@@ -53,7 +53,8 @@ pub struct Monitor {
     pub schedule: Schedule,
     pub(crate) cycle: Arc<Mutex<()>>,
     inventory: Arc<Mutex<Inventory>>,
-    workers: Arc<Mutex<BTreeMap<i64, tokio::task::JoinHandle<Result<Value>>>>>,
+    pub(crate) early_reset: Arc<Mutex<crate::oauth_early_reset::State>>,
+    pub(crate) workers: Arc<Mutex<BTreeMap<i64, tokio::task::JoinHandle<Result<Value>>>>>,
     daily: Arc<Mutex<Option<tokio::task::JoinHandle<Result<()>>>>>,
     force: Arc<Mutex<Option<watch::Receiver<Option<Value>>>>>,
     force_task: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
@@ -83,6 +84,7 @@ impl Monitor {
             clock: Arc::new(Utc::now),
             cycle: Arc::new(Mutex::new(())),
             inventory: Arc::new(Mutex::new((None, Arc::new(vec![])))),
+            early_reset: Arc::new(Mutex::new(crate::oauth_early_reset::State::default())),
             workers: Arc::new(Mutex::new(BTreeMap::new())),
             daily: Arc::new(Mutex::new(None)),
             force: Arc::new(Mutex::new(None)),
@@ -317,10 +319,18 @@ impl Monitor {
         let inventory = self.inventory(false).await?;
         let all_live = self.live_rows(&inventory).await?;
         self.credits.sweep(&all_live, now).await?;
+        self.tick_early_reset(&all_live, &config, now).await?;
+        let early_state = self.shared_state()?;
         let methods = recovery_policy::MethodIndex::from_config(&config);
         let rows = all_live
             .into_iter()
-            .filter(|row| methods.method(integer(&row["id"]).unwrap_or(0)).is_some())
+            .filter(|row| {
+                let id = integer(&row["id"]).unwrap_or(0);
+                methods.method(id).is_some()
+                    && !crate::oauth_early_reset::pending(
+                        &early_state["scheduler"][id.to_string()]["recovery_intent"],
+                    )
+            })
             .collect::<Vec<_>>();
         let enabled = config["oauth_recovery_monitor_enabled"] != false;
         let state = self.shared_state()?;

@@ -26,12 +26,14 @@ use tokio::sync::watch;
 pub enum Source {
     Automatic,
     Manual,
+    EarlyReset,
 }
 impl Source {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Automatic => "automatic",
             Self::Manual => "manual",
+            Self::EarlyReset => "early_reset",
         }
     }
 }
@@ -291,6 +293,14 @@ impl Coordinator {
             }
             let evidence = quota::latest_result(row, &saved, at);
             let mut query = query_metadata(metadata, &saved)?;
+            if options.source == Source::EarlyReset {
+                if !crate::oauth_early_reset::eligible(row, metadata, at) {
+                    return Ok(skipped("account_ineligible"));
+                }
+                query["early_reset_last_query_at"] = datetime(at).into();
+                metadata["quota_query"] = query;
+                return Ok(json!({"admitted":true}));
+            }
             if options.source == Source::Automatic {
                 let (blocked, deadline) =
                     automatic_gate(row, &evidence, metadata, at, true, false, 1)?;
@@ -330,6 +340,9 @@ impl Coordinator {
             return (false, admission);
         }
         let mut result = self.execute(row, key, options.timeout, at).await;
+        if options.source == Source::EarlyReset {
+            result["query_source"] = "early_reset".into();
+        }
         if truthy(&result["success"]) && !quota_complete(row, &result) {
             result["success"] = false.into();
             result["error_code"] = "incomplete_quota".into();
@@ -358,6 +371,21 @@ impl Coordinator {
                 .map(Value::Object)
                 .unwrap_or(json!({}));
             let code = string(&result["error_code"]);
+            if options.source == Source::EarlyReset {
+                if AUTH_ERRORS.contains(&code) {
+                    query["auth_fingerprint"] = credential_fingerprint(row).into();
+                } else if truthy(&result["success"]) {
+                    query
+                        .as_object_mut()
+                        .unwrap()
+                        .shift_remove("auth_fingerprint");
+                }
+                meta["quota_query"] = query;
+                if truthy(&result["success"]) {
+                    state["oauth_results"][&identity] = result.clone();
+                }
+                return Ok(());
+            }
             if truthy(&result["success"]) {
                 if let Some(observation) = &observation {
                     meta["reset_credit_observation"] = observation.clone();

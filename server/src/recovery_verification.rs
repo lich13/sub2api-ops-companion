@@ -13,7 +13,7 @@ use chrono::Duration;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
-fn state_block(row: &Value) -> Value {
+pub(crate) fn state_block(row: &Value) -> Value {
     let mut block = pick(
         row,
         &[
@@ -61,7 +61,11 @@ impl Monitor {
             && integer(&state["scheduler"][id.to_string()]["recovery_method_generation"])
                 .unwrap_or(0)
                 == method_generation
-            && recovery_policy::method(&self.config.current()?, id) == Some(method))
+            && recovery_policy::intent_method(
+                &self.config.current()?,
+                id,
+                &state["scheduler"][id.to_string()]["recovery_intent"],
+            ) == Some(method))
     }
     fn save_intent(
         &self,
@@ -87,7 +91,7 @@ impl Monitor {
             Ok(true)
         })
     }
-    fn blocked_intent(
+    pub(crate) fn blocked_intent(
         &self,
         id: i64,
         intent: &Value,
@@ -134,6 +138,8 @@ impl Monitor {
                     string(&receipt["recovery_method"]),
                 )?
                 && recovery_rules::confirmed(&row)
+                && (intent["kind"] != "early_reset"
+                    || crate::oauth_early_reset::eligible(&row, meta, self.now()))
                 && receipt["credential_fingerprint"]
                     == oauth_admission::credential_fingerprint(&row)
                 && recovery_rules::change_is_safe(&receipt["block_state"], &row)
@@ -232,7 +238,8 @@ impl Monitor {
             );
         }
         let saved = quota::latest_result(&row, usage, self.now());
-        if recovery_rules::obsolete_healthy_intent(&row, &saved, meta, self.now()) {
+        let early = intent["kind"] == "early_reset";
+        if !early && recovery_rules::obsolete_healthy_intent(&row, &saved, meta, self.now()) {
             self.save_intent(
                 id,
                 &intent,
@@ -243,7 +250,7 @@ impl Monitor {
             return Ok(json!({"success":false,"skipped":true,"error_code":"already_serving"}));
         }
         let summary = quota::summary_from_result(&row, &saved);
-        if recovery_rules::obsolete_rate_intent(&row, &summary, &intent, self.now()) {
+        if !early && recovery_rules::obsolete_rate_intent(&row, &summary, &intent, self.now()) {
             self.save_intent(
                 id,
                 &intent,
@@ -264,6 +271,9 @@ impl Monitor {
             .collect::<Vec<_>>();
         let prior = receipt_result(&intent["verification_receipt"]);
         if !(recovery_rules::eligible(&row, &windows, self.now())
+            || early
+                && recovery_rules::confirmed(&row)
+                && crate::oauth_early_reset::eligible(&row, meta, self.now())
             || truthy(&prior["success"]) && recovery_rules::confirmed(&row))
         {
             return self.blocked_intent(
@@ -483,7 +493,13 @@ impl Monitor {
                 method_generation,
             );
         }
-        if result["credential_fingerprint"] != oauth_admission::credential_fingerprint(&after)
+        if early
+            && !crate::oauth_early_reset::eligible(
+                &after,
+                &self.shared_state()?["scheduler"][id.to_string()],
+                self.now(),
+            )
+            || result["credential_fingerprint"] != oauth_admission::credential_fingerprint(&after)
             || !recovery_rules::change_is_safe(&result["block_state"], &after)
         {
             return self.known_recovery_failure(
@@ -521,6 +537,12 @@ impl Monitor {
         let fresh = self.row(id).await?;
         if !self.selected(id, generation, method_generation, method)?
             || self.hooks.detection_held(id)?
+            || early
+                && !crate::oauth_early_reset::eligible(
+                    &fresh,
+                    &self.shared_state()?["scheduler"][id.to_string()],
+                    self.now(),
+                )
             || !recovery_rules::change_is_safe(&result["block_state"], &fresh)
             || result["credential_fingerprint"] != oauth_admission::credential_fingerprint(&fresh)
         {

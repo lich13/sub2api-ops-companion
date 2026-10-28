@@ -16841,7 +16841,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3702,
+          "rust_source_line": 3729,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -16891,7 +16891,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2843,
+          "rust_source_line": 2870,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -16930,7 +16930,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 4554,
+          "rust_source_line": 4581,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -16975,7 +16975,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3569,
+          "rust_source_line": 3596,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -17020,7 +17020,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3569,
+          "rust_source_line": 3596,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -17069,7 +17069,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3795,
+          "rust_source_line": 3822,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -17118,7 +17118,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3795,
+          "rust_source_line": 3822,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -17157,7 +17157,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3652,
+          "rust_source_line": 3679,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -17199,7 +17199,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2766,
+          "rust_source_line": 2793,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -17241,7 +17241,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2766,
+          "rust_source_line": 2793,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -17293,7 +17293,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 879,
+          "rust_source_line": 906,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -17335,7 +17335,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2766,
+          "rust_source_line": 2793,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -17377,7 +17377,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2766,
+          "rust_source_line": 2793,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -33724,7 +33724,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/config_catalog_contract.rs",
-          "rust_source_line": 423,
+          "rust_source_line": 431,
           "verification_command": ".venv/bin/python scripts/server_test.py --test config_catalog_contract"
         },
         "gap": null,
@@ -33834,7 +33834,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3198,
+          "rust_source_line": 3225,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -33873,7 +33873,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3968,
+          "rust_source_line": 3995,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -33919,7 +33919,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3456,
+          "rust_source_line": 3483,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -33960,7 +33960,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2256,
+          "rust_source_line": 2283,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34000,7 +34000,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 4052,
+          "rust_source_line": 4079,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34040,7 +34040,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 4253,
+          "rust_source_line": 4280,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34084,7 +34084,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2415,
+          "rust_source_line": 2442,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34122,7 +34122,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2389,
+          "rust_source_line": 2416,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34164,7 +34164,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2326,
+          "rust_source_line": 2353,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34205,7 +34205,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3042,
+          "rust_source_line": 3069,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34255,7 +34255,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3094,
+          "rust_source_line": 3121,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34295,7 +34295,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 4383,
+          "rust_source_line": 4410,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34343,7 +34343,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2455,
+          "rust_source_line": 2482,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34383,7 +34383,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 4100,
+          "rust_source_line": 4127,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34439,7 +34439,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3359,
+          "rust_source_line": 3386,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34495,7 +34495,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3359,
+          "rust_source_line": 3386,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34543,7 +34543,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3042,
+          "rust_source_line": 3069,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34584,7 +34584,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3042,
+          "rust_source_line": 3069,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34634,7 +34634,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3094,
+          "rust_source_line": 3121,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34684,7 +34684,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3094,
+          "rust_source_line": 3121,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34734,7 +34734,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3094,
+          "rust_source_line": 3121,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34775,7 +34775,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3042,
+          "rust_source_line": 3069,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34816,7 +34816,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3042,
+          "rust_source_line": 3069,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -34856,7 +34856,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 4153,
+          "rust_source_line": 4180,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -35471,7 +35471,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 4616,
+          "rust_source_line": 4643,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -35518,7 +35518,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 4616,
+          "rust_source_line": 4643,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -35565,7 +35565,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 4616,
+          "rust_source_line": 4643,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -35604,7 +35604,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 973,
+          "rust_source_line": 1000,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -35643,7 +35643,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 973,
+          "rust_source_line": 1000,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -35695,7 +35695,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 879,
+          "rust_source_line": 906,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -35747,7 +35747,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 879,
+          "rust_source_line": 906,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -35799,7 +35799,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 879,
+          "rust_source_line": 906,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -35842,7 +35842,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1347,
+          "rust_source_line": 1374,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -35894,7 +35894,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1431,
+          "rust_source_line": 1458,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -35946,7 +35946,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1007,
+          "rust_source_line": 1034,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -35986,7 +35986,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1737,
+          "rust_source_line": 1764,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36038,7 +36038,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1431,
+          "rust_source_line": 1458,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36090,7 +36090,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1431,
+          "rust_source_line": 1458,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36133,7 +36133,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1347,
+          "rust_source_line": 1374,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36240,7 +36240,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1007,
+          "rust_source_line": 1034,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36287,7 +36287,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1264,
+          "rust_source_line": 1291,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36326,7 +36326,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1586,
+          "rust_source_line": 1613,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36378,7 +36378,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1007,
+          "rust_source_line": 1034,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36430,7 +36430,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1007,
+          "rust_source_line": 1034,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36482,7 +36482,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1431,
+          "rust_source_line": 1458,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36525,7 +36525,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1347,
+          "rust_source_line": 1374,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36566,7 +36566,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3914,
+          "rust_source_line": 3941,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36660,7 +36660,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1626,
+          "rust_source_line": 1653,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36710,7 +36710,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1132,
+          "rust_source_line": 1159,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36760,7 +36760,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1132,
+          "rust_source_line": 1159,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36803,7 +36803,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1654,
+          "rust_source_line": 1681,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36853,7 +36853,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1132,
+          "rust_source_line": 1159,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36905,7 +36905,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1431,
+          "rust_source_line": 1458,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36946,7 +36946,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2133,
+          "rust_source_line": 2160,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -36990,7 +36990,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2010,
+          "rust_source_line": 2037,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -37032,7 +37032,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2082,
+          "rust_source_line": 2109,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -37075,7 +37075,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2506,
+          "rust_source_line": 2533,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -37120,7 +37120,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3569,
+          "rust_source_line": 3596,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -37165,7 +37165,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3569,
+          "rust_source_line": 3596,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -37215,7 +37215,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2843,
+          "rust_source_line": 2870,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -37257,7 +37257,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2935,
+          "rust_source_line": 2962,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -37307,7 +37307,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2843,
+          "rust_source_line": 2870,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -37352,7 +37352,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3569,
+          "rust_source_line": 3596,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -37390,7 +37390,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 4511,
+          "rust_source_line": 4538,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -37430,7 +37430,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 4437,
+          "rust_source_line": 4464,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -37477,7 +37477,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2692,
+          "rust_source_line": 2719,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -37517,7 +37517,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 3874,
+          "rust_source_line": 3901,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -37558,7 +37558,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 2133,
+          "rust_source_line": 2160,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -37604,7 +37604,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1897,
+          "rust_source_line": 1924,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -37647,7 +37647,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/config_catalog_contract.rs",
-          "rust_source_line": 423,
+          "rust_source_line": 431,
           "verification_command": ".venv/bin/python scripts/server_test.py --test config_catalog_contract"
         },
         "gap": null,
@@ -37690,7 +37690,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/config_catalog_contract.rs",
-          "rust_source_line": 423,
+          "rust_source_line": 431,
           "verification_command": ".venv/bin/python scripts/server_test.py --test config_catalog_contract"
         },
         "gap": null,
@@ -37771,7 +37771,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/config_catalog_contract.rs",
-          "rust_source_line": 423,
+          "rust_source_line": 431,
           "verification_command": ".venv/bin/python scripts/server_test.py --test config_catalog_contract"
         },
         "gap": null,
@@ -40443,7 +40443,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 4511,
+          "rust_source_line": 4538,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -41394,14 +41394,14 @@
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 190,
+              "line": 194,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 277,
+          "rust_source_line": 281,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -41438,7 +41438,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 281,
+          "rust_source_line": 285,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -41488,14 +41488,14 @@
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 190,
+              "line": 194,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 277,
+          "rust_source_line": 281,
           "supporting_targets": [
             {
               "assertions": [
@@ -41507,7 +41507,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 393,
+              "line": 397,
               "module": "recovery_selection_parity",
               "path": "server/tests/recovery_selection_parity.rs",
               "test_name": "stale_revision_cannot_overwrite_new_account_but_partial_save_keeps_it",
@@ -41550,7 +41550,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 281,
+          "rust_source_line": 285,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -41600,14 +41600,14 @@
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 190,
+              "line": 194,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 273,
+          "rust_source_line": 277,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -41657,14 +41657,14 @@
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 190,
+              "line": 194,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 261,
+          "rust_source_line": 265,
           "supporting_targets": [
             {
               "assertions": [
@@ -41691,12 +41691,12 @@
                     "assert_eq!(reloaded.oauth[C], json!([]))",
                     "assert_eq!(reloaded.oauth[M], json!([]))"
                   ],
-                  "line": 190,
+                  "line": 194,
                   "name": "scenario"
                 }
               ],
               "kind": "rust_test",
-              "line": 265,
+              "line": 269,
               "module": "recovery_selection_parity",
               "path": "server/tests/recovery_selection_parity.rs",
               "test_name": "explicit_selection_keeps_both_modes_and_records_seen_baseline",
@@ -41739,7 +41739,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 467,
+          "rust_source_line": 471,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -41789,14 +41789,14 @@
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 190,
+              "line": 194,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 256,
+          "rust_source_line": 260,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43362,7 +43362,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 434,
+          "rust_source_line": 438,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43400,7 +43400,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 330,
+          "rust_source_line": 334,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43438,7 +43438,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 310,
+          "rust_source_line": 314,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43488,14 +43488,14 @@
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 190,
+              "line": 194,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 256,
+          "rust_source_line": 260,
           "supporting_targets": [
             {
               "assertions": [
@@ -43522,12 +43522,12 @@
                     "assert_eq!(reloaded.oauth[C], json!([]))",
                     "assert_eq!(reloaded.oauth[M], json!([]))"
                   ],
-                  "line": 190,
+                  "line": 194,
                   "name": "scenario"
                 }
               ],
               "kind": "rust_test",
-              "line": 269,
+              "line": 273,
               "module": "recovery_selection_parity",
               "path": "server/tests/recovery_selection_parity.rs",
               "test_name": "manual_removal_and_reappearance_never_reselect_seen_accounts",
@@ -43575,7 +43575,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 4325,
+          "rust_source_line": 4352,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,
@@ -43625,14 +43625,14 @@
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 190,
+              "line": 194,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 273,
+          "rust_source_line": 277,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43669,7 +43669,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 393,
+          "rust_source_line": 397,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43705,7 +43705,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 363,
+          "rust_source_line": 367,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43755,14 +43755,14 @@
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 190,
+              "line": 194,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 261,
+          "rust_source_line": 265,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -44584,7 +44584,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/oauth_scheduler_parity.rs",
-          "rust_source_line": 1007,
+          "rust_source_line": 1034,
           "verification_command": ".venv/bin/python scripts/server_test.py --test oauth_scheduler_parity"
         },
         "gap": null,

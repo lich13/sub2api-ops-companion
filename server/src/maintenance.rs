@@ -184,7 +184,7 @@ pub fn migrate_oauth(env: &BTreeMap<String, String>, env_file: &Path) -> Result<
         &retired,
         &[target.clone(), state_path.clone(), env_file.to_path_buf()],
     )?;
-    let defaults = json!({"oauth_auto_reset_credit_enabled":false,"oauth_daily_test_enabled":true,"oauth_daily_test_time":"05:00","oauth_early_probe_batch_size":8,"oauth_recovery_connection_account_ids":null,"oauth_recovery_model_account_ids":null,"oauth_recovery_monitor_enabled":true,"oauth_recovery_test_concurrency":2,"oauth_recovery_test_model_id":crate::model_downgrade::DEFAULT_TEST_MODEL,"oauth_usage_refresh_concurrency":4});
+    let defaults = json!({"connection_test_retry_interval_seconds":10,"connection_test_max_retries":3,"model_detection_model_id":crate::settings::DEFAULT_DETECTION_MODEL,"model_detection_platforms":crate::settings::detection_platforms(&Value::Null)?,"oauth_early_reset_enabled":false,"oauth_early_reset_interval_seconds":60,"oauth_auto_reset_credit_enabled":false,"oauth_daily_test_enabled":true,"oauth_daily_test_time":"05:00","oauth_early_probe_batch_size":8,"oauth_recovery_connection_account_ids":null,"oauth_recovery_model_account_ids":null,"oauth_recovery_monitor_enabled":true,"oauth_recovery_test_concurrency":2,"oauth_recovery_test_model_id":crate::model_downgrade::DEFAULT_TEST_MODEL,"oauth_usage_refresh_concurrency":4});
     let mut result = json!({});
     for key in OAUTH_FIELDS {
         let default = &defaults[*key];
@@ -202,16 +202,23 @@ pub fn migrate_oauth(env: &BTreeMap<String, String>, env_file: &Path) -> Result<
         result[*key] = if let Some(default) = default.as_bool() {
             json!(bool_value(&value, default))
         } else if let Some(default) = default.as_i64() {
-            let max = match *key {
-                "oauth_usage_refresh_concurrency" => 16,
-                "oauth_recovery_test_concurrency" => 8,
-                _ => 50,
+            let (min, max) = match *key {
+                "connection_test_retry_interval_seconds" => (1, 3600),
+                "connection_test_max_retries" => (0, 10),
+                "oauth_early_reset_interval_seconds" => (2, i64::MAX / 1000),
+                "oauth_usage_refresh_concurrency" => (1, 16),
+                "oauth_recovery_test_concurrency" => (1, 8),
+                _ => (1, 50),
             };
             json!(text(&value)
                 .trim()
                 .parse::<i64>()
                 .unwrap_or(default)
-                .clamp(1, max))
+                .clamp(min, max))
+        } else if *key == "model_detection_platforms" {
+            crate::settings::detection_platforms(&value)?
+        } else if *key == "model_detection_model_id" {
+            crate::settings::detection_model(&value)?.into()
         } else if *key == "oauth_daily_test_time" {
             json!(daily_time(&value)?)
         } else if key.ends_with("account_ids") {
@@ -231,6 +238,10 @@ pub fn migrate_oauth(env: &BTreeMap<String, String>, env_file: &Path) -> Result<
                 json!(v)
             }
         };
+    }
+    if let Some(seen) = current.get(crate::recovery_policy::SEEN_IDS) {
+        crate::recovery_policy::account_ids(seen)?;
+        result[crate::recovery_policy::SEEN_IDS] = seen.clone();
     }
     let raw_env = fs::read_to_string(env_file)?;
     let mut neutral: String = raw_env

@@ -39,6 +39,7 @@ beforeEach(() => {
   config = {
     oauth: {
       revision: "oauth-r1", oauth_recovery_monitor_enabled: true, oauth_auto_reset_credit_enabled: false,
+      oauth_early_reset_enabled: false, oauth_early_reset_interval_seconds: 60,
       oauth_daily_test_enabled: false, oauth_daily_test_time: "09:00", oauth_usage_refresh_concurrency: 3,
       connection_test_retry_interval_seconds: 10, connection_test_max_retries: 3,
       oauth_recovery_test_concurrency: 2, oauth_early_probe_batch_size: 5, oauth_recovery_test_model_id: "fixture-model",
@@ -67,7 +68,7 @@ afterEach(async () => {
 
 async function openFeatures() {
   await act(async () => root.render(<App/>));
-  const nav = [...container.querySelectorAll<HTMLButtonElement>("aside nav button")].find((button) => button.textContent === "功能")!;
+  const nav = [...container.querySelectorAll<HTMLButtonElement>("aside nav button, .bottom-nav button")].find((button) => button.textContent === "功能")!;
   await act(async () => nav.click());
 }
 
@@ -82,6 +83,43 @@ function saveButton(target: HTMLFormElement) {
 const writes = () => vi.mocked(api).mock.calls.filter(([method]) => method !== "GET");
 
 describe("feature settings drafts", () => {
+  it("keeps early reset independent, validates its interval and retains a failed save", async () => {
+    config.oauth.oauth_recovery_monitor_enabled = false;
+    initial.platform = "android";
+    await openFeatures();
+    const target = form("恢复、测活与模型检测");
+    const toggle = target.querySelector<HTMLButtonElement>('[aria-label="提前重置检测"]')!;
+    const input = [...target.querySelectorAll("label.field")].find(node => node.textContent?.includes("检测间隔（秒）"))!.querySelector<HTMLInputElement>("input")!;
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(input.value).toBe("60");
+    expect(input.disabled).toBe(true);
+    expect(input.min).toBe("2");
+    await act(async () => toggle.click());
+    expect(input.disabled).toBe(false);
+    const fill = async (value: string) => act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await fill(""); expect(input.value).toBe("");
+    await fill("1"); expect(input.checkValidity()).toBe(false);
+    await fill("2"); expect(input.checkValidity()).toBe(true);
+    const original = vi.mocked(api).getMockImplementation()!;
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (method === "PUT" && path === "/config/oauth") throw new Error("fixture save failed");
+      return original(method, path, body);
+    });
+    await act(async () => saveButton(target).click());
+    expect(container.textContent).toContain("fixture save failed");
+    expect(input.value).toBe("2"); expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(saveButton(target).disabled).toBe(false);
+    vi.mocked(api).mockImplementation(async (method, path, body) => method === "PUT" && path === "/config/oauth"
+      ? { ...config.oauth, revision: "oauth-r2", oauth_early_reset_enabled: true, oauth_early_reset_interval_seconds: 2 } as never
+      : original(method, path, body));
+    await act(async () => saveButton(target).click());
+    expect(writes().at(-1)).toEqual(["PUT", "/config/oauth", { expected_revision: "oauth-r1", changes: { oauth_early_reset_enabled: true, oauth_early_reset_interval_seconds: 2 } }]);
+    expect(saveButton(target).disabled).toBe(true);
+  });
+
   it("saves shared retry controls including zero without exposing the retired batch cap", async () => {
     await openFeatures();
     const target = form("恢复、测活与模型检测");

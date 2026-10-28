@@ -9,6 +9,7 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use serde_json::{json, Value};
 use sqlx::{types::Json as SqlJson, PgPool};
 use std::{
+    collections::BTreeMap,
     fs,
     ops::Deref,
     path::PathBuf,
@@ -158,6 +159,8 @@ struct MockUpstream {
     calls: Arc<StdMutex<Vec<Call>>>,
     unexpected: Arc<StdMutex<Vec<String>>>,
     usage_status: Arc<StdMutex<u16>>,
+    usage_by_account: Arc<StdMutex<BTreeMap<i64, (u16, Value)>>>,
+    test_by_account: Arc<StdMutex<BTreeMap<i64, String>>>,
     usage_data: Arc<StdMutex<Option<Value>>>,
     usage_raw: Arc<StdMutex<Option<Vec<u8>>>>,
     usage_gate: Arc<StdMutex<Option<Gate>>>,
@@ -180,6 +183,8 @@ impl MockUpstream {
             calls: Arc::new(StdMutex::new(Vec::new())),
             unexpected: Arc::new(StdMutex::new(Vec::new())),
             usage_status: Arc::new(StdMutex::new(200)),
+            usage_by_account: Arc::new(StdMutex::new(BTreeMap::new())),
+            test_by_account: Arc::new(StdMutex::new(BTreeMap::new())),
             usage_data: Arc::new(StdMutex::new(None)),
             usage_raw: Arc::new(StdMutex::new(None)),
             usage_gate: Arc::new(StdMutex::new(None)),
@@ -226,6 +231,17 @@ impl MockUpstream {
         *self.usage_status.lock().unwrap() = status;
         *self.usage_data.lock().unwrap() = data;
         *self.usage_raw.lock().unwrap() = None;
+    }
+
+    fn set_account_usage(&self, id: i64, status: u16, data: Value) {
+        self.usage_by_account
+            .lock()
+            .unwrap()
+            .insert(id, (status, data));
+    }
+
+    fn set_account_test(&self, id: i64, sse: &str) {
+        self.test_by_account.lock().unwrap().insert(id, sse.into());
     }
 
     fn set_usage_raw(&self, status: u16, body: Vec<u8>) {
@@ -336,6 +352,14 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
             gate.entered.notify_one();
             gate.release.notified().await;
         }
+        if let Some((status, data)) = account_id(&path, "/usage")
+            .and_then(|id| state.usage_by_account.lock().unwrap().get(&id).cloned())
+        {
+            return json_response(
+                status,
+                json!({"code":if status==200 {0} else {1},"data":data}),
+            );
+        }
         let status = *state.usage_status.lock().unwrap();
         if status != 200 {
             return json_response(status, json!({"code":1,"message":"fixture usage failure"}));
@@ -388,10 +412,13 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
                 .expect("self-heal only the synthetic account after a successful loopback test");
             *state.clear_block_on_test.lock().unwrap() = None;
         }
+        let sse = account_id(&path, "/test")
+            .and_then(|id| state.test_by_account.lock().unwrap().get(&id).cloned())
+            .unwrap_or_else(|| state.test_sse.lock().unwrap().clone());
         return Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "text/event-stream")
-            .body(Body::from(state.test_sse.lock().unwrap().clone()))
+            .body(Body::from(sse))
             .expect("fixture test SSE response");
     }
 
@@ -5379,5 +5406,448 @@ async fn recovery_failure_receipt_restart_preserves_original_retry_deadline_with
     assert_eq!(success["recovered"], true);
     assert_eq!(success["attempt_count"], 2);
     assert_eq!(h.mock.count("POST", "/test"), 1);
+    h.close().await;
+}
+
+async fn early_config(h: &Harness, seconds: i64) {
+    h.runtime
+        .config
+        .oauth
+        .transaction(|config| {
+            config["oauth_early_reset_enabled"] = true.into();
+            config["oauth_early_reset_interval_seconds"] = seconds.into();
+            config["oauth_recovery_monitor_enabled"] = false.into();
+            config["oauth_recovery_connection_account_ids"] = json!([]);
+            config["oauth_recovery_model_account_ids"] = json!([]);
+            config["connection_test_max_retries"] = 0.into();
+            Ok(())
+        })
+        .unwrap();
+}
+async fn early_wait(h: &Harness, condition: impl Fn(&Value) -> bool) -> Value {
+    tokio::time::timeout(StdDuration::from_secs(8), async {
+        loop {
+            h.runtime.monitor.tick().await.unwrap();
+            let state = h.runtime.monitor.state().unwrap();
+            if condition(&state) {
+                return state;
+            }
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("early reset workers did not finish")
+}
+async fn early_baseline(h: &Harness, ids: &[i64], used: i64) {
+    let mut data = default_usage(h.now());
+    data["five_hour"]["utilization"] = used.into();
+    h.mock.set_usage(200, Some(data));
+    early_wait(h, |state| {
+        ids.iter().all(|id| {
+            state["oauth_results"][id.to_string()]["success"] == true
+                && state["oauth_results"][id.to_string()]["queried_at"] == datetime(h.now())
+        })
+    })
+    .await;
+    // Completion follows persistence; allow the existing worker to retire.
+    tokio::time::sleep(StdDuration::from_millis(15)).await;
+    h.runtime.monitor.tick().await.unwrap();
+}
+#[tokio::test]
+async fn early_reset_observes_one_per_plan_and_recovers_each_account_without_query_budget() {
+    let mut h = Harness::new().await;
+    let a = h.seed_account("plus", "fixture-early-a", json!({})).await;
+    let b = h.seed_account("plus", "fixture-early-b", json!({})).await;
+    let pro = h.seed_account("pro", "fixture-early-pro", json!({})).await;
+    let a = integer(&a["id"]).unwrap();
+    let b = integer(&b["id"]).unwrap();
+    let pro = integer(&pro["id"]).unwrap();
+    h.runtime.monitor.startup().await.unwrap();
+    h.runtime
+        .monitor
+        .store
+        .transaction(|state| {
+            state["scheduler"][a.to_string()]["quota_query"] = json!({
+                "last_query_at":datetime(h.now()-Duration::seconds(10)),
+                "automatic_attempts":vec![datetime(h.now()-Duration::minutes(1));6],
+                "retry_at":datetime(h.now()+Duration::hours(1))
+            });
+            Ok(())
+        })
+        .unwrap();
+    early_config(&h, 60).await;
+    early_baseline(&h, &[a, pro], 80).await;
+    assert_eq!(h.mock.count("GET", "/usage"), 2);
+    let before = h.runtime.monitor.state().unwrap();
+    h.set_now(h.now() + Duration::seconds(59));
+    h.runtime.monitor.tick().await.unwrap();
+    assert_eq!(h.mock.count("GET", "/usage"), 2);
+    h.set_now(h.now() + Duration::seconds(1));
+    // Both plans recover independently with the same observed reset.
+    h.mock.set_usage(200, Some(default_usage(h.now())));
+    let state = early_wait(&h, |s| {
+        [a, b, pro]
+            .iter()
+            .all(|id| s["scheduler"][id.to_string()]["recovery_intent"]["status"] == "recovered")
+    })
+    .await;
+    assert_eq!(h.mock.count("GET", "/usage"), 5);
+    assert_eq!(h.mock.count("POST", "/test"), 3);
+    for id in [a, b, pro] {
+        let mut actual = state["scheduler"][id.to_string()]["quota_query"].clone();
+        actual
+            .as_object_mut()
+            .unwrap()
+            .shift_remove("early_reset_last_query_at");
+        let mut expected = before["scheduler"][id.to_string()]["quota_query"].clone();
+        expected
+            .as_object_mut()
+            .unwrap()
+            .shift_remove("early_reset_last_query_at");
+        assert_eq!(actual, expected);
+    }
+    assert_eq!(
+        h.mock.count("POST", "/recover-state"),
+        0,
+        "healthy accounts need no state write"
+    );
+    h.restart_runtime().await;
+    h.runtime.monitor.startup().await.unwrap();
+    h.set_now(h.now() + Duration::seconds(1));
+    early_baseline(&h, &[a, pro], 15).await;
+    assert_eq!(
+        h.mock.count("POST", "/test"),
+        3,
+        "restart must not repeat verified recovery"
+    );
+    h.close().await;
+}
+#[tokio::test]
+async fn early_reset_fixed_representative_reselects_after_disable_and_interval_changes() {
+    let h = Harness::new().await;
+    let a = h
+        .seed_account("plus", "fixture-observer-a", json!({}))
+        .await;
+    let b = h
+        .seed_account("plus", "fixture-observer-b", json!({}))
+        .await;
+    let a = integer(&a["id"]).unwrap();
+    let b = integer(&b["id"]).unwrap();
+    early_config(&h, 60).await;
+    early_baseline(&h, &[a], 80).await;
+    h.set_now(h.now() + Duration::seconds(2));
+    early_config(&h, 2).await;
+    h.mock.set_usage(
+        200,
+        Some({
+            let mut v = default_usage(h.now());
+            v["five_hour"]["utilization"] = 80.into();
+            v
+        }),
+    );
+    early_wait(&h, |s| {
+        s["oauth_results"][a.to_string()]["queried_at"] == datetime(h.now())
+    })
+    .await;
+    assert_eq!(h.mock.count("GET", &format!("/{b}/usage")), 0);
+    sqlx::query("UPDATE accounts SET schedulable=false WHERE id=$1")
+        .bind(a)
+        .execute(&h.runtime.db.pool)
+        .await
+        .unwrap();
+    h.runtime.monitor.inventory(true).await.unwrap();
+    early_baseline(&h, &[b], 50).await;
+    assert_eq!(
+        h.mock.count("POST", "/test"),
+        0,
+        "new representative establishes its own baseline"
+    );
+    h.runtime
+        .config
+        .oauth
+        .transaction(|c| {
+            c["oauth_early_reset_enabled"] = false.into();
+            Ok(())
+        })
+        .unwrap();
+    let count = h.mock.count("GET", "/usage");
+    h.set_now(h.now() + Duration::seconds(120));
+    h.runtime.monitor.tick().await.unwrap();
+    assert_eq!(h.mock.count("GET", "/usage"), count);
+    h.close().await;
+}
+#[tokio::test]
+async fn early_reset_keeps_manual_pause_and_failed_verification_blocked() {
+    let h = Harness::new().await;
+    let a = h
+        .seed_account("plus", "fixture-early-block", json!({}))
+        .await;
+    let paused = h
+        .seed_account("plus", "fixture-early-paused", json!({}))
+        .await;
+    let a = integer(&a["id"]).unwrap();
+    let paused = integer(&paused["id"]).unwrap();
+    sqlx::query("UPDATE accounts SET rate_limited_at=$1,rate_limit_reset_at=$2 WHERE id=$3")
+        .bind(h.now() - Duration::seconds(1))
+        .bind(h.now() + Duration::hours(4))
+        .bind(a)
+        .execute(&h.runtime.db.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET schedulable=false WHERE id=$1")
+        .bind(paused)
+        .execute(&h.runtime.db.pool)
+        .await
+        .unwrap();
+    early_config(&h, 60).await;
+    early_baseline(&h, &[a], 100).await;
+    h.mock
+        .set_test_sse("data: {\"type\":\"error\",\"error\":\"fixture failure\"}\n\n");
+    h.set_now(h.now() + Duration::seconds(60));
+    h.mock.set_usage(200, Some(default_usage(h.now())));
+    early_wait(&h, |s| {
+        s["scheduler"][a.to_string()]["recovery_intent"]["status"] == "retry_exhausted"
+    })
+    .await;
+    assert_eq!(h.mock.count("POST", "/test"), 1);
+    assert_eq!(h.mock.count("POST", "/recover-state"), 0);
+    assert_eq!(h.mock.count("GET", &format!("/{paused}/usage")), 0);
+    assert_ne!(
+        h.runtime.monitor.row(a).await.unwrap()["rate_limit_reset_at"],
+        Value::Null
+    );
+    assert_eq!(
+        h.runtime.monitor.row(paused).await.unwrap()["schedulable"],
+        false
+    );
+    h.close().await;
+}
+#[tokio::test]
+async fn early_reset_config_is_independent_and_rejects_invalid_values() {
+    let h = Harness::new().await;
+    let before = h.runtime.config.snapshot(Some("oauth")).unwrap();
+    assert_eq!(before["oauth"]["oauth_early_reset_enabled"], false);
+    assert_eq!(before["oauth"]["oauth_early_reset_interval_seconds"], 60);
+    for change in [
+        json!({"oauth_early_reset_enabled":1}),
+        json!({"oauth_early_reset_interval_seconds":1}),
+        json!({"oauth_early_reset_interval_seconds":2.5}),
+    ] {
+        assert_eq!(
+            h.runtime
+                .config
+                .save(
+                    "oauth",
+                    &change,
+                    "fixture-client",
+                    before["oauth"]["revision"].as_str()
+                )
+                .await
+                .unwrap_err()
+                .status
+                .as_u16(),
+            422
+        );
+    }
+    let saved=h.runtime.config.save("oauth",&json!({"oauth_early_reset_enabled":true,"oauth_early_reset_interval_seconds":2,"oauth_recovery_monitor_enabled":false}),"fixture-client",before["oauth"]["revision"].as_str()).await.unwrap();
+    assert_eq!(saved["oauth_early_reset_interval_seconds"], 2);
+    assert_eq!(saved["oauth_recovery_monitor_enabled"], false);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn early_reset_isolates_plans_and_confirms_quota_and_verification_per_account() {
+    let h = Harness::new().await;
+    let mut ids = vec![];
+    for suffix in ["representative", "depleted", "failed", "intervened"] {
+        let row = h
+            .seed_account("plus", &format!("fixture-{suffix}"), json!({}))
+            .await;
+        let id = integer(&row["id"]).unwrap();
+        sqlx::query("UPDATE accounts SET rate_limited_at=$1,rate_limit_reset_at=$2 WHERE id=$3")
+            .bind(h.now() - Duration::seconds(1))
+            .bind(h.now() + Duration::hours(4))
+            .bind(id)
+            .execute(&h.runtime.db.pool)
+            .await
+            .unwrap();
+        ids.push(id);
+    }
+    let pro = h
+        .seed_account("pro", "fixture-independent-plan", json!({}))
+        .await;
+    let pro = integer(&pro["id"]).unwrap();
+    let unknown = h
+        .seed_account("unrecognized-plan", "fixture-unknown", json!({}))
+        .await;
+    let unknown = integer(&unknown["id"]).unwrap();
+    early_config(&h, 60).await;
+    early_baseline(&h, &[ids[0], pro], 100).await;
+    h.set_now(h.now() + Duration::seconds(60));
+    h.mock.set_usage(200, Some(default_usage(h.now())));
+    let mut unchanged = default_usage(h.now());
+    unchanged["five_hour"]["utilization"] = 100.into();
+    h.mock.set_account_usage(pro, 200, unchanged);
+    let mut depleted = default_usage(h.now());
+    depleted["seven_day"]["utilization"] = 100.into();
+    h.mock.set_account_usage(ids[1], 200, depleted);
+    h.mock.set_account_test(
+        ids[2],
+        "data: {\"type\":\"error\",\"error\":\"fixture failure\"}\n\n",
+    );
+    h.mock.mark_unschedulable_on_test(ids[3]);
+    let state = early_wait(&h, |s| {
+        s["scheduler"][ids[0].to_string()]["recovery_intent"]["status"] == "recovered"
+            && s["scheduler"][ids[1].to_string()]["recovery_intent"]["status"] == "blocked"
+            && s["scheduler"][ids[2].to_string()]["recovery_intent"]["status"] == "retry_exhausted"
+            && s["scheduler"][ids[3].to_string()]["recovery_intent"]["status"] == "blocked"
+    })
+    .await;
+    assert_eq!(h.mock.count("POST", "/recover-state"), 1);
+    assert_eq!(h.mock.count("POST", &format!("/{}/test", ids[1])), 0);
+    assert_eq!(h.mock.count("POST", &format!("/{pro}/test")), 0);
+    assert_eq!(h.mock.count("GET", &format!("/{unknown}/usage")), 0);
+    assert!(state["scheduler"][pro.to_string()]["recovery_intent"].is_null());
+    assert!(!h.runtime.monitor.row(ids[0]).await.unwrap()["rate_limit_reset_at"].is_string());
+    assert_eq!(
+        h.runtime.monitor.row(ids[3]).await.unwrap()["schedulable"],
+        false
+    );
+    assert!(h.mock.unexpected().is_empty());
+    h.close().await;
+}
+
+#[tokio::test]
+async fn early_reset_disable_finishes_dispatched_verification_without_starting_another_batch() {
+    let h = Harness::new().await;
+    let row = h
+        .seed_account("plus", "fixture-disable-inflight", json!({}))
+        .await;
+    let id = integer(&row["id"]).unwrap();
+    early_config(&h, 2).await;
+    early_baseline(&h, &[id], 100).await;
+    h.set_now(h.now() + Duration::seconds(2));
+    h.mock.set_usage(200, Some(default_usage(h.now())));
+    let gate = Gate::new();
+    *h.mock.test_gate.lock().unwrap() = Some(gate.clone());
+    early_wait(&h, |s| {
+        s["scheduler"][id.to_string()]["recovery_intent"]["verification_dispatched"] == true
+    })
+    .await;
+    tokio::time::timeout(StdDuration::from_secs(5), gate.entered.notified())
+        .await
+        .unwrap();
+    h.set_now(h.now() + Duration::seconds(10));
+    for _ in 0..5 {
+        h.runtime.monitor.tick().await.unwrap();
+    }
+    assert_eq!(
+        h.mock.count("GET", "/usage"),
+        2,
+        "one batch in flight per plan"
+    );
+    h.runtime
+        .config
+        .oauth
+        .transaction(|c| {
+            c["oauth_early_reset_enabled"] = false.into();
+            Ok(())
+        })
+        .unwrap();
+    h.runtime.monitor.tick().await.unwrap();
+    *h.mock.test_gate.lock().unwrap() = None;
+    gate.release.notify_one();
+    early_wait(&h, |s| {
+        s["scheduler"][id.to_string()]["recovery_intent"]["status"] == "recovered"
+    })
+    .await;
+    assert_eq!(h.mock.count("GET", "/usage"), 2);
+    assert_eq!(h.mock.count("POST", "/test"), 1);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn early_reset_replaces_auth_invalid_observer_and_retries_transient_failure_at_the_interval()
+{
+    let h = Harness::new().await;
+    let a = h
+        .seed_account("plus", "fixture-auth-invalid", json!({}))
+        .await;
+    let b = h.seed_account("plus", "fixture-auth-next", json!({})).await;
+    let a = integer(&a["id"]).unwrap();
+    let b = integer(&b["id"]).unwrap();
+    early_config(&h, 60).await;
+    h.mock.set_account_usage(a, 500, json!({}));
+    early_wait(&h, |s| {
+        s["scheduler"][a.to_string()]["quota_query"]["early_reset_last_query_at"]
+            == datetime(h.now())
+    })
+    .await;
+    tokio::time::sleep(StdDuration::from_millis(25)).await;
+    h.set_now(h.now() + Duration::seconds(59));
+    h.runtime.monitor.tick().await.unwrap();
+    assert_eq!(h.mock.count("GET", "/usage"), 1);
+    h.mock.set_account_usage(a, 401, json!({}));
+    h.set_now(h.now() + Duration::seconds(1));
+    early_wait(&h, |s| {
+        s["scheduler"][a.to_string()]["quota_query"]["auth_fingerprint"].is_string()
+    })
+    .await;
+    early_baseline(&h, &[b], 15).await;
+    assert_eq!(h.mock.count("GET", &format!("/{a}/usage")), 2);
+    assert_eq!(h.mock.count("GET", &format!("/{b}/usage")), 1);
+    assert_eq!(h.mock.count("POST", "/test"), 0);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn early_reset_prefers_depleted_representative_and_defers_a_busy_account() {
+    let h = Harness::new().await;
+    let a = h
+        .seed_account("plus", "fixture-priority-healthy", json!({}))
+        .await;
+    let b = h
+        .seed_account("plus", "fixture-priority-depleted", json!({}))
+        .await;
+    let a_id = integer(&a["id"]).unwrap();
+    let b_id = integer(&b["id"]).unwrap();
+    let mut depleted = default_usage(h.now());
+    depleted["five_hour"]["utilization"] = 100.into();
+    save_cached(
+        &h,
+        b_id,
+        cached_result(&b, h.now() - Duration::seconds(1), depleted),
+    )
+    .await;
+    early_config(&h, 2).await;
+    let lease = h.runtime.monitor.lease(&b).unwrap();
+    h.runtime.monitor.tick().await.unwrap();
+    tokio::time::sleep(StdDuration::from_millis(30)).await;
+    assert_eq!(h.mock.count("GET", "/usage"), 0);
+    drop(lease);
+    h.set_now(h.now() + Duration::seconds(2));
+    early_baseline(&h, &[b_id], 100).await;
+    assert_eq!(h.mock.count("GET", &format!("/{a_id}/usage")), 0);
+    assert_eq!(h.mock.count("GET", &format!("/{b_id}/usage")), 1);
+    sqlx::query("UPDATE accounts SET credentials=jsonb_set(credentials,'{plan_type}','\"pro\"') WHERE id=$1")
+        .bind(b_id).execute(&h.runtime.db.pool).await.unwrap();
+    h.runtime.monitor.inventory(true).await.unwrap();
+    h.set_now(h.now() + Duration::seconds(2));
+    early_baseline(&h, &[a_id, b_id], 15).await;
+    assert_eq!(
+        h.mock.count("POST", "/test"),
+        0,
+        "plan change must establish new baselines"
+    );
+    sqlx::query("UPDATE accounts SET deleted_at=$1 WHERE id=$2")
+        .bind(h.now())
+        .bind(b_id)
+        .execute(&h.runtime.db.pool)
+        .await
+        .unwrap();
+    h.runtime.monitor.inventory(true).await.unwrap();
+    h.set_now(h.now() + Duration::seconds(2));
+    early_baseline(&h, &[a_id], 15).await;
+    assert_eq!(h.mock.count("GET", &format!("/{b_id}/usage")), 2);
     h.close().await;
 }

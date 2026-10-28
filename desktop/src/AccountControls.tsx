@@ -166,14 +166,12 @@ export function RecoveryHistory({
   accounts,
   online,
   active = true,
-  onCount,
   report,
 }: {
   latest: Recovery[];
   accounts: Account[];
   online: boolean;
   active?: boolean;
-  onCount?: (count: number) => void;
   report: (e: unknown) => void;
 }) {
   const [rows, setRows] = useState<Recovery[]>([]);
@@ -211,7 +209,6 @@ export function RecoveryHistory({
       ].sort((a, b) => b.id - a.id),
     [rows, latest, accountNameById],
   );
-  useEffect(() => { onCount?.(items.length); }, [items.length, onCount]);
   async function load(more = false) {
     if (running.current || !online || !active) return;
     const epoch = ++generation.current;

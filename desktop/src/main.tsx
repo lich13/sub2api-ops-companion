@@ -196,7 +196,6 @@ export default function App() {
     [type, setType] = useState(""),
     [config, setConfig] = useState<Config | null>(null),
     [runtimeVersion, setRuntimeVersion] = useState<string | null>(null),
-    [recoveryCount, setRecoveryCount] = useState(0),
     [eventTab, setEventTab] = useState<ErrorCategory | "recoveries" | "logs">("degradation"),
     [selected, setSelected] = useState<Set<number>>(new Set()),
     [removedIds, setRemovedIds] = useState<Set<number>>(new Set()),
@@ -443,10 +442,6 @@ export default function App() {
     () => [...new Set(accounts.map((a) => a.type))],
     [accounts],
   );
-  const countTab = useRef<ErrorCategory | "recoveries">("degradation");
-  if (eventTab !== "logs") countTab.current = eventTab;
-  const eventCount = countTab.current === "recoveries" ? recoveryCount
-    : quick ? errors.length : (countTab.current === "other" ? otherFeed : degradationFeed).items.length;
   async function prefs(patch: Partial<Preferences>) {
     try {
       await command("preferences", {
@@ -685,9 +680,6 @@ export default function App() {
               >
                 <p.icon size={17} />
                 {p.label}
-                {p.id === "events" && eventCount > 0 ? (
-                  <span className="nav-count">{eventCount}</span>
-                ) : null}
               </button>
             ))}
           </nav>
@@ -1112,7 +1104,7 @@ export default function App() {
                       </section>}
                       <section id="logs-panel" className="event-panel" role="tabpanel" aria-labelledby="logs-tab" hidden={eventTab !== "logs"}><DetectionLogs key={connectionKey} active={page === "events" && eventTab === "logs"} online={state.online} connectionKey={connectionKey}/></section>
                       <section id="recoveries-panel" className="event-panel" role="tabpanel" aria-labelledby="recoveries-tab" hidden={eventTab !== "recoveries"}>
-                        <RecoveryHistory key={connectionKey} latest={snap.recoveries ?? []} accounts={accounts} online={state.online} active={eventTab === "recoveries"} onCount={setRecoveryCount} report={report}/>
+                        <RecoveryHistory key={connectionKey} latest={snap.recoveries ?? []} accounts={accounts} online={state.online} active={eventTab === "recoveries"} report={report}/>
                       </section>
                     </div>
                   </div>
@@ -1392,6 +1384,8 @@ function Connection({
 }
 const oauthLabels: Record<string, string> = {
   oauth_recovery_monitor_enabled: "额度恢复监控",
+  oauth_early_reset_enabled: "提前重置检测",
+  oauth_early_reset_interval_seconds: "检测间隔（秒）",
   oauth_auto_reset_credit_enabled: "7d 100% 且 429 时自动用卡",
   oauth_daily_test_enabled: "每日定时测活",
   oauth_daily_test_time: "测活时间（北京时间）",
@@ -1471,12 +1465,14 @@ function SettingsPage({
           >
             {(draft, set) => (
               <>
-                {Object.entries(oauthLabels).filter(([key]) => (key !== "model_detection_model_id" || typeof config.oauth.model_detection_model_id === "string") && (!key.startsWith("connection_test_") || typeof config.oauth[key] === "number")).map(([key, label]) => (
+                {Object.entries(oauthLabels).filter(([key]) => (!key.startsWith("oauth_early_reset_") || config.oauth[key] != null) && (key !== "model_detection_model_id" || typeof config.oauth.model_detection_model_id === "string") && (!key.startsWith("connection_test_") || typeof config.oauth[key] === "number")).map(([key, label]) => (
                   key === "oauth_recovery_test_model_id" || key === "model_detection_model_id" ? <AccountModelField key={`${connectionKey}:${key}`} label={label} value={draft[key]} accounts={accounts} online={state.online} set={v => set(key, v)}/> : <Field
                     key={key}
                     label={label}
                     value={draft[key]}
                     type={key === "oauth_daily_test_time" ? "time" : undefined}
+                    min={key === "oauth_early_reset_interval_seconds" ? 2 : undefined}
+                    disabled={key === "oauth_early_reset_interval_seconds" && draft.oauth_early_reset_enabled !== true}
                     set={(v) => set(key, v)}
                   />
                 ))}
@@ -1570,11 +1566,15 @@ function Field({
   label,
   value,
   type,
+  min,
+  disabled,
   set,
 }: {
   label: string;
   value: unknown;
   type?: string;
+  min?: number;
+  disabled?: boolean;
   set: (v: unknown) => void;
 }) {
   const numeric = typeof value === "number";
@@ -1591,12 +1591,15 @@ function Field({
     <label className="field">
       <span>{label}</span>
       {typeof value === "boolean" ? (
-        <Switch label={label} on={value} onChange={() => set(!value)} />
+        <Switch label={label} on={value} disabled={disabled} onChange={() => set(!value)} />
       ) : (
         <input
           type={type || (numeric ? "number" : "text")}
           value={numeric ? raw : String(value ?? "")}
           autoComplete="off"
+          min={min}
+          step={min == null ? undefined : 1}
+          disabled={disabled}
           onChange={(e) => {
             const text = e.currentTarget.value;
             if (numeric) {

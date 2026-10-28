@@ -237,16 +237,6 @@ strong {
   background: var(--accent-bg);
   font-weight: 600;
 }
-.nav-count {
-  margin-left: auto;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
-  font-size: 10px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
 .main {
   flex: 1;
   min-width: 0;

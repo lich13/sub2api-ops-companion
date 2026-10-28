@@ -447,3 +447,51 @@ async fn stopped_continuous_test_cannot_be_requeued_by_a_late_busy_result() {
     assert_eq!(fixture.operations.listing(None).unwrap()["pending"], 0);
     fixture.close().await;
 }
+
+#[tokio::test]
+async fn listing_keeps_all_pending_and_latest_thirty_terminal_in_stable_order() {
+    let fixture = Fixture::new().await;
+    let mut state = json!({"version":1,"jobs":{},"requests":{},"batches":{},"batch_requests":{}});
+    for n in 0..75 {
+        let id = format!("{n:032x}");
+        let mut job = valid_job();
+        job["id"] = id.clone().into();
+        job["batch_id"] = Value::Null;
+        job["created_at"] = format!("2026-01-{:02}T00:00:00Z", (n * 17) % 28 + 1).into();
+        if n % 9 != 0 {
+            job["status"] = "completed".into();
+        }
+        state["jobs"][id] = job;
+    }
+    // Compare with the original stable public ordering, including tied dates.
+    let mut ordered = state["jobs"]
+        .as_object()
+        .unwrap()
+        .values()
+        .collect::<Vec<_>>();
+    ordered.sort_by(|a, b| b["created_at"].as_str().cmp(&a["created_at"].as_str()));
+    let expected = ordered
+        .iter()
+        .filter(|j| j["status"] == "queued")
+        .chain(
+            ordered
+                .iter()
+                .filter(|j| j["status"] == "completed")
+                .take(30),
+        )
+        .map(|j| j["id"].clone())
+        .collect::<Vec<_>>();
+    let before = fixture.replace_state(&state);
+    let listed = fixture.operations.listing(None).unwrap();
+    assert_eq!(
+        listed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|j| j["id"].clone())
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(fs::read(fixture.state_path()).unwrap(), before);
+    fixture.close().await;
+}

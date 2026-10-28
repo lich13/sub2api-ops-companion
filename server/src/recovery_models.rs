@@ -46,13 +46,19 @@ impl Detection {
             return Ok("账号不符合恢复验证条件".into());
         }
         let config = self.monitor.config.current()?;
-        if recovery_policy::method(&config, id) != Some("model")
-            || config["oauth_recovery_monitor_enabled"] == false
+        let state = self.monitor.state()?;
+        let meta = &state["scheduler"][id.to_string()];
+        let early =
+            context["kind"] == "recovery" && meta["recovery_intent"]["kind"] == "early_reset";
+        if (if early {
+            recovery_policy::intent_method(&config, id, &meta["recovery_intent"])
+        } else {
+            recovery_policy::method(&config, id)
+        }) != Some("model")
+            || !early && config["oauth_recovery_monitor_enabled"] == false
         {
             return Ok("恢复验证设置已变化".into());
         }
-        let state = self.monitor.state()?;
-        let meta = &state["scheduler"][id.to_string()];
         if json!(self.monitor.generation(id)?) != context["control_generation"]
             || json!(integer(&meta["recovery_method_generation"]).unwrap_or(0))
                 != context["method_generation"]
@@ -89,7 +95,16 @@ impl Detection {
             }
         } else {
             let intent = &meta["recovery_intent"];
-            let result = quota::latest_result(row, &state["oauth_results"][id.to_string()], now);
+            // Detection guards receive the public account projection. Early
+            // recovery also verifies the plan and credential identity.
+            let identity = if early {
+                Some(self.monitor.row(id).await?)
+            } else {
+                None
+            };
+            let recovery_row = identity.as_ref().unwrap_or(row);
+            let result =
+                quota::latest_result(recovery_row, &state["oauth_results"][id.to_string()], now);
             if intent["fingerprint"] != context["fingerprint"] {
                 return Ok("恢复事件已变化".into());
             }
@@ -99,14 +114,18 @@ impl Detection {
                 .flatten()
                 .map(|v| string(v).to_owned())
                 .collect::<Vec<_>>();
-            if !recovery_rules::eligible(row, &windows, now) {
+            if !(recovery_rules::eligible(recovery_row, &windows, now)
+                || early
+                    && recovery_rules::confirmed(recovery_row)
+                    && crate::oauth_early_reset::eligible(recovery_row, meta, now))
+            {
                 return Ok("账号状态不允许自动恢复".into());
             }
             if block_signature(row) != context["block_signature"] {
                 return Ok("账号阻断状态已变化".into());
             }
-            if !recovery_rules::control_allows(row, &result, meta, now)
-                || !recovery_rules::quota_ready(row, &result, meta, now)
+            if !recovery_rules::control_allows(recovery_row, &result, meta, now)
+                || !recovery_rules::quota_ready(recovery_row, &result, meta, now)
             {
                 return Ok("恢复所需的新鲜额度证据不足".into());
             }
@@ -284,6 +303,12 @@ impl Detection {
                 "retryable": retryable,
                 "uncertain": job["uncertain"] == true || job["status"] == "interrupted",
             }));
+        }
+        if kind == "recovery"
+            && meta["recovery_intent"]["kind"] == "early_reset"
+            && self.monitor.config.current()?["oauth_early_reset_enabled"] != true
+        {
+            return Ok(json!({"success":false,"error_code":"early_reset_disabled"}));
         }
         let allowed = self.next_allowed_at(id)?;
         if parse_datetime(&allowed).is_some_and(|due| self.now() < due) {

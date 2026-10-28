@@ -120,6 +120,8 @@ fn without_detection_model(value: &Value) -> Value {
         .as_object_mut()
         .expect("configuration value must be an object");
     object.remove(D);
+    object.remove("oauth_early_reset_enabled");
+    object.remove("oauth_early_reset_interval_seconds");
     object.remove("model_detection_platforms");
     object.remove("connection_test_retry_interval_seconds");
     object.remove("connection_test_max_retries");
@@ -131,6 +133,8 @@ fn assert_snapshot_revision(snapshot: &Value, raw: &Value) {
         .as_object()
         .expect("oauth snapshot must be an object");
     assert_eq!(oauth[D], DEFAULT_DETECTION_MODEL);
+    assert_eq!(oauth["oauth_early_reset_enabled"], false);
+    assert_eq!(oauth["oauth_early_reset_interval_seconds"], 60);
     assert_eq!(oauth["connection_test_retry_interval_seconds"], 10);
     assert_eq!(oauth["connection_test_max_retries"], 3);
 

@@ -552,13 +552,20 @@ fn model_options_path(path: &str) -> bool {
 }
 
 fn publish(app: &tauri::AppHandle, value: &ViewState) {
+    // Android's window visibility getter always returns false. Its suspended /
+    // resumed events already control polling and carry foreground in ViewState.
+    #[cfg(mobile)]
+    let _ = app.emit("ops-state", value);
+    #[cfg(desktop)]
+    publish_visible_windows(app, value);
+}
+
+#[cfg(desktop)]
+fn publish_visible_windows(app: &tauri::AppHandle, value: &ViewState) {
     let windows = app.webview_windows();
     let visible: Vec<&str> = windows
         .iter()
         .filter_map(|(label, window)| {
-            #[cfg(mobile)]
-            let is_visible = window.is_visible().unwrap_or(true);
-            #[cfg(not(mobile))]
             let is_visible = window.is_visible().unwrap_or(false);
             is_visible.then_some(label.as_str())
         })
@@ -993,7 +1000,7 @@ async fn run_test(
             .map_err(|_| "测试连接失败")?;
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let data: Value = response.json().await.unwrap_or(Value::Null);
+            let data = api_http::read_test_error(response).await?;
             return Err(format!(
                 "{} [{status}]",
                 data.get("detail")

@@ -4,6 +4,17 @@ use std::{io::Write, path::Path, time::Duration};
 const MAX_JSON_BYTES: usize = 8 * 1024 * 1024;
 const MAX_OPERATION_JSON_BYTES: usize = 128 * 1024 * 1024;
 
+pub(crate) async fn read_test_error(mut response: reqwest::Response) -> Result<Value, String> {
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| "测试响应读取中断")? {
+        if bytes.len() + chunk.len() > MAX_JSON_BYTES {
+            return Err("测试响应超过大小限制".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+}
+
 fn recoveries_valid(data: &Value) -> bool {
     data.as_array().is_some_and(|rows| {
         rows.iter().all(|row| {
@@ -802,6 +813,12 @@ fn shape_valid(path: &str, data: &Value) -> bool {
                 && data["oauth"]
                     .get("model_detection_platforms")
                     .is_none_or(detection_platforms_valid)
+                && data["oauth"]
+                    .get("oauth_early_reset_enabled")
+                    .is_none_or(Value::is_boolean)
+                && data["oauth"]
+                    .get("oauth_early_reset_interval_seconds")
+                    .is_none_or(|v| v.as_i64().is_some_and(|v| v >= 2))
         }
         "/capabilities" => {
             data["api_version"].as_u64() == Some(1)
@@ -1310,6 +1327,57 @@ mod tests {
                     "api_version":1, "platforms":platforms
                 })
             ));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_error_responses_enforce_the_json_limit_with_or_without_content_length() {
+        for (extra, chunked) in [(0, false), (0, true), (1, false), (1, true)] {
+            let length = MAX_JSON_BYTES + extra;
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            let server = std::thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket
+                    .set_write_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let _ = socket.read(&mut [0; 4096]);
+                let framing = if chunked {
+                    "Transfer-Encoding: chunked".to_owned()
+                } else {
+                    format!("Content-Length: {length}")
+                };
+                let _ = write!(
+                    socket,
+                    "HTTP/1.1 502 Bad Gateway\r\n{framing}\r\nConnection: close\r\n\r\n"
+                );
+                let mut bytes = vec![b' '; length];
+                let json = br#"{"detail":"fixture refused"}"#;
+                bytes[..json.len()].copy_from_slice(json);
+                if chunked {
+                    let _ = write!(socket, "{length:X}\r\n");
+                }
+                let _ = socket.write_all(&bytes);
+                if chunked {
+                    let _ = socket.write_all(b"\r\n0\r\n\r\n");
+                }
+            });
+            let response = reqwest::Client::builder()
+                .no_proxy()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap()
+                .get(url)
+                .send()
+                .await
+                .unwrap();
+            let result = read_test_error(response).await;
+            if extra == 0 {
+                assert_eq!(result.unwrap()["detail"], "fixture refused");
+            } else {
+                assert_eq!(result.unwrap_err(), "测试响应超过大小限制");
+            }
+            server.join().unwrap();
         }
     }
 

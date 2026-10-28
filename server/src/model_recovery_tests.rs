@@ -969,7 +969,7 @@ async fn run_natural_model(h: &Harness, id: i64, intent: &Value, usage: &Value) 
         .await
         .unwrap();
     let pending = natural_cycle(h, id, intent, usage).await;
-    assert_eq!(pending["deferred"], true);
+    assert_eq!(pending["deferred"], true, "{pending}");
     let job = h.runtime.tests.latest(id).unwrap();
     assert_eq!(job["status"], "queued");
     assert!(h
@@ -3037,5 +3037,67 @@ async fn batched_waiting_accounts_handle_deleted_and_changed_configuration() {
         "账号不存在"
     );
     assert_eq!(h.mock.count("POST", "/v1/responses"), 0);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn early_reset_model_receipt_finishes_after_disable_and_restart_with_regular_monitor_off() {
+    let mut h = Harness::new().await;
+    let (row, mut usage, mut intent) = seed_recovery(&h, false).await;
+    let id = integer(&row["id"]).unwrap();
+    usage["account_id"] = id.into();
+    intent["kind"] = "early_reset".into();
+    intent["plan_type"] = "plus".into();
+    intent["credential_fingerprint"] = oauth_admission::credential_fingerprint(&row).into();
+    intent["block_state"] = crate::recovery_verification::state_block(&row);
+    intent["manual_generation"] = 0.into();
+    intent["observed_at"] = usage["queried_at"].clone();
+    h.runtime
+        .config
+        .oauth
+        .transaction(|c| {
+            c["oauth_early_reset_enabled"] = true.into();
+            c["oauth_recovery_monitor_enabled"] = false.into();
+            Ok(())
+        })
+        .unwrap();
+    h.runtime
+        .monitor
+        .store
+        .transaction(|s| {
+            s["oauth_results"][id.to_string()] = usage.clone();
+            s["scheduler"][id.to_string()]["recovery_intent"] = intent.clone();
+            Ok(())
+        })
+        .unwrap();
+    let job = run_natural_model(&h, id, &intent, &usage).await;
+    assert_eq!(job["status"], "completed");
+    h.runtime
+        .config
+        .oauth
+        .transaction(|c| {
+            c["oauth_early_reset_enabled"] = false.into();
+            Ok(())
+        })
+        .unwrap();
+    h.restart().await;
+    h.set_now(h.now() + Duration::seconds(5));
+    tokio::time::timeout(StdDuration::from_secs(5), async {
+        loop {
+            h.runtime.monitor.tick().await.unwrap();
+            if h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
+                ["status"]
+                == "recovered"
+            {
+                break;
+            }
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(h.mock.count("POST", "/v1/responses"), 1);
+    assert_eq!(h.mock.count("POST", "/recover-state"), 1);
+    assert_eq!(h.mock.count("POST", "/test"), 0);
     h.close().await;
 }

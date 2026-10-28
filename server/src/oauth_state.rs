@@ -224,7 +224,7 @@ pub fn query_metadata(meta: &Value, saved: &Value) -> Result<Value> {
     {
         return Err(invalid("OAuth 查询退避状态无效"));
     }
-    for key in ["last_query_at", "retry_at"] {
+    for key in ["last_query_at", "retry_at", "early_reset_last_query_at"] {
         if !value[key].is_null() && value[key] != "" && parse_datetime(&value[key]).is_none() {
             return Err(invalid("OAuth 查询时间无效"));
         }
@@ -233,7 +233,7 @@ pub fn query_metadata(meta: &Value, saved: &Value) -> Result<Value> {
         value["last_query_at"] = json!([
             &meta["last_attempt_at"],
             &meta["last_success_at"],
-            if saved["source"] != "passive" {
+            if saved["source"] != "passive" && saved["query_source"] != "early_reset" {
                 &saved["queried_at"]
             } else {
                 &Value::Null

@@ -52,6 +52,7 @@ pub mod modeltrace;
 pub mod native_batches;
 pub mod oauth_admission;
 pub mod oauth_daily;
+pub mod oauth_early_reset;
 pub mod oauth_monitor;
 pub mod oauth_native;
 pub mod oauth_queries;

@@ -1,5 +1,5 @@
 //! State files are shared with the previous release during rollback. Every
-//! transaction rereads under the same advisory lock before atomic replacement.
+//! transaction checks the file identity under the advisory lock before atomic replacement.
 use crate::error::{Error, Result};
 use fs2::FileExt;
 use serde_json::{json, Value};
@@ -234,9 +234,9 @@ impl Store {
         let lock = options.open(&self.0.lock_path)?;
         lock.lock_exclusive()?;
         private_permissions(&lock)?;
-        // A write must always reconcile the current on-disk value after taking
-        // the shared advisory lock, even when a read snapshot is cached.
-        let (_, previous) = self.read_disk()?;
+        // Recheck the current file stamp under the cross-process lock. Reuse
+        // validated bytes only while that identity is unchanged.
+        let (_, previous) = self.read_shared_versioned()?;
         let mut value = (*previous).clone();
         let result = action(&mut value)?;
         (self.0.validate)(&value)?;

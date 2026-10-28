@@ -348,6 +348,9 @@ pub fn retry_at(at: DateTime<Utc>, attempt: i64) -> String {
     )
 }
 pub fn quota_ready(row: &Value, result: &Value, meta: &Value, at: DateTime<Utc>) -> bool {
+    if meta["recovery_intent"]["kind"] == "early_reset" {
+        return crate::oauth_early_reset::quota_ready(row, result, meta, at);
+    }
     let Some(observed) = parse_datetime(&result["queried_at"]) else {
         return false;
     };

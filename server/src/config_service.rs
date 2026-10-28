@@ -61,6 +61,12 @@ impl ConfigService {
                 )
             })
             .collect();
+        if values["oauth_early_reset_enabled"].is_null() {
+            values["oauth_early_reset_enabled"] = false.into();
+        }
+        if values["oauth_early_reset_interval_seconds"].is_null() {
+            values["oauth_early_reset_interval_seconds"] = 60.into();
+        }
         values["model_detection_model_id"] =
             crate::settings::detection_model(&values["model_detection_model_id"])
                 .map_err(|_| Error::new(503, "自动检测模型配置无效"))?
@@ -253,6 +259,7 @@ impl ConfigService {
                     "oauth_recovery_monitor_enabled",
                     "oauth_daily_test_enabled",
                     "oauth_auto_reset_credit_enabled",
+                    "oauth_early_reset_enabled",
                 ] {
                     if !values[key].is_boolean() {
                         return Err(Error::new(422, "开关必须为布尔值"));
@@ -266,6 +273,7 @@ impl ConfigService {
                     ("oauth_usage_refresh_concurrency", 1, 16),
                     ("oauth_recovery_test_concurrency", 1, 8),
                     ("oauth_early_probe_batch_size", 1, 50),
+                    ("oauth_early_reset_interval_seconds", 2, i64::MAX / 1000),
                 ] {
                     if !values[key].is_i64()
                         || !integer(&values[key]).is_some_and(|v| (low..=high).contains(&v))

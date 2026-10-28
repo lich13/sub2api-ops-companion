@@ -20,22 +20,36 @@ impl Detection {
         };
         self.refresh_call_frequency().await?;
         let alerts = self.capacity.store.shared_snapshot()?;
+        let mut acknowledged = std::collections::BTreeSet::new();
+        if alerts["detection_events"]
+            .as_object()
+            .is_some_and(|events| !events.is_empty())
+        {
+            let tests = self.tests.shared_data()?;
+            for job in tests["jobs"]
+                .as_object()
+                .unwrap()
+                .values()
+                .filter(|job| job["automatic"] == true)
+            {
+                if let Some(id) = integer(&job["account_id"]) {
+                    for key in job["triggers"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                    {
+                        acknowledged.insert((id, key.to_owned()));
+                    }
+                }
+            }
+        }
         for (key, event) in alerts["detection_events"].as_object().into_iter().flatten() {
             if self.store.read_shared()?["consumed"].get(key).is_none() {
                 let id = integer(&event["account_id"]).ok_or_else(Error::invalid)?;
                 // A persisted job is also the receipt if the process stopped
                 // between enqueueing it and acknowledging this clue.
-                let existing = self.tests.shared_data()?["jobs"]
-                    .as_object()
-                    .unwrap()
-                    .values()
-                    .any(|job| {
-                        job["automatic"] == true
-                            && job["account_id"] == id
-                            && job["triggers"]
-                                .as_array()
-                                .is_some_and(|v| v.iter().any(|trigger| trigger == key))
-                    });
+                let existing = acknowledged.contains(&(id, key.clone()));
                 if !existing {
                     if let Err(error) = self.trigger(id, std::slice::from_ref(key)).await {
                         if error.status.as_u16() >= 500 {
@@ -45,6 +59,7 @@ impl Detection {
                         self.update(id, json!({"status":"paused","reason":reason}))?;
                         self.clue_status(std::slice::from_ref(key), "failed", &reason, None)?;
                     }
+                    acknowledged.insert((id, key.clone()));
                 }
                 self.store.transaction(|data| {
                     data["consumed"][key] = datetime(self.now()).into();

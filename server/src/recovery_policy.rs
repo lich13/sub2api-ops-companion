@@ -82,6 +82,18 @@ pub fn method(config: &Value, id: i64) -> Option<&'static str> {
         None
     }
 }
+pub fn intent_method(config: &Value, id: i64, intent: &Value) -> Option<&'static str> {
+    if intent["kind"] == "early_reset" {
+        (config["oauth_early_reset_enabled"] == true
+            || intent["waiting_reason"] == "model_verification_pending"
+            || truthy(&intent["verification_dispatched"])
+            || truthy(&intent["verification_receipt"])
+            || truthy(&intent["recovery_write_dispatched"]))
+        .then(|| method(config, id).unwrap_or("connection"))
+    } else {
+        method(config, id)
+    }
+}
 pub fn eligible_ids(rows: &[Value]) -> BTreeSet<i64> {
     rows.iter()
         .filter(|row| {

@@ -539,17 +539,28 @@ impl Operations {
                 json!({"batch_id":bid,"pending":items.iter().filter(|v|PENDING.contains(&string(&v["status"]))).count(),"items":items}),
             );
         }
-        let mut jobs: Vec<_> = data["jobs"].as_object().unwrap().values().collect();
-        jobs.sort_by(|a, b| string(&b["created_at"]).cmp(string(&a["created_at"])));
-        let mut items: Vec<_> = jobs
-            .iter()
-            .filter(|j| cycle::pending(j))
-            .chain(
-                jobs.iter()
-                    .filter(|j| !cycle::pending(j) && j["repeat_state"] != "continued")
-                    .take(30),
-            )
-            .map(|j| self.public(j, false, 0))
+        let mut pending = Vec::new();
+        let mut recent: Vec<&Value> = Vec::with_capacity(31);
+        for job in data["jobs"].as_object().unwrap().values() {
+            if cycle::pending(job) {
+                pending.push(job);
+            } else if job["repeat_state"] != "continued" {
+                // Insert after equal timestamps to preserve the stable order
+                // of the previous full-history sort.
+                let index = recent.partition_point(|item| {
+                    string(&item["created_at"]) >= string(&job["created_at"])
+                });
+                if index < 30 {
+                    recent.insert(index, job);
+                    recent.truncate(30);
+                }
+            }
+        }
+        pending.sort_by(|a, b| string(&b["created_at"]).cmp(string(&a["created_at"])));
+        let mut items: Vec<_> = pending
+            .into_iter()
+            .chain(recent)
+            .map(|job| self.public(job, false, 0))
             .collect();
         items.extend(
             self.backend

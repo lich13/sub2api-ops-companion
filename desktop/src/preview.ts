@@ -415,6 +415,8 @@ const config: Config = {
   oauth: {
     revision: "1".repeat(64),
     oauth_recovery_monitor_enabled: true,
+    oauth_early_reset_enabled: false,
+    oauth_early_reset_interval_seconds: 60,
     oauth_auto_reset_credit_enabled: false,
     oauth_recovery_connection_account_ids: accounts.filter(a => a.platform === "openai" && a.type === "oauth").map(a => a.id),
     oauth_recovery_model_account_ids: [],
@@ -648,6 +650,7 @@ export async function run(
     }
     if (path === "/config") return structuredClone(config);
     if (path.startsWith("/config/")) {
+      if (scenario === "config-save-failure" && args.method === "PUT") throw new Error("设置保存失败，请重试");
       const section = path.split("/")[2];
       if (body?.expected_revision !== config[section].revision)
         throw new Error("设置已变化");

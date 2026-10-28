@@ -314,3 +314,16 @@ async fn desktop_offline_migration_removes_only_retired_menu_on_matching_host_an
     }
     pool.close().await;
 }
+
+#[test]
+fn migration_preserves_current_retry_and_detection_settings() {
+    let root = tempfile::tempdir().unwrap();
+    let env = oauth_fixture(root.path());
+    let current = json!({"connection_test_retry_interval_seconds":17,"connection_test_max_retries":0,"model_detection_platforms":{"openai":{"engine":"lm_detector","sample_count":3},"anthropic":{"engine":"lm_detector","sample_count":1},"grok":{"engine":"lm_detector","sample_count":1},"deepseek":{"engine":"lm_detector","sample_count":1}},"oauth_early_reset_enabled":true,"oauth_early_reset_interval_seconds":90,"oauth_recovery_seen_account_ids":[7]});
+    fs::write(root.path().join("oauth.json"), current.to_string()).unwrap();
+    migrate_oauth(&env, &root.path().join(".env")).unwrap();
+    let migrated = read(&root.path().join("oauth.json"));
+    for (key, value) in current.as_object().unwrap() {
+        assert_eq!(&migrated[key], value, "{key}");
+    }
+}
