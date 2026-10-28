@@ -317,7 +317,7 @@ function fixtureAccountActions(account) {
   const detection = openai || account.type === "apikey" && ["anthropic", "grok", "deepseek"].includes(account.platform);
   return {
     primary: detection ? ["模型测试", account.degradation_mark?.marked ? "取消标记" : "标记降智", "定时检测"] : [],
-    more: ["测试连接", "账号保活", ...(account.recoverable ? ["恢复状态"] : []), ...(openai ? ["应用模板"] : []), "模型白名单", "模型映射", "选择代理", "删除"],
+    more: ["测试连接", "账号保活", ...(account.platform === "openai" && account.type === "oauth" ? ["重新授权"] : []), ...(account.recoverable ? ["恢复状态"] : []), ...(openai ? ["应用模板"] : []), "模型白名单", "模型映射", "选择代理", "删除"],
   };
 }
 
