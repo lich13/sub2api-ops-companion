@@ -78,8 +78,8 @@ export default function ReauthorizeAccountDialog({ account, online, close, repor
       if (alive.current) { setAuthorization(null); setBusy(false); }
     }
   }
-  return <div className="modal-backdrop" onClick={close}>
-    <section ref={dialog} className="reauthorize-dialog" role="dialog" aria-modal="true" aria-label="重新授权" onClick={e => e.stopPropagation()}>
+  return <div className="modal-backdrop" onClick={() => { if (!busy) close(); }}>
+    <section ref={dialog} className="reauthorize-dialog" role="dialog" aria-modal="true" aria-label="重新授权" tabIndex={-1} onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === "Escape" && !e.nativeEvent.isComposing) { e.preventDefault(); e.stopPropagation(); if (!busy) close(); } }}>
       <header><div className="reauthorize-heading"><Link2 size={18}/><h2>重新授权</h2></div><button className="icon-button" aria-label="关闭重新授权" onClick={close}><X size={18}/></button></header>
       <div className="reauthorize-body">
         <div className="reauthorize-account" title={account.name}>{account.name}</div>

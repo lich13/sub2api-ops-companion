@@ -331,17 +331,11 @@ impl Actions {
             if path.starts_with("proxies/")
                 && (path.ends_with("/test") || path.ends_with("/quality-check"))
             {
-                return Error::new(
-                    if error.is_timeout() { 504 } else { 502 },
-                    format!(
-                        "{}：{error:?}",
-                        if error.is_timeout() {
-                            "代理检测超时，未重放请求"
-                        } else {
-                            "代理检测请求失败"
-                        }
-                    ),
-                );
+                return if error.is_timeout() {
+                    Error::new(504, "代理检测超时，未重放请求")
+                } else {
+                    Error::new(502, "代理检测请求失败")
+                };
             }
             if error.is_timeout() {
                 Error::new(504, "请求超时，未重放操作")
@@ -383,12 +377,12 @@ impl Actions {
         Ok(row)
     }
     pub async fn accounts(&self, ids: &[i64]) -> Result<Vec<Value>> {
+        static SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+            crate::sql::DESKTOP_ACCOUNT_SQL.replace("{filter}", "AND a.id=ANY($1)")
+        });
         self.queries
             .db
-            .all(
-                &crate::sql::DESKTOP_ACCOUNT_SQL.replace("{filter}", "AND a.id=ANY($1)"),
-                &[Param::Ints(ids.to_vec())],
-            )
+            .all(&SQL, &[Param::Ints(ids.to_vec())])
             .await
     }
     pub async fn settings_view(&self, id: i64) -> Result<Value> {

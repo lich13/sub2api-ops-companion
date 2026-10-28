@@ -24,7 +24,9 @@ struct Templates {
 }
 
 static TEMPLATES: LazyLock<Vec<Language>> = LazyLock::new(|| {
-    serde_json::from_str::<Templates>(include_str!("templates.json")).expect("templates.json is valid").languages
+    serde_json::from_str::<Templates>(include_str!("templates.json"))
+        .expect("templates.json is valid")
+        .languages
 });
 
 /// A uniform index below `length` from the OS CSPRNG, with the reference's rejection rule.
@@ -32,7 +34,9 @@ fn random_index(length: usize) -> Result<usize, Error> {
     let length = length as u64;
     let limit = (1u64 << 32) / length * length;
     loop {
-        let value = u64::from(getrandom::u32().map_err(|e| Error::new(format!("Random source failed: {e}")))?);
+        let value = u64::from(
+            getrandom::u32().map_err(|e| Error::new(format!("Random source failed: {e}")))?,
+        );
         if value < limit {
             return Ok((value % length) as usize);
         }
@@ -71,7 +75,11 @@ pub fn generate_challenges(count: usize) -> Result<Vec<Challenge>, Error> {
                 &language.start,
             ]
             .join(&language.space);
-            Ok(Challenge { id: format!("probe-{}-{}", index + 1, uuid::Uuid::new_v4()), expected_count: length, prompt })
+            Ok(Challenge {
+                id: format!("probe-{}-{}", index + 1, uuid::Uuid::new_v4()),
+                expected_count: length,
+                prompt,
+            })
         })
         .collect()
 }

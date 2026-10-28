@@ -150,7 +150,9 @@ impl Operations {
                 refresh,
             )
             .await;
-        self.apply_cycle_observation(job, observation.as_ref())
+        let allowed = matches!(&observation, Ok(obs) if !obs.stopped);
+        self.apply_cycle_observation(job, observation.as_ref())?;
+        Ok(allowed)
     }
 
     fn apply_cycle_observation(
@@ -162,30 +164,72 @@ impl Operations {
         match observation {
             Ok(observation) if observation.stopped => {
                 self.stop_repeat(jid, DEPLETED, false)?;
-                Ok(false)
+                Ok(true)
             }
-            Ok(_) => Ok(true),
+            Ok(_) => Ok(false),
             Err(error) if error.detail["code"] == "account_busy" => Ok(false),
             Err(error) => {
                 self.pause_repeat(jid, &crate::security::safe_error(&error.detail, 240))?;
-                Ok(false)
+                Ok(true)
             }
         }
     }
 
-    pub(super) async fn prepare_cycles(&self, data: &Value) -> Result<bool> {
+    pub(super) async fn prepare_cycles(&self, ops_rev: u64, data: &Arc<Value>) -> Result<bool> {
+        {
+            let cache = self
+                .active_scan_cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if cache.0 == ops_rev && !cache.2 {
+                return Ok(false);
+            }
+        }
         let mut prepared = false;
-        let waiting = data["jobs"]
-            .as_object()
-            .unwrap()
-            .values()
-            .filter(|job| job["repeat_state"] == "active" && job["status"] == "queued")
-            .map(|job| integer(&job["account_id"]).unwrap())
-            .collect::<Vec<_>>();
-        let observations = if waiting.is_empty() {
-            Ok(BTreeMap::new())
+        let now = self.backend.now();
+        let mut waiting = Vec::new();
+        let mut any_due = false;
+        let mut has_completed_active = false;
+        for job in data["jobs"].as_object().unwrap().values() {
+            if job["repeat_state"] != "active" {
+                continue;
+            }
+            if job["status"] == "queued" {
+                waiting.push(integer(&job["account_id"]).unwrap());
+                if parse_datetime(&job["scheduled_at"]).is_none_or(|due| due <= now) {
+                    any_due = true;
+                }
+            } else if job["status"] == "completed" {
+                has_completed_active = true;
+            }
+        }
+        if waiting.is_empty() && !has_completed_active {
+            return Ok(false);
+        }
+        let oauth_rev = self.actions.queries.oauth.0.cache_revision()?;
+        let should_poll = !waiting.is_empty()
+            && (any_due
+                || self
+                    .cycle_poll_cache
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .is_none_or(|(prev_ops, prev_oauth, prev_at)| {
+                        prev_ops != ops_rev
+                            || prev_oauth != oauth_rev
+                            || now >= prev_at + TimeDelta::seconds(2)
+                            || now < prev_at
+                    }));
+        let observations = if should_poll {
+            let fetched = self.backend.cycle_observations(&waiting).await;
+            if fetched.is_ok() {
+                *self
+                    .cycle_poll_cache
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = Some((ops_rev, oauth_rev, now));
+            }
+            Some(fetched)
         } else {
-            self.backend.cycle_observations(&waiting).await
+            None
         };
         let missing = Error::new(404, "账号不存在");
         for job in data["jobs"]
@@ -195,51 +239,54 @@ impl Operations {
             .filter(|job| job["repeat_state"] == "active")
         {
             if job["status"] == "queued" {
-                let observation = match &observations {
+                let Some(observations) = &observations else {
+                    continue;
+                };
+                let observation = match observations {
                     Ok(all) => all
                         .get(&integer(&job["account_id"]).unwrap())
                         .map(Result::as_ref)
                         .unwrap_or(Err(&missing)),
                     Err(error) => Err(error),
                 };
-                self.apply_cycle_observation(job, observation)?;
-                prepared = true;
+                prepared |= self.apply_cycle_observation(job, observation)?;
             } else if job["status"] == "completed" {
-                self.advance_cycle(job).await?;
-                prepared = true;
+                prepared |= self.advance_cycle(job).await?;
             }
         }
         Ok(prepared)
     }
 
-    async fn advance_cycle(&self, previous: &Value) -> Result<()> {
+    async fn advance_cycle(&self, previous: &Value) -> Result<bool> {
         let _submit = self.submit_lock.lock().await;
         let jid = string(&previous["id"]);
         if self.store.read_shared()?["jobs"][jid]["repeat_state"] != "active" {
-            return Ok(());
+            return Ok(false);
         }
         if !self.cycle_allowed(previous, false).await? {
-            return Ok(());
+            return Ok(self.store.read_shared()?["jobs"][jid]["repeat_state"] != "active");
         }
         let aid = integer(&previous["account_id"]).unwrap();
         let key = self.key(jid)?;
         let observation = match self.backend.cycle_observation(aid, &key, true).await {
             Ok(observation) => observation,
-            Err(error) if error.detail["code"] == "account_busy" => return Ok(()),
+            Err(error) if error.detail["code"] == "account_busy" => return Ok(false),
             Err(error) => {
-                return self.pause_repeat(jid, &crate::security::safe_error(&error.detail, 240))
+                self.pause_repeat(jid, &crate::security::safe_error(&error.detail, 240))?;
+                return Ok(true);
             }
         };
         if observation.stopped {
             self.stop_repeat(jid, DEPLETED, false)?;
-            return Ok(());
+            return Ok(true);
         }
         let Some(due) = next_cycle(
             &observation,
             self.backend.now(),
             parse_datetime(&previous["scheduled_at"]),
         ) else {
-            return self.pause_repeat(jid, "暂无可用的新周期重置时间，请查询用量后重新预约");
+            self.pause_repeat(jid, "暂无可用的新周期重置时间，请查询用量后重新预约")?;
+            return Ok(true);
         };
         let next_id = id();
         let mut next = json!({"id":next_id,"account_id":aid,"account_name":previous["account_name"],
@@ -266,7 +313,7 @@ impl Operations {
             keys.insert(next_id, key);
             keys.remove(jid);
         }
-        Ok(())
+        Ok(inserted)
     }
 
     pub(super) async fn initialize_cycle(&self, job: &mut Value, key: &str) -> Result<()> {

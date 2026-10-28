@@ -35,6 +35,7 @@ import RecordFilter from "./RecordFilter";
 import { priorityPlatformName, sortPriorityPlatforms, preferredPlatforms } from "./priorities";
 import RecordDatePicker from "./RecordDatePicker";
 import { presetRange, type RecordDateRange } from "./recordDates";
+import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
 import "./records.css";
 import CostDetails from "./CostDetails";
@@ -282,12 +283,8 @@ function RecordDetail({
   close: () => void;
 }) {
   const panel = useRef<HTMLElement>(null);
+  useDialogFocus(panel);
   useBackAction(true, close);
-  useEffect(() => {
-    const before = document.activeElement as HTMLElement | null;
-    panel.current?.querySelector<HTMLButtonElement>("button")?.focus();
-    return () => before?.focus();
-  }, []);
   const pair = (label: string, value: React.ReactNode) => (
     <React.Fragment key={label}>
       <dt>{label}</dt>
@@ -309,24 +306,12 @@ function RecordDetail({
         role="dialog"
         aria-modal="true"
         aria-label="调用记录详情"
+        tabIndex={-1}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
+            e.preventDefault();
             e.stopPropagation();
             close();
-          }
-          if (e.key === "Tab") {
-            const nodes = [
-              ...(panel.current?.querySelectorAll<HTMLElement>(
-                'button:not(:disabled),[tabindex="0"]',
-              ) || []),
-            ];
-            if (e.shiftKey && document.activeElement === nodes[0]) {
-              e.preventDefault();
-              nodes.at(-1)?.focus();
-            } else if (!e.shiftKey && document.activeElement === nodes.at(-1)) {
-              e.preventDefault();
-              nodes[0]?.focus();
-            }
           }
         }}
       >
@@ -456,6 +441,117 @@ function RecordDetail({
   );
 }
 
+const MobileRecordRow = React.memo(function MobileRecordRow({
+  row,
+  active,
+  hasCost,
+  shown,
+  onOpen,
+}: {
+  row: UsageRecord;
+  active: boolean;
+  hasCost: boolean;
+  shown: readonly (readonly [RecordColumn, string])[];
+  onOpen: (id: number) => void;
+}) {
+  return (
+    <article
+      className="mobile-record"
+      onClick={() => {
+        if (active) onOpen(row.id);
+      }}
+    >
+      <header>
+        <button
+          className="mobile-record-open"
+          disabled={!active}
+          aria-label={`查看记录 #${row.id}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen(row.id);
+          }}
+        >
+          <time>{fullTime(row.created_at)}</time>
+        </button>
+        {hasCost && <Cell column="cost" row={row} />}
+      </header>
+      <div className="mobile-record-user">
+        <span>用户</span>
+        <strong>
+          {row.user_name || row.user_email || "—"}{" "}
+          <small>#{row.user_id}</small>
+        </strong>
+      </div>
+      <div className="mobile-record-fields">
+        {shown
+          .filter(([key]) => key !== "cost")
+          .map(([key, label]) => (
+            <div
+              key={key}
+              className={`mobile-record-field mobile-record-${key}`}
+            >
+              <span className="mobile-record-label">{label}</span>
+              <Cell column={key} row={row} />
+            </div>
+          ))}
+      </div>
+    </article>
+  );
+});
+
+const DesktopRecordRow = React.memo(function DesktopRecordRow({
+  row,
+  active,
+  shown,
+  onOpen,
+}: {
+  row: UsageRecord;
+  active: boolean;
+  shown: readonly (readonly [RecordColumn, string])[];
+  onOpen: (id: number) => void;
+}) {
+  return (
+    <tr
+      onClick={() => {
+        if (active) onOpen(row.id);
+      }}
+    >
+      <td className="record-user">
+        <button
+          disabled={!active}
+          title={`查看记录 #${row.id}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen(row.id);
+          }}
+        >
+          <span>
+            {row.user_name || row.user_email || `#${row.user_id}`}
+          </span>
+          <small>#{row.user_id}</small>
+        </button>
+      </td>
+      {shown
+        .filter(([key]) => key === "api_key")
+        .map(([key]) => (
+          <td key={key} className={`record-col-${key}`}>
+            <Cell column={key} row={row} />
+          </td>
+        ))}
+      <td className="record-time">
+        <time>{fullTime(row.created_at)}</time>
+      </td>
+      {shown
+        .filter(([key]) => key !== "api_key")
+        .map(([key]) => (
+          <td key={key} className={`record-col-${key}`}>
+            <Cell column={key} row={row} />
+          </td>
+        ))}
+    </tr>
+  );
+});
+
 export default function UsageRecords({
   online,
   foreground,
@@ -502,7 +598,7 @@ export default function UsageRecords({
   const platforms = useMemo(() => sortPriorityPlatforms([...new Set([...preferredPlatforms, ...accounts.map(account => account.platform)])].map(platform => ({ platform }))), [accounts]);
   const accountOptions = useMemo<RecordOption[]>(
     () => accounts.map((account) => ({
-      id: account.id, name: account.name, status: account.status, deleted: false,
+      id: account.id, name: account.name, status: account.status, platform: account.platform, deleted: false,
     })),
     [accounts],
   );
@@ -607,8 +703,23 @@ export default function UsageRecords({
       else setRange(next);
     };
     checkDate();
-    const timer = setInterval(checkDate, 1000);
-    return () => clearInterval(timer);
+    let timer: ReturnType<typeof setTimeout>;
+    const scheduleMidnight = () => {
+      const bjOffsetMs = 8 * 3_600_000;
+      const dayMs = 86_400_000;
+      const elapsedInDay = (((Date.now() + bjOffsetMs) % dayMs) + dayMs) % dayMs;
+      const delay = Math.max(1, dayMs - elapsedInDay);
+      timer = setTimeout(() => {
+        checkDate();
+        scheduleMidnight();
+      }, delay);
+    };
+    scheduleMidnight();
+    window.addEventListener("focus", checkDate);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", checkDate);
+    };
   }, [
     active,
     range,
@@ -618,8 +729,13 @@ export default function UsageRecords({
     feed.items.length,
     datePending,
   ]);
-  const chosen = normalizeRecordColumns(columns);
-  const shown = recordColumns.filter(([key]) => chosen.includes(key));
+  const chosenKey = normalizeRecordColumns(columns).join(",");
+  const chosen = useMemo(() => normalizeRecordColumns(columns), [chosenKey]);
+  const shown = useMemo(
+    () => recordColumns.filter(([key]) => chosen.includes(key)),
+    [chosen],
+  );
+  const hasCost = chosen.includes("cost");
   useEffect(() => {
     if (scroll.current) scroll.current.scrollTop = 0;
     setScrolled(false);
@@ -638,19 +754,23 @@ export default function UsageRecords({
     setDetail(null);
     setDetailError("");
   };
-  async function openDetail(id: number) {
-    const generation = ++detailEpoch.current;
-    setSelected(id);
-    setDetail(null);
-    setDetailError("");
-    try {
-      const row = await feed.detail(id);
-      if (detailEpoch.current === generation) setDetail(row);
-    } catch (e) {
-      if (detailEpoch.current === generation)
-        setDetailError(String(e instanceof Error ? e.message : e));
-    }
-  }
+  const detailFnRef = useRef(feed.detail);
+  detailFnRef.current = feed.detail;
+  const openDetail = useCallback((id: number) => {
+    void (async () => {
+      const generation = ++detailEpoch.current;
+      setSelected(id);
+      setDetail(null);
+      setDetailError("");
+      try {
+        const row = await detailFnRef.current(id);
+        if (detailEpoch.current === generation) setDetail(row);
+      } catch (e) {
+        if (detailEpoch.current === generation)
+          setDetailError(String(e instanceof Error ? e.message : e));
+      }
+    })();
+  }, []);
   async function refresh() {
     if (range.preset) {
       const next = presetRange(range.preset);
@@ -752,7 +872,7 @@ export default function UsageRecords({
                 onOpenChange={pickerChanged}
                 active={active}
                 value={accountOptions.find((account) => String(account.id) === draft.account) ?? null}
-                options={accountOptions.filter(option => !draft.platform || accounts.some(account => account.id === option.id && account.platform === draft.platform))}
+                options={accountOptions.filter(option => !draft.platform || option.platform === draft.platform)}
                 onChange={(account) =>
                   setDraft({ ...draft, account: account ? String(account.id) : "" })
                 }
@@ -899,48 +1019,14 @@ export default function UsageRecords({
         {mobile ? (
           <div className="mobile-records">
             {feed.items.map((row) => (
-              <article
-                className="mobile-record"
+              <MobileRecordRow
                 key={row.id}
-                onClick={() => {
-                  if (active) void openDetail(row.id);
-                }}
-              >
-                <header>
-                  <button
-                    className="mobile-record-open"
-                    disabled={!active}
-                    aria-label={`查看记录 #${row.id}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void openDetail(row.id);
-                    }}
-                  >
-                    <time>{fullTime(row.created_at)}</time>
-                  </button>
-                  {chosen.includes("cost") && <Cell column="cost" row={row} />}
-                </header>
-                <div className="mobile-record-user">
-                  <span>用户</span>
-                  <strong>
-                    {row.user_name || row.user_email || "—"}{" "}
-                    <small>#{row.user_id}</small>
-                  </strong>
-                </div>
-                <div className="mobile-record-fields">
-                  {shown
-                    .filter(([key]) => key !== "cost")
-                    .map(([key, label]) => (
-                      <div
-                        key={key}
-                        className={`mobile-record-field mobile-record-${key}`}
-                      >
-                        <span className="mobile-record-label">{label}</span>
-                        <Cell column={key} row={row} />
-                      </div>
-                    ))}
-                </div>
-              </article>
+                row={row}
+                active={active}
+                hasCost={hasCost}
+                shown={shown}
+                onOpen={openDetail}
+              />
             ))}
           </div>
         ) : (
@@ -959,36 +1045,13 @@ export default function UsageRecords({
             </thead>
             <tbody>
               {feed.items.map((row) => (
-                <tr
+                <DesktopRecordRow
                   key={row.id}
-                  onClick={() => {
-                    if (active) void openDetail(row.id);
-                  }}
-                >
-                  <td className="record-user">
-                    <button
-                      disabled={!active}
-                      title={`查看记录 #${row.id}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void openDetail(row.id);
-                      }}
-                    >
-                      <span>
-                        {row.user_name || row.user_email || `#${row.user_id}`}
-                      </span>
-                      <small>#{row.user_id}</small>
-                    </button>
-                  </td>
-                  {shown.filter(([key]) => key === "api_key").map(([key]) => <td key={key} className={`record-col-${key}`}><Cell column={key} row={row}/></td>)}
-                  <td className="record-time"><time>{fullTime(row.created_at)}</time></td>
-                  {shown.filter(([key]) => key !== "api_key").map(([key]) => (
-                    <td key={key} className={`record-col-${key}`}>
-                      <Cell column={key} row={row} />
-                    </td>
-                  ))}
-
-                </tr>
+                  row={row}
+                  active={active}
+                  shown={shown}
+                  onOpen={openDetail}
+                />
               ))}
             </tbody>
           </table>

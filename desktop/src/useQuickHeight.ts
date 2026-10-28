@@ -1,7 +1,11 @@
 import { useLayoutEffect, useRef } from "react";
 import { command, preview } from "./bridge";
 
-export function useQuickHeight(enabled: boolean, expanded: boolean) {
+export function useQuickHeight(
+  enabled: boolean,
+  expanded: boolean,
+  deps: readonly unknown[] = [],
+) {
   const body = useRef<HTMLDivElement>(null);
   const last = useRef(0);
   const measure = useRef(() => {});
@@ -40,10 +44,13 @@ export function useQuickHeight(enabled: boolean, expanded: boolean) {
     for (const element of main.children)
       if (element !== content) observer.observe(element);
     resize();
-    return () => observer.disconnect();
+    return () => {
+      measure.current = () => {};
+      observer.disconnect();
+    };
   }, [enabled, expanded]);
   useLayoutEffect(() => {
-    measure.current();
-  });
+    if (enabled) measure.current();
+  }, [enabled, ...deps]);
   return body;
 }

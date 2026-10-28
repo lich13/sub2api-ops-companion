@@ -105,11 +105,12 @@ pub fn discover(
     at: DateTime<Utc>,
 ) -> Result<()> {
     let previous = store.shared_snapshot()?;
+    let methods = recovery_policy::MethodIndex::from_config(config);
     let mut changes = vec![];
     for row in rows {
         let row = row.borrow();
         let id = integer(&row["id"]).unwrap_or(0);
-        if id <= 0 || recovery_policy::method(config, id).is_none() {
+        if id <= 0 || methods.method(id).is_none() {
             continue;
         }
         let meta = &previous["scheduler"][id.to_string()];

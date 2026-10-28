@@ -1,13 +1,14 @@
 import { useEffect, type RefObject } from "react";
 
 // Keep keyboard editing within the active editor and return to its trigger.
-export function useDialogFocus(ref: RefObject<HTMLElement | null>) {
+export function useDialogFocus(ref: RefObject<HTMLElement | null>, active = true) {
   useEffect(() => {
+    if (!active) return;
     const dialog = ref.current;
     if (!dialog) return;
     const previous = document.activeElement;
     const controls = () => Array.from(dialog.querySelectorAll<HTMLElement>(
-      'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]',
+      'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex="0"]',
     ));
     if (!dialog.contains(document.activeElement)) controls()[0]?.focus();
     const trap = (event: KeyboardEvent) => {
@@ -25,5 +26,5 @@ export function useDialogFocus(ref: RefObject<HTMLElement | null>) {
       dialog.removeEventListener("keydown", trap);
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true });
     };
-  }, [ref]);
+  }, [ref, active]);
 }

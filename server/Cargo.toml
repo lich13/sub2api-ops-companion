@@ -1,6 +1,6 @@
 [package]
 name = "sub2ops-server"
-version = "0.1.73"
+version = "0.1.74"
 edition = "2021"
 rust-version = "1.99"
 publish = false
@@ -13,7 +13,7 @@ lmfpd = { path = "vendor/lmfpd", default-features = false }
 fancy-regex = "0.16"
 base64 = "0.22"
 axum = "0.8"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "process", "signal", "io-util", "fs"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "socks"] }
 # Enable data/runtime features on the used PostgreSQL components directly.
 # The facade's cross-driver features otherwise lock unused MySQL/RSA packages.

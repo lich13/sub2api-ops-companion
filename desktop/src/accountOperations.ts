@@ -20,13 +20,29 @@ export function publishOperation(job: Operation) {
   setOperations([job, ...getOperations().filter(row => row.id !== job.id && (!job.repeat_series_id || row.repeat_series_id !== job.repeat_series_id))]);
 }
 const listeners = new Set<() => void>();
-let rows: Operation[] = [], epoch = 0, connection = '';
+let rows: Operation[] = [], epoch = 0, connection = '', memoryClientId = '';
 const clientKey = 'sub2ops-operation-client';
 export function clientId() {
+  if (memoryClientId) return memoryClientId;
   const storage = typeof globalThis.localStorage === 'undefined' ? null : globalThis.localStorage;
-  let id = storage?.getItem(clientKey) ?? null;
-  if (!id) { id = crypto.randomUUID(); storage?.setItem(clientKey, id); }
-  return id;
+  try {
+    const saved = storage?.getItem(clientKey);
+    if (saved) { memoryClientId = saved; return saved; }
+  } catch { /* Restricted or full WebView storage falls back to in-memory client ID. */ }
+  memoryClientId = crypto.randomUUID();
+  try { storage?.setItem(clientKey, memoryClientId); } catch { /* Best-effort persistence. */ }
+  return memoryClientId;
+}
+function sameOperation(a: Operation, b: Operation) {
+  return a === b || (
+    a.id === b.id && a.account_id === b.account_id && a.account_name === b.account_name &&
+    a.action === b.action && a.status === b.status && a.batch_id === b.batch_id &&
+    a.reason === b.reason && a.started_at === b.started_at && a.scheduled_at === b.scheduled_at &&
+    a.attempt_count === b.attempt_count && a.next_retry_at === b.next_retry_at &&
+    a.repeat === b.repeat && a.repeat_series_id === b.repeat_series_id &&
+    a.repeat_state === b.repeat_state && a.repeat_reason === b.repeat_reason &&
+    a.next_operation_id === b.next_operation_id && a.next_event === b.next_event
+  );
 }
 export function bindOperationConnection(key: string) {
   if (connection === key) return;
@@ -34,7 +50,11 @@ export function bindOperationConnection(key: string) {
 }
 export const getOperations = () => rows;
 export function subscribeOperations(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
-export function setOperations(next: Operation[]) { rows = next; listeners.forEach((listener) => listener()); }
+export function setOperations(next: Operation[]) {
+  if (rows.length === next.length && rows.every((item, index) => sameOperation(item, next[index]))) return;
+  rows = next;
+  listeners.forEach((listener) => listener());
+}
 export const operationEpoch = () => epoch;
 export async function submitAccountBatch(action: 'delete' | 'groups' | 'recover', accounts: {
   account_id: number; expected_version: string; payload?: Record<string, unknown>;

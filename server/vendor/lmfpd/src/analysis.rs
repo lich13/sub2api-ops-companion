@@ -4,21 +4,35 @@ use crate::data::ReferenceData;
 use crate::features::{minimum_numbers, parse_numbers, raw_out_of_range_count};
 use crate::ranker::{calibrate, sequence_shape};
 use crate::{
-    Analysis, AnalysisResult, Decision, Diagnostic, Error, Evidence, ModelVersion, Output, ProbabilityStatus,
+    Analysis, AnalysisResult, Decision, Diagnostic, Error, Evidence, ModelVersion, Output,
+    ProbabilityStatus,
 };
 
-pub(crate) const SCORING_FAILED: &str = "Scoring failed. Check that the reference bank and detector files are valid.";
+pub(crate) const SCORING_FAILED: &str =
+    "Scoring failed. Check that the reference bank and detector files are valid.";
 const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
 
 fn evidence(label: &str, reason: String, method: &str) -> Evidence {
-    Evidence { insufficient: true, label: label.into(), reason, threshold: None, method: method.into() }
+    Evidence {
+        insufficient: true,
+        label: label.into(),
+        reason,
+        threshold: None,
+        method: method.into(),
+    }
 }
 
 /// Scores saved replies like `fpd --input`: extra numbers are cut in relaxed mode, short replies count as missing.
-pub(crate) fn analyze_outputs(outputs: &[Output], data: &ReferenceData, strict: bool) -> Result<Analysis, Error> {
+pub(crate) fn analyze_outputs(
+    outputs: &[Output],
+    data: &ReferenceData,
+    strict: bool,
+) -> Result<Analysis, Error> {
     if outputs.is_empty()
         || outputs.len() > 3
-        || outputs.iter().any(|o| o.expected_count == 0 || o.expected_count > MAX_SAFE_INTEGER)
+        || outputs
+            .iter()
+            .any(|o| o.expected_count == 0 || o.expected_count > MAX_SAFE_INTEGER)
     {
         return Err(Error::new(
             "Each input round must contain one to three outputs with text and a positive integer expected_count.",
@@ -39,17 +53,31 @@ pub(crate) fn analyze_outputs(outputs: &[Output], data: &ReferenceData, strict: 
             (text, expected)
         })
         .collect();
-    let prepared: Vec<(&str, u64)> = prepared.iter().map(|(text, expected)| (text.as_str(), *expected)).collect();
+    let prepared: Vec<(&str, u64)> = prepared
+        .iter()
+        .map(|(text, expected)| (text.as_str(), *expected))
+        .collect();
     score(&prepared, data, strict)
 }
 
 pub(crate) fn join(numbers: &[u32]) -> String {
-    numbers.iter().map(u32::to_string).collect::<Vec<_>>().join(", ")
+    numbers
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Scores `(text, expected_count)` replies as they are. Fails only when the ranking is not finite.
-pub(crate) fn score(outputs: &[(&str, u64)], data: &ReferenceData, strict: bool) -> Result<Analysis, Error> {
-    let parsed: Vec<Vec<u32>> = outputs.iter().map(|(text, _)| parse_numbers(text)).collect();
+pub(crate) fn score(
+    outputs: &[(&str, u64)],
+    data: &ReferenceData,
+    strict: bool,
+) -> Result<Analysis, Error> {
+    let parsed: Vec<Vec<u32>> = outputs
+        .iter()
+        .map(|(text, _)| parse_numbers(text))
+        .collect();
     let diagnostics: Vec<Diagnostic> = outputs
         .iter()
         .zip(&parsed)
@@ -65,8 +93,12 @@ pub(crate) fn score(outputs: &[(&str, u64)], data: &ReferenceData, strict: bool)
             }
         })
         .collect();
-    let accepted: Vec<Vec<u32>> =
-        parsed.iter().zip(&diagnostics).filter(|(_, d)| d.accepted).map(|(n, _)| n.clone()).collect();
+    let accepted: Vec<Vec<u32>> = parsed
+        .iter()
+        .zip(&diagnostics)
+        .filter(|(_, d)| d.accepted)
+        .map(|(n, _)| n.clone())
+        .collect();
     let used = accepted.len();
     let sequence = (used > 0).then(|| sequence_shape(&accepted));
     let model_like = sequence.as_ref().is_some_and(|s| s.model_like);
@@ -86,7 +118,9 @@ pub(crate) fn score(outputs: &[(&str, u64)], data: &ReferenceData, strict: bool)
         diagnostics,
         sequence,
         method: "shared-detector-v2".into(),
-        model_version: ModelVersion { base_sha256: data.base_sha256.clone() },
+        model_version: ModelVersion {
+            base_sha256: data.base_sha256.clone(),
+        },
         evidence: evidence(
             "Not enough valid samples",
             format!("Received {used}/3 valid samples. Three valid samples are required."),
@@ -110,8 +144,15 @@ pub(crate) fn score(outputs: &[(&str, u64)], data: &ReferenceData, strict: bool)
         not_model(&mut analysis);
         return Ok(analysis);
     }
-    let ranking = data.ranker.rank(if partial { &accepted } else { &parsed }).ok_or_else(|| Error::new(SCORING_FAILED))?;
-    let calibration = if partial { None } else { data.calibration.as_ref() };
+    let ranking = data
+        .ranker
+        .rank(if partial { &accepted } else { &parsed })
+        .ok_or_else(|| Error::new(SCORING_FAILED))?;
+    let calibration = if partial {
+        None
+    } else {
+        data.calibration.as_ref()
+    };
     let probabilities = calibration.map(|(_, tau)| calibrate(&ranking, *tau));
     // Stable: ties keep bank order.
     let mut order: Vec<usize> = (0..ranking.len()).collect();
@@ -162,7 +203,8 @@ pub(crate) fn score(outputs: &[(&str, u64)], data: &ReferenceData, strict: bool)
         }
         None => evidence(
             "Uncalibrated ranking",
-            "The confidence calibration does not match this detector. Confidence is unavailable.".into(),
+            "The confidence calibration does not match this detector. Confidence is unavailable."
+                .into(),
             "uncalibrated-ranking",
         ),
     };

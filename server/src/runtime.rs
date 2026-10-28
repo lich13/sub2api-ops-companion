@@ -69,6 +69,7 @@ pub struct Runtime {
     pub closing: AtomicBool,
     pub(crate) snapshot: tokio::sync::Mutex<crate::snapshot::Cache>,
     pub(crate) cache_epoch: AtomicU64,
+    pub(crate) stats_epoch: AtomicU64,
     pub(crate) quota_batch: Mutex<Value>,
     pub(crate) quota_task: Mutex<Option<JoinHandle<()>>>,
     pub(crate) usage_flights:
@@ -280,6 +281,7 @@ impl Runtime {
             closing: AtomicBool::new(false),
             snapshot: tokio::sync::Mutex::new(crate::snapshot::Cache::default()),
             cache_epoch: AtomicU64::new(0),
+            stats_epoch: AtomicU64::new(0),
             quota_batch: Mutex::new(json!({"status":"idle","items":[],"total":0,"completed":0})),
             quota_task: Mutex::new(None),
             usage_flights: Mutex::new(Default::default()),
@@ -301,13 +303,13 @@ impl Runtime {
     pub async fn preflight(&self) -> Result<Value> {
         startup("oauth_state", self.actions.queries.oauth.shared_snapshot())?;
         startup("oauth_config", self.config.snapshot(None))?;
-        startup("model_tests", self.tests.data())?;
-        startup("detection", self.detection.store.read())?;
-        startup("keepalive", self.keepalive.store.read())?;
-        startup("capacity", self.detection.capacity.store.snapshot())?;
-        startup("operations", self.operations.store.read())?;
-        startup("priority_orders", self.priorities.legacy.read())?;
-        startup("priority_orders_v2", self.priorities.store.read())?;
+        startup("model_tests", self.tests.shared_data())?;
+        startup("detection", self.detection.store.read_shared())?;
+        startup("keepalive", self.keepalive.store.read_shared())?;
+        startup("capacity", self.detection.capacity.store.shared_snapshot())?;
+        startup("operations", self.operations.store.read_shared())?;
+        startup("priority_orders", self.priorities.legacy.read_shared())?;
+        startup("priority_orders_v2", self.priorities.store.read_shared())?;
         startup(
             "templates",
             self.actions
@@ -354,12 +356,21 @@ impl Runtime {
         startup("keepalive", self.keepalive.startup())?;
         startup("legacy_templates", self.retire_legacy_templates().await)?;
         startup("monitor", self.monitor.startup().await)?;
-        self.detection.capacity.store.transaction(|state| {
-            if state.get("detection_since").is_none() {
-                state["detection_since"] = crate::compat::now().into();
-            }
-            Ok(())
-        })?;
+        if self
+            .detection
+            .capacity
+            .store
+            .shared_snapshot()?
+            .get("detection_since")
+            .is_none()
+        {
+            self.detection.capacity.store.transaction(|state| {
+                if state.get("detection_since").is_none() {
+                    state["detection_since"] = crate::compat::now().into();
+                }
+                Ok(())
+            })?;
+        }
         self.refresh_route().await;
         self.tests.resume()?;
         for (kind, milliseconds) in [

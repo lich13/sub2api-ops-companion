@@ -50,12 +50,16 @@ impl Probe {
     }
 }
 
+type CandidatePairs = Vec<(String, String)>;
+type CachedCandidates = Option<(Option<crate::store::FileStamp>, CandidatePairs)>;
+
 struct Cache {
     active: Option<String>,
     status: Probe,
     auth: Option<(String, Instant)>,
     failure: Option<(String, Probe, u32, Instant)>,
     completed_probe: Option<(String, Probe, Instant)>,
+    candidates: CachedCandidates,
 }
 
 impl Cache {
@@ -99,12 +103,38 @@ impl Upstream {
                 auth: None,
                 failure: None,
                 completed_probe: None,
+                candidates: None,
                 status: Probe::new("network_unreachable", "none", None, "尚未检查上游", false),
             })),
         })
     }
 
+    fn connection_stamp(&self) -> std::result::Result<Option<crate::store::FileStamp>, ()> {
+        match std::fs::metadata(&self.settings.connection_path) {
+            Ok(metadata) => Ok(Some(crate::store::FileStamp::from(&metadata))),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(_) => Err(()),
+        }
+    }
+
     fn candidates(&self) -> Vec<(String, String)> {
+        let Ok(stamp) = self.connection_stamp() else {
+            self.cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .candidates = None;
+            return vec![];
+        };
+        if let Some((cached_stamp, pairs)) = &self
+            .cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .candidates
+        {
+            if *cached_stamp == stamp {
+                return pairs.clone();
+            }
+        }
         let Ok(config) = self.settings.connection_config() else {
             return vec![];
         };
@@ -114,6 +144,12 @@ impl Upstream {
             if !value.is_empty() && !values.iter().any(|(_, v)| v == value) {
                 values.push((kind.to_owned(), value.to_owned()));
             }
+        }
+        if self.connection_stamp() == Ok(stamp.clone()) {
+            self.cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .candidates = Some((stamp, values.clone()));
         }
         values
     }
@@ -141,6 +177,7 @@ impl Upstream {
         cache.auth = None;
         cache.failure = None;
         cache.completed_probe = None;
+        cache.candidates = None;
     }
 
     async fn probe(&self, endpoint: &str, base: &str, key: &str) -> Probe {

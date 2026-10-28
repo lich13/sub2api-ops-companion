@@ -381,6 +381,9 @@ impl Operations {
                 Ok(target) => {
                     if native_reached(Some(row), job) {
                         self.update(jid,json!({"status":"completed","reason":"","result":native_confirmed(Some(row),job,true)}))?;
+                        if delete {
+                            self.notify_deleted_job(job);
+                        }
                     } else {
                         let mut job = job.clone();
                         job["native_target"] = target.clone();
@@ -420,6 +423,7 @@ impl Operations {
             let row = rows.get(&aid);
             if native_reached(row, &job) {
                 self.update(jid,json!({"status":"completed","reason":"","result":native_confirmed(row,&job,false)}))?;
+                self.notify_deleted_job(&job);
                 continue;
             }
             let children = children.get(&aid).cloned().unwrap_or_default();
@@ -654,6 +658,9 @@ impl Operations {
             }
             self.update_many(&updates)?;
             for (job, (_, changes)) in selected.iter().zip(&updates) {
+                if action == "delete" && changes["status"] == "completed" {
+                    self.notify_deleted_job(job);
+                }
                 self.audit(job, string(&changes["status"]));
             }
             self.store.transaction(|data| {
@@ -672,5 +679,13 @@ impl Operations {
             Ok(())
         }
         .boxed()
+    }
+    fn notify_deleted_job(&self, job: &Value) {
+        if let Some(aid) = integer(&job["account_id"]) {
+            self.backend.account_deleted(aid);
+        }
+        for child_id in ids(&job["child_account_ids"]) {
+            self.backend.account_deleted(child_id);
+        }
     }
 }

@@ -1,5 +1,5 @@
 import DiagnosticText from "./DiagnosticText";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Eye, EyeOff, LoaderCircle, X } from "lucide-react";
 import { api } from "./bridge";
 import { useDialogFocus } from "./dialogFocus";
@@ -200,7 +200,7 @@ export function ProxyEditor({
         row ? `/proxy-management/${row.id}` : "/proxy-management",
         body,
       );
-      if (alive.current && connected.current) saved();
+      if (alive.current) saved();
     } catch (e) {
       if (alive.current) setError(String(e).replace(/^Error: /, ""));
     } finally {
@@ -414,7 +414,7 @@ export function ProxyBatchAdd({
       alive.current = false;
     };
   }, []);
-  const parsed = parseProxyLines(text);
+  const parsed = useMemo(() => parseProxyLines(text), [text]);
   async function submit() {
     if (
       !online ||
@@ -429,6 +429,15 @@ export function ProxyBatchAdd({
     setBusy(true);
     let next = 0,
       succeeded = 0;
+    const slots: (typeof results[number] | undefined)[] = new Array(
+      parsed.proxies.length,
+    );
+    const flushSlots = () => {
+      if (alive.current)
+        setResults(
+          slots.filter((item): item is NonNullable<typeof item> => item !== undefined),
+        );
+    };
     await Promise.all(
       Array.from({ length: Math.min(5, parsed.proxies.length) }, async () => {
         while (
@@ -452,28 +461,21 @@ export function ProxyBatchAdd({
           } catch {
             message = "结果未确认，请刷新核对；未重试";
           }
-          if (alive.current)
-            setResults((old) =>
-              [
-                ...old,
-                { index, address: proxyAddress(proxy), ok, message },
-              ].sort((a, b) => a.index - b.index),
-            );
+          slots[index] = { index, address: proxyAddress(proxy), ok, message };
+          flushSlots();
         }
       }),
     );
     if (alive.current) {
-      setResults((old) =>
-        [
-          ...old,
-          ...parsed.proxies.slice(next).map((p, i) => ({
-            index: next + i,
-            address: proxyAddress(p),
-            ok: false,
-            message: "连接已断开，未提交",
-          })),
-        ].sort((a, b) => a.index - b.index),
-      );
+      for (let i = next; i < parsed.proxies.length; i++) {
+        slots[i] = {
+          index: i,
+          address: proxyAddress(parsed.proxies[i]),
+          ok: false,
+          message: "连接已断开，未提交",
+        };
+      }
+      flushSlots();
       setBusy(false);
     }
     lock.current = false;

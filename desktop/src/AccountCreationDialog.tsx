@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { Copy, ExternalLink, LoaderCircle, Plus, X } from "lucide-react";
 import { api, command } from "./bridge";
 import { useDialogFocus } from "./dialogFocus";
@@ -8,6 +8,33 @@ import AccountCreationFields from "./AccountCreationFields";
 import { authConfig, authMethods, authProvider, availableGroups, buildPayload, customErrorRisks, expiryInput, fields, fieldVisible, groupLongContextBilling, importParameters, isOAuth, newDraft, parseExpiry, platforms, reuseDraft, setField, tierOptions, tokenIdentity, typeNames, validateDraft, withProtocolDefaults, type Created, type CreationDraft, type CreationOptions, type RecordValue } from "./accountCreation";
 import "./account-settings.css";
 import "./account-creation.css";
+
+function CreationNumberInput({
+  value,
+  onChange,
+  ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "type"> & {
+  value: number;
+  onChange: (next: number) => void;
+}) {
+  const [raw, setRaw] = useState(() => (Number.isFinite(value) ? String(value) : ""));
+  useEffect(() => {
+    if (!Number.isFinite(value)) return;
+    setRaw((current) => (current.trim() !== "" && Number(current) === value ? current : String(value)));
+  }, [value]);
+  return (
+    <input
+      {...props}
+      type="number"
+      value={raw}
+      onChange={(e) => {
+        const text = e.currentTarget.value;
+        setRaw(text);
+        onChange(text.trim() === "" ? Number.NaN : Number(text));
+      }}
+    />
+  );
+}
 
 type Outcome = { index: number; status: "success" | "failed" | "unknown"; message: string };
 type Authorization = { auth_url: string; session_id: string; state?: string };
@@ -206,7 +233,7 @@ export default function AccountCreationDialog({ accounts,online,close,report }: 
   }
   const credential = (key: string,label: string,optional=false) => <label key={key}>{label}{optional?"（可选）":""}<input autoComplete="off" spellCheck={false} type="password" value={String(draft.credentials[key]??"")} onChange={e=>change(`credentials.${key}`,e.target.value)}/></label>;
   const methods=authMethods(draft), blockedDirect=ledger.current.get("direct:direct")?.status === "unknown";
-  return <div className="modal-backdrop" onClick={dismiss}><section className="account-settings-dialog account-creation-dialog" ref={dialog} role="dialog" aria-modal="true" aria-label="添加账号" onClick={e=>e.stopPropagation()} onKeyDown={e=>{if(e.key==="Escape"){e.stopPropagation();dismiss();}}}>
+  return <div className="modal-backdrop" onClick={dismiss}><section className="account-settings-dialog account-creation-dialog" ref={dialog} role="dialog" aria-modal="true" aria-label="添加账号" onClick={e=>e.stopPropagation()} onKeyDown={e=>{if(e.key==="Escape"){e.preventDefault();e.stopPropagation();dismiss();}}}>
     <header><div><h2>添加账号</h2><span>{step===1?"1 · 基本信息与配置":"2 · 凭据与授权"}</span></div><button type="button" className="icon-button" aria-label="关闭添加账号" disabled={busy} onClick={dismiss}><X size={18}/></button></header>
     <form id="account-creation-form" className="account-settings-body" onSubmit={e=>{e.preventDefault();void submit();}} autoComplete="off">
       {optionError && <p className="settings-notice bad-text" role="alert">{optionError} <button type="button" disabled={busy} onClick={()=>void loadOptions()}>重新读取选项</button></p>}
@@ -215,7 +242,7 @@ export default function AccountCreationDialog({ accounts,online,close,report }: 
         <div hidden={step!==1}>
           <div className="creation-grid"><label>平台<select value={draft.platform} onChange={e=>switchKind(e.target.value)}>{platforms.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label><label>账号类型<select value={draft.type} onChange={e=>switchKind(draft.platform,e.target.value)}>{platforms.find(p=>p.id===draft.platform)?.types.map(t=><option key={t} value={t}>{draft.platform==="antigravity" && t==="apikey"?"Upstream":typeNames[t]}</option>)}</select></label><label>账号名称<input value={draft.name} maxLength={100} onChange={e=>change("name",e.target.value)}/></label><label>备注<input value={draft.notes??""} onChange={e=>change("notes",e.target.value)}/></label></div>
           <section className="creation-reuse" aria-label="复用账号配置"><strong>复用同平台、同类型账号</strong>{candidates.length>1 && <input aria-label="搜索来源账号" type="search" placeholder="搜索账号名称或 ID" value={query} onChange={e=>setQuery(e.target.value)}/>}<div className="creation-inline"><select aria-label="来源账号" value={source} onChange={e=>{++sourceRequest.current;setReusing(false);setSource(e.target.value);setReuseNotice("");}}><option value="">{candidates.length?"选择来源账号":"暂无可复用账号"}</option>{candidates.filter(a=>visibleCandidates.includes(a) || String(a.id)===source).map(a=><option key={a.id} value={a.id}>{a.name} · #{a.id}</option>)}</select><button type="button" disabled={!source || reusing} onClick={()=>void reuse()}>{reusing?<LoaderCircle size={14} className="spin"/>:<Copy size={14}/>}复用配置</button></div>{reuseNotice && <p role="status">{reuseNotice}</p>}</section>
-          <div className="creation-grid"><label>代理<select value={draft.proxy_id??""} onChange={e=>change("proxy_id",e.target.value?Number(e.target.value):null)}><option value="">不使用代理</option>{options?.proxies.map(p=><option key={p.id} value={p.id}>{p.name}{p.status && p.status!=="active"?"（未启用）":""}</option>)}</select></label><label>并发<input type="number" min={1} value={draft.concurrency} onChange={e=>change("concurrency",Number(e.target.value))}/></label><label>负载因子<input type="number" min={1} placeholder="跟随并发数" value={draft.load_factor??""} onChange={e=>change("load_factor",e.target.value?Number(e.target.value):null)}/></label><label>优先级<input type="number" min={0} value={draft.priority} onChange={e=>change("priority",Number(e.target.value))}/></label><label>计费倍率<input type="number" min={0} step="any" value={draft.rate_multiplier} onChange={e=>change("rate_multiplier",Number(e.target.value))}/></label><label>到期时间（本地时区）<input type="datetime-local" value={expiryInput(draft.expires_at)} onChange={e=>change("expires_at",parseExpiry(e.target.value))}/></label></div>
+          <div className="creation-grid"><label>代理<select value={draft.proxy_id??""} onChange={e=>change("proxy_id",e.target.value?Number(e.target.value):null)}><option value="">不使用代理</option>{options?.proxies.map(p=><option key={p.id} value={p.id}>{p.name}{p.status && p.status!=="active"?"（未启用）":""}</option>)}</select></label><label>并发<CreationNumberInput min={1} value={draft.concurrency} onChange={next=>change("concurrency",next)}/></label><label>负载因子<input type="number" min={1} placeholder="跟随并发数" value={draft.load_factor??""} onChange={e=>change("load_factor",e.target.value?Number(e.target.value):null)}/></label><label>优先级<CreationNumberInput min={0} value={draft.priority} onChange={next=>change("priority",next)}/></label><label>计费倍率<CreationNumberInput min={0} step="any" value={draft.rate_multiplier} onChange={next=>change("rate_multiplier",next)}/></label><label>到期时间（本地时区）<input type="datetime-local" value={expiryInput(draft.expires_at)} onChange={e=>change("expires_at",parseExpiry(e.target.value))}/></label></div>
           <fieldset className="creation-choices"><legend>分组</legend>{availableGroups(draft,options?.groups??[]).map(g=><label key={g.id}><input type="checkbox" checked={draft.group_ids.includes(g.id)} onChange={e=>change("group_ids",e.target.checked?[...draft.group_ids,g.id]:draft.group_ids.filter(id=>id!==g.id))}/>{g.name}</label>)}{!draft.group_ids.length && <small className="muted">未选择时采用 Sub2API 的默认分组规则</small>}</fieldset>
           <AccountCreationFields draft={draft} change={change} invalid={(path,error)=>setEditorErrors(old=>({...old,[path]:error}))} tls={tls} aiStudio={aiStudio} quotaNotify={quotaNotify} webSearch={webSearch} groupLongContext={groupLongContextBilling(draft,options?.groups??[])}/>
           {draft.platform==="anthropic" && draft.type==="apikey" && <p className="muted">全局 Web Search 模拟：{webSearch?"开启":"关闭"}</p>}

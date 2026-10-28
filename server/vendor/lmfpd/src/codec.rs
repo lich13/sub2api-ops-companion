@@ -23,7 +23,9 @@ pub(crate) fn decode(data: &[u8]) -> Option<Decoded> {
     let (b0, rest) = planes.split_at(count);
     let (b1, rest) = rest.split_at(count);
     let (b2, b3) = rest.split_at(count);
-    let floats = (0..count).map(|i| f32::from_le_bytes([b0[i], b1[i], b2[i], b3[i]])).collect();
+    let floats = (0..count)
+        .map(|i| f32::from_le_bytes([b0[i], b1[i], b2[i], b3[i]]))
+        .collect();
     Some(Decoded { header, floats })
 }
 
@@ -127,7 +129,11 @@ impl Decoded {
             blend_positional: field(blend, "positional").as_f64()?,
             positional: PositionalHead {
                 params: self.preprocessing(field(positional, "params"), &POSITIONAL)?,
-                weights: self.rows(field(positional, "weights"), models, POSITIONAL.iter().sum())?,
+                weights: self.rows(
+                    field(positional, "weights"),
+                    models,
+                    POSITIONAL.iter().sum(),
+                )?,
                 bias: self.sized(field(positional, "bias"), models)?,
             },
         })

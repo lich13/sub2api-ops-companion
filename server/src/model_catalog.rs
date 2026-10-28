@@ -181,10 +181,25 @@ impl Catalog {
         body: Option<&Value>,
         client: Option<&reqwest::Client>,
     ) -> Result<HttpReply> {
+        self.read_http_timeout(method, url, headers, body, client, None)
+            .await
+    }
+    async fn read_http_timeout(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        headers: &Headers,
+        body: Option<&Value>,
+        client: Option<&reqwest::Client>,
+        timeout: Option<Duration>,
+    ) -> Result<HttpReply> {
         if self.read_only && method != reqwest::Method::GET {
             return Err(Error::read_only());
         }
         let mut request = client.unwrap_or(&self.client).request(method, url);
+        if let Some(timeout) = timeout {
+            request = request.timeout(timeout);
+        }
         for (key, value) in headers {
             request = request.header(key, value);
         }
@@ -779,11 +794,8 @@ impl Catalog {
         {
             return Err(Error::new(422, "上游目录地址无效"));
         }
-        let mut builder = reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(timeout.max(Duration::from_millis(100)));
-        if let Some(id) = integer(&account["proxy_id"]).filter(|v| *v != 0) {
+        let request_timeout = timeout.max(Duration::from_millis(100));
+        let client = if let Some(id) = integer(&account["proxy_id"]).filter(|v| *v != 0) {
             let proxy = self.db.one("SELECT protocol,host,port,username,password FROM proxies WHERE id=$1 AND deleted_at IS NULL",&[id.into()]).await?.ok_or_else(||Error::new(422,"账号代理不可用"))?;
             let host = string(&proxy["host"]);
             let host = if host.contains(':') && !host.starts_with('[') {
@@ -804,13 +816,42 @@ impl Catalog {
                 url.set_password(Some(string(&proxy["password"])))
                     .map_err(|_| Error::new(422, "账号代理不可用"))?;
             }
-            builder = builder.proxy(
-                reqwest::Proxy::all(url.as_str()).map_err(|_| Error::new(422, "账号代理不可用"))?,
-            );
-        }
-        let client = builder.build()?;
+            reqwest::Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .timeout(request_timeout)
+                .proxy(
+                    reqwest::Proxy::all(url.as_str())
+                        .map_err(|_| Error::new(422, "账号代理不可用"))?,
+                )
+                .build()?
+        } else {
+            static NO_PROXY_CLIENT: std::sync::LazyLock<Option<reqwest::Client>> =
+                std::sync::LazyLock::new(|| {
+                    reqwest::Client::builder()
+                        .no_proxy()
+                        .redirect(reqwest::redirect::Policy::none())
+                        .build()
+                        .ok()
+                });
+            match NO_PROXY_CLIENT.as_ref() {
+                Some(shared) => shared.clone(),
+                None => reqwest::Client::builder()
+                    .no_proxy()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .timeout(request_timeout)
+                    .build()?,
+            }
+        };
         let response = self
-            .read_http(reqwest::Method::GET, &url, &headers, None, Some(&client))
+            .read_http_timeout(
+                reqwest::Method::GET,
+                &url,
+                &headers,
+                None,
+                Some(&client),
+                Some(request_timeout),
+            )
             .await?;
         if response.status != 200 {
             return Err(Error::new(
@@ -854,12 +895,13 @@ impl Catalog {
             page_url.query_pairs_mut().append_pair(key, &cursor);
             let reply = tokio::time::timeout_at(
                 deadline,
-                self.read_http(
+                self.read_http_timeout(
                     reqwest::Method::GET,
                     page_url.as_str(),
                     &headers,
                     None,
                     Some(&client),
+                    Some(request_timeout),
                 ),
             )
             .await

@@ -1,5 +1,4 @@
-import Sub2ApiConfig from "./Sub2ApiConfig";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowUpRight,
@@ -9,12 +8,12 @@ import {
   ChevronRight,
   CircleAlert,
   Clock3,
-  Command,
   ExternalLink,
   Layers3,
   ListOrdered,
   LayoutTemplate,
   Network,
+  Plus,
   Trash2,
   LayoutDashboard,
   LoaderCircle,
@@ -23,7 +22,6 @@ import {
   RefreshCw,
   Search,
   Settings2,
-  ShieldCheck,
   SlidersHorizontal,
   Unplug,
   Users,
@@ -51,7 +49,6 @@ import "./responsive.css";
 import UsageCell from "./UsageCell";
 import { KeyQuotaProvider, KeyQuotaRefreshSettings } from "./KeyQuotaSettings";
 import RecoveryAccounts from "./RecoveryAccounts";
-import ProxyManagement from "./ProxyManagement";
 import { useErrorFeed, type ErrorCategory } from "./useErrorFeed";
 import {
   MiniUsage,
@@ -69,11 +66,8 @@ import { DeleteAccountsDialog, RecoverSelectedButton } from "./AccountManagement
 import { useQuickHeight } from "./useQuickHeight";
 import ModelConfig from "./ModelConfig";
 import AccountTemplates from "./AccountTemplates";
-import { AccountCreationButton } from "./AccountCreationDialog";
 import SchedulingParameters from "./SchedulingParameters";
 import AccountSettingsDialog, { type SettingsSection } from "./AccountSettingsDialog";
-import ProxyBatchDialog from "./ProxyBatchDialog";
-import ReauthorizeAccountDialog from "./ReauthorizeAccountDialog";
 import AccountActions, { useAccountActions } from "./AccountActions";
 import ModelDetectionDialog from "./ModelDetectionDialog";
 import AccountModelField from "./AccountModelField";
@@ -86,10 +80,50 @@ import MobileAccounts from "./MobileAccounts";
 import GroupManager from "./GroupManager";
 import PriorityManager from "./PriorityManager";
 import DegradationAction, { DegradationBadge } from "./DegradationMark";
+import { useDialogFocus } from "./dialogFocus";
 import { listenBack, useBackAction } from "./mobile";
 import { version as appVersion } from "../package.json";
 import { getVersion as getRuntimeVersion } from "@tauri-apps/api/app";
 import "./mobile-layout.css";
+
+const LazySub2ApiConfig = React.lazy(() => import("./Sub2ApiConfig"));
+const LazyProxyManagement = React.lazy(() => import("./ProxyManagement"));
+const LazyAccountCreationDialog = React.lazy(() => import("./AccountCreationDialog"));
+const LazyProxyBatchDialog = React.lazy(() => import("./ProxyBatchDialog"));
+const LazyReauthorizeAccountDialog = React.lazy(() => import("./ReauthorizeAccountDialog"));
+
+function LazyAccountCreationButton({
+  accounts,
+  online,
+  connectionKey,
+  report,
+}: {
+  accounts: Account[];
+  online: boolean;
+  connectionKey: string;
+  report: (message: string) => void;
+}) {
+  const [opened, setOpened] = useState<string | null>(null);
+  return (
+    <>
+      <button disabled={!online} onClick={() => setOpened(connectionKey)}>
+        <Plus size={15} />
+        添加账号
+      </button>
+      {opened === connectionKey && (
+        <Suspense fallback={null}>
+          <LazyAccountCreationDialog
+            key={connectionKey}
+            accounts={accounts}
+            online={online}
+            close={() => setOpened(null)}
+            report={report}
+          />
+        </Suspense>
+      )}
+    </>
+  );
+}
 
 type Page = "accounts" | "groups" | "priorities" | "records" | "events" | "features" | "settings";
 const quick = new URLSearchParams(location.search).get("panel") === "quick";
@@ -172,6 +206,7 @@ export default function App() {
     [groupChanges, setGroupChanges] = useState({ count: 0, busy: false }),
     [priorityChanges, setPriorityChanges] = useState(0),
     [leaveGroups, setLeaveGroups] = useState<((proceed: boolean) => void) | null>(null),
+    discardRef = useRef<HTMLElement>(null),
     schedulePending = useRef(false),
     detailGeneration = useRef(0),
     detailAbort = useRef<AbortController | null>(null);
@@ -195,6 +230,7 @@ export default function App() {
     return new Promise<boolean>((resolve) => setLeaveGroups(() => resolve));
   }
   const mobile = state.platform === "android" || (preview && new URLSearchParams(location.search).has("mobile"));
+  useDialogFocus(discardRef, !!leaveGroups);
   useBackAction(groupsOpen, () => setGroupsOpen(false));
   useBackAction(!!leaveGroups, () => { leaveGroups?.(false); setLeaveGroups(null); });
   useBackAction(filtersOpen, () => setFiltersOpen(false));
@@ -224,7 +260,13 @@ export default function App() {
     }
     previousPage.current = page;
   }, [page]);
-  const quickBody = useQuickHeight(quick, !!detail || detailBusy);
+  const quickBody = useQuickHeight(quick, !!detail || detailBusy, [
+    state.connected,
+    state.online,
+    ready,
+    quickTab,
+    state.snapshot?.observed_at,
+  ]);
   const connectionKey = `${state.preferences.base_url}:${state.connected}:${state.connection_revision ?? 0}`;
   useEffect(() => bindOperationConnection(connectionKey), [connectionKey]);
   const connectionBatch = useConnectionBatch({ connectionKey, storageKey: state.preferences.base_url,
@@ -248,7 +290,11 @@ export default function App() {
     closeDetail();
     setTestAccount(null);
     setModelTestAccount(null);
+    setModelDetectionAccount(null);
     setKeepaliveAccount(null);
+    setTemplatesOpen(false);
+    setTemplateAccount(null);
+    setTemplateAccounts(undefined);
     setSettingsAccount(null); setReauthorizeAccount(null);
     setProxyAccounts(null);
     schedulePending.current = false; setBusy(null);
@@ -256,6 +302,11 @@ export default function App() {
     setFiltersOpen(false);
     setConfig(null);
     setGroupChanges({ count: 0, busy: false });
+    setPriorityChanges(0);
+    setLeaveGroups((pending: ((proceed: boolean) => void) | null) => {
+      pending?.(false);
+      return null;
+    });
   }, [connectionKey]);
   const report = (e: unknown) => { if (!String(e).includes("连接已切换；请求保留在原连接")) setToast(String(e).replace(/^Error: /, "")); };
   const accountActions = useAccountActions({ online: state.online, connectionKey, report,
@@ -305,15 +356,43 @@ export default function App() {
   }, []);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.isComposing) return;
+      if (event.key !== "Escape" || event.isComposing || event.defaultPrevented) return;
       if (testAccount) setTestAccount(null);
       else if (detail || detailBusy) {
         closeDetail();
-      } else if (quick) void command("hide_quick").catch(report);
+      } else if (quick) {
+        if (
+          leaveGroups ||
+          deleteAccounts ||
+          modelTestAccount ||
+          modelDetectionAccount ||
+          keepaliveAccount ||
+          templatesOpen ||
+          proxyAccounts ||
+          reauthorizeAccount ||
+          settingsAccount ||
+          document.querySelector('[role="dialog"], [role="alertdialog"]')
+        )
+          return;
+        void command("hide_quick").catch(report);
+      }
     };
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
-  }, [detail, detailBusy, testAccount]);
+  }, [
+    detail,
+    detailBusy,
+    testAccount,
+    leaveGroups,
+    deleteAccounts,
+    modelTestAccount,
+    modelDetectionAccount,
+    keepaliveAccount,
+    templatesOpen,
+    proxyAccounts,
+    reauthorizeAccount,
+    settingsAccount,
+  ]);
   useEffect(() => {
     let disposed = false;
     if (state.online && (page === "settings" || page === "features"))
@@ -348,7 +427,22 @@ export default function App() {
         : new Set([...old].filter((id) => live.has(id))),
     );
   }, [accounts]);
-  const eventRows = (quick ? errors : eventFeed.items).slice().sort((a, b) => b.id - a.id);
+  const eventRows = useMemo(
+    () =>
+      (quick ? errors : page === "events" ? eventFeed.items : [])
+        .slice()
+        .sort((a, b) => b.id - a.id),
+    [quick, page, errors, eventFeed.items],
+  );
+  const hasApiKey = useMemo(() => accounts.some((a) => a.type === "apikey"), [accounts]);
+  const accountPlatforms = useMemo(
+    () => [...new Set(accounts.map((a) => a.platform))],
+    [accounts],
+  );
+  const accountTypes = useMemo(
+    () => [...new Set(accounts.map((a) => a.type))],
+    [accounts],
+  );
   const countTab = useRef<ErrorCategory | "recoveries">("degradation");
   if (eventTab !== "logs") countTab.current = eventTab;
   const eventCount = countTab.current === "recoveries" ? recoveryCount
@@ -565,7 +659,13 @@ export default function App() {
       </span>
     );
   }
-  const visibleGroups = currentGroups(groups, accounts);
+  const visibleGroups = useMemo(
+    () => (quick || (mobile && groupsOpen) ? currentGroups(groups, accounts) : []),
+    [quick, mobile, groupsOpen, groups, accounts],
+  );
+  const detailAccount = detail
+    ? accounts.find((a) => a.id === detail.account_id)
+    : undefined;
   return (
     <div className={`app${quick ? " quick" : ""}${mobile ? " mobile" : ""}`}>
       {!quick && !mobile && (
@@ -618,7 +718,7 @@ export default function App() {
           <div className="top-actions">
             {preview && !quick && <span className="preview-label">预览</span>}
             {status()}
-            <AccountOperations accounts={accounts} online={state.online} connectionKey={connectionKey} report={report} modelTest={setModelTestAccount} priorities={() => setPage("priorities")} template={(a) => { setTemplateAccounts(undefined); setTemplateAccount(a); setTemplatesOpen(true); }} />
+            <AccountOperations accounts={accounts} online={state.online} connectionKey={connectionKey} active={state.foreground !== false} report={report} modelTest={setModelTestAccount} priorities={() => setPage("priorities")} template={(a) => { setTemplateAccounts(undefined); setTemplateAccount(a); setTemplatesOpen(true); }} />
             {!quick && !preview && !mobile && (
               <button
                 className="icon-button"
@@ -699,7 +799,7 @@ export default function App() {
             ) : quick ? (
               <>
                 {quickTab === "groups" ? (
-                  <KeyQuotaProvider key={connectionKey} accounts={accounts} online={state.online} active={state.foreground !== false} enabled={accounts.some(a => a.type === "apikey")}>
+                  <KeyQuotaProvider key={connectionKey} accounts={accounts} online={state.online} active={state.foreground !== false} enabled={hasApiKey}>
                   <div className="quick-groups">
                     {visibleGroups.map((g) => groupRow(g, true))}
                     {!groups.length && <Empty text="没有分组记录" />}
@@ -735,8 +835,8 @@ export default function App() {
                   await command("preferences", { ...state.preferences, launchAtLogin: state.preferences.launch_at_login, recordColumns: columns });
                 }}/>}
                 {page === "accounts" && (
-                  <KeyQuotaProvider key={connectionKey} accounts={accounts} online={state.online} active={state.foreground !== false} enabled={accounts.some(a => a.type === "apikey")}>
-                    {!mobile && <div className="account-toolbar"><AccountCreationButton accounts={accounts} online={state.online} connectionKey={connectionKey} report={report}/>{accounts.some(a => a.type === "apikey") && <KeyQuotaRefreshSettings online={state.online}/>}<QuotaRefresh key={connectionKey} connectionKey={connectionKey} online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={accountSort} onChange={(e) => updateAccountSort(e.target.value)}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></label><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
+                  <KeyQuotaProvider key={connectionKey} accounts={accounts} online={state.online} active={state.foreground !== false} enabled={hasApiKey}>
+                    {!mobile && <div className="account-toolbar"><LazyAccountCreationButton accounts={accounts} online={state.online} connectionKey={connectionKey} report={report}/>{hasApiKey && <KeyQuotaRefreshSettings online={state.online}/>}<QuotaRefresh key={connectionKey} connectionKey={connectionKey} online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={accountSort} onChange={(e) => updateAccountSort(e.target.value)}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></label><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
                     {mobile && <div className="mobile-group-entry"><button onClick={() => setPage("groups")}><Layers3 size={18}/>分组管理<ChevronRight size={16}/></button><button onClick={() => setPage("priorities")}><ListOrdered size={18}/>优先级管理<ChevronRight size={16}/></button></div>}
                     <div className="filters">
                       <label className="search">
@@ -769,7 +869,7 @@ export default function App() {
                         onChange={(e) => setPlatform(e.target.value)}
                       >
                         <option value="">全部平台</option>
-                        {[...new Set(accounts.map((a) => a.platform))].map(
+                        {accountPlatforms.map(
                           (p) => (
                             <option key={p}>{p}</option>
                           ),
@@ -781,7 +881,7 @@ export default function App() {
                         onChange={(e) => setType(e.target.value)}
                       >
                         <option value="">全部类型</option>
-                        {[...new Set(accounts.map((a) => a.type))].map((p) => (
+                        {accountTypes.map((p) => (
                           <option key={p}>{p}</option>
                         ))}
                       </select>
@@ -798,7 +898,7 @@ export default function App() {
                       {mobile && <button className="primary" onClick={() => setFiltersOpen(false)}>完成</button>}
                       </div>
                     </div>
-                    {mobile && <div className="account-toolbar"><AccountCreationButton accounts={accounts} online={state.online} connectionKey={connectionKey} report={report}/>{accounts.some(a => a.type === "apikey") && <KeyQuotaRefreshSettings online={state.online}/>}<QuotaRefresh key={connectionKey} connectionKey={connectionKey} online={state.online} active={state.foreground !== false} report={report}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
+                    {mobile && <div className="account-toolbar"><LazyAccountCreationButton accounts={accounts} online={state.online} connectionKey={connectionKey} report={report}/>{hasApiKey && <KeyQuotaRefreshSettings online={state.online}/>}<QuotaRefresh key={connectionKey} connectionKey={connectionKey} online={state.online} active={state.foreground !== false} report={report}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
                     {mobile && <div className="mobile-sort"><label className="mobile-select-all"><input type="checkbox" aria-label="全选当前筛选账号" checked={filteredAccounts.length > 0 && filteredAccounts.every((a) => selected.has(a.id))} disabled={!state.online} onChange={(e) => setSelected(e.target.checked ? new Set(filteredAccounts.map((a) => a.id)) : new Set())}/>全选</label><span>{filteredAccounts.length} 个账号</span><select aria-label="账号排序" value={accountSort} onChange={(e) => updateAccountSort(e.target.value)}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></div>}
                     <div className="table-wrap">
                       {selected.size > 0 && <div className="selection-bar">
@@ -994,14 +1094,7 @@ export default function App() {
                         </tbody>
                       </table>}
                     </div>
-                    {!filterAccounts(
-                      accounts,
-                      query,
-                      group,
-                      platform,
-                      filter,
-                      type,
-                    ).length && <Empty text="没有符合条件的账号" />}
+                    {!filteredAccounts.length && <Empty text="没有符合条件的账号" />}
                   </KeyQuotaProvider>
                 )}
                 {page === "events" && (
@@ -1029,6 +1122,7 @@ export default function App() {
                   (config ? (
                     <SettingsPage
                       page={page}
+                      mobile={mobile}
                       config={config}
                       accounts={accounts}
                       state={state}
@@ -1061,7 +1155,7 @@ export default function App() {
         )}
       </main>
       {mobile && <nav className="bottom-nav" aria-label="主导航">{pages.filter((p) => p.id !== "groups" && p.id !== "priorities").map((p) => { const selected = page === p.id || ["groups", "priorities"].includes(page) && p.id === "accounts"; return <button key={p.id} className={selected ? "active" : ""} aria-current={selected ? "page" : undefined} onClick={() => setPage(p.id)}><p.icon size={21}/><span>{p.label}</span></button>; })}</nav>}
-      {leaveGroups && <div className="modal-backdrop"><section className="discard-groups-dialog" role="dialog" aria-modal="true" aria-label={priorityChanges ? "未应用的优先级修改" : "未应用的分组修改"}><h2>放弃{groupChanges.count ? "分组" : ""}{groupChanges.count && priorityChanges ? "和" : ""}{priorityChanges ? "优先级" : ""}草稿并更换连接？</h2><div><button onClick={() => { leaveGroups(false); setLeaveGroups(null); }}>保留草稿</button><button className="primary" onClick={() => { leaveGroups(true); setLeaveGroups(null); }}>放弃并继续</button></div></section></div>}
+      {leaveGroups && <div className="modal-backdrop"><section ref={discardRef} className="discard-groups-dialog" role="dialog" aria-modal="true" aria-label={priorityChanges ? "未应用的优先级修改" : "未应用的分组修改"} tabIndex={-1} onKeyDown={(e) => { if (e.key === "Escape" && !e.nativeEvent.isComposing) { e.preventDefault(); e.stopPropagation(); leaveGroups(false); setLeaveGroups(null); } }}><h2>放弃{groupChanges.count ? "分组" : ""}{groupChanges.count && priorityChanges ? "和" : ""}{priorityChanges ? "优先级" : ""}草稿并更换连接？</h2><div><button onClick={() => { leaveGroups(false); setLeaveGroups(null); }}>保留草稿</button><button className="primary" onClick={() => { leaveGroups(true); setLeaveGroups(null); }}>放弃并继续</button></div></section></div>}
       {mobile && groupsOpen && <div className="mobile-groups-surface" role="dialog" aria-modal="true" aria-label="分组动态"><header><h2>分组动态</h2><button className="icon-button" aria-label="关闭分组动态" onClick={() => setGroupsOpen(false)}><X size={20}/></button></header><div className="quick-groups">{visibleGroups.map((g) => groupRow(g, true))}{!groups.length && <Empty text="没有分组记录"/>}</div></div>}
       {deleteAccounts && (
         <DeleteAccountsDialog
@@ -1069,9 +1163,11 @@ export default function App() {
           allAccounts={accounts}
           online={state.online}
           removed={(id) => {
-            setRemovedIds((old) => new Set([...old, id]));
-            setSelected(
-              (old) => new Set([...old].filter((value) => value !== id)),
+            setRemovedIds((old) => (old.has(id) ? old : new Set([...old, id])));
+            setSelected((old) =>
+              !old.has(id)
+                ? old
+                : new Set([...old].filter((value) => value !== id)),
             );
           }}
           finished={(results) =>
@@ -1154,9 +1250,9 @@ export default function App() {
                     <dd>{detail.request_id || "未知"}</dd>
                     {detail.notification && <><dt>检测线索</dt><dd>{detail.notification.status === "suppressed" ? detail.notification.reason === "degradation_mark" ? "降智标记静默" : "已抑制" : ({ delivered: "历史预警已推送", retired: "历史预警已停发", clue: "已采集", testing: "检测中", ignored: "已忽略", failed: "检测未完成", confirmed: "已确认降智", unavailable: "状态暂不可读取" } as Record<string, string>)[detail.notification.status] ?? "—"}</dd></>}
                   </dl>
-                  {detail.disposition_notification && <p>处置通知：{({delivered: "已推送", queued: "待推送", retry: "待重试", suppressed: "已取消"} as Record<string, string>)[detail.disposition_notification.status] ?? "—"}</p>}
+                  {detail.disposition_notification && <p>处置通知：{({delivered: "已推送", queued: "待推送", retry: "待重试", suppressed: "已取消", failed: "投递失败"} as Record<string, string>)[detail.disposition_notification.status] ?? "—"}</p>}
                   <h3>错误内容</h3>
-                  {accounts.find((a) => a.id === detail.account_id) && <DegradationAction account={accounts.find((a) => a.id === detail.account_id)!} online={state.online} report={report}/>}
+                  {detailAccount && <DegradationAction account={detailAccount} online={state.online} report={report}/>}
                   <pre>
                     {detail.content || detail.message || "没有额外错误内容"}
                   </pre>
@@ -1205,10 +1301,10 @@ export default function App() {
         />
       )}
       {templatesOpen && <AccountTemplates key={connectionKey} accounts={accounts} online={state.online} initialAccount={templateAccount} initialAccounts={templateAccounts} close={() => setTemplatesOpen(false)} report={report}/>}
-      {proxyAccounts && <ProxyBatchDialog key={connectionKey} accounts={proxyAccounts} online={state.online} connectionKey={connectionKey} close={() => setProxyAccounts(null)} report={report}/>}
+      {proxyAccounts && <Suspense fallback={null}><LazyProxyBatchDialog key={connectionKey} accounts={proxyAccounts} online={state.online} connectionKey={connectionKey} close={() => setProxyAccounts(null)} report={report}/></Suspense>}
       {modelDetectionAccount && <ModelDetectionDialog key={`${connectionKey}:${modelDetectionAccount.id}`} account={accounts.find((a) => a.id === modelDetectionAccount.id) ?? modelDetectionAccount} online={state.online} close={() => setModelDetectionAccount(null)} showResult={() => { setModelTestAccount(modelDetectionAccount); setModelDetectionAccount(null); }} report={report}/>}
       {keepaliveAccount && <KeepaliveDialog key={`${connectionKey}:${keepaliveAccount.id}`} account={accounts.find((a) => a.id === keepaliveAccount.id) ?? keepaliveAccount} online={state.online} connectionKey={connectionKey} close={() => setKeepaliveAccount(null)} report={report}/>}
-      {reauthorizeAccount?.connection === connectionKey && <ReauthorizeAccountDialog key={`${connectionKey}:${reauthorizeAccount.account.id}`} account={reauthorizeAccount.account} online={state.online} close={() => setReauthorizeAccount(null)} report={report}/>}
+      {reauthorizeAccount?.connection === connectionKey && <Suspense fallback={null}><LazyReauthorizeAccountDialog key={`${connectionKey}:${reauthorizeAccount.account.id}`} account={reauthorizeAccount.account} online={state.online} close={() => setReauthorizeAccount(null)} report={report}/></Suspense>}
       {settingsAccount?.connection === connectionKey && <AccountSettingsDialog key={`${connectionKey}:${settingsAccount.account.id}:${settingsAccount.section}`} account={settingsAccount.account} initialSection={settingsAccount.section} online={state.online} close={() => setSettingsAccount(null)}/>}
       {toast && (
         <div className="toast" role="status">
@@ -1308,6 +1404,7 @@ const oauthLabels: Record<string, string> = {
 };
 function SettingsPage({
   page,
+  mobile = false,
   config,
   accounts,
   state,
@@ -1319,6 +1416,7 @@ function SettingsPage({
   beforeConnectionChange,
 }: {
   page: Page;
+  mobile?: boolean;
   config: Config;
   accounts: Account[];
   state: ViewState;
@@ -1330,6 +1428,11 @@ function SettingsPage({
   beforeConnectionChange: () => Promise<boolean>;
 }) {
   const [featureTab, setFeatureTab] = useState("recovery");
+  const [visitedTabs, setVisitedTabs] = useState<Record<string, boolean>>({ recovery: true });
+  const selectFeatureTab = (next: string) => {
+    setFeatureTab(next);
+    setVisitedTabs((old) => (old[next] ? old : { ...old, [next]: true }));
+  };
   const connectionKey = `${state.preferences.base_url}:${state.connection_revision ?? 0}`;
   async function action(name: string) {
     try {
@@ -1348,11 +1451,11 @@ function SettingsPage({
         <>
           <div className="feature-tabs" role="tablist" aria-label="功能分区">
             {[["recovery", "恢复与检测"], ["models", "模型配置"], ["ip", "IP 管理"], ["sub2api", "Sub2API 配置"]].map(([key, label]) => (
-              <button key={key} id={`feature-tab-${key}`} role="tab" aria-selected={featureTab === key} aria-controls={`feature-panel-${key}`} tabIndex={featureTab === key ? 0 : -1} onClick={() => setFeatureTab(key)} onKeyDown={e => {
+              <button key={key} id={`feature-tab-${key}`} role="tab" aria-selected={featureTab === key} aria-controls={`feature-panel-${key}`} tabIndex={featureTab === key ? 0 : -1} onClick={() => selectFeatureTab(key)} onKeyDown={e => {
                 const keys = ["recovery", "models", "ip", "sub2api"];
                 const index = keys.indexOf(key);
                 const next = e.key === "ArrowRight" ? keys[(index + 1) % keys.length] : e.key === "ArrowLeft" ? keys[(index + keys.length - 1) % keys.length] : e.key === "Home" ? keys[0] : e.key === "End" ? keys[keys.length - 1] : null;
-                if (next) { e.preventDefault(); setFeatureTab(next); document.getElementById(`feature-tab-${next}`)?.focus(); }
+                if (next) { e.preventDefault(); selectFeatureTab(next); document.getElementById(`feature-tab-${next}`)?.focus(); }
               }}>{label}</button>
             ))}
           </div>
@@ -1385,13 +1488,13 @@ function SettingsPage({
           </ConfigForm>
           </div>
           <section className="feature-models" role="tabpanel" id="feature-panel-models" aria-labelledby="feature-tab-models" hidden={featureTab !== "models"}>
-            <ModelConfig key={connectionKey} online={state.online}/>
+            {(featureTab === "models" || visitedTabs.models) && <ModelConfig key={connectionKey} online={state.online}/>}
           </section>
           <div role="tabpanel" id="feature-panel-sub2api" aria-labelledby="feature-tab-sub2api" hidden={featureTab !== "sub2api"}>
-            <Sub2ApiConfig key={connectionKey} active={featureTab === "sub2api"} online={state.online}/>
+            {(featureTab === "sub2api" || visitedTabs.sub2api) && <Suspense fallback={null}><LazySub2ApiConfig key={connectionKey} active={featureTab === "sub2api"} online={state.online}/></Suspense>}
           </div>
           <div role="tabpanel" id="feature-panel-ip" aria-labelledby="feature-tab-ip" hidden={featureTab !== "ip"}>
-            <ProxyManagement key={connectionKey} connectionKey={connectionKey} active={featureTab === "ip"} online={state.online}/>
+            {(featureTab === "ip" || visitedTabs.ip) && <Suspense fallback={null}><LazyProxyManagement key={connectionKey} connectionKey={connectionKey} active={featureTab === "ip"} online={state.online} mobile={mobile}/></Suspense>}
           </div>
         </>
       ) : (
@@ -1474,6 +1577,16 @@ function Field({
   type?: string;
   set: (v: unknown) => void;
 }) {
+  const numeric = typeof value === "number";
+  const [raw, setRaw] = useState(() =>
+    numeric ? (Number.isFinite(value) ? String(value) : "") : "",
+  );
+  useEffect(() => {
+    if (!numeric || !Number.isFinite(value)) return;
+    setRaw((current) =>
+      current.trim() !== "" && Number(current) === value ? current : String(value),
+    );
+  }, [numeric, value]);
   return (
     <label className="field">
       <span>{label}</span>
@@ -1481,16 +1594,25 @@ function Field({
         <Switch label={label} on={value} onChange={() => set(!value)} />
       ) : (
         <input
-          type={type || (typeof value === "number" ? "number" : "text")}
-          value={String(value ?? "")}
+          type={type || (numeric ? "number" : "text")}
+          value={numeric ? raw : String(value ?? "")}
           autoComplete="off"
-          onInput={(e) =>
-            set(
-              typeof value === "number"
-                ? Number(e.currentTarget.value)
-                : e.currentTarget.value,
-            )
-          }
+          onChange={(e) => {
+            const text = e.currentTarget.value;
+            if (numeric) {
+              setRaw(text);
+              if (text.trim() !== "" && Number.isFinite(Number(text))) {
+                set(Number(text));
+              }
+            } else {
+              set(text);
+            }
+          }}
+          onBlur={() => {
+            if (numeric && (raw.trim() === "" || !Number.isFinite(Number(raw))) && Number.isFinite(value)) {
+              setRaw(String(value));
+            }
+          }}
         />
       )}
     </label>

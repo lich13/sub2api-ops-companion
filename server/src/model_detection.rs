@@ -67,6 +67,8 @@ fn validate(value: &Value) -> Result<()> {
     }
     Ok(())
 }
+type WaitingSweepCache = std::sync::Mutex<Option<((u64, u64, u64, u64), DateTime<Utc>)>>;
+
 #[derive(Clone)]
 pub struct Detection {
     pub actions: Actions,
@@ -79,6 +81,7 @@ pub struct Detection {
     pub(crate) tick_lock: Arc<tokio::sync::Mutex<()>>,
     pub(crate) notice_lock: Arc<tokio::sync::Mutex<()>>,
     pub(crate) frequency_lock: Arc<tokio::sync::Mutex<()>>,
+    pub(crate) waiting_sweep_cache: Arc<WaitingSweepCache>,
 }
 impl Detection {
     pub fn new(
@@ -108,6 +111,7 @@ impl Detection {
             tick_lock: Arc::new(tokio::sync::Mutex::new(())),
             notice_lock: Arc::new(tokio::sync::Mutex::new(())),
             frequency_lock: Arc::new(tokio::sync::Mutex::new(())),
+            waiting_sweep_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
     pub fn model_id(&self) -> Result<String> {

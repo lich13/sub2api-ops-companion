@@ -58,7 +58,7 @@ async fn run() -> Result<()> {
             index += 1;
         }
         let env_file = env_file.ok_or_else(Error::invalid)?;
-        let env = std::env::vars().collect();
+        let env = sub2ops_server::settings::env_map();
         let result = if args[0] == "migrate-oauth" {
             sub2ops_server::maintenance::migrate_oauth(&env, &env_file)?
         } else {

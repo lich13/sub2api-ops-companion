@@ -93,7 +93,7 @@ impl Runtime {
                     && v["platform"] == row["platform"]
                     && v["type"] == row["type"]
             });
-        self.invalidate().await;
+        self.invalidate_snapshot().await;
         crate::audit::write(
             &self.settings.audit_path,
             "desktop_schedulable",
@@ -132,7 +132,7 @@ impl Runtime {
             .account(id)
             .await
             .is_err_and(|error| error.status.as_u16() == 404);
-        self.invalidate().await;
+        self.invalidate_snapshot().await;
         crate::audit::write(
             &self.settings.audit_path,
             "desktop_delete_account",
@@ -146,6 +146,7 @@ impl Runtime {
             ));
         }
         self.key_quota.forget(id);
+        let _ = self.key_quota.remove_account_settings(id);
         self.monitor.queries.forget(id);
         Ok(json!({"account_id":id,"deleted":true,"verified":true}))
     }
@@ -175,7 +176,7 @@ impl Runtime {
                 && v["type"] == row["type"]
                 && !crate::queries::recoverable(&v, chrono::Utc::now())
         });
-        self.invalidate().await;
+        self.invalidate_snapshot().await;
         crate::audit::write(
             &self.settings.audit_path,
             "desktop_recover_state",
@@ -214,7 +215,7 @@ impl Runtime {
             chrono::Utc::now(),
             None,
         )?;
-        self.invalidate().await;
+        self.invalidate_snapshot().await;
         crate::audit::write(
             &self.settings.audit_path,
             "desktop_degradation_mark",
@@ -331,7 +332,7 @@ impl Runtime {
                             string(&result["error_code"]),
                         ));
                     }
-                    self.invalidate().await;
+                    self.invalidate_snapshot().await;
                     return Ok(
                         json!({"message":"用量查询完成","account":self.account_snapshot(id).await?}),
                     );

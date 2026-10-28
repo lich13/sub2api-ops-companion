@@ -95,32 +95,97 @@ impl Detection {
             }
         }
         if !waiting.is_empty() {
-            let ids = waiting.iter().map(|(id, ..)| *id).collect::<Vec<_>>();
-            let rows = self
-                .actions
-                .accounts(&ids)
-                .await?
-                .into_iter()
-                .filter_map(|row| integer(&row["id"]).map(|id| (id, row)))
-                .collect::<std::collections::BTreeMap<_, _>>();
-            for (id, value, mark, recheck) in waiting {
-                // A manual control change during the batch read wins this tick.
-                if self.control(id)? != value {
-                    continue;
-                }
-                let result = match rows.get(&id) {
-                    Some(row) => self.tick_waiting(id, &value, &mark, recheck, row).await,
-                    None => Err(Error::new(404, "账号不存在")),
-                };
-                if let Err(error) = result {
-                    if error.status.as_u16() >= 500 {
-                        return Err(error);
+            let now = self.now();
+            let ptrs = self.waiting_state_ptrs()?;
+            let full_sweep = self
+                .waiting_sweep_cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_none_or(|(prev_ptrs, prev_at)| {
+                    prev_ptrs != ptrs || now >= prev_at + Duration::seconds(10) || now < prev_at
+                });
+            if !full_sweep {
+                let mut due_waiting = Vec::new();
+                for item in waiting {
+                    if self.waiting_needs_immediate_eval(item.0, &item.1, now)? {
+                        due_waiting.push(item);
                     }
-                    self.update(id,json!({"status":"paused","reason":safe_error(&error.detail,200),"next_at":null}))?;
                 }
+                waiting = due_waiting;
+            }
+            if !waiting.is_empty() {
+                let ids = waiting.iter().map(|(id, ..)| *id).collect::<Vec<_>>();
+                let rows = self
+                    .actions
+                    .accounts(&ids)
+                    .await?
+                    .into_iter()
+                    .filter_map(|row| integer(&row["id"]).map(|id| (id, row)))
+                    .collect::<std::collections::BTreeMap<_, _>>();
+                for (id, value, mark, recheck) in waiting {
+                    // A manual control change during the batch read wins this tick.
+                    if self.control(id)? != value {
+                        continue;
+                    }
+                    let result = match rows.get(&id) {
+                        Some(row) => self.tick_waiting(id, &value, &mark, recheck, row).await,
+                        None => Err(Error::new(404, "账号不存在")),
+                    };
+                    if let Err(error) = result {
+                        if error.status.as_u16() >= 500 {
+                            return Err(error);
+                        }
+                        self.update(id,json!({"status":"paused","reason":safe_error(&error.detail,200),"next_at":null}))?;
+                    }
+                }
+            }
+            if full_sweep {
+                let post_ptrs = self.waiting_state_ptrs()?;
+                *self
+                    .waiting_sweep_cache
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = Some((post_ptrs, now));
             }
         }
         Ok(())
+    }
+    fn waiting_state_ptrs(&self) -> Result<(u64, u64, u64, u64)> {
+        Ok((
+            self.store.cache_revision()?,
+            self.monitor.config.oauth.cache_revision()?,
+            self.capacity.store.0.cache_revision()?,
+            self.monitor.store.0.cache_revision()?,
+        ))
+    }
+    fn waiting_needs_immediate_eval(
+        &self,
+        id: i64,
+        value: &Value,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<bool> {
+        if truthy(&value["candidate_blocked_due"])
+            || (value["candidate_blocked"] == true
+                && parse_datetime(&value["candidate_recheck_at"]).is_none_or(|at| now >= at))
+        {
+            return Ok(true);
+        }
+        if crate::detection_schedule::smart(value) {
+            let interval = crate::detection_schedule::effective_interval(value);
+            if value["schedule_idle_paused"] == true && interval.is_some() {
+                return Ok(true);
+            }
+            let due = self.smart_due(id, value)?;
+            if due.is_some_and(|d| now >= d) {
+                return Ok(true);
+            }
+            let expected_status = if due.is_some() { "waiting" } else { "paused" };
+            Ok(value["schedule_anchor_at"].is_null()
+                || value["status"] != expected_status
+                || (due.is_some() && value["next_at"].is_null()))
+        } else {
+            let due = parse_datetime(&value["next_at"]);
+            Ok(due.is_none_or(|d| now >= d) || value["status"] != "waiting")
+        }
     }
     async fn tick_account(&self, id: i64) -> Result<Option<(Value, Value, bool)>> {
         let mut value = self.control(id)?;

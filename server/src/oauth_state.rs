@@ -499,6 +499,115 @@ pub fn block_signature(row: &Value) -> String {
     sha256(py_json(&value, false, true))
 }
 
+const MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY: usize = 200;
+const MAX_RECOVERY_HISTORY: usize = 10_000;
+
+fn prune_credit_history(state: &mut Value) {
+    if let Some(scheduler) = state["scheduler"].as_object_mut() {
+        for meta in scheduler.values_mut() {
+            let active_episode = meta["auto_reset_credit"]["episode"]
+                .as_str()
+                .map(str::to_owned);
+            let mut pending_notice_episodes = std::collections::HashSet::new();
+            if let Some(notices) = meta["credit_result_notifications"].as_object() {
+                for (ep, notice) in notices {
+                    if notice["status"] == "pending" {
+                        pending_notice_episodes.insert(ep.clone());
+                    }
+                }
+            }
+            if meta["credit_result_notifications"]
+                .as_object()
+                .is_some_and(|m| m.len() > MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY)
+            {
+                let mut terminals = meta["credit_result_notifications"]
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (ep, notice))| {
+                        notice["status"] != "pending"
+                            && active_episode.as_deref() != Some(ep.as_str())
+                    })
+                    .map(|(idx, (ep, notice))| {
+                        (
+                            notice["completed_at"].as_str().unwrap_or("").to_owned(),
+                            idx,
+                            ep.clone(),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                if terminals.len() > MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY {
+                    terminals.sort();
+                    let drop_count = terminals.len() - MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY;
+                    let map = meta["credit_result_notifications"].as_object_mut().unwrap();
+                    for (_, _, ep) in terminals.into_iter().take(drop_count) {
+                        map.shift_remove(&ep);
+                    }
+                }
+            }
+            if meta["reset_credit_episodes"]
+                .as_object()
+                .is_some_and(|m| m.len() > MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY)
+            {
+                let mut terminals = meta["reset_credit_episodes"]
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (ep, item))| {
+                        let stage = string(&item["stage"]);
+                        let is_terminal = matches!(
+                            stage,
+                            "recovered" | "manual" | "blocked" | "closed" | "finished"
+                        ) && !(stage == "finished"
+                            && truthy(&item["owns_pause"]));
+                        is_terminal
+                            && active_episode.as_deref() != Some(ep.as_str())
+                            && !pending_notice_episodes.contains(*ep)
+                    })
+                    .map(|(idx, (ep, item))| {
+                        let stamp = item["completed_at"]
+                            .as_str()
+                            .or_else(|| item["manual_at"].as_str())
+                            .or_else(|| item["recovered_at"].as_str())
+                            .or_else(|| item["attempt_at"].as_str())
+                            .unwrap_or("")
+                            .to_owned();
+                        (stamp, idx, ep.clone())
+                    })
+                    .collect::<Vec<_>>();
+                if terminals.len() > MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY {
+                    terminals.sort();
+                    let drop_count = terminals.len() - MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY;
+                    let map = meta["reset_credit_episodes"].as_object_mut().unwrap();
+                    for (_, _, ep) in terminals.into_iter().take(drop_count) {
+                        map.shift_remove(&ep);
+                    }
+                }
+            }
+        }
+    }
+    if state["recovery_history"]
+        .as_object()
+        .is_some_and(|m| m.len() > MAX_RECOVERY_HISTORY)
+    {
+        let mut entries = state["recovery_history"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .enumerate()
+            .map(|(idx, (key, item))| (integer(&item["id"]).unwrap_or(0), idx, key.clone()))
+            .collect::<Vec<_>>();
+        entries.sort();
+        let drop_count = entries.len() - MAX_RECOVERY_HISTORY;
+        let map = state["recovery_history"].as_object_mut().unwrap();
+        for (_, _, key) in entries.into_iter().take(drop_count) {
+            map.shift_remove(&key);
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct OAuthState(pub Store, Arc<Mutex<Option<Normalized>>>);
 
@@ -554,7 +663,9 @@ impl OAuthState {
     pub fn transaction<T>(&self, action: impl FnOnce(&mut Value) -> Result<T>) -> Result<T> {
         self.0.transaction(|value| {
             *value = normalize(value);
-            action(value)
+            let out = action(value)?;
+            prune_credit_history(value);
+            Ok(out)
         })
     }
     pub fn admin_token(&self) -> Result<String> {

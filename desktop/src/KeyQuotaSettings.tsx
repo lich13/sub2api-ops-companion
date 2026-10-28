@@ -1,7 +1,9 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -69,22 +71,39 @@ export function KeyQuotaProvider({
       alive = false;
     };
   }, [online, active, visible, enabled, retry]);
+  const accountsVersionKey = useMemo(
+    () =>
+      enabled
+        ? accounts
+            .map(
+              (a) =>
+                `${a.id}:${a.operation_versions?.usage ?? a.version}`,
+            )
+            .join("|")
+        : "",
+    [accounts, enabled],
+  );
+  const stableAccounts = useMemo(() => (enabled ? accounts : []), [accountsVersionKey]);
+  const reload = useCallback(() => setRetry((n) => n + 1), []);
+  const saved = useCallback((v: Settings) => {
+    setValue(v);
+    setError("");
+  }, []);
+  const contextValue = useMemo(
+    () => ({
+      accounts: stableAccounts,
+      seconds: value?.seconds ?? 60,
+      revision: value?.revision ?? "",
+      ready: !!value && !error,
+      visible: visible && active,
+      error,
+      reload,
+      saved,
+    }),
+    [stableAccounts, value, error, visible, active, reload, saved],
+  );
   return (
-    <Context.Provider
-      value={{
-        accounts,
-        seconds: value?.seconds ?? 60,
-        revision: value?.revision ?? "",
-        ready: !!value && !error,
-        visible: visible && active,
-        error,
-        reload: () => setRetry((n) => n + 1),
-        saved: (v) => {
-          setValue(v);
-          setError("");
-        },
-      }}
-    >
+    <Context.Provider value={contextValue}>
       {children}
     </Context.Provider>
   );

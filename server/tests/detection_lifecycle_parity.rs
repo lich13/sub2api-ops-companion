@@ -7717,3 +7717,66 @@ async fn aggregate_disposition_respects_human_override_and_invalid_analysis() {
         h.close().await;
     }
 }
+
+#[tokio::test]
+async fn disposition_notification_caps_retries_at_five_attempts() {
+    let delays = [5_i64, 30, 120, 600];
+    let harness = Harness::new(sample_text("automatic_first_group", 0)).await;
+    let row = harness.seed_account("apikey", true, json!({})).await;
+    let id = integer(&row["id"]).unwrap();
+    harness.enable_detection(id, 1).await;
+    harness
+        .runtime()
+        .detection
+        .update(
+            id,
+            json!({"next_at":datetime(harness.now()-Duration::seconds(1))}),
+        )
+        .unwrap();
+    harness.mock.set_bark_failures(10);
+    harness.runtime().detection.tick().await.unwrap();
+    let job_id = harness.runtime().detection.control(id).unwrap()["job_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let job = harness.wait_job_terminal(&job_id).await;
+    assert_eq!(job["automatic_disposition"]["status"], "completed");
+
+    for (index, delay) in delays.iter().enumerate() {
+        harness
+            .runtime()
+            .detection
+            .deliver_notifications()
+            .await
+            .unwrap();
+        let attempt = index as i64 + 1;
+        let event =
+            harness.runtime().detection.view(id).await.unwrap()["disposition_notification"].clone();
+        assert_eq!(event["status"], "retry");
+        assert_eq!(event["attempts"], attempt);
+        harness.advance(*delay);
+    }
+
+    harness
+        .runtime()
+        .detection
+        .deliver_notifications()
+        .await
+        .unwrap();
+    let event =
+        harness.runtime().detection.view(id).await.unwrap()["disposition_notification"].clone();
+    assert_eq!(event["status"], "failed");
+    assert_eq!(event["attempts"], 5);
+    assert!(event["next_at"].is_null());
+    assert_eq!(harness.mock.count("POST", "/push"), 5);
+
+    harness.advance(3600);
+    harness
+        .runtime()
+        .detection
+        .deliver_notifications()
+        .await
+        .unwrap();
+    assert_eq!(harness.mock.count("POST", "/push"), 5);
+    harness.close().await;
+}

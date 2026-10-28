@@ -933,6 +933,7 @@ async fn prepare_loopback_worker(h: &Harness, job: &Value) -> Arc<super::Context
         samples: StdMutex::new(Default::default()),
         challenges: modeltrace::challenges(),
         snapshot: h.runtime.tests.bank.snapshot(),
+        compiled: None,
         row,
         owner,
         target,

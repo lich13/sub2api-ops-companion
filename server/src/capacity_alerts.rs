@@ -150,19 +150,24 @@ impl CapacityStore {
         Ok((*self.shared_snapshot()?).clone())
     }
     pub(crate) fn shared_snapshot(&self) -> Result<std::sync::Arc<Value>> {
-        let mut data = self.0.read_shared()?;
+        Ok(self.shared_snapshot_versioned()?.1)
+    }
+    pub(crate) fn shared_snapshot_versioned(&self) -> Result<(u64, std::sync::Arc<Value>)> {
+        let (rev, mut data) = self.0.read_shared_versioned()?;
         if ["slow_ttft", "slow_pending", "detection_events"]
             .iter()
             .any(|key| data.get(*key).is_none())
         {
             Self::normalize(std::sync::Arc::make_mut(&mut data));
         }
-        Ok(data)
+        Ok((rev, data))
     }
     pub fn transaction<T>(&self, action: impl FnOnce(&mut Value) -> Result<T>) -> Result<T> {
         self.0.transaction(|data| {
             Self::normalize(data);
-            action(data)
+            let out = action(data)?;
+            prune_notifications(data);
+            Ok(out)
         })
     }
     pub fn account_guard(&self, id: i64) -> Result<MarkGuard> {
@@ -227,12 +232,70 @@ impl CapacityStore {
         })
     }
 }
+const MAX_TERMINAL_CAPACITY_NOTIFICATIONS: usize = 2_000;
+
+fn prune_notifications(data: &mut Value) {
+    let Some(total) = data["notifications"].as_object().map(|m| m.len()) else {
+        return;
+    };
+    if total <= MAX_TERMINAL_CAPACITY_NOTIFICATIONS {
+        return;
+    }
+    let pending = data["pending"].as_object();
+    let slow_pending = data["slow_pending"].as_object();
+    let detection_events = data["detection_events"].as_object();
+    let mut terminals = data["notifications"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .filter(|(_, (key, entry))| {
+            let active_ref = pending.is_some_and(|m| m.contains_key(*key))
+                || slow_pending.is_some_and(|m| m.contains_key(*key))
+                || detection_events.is_some_and(|m| {
+                    m.contains_key(*key) || m.contains_key(&format!("error:{key}"))
+                });
+            if active_ref {
+                return false;
+            }
+            !matches!(
+                entry["status"].as_str(),
+                Some("queued" | "retry" | "pending" | "sending")
+            )
+        })
+        .map(|(idx, (key, entry))| {
+            let stamp = entry["updated_at"]
+                .as_str()
+                .or_else(|| entry["at"].as_str())
+                .unwrap_or("")
+                .to_owned();
+            (stamp, idx, key.clone())
+        })
+        .collect::<Vec<_>>();
+    if terminals.len() <= MAX_TERMINAL_CAPACITY_NOTIFICATIONS {
+        return;
+    }
+    terminals.sort();
+    let drop_count = terminals.len() - MAX_TERMINAL_CAPACITY_NOTIFICATIONS;
+    let map = data["notifications"].as_object_mut().unwrap();
+    for (_, _, key) in terminals.into_iter().take(drop_count) {
+        map.shift_remove(&key);
+    }
+}
+
+struct SlowPollCache {
+    max_id: i64,
+    store_rev: u64,
+    scanned_at: DateTime<Utc>,
+}
+
 #[derive(Clone)]
 pub struct CapacityAlerts {
     pub store: CapacityStore,
     db: Database,
     audit_path: PathBuf,
     read_only: bool,
+    slow_cache: std::sync::Arc<std::sync::Mutex<Option<SlowPollCache>>>,
 }
 impl CapacityAlerts {
     pub fn new(db: Database, settings: &crate::settings::Settings) -> Self {
@@ -246,6 +309,7 @@ impl CapacityAlerts {
             db,
             audit_path: settings.audit_path.clone(),
             read_only: settings.read_only,
+            slow_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
     fn audit(&self, event: &str, payload: Value) {
@@ -333,17 +397,50 @@ impl CapacityAlerts {
         }
         let since = (at - Duration::minutes(5))
             .max(parse_datetime(&state["initialized_at"]).ok_or_else(Error::internal)?);
+        let current = self.store.shared_snapshot()?;
+        let mut seen_ids = current["seen"]
+            .as_object()
+            .into_iter()
+            .flat_map(|m| m.keys())
+            .chain(
+                current["pending"]
+                    .as_object()
+                    .into_iter()
+                    .flat_map(|m| m.keys()),
+            )
+            .filter_map(|key| key.parse::<i64>().ok())
+            .collect::<Vec<_>>();
+        seen_ids.sort_unstable();
+        seen_ids.dedup();
         let mut after = 0i64;
+        let mut collected_any = false;
         loop {
-            let rows=self.db.all(&format!("SELECT {} FROM ops_error_logs e LEFT JOIN accounts a ON a.id=e.account_id WHERE e.created_at>=$1 AND e.id>$2 ORDER BY e.id LIMIT 200",sql::CAPACITY_FIELDS),&[since.into(),after.into()]).await?;
+            let rows = self
+                .db
+                .all(
+                    &format!(
+                        "SELECT {} FROM ops_error_logs e LEFT JOIN accounts a ON a.id=e.account_id WHERE e.created_at>=$1 AND e.id>$2 AND NOT (e.id = ANY($3)) ORDER BY e.id LIMIT 200",
+                        sql::CAPACITY_FIELDS
+                    ),
+                    &[
+                        since.into(),
+                        after.into(),
+                        crate::db::Param::Ints(seen_ids.clone()),
+                    ],
+                )
+                .await?;
             if rows.is_empty() {
                 break;
             }
+            collected_any = true;
             self.collect(&rows, false, Utc::now())?;
             after = integer(&rows.last().unwrap()["id"]).ok_or_else(Error::internal)?;
             if rows.len() < 200 {
                 break;
             }
+        }
+        if !collected_any {
+            self.collect(&[], false, Utc::now())?;
         }
         self.poll_slow(Utc::now()).await
     }
@@ -459,6 +556,35 @@ impl CapacityAlerts {
         Ok(())
     }
     async fn poll_slow(&self, at: DateTime<Utc>) -> Result<()> {
+        let (store_rev, previous) = self.store.shared_snapshot_versioned()?;
+        let max_id = match self
+            .db
+            .one("SELECT COALESCE(MAX(id), 0) AS max_id FROM usage_logs", &[])
+            .await
+        {
+            Ok(row) => row
+                .as_ref()
+                .and_then(|r| integer(&r["max_id"]))
+                .unwrap_or(0),
+            Err(_) => {
+                self.audit("slow_ttft_query_error", json!({"error":"DatabaseError"}));
+                return Ok(());
+            }
+        };
+        if let Some(cached) = self
+            .slow_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            if cached.max_id == max_id
+                && cached.store_rev == store_rev
+                && at >= cached.scanned_at
+                && at < cached.scanned_at + Duration::seconds(30)
+            {
+                return Ok(());
+            }
+        }
         let rows = match self
             .db
             .all(
@@ -482,11 +608,15 @@ impl CapacityAlerts {
             accounts.insert(id,json!({"id":id,"platform":row["account_platform"],"type":row["account_type"],"name":row.get("account_name").cloned().filter(truthy).unwrap_or(json!(format!("账号 {id}")))}));
             grouped.entry(id).or_default().push(row);
         }
-        let previous = self.store.shared_snapshot()?;
         let projected = slow_projection(&previous, &grouped, &accounts, at);
         if projected["slow_ttft"] == previous["slow_ttft"]
             && projected["alerts"].as_array().unwrap().is_empty()
         {
+            *self.slow_cache.lock().unwrap_or_else(|e| e.into_inner()) = Some(SlowPollCache {
+                max_id,
+                store_rev,
+                scanned_at: at,
+            });
             return Ok(());
         }
         let matched = self.store.transaction(|data| {
@@ -506,6 +636,13 @@ impl CapacityAlerts {
             }
             Ok(projected["alerts"].clone())
         })?;
+        if let Ok(updated_rev) = self.store.0.cache_revision() {
+            *self.slow_cache.lock().unwrap_or_else(|e| e.into_inner()) = Some(SlowPollCache {
+                max_id,
+                store_rev: updated_rev,
+                scanned_at: at,
+            });
+        }
         for alert in matched.as_array().unwrap() {
             self.audit("slow_ttft_matched", alert["audit"].clone());
         }

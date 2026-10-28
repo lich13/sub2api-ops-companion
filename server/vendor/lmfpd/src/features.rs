@@ -17,7 +17,9 @@ fn value(digits: &str) -> Option<u32> {
     if digits.len() > 3 {
         return None;
     }
-    let value = digits.bytes().fold(0, |value, digit| value * 10 + u32::from(digit - b'0'));
+    let value = digits
+        .bytes()
+        .fold(0, |value, digit| value * 10 + u32::from(digit - b'0'));
     (1..=VALUE_MAX).contains(&value).then_some(value)
 }
 
@@ -58,14 +60,20 @@ pub fn parse_numbers(text: &str) -> Vec<u32> {
         }
         previous_end = end;
     }
-    if current.len() > best.len() { current } else { best }
+    if current.len() > best.len() {
+        current
+    } else {
+        best
+    }
 }
 
 /// Matches of `-?[0-9]+` whose value is below 1 or above 355.
 pub(crate) fn raw_out_of_range_count(text: &str) -> usize {
     let bytes = text.as_bytes();
     digit_runs(text)
-        .filter(|&(start, end)| (start > 0 && bytes[start - 1] == b'-') || value(&text[start..end]).is_none())
+        .filter(|&(start, end)| {
+            (start > 0 && bytes[start - 1] == b'-') || value(&text[start..end]).is_none()
+        })
         .count()
 }
 
@@ -92,7 +100,10 @@ fn count_numbers(numbers: &[u32]) -> Vec<f64> {
 pub(crate) fn hellinger_feature(numbers: &[u32]) -> Vec<f64> {
     let counts = count_numbers(numbers);
     let total = sum(&counts) + ALPHA * DIMENSION as f64;
-    counts.iter().map(|value| ((value + ALPHA) / total).sqrt()).collect()
+    counts
+        .iter()
+        .map(|value| ((value + ALPHA) / total).sqrt())
+        .collect()
 }
 
 pub(crate) fn ordered_block_feature(numbers: &[u32]) -> Vec<f64> {
@@ -124,7 +135,11 @@ fn position_kernel(x: &[u32]) -> Vec<f64> {
     let mut out = vec![0.0; 34 * 3];
     for (position, &value) in x.iter().enumerate() {
         let t = (position as f64 + 0.5) * 2.0 / n - 1.0;
-        let basis = [t, 0.5 * (3.0 * t * t - 1.0), 0.5 * (5.0 * t.powi(3) - 3.0 * t)];
+        let basis = [
+            t,
+            0.5 * (3.0 * t * t - 1.0),
+            0.5 * (5.0 * t.powi(3) - 3.0 * t),
+        ];
         let v = f64::from(value);
         for k in 0..24 {
             let centre = 1.0 + k as f64 * 354.0 / 23.0;
@@ -153,8 +168,15 @@ fn centred_transitions(symbols: &[usize], bins: usize, out: &mut Vec<f64>) {
         *value /= total;
     }
     let rows: Vec<f64> = joint.chunks(bins).map(sum).collect();
-    let columns: Vec<f64> = (0..bins).map(|b| (0..bins).fold(0.0, |s, a| s + joint[a * bins + b])).collect();
-    out.extend(joint.iter().enumerate().map(|(i, value)| value - rows[i / bins] * columns[i % bins]));
+    let columns: Vec<f64> = (0..bins)
+        .map(|b| (0..bins).fold(0.0, |s, a| s + joint[a * bins + b]))
+        .collect();
+    out.extend(
+        joint
+            .iter()
+            .enumerate()
+            .map(|(i, value)| value - rows[i / bins] * columns[i % bins]),
+    );
 }
 
 fn fraction(length: usize, test: impl Fn(usize) -> bool) -> f64 {
@@ -193,7 +215,10 @@ fn sequence_features(numbers: &[u32]) -> Vec<f64> {
             fraction(count, |i| d[i].abs() <= 20.0),
         ]);
     }
-    let octets: Vec<usize> = numbers.iter().map(|&v| 7.min((v - 1) as usize * 8 / 355)).collect();
+    let octets: Vec<usize> = numbers
+        .iter()
+        .map(|&v| 7.min((v - 1) as usize * 8 / 355))
+        .collect();
     centred_transitions(&octets, 8, &mut out);
     let digits: Vec<usize> = numbers.iter().map(|&v| (v % 10) as usize).collect();
     centred_transitions(&digits, 10, &mut out);
@@ -206,7 +231,10 @@ fn sequence_features(numbers: &[u32]) -> Vec<f64> {
         fraction(n - 1, |i| z_step[i] > 1.0),
         fraction(n - 1, |i| z_step[i] > 2.0),
     ]);
-    let buckets: Vec<usize> = numbers.iter().map(|&v| 15.min((v - 1) as usize * 16 / 355)).collect();
+    let buckets: Vec<usize> = numbers
+        .iter()
+        .map(|&v| 15.min((v - 1) as usize * 16 / 355))
+        .collect();
     for width in [4, 8, 16] {
         let mut total = 0.0;
         for window in buckets.windows(width) {

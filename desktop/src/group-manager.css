@@ -4,7 +4,7 @@
 .group-manager button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .group-manager-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .group-platforms { display: flex; flex-wrap: wrap; max-width: 100%; padding: 3px; background: var(--canvas); border: 1px solid var(--line); border-radius: 10px; }
-.group-platforms button { border: 0; background: transparent; padding: 8px 16px; color: var(--muted); }
+.group-platforms button { min-height: 32px; border: 0; border-radius: 7px; background: transparent; padding: 6px 14px; color: var(--muted); }
 .group-platforms button.active { color: var(--ink); background: var(--surface); box-shadow: 0 1px 3px #0001; }
 .group-search { display: flex; align-items: center; gap: 8px; margin-left: auto; width: min(340px, 42%); color: var(--muted); }
 .group-search input { min-width: 0; width: 100%; }
@@ -35,7 +35,7 @@
 .group-account.dragging { opacity: .35; border-style: dashed; }
 .group-grip { flex-shrink: 0; touch-action: none; cursor: grab; }
 .group-grip:active { cursor: grabbing; }
-.group-account .group-grip, .group-account-identity { background: none; border: none; padding: 3px; border-radius: 5px; color: var(--muted); box-shadow: none; }
+.group-account .group-grip, .group-account-identity { min-height: 0; background: none; border: none; padding: 3px; border-radius: 5px; color: var(--muted); box-shadow: none; }
 .group-account-identity { text-align: left; display: grid; grid-template-columns: minmax(0, 1fr); justify-content: stretch; justify-items: start; gap: 5px; flex: 1; min-width: 0; color: var(--ink); white-space: normal; }
 .group-account-identity strong { width: 100%; font-weight: 550; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
 .group-account-meta { width: 100%; min-width: 0; line-height: 1.5; display: flex; align-items: center; gap: 4px 7px; flex-wrap: wrap; color: var(--muted); font-size: 10px; }
@@ -43,7 +43,7 @@
 .group-dirty-label { color: var(--accent); }
 .group-account > .switch-cell { flex-shrink: 0; margin-inline: 5px; }
 .group-account-menu { align-self: flex-start; position: relative; flex-shrink: 0; }
-.group-account-menu > .account-more-trigger { display: flex; align-items: center; justify-content: center; width: 26px; height: 28px; padding: 0; color: var(--muted); background: transparent; border: 0; border-radius: 6px; }
+.group-account-menu > .account-more-trigger { display: flex; align-items: center; justify-content: center; width: 26px; height: 28px; min-height: 28px; padding: 0; color: var(--muted); background: transparent; border: 0; border-radius: 6px; }
 .group-empty { padding: 24px 0; text-align: center; color: var(--muted); font-size: 12px; }
 .group-pool { padding-top: 8px; border-top: 1px solid var(--line); }
 .group-pool .membership-zone { padding: 14px 0; }

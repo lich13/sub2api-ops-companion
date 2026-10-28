@@ -17,16 +17,16 @@
 .proxy-batch-previews dt { color: var(--muted); }
 .proxy-batch-previews dd { margin: 0; overflow-wrap: anywhere; }
 .proxy-batch-previews p { margin: 6px 0 0; overflow-wrap: anywhere; }
-.account-settings-body button, .account-settings-dialog > footer button { min-height: 30px; padding: 5px 9px; font-size: 12px; gap: 5px; }
-.account-settings-body input:not([type="checkbox"]):not([type="radio"]) { width: 100%; min-height: 32px; padding: 6px 8px; font-size: 12px; }
+.account-settings-body button, .account-settings-dialog > footer button { min-height: 32px; padding: 5px 10px; font-size: 12px; gap: 5px; }
+.account-settings-body input:not([type="checkbox"]):not([type="radio"]) { width: 100%; min-height: var(--control-h); padding: 6px 10px; font-size: 12px; }
 .settings-tabs { display: flex; gap: 4px; margin-bottom: 12px; }
 .settings-tabs button { flex: 1; justify-content: center; }
 .settings-tabs [aria-selected="true"] { color: var(--accent); background: var(--accent-bg); border-color: var(--accent); }
 .settings-section-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 10px 0 8px; }
 .settings-section-tools h3, .settings-section-tools > span { margin: 0 auto 0 0; font-size: 12px; font-weight: 500; }
-.settings-model-row { display: grid; grid-template-columns: minmax(0, 1fr) 32px; gap: 6px; align-items: center; margin-bottom: 6px; }
-.settings-model-row.mapping { grid-template-columns: minmax(0, 1fr) 14px minmax(0, 1fr) 32px; }
-.settings-model-row .icon-button { min-width: 32px; padding: 6px; justify-content: center; }
+.settings-model-row { display: grid; grid-template-columns: minmax(0, 1fr) 34px; gap: 6px; align-items: center; margin-bottom: 6px; }
+.settings-model-row.mapping { grid-template-columns: minmax(0, 1fr) 14px minmax(0, 1fr) 34px; }
+.settings-model-row .icon-button { min-width: 34px; min-height: 34px; padding: 6px; justify-content: center; }
 .settings-notice { margin: 8px 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .settings-catalog { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .settings-model-options { max-height: 240px; overflow: auto; }
@@ -34,7 +34,6 @@
 .settings-model-options label span { flex: 1; overflow-wrap: anywhere; font-size: 12px; }
 .settings-model-options small { color: var(--muted); font-size: 10px; flex-shrink: 0; }
 .settings-model-options input, .proxy-options input { flex-shrink: 0; accent-color: var(--accent); }
-.settings-proxy-search { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
 .proxy-options { margin-top: 8px; }
 .proxy-options label { border-bottom: 1px solid var(--line); }
 .proxy-options label > span { flex: 1; overflow-wrap: anywhere; }
@@ -62,6 +61,7 @@
   .account-settings-body { padding: 10px 12px; }
   .account-settings-dialog button, .numeric-editor button { min-height: 48px; }
   .account-settings-body input:not([type="checkbox"]):not([type="radio"]), .numeric-input-row input { min-height: 48px; font-size: 16px; }
+  .numeric-input-row input { height: 48px; }
   .account-settings-dialog .icon-button, .numeric-editor .icon-button { min-width: 48px; }
   .settings-model-row { grid-template-columns: minmax(0, 1fr) 48px; }
   .settings-model-row.mapping { grid-template-columns: minmax(0, 1fr) 48px; padding: 8px 0; border-bottom: 1px solid var(--line); }

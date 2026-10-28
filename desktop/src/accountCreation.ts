@@ -93,7 +93,7 @@ export function reuseDraft(current: CreationDraft, source: CreationDraft): Creat
   if (source.platform !== current.platform || source.type !== current.type) throw new Error("来源账号平台或类型已变化，请重新选择");
   let result: CreationDraft = { ...current, credentials: { ...current.credentials }, extra: {} };
   for (const key of ["notes", "proxy_id", "concurrency", "load_factor", "priority", "rate_multiplier", "group_ids", "expires_at", "auto_pause_on_expired"] as const) {
-    if (Object.hasOwn(source,key)) result = { ...result, [key]: structuredClone(source[key]) };
+    if (Object.prototype.hasOwnProperty.call(source, key)) result = { ...result, [key]: structuredClone(source[key]) };
   }
   // Replace configuration, while preserving the new account's identity inputs.
   for (const f of fields.filter(f => applicable(f,current))) {
@@ -197,7 +197,7 @@ export function tokenIdentity(platform: string, token: RecordValue, fallbackRefr
   if (fallbackRefresh && !credentials.refresh_token) credentials.refresh_token = fallbackRefresh;
   if (["gemini", "antigravity"].includes(platform) && credentials.expires_at !== undefined) credentials.expires_at = String(credentials.expires_at);
   const extra: RecordValue = {};
-  if (platform === "gemini" && token.extra && typeof token.extra === "object") for (const key of ["drive_storage_limit","drive_storage_usage","drive_tier_updated_at"]) if (Object.hasOwn(token.extra,key)) extra[key]=(token.extra as RecordValue)[key];
+  if (platform === "gemini" && token.extra && typeof token.extra === "object") for (const key of ["drive_storage_limit","drive_storage_usage","drive_tier_updated_at"]) if (Object.prototype.hasOwnProperty.call(token.extra, key)) extra[key]=(token.extra as RecordValue)[key];
   for (const key of ["email", "email_address", "org_uuid", "account_uuid", "subscription_tier", "entitlement_status", "name", "privacy_mode"]) if (token[key]) extra[key] = token[key];
   return { credentials, extra };
 }

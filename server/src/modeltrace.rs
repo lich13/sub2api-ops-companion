@@ -269,6 +269,222 @@ pub fn scores(numbers: &[usize], data: &Value) -> Vec<f64> {
         .map(|(x, y)| (1.0 - weight) * x + weight * y)
         .collect()
 }
+fn matrix(value: &Value) -> Vec<Vec<f64>> {
+    value.as_array().into_iter().flatten().map(vector).collect()
+}
+fn subtract_basis_vec(mut v: Vec<f64>, basis: &[Vec<f64>]) -> Vec<f64> {
+    for row in basis {
+        let projection = dot(&v, row);
+        v = v
+            .into_iter()
+            .zip(row)
+            .map(|(x, y)| x - projection * y)
+            .collect();
+    }
+    v
+}
+fn scaled_vec(feature: &[f64], center: &[f64], scale: &[f64]) -> Vec<f64> {
+    feature
+        .iter()
+        .enumerate()
+        .map(|(i, x)| (x - center[i]) / scale[i])
+        .collect()
+}
+fn similarities_vec(unit: &[f64], rows: &[Vec<f64>]) -> Vec<f64> {
+    rows.iter().map(|row| dot(unit, row)).collect()
+}
+
+pub struct CompiledBank {
+    hellinger_mean: Vec<f64>,
+    hellinger_scale: Vec<f64>,
+    hellinger_basis: Vec<Vec<f64>>,
+    hellinger_centroids: Vec<Vec<f64>>,
+    ordered_weight: f64,
+    ordered_mean: Vec<f64>,
+    ordered_scale: Vec<f64>,
+    ordered_env_centroids: Vec<Vec<Vec<f64>>>,
+    ordered_basis: Vec<Vec<f64>>,
+    ordered_centroids: Vec<Vec<f64>>,
+    models: Vec<(Value, Value)>,
+    betas: [Option<f64>; 3],
+}
+
+impl CompiledBank {
+    pub fn compile(data: &Value) -> Result<Self> {
+        crate::fingerprint_bank::validate(data)?;
+        let invalid = || Error::new(503, "指纹库数据无效");
+        let models = data["models"]
+            .as_array()
+            .ok_or_else(invalid)?
+            .iter()
+            .map(|m| (m["id"].clone(), m["display_name"].clone()))
+            .collect::<Vec<_>>();
+        let hellinger = &data["robust"]["hellinger"];
+        let ordered = &data["robust"]["ordered_blocks"];
+        Ok(Self {
+            hellinger_mean: vector(&hellinger["feature_mean"]),
+            hellinger_scale: vector(&hellinger["feature_scale"]),
+            hellinger_basis: matrix(&hellinger["nuisance_basis"]),
+            hellinger_centroids: matrix(&hellinger["centroids"]),
+            ordered_weight: ordered["weight"].as_f64().unwrap_or(0.0),
+            ordered_mean: vector(&ordered["feature_mean"]),
+            ordered_scale: vector(&ordered["feature_scale"]),
+            ordered_env_centroids: ordered["environment_centroids"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(matrix)
+                .collect(),
+            ordered_basis: matrix(&ordered["nuisance_basis"]),
+            ordered_centroids: matrix(&ordered["centroids"]),
+            models,
+            betas: [
+                data["calibration"]["1"]["beta"].as_f64(),
+                data["calibration"]["2"]["beta"].as_f64(),
+                data["calibration"]["3"]["beta"].as_f64(),
+            ],
+        })
+    }
+
+    pub fn scores(&self, numbers: &[usize]) -> Vec<f64> {
+        let mut marginal = vec![0f64; 355];
+        for n in numbers {
+            marginal[n - 1] += 1.0;
+        }
+        let total = marginal.iter().sum::<f64>() + 0.5 * 355.0;
+        let feature = marginal
+            .iter()
+            .map(|n| ((n + 0.5) / total).sqrt())
+            .collect::<Vec<_>>();
+        let unit = normalized(subtract_basis_vec(
+            scaled_vec(&feature, &self.hellinger_mean, &self.hellinger_scale),
+            &self.hellinger_basis,
+        ));
+        let marginal = standardize(similarities_vec(&unit, &self.hellinger_centroids));
+        let weight = self.ordered_weight;
+        if weight == 0.0 {
+            return marginal;
+        }
+        let mut feature = Vec::with_capacity(74);
+        let mut start = 0;
+        for i in 0..4 {
+            let size = numbers.len() / 4 + usize::from(i < numbers.len() % 4);
+            let mut bins = vec![0.5; 16];
+            for n in &numbers[start..start + size] {
+                bins[((n - 1) * 16 / 355).min(15)] += 1.0;
+            }
+            let sum = bins.iter().sum::<f64>();
+            feature.extend(bins.into_iter().map(|x| (x / sum).sqrt()));
+            start += size;
+        }
+        let mut bins = vec![0.5; 10];
+        for n in numbers {
+            bins[n % 10] += 1.0;
+        }
+        let total = bins.iter().sum::<f64>();
+        feature.extend(bins.into_iter().map(|x| (x / total).sqrt()));
+        let standardized = scaled_vec(&feature, &self.ordered_mean, &self.ordered_scale);
+        let unit = normalized(standardized.clone());
+        let environment = self
+            .ordered_env_centroids
+            .iter()
+            .map(|rows| similarities_vec(&unit, rows))
+            .collect::<Vec<_>>();
+        let template = standardize(
+            (0..marginal.len())
+                .map(|i| {
+                    environment
+                        .iter()
+                        .map(|row| row[i])
+                        .fold(f64::NEG_INFINITY, f64::max)
+                })
+                .collect(),
+        );
+        let projected = normalized(subtract_basis_vec(standardized, &self.ordered_basis));
+        let nuisance = standardize(similarities_vec(&projected, &self.ordered_centroids));
+        let ordered = standardize(
+            template
+                .into_iter()
+                .zip(nuisance)
+                .map(|(x, y)| 0.5 * x + 0.5 * y)
+                .collect(),
+        );
+        marginal
+            .into_iter()
+            .zip(ordered)
+            .map(|(x, y)| (1.0 - weight) * x + weight * y)
+            .collect()
+    }
+
+    pub fn analyze(&self, outputs: &[String], version: &Value) -> Result<Value> {
+        if outputs.len() > 3 {
+            return Err(Error::new(422, "最多分析三组样本"));
+        }
+        let valid = outputs
+            .iter()
+            .map(|text| validate(text))
+            .filter(|numbers| numbers.len() >= 80)
+            .collect::<Vec<_>>();
+        if valid.is_empty() {
+            return Ok(Value::Null);
+        }
+        self.analyze_valid(&valid, version)
+    }
+
+    fn analyze_valid(&self, valid: &[Vec<usize>], version: &Value) -> Result<Value> {
+        let invalid = || Error::new(503, "指纹库数据无效");
+        let rows = valid
+            .iter()
+            .map(|nums| self.scores(nums))
+            .collect::<Vec<_>>();
+        if rows
+            .iter()
+            .any(|row| row.len() != self.models.len() || row.iter().any(|v| !v.is_finite()))
+        {
+            return Err(invalid());
+        }
+        let count = rows.len() as f64;
+        let combined = (0..rows[0].len())
+            .map(|i| rows.iter().map(|row| row[i]).sum::<f64>() / count)
+            .collect::<Vec<_>>();
+        let beta = self
+            .betas
+            .get(valid.len() - 1)
+            .and_then(|b| *b)
+            .ok_or_else(invalid)?;
+        let logits = combined.iter().map(|x| x * beta).collect::<Vec<_>>();
+        if logits.iter().any(|v| !v.is_finite()) {
+            return Err(invalid());
+        }
+        let top = logits.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let weights = logits.iter().map(|x| (x - top).exp()).collect::<Vec<_>>();
+        let total = weights.iter().sum::<f64>();
+        if !total.is_finite() || total <= 0.0 {
+            return Err(invalid());
+        }
+        let mut ranked = self
+            .models
+            .iter()
+            .enumerate()
+            .map(|(i, (id, display_name))| {
+                let probability = weights[i] / total;
+                (
+                    probability,
+                    json!({"model":id,"display_name":display_name,"probability":probability,"score":combined[i]}),
+                )
+            })
+            .collect::<Vec<_>>();
+        ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
+        let results = ranked
+            .into_iter()
+            .map(|(_, value)| value)
+            .collect::<Vec<_>>();
+        Ok(
+            json!({"prediction":results[0]["model"],"prediction_name":results[0]["display_name"],"probability":results[0]["probability"],"used_outputs":valid.len(),"results":results,"bank_version":version}),
+        )
+    }
+}
+
 pub fn analyze(outputs: &[String], snapshot: &(Value, Value)) -> Result<Value> {
     if outputs.len() > 3 {
         return Err(Error::new(422, "最多分析三组样本"));
@@ -284,45 +500,6 @@ pub fn analyze(outputs: &[String], snapshot: &(Value, Value)) -> Result<Value> {
     }
     // Snapshots are normally validated when installed, but analysis must also
     // reject malformed dimensions and finite inputs that overflow arithmetic.
-    crate::fingerprint_bank::validate(data)?;
-    let invalid = || Error::new(503, "指纹库数据无效");
-    let models = data["models"].as_array().ok_or_else(invalid)?;
-    let rows = valid
-        .iter()
-        .map(|nums| scores(nums, data))
-        .collect::<Vec<_>>();
-    if rows
-        .iter()
-        .any(|row| row.len() != models.len() || row.iter().any(|v| !v.is_finite()))
-    {
-        return Err(invalid());
-    }
-    let combined = (0..rows[0].len())
-        .map(|i| mean(&rows.iter().map(|row| row[i]).collect::<Vec<_>>()))
-        .collect::<Vec<_>>();
-    let beta = data["calibration"][valid.len().to_string()]["beta"]
-        .as_f64()
-        .ok_or_else(invalid)?;
-    let logits = combined.iter().map(|x| x * beta).collect::<Vec<_>>();
-    if logits.iter().any(|v| !v.is_finite()) {
-        return Err(invalid());
-    }
-    let top = logits.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let weights = logits.iter().map(|x| (x - top).exp()).collect::<Vec<_>>();
-    let total = weights.iter().sum::<f64>();
-    if !total.is_finite() || total <= 0.0 {
-        return Err(invalid());
-    }
-    let mut ranked = models.iter().enumerate().map(|(i, model)| {
-        let probability = weights[i] / total;
-        (probability, json!({"model":model["id"],"display_name":model["display_name"],"probability":probability,"score":combined[i]}))
-    }).collect::<Vec<_>>();
-    ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
-    let results = ranked
-        .into_iter()
-        .map(|(_, value)| value)
-        .collect::<Vec<_>>();
-    Ok(
-        json!({"prediction":results[0]["model"],"prediction_name":results[0]["display_name"],"probability":results[0]["probability"],"used_outputs":valid.len(),"results":results,"bank_version":version}),
-    )
+    let compiled = CompiledBank::compile(data)?;
+    compiled.analyze_valid(&valid, version)
 }

@@ -74,6 +74,7 @@ export type RecordOption = {
   user_name?: string | null;
   user_email?: string | null;
   status?: string | null;
+  platform?: string | null;
   deleted: boolean;
 };
 export type RecordOptionPage = {
@@ -131,7 +132,7 @@ export function requestType(record: {
   stream?: boolean | null;
 }): RequestType {
   for (const kind of [record.native_request_type, record.request_type]) {
-    if (kind && Object.hasOwn(requestTypes, kind)) return kind as RequestType;
+    if (kind && Object.prototype.hasOwnProperty.call(requestTypes, kind)) return kind as RequestType;
   }
   return record.openai_ws_mode ? "ws_v2" : record.stream ? "stream" : "sync";
 }

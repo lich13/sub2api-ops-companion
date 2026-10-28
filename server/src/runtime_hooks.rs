@@ -272,12 +272,19 @@ impl operations::Backend for Hooks {
                 }
                 _ => Err(Error::new(422, "未知账号操作")),
             };
-            runtime.invalidate().await;
+            runtime.invalidate_snapshot().await;
             result
         })
     }
     fn model_get(&self, id: &str) -> Result<Value> {
         self.runtime()?.tests.get(id)
+    }
+    fn account_deleted(&self, id: i64) {
+        if let Ok(runtime) = self.runtime() {
+            runtime.key_quota.forget(id);
+            let _ = runtime.key_quota.remove_account_settings(id);
+            runtime.monitor.queries.forget(id);
+        }
     }
     fn model_jobs(&self) -> Result<Vec<Value>> {
         Ok(self.runtime()?.tests.shared_data()?["jobs"]

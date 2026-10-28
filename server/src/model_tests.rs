@@ -49,6 +49,7 @@ pub(crate) struct Context {
     pub samples: Mutex<BTreeMap<usize, String>>,
     pub challenges: Vec<(usize, String)>,
     pub snapshot: Arc<(Value, Value)>,
+    pub compiled: Option<Arc<modeltrace::CompiledBank>>,
     pub lm: Option<Arc<crate::lm_detector::Snapshot>>,
     pub row: Value,
     pub owner: Value,
@@ -58,10 +59,13 @@ impl Context {
     pub fn analyze(&self, samples: &BTreeMap<usize, String>) -> Result<Value> {
         match &self.lm {
             Some(lm) => lm.analyze(samples, &self.challenges),
-            None => modeltrace::analyze(
-                &samples.values().cloned().collect::<Vec<_>>(),
-                &self.snapshot,
-            ),
+            None => {
+                let outputs = samples.values().cloned().collect::<Vec<_>>();
+                match &self.compiled {
+                    Some(compiled) => compiled.analyze(&outputs, &self.snapshot.1),
+                    None => modeltrace::analyze(&outputs, &self.snapshot),
+                }
+            }
         }
     }
 }
@@ -105,6 +109,61 @@ fn validate(value: &Value) -> Result<()> {
         return Err(error());
     }
     Ok(())
+}
+const MAX_TERMINAL_MODEL_JOBS: usize = 10_000;
+
+fn prune_terminal_jobs(value: &mut Value) {
+    let Some(total) = value["jobs"].as_object().map(|m| m.len()) else {
+        return;
+    };
+    if total <= MAX_TERMINAL_MODEL_JOBS {
+        return;
+    }
+    let pinned = value["accounts"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(_, v)| v["id"].as_str().map(str::to_owned))
+        .collect::<std::collections::HashSet<_>>();
+    let mut terminals = value["jobs"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .filter(|(_, (id, job))| {
+            let status = string(&job["status"]);
+            !ACTIVE.contains(&status)
+                && status != "needs_confirmation"
+                && job["can_retry"] != true
+                && !pinned.contains(*id)
+        })
+        .map(|(idx, (id, job))| {
+            let stamp = job["completed_at"]
+                .as_str()
+                .or_else(|| job["queued_at"].as_str())
+                .unwrap_or("")
+                .to_owned();
+            (stamp, idx, id.clone())
+        })
+        .collect::<Vec<_>>();
+    if terminals.len() <= MAX_TERMINAL_MODEL_JOBS {
+        return;
+    }
+    terminals.sort();
+    let drop_count = terminals.len() - MAX_TERMINAL_MODEL_JOBS;
+    let jobs = value["jobs"].as_object_mut().unwrap();
+    for (_, _, id) in terminals.into_iter().take(drop_count) {
+        jobs.shift_remove(&id);
+    }
+    let live_ids = value["jobs"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
+    if let Some(requests) = value["requests"].as_object_mut() {
+        requests.retain(|_, job_id| job_id.as_str().is_some_and(|id| live_ids.contains(id)));
+    }
 }
 fn normalize(value: &mut Value) {
     if value.get("requests").is_none() {
@@ -196,7 +255,9 @@ impl ModelTests {
     pub fn transaction<T>(&self, change: impl FnOnce(&mut Value) -> Result<T>) -> Result<T> {
         self.store.transaction(|data| {
             normalize(data);
-            change(data)
+            let out = change(data)?;
+            prune_terminal_jobs(data);
+            Ok(out)
         })
     }
     pub fn public(job: &Value) -> Value {
@@ -256,8 +317,14 @@ impl ModelTests {
         })
     }
     pub fn startup(&self) -> Result<()> {
-        self.shared_data()?;
+        let data = self.shared_data()?;
         if self.actions.settings.read_only {
+            return Ok(());
+        }
+        if !data["jobs"].as_object().is_some_and(|jobs| {
+            jobs.values()
+                .any(|job| matches!(string(&job["status"]), "running" | "retrying"))
+        }) {
             return Ok(());
         }
         self.transaction(|data| {
@@ -572,7 +639,7 @@ impl ModelTests {
             } else {
                 None
             };
-            let snapshot = self.bank.snapshot();
+            let (snapshot, compiled) = self.bank.compiled_snapshot();
             if job["automatic"] == true
                 && lm.is_none()
                 && !crate::model_downgrade::bank_contains(
@@ -614,6 +681,7 @@ impl ModelTests {
                 },
                 lm,
                 snapshot,
+                compiled: Some(compiled),
                 row,
                 owner,
                 target,

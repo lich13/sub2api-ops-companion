@@ -334,20 +334,7 @@ pub(crate) async fn connection(
         .or_else(|| integer(&owner["proxy_id"]).filter(|v| *v > 0));
     let proxy = if let Some(id) = proxy_id {
         let p=actions.queries.db.one("SELECT protocol,host,port,username,password FROM proxies WHERE id=$1 AND deleted_at IS NULL",&[id.into()]).await?.ok_or_else(||Error::new(409,"账号代理不可用"))?;
-        let mut url = reqwest::Url::parse(&format!(
-            "{}://{}:{}",
-            string(&p["protocol"]),
-            string(&p["host"]),
-            integer(&p["port"]).unwrap_or(0)
-        ))
-        .map_err(|_| Error::new(409, "账号代理不可用"))?;
-        if truthy(&p["username"]) {
-            url.set_username(string(&p["username"]))
-                .map_err(|_| Error::new(409, "账号代理不可用"))?;
-            url.set_password(Some(string(&p["password"])))
-                .map_err(|_| Error::new(409, "账号代理不可用"))?;
-        }
-        Some(url.to_string())
+        Some(format_proxy_url(&p)?)
     } else {
         None
     };
@@ -363,4 +350,56 @@ pub(crate) async fn connection(
         },
         owner,
     ))
+}
+
+fn format_proxy_url(p: &Value) -> Result<String> {
+    let host = string(&p["host"]);
+    let host = if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]")
+    } else {
+        host.to_owned()
+    };
+    let mut url = reqwest::Url::parse(&format!(
+        "{}://{}:{}",
+        string(&p["protocol"]),
+        host,
+        integer(&p["port"]).unwrap_or(0)
+    ))
+    .map_err(|_| Error::new(409, "账号代理不可用"))?;
+    if truthy(&p["username"]) {
+        url.set_username(string(&p["username"]))
+            .map_err(|_| Error::new(409, "账号代理不可用"))?;
+        url.set_password(Some(string(&p["password"])))
+            .map_err(|_| Error::new(409, "账号代理不可用"))?;
+    }
+    Ok(url.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn proxy_url_wraps_bare_ipv6_hosts() {
+        let bare = json!({
+            "protocol": "socks5",
+            "host": "2001:db8::1",
+            "port": 1080,
+            "username": "alice",
+            "password": "secret"
+        });
+        assert_eq!(
+            format_proxy_url(&bare).unwrap(),
+            "socks5://alice:secret@[2001:db8::1]:1080"
+        );
+        let bracketed = json!({
+            "protocol": "http",
+            "host": "[::1]",
+            "port": 8080,
+            "username": "",
+            "password": ""
+        });
+        assert_eq!(format_proxy_url(&bracketed).unwrap(), "http://[::1]:8080/");
+    }
 }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, RefreshCw, X } from "lucide-react";
 import { api } from "./bridge";
 import { fullTime } from "./types";
+import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
 
 type Group = { id: number; name: string; platform: string; version: string };
@@ -85,7 +86,6 @@ export default function ModelConfig({ online }: { online: boolean }) {
   const loadSequence = useRef(0);
   const resolveSequence = useRef(0);
   const modal = useRef<HTMLDivElement>(null);
-  const focusReturn = useRef<HTMLElement | null>(null);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -198,14 +198,7 @@ export default function ModelConfig({ online }: { online: boolean }) {
     };
   }, [selectedKey, groupId, online, checkRevision]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const isOpen = !!draft;
-  useEffect(() => {
-    if (!isOpen) return;
-    focusReturn.current = document.activeElement as HTMLElement;
-    const first = modal.current?.querySelector<HTMLElement>("input,button");
-    first?.focus();
-    return () => focusReturn.current?.focus();
-  }, [isOpen]);
+  useDialogFocus(modal, !!draft);
 
   function open(item?: Item) {
     setFormError("");
@@ -419,27 +412,12 @@ export default function ModelConfig({ online }: { online: boolean }) {
             aria-modal="true"
             aria-labelledby="reasoning-title"
             ref={modal}
+            tabIndex={-1}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
+                e.preventDefault();
                 e.stopPropagation();
                 close();
-              }
-              if (e.key === "Tab") {
-                const elements = [
-                  ...(modal.current?.querySelectorAll<HTMLElement>(
-                    "button:not(:disabled),input:not(:disabled),select:not(:disabled),summary",
-                  ) || []),
-                ];
-                const index = elements.indexOf(
-                  document.activeElement as HTMLElement,
-                );
-                if (
-                  (e.shiftKey && index <= 0) ||
-                  (!e.shiftKey && index === elements.length - 1)
-                ) {
-                  e.preventDefault();
-                  elements[e.shiftKey ? elements.length - 1 : 0]?.focus();
-                }
               }
             }}
           >

@@ -553,7 +553,7 @@ export async function run(
     }
     if (/^\/accounts\/\d+\/key-quota-settings$/.test(String(args.path))) {
       const id = Number(String(args.path).split("/")[2]);
-      if (args.method === "PUT" && Object.hasOwn((args.body || {}) as object, "access_token")) previewQuotaTokens.set(id, (args.body as {access_token:string}).access_token);
+      if (args.method === "PUT" && Object.prototype.hasOwnProperty.call((args.body || {}) as object, "access_token")) previewQuotaTokens.set(id, (args.body as {access_token:string}).access_token);
       return {account_id:id,has_access_token:!!previewQuotaTokens.get(id),revision:"b".repeat(64)};
     }
 

@@ -25,7 +25,11 @@ function readSaved(key: string): Saved {
   } catch { /* An unreadable preference never starts an operation. */ }
   return {};
 }
-function remember(key: string, saved: Saved) { localStorage.setItem(key, JSON.stringify(saved)); }
+function remember(key: string, saved: Saved) {
+  try {
+    localStorage.setItem(key, JSON.stringify(saved));
+  } catch { /* Best-effort persistence when storage quota is full. */ }
+}
 function publish(batch: OperationBatch) { setOperations([...batch.items, ...getOperations().filter(row => !batch.items.some(item => row.id === item.id))]); }
 
 export function useConnectionBatch({ connectionKey, storageKey, online, active }: {

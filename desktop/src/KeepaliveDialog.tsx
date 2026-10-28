@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, X } from "lucide-react";
 import { api, command } from "./bridge";
+import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
 import { fullTime, type Account, type AccountKeepalive } from "./types";
 
@@ -31,10 +32,10 @@ export default function KeepaliveDialog({ account, online, connectionKey, close,
   const [draft, setDraft] = useState<AccountKeepalive | null>(null);
   const [loading, setLoading] = useState(online), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const epoch = useRef(0), revision = useRef(0), saving = useRef(false);
-  const identity = useRef(""), closeAction = useRef(close);
+  const identity = useRef(""), closeAction = useRef(close), dialogRef = useRef<HTMLElement>(null);
   closeAction.current = close;
-  const closeButton = useRef<HTMLButtonElement>(null);
   const dismiss = () => { ++epoch.current; ++revision.current; closeAction.current(); };
+  useDialogFocus(dialogRef);
   useBackAction(true, dismiss);
 
   async function read() {
@@ -58,15 +59,6 @@ export default function KeepaliveDialog({ account, online, connectionKey, close,
     if (online) void read();
     return () => { ++epoch.current; ++revision.current; };
   }, [account.id, connectionKey, online]);
-  useEffect(() => {
-    const previous = document.activeElement;
-    closeButton.current?.focus();
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.isComposing) { event.preventDefault(); event.stopPropagation(); dismiss(); }
-    };
-    document.addEventListener("keydown", escape, true);
-    return () => { document.removeEventListener("keydown", escape, true); if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
-  }, []);
   useEffect(() => {
     if (!online || !value) return;
     let alive = true, timer: ReturnType<typeof setTimeout>;
@@ -103,9 +95,9 @@ export default function KeepaliveDialog({ account, online, connectionKey, close,
   }
   const disabled = loading || busy || !online || !value || value.read_only;
   return <div className="modal-backdrop" onClick={dismiss}>
-    <section className="model-detection-dialog" role="dialog" aria-modal="true" aria-label="账号保活" onClick={(event) => event.stopPropagation()}>
+    <section ref={dialogRef} className="model-detection-dialog" role="dialog" aria-modal="true" aria-label="账号保活" tabIndex={-1} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); dismiss(); } }}>
       <header><div><span className="eyebrow">{account.name} #{account.id}</span><h2>账号保活</h2></div>
-        <button ref={closeButton} type="button" className="icon-button" aria-label="关闭账号保活" onClick={dismiss}><X size={19}/></button>
+        <button type="button" className="icon-button" aria-label="关闭账号保活" onClick={dismiss}><X size={19}/></button>
       </header>
       <p className="muted">检测到符合条件的临时不可调度时尝试恢复。原生恢复也会清除模型级限制；不会打开已关闭的调度或解除降智标记。</p>
       {loading && <LoaderCircle className="spin" aria-label="正在读取保活设置"/>}

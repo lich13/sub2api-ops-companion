@@ -72,16 +72,24 @@ impl Service {
         } else {
             None
         };
-        let prior = if action == "apply" {
+        let (prior, preserve_active_prior) = if action == "apply" {
             let mut owner = self.owner.lock().unwrap_or_else(|e| e.into_inner());
-            owner.replace((
-                sha256(key),
-                Instant::now() + Duration::from_secs(900),
-                false,
-            ))
+            let active = owner
+                .as_ref()
+                .is_some_and(|(_, deadline, terminal)| !*terminal && *deadline > Instant::now());
+            let saved = owner.clone();
+            if !active {
+                *owner = Some((
+                    sha256(key),
+                    Instant::now() + Duration::from_secs(900),
+                    false,
+                ));
+            }
+            (saved, active)
         } else {
-            None
+            (None, false)
         };
+        let mut sent = false;
         let call = async {
             let mut stream = UnixStream::connect(socket)
                 .await
@@ -91,21 +99,36 @@ impl Service {
                 &json!({"action":action,"target":target,"payload":payload}),
             )
             .await?;
+            sent = true;
             let result = read_frame(&mut stream).await?;
             if result["ok"] != true {
-                if action == "apply" {
-                    *self.owner.lock().unwrap_or_else(|e| e.into_inner()) = prior;
+                if action == "apply" && !preserve_active_prior {
+                    *self.owner.lock().unwrap_or_else(|e| e.into_inner()) = prior.clone();
                 }
                 return Err(Error::new(
                     result["status"].as_u64().unwrap_or(503) as u16,
                     result["detail"].clone(),
                 ));
             }
+            if action == "apply" && preserve_active_prior {
+                *self.owner.lock().unwrap_or_else(|e| e.into_inner()) = Some((
+                    sha256(key),
+                    Instant::now() + Duration::from_secs(900),
+                    false,
+                ));
+            }
             Ok(result["value"].clone())
         };
-        let value = tokio::time::timeout(Duration::from_secs(55), call)
+        let outcome = tokio::time::timeout(Duration::from_secs(55), call)
             .await
-            .map_err(|_| Error::new(504, "配置接口超时，请查询操作状态；未重放"))??;
+            .map_err(|_| Error::new(504, "配置接口超时，请查询操作状态；未重放"));
+        if action == "apply" && !preserve_active_prior && !sent {
+            let failed_before_send = !matches!(&outcome, Ok(Ok(_)));
+            if failed_before_send {
+                *self.owner.lock().unwrap_or_else(|e| e.into_inner()) = prior;
+            }
+        }
+        let value = outcome??;
         if action == "operation"
             && self.owns_operation(key)
             && !matches!(
@@ -238,5 +261,36 @@ mod tests {
         assert!(service.owns_operation("fixture-owner"));
         assert!(!service.owns_operation("fixture-other"));
         server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn sub2api_config_failed_socket_connect_preserves_active_owner() {
+        let directory = tempfile::tempdir().unwrap();
+        let missing_socket = directory.path().join("missing-control.sock");
+        let service = Service {
+            socket: Some(missing_socket),
+            owner: Mutex::new(Some((
+                sha256("fixture-owner"),
+                Instant::now() + Duration::from_secs(900),
+                false,
+            ))),
+            apply_gate: tokio::sync::Mutex::new(()),
+        };
+        assert_eq!(
+            service
+                .request(
+                    "apply",
+                    "http://example.invalid",
+                    "fixture-other",
+                    &json!({})
+                )
+                .await
+                .unwrap_err()
+                .status
+                .as_u16(),
+            503
+        );
+        assert!(service.owns_operation("fixture-owner"));
+        assert!(!service.owns_operation("fixture-other"));
     }
 }

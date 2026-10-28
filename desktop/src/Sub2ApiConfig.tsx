@@ -451,10 +451,15 @@ export default function Sub2ApiConfig({
   const [confirm, setConfirm] = useState(false),
     [operation, setOperation] = useState<Operation | null>(null);
   const alive = useRef(true),
+    loadSeq = useRef(0),
+    draftRef = useRef(draft),
+    documentRef = useRef(document),
     conflicted = useRef(false),
     statusLoaded = useRef(false),
     uncertain = useRef(false),
     applying = running(operation);
+  draftRef.current = draft;
+  documentRef.current = document;
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -462,18 +467,20 @@ export default function Sub2ApiConfig({
     };
   }, []);
   async function load(reset = false, protectDraft = false) {
+    const seq = ++loadSeq.current;
     setBusy(true);
     setError("");
     try {
       const next = await api<ConfigDocument>("GET", "/sub2api-config");
-      if (alive.current) {
-        if (reset || !Object.keys(draft).length) conflicted.current = false;
+      if (alive.current && seq === loadSeq.current) {
+        const currentDoc = documentRef.current;
+        if (reset || !Object.keys(draftRef.current).length) conflicted.current = false;
         else if (
           protectDraft &&
-          document?.available &&
+          currentDoc?.available &&
           next.available &&
-          (document.revision !== next.revision ||
-            document.runtime_revision !== next.runtime_revision)
+          (currentDoc.revision !== next.revision ||
+            currentDoc.runtime_revision !== next.runtime_revision)
         )
           conflicted.current = true;
         setDocument(
@@ -492,14 +499,14 @@ export default function Sub2ApiConfig({
         }
       }
     } catch (e) {
-      if (alive.current) {
+      if (alive.current && seq === loadSeq.current) {
         setError(errorText(e));
         setDocument((old) =>
           old ? { ...old, editable: false, reason: errorText(e) } : old,
         );
       }
     } finally {
-      if (alive.current) setBusy(false);
+      if (alive.current && seq === loadSeq.current) setBusy(false);
     }
   }
   useEffect(() => {
@@ -666,26 +673,34 @@ export default function Sub2ApiConfig({
   const needle = query.trim().toLowerCase();
   const matches = (field: ConfigField) =>
     `${field.path} ${field.description}`.toLowerCase().includes(needle);
-  const fields = document?.available
-    ? document.catalog.fields.filter((field) => {
-        const value = document.values[field.path];
-        return (
-          !field.internal && field.status === "supported" && field.editable &&
-          value?.editable && value.source !== "environment" &&
-          (!needle ||
-            matches(field) ||
-            childrenByPath.get(field.path)?.some(matches)) &&
-          (filter === "all" ||
-            (filter === "configured" && value?.configured) ||
-            (filter === "changed" && !!draft[field.path]))
-        );
-      })
-    : [];
-  const groups = document?.available
-    ? document.catalog.groups.filter((g) =>
-        fields.some((f) => f.group === g.id),
-      )
-    : [];
+  const fields = useMemo(() => {
+    if (!document?.available) return [];
+    return document.catalog.fields.filter((field) => {
+      const value = document.values[field.path];
+      return (
+        !field.internal && field.status === "supported" && field.editable &&
+        value?.editable && value.source !== "environment" &&
+        (!needle ||
+          matches(field) ||
+          childrenByPath.get(field.path)?.some(matches)) &&
+        (filter === "all" ||
+          (filter === "configured" && value?.configured) ||
+          (filter === "changed" && !!draft[field.path]))
+      );
+    });
+  }, [document, needle, childrenByPath, filter, draft]);
+  const groupCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const field of fields) counts.set(field.group, (counts.get(field.group) ?? 0) + 1);
+    return counts;
+  }, [fields]);
+  const groups = useMemo(
+    () =>
+      document?.available
+        ? document.catalog.groups.filter((g) => (groupCounts.get(g.id) ?? 0) > 0)
+        : [],
+    [document, groupCounts],
+  );
   const aggregate = !!needle || filter !== "all";
   const selectedGroup = aggregate
     ? groups.some((g) => g.id === scopeGroup)
@@ -697,7 +712,7 @@ export default function Sub2ApiConfig({
   const shownGroups = groups.filter(
     (g) => !selectedGroup || g.id === selectedGroup,
   );
-  const count = (id: string) => fields.filter((f) => f.group === id).length;
+  const count = (id: string) => groupCounts.get(id) ?? 0;
   const shownCount = selectedGroup ? count(selectedGroup) : fields.length;
   function chooseGroup(id: string) {
     if (aggregate) setScopeGroup(id);

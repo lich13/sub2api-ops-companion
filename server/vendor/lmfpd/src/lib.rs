@@ -1,7 +1,4 @@
-//! Language-model fingerprint detection.
-//!
-//! Load the reference data with [`Detector::load`] from the published URLs (cached) or a local directory, then score
-//! saved replies with [`Detector::analyze`] or run one live round with `Detector::detect` (the default `network` feature).
+//! Language-model fingerprint detection (offline scoring and challenges).
 
 mod analysis;
 mod challenge;
@@ -10,25 +7,15 @@ mod data;
 mod error;
 mod features;
 mod ranker;
-#[cfg(feature = "network")]
-mod request;
-#[cfg(feature = "network")]
-mod sample;
 
-use std::path::PathBuf;
-#[cfg(feature = "network")]
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
 pub use challenge::generate_challenges;
-pub use data::DEFAULT_DATA_URLS;
+pub use data::Model;
 pub use error::Error;
 pub use features::parse_numbers;
-#[cfg(feature = "network")]
-pub use request::{Request, build_request};
-#[cfg(feature = "network")]
-pub use sample::request_sample;
 
 /// One model reply and the number count its challenge asked for.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,57 +29,6 @@ pub struct Challenge {
     pub id: String,
     pub expected_count: u64,
     pub prompt: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Api {
-    #[default]
-    Responses,
-    ChatCompletions,
-    Messages,
-}
-
-/// Settings for live detection. [`DetectConfig::new`] fills the defaults.
-#[derive(Debug, Clone, PartialEq)]
-pub struct DetectConfig {
-    pub base_url: String,
-    pub api_key: String,
-    pub model: String,
-    /// Default [`Api::Responses`].
-    pub api: Api,
-    /// Reasoning effort sent to the model. Empty sends none; `none` disables thinking on Messages.
-    pub effort: String,
-    /// `flex`, `default`, `fast`, or `ultrafast`. `default` sends no tier field.
-    pub service_tier: String,
-    /// Default true.
-    pub stream: bool,
-    /// Require three complete replies and no truncation. Needs `count` 3. Default false.
-    pub strict: bool,
-    /// Challenges per round, 1 to 3. Default 3.
-    pub count: usize,
-    /// Concurrent requests, 1 to 3, capped at `count`. Default 3.
-    pub parallel: usize,
-    /// Seconds to wait for the first SSE byte or the whole JSON response. Default 120.
-    pub timeout: f64,
-}
-
-impl DetectConfig {
-    pub fn new(base_url: impl Into<String>, api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self {
-            base_url: base_url.into(),
-            api_key: api_key.into(),
-            model: model.into(),
-            api: Api::Responses,
-            effort: String::new(),
-            service_tier: "default".into(),
-            stream: true,
-            strict: false,
-            count: 3,
-            parallel: 3,
-            timeout: 120.0,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -184,63 +120,11 @@ pub struct Analysis {
     pub evidence: Evidence,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SampleState {
-    Complete,
-    Truncated,
-    Failed,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Sample {
-    pub state: SampleState,
-    /// The numbers used for scoring; capped at `expected_count` when the reply had more.
-    pub text: String,
-    pub raw_text: String,
-    pub count: u64,
-    pub expected_count: u64,
-    pub response_model: Option<String>,
-    pub response_id: Option<String>,
-    pub error: Option<String>,
-}
-
-#[cfg(feature = "network")]
-impl Sample {
-    fn accepted(&self) -> bool {
-        matches!(self.state, SampleState::Complete | SampleState::Truncated)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DetectResult {
-    pub challenges: Vec<Challenge>,
-    pub samples: Vec<Sample>,
-    pub analysis: Option<Analysis>,
-    /// Why the round has no ranking, or `None` when it has one.
-    pub error: Option<String>,
-}
-
 /// Where [`Detector::load`] gets the reference data.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct LoadOptions {
-    /// Base URLs, each ending in `/`, tried in order; or a single local directory holding `unified_bank.json` and
-    /// `shared_detector.bin`, such as `projects/data`. Default [`DEFAULT_DATA_URLS`].
+    /// A single local directory holding `unified_bank.json` and `shared_detector.bin`.
     pub sources: Vec<String>,
-    /// The cache file for URL sources. Default `<OS cache directory>/lmfpd/data.bin`.
-    pub cache: PathBuf,
-    /// Seconds after a check before the cache is refreshed in the background; 0 checks on every load. Default 86400.
-    pub ttl: f64,
-}
-
-impl Default for LoadOptions {
-    fn default() -> Self {
-        Self {
-            sources: DEFAULT_DATA_URLS.iter().map(|url| url.to_string()).collect(),
-            cache: data::default_cache_path(),
-            ttl: 86_400.0,
-        }
-    }
 }
 
 /// A loaded reference bank and detector.
@@ -249,11 +133,25 @@ pub struct Detector {
 }
 
 impl Detector {
-    /// Loads the reference data. A single local directory is read as is, without the cache. For URLs, an existing
-    /// cache is returned at once and, when last checked over a day ago, refreshed in a background thread for the next
-    /// load; without a cache the data is downloaded first.
+    /// Loads the reference data from a single local directory.
     pub fn load(options: &LoadOptions) -> Result<Self, Error> {
-        Ok(Self { data: data::load(&options.sources, &options.cache, options.ttl)? })
+        Ok(Self {
+            data: data::load(&options.sources)?,
+        })
+    }
+
+    /// Loads the reference data directly from a local directory path.
+    pub fn load_dir(dir: &Path) -> Result<Self, Error> {
+        Ok(Self {
+            data: data::load_dir(dir)?,
+        })
+    }
+
+    /// Loads the reference data directly from in-memory `unified_bank.json` and `shared_detector.bin` bytes.
+    pub fn load_bytes(bank_json: &[u8], detector_bin: &[u8]) -> Result<Self, Error> {
+        Ok(Self {
+            data: data::load_bytes(bank_json, detector_bin)?,
+        })
     }
 
     /// `built_at` of the reference bank, which identifies the data build.
@@ -261,63 +159,14 @@ impl Detector {
         &self.data.built_at
     }
 
+    /// Parsed reference bank models in canonical detector order.
+    pub fn models(&self) -> &[Model] {
+        &self.data.models
+    }
+
     /// Scores one to three saved replies. Three valid replies give a calibrated ranking; fewer give a partial
     /// ranking unless `strict` is set.
     pub fn analyze(&self, outputs: &[Output], strict: bool) -> Result<Analysis, Error> {
         analysis::analyze_outputs(outputs, &self.data, strict)
-    }
-
-    /// Sends one round of challenges to the model API and scores the replies. Errors only on an invalid config.
-    #[cfg(feature = "network")]
-    pub fn detect(&self, config: &DetectConfig) -> Result<DetectResult, Error> {
-        let options = request::Options::new(config)?;
-        let challenges = generate_challenges(options.count)?;
-        let next = AtomicUsize::new(0);
-        let mut slots: Vec<Option<Sample>> = vec![None; challenges.len()];
-        std::thread::scope(|scope| {
-            let workers: Vec<_> = (0..options.parallel)
-                .map(|_| {
-                    scope.spawn(|| {
-                        let mut done = Vec::new();
-                        loop {
-                            let index = next.fetch_add(1, Ordering::Relaxed);
-                            let Some(challenge) = challenges.get(index) else { break };
-                            done.push((index, sample::sample(&options, challenge)));
-                        }
-                        done
-                    })
-                })
-                .collect();
-            for worker in workers {
-                for (index, sample) in worker.join().expect("sampler thread panicked") {
-                    slots[index] = Some(sample);
-                }
-            }
-        });
-        let samples: Vec<Sample> = slots.into_iter().map(|slot| slot.expect("every challenge is sampled")).collect();
-        let (analysis, error) = self.score_round(&samples, options.strict);
-        Ok(DetectResult { challenges, samples, analysis, error })
-    }
-
-    #[cfg(feature = "network")]
-    fn score_round(&self, samples: &[Sample], strict: bool) -> (Option<Analysis>, Option<String>) {
-        let accepted = samples.iter().filter(|sample| sample.accepted()).count();
-        if strict && accepted != 3 {
-            return (None, Some(format!("Strict mode requires 3/3 successful samples; received {accepted}/3.")));
-        }
-        if accepted == 0 {
-            return (None, Some("No valid samples. This round cannot be scored.".into()));
-        }
-        let outputs: Vec<(&str, u64)> = samples
-            .iter()
-            .map(|sample| (if sample.accepted() { sample.text.as_str() } else { "" }, sample.expected_count))
-            .collect();
-        match analysis::score(&outputs, &self.data, strict) {
-            Ok(analysis) => {
-                let error = analysis.results.is_empty().then(|| analysis.evidence.reason.clone());
-                (Some(analysis), error)
-            }
-            Err(error) => (None, Some(error.to_string())),
-        }
     }
 }

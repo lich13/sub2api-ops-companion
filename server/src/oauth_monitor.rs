@@ -149,6 +149,16 @@ impl Monitor {
         Ok(cache.1.clone())
     }
     fn initialize_queries(&self, rows: &[Value]) -> Result<()> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let shared = self.store.shared_snapshot()?;
+        if rows.iter().all(|row| {
+            let id = integer(&row["id"]).unwrap_or(0).to_string();
+            shared["scheduler"][&id]["quota_query"].is_object()
+        }) {
+            return Ok(());
+        }
         self.store.transaction(|state| {
             for row in rows {
                 let id = integer(&row["id"]).unwrap_or(0).to_string();
@@ -307,11 +317,10 @@ impl Monitor {
         let inventory = self.inventory(false).await?;
         let all_live = self.live_rows(&inventory).await?;
         self.credits.sweep(&all_live, now).await?;
+        let methods = recovery_policy::MethodIndex::from_config(&config);
         let rows = all_live
             .into_iter()
-            .filter(|row| {
-                recovery_policy::method(&config, integer(&row["id"]).unwrap_or(0)).is_some()
-            })
+            .filter(|row| methods.method(integer(&row["id"]).unwrap_or(0)).is_some())
             .collect::<Vec<_>>();
         let enabled = config["oauth_recovery_monitor_enabled"] != false;
         let state = self.shared_state()?;

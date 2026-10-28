@@ -21,7 +21,7 @@ export default function ConnectionStatusCard({ connectionKey }: { connectionKey:
   }, [connectionKey, revision]);
   return <section className="settings-card connection-diagnostic" aria-label="连接诊断">
     <div className="connection-diagnostic-heading"><h2>连接诊断</h2><button disabled={loading} onClick={() => setRevision((value) => value + 1)}>{loading ? <LoaderCircle size={15} className="spin"/> : <RefreshCw size={15}/>}重新检查</button></div>
-    {status && <div role="status"><strong className={status.state === "ok" ? "good-text" : "bad-text"}>{labels[status.state] || "连接状态未知"}</strong>{status.message && <p>{status.message}</p>}<span className="muted">{status.http_status ? `HTTP ${status.http_status} · ` : ""}{fullTime(status.checked_at)}</span></div>}
+    {status && <div role="status"><strong className={status.state === "ok" ? "good-text" : "bad-text"}><span className={`status-dot ${status.state === "ok" ? "good" : "bad"}`} aria-hidden="true"/>{labels[status.state] || "连接状态未知"}</strong>{status.message && <p>{status.message}</p>}<span className="muted">{status.http_status ? `HTTP ${status.http_status} · ` : ""}{fullTime(status.checked_at)}</span></div>}
     {error && <p className="bad-text" role="alert">{error}</p>}
   </section>;
 }

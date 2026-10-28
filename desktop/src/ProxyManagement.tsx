@@ -81,11 +81,25 @@ export default function ProxyManagement({
   active,
   online,
   connectionKey,
+  mobile = false,
 }: {
   active: boolean;
   online: boolean;
   connectionKey: string;
+  mobile?: boolean;
 }) {
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== "undefined" && Boolean(window.matchMedia?.("(max-width: 760px)").matches),
+  );
+  useEffect(() => {
+    const media = typeof window !== "undefined" ? window.matchMedia?.("(max-width: 760px)") : undefined;
+    if (!media) return;
+    const sync = () => setNarrow(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+  const compact = mobile || narrow;
   const [data, setData] = useState<ProxyPage>(emptyPage),
     [search, setSearch] = useState(""),
     [protocol, setProtocol] = useState(""),
@@ -780,159 +794,162 @@ export default function ProxyManagement({
           )}
         </div>
       )}
-      <div
-        className="proxy-table-scroll"
-        role="region"
-        aria-label="IP 列表"
-        tabIndex={0}
-      >
-        <table className="proxy-table">
-          <colgroup>
-            {Array.from({ length: 11 }, (_, i) => (
-              <col key={i} />
-            ))}
-          </colgroup>
-          <thead>
-            <tr>
-              <th className="proxy-pin-select">
-                <input
-                  type="checkbox"
-                  aria-label="全选 IP"
-                  checked={
-                    data.items.length > 0 && selected.size === data.items.length
-                  }
-                  onChange={(e) =>
-                    setSelected(
-                      new Set(
-                        e.target.checked ? data.items.map((p) => p.id) : [],
-                      ),
-                    )
-                  }
-                />
-              </th>
-              <th className="proxy-pin-name">{sortTitle("名称", "name")}</th>
-              <th>{sortTitle("协议", "protocol")}</th>
-              <th>地址</th>
-              <th>认证</th>
-              <th>地理位置</th>
-              <th>{sortTitle("账号数", "account_count")}</th>
-              <th>延迟与质量</th>
-              <th>有效期</th>
-              <th>状态</th>
-              <th className="proxy-pin-actions">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.items.map((row) => (
-              <tr
-                key={row.id}
-                className={selected.has(row.id) ? "selected" : ""}
-              >
-                <td className="proxy-pin-select">
+      {compact ? (
+        <div className="proxy-mobile-list">
+          {data.items.map((row) => (
+            <article
+              key={row.id}
+              className={selected.has(row.id) ? "selected" : ""}
+            >
+              <header>
+                <label>
                   <input
                     type="checkbox"
                     aria-label={`选择 ${row.name}`}
                     checked={selected.has(row.id)}
                     onChange={() => toggle(row.id)}
                   />
-                </td>
-                <td className="proxy-pin-name">
-                  <b title={row.name}>{row.name}</b>
-                </td>
-                <td>
-                  <span className="proxy-badge protocol">
-                    {row.protocol.toUpperCase()}
-                  </span>
-                </td>
-                <td>
-                  <div className="proxy-address">
-                    <code title={proxyAddress(row)}>{proxyAddress(row)}</code>
-                    <button
-                      className="icon-button"
-                      aria-label={`复制 ${row.name} 地址`}
-                      disabled={blocked}
-                      onClick={() => void copy(row, false)}
-                    >
-                      <Copy size={13} />
-                    </button>
-                  </div>
-                </td>
-                <td>{auth(row)}</td>
-                <td>
-                  <span className="proxy-location" title={location(row)}>
-                    {location(row)}
-                  </span>
-                </td>
-                <td>
-                  <button
-                    className="proxy-count"
-                    disabled={blocked}
-                    onClick={() => accounts(row)}
-                  >
-                    {row.account_count ?? 0} 个账号
-                  </button>
-                </td>
-                <td>{quality(row)}</td>
-                <td>
-                  <time
-                    className={row.status === "expired" ? "bad-text" : "muted"}
-                  >
-                    {row.expires_at ? fullTime(row.expires_at) : "长期有效"}
-                  </time>
-                </td>
-                <td>{statusButton(row)}</td>
-                <td className="proxy-pin-actions">{rowActions(row)}</td>
+                  <b>{row.name}</b>
+                </label>
+                {statusButton(row)}
+              </header>
+              <div className="proxy-mobile-address">
+                <span className="proxy-badge protocol">
+                  {row.protocol.toUpperCase()}
+                </span>
+                <code title={proxyAddress(row)}>{proxyAddress(row)}</code>
+                <button
+                  aria-label={`复制 ${row.name} 地址`}
+                  disabled={blocked}
+                  onClick={() => void copy(row, false)}
+                >
+                  <Copy size={15} />
+                </button>
+              </div>
+              <div className="proxy-mobile-facts">
+                <span>{location(row)}</span>
+                <button disabled={blocked} onClick={() => accounts(row)}>
+                  {row.account_count ?? 0} 个账号
+                </button>
+                <span>
+                  {row.expires_at ? fullTime(row.expires_at) : "长期有效"}
+                </span>
+                {auth(row)}
+              </div>
+              {quality(row)}
+              {rowActions(row)}
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div
+          className="proxy-table-scroll"
+          role="region"
+          aria-label="IP 列表"
+          tabIndex={0}
+        >
+          <table className="proxy-table">
+            <colgroup>
+              {Array.from({ length: 11 }, (_, i) => (
+                <col key={i} />
+              ))}
+            </colgroup>
+            <thead>
+              <tr>
+                <th className="proxy-pin-select">
+                  <input
+                    type="checkbox"
+                    aria-label="全选 IP"
+                    checked={
+                      data.items.length > 0 && selected.size === data.items.length
+                    }
+                    onChange={(e) =>
+                      setSelected(
+                        new Set(
+                          e.target.checked ? data.items.map((p) => p.id) : [],
+                        ),
+                      )
+                    }
+                  />
+                </th>
+                <th className="proxy-pin-name">{sortTitle("名称", "name")}</th>
+                <th>{sortTitle("协议", "protocol")}</th>
+                <th>地址</th>
+                <th>认证</th>
+                <th>地理位置</th>
+                <th>{sortTitle("账号数", "account_count")}</th>
+                <th>延迟与质量</th>
+                <th>有效期</th>
+                <th>状态</th>
+                <th className="proxy-pin-actions">操作</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="proxy-mobile-list">
-        {data.items.map((row) => (
-          <article
-            key={row.id}
-            className={selected.has(row.id) ? "selected" : ""}
-          >
-            <header>
-              <label>
-                <input
-                  type="checkbox"
-                  aria-label={`选择 ${row.name}`}
-                  checked={selected.has(row.id)}
-                  onChange={() => toggle(row.id)}
-                />
-                <b>{row.name}</b>
-              </label>
-              {statusButton(row)}
-            </header>
-            <div className="proxy-mobile-address">
-              <span className="proxy-badge protocol">
-                {row.protocol.toUpperCase()}
-              </span>
-              <code title={proxyAddress(row)}>{proxyAddress(row)}</code>
-              <button
-                aria-label={`复制 ${row.name} 地址`}
-                disabled={blocked}
-                onClick={() => void copy(row, false)}
-              >
-                <Copy size={15} />
-              </button>
-            </div>
-            <div className="proxy-mobile-facts">
-              <span>{location(row)}</span>
-              <button disabled={blocked} onClick={() => accounts(row)}>
-                {row.account_count ?? 0} 个账号
-              </button>
-              <span>
-                {row.expires_at ? fullTime(row.expires_at) : "长期有效"}
-              </span>
-              {auth(row)}
-            </div>
-            {quality(row)}
-            {rowActions(row)}
-          </article>
-        ))}
-      </div>
+            </thead>
+            <tbody>
+              {data.items.map((row) => (
+                <tr
+                  key={row.id}
+                  className={selected.has(row.id) ? "selected" : ""}
+                >
+                  <td className="proxy-pin-select">
+                    <input
+                      type="checkbox"
+                      aria-label={`选择 ${row.name}`}
+                      checked={selected.has(row.id)}
+                      onChange={() => toggle(row.id)}
+                    />
+                  </td>
+                  <td className="proxy-pin-name">
+                    <b title={row.name}>{row.name}</b>
+                  </td>
+                  <td>
+                    <span className="proxy-badge protocol">
+                      {row.protocol.toUpperCase()}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="proxy-address">
+                      <code title={proxyAddress(row)}>{proxyAddress(row)}</code>
+                      <button
+                        className="icon-button"
+                        aria-label={`复制 ${row.name} 地址`}
+                        disabled={blocked}
+                        onClick={() => void copy(row, false)}
+                      >
+                        <Copy size={13} />
+                      </button>
+                    </div>
+                  </td>
+                  <td>{auth(row)}</td>
+                  <td>
+                    <span className="proxy-location" title={location(row)}>
+                      {location(row)}
+                    </span>
+                  </td>
+                  <td>
+                    <button
+                      className="proxy-count"
+                      disabled={blocked}
+                      onClick={() => accounts(row)}
+                    >
+                      {row.account_count ?? 0} 个账号
+                    </button>
+                  </td>
+                  <td>{quality(row)}</td>
+                  <td>
+                    <time
+                      className={row.status === "expired" ? "bad-text" : "muted"}
+                    >
+                      {row.expires_at ? fullTime(row.expires_at) : "长期有效"}
+                    </time>
+                  </td>
+                  <td>{statusButton(row)}</td>
+                  <td className="proxy-pin-actions">{rowActions(row)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       {!data.items.length && (
         <div className="proxy-empty">
           {loading

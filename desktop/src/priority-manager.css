@@ -19,7 +19,8 @@
 .priority-column > p { margin: 10px 12px; font-size: 12px; overflow-wrap: anywhere; }
 .priority-column > p button { margin-left: 6px; }
 .priority-tabs { display: flex; gap: 4px; overflow-x: auto; padding: 0 0 10px; }
-.priority-tabs button { gap: 6px; font-size: 12px; background: transparent; border-color: transparent; }
+.priority-tabs button { min-height: var(--control-h-compact); gap: 6px; font-size: 12px; background: transparent; border-color: transparent; }
+.priority-tabs button:hover:not(:disabled) { border-color: transparent; }
 .priority-tabs button[aria-selected="true"] { background: var(--accent-bg); color: var(--accent); }
 .priority-tabs button > span { font-variant-numeric: tabular-nums; color: var(--muted); }
 .priority-tabs i { display: block; height: 5px; width: 5px; border-radius: 50%; background: var(--accent); }
@@ -39,7 +40,7 @@
 .priority-slot-filtered { min-height: 0; }
 .priority-account-row { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto minmax(34px, auto); align-items: center; gap: 6px; padding: 8px; min-height: 64px; }
 .priority-account-row.dragging { opacity: .45; }
-.priority-grip { padding: 4px 0; min-width: 24px; border: 0; background: transparent; color: var(--muted); cursor: grab; touch-action: none; }
+.priority-grip { min-height: 0; padding: 4px 0; min-width: 24px; border: 0; background: transparent; color: var(--muted); cursor: grab; touch-action: none; }
 .priority-identity { min-width: 0; }
 .priority-identity strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
 .priority-identity small { display: flex; gap: 4px 8px; align-items: center; flex-wrap: wrap; color: var(--muted); font-size: 11px; margin-top: 4px; overflow-wrap: anywhere; }
@@ -52,7 +53,7 @@
 .priority-draft { padding: 12px; background: var(--surface); border-top: 1px solid var(--line); }
 .priority-draft p { color: var(--muted); font-size: 12px; line-height: 1.5; margin: 0 0 8px; overflow-wrap: anywhere; }
 .priority-draft > div { flex-wrap: wrap; gap: 6px; }
-.priority-draft button { gap: 4px; padding: 6px 8px; font-size: 12px; }
+.priority-draft button { min-height: var(--control-h-compact); gap: 4px; padding: 5px 9px; font-size: 12px; }
 .priority-draft .primary { margin-left: auto; }
 .priority-draft > div + p { margin: 8px 0 0; }
 .priority-empty { padding: 20px 12px; color: var(--muted); }
@@ -74,7 +75,7 @@
 .priority-account-controls { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .priority-task-state { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px; font-size: 12px; }
 .priority-task-state > span { flex: 1; overflow-wrap: anywhere; color: var(--muted); }
-.priority-task-state button { font-size: 12px; padding: 5px 8px; }
+.priority-task-state button { min-height: var(--control-h-dense); font-size: 12px; padding: 4px 8px; }
 .priority-result { overflow-wrap: anywhere; }
 .app.mobile .priority-account-controls { grid-column: 2 / -1; flex-direction: row; justify-content: flex-end; }
 .has-parallel-slots .priority-account-row { grid-template-columns: 24px minmax(0, 1fr) auto; }

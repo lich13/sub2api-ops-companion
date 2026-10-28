@@ -30,12 +30,13 @@
 .records-toolbar input,
 .records-toolbar select {
   height: 28px;
+  min-height: 28px;
   min-width: 0;
   padding: 3px 6px;
   border: 1px solid var(--line);
   border-radius: 6px;
   color: var(--ink);
-  background: var(--surface);
+  background-color: var(--surface);
 }
 .records-toolbar select {
   max-width: 155px;
@@ -113,6 +114,7 @@
   gap: 10px;
   width: 100%;
   height: 28px;
+  min-height: 28px;
   padding: 3px 6px;
   text-align: left;
   font-size: 12px;
@@ -171,7 +173,8 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 8px;
+  min-height: 30px;
+  padding: 6px 8px;
   border: 0;
   border-radius: 5px;
   background: transparent;
@@ -235,15 +238,9 @@
 }
 .records-toolbar .record-filter-more {
   display: block;
+  min-height: 28px;
   margin: 5px auto;
   font-size: 11px;
-}
-.records-date-range {
-  flex-basis: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--muted);
 }
 .records-actions {
   display: flex;
@@ -396,6 +393,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 3px;
+  min-height: 0;
   text-align: left;
   background: transparent;
   border: 0;
@@ -800,7 +798,7 @@
 .app:not(.mobile) .records-table .record-col-ip { min-width: 108px; }
 .app:not(.mobile) .records-table .record-col-request_id,
 .app:not(.mobile) .records-table .record-col-upstream_id { min-width: 130px; }
-.record-cost-trigger { border: 0; background: transparent; padding: 0; text-align: left; font: inherit; cursor: help; box-shadow: none; }
+.record-cost-trigger { min-height: 0; border: 0; background: transparent; padding: 0; text-align: left; font: inherit; cursor: help; box-shadow: none; }
 .record-cost-trigger > span { display: inline-flex; align-items: center; gap: 4px; }
 .record-cost-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .record-cost-tooltip { position: fixed; z-index: 1000; width: max-content; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; padding: 12px 14px; border: 1px solid #495265; border-radius: 10px; background: #111827; color: #f9fafb; box-shadow: 0 12px 35px #0005; font-size: 12px; pointer-events: auto; }
@@ -817,7 +815,7 @@
 .record-cost-tooltip .cost-section { border-top: 1px solid #374151; margin-top: 6px; padding-top: 9px; }
 
 .records-platform-select { position: relative; display: flex; align-items: center; min-width: 0; }
-.records-platform-select select { appearance: none; width: 100%; max-width: none; padding-right: 28px; text-overflow: ellipsis; }
+.records-platform-select select { -webkit-appearance: none; appearance: none; background-image: none; width: 100%; max-width: none; padding-right: 28px; text-overflow: ellipsis; }
 .records-platform-select > svg { position: absolute; right: 6px; color: var(--muted); pointer-events: none; }
 .app:not(.mobile) .records-date-trigger,
 .app:not(.mobile) .records-toolbar .record-filter-trigger,

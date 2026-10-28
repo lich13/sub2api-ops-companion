@@ -190,7 +190,16 @@ fn escaped(value: &str) -> String {
             .replace('_', "\\_")
     )
 }
-async fn usage_selection(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Result<String> {
+async fn usage_selection(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Result<&'static str> {
+    static WITH_COMPACTION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+        format!(
+            "{}, COALESCE(u.native_compaction_v2, false) AS native_compaction_v2",
+            sql::USAGE_SELECT
+        )
+    });
+    static WITHOUT_COMPACTION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+        format!("{}, false AS native_compaction_v2", sql::USAGE_SELECT)
+    });
     // Resolve the same relation as the page/detail query, including its search_path.
     // Check on each read so an upstream migration takes effect without a restart.
     let has_compaction: bool = sqlx::query_scalar(
@@ -198,15 +207,11 @@ async fn usage_selection(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Resu
     )
     .fetch_one(&mut **tx)
     .await?;
-    let compaction = if has_compaction {
-        "COALESCE(u.native_compaction_v2, false)"
+    Ok(if has_compaction {
+        WITH_COMPACTION.as_str()
     } else {
-        "false"
-    };
-    Ok(format!(
-        "{}, {compaction} AS native_compaction_v2",
-        sql::USAGE_SELECT
-    ))
+        WITHOUT_COMPACTION.as_str()
+    })
 }
 fn decode_cursor(value: &str) -> Result<Value> {
     if value.len() > 2048 {

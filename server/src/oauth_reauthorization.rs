@@ -123,7 +123,7 @@ impl Runtime {
                 "授权结果已变化或未确认，请刷新账号核对；未重放请求",
             ));
         }
-        self.invalidate().await;
+        self.invalidate_snapshot().await;
         Ok(json!({"account_id":id,"verified":true,"status":string(&confirmed["status"])}))
     }
 }

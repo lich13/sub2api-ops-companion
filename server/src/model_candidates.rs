@@ -153,20 +153,23 @@ impl Candidates {
             if let Some(models) = models {
                 entries.insert(identity.to_owned(), json!(models));
             }
-            while entries.len() > MAX_ENTRIES
-                || entries
-                    .values()
-                    .map(|v| {
+            let mut sizes = entries
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        k.clone(),
                         serde_json::to_vec(v)
                             .map(|v| v.len())
-                            .unwrap_or(MAX_BYTES + 1)
-                    })
-                    .sum::<usize>()
-                    > MAX_BYTES
-            {
-                let Some(oldest) = entries.keys().next().cloned() else {
+                            .unwrap_or(MAX_BYTES + 1),
+                    )
+                })
+                .collect::<std::collections::VecDeque<_>>();
+            let mut total_bytes: usize = sizes.iter().map(|(_, s)| *s).sum();
+            while entries.len() > MAX_ENTRIES || total_bytes > MAX_BYTES {
+                let Some((oldest, size)) = sizes.pop_front() else {
                     break;
                 };
+                total_bytes = total_bytes.saturating_sub(size);
                 entries.shift_remove(&oldest);
             }
             Ok(())

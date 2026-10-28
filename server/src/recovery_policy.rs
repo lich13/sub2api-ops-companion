@@ -3,11 +3,53 @@ use crate::{
     error::{Error, Result},
 };
 use serde_json::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 pub const CONNECTION_IDS: &str = "oauth_recovery_connection_account_ids";
 pub const MODEL_IDS: &str = "oauth_recovery_model_account_ids";
 pub const SEEN_IDS: &str = "oauth_recovery_seen_account_ids";
+
+pub struct MethodIndex {
+    default_connection: bool,
+    models: HashSet<i64>,
+    connections: HashSet<i64>,
+}
+
+impl MethodIndex {
+    pub fn from_config(config: &Value) -> Self {
+        let default_connection = config[CONNECTION_IDS].is_null() && config[MODEL_IDS].is_null();
+        let models = config[MODEL_IDS]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(integer)
+            .collect();
+        let connections = config[CONNECTION_IDS]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(integer)
+            .collect();
+        Self {
+            default_connection,
+            models,
+            connections,
+        }
+    }
+
+    pub fn method(&self, id: i64) -> Option<&'static str> {
+        if self.default_connection {
+            return Some("connection");
+        }
+        if self.models.contains(&id) {
+            Some("model")
+        } else if self.connections.contains(&id) {
+            Some("connection")
+        } else {
+            None
+        }
+    }
+}
 
 pub fn account_ids(value: &Value) -> Result<BTreeSet<i64>> {
     let items = value

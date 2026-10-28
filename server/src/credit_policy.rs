@@ -9,7 +9,10 @@ use crate::{
 use chrono::{DateTime, Duration, Utc};
 use futures_util::{stream, StreamExt};
 use serde_json::{json, Value};
-use std::{borrow::Cow, collections::BTreeMap};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+};
 impl CreditController {
     pub async fn sweep(
         &self,
@@ -132,7 +135,9 @@ impl CreditController {
         if self.actions.settings.read_only {
             return Ok(());
         }
-        if self.hooks.config()?["oauth_auto_reset_credit_enabled"] != true
+        let config = self.hooks.config()?;
+        let enabled = truthy(&config["oauth_auto_reset_credit_enabled"]);
+        if !enabled
             && !self.store.shared_snapshot()?["scheduler"]
                 .as_object()
                 .into_iter()
@@ -142,10 +147,76 @@ impl CreditController {
             return Ok(());
         }
         self.sweep(rows, at).await?;
-        let results = stream::iter(rows.iter().map(|row| self.run_account(row, at)))
-            .buffer_unordered(8)
-            .collect::<Vec<_>>()
-            .await;
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let snapshot = self.store.shared_snapshot()?;
+        let mut active_set = BTreeSet::new();
+        for (key, meta) in snapshot["scheduler"].as_object().into_iter().flatten() {
+            let Ok(id) = key.parse::<i64>() else {
+                continue;
+            };
+            let task = &meta["auto_reset_credit"];
+            let task_needs_step = if !truthy(task) || (!enabled && !truthy(&task["policy_version"]))
+            {
+                false
+            } else {
+                let stage = string(&task["stage"]);
+                let owns_unissued = truthy(&task["owns_pause"]) && !truthy(&task["attempt_at"]);
+                !((matches!(stage, "recovered" | "closed") && !truthy(&task["owns_pause"]))
+                    || (stage == "finished"
+                        && truthy(&task["recovered_evidence_at"])
+                        && !owns_unissued)
+                    || (credit_rules::LEGACY_ENDED.contains(&stage)
+                        && !truthy(&task["policy_version"])
+                        && stage != "manual"))
+            };
+            let admission = &meta["credit_admission"];
+            let admission_unrecovered =
+                enabled && truthy(admission) && !truthy(&admission["recovered_at"]);
+            if task_needs_step || admission_unrecovered {
+                active_set.insert(id);
+            }
+        }
+        if !enabled && active_set.is_empty() {
+            return Ok(());
+        }
+        let candidate_ids: Vec<i64> = rows
+            .iter()
+            .filter_map(|row| integer(&row["id"]))
+            .filter(|id| enabled || active_set.contains(id))
+            .collect();
+        if candidate_ids.is_empty() {
+            return Ok(());
+        }
+        let active_ids: Vec<i64> = active_set.into_iter().collect();
+        let matched: BTreeSet<i64> = self
+            .actions
+            .queries
+            .db
+            .all(
+                "SELECT id FROM accounts WHERE deleted_at IS NULL AND id = ANY($1) AND (id = ANY($2) OR rate_limit_reset_at > $3)",
+                &[
+                    crate::db::Param::Ints(candidate_ids),
+                    crate::db::Param::Ints(active_ids),
+                    at.into(),
+                ],
+            )
+            .await?
+            .into_iter()
+            .filter_map(|row| integer(&row["id"]))
+            .collect();
+        if matched.is_empty() {
+            return Ok(());
+        }
+        let results = stream::iter(
+            rows.iter()
+                .filter(|row| integer(&row["id"]).is_some_and(|id| matched.contains(&id)))
+                .map(|row| self.run_account(row, at)),
+        )
+        .buffer_unordered(8)
+        .collect::<Vec<_>>()
+        .await;
         for result in results {
             result?;
         }

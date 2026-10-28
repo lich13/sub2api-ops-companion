@@ -10,15 +10,22 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
 };
 
 type Validator = fn(&Value) -> Result<()>;
+type CachedSnapshot = Option<(FileStamp, u64, Arc<Value>)>;
+
+static NEXT_CACHE_REVISION: AtomicU64 = AtomicU64::new(1);
+
+fn next_cache_revision() -> u64 {
+    NEXT_CACHE_REVISION.fetch_add(1, Ordering::Relaxed)
+}
 
 #[derive(Clone, PartialEq, Eq)]
-struct FileStamp {
+pub(crate) struct FileStamp {
     length: u64,
     modified: Option<std::time::SystemTime>,
     #[cfg(unix)]
@@ -45,11 +52,12 @@ struct Inner {
     path: PathBuf,
     lock_path: PathBuf,
     defaults: Arc<Value>,
+    default_revision: u64,
     existed: AtomicBool,
     mutex: Mutex<()>,
     read_only: bool,
     validate: Validator,
-    cache: Mutex<Option<(FileStamp, Arc<Value>)>>,
+    cache: Mutex<CachedSnapshot>,
 }
 
 #[derive(Clone)]
@@ -96,6 +104,7 @@ impl Store {
             path,
             lock_path,
             defaults: Arc::new(defaults),
+            default_revision: next_cache_revision(),
             existed: AtomicBool::new(existed),
             mutex: Mutex::new(()),
             read_only,
@@ -115,6 +124,11 @@ impl Store {
     pub fn is_read_only(&self) -> bool {
         self.0.read_only
     }
+    pub(crate) fn evict_cache(&self) {
+        if let Ok(mut cache) = self.0.cache.lock() {
+            *cache = None;
+        }
+    }
 
     pub fn read(&self) -> Result<Value> {
         Ok((*self.read_shared()?).clone())
@@ -123,13 +137,21 @@ impl Store {
     /// Immutable snapshots outlive the cache lock and remain stable after a write.
     /// Callers can project a record without copying unrelated history.
     pub(crate) fn read_shared(&self) -> Result<Arc<Value>> {
+        Ok(self.read_shared_versioned()?.1)
+    }
+
+    pub(crate) fn cache_revision(&self) -> Result<u64> {
+        Ok(self.read_shared_versioned()?.0)
+    }
+
+    pub(crate) fn read_shared_versioned(&self) -> Result<(u64, Arc<Value>)> {
         match fs::metadata(&self.0.path) {
             Ok(metadata) => {
                 let stamp = FileStamp::from(&metadata);
                 let cache = self.0.cache.lock().map_err(|_| Error::internal())?;
-                if let Some((cached_stamp, value)) = cache.as_ref() {
+                if let Some((cached_stamp, rev, value)) = cache.as_ref() {
                     if *cached_stamp == stamp {
-                        return Ok(value.clone());
+                        return Ok((*rev, value.clone()));
                     }
                 }
             }
@@ -140,7 +162,7 @@ impl Store {
         self.read_disk()
     }
 
-    fn read_disk(&self) -> Result<Arc<Value>> {
+    fn read_disk(&self) -> Result<(u64, Arc<Value>)> {
         match File::open(&self.0.path) {
             Ok(mut file) => {
                 let before = FileStamp::from(&file.metadata()?);
@@ -157,15 +179,26 @@ impl Store {
                 let stable = FileStamp::from(&file.metadata()?) == before
                     && fs::metadata(&self.0.path)
                         .is_ok_and(|metadata| FileStamp::from(&metadata) == before);
-                *self.0.cache.lock().map_err(|_| Error::internal())? =
-                    stable.then(|| (before, value.clone()));
-                Ok(value)
+                let mut cache = self.0.cache.lock().map_err(|_| Error::internal())?;
+                if stable {
+                    if let Some((cached_stamp, cached_rev, cached_val)) = cache.as_ref() {
+                        if *cached_stamp == before && **cached_val == *value {
+                            return Ok((*cached_rev, cached_val.clone()));
+                        }
+                    }
+                    let rev = next_cache_revision();
+                    *cache = Some((before, rev, value.clone()));
+                    Ok((rev, value))
+                } else {
+                    *cache = None;
+                    Ok((next_cache_revision(), value))
+                }
             }
             Err(e)
                 if e.kind() == std::io::ErrorKind::NotFound
                     && !self.0.existed.load(Ordering::Acquire) =>
             {
-                Ok(self.0.defaults.clone())
+                Ok((self.0.default_revision, self.0.defaults.clone()))
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 Err(Error::new(503, "控制状态文件丢失"))
@@ -203,13 +236,24 @@ impl Store {
         private_permissions(&lock)?;
         // A write must always reconcile the current on-disk value after taking
         // the shared advisory lock, even when a read snapshot is cached.
-        let previous = self.read_disk()?;
+        let (_, previous) = self.read_disk()?;
         let mut value = (*previous).clone();
         let result = action(&mut value)?;
         (self.0.validate)(&value)?;
         if value != *previous || !self.0.existed.load(Ordering::Acquire) {
-            write_json(&self.0.path, &value)?;
-            *self.0.cache.lock().map_err(|_| Error::internal())? = None;
+            let bytes = write_json_bytes(&self.0.path, &value)?;
+            let cached = serde_json::from_slice::<Value>(&bytes)
+                .ok()
+                .and_then(|persisted| {
+                    fs::metadata(&self.0.path).ok().map(|metadata| {
+                        (
+                            FileStamp::from(&metadata),
+                            next_cache_revision(),
+                            Arc::new(persisted),
+                        )
+                    })
+                });
+            *self.0.cache.lock().map_err(|_| Error::internal())? = cached;
         }
         self.0.existed.store(true, Ordering::Release);
         // File drop releases the OS lock on every error path too.
@@ -218,19 +262,24 @@ impl Store {
 }
 
 pub fn write_json(path: &Path, value: &Value) -> Result<()> {
+    write_json_bytes(path, value).map(|_| ())
+}
+
+fn write_json_bytes(path: &Path, value: &Value) -> Result<Vec<u8>> {
     let parent = path.parent().ok_or_else(Error::internal)?;
     fs::create_dir_all(parent)?;
+    let mut bytes = serde_json::to_vec(value)?;
+    bytes.push(b'\n');
     let mut temporary = tempfile::Builder::new()
         .prefix(".sub2ops-state-")
         .tempfile_in(parent)?;
     private_permissions(temporary.as_file())?;
-    serde_json::to_writer(&mut temporary, value)?;
-    temporary.write_all(b"\n")?;
+    temporary.write_all(&bytes)?;
     temporary.flush()?;
     temporary.as_file().sync_all()?;
     temporary.persist(path).map_err(|_| Error::internal())?;
     File::open(parent)?.sync_all()?;
-    Ok(())
+    Ok(bytes)
 }
 
 /// Tighten the opened file, without following a path that could be replaced.

@@ -4,7 +4,7 @@
 .accounts-table { --account-actions-width: 110px; --account-name-width: 128px; table-layout: fixed; width: 100%; min-width: calc(734px + var(--account-actions-width) + var(--account-name-width)); }
 .accounts-table.name-expanded { --account-name-width: 240px; }
 .accounts-table .col-name { width: var(--account-name-width); }
-.account-column-toggle { display: inline-flex; align-items: center; gap: 5px; padding: 0; background: transparent; border: 0; color: inherit; font-size: inherit; font-weight: inherit; }
+.account-column-toggle { display: inline-flex; align-items: center; gap: 5px; min-height: 0; padding: 0; background: transparent; border: 0; color: inherit; font-size: inherit; font-weight: inherit; }
 .account-column-toggle svg { flex-shrink: 0; }
 .accounts-table .col-select { width: 30px; }
 .accounts-table .col-priority { width: 120px; }
@@ -32,7 +32,7 @@
 .accounts-table .account-actions > button { width: 100%; min-height: 24px; padding: 3px 6px; font-size: 11px; line-height: 16px; font-weight: 400; gap: 4px; white-space: normal; justify-content: flex-start; }
 .accounts-table .account-actions > button svg { width: 12px; height: 12px; flex-shrink: 0; }
 .account-sort { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12px; color: var(--muted); }
-.account-sort select { height: 30px; min-height: 30px; padding: 4px 8px; line-height: 20px; }
+.account-sort select { height: 30px; min-height: 30px; padding: 4px 26px 4px 8px; background-position: right 7px center; line-height: 20px; }
 .account-toolbar > .quota-batch { margin-bottom: 0; gap: 8px; }
 .account-toolbar > button, .account-toolbar > .quota-batch > button { min-height: 30px; padding: 4px 10px; font-size: 12px; line-height: 20px; }
 .page-surface[data-page="accounts"] .account-sort,
@@ -49,7 +49,8 @@
   min-height: 30px;
 }
 .app:not(.mobile) .page-surface[data-page="accounts"] .filters select {
-  padding: 4px 8px;
+  padding: 4px 26px 4px 8px;
+  background-position: right 7px center;
 }
 .app:not(.mobile) .page-surface[data-page="accounts"] .filters .search input {
   padding: 4px 0;
@@ -100,7 +101,7 @@
 .mobile .filter-options h2, .mobile-action-sheet h2, .mobile-groups-surface h2 { font-size: 18px; margin: 0; overflow-wrap: anywhere; }
 .filter-shade { position: fixed; inset: 0; z-index: 40; background: #0007; }
 .mobile-sort { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
-.mobile-sort select { background: transparent; border-color: transparent; font-size: 12px; }
+.mobile-sort select { background-color: transparent; border-color: transparent; padding-right: 26px; font-size: 12px; }
 .mobile .table-wrap { border: 0; border-radius: 0; background: transparent; overflow: visible; }
 .mobile .selection-bar { padding: 0; gap: 8px; border-bottom: 0; }
 .mobile .selection-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: 8px; }
@@ -114,7 +115,6 @@
 .mobile-identity strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .mobile-identity > span { display: block; font-size: 11px; margin-top: 3px; color: var(--muted); }
 .mobile-account-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
-.mobile-limit { color: var(--muted); font-size: 11px; padding-bottom: 8px; }
 .mobile-account .usage-cell { min-width: 0; width: 100%; padding: 8px 0 2px; }
 .mobile .usage-window { width: 100%; }
 .mobile .usage-stats { gap: 5px; }
@@ -138,7 +138,6 @@
 .mobile .model-test-model select { min-height: 48px; }
 .mobile .model-test-result dl > div { grid-template-columns: 78px minmax(0, 1fr); gap: 8px; }
 .mobile-action-sheet { display: grid; gap: 12px; }
-.mobile-action-sheet .priority-edit input { width: 110px; }
 .mobile-action-sheet .field { margin: 0; }
 .mobile .drawer, .mobile .test-dialog, .mobile .reasoning-modal, .mobile .delete-dialog { position: relative; width: 100%; max-width: none; height: 100dvh; max-height: 100dvh; border-radius: 0; padding: calc(12px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); overflow: auto; } .mobile .test-dialog header > div { min-width: 0; flex: 1; } .mobile .test-dialog header strong { max-width: 100%; }
 .mobile .test-controls { grid-template-columns: minmax(0, 1fr); padding: 12px 0; }
@@ -172,7 +171,6 @@
 .mobile-groups-surface .compact-times button { min-height: 48px; }
 .mobile-groups-surface .compact .mini-usage { flex-wrap: wrap; }
 .mobile .toast { left: 12px; right: 12px; bottom: calc(78px + env(safe-area-inset-bottom)); max-width: none; width: auto; transform: none; }
-.mobile .connect-card { width: 100%; padding: 20px 12px; margin: 0; }
 .mobile .account-template-grid { grid-template-columns: 1fr; }
 
 @media (max-width: 680px) {
@@ -205,8 +203,12 @@
 .selection-actions button { display: inline-flex; align-items: center; gap: 4px; }
 .selection-actions button svg { width: 12px; height: 12px; flex: 0 0 12px; }
 
-.mobile .model-test-dialog button, .mobile .model-test-dialog summary, .mobile .lm-probe-option label, .mobile .detection-platform-settings select { min-height: 48px; }
+.mobile .model-test-dialog button, .mobile .model-test-dialog summary, .mobile .lm-probe-option label, .mobile .detection-platform-settings select { min-height: 48px; height: auto; }
 .mobile .model-test-dialog summary { display: list-item; align-content: center; line-height: 1.5; padding: 12px 0; }
 .mobile .detection-platform-settings { display: grid; grid-template-columns: minmax(0, 1fr); }
-.mobile .detection-platform-settings label { display: grid; gap: 6px; }
+.mobile .detection-platform-controls { display: grid; grid-template-columns: minmax(0, 1fr); justify-content: stretch; width: 100%; }
+.mobile .detection-platform-settings label { display: grid; gap: 6px; width: 100%; }
+.mobile .detection-platform-settings select { width: 100%; }
+.mobile .model-directory-control > select, .mobile .model-directory-control > input, .mobile .model-source-field input, .mobile .model-source-field select { height: auto; min-height: 48px; }
+.mobile .model-directory-control > .icon-button { flex-basis: 48px; width: 48px; height: 48px; min-height: 48px; }
 .mobile .lm-candidates > div { padding: 12px 0; }

@@ -587,18 +587,35 @@ pub struct Target {
 }
 impl Target {
     pub fn client(&self) -> TransportResult<reqwest::Client> {
-        let mut client = reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .connect_timeout(Duration::from_secs(10));
         if let Some(proxy) = &self.proxy {
-            client = client.proxy(
-                reqwest::Proxy::all(proxy).map_err(|_| Failure::new("network_error", false))?,
-            );
+            return reqwest::Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .connect_timeout(Duration::from_secs(10))
+                .proxy(
+                    reqwest::Proxy::all(proxy).map_err(|_| Failure::new("network_error", false))?,
+                )
+                .build()
+                .map_err(|_| Failure::new("network_error", false));
         }
-        client
-            .build()
-            .map_err(|_| Failure::new("network_error", false))
+        static NO_PROXY_CLIENT: std::sync::LazyLock<Option<reqwest::Client>> =
+            std::sync::LazyLock::new(|| {
+                reqwest::Client::builder()
+                    .no_proxy()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .connect_timeout(Duration::from_secs(10))
+                    .build()
+                    .ok()
+            });
+        match NO_PROXY_CLIENT.as_ref() {
+            Some(shared) => Ok(shared.clone()),
+            None => reqwest::Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .connect_timeout(Duration::from_secs(10))
+                .build()
+                .map_err(|_| Failure::new("network_error", false)),
+        }
     }
     pub fn payload(&self, prompt: &str) -> Value {
         if self.protocol == "messages" {

@@ -70,6 +70,14 @@ pub fn recoverable(row: &Value, at: DateTime<Utc>) -> bool {
 }
 
 pub fn account_dto(row: &Value, at: DateTime<Utc>, quota_result: &Value) -> Value {
+    account_dto_inner(row, at, Some(quota_result))
+}
+
+pub(crate) fn account_dto_without_windows(row: &Value, at: DateTime<Utc>) -> Value {
+    account_dto_inner(row, at, None)
+}
+
+fn account_dto_inner(row: &Value, at: DateTime<Utc>, quota_result: Option<&Value>) -> Value {
     let mut value = pick(
         row,
         &[
@@ -121,7 +129,10 @@ pub fn account_dto(row: &Value, at: DateTime<Utc>, quota_result: &Value) -> Valu
         .cloned()
         .unwrap_or_default()
         .into();
-    value["usage_windows"] = quota::usage_windows(row, at, quota_result).into();
+    value["usage_windows"] = match quota_result {
+        Some(result) => quota::usage_windows(row, at, result).into(),
+        None => Value::Null,
+    };
     value["recovery_selectable"] = json!(
         row["platform"] == "openai"
             && row["type"] == "oauth"
@@ -323,16 +334,16 @@ pub struct Queries {
 }
 impl Queries {
     pub async fn accounts(&self) -> Result<Vec<Value>> {
-        self.db
-            .all(&sql::DESKTOP_ACCOUNT_SQL.replace("{filter}", ""), &[])
-            .await
+        static SQL: std::sync::LazyLock<String> =
+            std::sync::LazyLock::new(|| sql::DESKTOP_ACCOUNT_SQL.replace("{filter}", ""));
+        self.db.all(&SQL, &[]).await
     }
     pub async fn account(&self, id: i64) -> Result<Value> {
+        static SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+            sql::DESKTOP_ACCOUNT_SQL.replace("{filter}", "AND a.id=$1")
+        });
         self.db
-            .one(
-                &sql::DESKTOP_ACCOUNT_SQL.replace("{filter}", "AND a.id=$1"),
-                &[id.into()],
-            )
+            .one(&SQL, &[id.into()])
             .await?
             .ok_or_else(|| Error::new(404, "账号不存在"))
     }
@@ -402,14 +413,12 @@ impl Queries {
     }
     pub async fn recoveries(&self, before: Option<i64>, limit: usize) -> Result<Value> {
         let state = self.oauth.shared_snapshot()?;
-        let mut rows: Vec<&Value> = state["recovery_history"]
+        let has_rows = state["recovery_history"]
             .as_object()
             .into_iter()
             .flat_map(|v| v.values())
-            .filter(|v| before.is_none_or(|b| integer(&v["id"]).unwrap_or(0) < b))
-            .collect();
-        rows.sort_by_key(|v| std::cmp::Reverse(integer(&v["id"]).unwrap_or(0)));
-        let names: BTreeMap<i64, Value> = if rows.is_empty() {
+            .any(|v| before.is_none_or(|b| integer(&v["id"]).unwrap_or(0) < b));
+        let names: BTreeMap<i64, Value> = if !has_rows {
             BTreeMap::new()
         } else {
             self.db
@@ -419,6 +428,32 @@ impl Queries {
                 .filter_map(|v| integer(&v["id"]).map(|id| (id, v["name"].clone())))
                 .collect()
         };
+        Self::project_recoveries(&state, before, limit, &names)
+    }
+
+    pub fn recoveries_with_names(
+        &self,
+        before: Option<i64>,
+        limit: usize,
+        names: &BTreeMap<i64, Value>,
+    ) -> Result<Value> {
+        let state = self.oauth.shared_snapshot()?;
+        Self::project_recoveries(&state, before, limit, names)
+    }
+
+    fn project_recoveries(
+        state: &Value,
+        before: Option<i64>,
+        limit: usize,
+        names: &BTreeMap<i64, Value>,
+    ) -> Result<Value> {
+        let mut rows: Vec<&Value> = state["recovery_history"]
+            .as_object()
+            .into_iter()
+            .flat_map(|v| v.values())
+            .filter(|v| before.is_none_or(|b| integer(&v["id"]).unwrap_or(0) < b))
+            .collect();
+        rows.sort_by_key(|v| std::cmp::Reverse(integer(&v["id"]).unwrap_or(0)));
         rows.retain(|v| integer(&v["account_id"]).is_some_and(|id| names.contains_key(&id)));
         let items: Vec<_> = rows
             .iter()

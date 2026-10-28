@@ -205,8 +205,15 @@ pub fn parse_git_refs(raw: &[u8], branch: &str) -> SyncResult<String> {
         Err(Failure::new("invalid-data"))
     }
 }
+fn strip_raw_bank(mut state: Value) -> Value {
+    if let Some(active) = state["active"].as_object_mut() {
+        active.shift_remove("raw_bank");
+    }
+    state
+}
 struct Active {
     snapshot: Arc<(Value, Value)>,
+    compiled: Arc<modeltrace::CompiledBank>,
     state: Value,
     status: String,
 }
@@ -262,6 +269,7 @@ impl FingerprintBank {
         );
         let cached = store.path().exists();
         let mut state = store.read()?;
+        store.evict_cache();
         let v = &state["active"]["version"];
         let raw = state["active"]["raw_bank"]
             .as_str()
@@ -285,7 +293,7 @@ impl FingerprintBank {
             return Err(Error::new(503, "指纹库缓存损坏"));
         }
         let bank: Value = serde_json::from_str(raw)?;
-        validate(&bank)?;
+        let compiled = Arc::new(modeltrace::CompiledBank::compile(&bank)?);
         if bank["built_at"] != v["built_at"]
             || parse_datetime(&bank["built_at"]) < parse_datetime(&bundled.0["built_at"])
         {
@@ -298,6 +306,7 @@ impl FingerprintBank {
         if cached {
             state["source"] = "cache".into();
         }
+        state = strip_raw_bank(state);
         let code = string(&state["last_error"]["code"]);
         let status = if code.is_empty() {
             "idle"
@@ -311,6 +320,7 @@ impl FingerprintBank {
             store,
             active: Arc::new(RwLock::new(Active {
                 snapshot,
+                compiled,
                 state,
                 status,
             })),
@@ -327,6 +337,10 @@ impl FingerprintBank {
             .unwrap_or_else(|e| e.into_inner())
             .snapshot
             .clone()
+    }
+    pub(crate) fn compiled_snapshot(&self) -> (Arc<(Value, Value)>, Arc<modeltrace::CompiledBank>) {
+        let active = self.active.read().unwrap_or_else(|e| e.into_inner());
+        (active.snapshot.clone(), active.compiled.clone())
     }
     pub fn public(&self) -> Value {
         let active = self.active.read().unwrap_or_else(|e| e.into_inner());
@@ -674,22 +688,37 @@ impl FingerprintBank {
             .retrieve(&state, &snapshot, &mut rate)
             .await
             .and_then(|(next, bank)| {
+                let compiled = match &bank {
+                    Some((bank_data, _)) => Some(Arc::new(
+                        modeltrace::CompiledBank::compile(bank_data)
+                            .map_err(|_| Failure::new("invalid-data"))?,
+                    )),
+                    None => None,
+                };
                 self.store
                     .transaction(|v| {
+                        let preserved_raw = v["active"].get("raw_bank").cloned();
                         *v = next.clone();
+                        if v["active"].get("raw_bank").is_none() {
+                            if let Some(raw) = preserved_raw {
+                                v["active"]["raw_bank"] = raw;
+                            }
+                        }
                         Ok(())
                     })
                     .map_err(|_| Failure::new("cache"))?;
-                Ok((next, bank))
+                self.store.evict_cache();
+                Ok((strip_raw_bank(next), bank, compiled))
             });
         match result {
-            Ok((next, bank)) => {
+            Ok((next, bank, compiled)) => {
                 let event = string(&next["result"]).to_owned();
                 let revision = next["active"]["version"]["revision"].clone();
                 let mut active = self.active.write().unwrap_or_else(|e| e.into_inner());
                 active.state = next;
-                if let Some(bank) = bank {
+                if let (Some(bank), Some(compiled)) = (bank, compiled) {
                     active.snapshot = Arc::new(bank);
+                    active.compiled = compiled;
                 }
                 active.status = "idle".into();
                 audit::write(
@@ -706,7 +735,7 @@ impl FingerprintBank {
                     } else {
                         None
                     };
-                let mut next = state;
+                let mut next = strip_raw_bank(state);
                 next["checked_at"] = json!(self.now());
                 next["last_error"] = json!({"code":failure.code});
                 next["cooldown_until"] = json!(cooldown);
@@ -716,9 +745,16 @@ impl FingerprintBank {
                     next["cooldown_until"] = json!(cooldown.unwrap_or(0.0).max(rate));
                 }
                 let _ = self.store.transaction(|v| {
+                    let preserved_raw = v["active"].get("raw_bank").cloned();
                     *v = next.clone();
+                    if v["active"].get("raw_bank").is_none() {
+                        if let Some(raw) = preserved_raw {
+                            v["active"]["raw_bank"] = raw;
+                        }
+                    }
                     Ok(())
                 });
+                self.store.evict_cache();
                 let mut active = self.active.write().unwrap_or_else(|e| e.into_inner());
                 active.state = next;
                 active.status = if failure.code == "incompatible" {

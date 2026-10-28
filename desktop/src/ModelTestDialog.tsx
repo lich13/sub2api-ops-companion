@@ -6,6 +6,7 @@ import type { Account } from "./types";
 import FingerprintBankStatus from "./FingerprintBankStatus";
 import { ModelFingerprintResult, TokenizerResult } from "./ModelFingerprintResult";
 import { engineName, type DetectionEngine, type ModelTestPreference, type ModelTestResult as Result } from "./modelTestTypes";
+import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
 
 type Model = { id: string; display_name?: string; type?: string };
@@ -28,8 +29,9 @@ export default function ModelTestDialog({ account, online, close, report, concur
   const [defaultsLoading, setDefaultsLoading] = useState(account.type === "apikey");
   const [modelError, setModelError] = useState(""), [modelReload, setModelReload] = useState(0);
   const [busy, setBusy] = useState(false), generation = useRef(0), timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const reportRef = useRef(report); reportRef.current = report;
+  const reportRef = useRef(report), dialogRef = useRef<HTMLElement>(null); reportRef.current = report;
   const dismiss = () => { ++scope.current; ++generation.current; clearTimeout(timer.current); close(); };
+  useDialogFocus(dialogRef);
   useBackAction(true, dismiss);
   useEffect(() => {
     ++scope.current;
@@ -120,7 +122,7 @@ export default function ModelTestDialog({ account, online, close, report, concur
   const running = !!job && !terminal.has(job.status);
   const reportResult = job?.report;
   const available = models.some((item) => item.id === model);
-  return <div className="modal-backdrop" onClick={dismiss}><section className="model-test-dialog" role="dialog" aria-modal="true" aria-label="模型测试" onClick={(e) => e.stopPropagation()}>
+  return <div className="modal-backdrop" onClick={dismiss}><section ref={dialogRef} className="model-test-dialog" role="dialog" aria-modal="true" aria-label="模型测试" tabIndex={-1} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Escape" && !e.nativeEvent.isComposing) { e.preventDefault(); e.stopPropagation(); dismiss(); } }}>
     <header><div><h2>模型测试</h2><strong>{account.name} <span>#{account.id}</span></strong></div><button className="icon-button" aria-label="关闭模型测试" onClick={dismiss}><X size={18}/></button></header>
     <div className="model-test-content">
     <div className="model-test-controls">

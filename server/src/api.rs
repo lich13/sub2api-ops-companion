@@ -376,7 +376,17 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             json!({"api_version":1,"service":"Sub2API Ops Companion","platforms":["macos","android"],"version":crate::VERSION,
             "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"sub2api_config":runtime.sub2api_config.available(),"account_creation":true,"key_quota_token_reveal":true,"proxy_management":true,"detection_logs":true,"global_detection_model":true,"account_priority_ordering":true,"account_priority_per_platform":true}})
         }
-        ["snapshot"] => runtime.snapshot().await?,
+        ["snapshot"] => {
+            let bytes = runtime.snapshot_bytes().await?;
+            return Ok((
+                [(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static("application/json"),
+                )],
+                bytes,
+            )
+                .into_response());
+        }
         ["config", "key-quota"] => {
             if method == Method::GET {
                 runtime.key_quota.settings()?
@@ -840,7 +850,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
         _ => return Err(Error::new(404, "Not Found")),
     };
     if method != Method::GET {
-        runtime.invalidate().await;
+        runtime.invalidate_snapshot().await;
     }
     let mut result = result;
     if path.first() == Some(&"model-groups") {

@@ -206,6 +206,7 @@ impl Detection {
                         "status": "queued",
                     })
                 });
+            crate::detection_dispatch::prune_disposition_notifications(data);
             Ok(())
         })?;
 

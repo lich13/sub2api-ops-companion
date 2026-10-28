@@ -52,11 +52,37 @@ impl Detection {
         })
     }
     pub fn migrate_dispatches(&self) -> Result<()> {
+        let current = self.store.read_shared()?;
         if self.actions.settings.read_only {
-            self.store.read_shared()?;
             return Ok(());
         }
         let jobs = self.tests.shared_data()?;
+        let needs_migration = !current["automatic_starts"].is_object()
+            || current["accounts"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .any(|(_, value)| value.get("schedule_mode").is_none())
+            || jobs["jobs"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .any(|(_, job)| {
+                    if job["automatic"] != true {
+                        return false;
+                    }
+                    let Some(at) = parse_datetime(&job["started_at"]) else {
+                        return false;
+                    };
+                    let Some(id) = integer(&job["account_id"]) else {
+                        return true;
+                    };
+                    parse_datetime(&current["automatic_starts"][id.to_string()]["started_at"])
+                        .is_none_or(|previous| previous < at)
+                });
+        if !needs_migration {
+            return Ok(());
+        }
         self.store.transaction(|state| {
             if !state["automatic_starts"].is_object() {
                 state["automatic_starts"] = json!({});
@@ -167,6 +193,7 @@ impl Detection {
                             "status": "queued"
                         })
                     });
+                prune_disposition_notifications(data);
             }
             Ok(())
         })?;
@@ -225,6 +252,7 @@ impl Detection {
                     "manual_intervention"
                 }
                 .into();
+                prune_disposition_notifications(data);
                 return Ok(Value::Null);
             }
             let attempts = integer(&event["attempts"]).unwrap_or(0) + 1;
@@ -246,6 +274,7 @@ impl Detection {
             self.store.transaction(|data| {
                 data["disposition_notifications"][key]["status"] = "suppressed".into();
                 data["disposition_notifications"][key]["reason"] = "manual_intervention".into();
+                prune_disposition_notifications(data);
                 Ok(())
             })?;
             return Ok(());
@@ -261,6 +290,13 @@ impl Detection {
                 &config,
             )
             .await;
+        let final_status = if result.success {
+            "delivered"
+        } else if integer(&reserved["attempts"]).unwrap_or(0) >= 5 {
+            "failed"
+        } else {
+            "retry"
+        };
         self.store.transaction(|data| {
             let saved = &mut data["disposition_notifications"][key];
             if !result.success && saved["status"] == "suppressed" {
@@ -269,7 +305,10 @@ impl Detection {
             if saved["attempts"] != reserved["attempts"] {
                 return Ok(());
             }
-            saved["status"] = if result.success { "delivered" } else { "retry" }.into();
+            saved["status"] = final_status.into();
+            if final_status == "failed" {
+                saved["next_at"] = Value::Null;
+            }
             saved["delivered_at"] = if result.success {
                 json!(datetime(self.now()))
             } else {
@@ -280,9 +319,10 @@ impl Detection {
             } else {
                 json!(result.error_code)
             };
+            prune_disposition_notifications(data);
             Ok(())
         })?;
-        self.audit("model_detection_notification",json!({"account_id":id,"job_id":key,"kind":event.get("kind").unwrap_or(&json!("degraded")),"status":if result.success {"delivered"}else {"retry"}}));
+        self.audit("model_detection_notification",json!({"account_id":id,"job_id":key,"kind":event.get("kind").unwrap_or(&json!("degraded")),"status":final_status}));
         Ok(())
     }
     pub async fn deliver_notifications(&self) -> Result<()> {
@@ -310,6 +350,55 @@ impl Detection {
             result?;
         }
         Ok(())
+    }
+}
+
+pub(crate) fn prune_disposition_notifications(data: &mut Value) {
+    const MAX_TERMINAL: usize = 2_000;
+    let Some(len) = data["disposition_notifications"]
+        .as_object()
+        .map(serde_json::Map::len)
+    else {
+        return;
+    };
+    if len <= MAX_TERMINAL {
+        return;
+    }
+    let mut referenced = std::collections::BTreeSet::new();
+    for control in data["accounts"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .map(|(_, v)| v)
+    {
+        for field in ["disposition", "recheck_recovery"] {
+            if let Some(jid) = control[field]["job_id"].as_str().filter(|s| !s.is_empty()) {
+                referenced.insert(jid.to_owned());
+            }
+        }
+    }
+    let map = data["disposition_notifications"].as_object().unwrap();
+    let mut terminal = Vec::new();
+    for (key, item) in map {
+        let non_terminal = matches!(string(&item["status"]), "queued" | "retry");
+        if !non_terminal && !referenced.contains(key) {
+            let stamp = item["delivered_at"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .or_else(|| item["created_at"].as_str())
+                .unwrap_or("")
+                .to_owned();
+            terminal.push((stamp, key.clone()));
+        }
+    }
+    if terminal.len() <= MAX_TERMINAL {
+        return;
+    }
+    terminal.sort();
+    let drop_count = terminal.len() - MAX_TERMINAL;
+    let map = data["disposition_notifications"].as_object_mut().unwrap();
+    for (_, key) in terminal.into_iter().take(drop_count) {
+        map.shift_remove(&key);
     }
 }
 pub fn notification_message(event: &Value) -> (&'static str, String) {

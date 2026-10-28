@@ -1,6 +1,7 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ListChecks, X } from 'lucide-react';
 import { api, command } from './bridge';
+import { useDialogFocus } from './dialogFocus';
 import { fullTime, type Account } from './types';
 import { useBackAction } from './mobile';
 import { getOperations, subscribeOperations, setOperations, operationEpoch, submitOperation, publishOperation, repeating, operationPending, type Operation } from './accountOperations';
@@ -20,14 +21,22 @@ export function AccountOperationStatus({ id }: { id: number }) {
   if (!active.length) return null;
   return <span className="operation-account-status">{active.some((job) => job.status === 'needs_confirmation' || job.repeat_state === 'needs_confirmation') ? '操作需确认' : `${active.length} 项待办`}</span>;
 }
-export default function AccountOperations({ accounts, online, connectionKey, report, modelTest, template, priorities }: { accounts: Account[]; online: boolean; connectionKey: string; report: (error: unknown) => void; modelTest: (account: Account) => void; template: (account: Account) => void; priorities: () => void }) {
+export default function AccountOperations({ accounts, online, connectionKey, active = true, report, modelTest, template, priorities }: { accounts: Account[]; online: boolean; connectionKey: string; active?: boolean; report: (error: unknown) => void; modelTest: (account: Account) => void; template: (account: Account) => void; priorities: () => void }) {
   const jobs = useSyncExternalStore(subscribeOperations, getOperations);
   const [open, setOpen] = useState(false), [error, setError] = useState('');
+  const [visible, setVisible] = useState(() => typeof document === 'undefined' || document.visibilityState !== 'hidden');
   const [batchId, setBatchId] = useState<string | null>(null), [batchItems, setBatchItems] = useState<Operation[]>([]);
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(dialogRef, open);
   useBackAction(open, () => batchId ? setBatchId(null) : setOpen(false));
+  useEffect(() => {
+    const sync = () => setVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', sync);
+    return () => document.removeEventListener('visibilitychange', sync);
+  }, []);
   useEffect(() => { setOpen(false); setError(''); setBatchId(null); setBatchItems([]); }, [connectionKey]);
   useEffect(() => {
-    if (!online) return;
+    if (!online || (!open && (!active || !visible))) return;
     let alive = true, timer: ReturnType<typeof setTimeout>;
     const epoch = operationEpoch();
     const read = async () => {
@@ -45,7 +54,7 @@ export default function AccountOperations({ accounts, online, connectionKey, rep
       if (alive) timer = setTimeout(() => void read(), open || getOperations().some(j => ['queued', 'running', 'checking'].includes(j.status) || j.repeat_state === 'active') ? 2000 : 10000);
     };
     void read(); return () => { alive = false; clearTimeout(timer); };
-  }, [online, connectionKey, open, batchId]);
+  }, [online, connectionKey, open, batchId, active, visible]);
   const pending = jobs.filter((j) => operationPending(j));
   async function cancel(job: Operation) {
     const epoch = operationEpoch();
@@ -73,7 +82,7 @@ export default function AccountOperations({ accounts, online, connectionKey, rep
     catch (e) { report(e); }
   }
   return <>{(jobs.length > 0 || error) && <button className="icon-button operation-entry" aria-label={`操作待办 ${pending.length}`} onClick={() => setOpen(true)}><ListChecks size={18}/>{pending.length > 0 && <span>{pending.length}</span>}</button>}
-    {open && <div className="modal-backdrop" onClick={() => setOpen(false)}><section className="operation-dialog" role="dialog" aria-label="操作待办" aria-modal="true" onClick={(e) => e.stopPropagation()}><header><h2>操作待办</h2><button className="icon-button" aria-label="关闭待办" onClick={() => setOpen(false)}><X size={18}/></button></header>
+    {open && <div className="modal-backdrop" onClick={() => setOpen(false)}><section ref={dialogRef} className="operation-dialog" role="dialog" aria-label="操作待办" aria-modal="true" tabIndex={-1} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (batchId) setBatchId(null); else setOpen(false); } }}><header><h2>操作待办</h2><button className="icon-button" aria-label="关闭待办" onClick={() => setOpen(false)}><X size={18}/></button></header>
       {batchId && <button onClick={() => setBatchId(null)}>返回全部待办</button>}
       {error && <p className="bad-text" role="alert">{error}</p>}
       <div className="operation-list">{(batchId ? batchItems : jobs).map((job) => <article key={job.id}><div><strong>{job.account_name} <span>#{job.account_id}</span></strong><span>{job.repeat ? "持续预约测试" : labels[job.action] || job.action} · {job.repeat_state === "needs_confirmation" ? "需确认" : job.repeat_state === "stopped" ? "已停止" : job.repeat_state === "active" && job.status === "completed" ? "准备下一次预约" : states[job.status] || job.status}</span></div>{(job.repeat_reason || job.reason) && <p className={job.repeat_state === "needs_confirmation" || job.status === "needs_confirmation" || job.status === "failed" ? "bad-text" : "muted"}>{job.repeat_reason || job.reason}</p>}

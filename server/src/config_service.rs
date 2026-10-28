@@ -12,6 +12,8 @@ use crate::{
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, sync::Arc};
 
+type CachedCurrent = Option<(u64, Arc<Value>)>;
+
 #[derive(Clone)]
 pub struct ConfigService {
     pub settings: Arc<Settings>,
@@ -21,6 +23,7 @@ pub struct ConfigService {
     pub state: OAuthState,
     pub queries: Queries,
     pub lock: Arc<tokio::sync::Mutex<()>>,
+    cached_current: Arc<std::sync::Mutex<CachedCurrent>>,
 }
 fn conflict() -> Error {
     Error::new(409, "设置已被其他窗口修改，请刷新后重试")
@@ -45,6 +48,7 @@ impl ConfigService {
             bark,
             queries,
             lock: Arc::new(tokio::sync::Mutex::new(())),
+            cached_current: Arc::new(std::sync::Mutex::new(None)),
         }
     }
     pub fn oauth_values(&self, raw: &Value) -> Result<Value> {
@@ -68,8 +72,27 @@ impl ConfigService {
         values["connection_test_max_retries"] = retry.max_retries.into();
         Ok(values)
     }
+    pub(crate) fn current_shared(&self) -> Result<Arc<Value>> {
+        let (rev, raw) = self.oauth.read_shared_versioned()?;
+        if let Some((cached_rev, value)) = self
+            .cached_current
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            if *cached_rev == rev {
+                return Ok(value.clone());
+            }
+        }
+        let computed = Arc::new(self.oauth_values(&raw)?);
+        *self
+            .cached_current
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some((rev, computed.clone()));
+        Ok(computed)
+    }
     pub fn current(&self) -> Result<Value> {
-        self.oauth_values(&self.oauth.read()?)
+        Ok((*self.current_shared()?).clone())
     }
     pub async fn migrate_legacy(&self) -> Result<()> {
         if self.settings.read_only {
@@ -78,7 +101,7 @@ impl ConfigService {
         let _guard = self.lock.lock().await;
         if self
             .oauth
-            .read()?
+            .read_shared()?
             .get("oauth_7d_probe_interval_seconds")
             .is_none()
         {
@@ -97,9 +120,9 @@ impl ConfigService {
     }
     pub fn snapshot(&self, section: Option<&str>) -> Result<Value> {
         let raw = if section.is_none_or(|s| s == "oauth") {
-            self.oauth.read()?
+            self.oauth.read_shared()?
         } else {
-            json!({})
+            Arc::new(json!({}))
         };
         let oauth = if section.is_none_or(|s| s == "oauth") {
             self.oauth_values(&raw)?
@@ -115,13 +138,15 @@ impl ConfigService {
             // Optional Bark config can be invalid while the service keeps
             // displaying its disabled/invalid status. Transactions still use
             // the strict store and cannot overwrite unreadable state.
-            self.bark_store.read().unwrap_or(json!({}))
+            self.bark_store
+                .read_shared()
+                .unwrap_or_else(|_| Arc::new(json!({})))
         } else {
-            json!({})
+            Arc::new(json!({}))
         };
         let mut result = json!({"oauth":oauth,"bark":bark});
-        result["oauth"]["revision"] = config_revision(&json!([result["oauth"], raw])).into();
-        result["bark"]["revision"] = config_revision(&json!([result["bark"], bark_raw])).into();
+        result["oauth"]["revision"] = config_revision(&json!([result["oauth"], *raw])).into();
+        result["bark"]["revision"] = config_revision(&json!([result["bark"], *bark_raw])).into();
         Ok(result)
     }
     pub async fn reconcile(&self, rows: &[Value]) -> Result<bool> {
@@ -130,7 +155,7 @@ impl ConfigService {
         }
         let _guard = self.lock.lock().await;
         let eligible = recovery_policy::eligible_ids(rows);
-        let before = self.oauth.read()?;
+        let before = self.oauth.read_shared()?;
         let (connection, models) =
             if before.get(CONNECTION_IDS).is_some() || before.get(MODEL_IDS).is_some() {
                 (
@@ -148,24 +173,35 @@ impl ConfigService {
         } else {
             eligible.clone()
         };
-        let mut next = before.clone();
-        next[CONNECTION_IDS] = json!(connection
+        let next_connection = connection
             .union(&eligible.difference(&seen).copied().collect())
             .copied()
             .filter(|id| !models.contains(id))
-            .collect::<BTreeSet<_>>());
-        next[MODEL_IDS] = json!(models);
-        next[SEEN_IDS] = json!(seen
+            .collect::<BTreeSet<_>>();
+        let next_seen = seen
             .union(&eligible)
             .copied()
             .chain(connection.iter().copied())
             .chain(models.iter().copied())
-            .collect::<BTreeSet<_>>());
-        if next == before {
+            .collect::<BTreeSet<_>>();
+        let next_connection_val = json!(next_connection);
+        let next_models_val = json!(models);
+        let next_seen_val = json!(next_seen);
+        if before.get(CONNECTION_IDS) == Some(&next_connection_val)
+            && before.get(MODEL_IDS) == Some(&next_models_val)
+            && before.get(SEEN_IDS) == Some(&next_seen_val)
+        {
+            return Ok(false);
+        }
+        let mut next = (*before).clone();
+        next[CONNECTION_IDS] = next_connection_val;
+        next[MODEL_IDS] = next_models_val;
+        next[SEEN_IDS] = next_seen_val;
+        if next == *before {
             return Ok(false);
         }
         self.oauth.transaction(|raw| {
-            if *raw != before {
+            if *raw != *before {
                 return Err(conflict());
             }
             *raw = next;

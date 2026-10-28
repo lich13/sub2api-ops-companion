@@ -179,21 +179,150 @@ impl OperationStore {
         Ok((*self.read_shared()?).clone())
     }
     pub(crate) fn read_shared(&self) -> Result<Arc<Value>> {
-        let mut data = self.0.read_shared()?;
+        Ok(self.read_shared_versioned()?.1)
+    }
+    pub(crate) fn read_shared_versioned(&self) -> Result<(u64, Arc<Value>)> {
+        let (rev, mut data) = self.0.read_shared_versioned()?;
         if data.get("batches").is_none() || data.get("batch_requests").is_none() {
             Self::normalize(Arc::make_mut(&mut data));
         }
-        Ok(data)
+        Ok((rev, data))
     }
     pub fn transaction<T>(&self, f: impl FnOnce(&mut Value) -> Result<T>) -> Result<T> {
         self.0.transaction(|data| {
             Self::normalize(data);
-            f(data)
+            let out = f(data)?;
+            Self::prune_terminal_jobs(data);
+            Ok(out)
         })
     }
+    fn prune_terminal_jobs(data: &mut Value) {
+        const MAX_TERMINAL_JOBS: usize = 10_000;
+        let Some(jobs_len) = data["jobs"].as_object().map(serde_json::Map::len) else {
+            return;
+        };
+        if jobs_len <= MAX_TERMINAL_JOBS {
+            return;
+        }
+        let jobs = data["jobs"].as_object().unwrap();
+        let mut open_series = BTreeSet::new();
+        for job in jobs.values() {
+            if repeat_open(job) {
+                let series = string(&job["repeat_series_id"]);
+                if !series.is_empty() {
+                    open_series.insert(series.to_owned());
+                }
+            }
+        }
+        let mut active_batches = BTreeSet::new();
+        for (bid, batch) in data["batches"].as_object().into_iter().flatten() {
+            let has_pending = batch["job_ids"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .any(|jid| {
+                    jobs.get(jid)
+                        .is_some_and(|job| PENDING.contains(&string(&job["status"])))
+                });
+            if has_pending {
+                active_batches.insert(bid.clone());
+            }
+        }
+        let mut protected = BTreeSet::new();
+        let mut terminal_candidates = Vec::new();
+        for (jid, job) in jobs {
+            let is_pending = PENDING.contains(&string(&job["status"]));
+            let in_open_series =
+                repeat_open(job) || open_series.contains(string(&job["repeat_series_id"]));
+            let in_active_batch = active_batches.contains(string(&job["batch_id"]));
+            if is_pending || in_open_series || in_active_batch {
+                protected.insert(jid.clone());
+            } else {
+                let stamp = job["updated_at"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| job["created_at"].as_str())
+                    .unwrap_or("")
+                    .to_owned();
+                terminal_candidates.push((stamp, jid.clone()));
+            }
+        }
+        if terminal_candidates.len() <= MAX_TERMINAL_JOBS {
+            return;
+        }
+        terminal_candidates.sort();
+        let skip = terminal_candidates.len() - MAX_TERMINAL_JOBS;
+        let mut retain_ids = protected;
+        for (_, jid) in terminal_candidates.into_iter().skip(skip) {
+            retain_ids.insert(jid);
+        }
+        let mut worklist: Vec<String> = retain_ids.iter().cloned().collect();
+        while let Some(jid) = worklist.pop() {
+            if let Some(next_id) = jobs
+                .get(&jid)
+                .and_then(|j| j.get("next_operation_id"))
+                .and_then(Value::as_str)
+            {
+                if jobs.contains_key(next_id) && retain_ids.insert(next_id.to_owned()) {
+                    worklist.push(next_id.to_owned());
+                }
+            }
+        }
+        if retain_ids.len() == jobs_len {
+            return;
+        }
+        data["jobs"]
+            .as_object_mut()
+            .unwrap()
+            .retain(|jid, _| retain_ids.contains(jid));
+        if let Some(batches) = data["batches"].as_object_mut() {
+            batches.retain(|_, batch| {
+                if let Some(job_ids) = batch["job_ids"].as_array_mut() {
+                    job_ids.retain(|j| j.as_str().is_some_and(|jid| retain_ids.contains(jid)));
+                    !job_ids.is_empty()
+                } else {
+                    false
+                }
+            });
+        }
+        let surviving_batches: BTreeSet<String> = data["batches"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .map(|(bid, _)| bid.clone())
+            .collect();
+        if let Some(batch_requests) = data["batch_requests"].as_object_mut() {
+            batch_requests
+                .retain(|_, bid| bid.as_str().is_some_and(|b| surviving_batches.contains(b)));
+        }
+        if let Some(requests) = data["requests"].as_object_mut() {
+            requests.retain(|_, jid| jid.as_str().is_some_and(|j| retain_ids.contains(j)));
+        }
+    }
     pub fn recover_startup(&self) -> Result<()> {
+        let data = self.read_shared()?;
         if self.0.is_read_only() {
-            self.read()?;
+            return Ok(());
+        }
+        let needs_recovery = data["jobs"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .any(|(_, job)| job["status"] == "running")
+            || data["batches"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .any(|(_, batch)| {
+                    batch
+                        .get("chunks")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .any(|chunk| chunk["status"] == "dispatched")
+                });
+        if !needs_recovery {
             return Ok(());
         }
         self.transaction(|data| {
@@ -263,17 +392,28 @@ pub trait Backend: Send + Sync {
     fn test_slots(&self) -> Option<crate::execution::TestSlots> {
         None
     }
+    fn account_deleted(&self, _id: i64) {}
 }
+
+struct EventBuffer {
+    items: Vec<Value>,
+    terminal_at: Option<chrono::DateTime<chrono::Utc>>,
+    last_push_at: chrono::DateTime<chrono::Utc>,
+}
+
 pub struct Operations {
     pub actions: Actions,
     pub store: OperationStore,
     pub backend: Arc<dyn Backend>,
     pub submit_lock: AsyncMutex<()>,
     pub keys: Mutex<BTreeMap<String, String>>,
-    events: Mutex<BTreeMap<String, Vec<Value>>>,
+    events: Mutex<BTreeMap<String, EventBuffer>>,
     tasks: Mutex<BTreeMap<String, JoinHandle<()>>>,
     pub budget: Arc<Semaphore>,
     closing: AtomicBool,
+    pub(super) cycle_poll_cache: Mutex<Option<(u64, u64, chrono::DateTime<chrono::Utc>)>>,
+    scheduled_results_cache: Mutex<(u64, u64)>,
+    pub(super) active_scan_cache: Mutex<(u64, bool, bool)>,
 }
 impl Operations {
     pub fn new(
@@ -297,7 +437,7 @@ impl Operations {
                 .with_file_name("account-operations.json"),
             actions.settings.read_only,
         );
-        store.read()?;
+        store.read_shared()?;
         Ok(Arc::new(Self {
             actions,
             store,
@@ -308,6 +448,9 @@ impl Operations {
             tasks: Mutex::new(BTreeMap::new()),
             budget,
             closing: AtomicBool::new(false),
+            cycle_poll_cache: Mutex::new(None),
+            scheduled_results_cache: Mutex::new((0, 0)),
+            active_scan_cache: Mutex::new((0, false, false)),
         }))
     }
     pub fn public(&self, job: &Value, detail: bool, after: usize) -> Value {
@@ -359,7 +502,7 @@ impl Operations {
             let events = self.events.lock().unwrap_or_else(|e| e.into_inner());
             let values = events
                 .get(string(&job["id"]))
-                .map(Vec::as_slice)
+                .map(|buf| buf.items.as_slice())
                 .unwrap_or(&[]);
             out["events"] = json!(values.iter().skip(after).take(100).collect::<Vec<_>>());
             out["next_event"] = json!(values.len().min(after.saturating_add(100)));
@@ -1087,20 +1230,49 @@ impl Operations {
         {
             return Ok(());
         }
-        let mut data = self.store.read_shared()?;
-        if self.prepare_cycles(&data).await? {
-            data = self.store.read_shared()?;
+        let (mut ops_rev, mut data) = self.store.read_shared_versioned()?;
+        if self.prepare_cycles(ops_rev, &data).await? || self.store.0.cache_revision()? != ops_rev {
+            (ops_rev, data) = self.store.read_shared_versioned()?;
         }
         let jobs = data["jobs"].as_object().unwrap();
-        self.keys
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .retain(|id, _| jobs.get(id).is_none_or(Self::needs_key));
-        self.record_scheduled_results(jobs.values())?;
-        if !jobs
-            .values()
-            .any(|job| matches!(string(&job["status"]), "queued" | "checking"))
         {
+            let mut keys = self.keys.lock().unwrap_or_else(|e| e.into_inner());
+            if !keys.is_empty() {
+                keys.retain(|id, _| jobs.get(id).is_none_or(Self::needs_key));
+            }
+        }
+        self.evict_events(Some(jobs));
+        self.record_scheduled_results(ops_rev, jobs.values())?;
+        let has_active = {
+            let cache = self
+                .active_scan_cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if cache.0 == ops_rev {
+                cache.1
+            } else {
+                drop(cache);
+                let mut found_active = false;
+                let mut found_cycle = false;
+                for job in jobs.values() {
+                    if matches!(string(&job["status"]), "queued" | "checking") {
+                        found_active = true;
+                    }
+                    if job["repeat_state"] == "active" {
+                        found_cycle = true;
+                    }
+                    if found_active && found_cycle {
+                        break;
+                    }
+                }
+                *self
+                    .active_scan_cache
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = (ops_rev, found_active, found_cycle);
+                found_active
+            }
+        };
+        if !has_active {
             return Ok(());
         }
         let mut running: BTreeSet<_> = self
@@ -1250,7 +1422,21 @@ impl Operations {
         }
         Ok(())
     }
-    fn record_scheduled_results<'a>(&self, jobs: impl Iterator<Item = &'a Value>) -> Result<()> {
+    fn record_scheduled_results<'a>(
+        &self,
+        ops_rev: u64,
+        jobs: impl Iterator<Item = &'a Value>,
+    ) -> Result<()> {
+        // Connection-test receipts need no legacy recovery normalization.
+        let (oauth_rev, state) = self.actions.queries.oauth.0.read_shared_versioned()?;
+        if *self
+            .scheduled_results_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            == (ops_rev, oauth_rev)
+        {
+            return Ok(());
+        }
         let mut jobs = jobs
             .filter(|job| {
                 (job["scheduled_at"].is_string() || job["repeat"] == "quota_cycle")
@@ -1258,10 +1444,12 @@ impl Operations {
             })
             .peekable();
         if jobs.peek().is_none() {
+            *self
+                .scheduled_results_cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = (ops_rev, oauth_rev);
             return Ok(());
         }
-        // Connection-test receipts need no legacy recovery normalization.
-        let state = self.actions.queries.oauth.0.read_shared()?;
         let mut history = BTreeMap::new();
         let mut pending = BTreeMap::new();
         for job in jobs {
@@ -1298,7 +1486,7 @@ impl Operations {
             }
             history.insert(key, entry);
         }
-        if !history.is_empty() {
+        let next_oauth_rev = if !history.is_empty() {
             self.actions
                 .queries
                 .oauth
@@ -1307,7 +1495,14 @@ impl Operations {
                     pending,
                     ..Default::default()
                 })?;
-        }
+            self.actions.queries.oauth.0.cache_revision()?
+        } else {
+            oauth_rev
+        };
+        *self
+            .scheduled_results_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = (ops_rev, next_oauth_rev);
         Ok(())
     }
     fn launch(
@@ -1593,20 +1788,35 @@ impl Operations {
             json!({"success":false})
         };
         let mut terminal = false;
+        let event_id = string(&job["id"]).to_owned();
         if !summary {
+            let at = self.backend.now();
+            self.evict_events(None);
             self.events
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .insert(string(&job["id"]).into(), vec![]);
+                .insert(
+                    event_id.clone(),
+                    EventBuffer {
+                        items: vec![],
+                        terminal_at: None,
+                        last_push_at: at,
+                    },
+                );
         }
         while let Some(event) = stream.recv().await {
             if !summary {
-                self.events
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .entry(string(&job["id"]).into())
-                    .or_default()
-                    .push(event.clone());
+                let at = self.backend.now();
+                let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
+                let entry = events
+                    .entry(event_id.clone())
+                    .or_insert_with(|| EventBuffer {
+                        items: vec![],
+                        terminal_at: None,
+                        last_push_at: at,
+                    });
+                entry.items.push(event.clone());
+                entry.last_push_at = at;
             }
             match string(&event["type"]) {
                 "test_start" if summary && event["model"].is_string() => {
@@ -1641,6 +1851,18 @@ impl Operations {
                 _ => {}
             }
         }
+        if !summary {
+            let at = self.backend.now();
+            if let Some(buf) = self
+                .events
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get_mut(&event_id)
+            {
+                buf.terminal_at = Some(at);
+            }
+            self.evict_events(None);
+        }
         if summary {
             if !terminal {
                 result["uncertain"] = true.into();
@@ -1651,6 +1873,49 @@ impl Operations {
             result["completed_at"] = now().into();
         }
         Ok(result)
+    }
+    fn evict_events(&self, jobs: Option<&serde_json::Map<String, Value>>) {
+        const MAX_TERMINAL_EVENT_BUFFERS: usize = 64;
+        let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
+        if events.is_empty() {
+            return;
+        }
+        let now = self.backend.now();
+        if let Some(jobs) = jobs {
+            for (jid, buf) in events.iter_mut() {
+                if buf.terminal_at.is_none()
+                    && jobs
+                        .get(jid)
+                        .is_none_or(|job| !PENDING.contains(&string(&job["status"])))
+                {
+                    buf.terminal_at = Some(now);
+                }
+            }
+        }
+        events.retain(|_, buf| {
+            buf.terminal_at
+                .is_none_or(|done_at| now < done_at + chrono::Duration::seconds(60))
+        });
+        let terminal_count = events
+            .values()
+            .filter(|buf| buf.terminal_at.is_some())
+            .count();
+        if terminal_count > MAX_TERMINAL_EVENT_BUFFERS {
+            let mut ranked: Vec<_> = events
+                .iter()
+                .filter_map(|(jid, buf)| {
+                    buf.terminal_at
+                        .map(|done_at| (done_at, buf.last_push_at, jid.clone()))
+                })
+                .collect();
+            ranked.sort();
+            for (_, _, jid) in ranked
+                .into_iter()
+                .take(terminal_count - MAX_TERMINAL_EVENT_BUFFERS)
+            {
+                events.remove(&jid);
+            }
+        }
     }
     pub async fn close(&self) {
         self.closing.store(true, Ordering::Release);

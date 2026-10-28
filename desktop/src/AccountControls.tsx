@@ -1,6 +1,5 @@
-import { accountOperation } from "./accountOperations";
-import { useEffect, useRef, useState } from "react";
-import { LoaderCircle, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { RefreshCw } from "lucide-react";
 import { api, command } from "./bridge";
 import {
   fullTime,
@@ -59,7 +58,14 @@ export function QuotaRefresh({
 }) {
   const [batch, setBatch] = useState<QuotaBatch | null>(null);
   const [starting, setStarting] = useState(false);
+  const [pollRun, setPollRun] = useState(0);
   const running = useRef(false);
+  const wasRunning = useRef(false);
+  const skipInitialFetch = useRef(false);
+  useEffect(() => {
+    wasRunning.current = false;
+    skipInitialFetch.current = false;
+  }, [connectionKey]);
   useEffect(() => {
     if (!online || !active) return;
     let gone = false;
@@ -69,30 +75,49 @@ export function QuotaRefresh({
         const result = await api<QuotaBatch>("GET", "/quota-refresh");
         if (!gone) {
           setBatch(result);
-          if (result.status === "running")
+          if (result.status === "running") {
+            wasRunning.current = true;
             timer = setTimeout(() => void poll(), 1000);
-          else if (batch?.status === "running") {
+          } else if (wasRunning.current) {
+            wasRunning.current = false;
             document.dispatchEvent(new CustomEvent(usageRefreshEvent, { detail: { connectionKey, batch: result } }));
             void command("refresh");
           }
         }
       } catch {
-        if (!gone && batch?.status === "running")
+        if (!gone && wasRunning.current)
           timer = setTimeout(() => void poll(), 1000);
       }
     }
-    void poll();
+    if (skipInitialFetch.current) {
+      skipInitialFetch.current = false;
+      if (wasRunning.current) timer = setTimeout(() => void poll(), 1000);
+    } else {
+      void poll();
+    }
     return () => {
       gone = true;
       clearTimeout(timer);
     };
-  }, [online, active, connectionKey, batch?.id, batch?.status === "running"]);
+  }, [online, active, connectionKey, pollRun]);
   async function start() {
     if (running.current || !online) return;
     running.current = true;
     setStarting(true);
     try {
-      setBatch(await api<QuotaBatch>("POST", "/quota-refresh", {}));
+      const result = await api<QuotaBatch>("POST", "/quota-refresh", {});
+      setBatch(result);
+      if (result.status === "running") {
+        wasRunning.current = true;
+        skipInitialFetch.current = true;
+        setPollRun((n) => n + 1);
+      } else {
+        wasRunning.current = false;
+        if (result.status !== "idle") {
+          document.dispatchEvent(new CustomEvent(usageRefreshEvent, { detail: { connectionKey, batch: result } }));
+          void command("refresh");
+        }
+      }
     } catch (e) {
       report(e);
     } finally {
@@ -171,14 +196,21 @@ export function RecoveryHistory({
     if (active && online) void load();
     return () => { ++generation.current; running.current = false; };
   }, [online, active]);
-  const live = new Set(accounts.map((a) => a.id));
-  const items = [
-    ...new Map(
-      [...rows, ...latest]
-        .filter((i) => live.has(i.account_id))
-        .map((i) => [i.id, i]),
-    ).values(),
-  ].sort((a, b) => b.id - a.id);
+  const accountNameById = useMemo(
+    () => new Map(accounts.map((a) => [a.id, a.name])),
+    [accounts],
+  );
+  const items = useMemo(
+    () =>
+      [
+        ...new Map(
+          [...rows, ...latest]
+            .filter((i) => accountNameById.has(i.account_id))
+            .map((i) => [i.id, i]),
+        ).values(),
+      ].sort((a, b) => b.id - a.id),
+    [rows, latest, accountNameById],
+  );
   useEffect(() => { onCount?.(items.length); }, [items.length, onCount]);
   async function load(more = false) {
     if (running.current || !online || !active) return;
@@ -240,8 +272,7 @@ export function RecoveryHistory({
               return (
               <tr key={r.id}>
                 <td data-label="账号">
-                  {r.account_name ||
-                    accounts.find((a) => a.id === r.account_id)?.name}
+                  {r.account_name || accountNameById.get(r.account_id)}
                 </td>
                 <td data-label="恢复类型">{scheduled ? "预约测试" : card ? "用卡恢复" : "额度恢复"}</td>
                 <td data-label="验证方式">{scheduled ? "测试连接" : card ? card.verification_method === "model" ? "模型测试" : "测试连接" : "—"}</td>

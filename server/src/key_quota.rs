@@ -200,6 +200,27 @@ impl Service {
             .unwrap_or_else(|e| e.into_inner())
             .remove(&id.to_string());
     }
+    pub fn remove_account_settings(&self, id: i64) -> Result<()> {
+        if self.config.is_read_only() {
+            return Ok(());
+        }
+        let key = id.to_string();
+        if self
+            .config
+            .read_shared()?
+            .get("accounts")
+            .and_then(Value::as_object)
+            .is_none_or(|accounts| !accounts.contains_key(&key))
+        {
+            return Ok(());
+        }
+        self.config.transaction(|raw| {
+            if let Some(accounts) = raw["accounts"].as_object_mut() {
+                accounts.remove(&key);
+            }
+            Ok(())
+        })
+    }
     pub(crate) fn retain_accounts(&self, rows: &[Value]) {
         let ids: std::collections::HashSet<String> = rows
             .iter()

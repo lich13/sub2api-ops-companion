@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowRight, LoaderCircle, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { api, command } from "./bridge";
 import { clientId, getOperations, operationEpoch, setOperations, type Operation } from "./accountOperations";
+import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
 import type { Account } from "./types";
 
@@ -56,7 +57,8 @@ export default function AccountTemplates({ accounts, online, initialAccount, ini
   const [selected, setSelected] = useState(""), [creating, setCreating] = useState<Draft | null>(null), [deleteId, setDeleteId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [batch, setBatch] = useState<Batch | null>(null), [batchError, setBatchError] = useState("");
   const configGeneration = useRef(0), accountGeneration = useRef(0), savedRef = useRef<Config | null>(null);
-  const pendingRequest = useRef<{ signature: string; request_id: string } | null>(null);
+  const pendingRequest = useRef<{ signature: string; request_id: string } | null>(null), dialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(dialogRef);
   useBackAction(true, () => deleteId ? setDeleteId(null) : close());
 
   function accept(value: Config, changed?: string) {
@@ -165,7 +167,7 @@ export default function AccountTemplates({ accounts, online, initialAccount, ini
   const disabled = busy || !online;
   const failure = error || Object.values(accountErrors)[0];
 
-  return <div className="modal-backdrop" onClick={close}><section className="account-templates-dialog" role="dialog" aria-modal="true" aria-label="账号模板" onClick={e => e.stopPropagation()}>
+  return <div className="modal-backdrop" onClick={close}><section ref={dialogRef} className="account-templates-dialog" role="dialog" aria-modal="true" aria-label="账号模板" tabIndex={-1} onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === "Escape" && !e.nativeEvent.isComposing) { e.preventDefault(); e.stopPropagation(); if (deleteId) setDeleteId(null); else close(); } }}>
     <header><h2>账号模板</h2><button className="icon-button" aria-label="关闭账号模板" onClick={close}><X size={19}/></button></header>
     {!saved ? <div className="dialog-loading">{busy && <LoaderCircle className="spin"/>}</div> : <>
       <div className="account-template-grid">{saved.template_order.map(id => {

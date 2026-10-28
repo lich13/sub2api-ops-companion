@@ -1,11 +1,22 @@
+use objc2::{rc::Retained, MainThreadMarker};
+use objc2_app_kit::NSApplication;
+use std::cell::OnceCell;
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::watch;
 
 const BACKGROUND: &str = "应用已转入后台，已停止读取";
 
+thread_local! {
+    static APP: OnceCell<Option<Retained<NSApplication>>> = const { OnceCell::new() };
+}
+
 pub(crate) fn application_active() -> bool {
-    objc2::MainThreadMarker::new()
-        .is_some_and(|main| objc2_app_kit::NSApplication::sharedApplication(main).isActive())
+    APP.with(|cell| {
+        cell.get_or_init(|| MainThreadMarker::new().map(NSApplication::sharedApplication))
+            .as_ref()
+            .is_some_and(|app| app.isActive())
+    })
 }
 
 pub(crate) fn record_path(path: &str) -> bool {
@@ -14,25 +25,40 @@ pub(crate) fn record_path(path: &str) -> bool {
         || route.starts_with("/usage-records/")
 }
 
-pub(crate) struct RecordActivity(watch::Sender<bool>);
+pub(crate) struct RecordActivity {
+    active: AtomicBool,
+    tx: watch::Sender<bool>,
+}
 
 impl Default for RecordActivity {
     fn default() -> Self {
-        Self(watch::channel(false).0)
+        Self::new(false)
     }
 }
 
 impl RecordActivity {
+    pub(crate) fn new(initial: bool) -> Self {
+        Self {
+            active: AtomicBool::new(initial),
+            tx: watch::channel(initial).0,
+        }
+    }
+
     pub(crate) fn active(&self) -> bool {
-        *self.0.borrow()
+        self.active.load(Ordering::Acquire)
     }
 
     pub(crate) fn set_active(&self, active: bool) -> bool {
-        self.0.send_if_modified(|current| {
+        if self.active.load(Ordering::Relaxed) == active {
+            return false;
+        }
+        self.tx.send_if_modified(|current| {
             if *current == active {
+                self.active.store(active, Ordering::Release);
                 return false;
             }
             *current = active;
+            self.active.store(active, Ordering::Release);
             true
         })
     }
@@ -41,7 +67,10 @@ impl RecordActivity {
         &self,
         request: impl Future<Output = Result<T, String>>,
     ) -> Result<T, String> {
-        let mut activity = self.0.subscribe();
+        if !self.active.load(Ordering::Acquire) {
+            return Err(BACKGROUND.into());
+        }
+        let mut activity = self.tx.subscribe();
         if !*activity.borrow_and_update() {
             return Err(BACKGROUND.into());
         }
@@ -116,5 +145,21 @@ mod tests {
         ] {
             assert!(!record_path(path));
         }
+    }
+
+    #[test]
+    fn fast_path_mirror_tracks_initial_and_repeated_transitions() {
+        let initially_active = RecordActivity::new(true);
+        assert!(initially_active.active());
+        assert!(!initially_active.set_active(true));
+        assert!(initially_active.set_active(false));
+        assert!(!initially_active.active());
+        assert!(!initially_active.set_active(false));
+
+        let initially_inactive = RecordActivity::new(false);
+        assert!(!initially_inactive.active());
+        assert!(!initially_inactive.set_active(false));
+        assert!(initially_inactive.set_active(true));
+        assert!(initially_inactive.active());
     }
 }

@@ -29,11 +29,10 @@ const ACCOUNT_SQL: &str = "SELECT id,name,platform,type,priority,status,schedula
 async fn account_rows(db: &crate::db::Database, platform: Option<&str>) -> Result<Vec<Value>> {
     match platform {
         Some(platform) => {
-            db.all(
-                &ACCOUNT_SQL.replace("ORDER BY id", "AND platform=$1 ORDER BY id"),
-                &[platform.into()],
-            )
-            .await
+            static BY_PLATFORM_SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+                ACCOUNT_SQL.replace("ORDER BY id", "AND platform=$1 ORDER BY id")
+            });
+            db.all(&BY_PLATFORM_SQL, &[platform.into()]).await
         }
         None => db.all(ACCOUNT_SQL, &[]).await,
     }
@@ -267,7 +266,8 @@ impl PriorityGate {
     }
     pub async fn enter(&self) -> Result<OwnedRwLockReadGuard<()>> {
         let guard = self.admission.clone().read_owned().await;
-        if active(&self.legacy.read()?).is_some() {
+        let legacy = self.legacy.read_shared()?;
+        if active(&legacy).is_some() {
             return Err(Error::new(409, "旧版排序正在收束，请稍后重新核对"));
         }
         let data = self.store.read_shared()?;
@@ -522,7 +522,7 @@ impl PriorityOrders {
     }
     pub async fn view(&self, v2: bool) -> Result<Value> {
         let rows = self.rows(None).await?;
-        let legacy = self.legacy.read()?;
+        let legacy = self.legacy.read_shared()?;
         let data = self.store.read_shared()?;
         let items: Vec<_> = rows
             .iter()
@@ -582,7 +582,7 @@ impl PriorityOrders {
                 return Ok(public_job_v2(job, details));
             }
         }
-        let data = self.legacy.read()?;
+        let data = self.legacy.read_shared()?;
         let job = data["jobs"]
             .get(id)
             .ok_or_else(|| Error::new(404, "优先级排序任务不存在"))?;
@@ -621,10 +621,11 @@ impl PriorityOrders {
             }
             return Ok(public_job_v2(job, true));
         }
-        if active(&data).is_some() || active(&self.legacy.read()?).is_some() {
+        let legacy = self.legacy.read_shared()?;
+        if active(&data).is_some() || active(&legacy).is_some() {
             return Err(busy());
         }
-        if self.legacy.read()?["requests"].get(rid).is_some() {
+        if legacy["requests"].get(rid).is_some() {
             return Err(Error::new(409, "请求 ID 已用于旧版排序"));
         }
         if self.operations.store.read_shared()?["jobs"]
@@ -704,7 +705,8 @@ impl PriorityOrders {
         validate_parallelism_request(request)?;
         let _gate = self.actions.priorities.admission.write().await;
         let data = self.store.read_shared()?;
-        if active(&data).is_some() || active(&self.legacy.read()?).is_some() {
+        let legacy = self.legacy.read_shared()?;
+        if active(&data).is_some() || active(&legacy).is_some() {
             return Err(busy());
         }
         let platform = string(&request["platform"]);
@@ -760,7 +762,7 @@ impl PriorityOrders {
         self.get(id, v2, true)
     }
     pub async fn recover_startup(&self) -> Result<()> {
-        self.legacy.read()?;
+        self.legacy.read_shared()?;
         let data = self.store.read_shared()?;
         if self.actions.settings.read_only {
             return Ok(());
@@ -778,7 +780,7 @@ impl PriorityOrders {
         Ok(())
     }
     async fn retire_legacy(&self) -> Result<bool> {
-        let data = self.legacy.read()?;
+        let data = self.legacy.read_shared()?;
         let Some(id) = active(&data) else {
             return Ok(true);
         };

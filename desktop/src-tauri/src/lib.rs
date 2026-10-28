@@ -91,7 +91,7 @@ struct ViewState {
     online: bool,
     error: String,
     upstream_connection: Option<Value>,
-    snapshot: Option<Value>,
+    snapshot: Option<Arc<Value>>,
     preferences: Preferences,
 }
 
@@ -398,7 +398,7 @@ fn allowed_request(method: &str, path: &str) -> bool {
                         .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
             }
             "PUT" => path == "/account-templates",
-            "POST" => path == "/account-templates" || path == "/account-templates/custom",
+            "POST" => path == "/account-templates",
             _ => false,
         };
     }
@@ -493,27 +493,19 @@ fn allowed_request(method: &str, path: &str) -> bool {
             matches!(
                 plain,
                 "/config"
-                    | "/errors"
                     | "/recoveries"
                     | "/quota-refresh"
                     | "/capabilities"
-                    | "/connection-status"
                     | "/usage-records"
                     | "/usage-record-options"
             ) || plain
                 .strip_prefix("/usage-records/")
                 .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
-                || plain
-                    .strip_prefix("/errors/")
-                    .is_some_and(|s| s.parse::<u64>().is_ok())
                 || model_options_path(path)
                 || plain
                     .strip_prefix("/accounts/")
                     .and_then(|s| s.strip_suffix("/model-tests/latest"))
                     .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
-                || plain
-                    .strip_prefix("/model-tests/")
-                    .is_some_and(|s| s.len() == 32 && s.chars().all(|c| c.is_ascii_hexdigit()))
         }
         "PUT" => {
             (["oauth", "bark"]
@@ -538,10 +530,6 @@ fn allowed_request(method: &str, path: &str) -> bool {
                             .or_else(|| s.strip_suffix("/model-tests"))
                     })
                     .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
-                || plain
-                    .strip_prefix("/model-tests/")
-                    .and_then(|s| s.strip_suffix("/cancel"))
-                    .is_some_and(|s| s.len() == 32 && s.chars().all(|c| c.is_ascii_hexdigit()))
         }
         "DELETE" => !path.contains('?') && account_path(path, ""),
         _ => false,
@@ -564,13 +552,71 @@ fn model_options_path(path: &str) -> bool {
 }
 
 fn publish(app: &tauri::AppHandle, value: &ViewState) {
-    let _ = app.emit("ops-state", value);
+    let windows = app.webview_windows();
+    let visible: Vec<&str> = windows
+        .iter()
+        .filter_map(|(label, window)| {
+            #[cfg(mobile)]
+            let is_visible = window.is_visible().unwrap_or(true);
+            #[cfg(not(mobile))]
+            let is_visible = window.is_visible().unwrap_or(false);
+            is_visible.then_some(label.as_str())
+        })
+        .collect();
+    if visible.is_empty() {
+        return;
+    }
+    if visible.len() == windows.len() {
+        let _ = app.emit("ops-state", value);
+    } else {
+        for label in visible {
+            let _ = app.emit_to(label, "ops-state", value);
+        }
+    }
+}
+
+#[cfg(desktop)]
+fn emit_view_to_window(app: &tauri::AppHandle, label: &str) {
+    let state = app.state::<Arc<Runtime>>();
+    #[cfg(target_os = "macos")]
+    let changed = state
+        .record_activity
+        .set_active(record_activity::application_active());
+    #[cfg(not(target_os = "macos"))]
+    let changed = false;
+    if let Ok(mut view) = state.view.try_lock() {
+        #[cfg(target_os = "macos")]
+        if changed {
+            view.foreground = state.record_activity.active();
+        }
+        if changed {
+            publish(app, &view);
+        } else {
+            let _ = app.emit_to(label, "ops-state", &*view);
+        }
+    } else {
+        let app = app.clone();
+        let state = state.inner().clone();
+        let label = label.to_owned();
+        tauri::async_runtime::spawn(async move {
+            let mut view = state.view.lock().await;
+            #[cfg(target_os = "macos")]
+            if changed {
+                view.foreground = state.record_activity.active();
+            }
+            if changed {
+                publish(&app, &view);
+            } else {
+                let _ = app.emit_to(&label, "ops-state", &*view);
+            }
+        });
+    };
 }
 
 fn apply_refresh(view: &mut ViewState, result: Result<Value, HttpFailure>) {
     match result {
         Ok(data) => {
-            view.snapshot = Some(data);
+            view.snapshot = Some(Arc::new(data));
             view.online = true;
             view.error.clear();
             view.upstream_connection = None;
@@ -660,13 +706,15 @@ async fn active_read<T, E: From<&'static str>>(
 }
 
 #[cfg(target_os = "macos")]
-fn sync_record_activity(app: &tauri::AppHandle) -> bool {
+fn sync_record_activity_with(app: &tauri::AppHandle, state: &Arc<Runtime>) -> bool {
     // A key window can outlive application activation on macOS. Use AppKit's
     // application state, while preserving background snapshots for the tray.
     let active = record_activity::application_active();
-    let state = app.state::<Arc<Runtime>>();
     if state.record_activity.set_active(active) {
-        let state = state.inner().clone();
+        if active {
+            state.wake.notify_one();
+        }
+        let state = state.clone();
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             let mut view = state.view.lock().await;
@@ -675,6 +723,12 @@ fn sync_record_activity(app: &tauri::AppHandle) -> bool {
         });
     }
     active
+}
+
+#[cfg(target_os = "macos")]
+fn sync_record_activity(app: &tauri::AppHandle) -> bool {
+    let state = app.state::<Arc<Runtime>>();
+    sync_record_activity_with(app, state.inner())
 }
 
 #[cfg(target_os = "macos")]
@@ -844,6 +898,12 @@ async fn cancel_test(
     Ok(())
 }
 
+fn parse_sse_line(line: &[u8]) -> Option<Value> {
+    let raw = line.strip_suffix(b"\r").unwrap_or(line);
+    let payload = raw.strip_prefix(b"data:")?;
+    serde_json::from_slice(payload).ok()
+}
+
 async fn media_data(client: &reqwest::Client, value: &str, kind: &str) -> Result<String, String> {
     use base64::Engine;
     if value.starts_with(&format!("data:{kind}/")) {
@@ -951,17 +1011,13 @@ async fn run_test(
                 return Err("测试输出过大".into());
             }
             while let Some(end) = buffer.iter().position(|b| *b == b'\n') {
-                let line: Vec<u8> = buffer.drain(..=end).collect();
-                if !line.starts_with(b"data:") {
-                    continue;
-                }
-                if let Ok(mut event) = serde_json::from_slice::<Value>(&line[5..]) {
-                    let kind = event
-                        .get("type")
-                        .and_then(Value::as_str)
-                        .unwrap_or("")
-                        .to_string();
-                    if ["image", "audio", "video"].contains(&kind.as_str()) {
+                let parsed = parse_sse_line(&buffer[..end]);
+                buffer.drain(..=end);
+                if let Some(mut event) = parsed {
+                    if let Some(kind @ ("image" | "audio" | "video")) =
+                        event.get("type").and_then(Value::as_str)
+                    {
+                        let kind = kind.to_owned();
                         let field = format!("{kind}_url");
                         if let Some(raw) = event.get(&field).and_then(Value::as_str) {
                             event[&field] =
@@ -1078,8 +1134,9 @@ fn main_visibility(app: &tauri::AppHandle, visible: bool) -> Result<(), String> 
         window.show().map_err(|_| "无法打开窗口")?;
         window.unminimize().map_err(|_| "无法恢复主窗口")?;
         window.set_focus().map_err(|_| "无法聚焦主窗口")?;
+        emit_view_to_window(app, "main");
+        app.state::<Arc<Runtime>>().wake.notify_one();
     }
-    app.state::<Arc<Runtime>>().wake.notify_one();
     panel_trace(
         app,
         "main_visibility",
@@ -1328,6 +1385,7 @@ fn quick_panel(
     #[cfg(target_os = "macos")]
     app.show()?;
     window.show()?;
+    emit_view_to_window(app, "quick");
     panel_trace(app, "shown", "");
     window.set_focus()?;
     let focused = window.is_focused()?;
@@ -1556,6 +1614,37 @@ async fn background(app: tauri::AppHandle) -> Result<(), String> {
     .map_err(|_| "无法返回后台".to_string())?
 }
 
+#[cfg(any(desktop, test))]
+fn should_poll_fast(
+    main_visible: bool,
+    main_minimized: bool,
+    app_active: bool,
+    quick_visible: bool,
+) -> bool {
+    (main_visible && !main_minimized && app_active) || quick_visible
+}
+
+#[cfg(desktop)]
+fn active_polling_visible(app: &tauri::AppHandle, state: &Runtime) -> bool {
+    let (main_visible, main_minimized) = app
+        .get_webview_window("main")
+        .map(|w| {
+            (
+                w.is_visible().unwrap_or(false),
+                w.is_minimized().unwrap_or(false),
+            )
+        })
+        .unwrap_or((false, false));
+    let quick_visible = app
+        .get_webview_window("quick")
+        .is_some_and(|w| w.is_visible().unwrap_or(false));
+    #[cfg(target_os = "macos")]
+    let app_active = state.record_activity.active();
+    #[cfg(not(target_os = "macos"))]
+    let app_active = true;
+    should_poll_fast(main_visible, main_minimized, app_active, quick_visible)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -1581,13 +1670,17 @@ pub fn run() {
         .setup(|app| {
             let path = app.path().app_config_dir()?.join("preferences.json");
             let prefs: Preferences = std::fs::read(&path).ok().and_then(|data| serde_json::from_slice(&data).ok()).unwrap_or_default();
+            #[cfg(target_os = "macos")]
+            let initial_active = record_activity::application_active();
+            #[cfg(not(target_os = "macos"))]
+            let initial_active = true;
             let state = Arc::new(Runtime { client: reqwest::Client::builder().timeout(Duration::from_secs(10)).redirect(reqwest::redirect::Policy::none()).retry(reqwest::retry::never()).build()?,
                 #[cfg(desktop)] pinned: AtomicBool::new(prefs.pinned),
                 #[cfg(desktop)] quitting: AtomicBool::new(false),
                 #[cfg(desktop)] panel: StdMutex::new(PanelLifecycle::default()),
                 foreground: AtomicBool::new(true), read_epoch: watch::channel(0).0,
-                #[cfg(target_os = "macos")] record_activity: record_activity::RecordActivity::default(),
-                view: Mutex::new(ViewState { platform: if cfg!(mobile) { "android" } else { "macos" }, foreground: !cfg!(target_os = "macos"), initializing: true, preferences: prefs, ..Default::default() }),
+                #[cfg(target_os = "macos")] record_activity: record_activity::RecordActivity::new(initial_active),
+                view: Mutex::new(ViewState { platform: if cfg!(mobile) { "android" } else { "macos" }, foreground: initial_active, initializing: true, preferences: prefs, ..Default::default() }),
                 key: Mutex::new(None), network: Mutex::new(()), snapshot_gate: Mutex::new(()),
                 generation: AtomicU64::new(0), tests: Mutex::new(HashMap::new()), wake: Notify::new(), path });
             app.manage(state.clone());
@@ -1649,24 +1742,21 @@ pub fn run() {
                     publish(&handle, &view);
                 }
                 loop {
-                if !state.foreground.load(Ordering::SeqCst) {
-                    state.wake.notified().await;
-                    continue;
-                }
-                #[cfg(desktop)]
-                let visible=["main","quick"].iter().any(|label| handle.get_webview_window(label).is_some_and(|w|w.is_visible().unwrap_or(false)));
-                #[cfg(mobile)]
-                let visible = true;
-                // Wall time advances through macOS sleep. Check locally once a
-                // second so wake does not wait out a suspended 15-second timer.
-                let due=std::time::SystemTime::now()+Duration::from_secs(if visible {2} else {15});
-                refresh_inner(&handle,&state).await;
-                loop {
-                    if std::time::SystemTime::now()>=due {break;}
-                    let delay=due.duration_since(std::time::SystemTime::now()).unwrap_or_default().min(Duration::from_secs(1));
-                    tokio::select! { _=tokio::time::sleep(delay)=>(), _=state.wake.notified()=>break }
-                }
-            }});
+                    if !state.foreground.load(Ordering::SeqCst) {
+                        state.wake.notified().await;
+                        continue;
+                    }
+                    refresh_inner(&handle, &state).await;
+                    #[cfg(desktop)]
+                    let active_visible = active_polling_visible(&handle, &state);
+                    #[cfg(mobile)]
+                    let active_visible = true;
+                    let interval = Duration::from_secs(if active_visible { 2 } else { 15 });
+                    tokio::select! {
+                        _ = tokio::time::sleep(interval) => {}
+                        _ = state.wake.notified() => {}
+                    }
+                }});
             Ok(())
         })
         .on_window_event(|window,event| {
@@ -1733,16 +1823,62 @@ pub fn run() {
         check_updates,
         open_authorization_url
     ]);
+    #[cfg(target_os = "macos")]
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum ActivityTick {
+        Pending,
+        SkipCleared,
+        Checked,
+    }
+    #[cfg(target_os = "macos")]
+    let mut cached_state: Option<Arc<Runtime>> = None;
+    #[cfg(target_os = "macos")]
+    let mut activity_tick = ActivityTick::Pending;
     builder
         .build(tauri::generate_context!())
         .expect("Sub2Ops failed to start")
-        .run(|_app, _event| {
+        .run(move |_app, _event| {
             #[cfg(target_os = "macos")]
-            if matches!(
-                &_event,
-                tauri::RunEvent::Ready | tauri::RunEvent::MainEventsCleared
-            ) {
-                sync_record_activity(_app);
+            {
+                let state = cached_state
+                    .get_or_insert_with(|| _app.state::<Arc<Runtime>>().inner().clone());
+                match &_event {
+                    tauri::RunEvent::Ready
+                    | tauri::RunEvent::Resumed
+                    | tauri::RunEvent::Reopen { .. }
+                    | tauri::RunEvent::MenuEvent(_)
+                    | tauri::RunEvent::WindowEvent {
+                        event: WindowEvent::Focused(_),
+                        ..
+                    }
+                    | tauri::RunEvent::TrayIconEvent(TrayIconEvent::Click { .. }) => {
+                        sync_record_activity_with(_app, state);
+                        activity_tick = ActivityTick::Checked;
+                    }
+                    tauri::RunEvent::TrayIconEvent(
+                        TrayIconEvent::Move { .. }
+                        | TrayIconEvent::Enter { .. }
+                        | TrayIconEvent::Leave { .. },
+                    )
+                    | tauri::RunEvent::WindowEvent {
+                        event:
+                            WindowEvent::Moved(_)
+                            | WindowEvent::Resized(_)
+                            | WindowEvent::ScaleFactorChanged { .. },
+                        ..
+                    } => {
+                        if activity_tick == ActivityTick::Pending {
+                            activity_tick = ActivityTick::SkipCleared;
+                        }
+                    }
+                    tauri::RunEvent::MainEventsCleared => {
+                        if activity_tick == ActivityTick::Pending {
+                            sync_record_activity_with(_app, state);
+                        }
+                        activity_tick = ActivityTick::Pending;
+                    }
+                    _ => {}
+                }
             }
             #[cfg(desktop)]
             if let tauri::RunEvent::Reopen { .. } = _event {
@@ -2099,7 +2235,16 @@ mod tests {
         apply_refresh(&mut view, Ok(first.clone()));
         apply_refresh(&mut view, Err("网关暂不可用 [502]".into()));
         assert!(!view.online);
-        assert_eq!(view.snapshot, Some(first));
+        assert_eq!(view.snapshot.as_deref(), Some(&first));
+        let cloned = view.clone();
+        assert!(Arc::ptr_eq(
+            view.snapshot.as_ref().unwrap(),
+            cloned.snapshot.as_ref().unwrap()
+        ));
+        assert_eq!(
+            serde_json::to_value(&cloned).unwrap()["snapshot"],
+            first
+        );
         let connection = serde_json::json!({"state":"auth_rejected"});
         apply_refresh(
             &mut view,
@@ -2112,7 +2257,34 @@ mod tests {
         let next = serde_json::json!({"observed_at":"2026-09-25T10:00:02Z","accounts":[{"id":2}]});
         apply_refresh(&mut view, Ok(next.clone()));
         assert!(view.online && view.error.is_empty());
-        assert_eq!(view.snapshot, Some(next));
+        assert_eq!(view.snapshot.as_deref(), Some(&next));
+    }
+
+    #[test]
+    fn fast_polling_requires_active_unminimized_main_or_visible_quick_panel() {
+        assert!(should_poll_fast(true, false, true, false));
+        assert!(!should_poll_fast(true, true, true, false));
+        assert!(!should_poll_fast(true, false, false, false));
+        assert!(!should_poll_fast(false, false, true, false));
+        assert!(should_poll_fast(false, false, false, true));
+        assert!(should_poll_fast(true, true, false, true));
+    }
+
+    #[test]
+    fn sse_line_parser_handles_crlf_and_ignores_non_data_lines() {
+        assert_eq!(
+            parse_sse_line(b"data: {\"type\":\"delta\",\"text\":\"ok\"}\r"),
+            Some(serde_json::json!({"type":"delta","text":"ok"}))
+        );
+        assert_eq!(
+            parse_sse_line(b"data:{\"type\":\"done\"}"),
+            Some(serde_json::json!({"type":"done"}))
+        );
+        assert!(parse_sse_line(b"").is_none());
+        assert!(parse_sse_line(b"\r").is_none());
+        assert!(parse_sse_line(b": keepalive\r").is_none());
+        assert!(parse_sse_line(b"event: message").is_none());
+        assert!(parse_sse_line(b"data: {invalid").is_none());
     }
     #[cfg(desktop)]
     #[test]

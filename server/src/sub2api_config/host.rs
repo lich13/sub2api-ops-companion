@@ -11,7 +11,7 @@ use std::{
     collections::BTreeMap,
     io::Write,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, LazyLock, Mutex},
     time::{Duration, Instant},
 };
 use tokio::{
@@ -142,8 +142,10 @@ impl Driver for Docker {
                 String::from_utf8_lossy(&out.stdout),
                 String::from_utf8_lossy(&out.stderr)
             );
-            let re = regex::Regex::new(r"Sub2API\s+(\S+)\s+\(commit:\s*([a-f0-9]{7,40}),").unwrap();
-            let cap = re
+            static VERSION_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+                regex::Regex::new(r"Sub2API\s+(\S+)\s+\(commit:\s*([a-f0-9]{7,40}),").unwrap()
+            });
+            let cap = VERSION_RE
                 .captures(&text)
                 .filter(|_| out.status.success())
                 .ok_or_else(|| Error::new(409, "无法确认运行版本及提交"))?;
@@ -487,8 +489,14 @@ pub async fn run(args: &[String]) -> Result<()> {
     std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o750))?;
     std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o660))?;
     loop {
-        let (mut stream, _) = listener.accept().await?;
-        if stream.peer_cred()?.uid() != uid {
+        let Ok((mut stream, _)) = listener.accept().await else {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            continue;
+        };
+        let Ok(cred) = stream.peer_cred() else {
+            continue;
+        };
+        if cred.uid() != uid {
             continue;
         }
         let host = host.clone();

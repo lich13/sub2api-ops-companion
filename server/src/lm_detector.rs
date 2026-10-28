@@ -8,7 +8,6 @@ use crate::{
     tokenizer,
 };
 use futures_util::StreamExt;
-use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -56,41 +55,33 @@ pub struct Snapshot {
     pub version: Value,
 }
 impl Snapshot {
-    fn load(path: &Path, meta: &Value) -> Result<Self> {
-        for (name, _, limit) in FILES {
-            let bytes = std::fs::read(path.join(name)).map_err(|_| unavailable())?;
-            if bytes.len() > limit || sha256(&bytes) != meta["files"][name]["sha256"] {
+    fn load_bytes(
+        bank_bytes: &[u8],
+        detector_bytes: &[u8],
+        tokenizer_bytes: &[u8],
+        meta: &Value,
+    ) -> Result<Self> {
+        for ((name, _, limit), bytes) in
+            FILES
+                .into_iter()
+                .zip([bank_bytes, detector_bytes, tokenizer_bytes])
+        {
+            if bytes.len() > limit || sha256(bytes) != meta["files"][name]["sha256"] {
                 return Err(unavailable());
             }
         }
-        let detector = lmfpd::Detector::load(&lmfpd::LoadOptions {
-            sources: vec![path.to_string_lossy().into_owned()],
-            cache: PathBuf::new(),
-            ttl: 0.0,
-        })
-        .map_err(|_| unavailable())?;
-        #[derive(Deserialize)]
-        struct Model {
-            id: String,
-            display_name: String,
-        }
-        #[derive(Deserialize)]
-        struct Metadata {
-            models: Vec<Model>,
-        }
-        let bank: Metadata =
-            serde_json::from_slice(&std::fs::read(path.join("unified_bank.json"))?)
-                .map_err(|_| unavailable())?;
-        if bank.models.is_empty() || bank.models.len() > 256 {
+        let detector =
+            lmfpd::Detector::load_bytes(bank_bytes, detector_bytes).map_err(|_| unavailable())?;
+        let models = detector.models();
+        if models.is_empty() || models.len() > 256 {
             return Err(unavailable());
         }
-        let merged_models = bank
-            .models
-            .into_iter()
+        let merged_models = models
+            .iter()
             .filter(|m| m.display_name.contains('/'))
-            .map(|m| m.id)
+            .map(|m| m.id.clone())
             .collect();
-        let tokenizer = tokenizer::Bank::parse(&std::fs::read(path.join("tokenizer_bank.json"))?)?;
+        let tokenizer = tokenizer::Bank::parse(tokenizer_bytes)?;
         let version = json!({"revision":meta["revision"],"sha256":meta["files"]["shared_detector.bin"]["sha256"],"files":meta["files"],"built_at":detector.built_at(),"tokenizer_built_at":tokenizer.built_at(),"analyzer_version":"lmfpd-0.1.0"});
         Ok(Self {
             detector,
@@ -98,6 +89,15 @@ impl Snapshot {
             merged_models,
             version,
         })
+    }
+    fn load(path: &Path, meta: &Value) -> Result<Self> {
+        let bank_bytes =
+            std::fs::read(path.join("unified_bank.json")).map_err(|_| unavailable())?;
+        let detector_bytes =
+            std::fs::read(path.join("shared_detector.bin")).map_err(|_| unavailable())?;
+        let tokenizer_bytes =
+            std::fs::read(path.join("tokenizer_bank.json")).map_err(|_| unavailable())?;
+        Self::load_bytes(&bank_bytes, &detector_bytes, &tokenizer_bytes, meta)
     }
     pub fn analyze(
         &self,
@@ -157,7 +157,7 @@ impl Bank {
         }
     }
     pub fn revision(&self) -> Result<String> {
-        let state = self.state.read()?;
+        let state = self.state.read_shared()?;
         let revision = string(&state["revision"]);
         if !valid_revision(revision) {
             return Err(unavailable());
@@ -177,41 +177,27 @@ impl Bank {
         if let Some(snapshot) = cache.history.get(revision).and_then(Weak::upgrade) {
             return Ok(snapshot);
         }
-        let mut path = self.root.join(revision);
-        let mut temporary = None;
-        if revision == REVISION && !path.exists() {
-            let stage = if self.settings.read_only {
-                tempfile::tempdir()?
-            } else {
-                std::fs::create_dir_all(&self.root)?;
-                tempfile::tempdir_in(&self.root)?
-            };
+        let path = self.root.join(revision);
+        let loaded = if revision == REVISION && !path.exists() {
             let bundled = manifest();
             let mut files = json!({});
-            for (name, bytes, _) in FILES {
-                std::fs::write(stage.path().join(name), bytes)?;
+            for (name, _, _) in FILES {
                 files[name] = bundled["files"][format!("data/{name}")].clone();
             }
-            std::fs::write(
-                stage.path().join("manifest.json"),
-                serde_json::to_vec(&json!({"revision":revision,"files":files}))?,
-            )?;
-            if self.settings.read_only {
-                path = stage.path().to_path_buf();
-                temporary = Some(stage);
-            } else {
-                std::fs::rename(stage.path(), &path)?;
+            let meta = json!({"revision":revision,"files":files});
+            Arc::new(Snapshot::load_bytes(
+                FILES[0].1, FILES[1].1, FILES[2].1, &meta,
+            )?)
+        } else {
+            let meta: Value = serde_json::from_slice(
+                &std::fs::read(path.join("manifest.json")).map_err(|_| unavailable())?,
+            )
+            .map_err(|_| unavailable())?;
+            if meta["revision"] != revision {
+                return Err(unavailable());
             }
-        }
-        let meta: Value = serde_json::from_slice(
-            &std::fs::read(path.join("manifest.json")).map_err(|_| unavailable())?,
-        )
-        .map_err(|_| unavailable())?;
-        if meta["revision"] != revision {
-            return Err(unavailable());
-        }
-        let loaded = Arc::new(Snapshot::load(&path, &meta)?);
-        drop(temporary);
+            Arc::new(Snapshot::load(&path, &meta)?)
+        };
         cache
             .history
             .insert(revision.into(), Arc::downgrade(&loaded));
@@ -385,19 +371,34 @@ impl Bank {
             stage.path().join("manifest.json"),
             serde_json::to_vec(&meta)?,
         )?;
-        let path = stage.path().to_path_buf();
-        let check = meta.clone();
-        let snapshot = crate::supervision::join(tokio::task::spawn_blocking(move || {
-            Snapshot::load(&path, &check)
-        }))
-        .await
-        .map_err(|_| unavailable())??;
         let dest = self.root.join(revision);
-        if !dest.exists() {
-            std::fs::rename(stage.path(), &dest)?;
+        let snapshot = if dest.exists() {
+            let stage_path = stage.path().to_path_buf();
+            let dest_path = dest.clone();
+            let check = meta.clone();
+            crate::supervision::join(tokio::task::spawn_blocking(move || -> Result<Snapshot> {
+                for (name, _, limit) in FILES {
+                    let bytes = std::fs::read(stage_path.join(name)).map_err(|_| unavailable())?;
+                    if bytes.len() > limit || sha256(&bytes) != check["files"][name]["sha256"] {
+                        return Err(unavailable());
+                    }
+                }
+                Snapshot::load(&dest_path, &check)
+            }))
+            .await
+            .map_err(|_| unavailable())??
         } else {
-            Snapshot::load(&dest, &meta)?;
-        }
+            let path = stage.path().to_path_buf();
+            let check = meta.clone();
+            let loaded = crate::supervision::join(tokio::task::spawn_blocking(move || {
+                Snapshot::load(&path, &check)
+            }))
+            .await
+            .map_err(|_| unavailable())??;
+            std::fs::create_dir_all(&self.root)?;
+            std::fs::rename(stage.path(), &dest)?;
+            loaded
+        };
         self.state.transaction(|state| {
             state["revision"] = revision.into();
             state["synced_at"] = crate::compat::now().into();

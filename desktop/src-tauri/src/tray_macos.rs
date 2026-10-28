@@ -9,34 +9,34 @@ thread_local! {
 }
 
 pub fn install(tray: &tauri::tray::TrayIcon) -> tauri::Result<()> {
-    tray.with_inner_tray_icon(|inner| {
+    tray.with_inner_tray_icon(|inner| -> std::io::Result<()> {
         let mtm = MainThreadMarker::new()
-            .ok_or_else(|| anyhow::anyhow!("tray install requires main thread"))?;
+            .ok_or_else(|| std::io::Error::other("tray install requires main thread"))?;
         inner.set_show_menu_on_right_click(false);
         let item = inner
             .ns_status_item()
-            .ok_or_else(|| anyhow::anyhow!("status item missing"))?;
+            .ok_or_else(|| std::io::Error::other("status item missing"))?;
         MENU.with(|saved| saved.replace(item.menu(mtm)));
         item.setMenu(None);
         Ok(())
     })?
-    .map_err(tauri::Error::Anyhow)
+    .map_err(tauri::Error::Io)
 }
 
 pub fn show_menu(tray: &tauri::tray::TrayIcon) -> tauri::Result<()> {
-    tray.with_inner_tray_icon(|inner| {
+    tray.with_inner_tray_icon(|inner| -> std::io::Result<()> {
         let mtm = MainThreadMarker::new()
-            .ok_or_else(|| anyhow::anyhow!("tray menu requires main thread"))?;
+            .ok_or_else(|| std::io::Error::other("tray menu requires main thread"))?;
         let item = inner
             .ns_status_item()
-            .ok_or_else(|| anyhow::anyhow!("status item missing"))?;
+            .ok_or_else(|| std::io::Error::other("status item missing"))?;
         let button = item
             .button(mtm)
-            .ok_or_else(|| anyhow::anyhow!("status button missing"))?;
+            .ok_or_else(|| std::io::Error::other("status button missing"))?;
         // AppKit runs a nested loop here. Do not hold the RefCell borrow.
         let menu = MENU
             .with(|saved| saved.borrow().clone())
-            .ok_or_else(|| anyhow::anyhow!("tray menu missing"))?;
+            .ok_or_else(|| std::io::Error::other("tray menu missing"))?;
         unsafe {
             item.setMenu(Some(&menu));
             button.performClick(None);
@@ -44,5 +44,5 @@ pub fn show_menu(tray: &tauri::tray::TrayIcon) -> tauri::Result<()> {
         }
         Ok(())
     })?
-    .map_err(tauri::Error::Anyhow)
+    .map_err(tauri::Error::Io)
 }

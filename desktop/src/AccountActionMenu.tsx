@@ -17,10 +17,11 @@ export default function AccountActionMenu({ label, children, iconOnly = false, a
   useBackAction(visible, () => { setOpen(false); trigger.current?.focus({ preventScroll: true }); });
   useEffect(() => { setOpen(false); setPosition(undefined); }, [active, contextKey, disabled]);
   useEffect(() => {
+    if (!visible) return;
     const closeOther = (event: Event) => { if ((event as CustomEvent<string>).detail !== id) setOpen(false); };
     document.addEventListener(openedEvent, closeOther);
     return () => document.removeEventListener(openedEvent, closeOther);
-  }, [id]);
+  }, [id, visible]);
 
   useLayoutEffect(() => {
     if (!visible || !trigger.current || !popup.current) return;

@@ -476,11 +476,11 @@ impl Runtime {
         let stats = if specs.is_empty() {
             Ok(crate::usage::Stats::new())
         } else {
+            static STATS_SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+                crate::sql::STATS_STATS_SQL.replace("%(windows)s", "$1")
+            });
             self.db
-                .all(
-                    &crate::sql::STATS_STATS_SQL.replace("%(windows)s", "$1"),
-                    &[crate::db::Param::Json(json!(specs))],
-                )
+                .all(&STATS_SQL, &[crate::db::Param::Json(json!(specs))])
                 .await
                 .map(crate::usage::stats_rows)
         };
@@ -569,7 +569,7 @@ impl Runtime {
             ),
         }
         if force {
-            self.invalidate().await;
+            self.invalidate_snapshot().await;
         }
         Ok(usage)
     }

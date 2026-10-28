@@ -125,9 +125,15 @@ pub fn normalize_url(value: &str) -> Result<String> {
     Ok(value.to_owned())
 }
 
+pub fn env_map() -> BTreeMap<String, String> {
+    std::env::vars_os()
+        .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
+        .collect()
+}
+
 impl Settings {
     pub fn load(read_only: bool) -> Result<Self> {
-        Self::from_env(&std::env::vars().collect(), read_only)
+        Self::from_env(&env_map(), read_only)
     }
 
     pub fn from_env(env: &BTreeMap<String, String>, read_only: bool) -> Result<Self> {
