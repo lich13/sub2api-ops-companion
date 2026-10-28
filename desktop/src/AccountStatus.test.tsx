@@ -53,6 +53,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("remaining restriction", () => {
@@ -81,7 +82,7 @@ describe("remaining restriction", () => {
 });
 
 describe("account status display", () => {
-  it("releases its countdown interval when removed", async () => {
+  it("releases its countdown timer when removed", async () => {
     await render(
       account({
         blockers: [
@@ -97,6 +98,37 @@ describe("account status display", () => {
 
     await act(async () => root.render(null));
 
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("updates at day and minute boundaries without losing the final seconds", async () => {
+    const value = account({ blockers: [{ code: "rate_limit_reset_at", label: "上游限流", until: "2026-10-17T00:00:00.000Z" }] });
+    await render(value);
+    expect(container.textContent).toContain("1天0小时后自动解除");
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(container.textContent).toContain("23小时59分钟后自动解除");
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(container.textContent).toContain("23小时58分钟后自动解除");
+  });
+
+  it("stops when hidden or expired and recalibrates after focus or clock rollback", async () => {
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    await render(account({ blockers: [{ code: "rate_limit_reset_at", label: "上游限流", until: "2026-10-16T00:00:02.000Z" }] }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(container.textContent).toContain("等待状态刷新");
+    expect(vi.getTimerCount()).toBe(0);
+    vi.setSystemTime(now);
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    expect(container.textContent).toContain("2秒后自动解除");
+    visibility.mockReturnValue("hidden");
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(vi.getTimerCount()).toBe(0);
+    vi.setSystemTime(now + 1000);
+    visibility.mockReturnValue("visible");
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(container.textContent).toContain("1秒后自动解除");
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(container.textContent).toContain("等待状态刷新");
     expect(vi.getTimerCount()).toBe(0);
   });
 

@@ -762,6 +762,16 @@ fn shape_valid(path: &str, data: &Value) -> bool {
     {
         return crate::proxy_management::valid(path, data);
     }
+    if path.ends_with("/apply-oauth-credentials") {
+        return path
+            .strip_prefix("/accounts/")
+            .and_then(|value| value.strip_suffix("/apply-oauth-credentials"))
+            .and_then(|value| value.parse::<i64>().ok())
+            .is_some_and(|id| id > 0 && data["account_id"].as_i64() == Some(id))
+            && data["verified"] == true
+            && data["status"].is_string()
+            && data.as_object().is_some_and(|v| v.len() == 3);
+    }
     match path.split('?').next().unwrap_or("") {
         "/snapshot" => snapshot_valid(data),
         "/config/key-quota" => crate::key_quota::settings_valid(data, None),
@@ -1096,7 +1106,8 @@ pub(crate) async fn http_detailed(
     if path.starts_with("/proxies/") || path.starts_with("/proxy-management") {
         req = req.timeout(Duration::from_secs(105));
     }
-    if path == "/account-creation"
+    if path.ends_with("/apply-oauth-credentials")
+        || path == "/account-creation"
         || path.starts_with("/account-creation/")
         || path == "/account-creation?sync_models=true"
     {
@@ -1928,6 +1939,26 @@ mod tests {
                 !shape_valid("/detection-logs", &response),
                 "accepted malformed detection log response: {response}"
             );
+        }
+    }
+
+    #[test]
+    fn oauth_reauthorization_response_requires_matching_account_and_no_credentials() {
+        let path = "/accounts/7/apply-oauth-credentials";
+        let valid = serde_json::json!({"account_id":7,"verified":true,"status":"active"});
+        assert!(shape_valid(path, &valid));
+        assert!(!shape_valid("/accounts/8/apply-oauth-credentials", &valid));
+        for (field, value) in [
+            ("verified", serde_json::json!(false)),
+            ("status", serde_json::Value::Null),
+            (
+                "credentials",
+                serde_json::json!({"access_token":"fixture-token"}),
+            ),
+        ] {
+            let mut invalid = valid.clone();
+            invalid[field] = value;
+            assert!(!shape_valid(path, &invalid));
         }
     }
 

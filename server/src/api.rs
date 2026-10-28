@@ -187,8 +187,14 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         ["accounts", _] => Some(&["DELETE"]),
         ["accounts", _, "settings" | "models" | "usage"]
         | ["accounts", _, "model-tests", "latest"] => Some(&["GET"]),
-        ["accounts", _, "operations" | "schedulable" | "recover-state" | "priority" | "test" | "model-tests"
-        | "usage-action"] => Some(&["POST"]),
+        ["accounts", _, "operations"
+        | "schedulable"
+        | "recover-state"
+        | "priority"
+        | "test"
+        | "model-tests"
+        | "usage-action"
+        | "apply-oauth-credentials"] => Some(&["POST"]),
         ["accounts", _, "groups" | "degradation-mark"] => Some(&["PUT"]),
         ["accounts", _, "model-detection" | "keepalive"] => Some(&["GET", "PUT"]),
         ["errors" | "usage-records", _] => Some(&["GET"]),
@@ -573,6 +579,14 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             version(&payload, "expected_mark_version")?;
             validation::boolean(&payload["marked"])?;
             runtime.set_degradation(path_id(id)?, &payload).await?
+        }
+        ["accounts", id, "apply-oauth-credentials"] => {
+            if !query.is_empty() {
+                return Err(Error::invalid());
+            }
+            runtime
+                .apply_oauth_credentials(path_id(id)?, &key, &payload)
+                .await?
         }
         ["accounts", id, "settings"] => runtime.actions.settings_view(path_id(id)?).await?,
         ["proxy-management", ..] => {

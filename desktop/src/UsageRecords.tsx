@@ -735,11 +735,11 @@ export default function UsageRecords({
                   </button>
                 </header>
               )}
-              <select aria-label="记录平台" value={draft.platform} onChange={e => {
+              <div className="records-platform-select"><select aria-label="记录平台" value={draft.platform} onChange={e => {
                 const platform = e.target.value;
                 const selected = accounts.find(account => String(account.id) === draft.account);
                 setDraft({ ...draft, platform, account: platform && selected?.platform !== platform ? "" : draft.account });
-              }}><option value="">全部平台</option>{platforms.map(({ platform }) => <option key={platform} value={platform}>{priorityPlatformName(platform)}</option>)}</select>
+              }}><option value="">全部平台</option>{platforms.map(({ platform }) => <option key={platform} value={platform}>{priorityPlatformName(platform)}</option>)}</select><ChevronDown size={16} aria-hidden="true"/></div>
               <RecordFilter
                 kind="users"
                 onOpenChange={pickerChanged}

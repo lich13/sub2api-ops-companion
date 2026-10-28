@@ -28,7 +28,7 @@ COPY server/resources/lm-detector/LICENSE.txt /usr/share/doc/sub2ops/LM-Detector
 ARG BUILD_REVISION=development
 LABEL org.opencontainers.image.title="Sub2Ops Companion" \
       org.opencontainers.image.revision=$BUILD_REVISION \
-      org.opencontainers.image.version="0.1.72"
+      org.opencontainers.image.version="0.1.73"
 ENV APP_PORT=18081
 USER 10001:10001
 EXPOSE 18081

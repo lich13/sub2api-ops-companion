@@ -224,7 +224,7 @@ pub fn write_json(path: &Path, value: &Value) -> Result<()> {
         .prefix(".sub2ops-state-")
         .tempfile_in(parent)?;
     private_permissions(temporary.as_file())?;
-    serde_json::to_writer_pretty(&mut temporary, value)?;
+    serde_json::to_writer(&mut temporary, value)?;
     temporary.write_all(b"\n")?;
     temporary.flush()?;
     temporary.as_file().sync_all()?;
@@ -291,7 +291,11 @@ mod tests {
         assert!(Arc::ptr_eq(&first, &store.read_shared().unwrap()));
         assert_eq!(store.read().unwrap()["value"], 1);
         assert_eq!(VALIDATIONS.load(Ordering::SeqCst), validations);
-        write_json(&path, &json!({"version":1,"value":2})).unwrap();
+        fs::write(
+            &path,
+            serde_json::to_vec_pretty(&json!({"version":1,"value":2})).unwrap(),
+        )
+        .unwrap();
         assert_eq!(store.read().unwrap()["value"], 2);
         assert_eq!(
             first["value"], 1,

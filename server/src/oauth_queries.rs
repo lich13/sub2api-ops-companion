@@ -188,12 +188,13 @@ impl Coordinator {
     }
     pub fn observe_gates(
         &self,
-        rows: &[Value],
+        rows: &[impl std::borrow::Borrow<Value>],
         results: &Value,
         scheduler: &Value,
         at: DateTime<Utc>,
     ) -> Result<()> {
         for row in rows {
+            let row = row.borrow();
             let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
             let saved = quota::latest_result(row, &results[id.to_string()], at);
             let (blocked, deadline) =

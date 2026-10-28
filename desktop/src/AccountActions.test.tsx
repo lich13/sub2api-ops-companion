@@ -78,7 +78,7 @@ const state = (accounts: Account[] = [account(1)]): ViewState => ({
   },
 });
 
-const openAILabels = ["模型测试", "标记降智", "定时检测", "测试连接", "账号保活", "恢复状态", "应用模板", "模型白名单", "模型映射", "选择代理", "删除"];
+const openAILabels = ["模型测试", "标记降智", "定时检测", "测试连接", "账号保活", "重新授权", "恢复状态", "应用模板", "模型白名单", "模型映射", "选择代理", "删除"];
 let container: HTMLDivElement;
 let root: Root;
 let receive: (next: ViewState) => void;
@@ -173,11 +173,9 @@ describe("shared account actions", () => {
   it.each(["oauth", "apikey"])("expands every supported OpenAI %s action in the account table while retaining the group menu", async (type) => {
     await render(state([account(1, { type })]));
     const panel = container.querySelector<HTMLElement>(".accounts-table .account-actions")!;
-    expect(labels(panel)).toEqual(openAILabels);
+    expect(labels(panel)).toEqual(openAILabels.filter(label => type === "oauth" || label !== "重新授权"));
     expect(panel.querySelector(".account-more-trigger")).toBeNull();
-    expect([...panel.querySelectorAll("button")].map((node) => !!node.querySelector("svg"))).toEqual([
-      true, true, true, true, true, true, true, true, true, true, true,
-    ]);
+    expect([...panel.querySelectorAll("button")].every(node => !!node.querySelector("svg"))).toBe(true);
     expect(container.querySelector('[role="group"][aria-label="批量账号操作"]')).toBeNull();
     await act(async () => container.querySelector<HTMLInputElement>('[aria-label="选择 Fixture 1"]')!.click());
     const bulk = container.querySelector<HTMLElement>('[role="group"][aria-label="批量账号操作"]')!;
@@ -186,7 +184,7 @@ describe("shared account actions", () => {
     await openGroups();
     await openGroupMenu();
 
-    expect(labels(menu()!)).toEqual(openAILabels);
+    expect(labels(menu()!)).toEqual(openAILabels.filter(label => type === "oauth" || label !== "重新授权"));
     expect(menu()?.parentElement).toBe(document.body);
     expect(groupCard("Fixture 1").querySelector("details")).toBeNull();
     expect(vi.mocked(api).mock.calls.every(([method]) => method === "GET")).toBe(true);

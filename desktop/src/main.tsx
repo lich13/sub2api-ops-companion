@@ -73,6 +73,7 @@ import { AccountCreationButton } from "./AccountCreationDialog";
 import SchedulingParameters from "./SchedulingParameters";
 import AccountSettingsDialog, { type SettingsSection } from "./AccountSettingsDialog";
 import ProxyBatchDialog from "./ProxyBatchDialog";
+import ReauthorizeAccountDialog from "./ReauthorizeAccountDialog";
 import AccountActions, { useAccountActions } from "./AccountActions";
 import ModelDetectionDialog from "./ModelDetectionDialog";
 import AccountModelField from "./AccountModelField";
@@ -138,6 +139,7 @@ export default function App() {
     [ready, setReady] = useState(false),
     [page, setPage] = useState<Page>("accounts"),
     [accountSort, setAccountSort] = useState(readAccountSort),
+    [reauthorizeAccount, setReauthorizeAccount] = useState<{ account: Account; connection: string } | null>(null),
     [settingsAccount, setSettingsAccount] = useState<{ account: Account; section: SettingsSection; connection: string } | null>(null),
     [nameExpanded, setNameExpanded] = useState(() => { try { return localStorage.getItem("sub2ops-account-name-expanded") === "true"; } catch { return false; } }),
     [testAccount, setTestAccount] = useState<Account | null>(null),
@@ -212,7 +214,7 @@ export default function App() {
     if (previousPage.current !== page && (previousPage.current === "accounts" || page === "accounts")) {
       setQuery(""); setGroup(""); setPlatform(""); setFilter(""); setType(""); setSelected(new Set());
       setFiltersOpen(false); setGroupsOpen(false); setDeleteAccounts(null); setTestAccount(null); setModelTestAccount(null);
-      setModelDetectionAccount(null); setKeepaliveAccount(null); setSettingsAccount(null); setProxyAccounts(null);
+      setModelDetectionAccount(null); setKeepaliveAccount(null); setSettingsAccount(null); setReauthorizeAccount(null); setProxyAccounts(null);
       setTemplatesOpen(false); setTemplateAccount(null); setTemplateAccounts(undefined); closeDetail();
       if (page === "accounts") {
         setAccountSort(readAccountSort());
@@ -247,7 +249,7 @@ export default function App() {
     setTestAccount(null);
     setModelTestAccount(null);
     setKeepaliveAccount(null);
-    setSettingsAccount(null);
+    setSettingsAccount(null); setReauthorizeAccount(null);
     setProxyAccounts(null);
     schedulePending.current = false; setBusy(null);
     setGroupsOpen(false);
@@ -259,6 +261,7 @@ export default function App() {
   const accountActions = useAccountActions({ online: state.online, connectionKey, report,
     modelTest: setModelTestAccount, modelDetection: setModelDetectionAccount, test: setTestAccount,
     keepalive: setKeepaliveAccount,
+    reauthorize: (account) => setReauthorizeAccount({ account, connection: connectionKey }),
     template: (account) => { setTemplateAccounts(undefined); setTemplateAccount(account); setTemplatesOpen(true); },
     remove: (account) => setDeleteAccounts([account]),
     settings: (account, section) => setSettingsAccount({ account, section, connection: connectionKey }),
@@ -1205,6 +1208,7 @@ export default function App() {
       {proxyAccounts && <ProxyBatchDialog key={connectionKey} accounts={proxyAccounts} online={state.online} connectionKey={connectionKey} close={() => setProxyAccounts(null)} report={report}/>}
       {modelDetectionAccount && <ModelDetectionDialog key={`${connectionKey}:${modelDetectionAccount.id}`} account={accounts.find((a) => a.id === modelDetectionAccount.id) ?? modelDetectionAccount} online={state.online} close={() => setModelDetectionAccount(null)} showResult={() => { setModelTestAccount(modelDetectionAccount); setModelDetectionAccount(null); }} report={report}/>}
       {keepaliveAccount && <KeepaliveDialog key={`${connectionKey}:${keepaliveAccount.id}`} account={accounts.find((a) => a.id === keepaliveAccount.id) ?? keepaliveAccount} online={state.online} connectionKey={connectionKey} close={() => setKeepaliveAccount(null)} report={report}/>}
+      {reauthorizeAccount?.connection === connectionKey && <ReauthorizeAccountDialog key={`${connectionKey}:${reauthorizeAccount.account.id}`} account={reauthorizeAccount.account} online={state.online} close={() => setReauthorizeAccount(null)} report={report}/>}
       {settingsAccount?.connection === connectionKey && <AccountSettingsDialog key={`${connectionKey}:${settingsAccount.account.id}:${settingsAccount.section}`} account={settingsAccount.account} initialSection={settingsAccount.section} online={state.online} close={() => setSettingsAccount(null)}/>}
       {toast && (
         <div className="toast" role="status">

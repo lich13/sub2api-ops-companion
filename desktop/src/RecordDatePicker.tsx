@@ -73,7 +73,7 @@ export default function RecordDatePicker({
       >
         <CalendarDays size={16} />
         <span>{dateRangeLabel(value)}</span>
-        <ChevronDown size={14} />
+        <ChevronDown size={16} />
       </button>
       {open && (
         <div

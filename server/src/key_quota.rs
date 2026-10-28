@@ -212,7 +212,7 @@ impl Service {
             .retain(|id, _| ids.contains(id));
     }
     pub fn settings(&self) -> Result<Value> {
-        let raw = self.config.read()?;
+        let raw = self.config.read_shared()?;
         let seconds = seconds(&raw)?;
         if !raw["accounts"].is_object() {
             return Err(Error::new(503, "余额查询配置无效"));
@@ -220,13 +220,13 @@ impl Service {
         Ok(json!({"seconds":seconds,"revision":config_revision(&json!(seconds))}))
     }
     pub fn account_settings(&self, id: i64) -> Result<Value> {
-        let token = token(&self.config.read()?, id)?;
+        let token = token(self.config.read_shared()?.as_ref(), id)?;
         Ok(
             json!({"account_id":id,"has_access_token":token.is_some(),"revision":config_revision(&json!([id,token]))}),
         )
     }
     pub fn account_access_token(&self, id: i64) -> Result<Value> {
-        let value = token(&self.config.read()?, id)?
+        let value = token(self.config.read_shared()?.as_ref(), id)?
             .ok_or_else(|| Error::new(404, "尚未配置账户访问令牌"))?;
         Ok(json!({"account_id":id,"access_token":value}))
     }
@@ -271,7 +271,7 @@ impl Service {
         }
     }
     pub fn input(&self, id: i64, credentials: &Value, owner: &Value) -> Result<Query> {
-        let access = token(&self.config.read()?, id)?;
+        let access = token(self.config.read_shared()?.as_ref(), id)?;
         let base = text_value(&credentials["base_url"])
             .trim_end_matches('/')
             .to_owned();

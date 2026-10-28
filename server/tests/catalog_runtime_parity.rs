@@ -886,6 +886,62 @@ async fn keepalive_reads_preserve_history_and_validate_the_entire_changed_state(
 }
 
 #[tokio::test]
+async fn keepalive_skips_database_while_waiting_and_still_reconciles_pending() {
+    use sub2ops_server::store::write_json;
+
+    let h = Harness::new().await;
+    let keepalive = &h.runtime.keepalive;
+    let now = chrono::Utc::now();
+    let mut cooling = serde_json::to_value(keepalive.control(47_101).unwrap()).unwrap();
+    cooling["enabled"] = true.into();
+    cooling["last_restore_at"] = json!(now);
+    let mut exhausted = cooling.clone();
+    exhausted["last_restore_at"] = Value::Null;
+    exhausted["restores"] = json!(vec![now; 5]);
+    let mut state = json!({"version":1,"accounts":{"47101":cooling,"47102":exhausted}});
+    write_json(keepalive.store.path(), &state).unwrap();
+    let db = &h.runtime.actions.queries.db.pool;
+    sqlx::query("ALTER TABLE accounts RENAME TO fixture_waiting_accounts")
+        .execute(db)
+        .await
+        .unwrap();
+    keepalive
+        .tick()
+        .await
+        .expect("waiting accounts need no database query");
+
+    state["accounts"]["47101"]["last_restore_at"] = json!(now - chrono::Duration::minutes(5));
+    write_json(keepalive.store.path(), &state).unwrap();
+    assert!(
+        keepalive.tick().await.is_err(),
+        "expired cooldown must resume reading accounts"
+    );
+
+    let control = &mut state["accounts"]["47101"];
+    control["enabled"] = false.into();
+    control["last_restore_at"] = json!(now);
+    control["reservations"] = json!([{"id":"fixture-pending","at":now}]);
+    control["pending"] = json!({"id":"fixture-pending","generation":0,"fingerprint":"a".repeat(64),
+        "before_until":now + chrono::Duration::minutes(5),"reason":"流响应超时","dispatched_at":now});
+    write_json(keepalive.store.path(), &state).unwrap();
+    assert!(
+        keepalive.tick().await.is_err(),
+        "pending results still require a read while disabled and cooling"
+    );
+    sqlx::query("ALTER TABLE fixture_waiting_accounts RENAME TO accounts")
+        .execute(db)
+        .await
+        .unwrap();
+    keepalive.tick().await.unwrap();
+    assert!(
+        keepalive.control(47_101).unwrap().pending.is_none(),
+        "missing account reconciles the pending result"
+    );
+    assert!(!keepalive.control(47_101).unwrap().enabled);
+    h.close().await;
+}
+
+#[tokio::test]
 async fn desktop_parameter_and_body_shape_errors_keep_422_before_authentication() {
     let h = Harness::new().await;
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

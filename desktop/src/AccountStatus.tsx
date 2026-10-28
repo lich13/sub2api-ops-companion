@@ -20,10 +20,28 @@ export default function AccountStatus({ account, onError }: {
   const limit = account.blockers.find(blocker => blocker.code === "rate_limit_reset_at");
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
-    setNow(Date.now());
-    if (!limit?.until || !Number.isFinite(Date.parse(limit.until))) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
+    const end = limit?.until ? Date.parse(limit.until) : NaN;
+    if (!Number.isFinite(end)) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const update = () => {
+      clearTimeout(timer);
+      if (document.visibilityState === "hidden") return;
+      const at = Date.now();
+      setNow(at);
+      const seconds = Math.ceil((end - at) / 1000);
+      if (!Number.isFinite(seconds) || seconds <= 0) return;
+      const unit = seconds >= 86400 ? 3600 : seconds >= 60 ? 60 : 1;
+      const next = Math.floor(seconds / unit) * unit - 1;
+      timer = setTimeout(update, Math.max(1, end - at - next * 1000));
+    };
+    update();
+    document.addEventListener("visibilitychange", update);
+    window.addEventListener("focus", update);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", update);
+      window.removeEventListener("focus", update);
+    };
   }, [limit?.until]);
   const label = account.available ? "可调度" : account.blockers.map(blocker => blocker.label).join(" / ") || "暂不可调度";
   const recentRateError = !!limit && !account.available && !account.success_after_error && account.last_error_status === 429;

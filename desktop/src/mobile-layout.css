@@ -314,7 +314,7 @@
   max-width: none;
   flex: none;
 }
-.app.mobile .records-filter-sheet > select,
+.app.mobile .records-filter-sheet > .records-platform-select select,
 .app.mobile .records-filter-sheet > input,
 .app.mobile .records-filter-sheet .record-filter-trigger,
 .app.mobile .records-filter-sheet > button[type="submit"] {
@@ -328,7 +328,7 @@
   font-weight: 400;
   border-radius: 6px;
 }
-.app.mobile .records-filter-sheet > select,
+.app.mobile .records-filter-sheet > .records-platform-select select,
 .app.mobile .records-filter-sheet .records-model-filter {
   flex: none;
 }
@@ -708,3 +708,8 @@
     padding-top: 0;
   }
 }
+
+.app.mobile .records-filter-sheet > .records-platform-select { flex: 0 0 auto; width: 100%; min-width: 0; max-width: none; }
+
+.app.mobile .records-platform-select > svg { right: 12px; }
+.app.mobile .records-filter-sheet > .records-platform-select select { padding-right: 36px; }

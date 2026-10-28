@@ -399,7 +399,7 @@ pub fn control_allows(row: &Value, result: &Value, meta: &Value, at: DateTime<Ut
     }) && quota_ready(row, result, meta, at)
 }
 pub fn candidates(
-    rows: &[Value],
+    rows: &[impl std::borrow::Borrow<Value>],
     results: &Value,
     scheduler: &Value,
     at: DateTime<Utc>,
@@ -410,6 +410,7 @@ pub fn candidates(
     }
     let mut candidates = vec![];
     for row in rows {
+        let row = row.borrow();
         let id = integer(&row["id"]).unwrap_or(0);
         if id <= 0 {
             continue;

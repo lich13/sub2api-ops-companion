@@ -55,6 +55,7 @@ pub mod oauth_daily;
 pub mod oauth_monitor;
 pub mod oauth_native;
 pub mod oauth_queries;
+pub mod oauth_reauthorization;
 pub mod oauth_state;
 pub mod operations;
 pub mod priority_orders;

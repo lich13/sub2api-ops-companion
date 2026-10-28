@@ -562,6 +562,7 @@ export async function run(
       if(!token) throw new Error("尚未配置账户访问令牌 [404]");
       return {account_id:id,access_token:token};
     }
+    if (/^\/accounts\/\d+\/apply-oauth-credentials$/.test(String(args.path))) return { account_id: Number(String(args.path).split("/")[2]), verified: true, status: "active" };
     if (String(args.path).startsWith("/account-creation")) return (await import("./accountCreationPreview")).creationPreview(String(args.path),(args.body||{}) as Record<string,unknown>,state.snapshot?.accounts??[],emit);
     if (args.path === "/capabilities") return { api_version: 1, features: { account_creation: true, key_quota_token_reveal: true, detection_logs: true, global_detection_model: true, account_priority_ordering: true, account_priority_per_platform: true } };
     if (String(args.path).split("?")[0] === "/account-priorities" || String(args.path).startsWith("/account-priority-orders")) return (await import("./priorityPreview")).priorityPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? [], emit);

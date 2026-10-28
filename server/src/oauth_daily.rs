@@ -14,13 +14,13 @@ use std::{collections::BTreeMap, time::Instant};
 
 impl Monitor {
     pub async fn run_daily(&self, batch: Value, rows: Vec<Value>) -> Result<()> {
-        self.run_daily_with_recovery(batch, rows, BTreeMap::new())
+        self.run_daily_with_recovery(batch, std::sync::Arc::new(rows), BTreeMap::new())
             .await
     }
     pub(crate) async fn run_daily_with_recovery(
         &self,
         mut batch: Value,
-        rows: Vec<Value>,
+        rows: std::sync::Arc<Vec<Value>>,
         mut cycle_results: BTreeMap<i64, tokio::sync::watch::Receiver<Option<Value>>>,
     ) -> Result<()> {
         let started = self.now();
@@ -36,11 +36,12 @@ impl Monitor {
             batch["accounts"] = json!({});
         }
         let rows = rows
-            .into_iter()
+            .iter()
             .filter(|row| {
                 integer(&row["id"])
                     .is_some_and(|id| id > 0 && batch["accounts"].get(id.to_string()).is_none())
             })
+            .cloned()
             .collect::<Vec<_>>();
         for row in &rows {
             batch["accounts"][integer(&row["id"]).unwrap().to_string()] =

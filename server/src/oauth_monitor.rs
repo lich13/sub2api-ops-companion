@@ -26,6 +26,8 @@ use std::{
 };
 use tokio::sync::{watch, Mutex, Semaphore};
 
+type Inventory = (Option<Instant>, Arc<Vec<Value>>);
+
 pub trait RecoveryHooks: Hooks {
     fn model_notification(&self, _job_id: &str, _suppressed: bool) -> Result<()> {
         Ok(())
@@ -50,7 +52,7 @@ pub struct Monitor {
     pub clock: Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>,
     pub schedule: Schedule,
     pub(crate) cycle: Arc<Mutex<()>>,
-    inventory: Arc<Mutex<(Option<Instant>, Vec<Value>)>>,
+    inventory: Arc<Mutex<Inventory>>,
     workers: Arc<Mutex<BTreeMap<i64, tokio::task::JoinHandle<Result<Value>>>>>,
     daily: Arc<Mutex<Option<tokio::task::JoinHandle<Result<()>>>>>,
     force: Arc<Mutex<Option<watch::Receiver<Option<Value>>>>>,
@@ -80,7 +82,7 @@ impl Monitor {
             budget,
             clock: Arc::new(Utc::now),
             cycle: Arc::new(Mutex::new(())),
-            inventory: Arc::new(Mutex::new((None, vec![]))),
+            inventory: Arc::new(Mutex::new((None, Arc::new(vec![])))),
             workers: Arc::new(Mutex::new(BTreeMap::new())),
             daily: Arc::new(Mutex::new(None)),
             force: Arc::new(Mutex::new(None)),
@@ -133,7 +135,7 @@ impl Monitor {
             .locks
             .try_ids([integer(&row["id"]).unwrap_or(0), parent.unwrap_or(0)])
     }
-    pub async fn inventory(&self, refresh: bool) -> Result<Vec<Value>> {
+    pub async fn inventory(&self, refresh: bool) -> Result<Arc<Vec<Value>>> {
         let mut cache = self.inventory.lock().await;
         if refresh || cache.0.is_none_or(|at| at.elapsed().as_secs() >= 60) {
             let rows=self.actions.queries.db.all(&format!("{} AND lower(coalesce(platform,''))='openai' AND lower(coalesce(type,''))='oauth' ORDER BY id",credit_ownership::ACCOUNT_SELECT),&[]).await?;
@@ -142,7 +144,7 @@ impl Monitor {
                 self.initialize_queries(&rows)?;
             }
             self.queries.retain_accounts(&rows);
-            *cache = (Some(Instant::now()), rows);
+            *cache = (Some(Instant::now()), Arc::new(rows));
         }
         Ok(cache.1.clone())
     }
@@ -179,7 +181,10 @@ impl Monitor {
             Ok(())
         })
     }
-    pub async fn live_rows(&self, rows: &[Value]) -> Result<Vec<Value>> {
+    pub async fn live_rows<'a>(
+        &self,
+        rows: &'a [Value],
+    ) -> Result<Vec<std::borrow::Cow<'a, Value>>> {
         if rows.is_empty() {
             return Ok(vec![]);
         }
@@ -190,7 +195,7 @@ impl Monitor {
             .filter(|id| truthy(&state["scheduler"][id.to_string()]["auto_reset_credit"]))
             .collect::<Vec<_>>();
         if ids.is_empty() {
-            return Ok(rows.to_vec());
+            return Ok(rows.iter().map(std::borrow::Cow::Borrowed).collect());
         }
         // Credit ownership can change between inventory refreshes. Refresh
         // those accounts while keeping ordinary idle ticks on the cache.
@@ -203,7 +208,7 @@ impl Monitor {
         for original in rows {
             let id = integer(&original["id"]).unwrap_or(0);
             if !truthy(&state["scheduler"][id.to_string()]["auto_reset_credit"]) {
-                live.push(original.clone());
+                live.push(std::borrow::Cow::Borrowed(original));
                 continue;
             }
             if let Some(mut current) = by_id.remove(&id) {
@@ -217,7 +222,7 @@ impl Monitor {
                     .unwrap()
                     .extend(current.as_object().unwrap().clone());
                 row["extra"] = extra;
-                live.push(row);
+                live.push(std::borrow::Cow::Owned(row));
             }
         }
         Ok(live)
@@ -229,7 +234,7 @@ impl Monitor {
         }
         let rows = self.inventory(true).await?;
         self.schedule.startup(&self.config.current()?, self.now())?;
-        for row in rows {
+        for row in rows.iter() {
             self.reconcile_unknown(integer(&row["id"]).unwrap_or(0))
                 .await?;
         }
@@ -487,6 +492,7 @@ impl Monitor {
                     continue;
                 }
                 let this = self.clone();
+                let row = row.into_owned();
                 workers.insert(
                     id,
                     self.actions
@@ -694,7 +700,7 @@ impl Monitor {
         }
         let state = self.shared_state()?;
         let config = self.config.current()?;
-        let results = stream::iter(rows.into_iter().map(|row| {
+        let results = stream::iter(rows.iter().cloned().map(|row| {
             let this = self.clone();
             let state = &state;
             let config = &config;

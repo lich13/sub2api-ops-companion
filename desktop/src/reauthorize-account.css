@@ -1,0 +1,31 @@
+.reauthorize-dialog {
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 20px 60px #0003;
+  font: inherit;
+  font-size: 13px;
+}
+.reauthorize-dialog header, .reauthorize-dialog footer { display: flex; align-items: center; gap: 8px; padding: 14px 16px; }
+.reauthorize-dialog header { justify-content: space-between; border-bottom: 1px solid var(--line); }
+.reauthorize-heading { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.reauthorize-heading h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.reauthorize-dialog footer { justify-content: flex-end; border-top: 1px solid var(--line); }
+.reauthorize-body { display: grid; gap: 14px; padding: 16px; overflow: auto; min-height: 0; }
+.reauthorize-account { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.reauthorize-body label { display: grid; gap: 6px; }
+.reauthorize-body input, .reauthorize-body textarea { width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font: inherit; }
+.reauthorize-body textarea { resize: vertical; min-height: 80px; }
+.reauthorize-links { display: flex; gap: 8px; }
+.reauthorize-dialog button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; font: inherit; }
+.reauthorize-dialog button svg { flex-shrink: 0; }
+.reauthorize-error { margin: 0; color: var(--red); line-height: 1.6; overflow-wrap: anywhere; }
+.app.mobile .reauthorize-dialog button { min-height: 48px; }
+.app.mobile .reauthorize-dialog input, .app.mobile .reauthorize-dialog textarea { min-height: 48px; font-size: 16px; }
+.app.mobile .reauthorize-links > button { flex: 1; }

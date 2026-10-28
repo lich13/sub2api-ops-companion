@@ -143,6 +143,63 @@ fn invalid_yaml_and_duplicate_keys_do_not_reach_writes() {
     assert!(parse_yaml(b"server: 1\nserver: 2\n").is_err());
     assert!(parse_yaml(b"[1,2]").is_err());
     assert!(parse_yaml(b"a: [").is_err());
+    assert!(parse_yaml(b"a: 1\n---\nb: 2\n").is_err());
+    let error = parse_yaml(b"password: [fixture-private-value\n").unwrap_err();
+    assert_eq!(error.status.as_u16(), 422);
+    assert!(!error.detail.to_string().contains("fixture-private-value"));
+}
+#[test]
+fn maintained_yaml_parser_preserves_existing_scalar_alias_and_tag_semantics() {
+    for (raw, expected) in [
+        (
+            "a: on\nb: yes\nc: true\nd: 01\ne: 0x10\nf: 1.25\ng: null\nh: TRUE\n",
+            json!({"a":"on","b":"yes","c":true,"d":"01","e":16,"f":1.25,"g":null,"h":true}),
+        ),
+        (
+            "port: '8080'\nflag: 'true'\nempty: ''\nmulti: |\n  hello\n  world\n",
+            json!({"port":"8080","flag":"true","empty":"","multi":"hello\nworld\n"}),
+        ),
+        (
+            "first: &value {port: 8080}\nsecond: *value\n",
+            json!({"first":{"port":8080},"second":{"port":8080}}),
+        ),
+        (
+            "base: &base {port: 8080}\nserver: {<<: *base, host: '127.0.0.1'}\n",
+            json!({"base":{"port":8080},"server":{"<<":{"port":8080},"host":"127.0.0.1"}}),
+        ),
+        (
+            "value: !Fixture {port: 8080}\n",
+            json!({"value":{"!Fixture":{"port":8080}}}),
+        ),
+        (
+            "value: !Fixture hello\n",
+            json!({"value":{"!Fixture":"hello"}}),
+        ),
+        ("value: !!str 123\n", json!({"value":"123"})),
+        ("value: !str 123\n", json!({"value":{"!str":123}})),
+        (
+            "value: !<tag:example.invalid,2026:fixture> hello\n",
+            json!({"value":"hello"}),
+        ),
+        ("value: !!binary SGVsbG8=\n", json!({"value":"SGVsbG8="})),
+        ("true: value\n", json!({"true":"value"})),
+        ("1.5: value\n", json!({"1.5":"value"})),
+        ("value: .nan\n", json!({"value":null})),
+        ("1: value\n", json!({"1":"value"})),
+    ] {
+        assert_eq!(parse_yaml(raw.as_bytes()).unwrap(), expected, "{raw}");
+    }
+}
+#[test]
+fn yaml_write_preserves_unknown_values_alias_contents_and_scalar_types() {
+    let source = b"log:\n  level: info\nunknown:\n  base: &base {port: '8080', code: 01}\n  alias: *base\n  tagged: !Fixture {enabled: true}\n  literal: !!str 123\n  binary: !!binary SGVsbG8=\n  nonfinite: .nan\n";
+    let before = parse_yaml(source).unwrap();
+    let mut request = payload("log.level", json!("debug"));
+    request["expected_revision"] = json!(sha256(source));
+    let (output, value) = prepare(source, &BTreeMap::new(), &request).unwrap();
+    assert_eq!(value["unknown"], before["unknown"]);
+    assert_eq!(value["log"]["level"], "debug");
+    assert_eq!(parse_yaml(&output).unwrap(), value);
 }
 #[test]
 fn removes_only_requested_keys_preserves_unknowns_and_secret() {

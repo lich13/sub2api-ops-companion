@@ -302,7 +302,7 @@ impl Keepalive {
         let mut controls = BTreeMap::new();
         for (id, value) in data["accounts"].as_object().into_iter().flatten() {
             let control: Control = Control::deserialize(value).map_err(|_| state::invalid())?;
-            if control.enabled || control.pending.is_some() {
+            if control.pending.is_some() || control.enabled && !control.waiting(self.now()) {
                 controls.insert(id.parse::<i64>().map_err(|_| state::invalid())?, control);
             }
         }

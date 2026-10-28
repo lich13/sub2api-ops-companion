@@ -100,13 +100,14 @@ pub fn new_intent(descriptor: &Value, status: &str, at: Option<DateTime<Utc>>) -
 }
 pub fn discover(
     store: &OAuthState,
-    rows: &[Value],
+    rows: &[impl std::borrow::Borrow<Value>],
     config: &Value,
     at: DateTime<Utc>,
 ) -> Result<()> {
     let previous = store.shared_snapshot()?;
     let mut changes = vec![];
     for row in rows {
+        let row = row.borrow();
         let id = integer(&row["id"]).unwrap_or(0);
         if id <= 0 || recovery_policy::method(config, id).is_none() {
             continue;

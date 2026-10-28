@@ -1,6 +1,6 @@
 [package]
 name = "sub2ops"
-version = "0.1.72"
+version = "0.1.73"
 description = "Sub2API Ops desktop companion"
 edition = "2021"
 rust-version = "1.99"
@@ -36,6 +36,13 @@ anyhow = "1"
 
 [dev-dependencies]
 tempfile = "3"
+
+[patch.crates-io]
+glib = { path = "vendor/glib" }
+glib-macros = { path = "vendor/glib-macros" }
+gtk3-macros = { path = "vendor/gtk3-macros" }
+tauri-plugin-opener = { path = "vendor/tauri-plugin-opener" }
+tauri-plugin-single-instance = { path = "vendor/tauri-plugin-single-instance" }
 
 [profile.release]
 strip = "debuginfo"

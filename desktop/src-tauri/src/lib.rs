@@ -225,6 +225,11 @@ fn allowed_request(method: &str, path: &str) -> bool {
         return false;
     }
     let plain = path.split('?').next().unwrap_or("");
+    if plain.ends_with("/apply-oauth-credentials") {
+        return method == "POST"
+            && !path.contains('?')
+            && account_path(plain, "/apply-oauth-credentials");
+    }
     if plain.ends_with("/key-quota-settings/access-token") {
         return method == "GET"
             && !path.contains('?')
@@ -2066,6 +2071,24 @@ mod tests {
             format!("/account-operations/batches/{id}/{id}/cancel"),
         ] {
             assert!(!allowed_request("POST", &invalid_path), "{invalid_path}");
+        }
+    }
+
+    #[test]
+    fn oauth_reauthorization_only_allows_post_for_one_account() {
+        let path = "/accounts/7/apply-oauth-credentials";
+        assert!(allowed_request("POST", path));
+        for method in ["GET", "PUT", "PATCH", "DELETE", "HEAD"] {
+            assert!(!allowed_request(method, path));
+        }
+        for path in [
+            "/accounts/0/apply-oauth-credentials",
+            "/accounts/-1/apply-oauth-credentials",
+            "/accounts/7/apply-oauth-credentials?retry=1",
+            "/accounts/7/apply-oauth-credentials/",
+            "/accounts/7/8/apply-oauth-credentials",
+        ] {
+            assert!(!allowed_request("POST", path));
         }
     }
 

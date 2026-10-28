@@ -28,6 +28,7 @@ pub fn has_body(path: &[&str], method: &str) -> bool {
                     | "test"
                     | "model-tests"
                     | "usage-action"
+                    | "apply-oauth-credentials"
                     | "groups"
                     | "degradation-mark"
                     | "model-detection"
@@ -193,6 +194,9 @@ pub fn validate(path: &[&str], method: &str, value: &mut Value) -> Result<()> {
         return crate::proxy_management::validate_body(path, method, value);
     }
     match path {
+        ["accounts", _, "apply-oauth-credentials"] => {
+            crate::oauth_reauthorization::validate(value)?
+        }
         ["account-operations", "batch"] => batch(value, false)?,
         ["account-templates", "apply"] => batch(value, true)?,
         ["account-priorities"] if method == "PUT" => {

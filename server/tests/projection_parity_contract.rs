@@ -4080,6 +4080,16 @@ async fn native_account_usage_http_contract_is_private_isolated_and_keeps_child_
         .await
         .unwrap();
     assert_eq!(child["windows"][1]["used_percent"], 0.0);
+    insert_runtime_account(
+        &fixture.seed.pool,
+        969_807,
+        "anthropic",
+        "setup-token",
+        json!({}),
+        json!({}),
+        false,
+    )
+    .await;
     fixture
         .runtime
         .start_quota_refresh("fixture-key")
@@ -4100,13 +4110,11 @@ async fn native_account_usage_http_contract_is_private_isolated_and_keeps_child_
     assert!(items
         .iter()
         .any(|v| v["account_id"] == 969_802 && v["status"] == "partial"));
-    assert!(items.iter().any(|v| v["account_id"] == 969_805
-        && v["status"] == "partial"
-        && v["usage"]["key_quota"]["state"] == "error"
-        && v["usage"]["balances"][0]["currency"] == "CNY"));
-    assert!(items
-        .iter()
-        .any(|v| v["account_id"] == 969_801 && v["status"] == "partial"));
+    assert_eq!(batch["total"], items.len());
+    assert_eq!(batch["completed"], items.len());
+    for excluded in [969_801, 969_803, 969_804, 969_805, 969_806, 969_807] {
+        assert!(items.iter().all(|v| v["account_id"] != excluded));
+    }
     task.abort();
     fixture.close().await;
 }

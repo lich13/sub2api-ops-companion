@@ -33,6 +33,8 @@ const REFERENCE_SHA: &str = "6be7c291ed38dcc337cb88f693639040a3463899";
 const ADMIN_KEY: &str = "fixture-account-mutation-admin-040";
 #[path = "common/account_creation.rs"]
 mod account_creation;
+#[path = "common/oauth_reauthorization.rs"]
+mod oauth_reauthorization;
 const CLIENT_ID: &str = "fixture-account-mutation-client-0001";
 const PROXY_ID: i64 = 1_520_000_001;
 static NEXT_ACCOUNT_ID: AtomicI64 = AtomicI64::new(820_000_000);
@@ -454,6 +456,19 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
         );
     }
 
+    if let Some(id) = id_from_path(&path, "/apply-oauth-credentials") {
+        assert_eq!(method, Method::POST);
+        if state.apply_updates.load(Ordering::Acquire) {
+            sqlx::query("UPDATE accounts SET credentials=credentials || $2,extra=extra || $3,status='active',error_message=NULL,updated_at=now() WHERE id=$1")
+                .bind(id).bind(SqlJson(body["credentials"].clone())).bind(SqlJson(body.get("extra").cloned().unwrap_or(json!({}))))
+                .execute(&state.pool).await.unwrap();
+        }
+        let status = state.update_status.load(Ordering::Acquire) as u16;
+        return response(
+            StatusCode::from_u16(status).unwrap(),
+            json!({"code":if status == 200 {0} else {1},"data":{"id":id,"credentials":body["credentials"]},"message":"fixture-sensitive-upstream"}),
+        );
+    }
     if let Some(id) = id_from_path(&path, "/usage") {
         if method == Method::GET {
             let billing = state

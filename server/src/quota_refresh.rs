@@ -39,9 +39,9 @@ impl Runtime {
             .await?
             .into_iter()
             .filter(|row| {
-                matches!(string(&row["platform"]), "openai" | "grok") && row["type"] == "oauth"
-                    || row["type"] == "apikey"
-                    || !crate::account_usage::provider(row).is_empty()
+                row["type"] == "oauth"
+                    && (matches!(string(&row["platform"]), "openai" | "grok")
+                        || !crate::account_usage::provider(row).is_empty())
             })
             .collect::<Vec<_>>();
         let batch = json!({"id":uuid::Uuid::new_v4().simple().to_string(),"status":"running","started_at":crate::compat::now(),"completed_at":null,

@@ -482,28 +482,110 @@ impl CapacityAlerts {
             accounts.insert(id,json!({"id":id,"platform":row["account_platform"],"type":row["account_type"],"name":row.get("account_name").cloned().filter(truthy).unwrap_or(json!(format!("账号 {id}")))}));
             grouped.entry(id).or_default().push(row);
         }
-        self.store.transaction(|data| {
-            data["slow_ttft"].as_object_mut().unwrap().retain(|key,_|key.parse::<i64>().is_ok_and(|id|accounts.contains_key(&id)));
-            for (id,rows) in grouped {
-                let samples=rows.iter().filter_map(|row|slow_sample(row,&accounts[&id])).collect::<Vec<_>>();let warning=slow_warning(&samples,at);let key=id.to_string();let mut state=data["slow_ttft"].get(&key).cloned().unwrap_or(json!({"active":false,"alerted":false}));
-                let prior=parse_datetime(if truthy(&state["last_sample_at"]) {&state["last_sample_at"]} else {&state["last_at"]});let prior_id=integer(&state["last_sample_id"]).unwrap_or(0);
-                let fast=samples.iter().filter(|s|s.first<=10000.0 && prior.is_none_or(|p|(s.at,s.id)>(p,prior_id))).max_by_key(|s|(s.at,s.id));state["active"]=warning.as_ref().is_some_and(|v|v["active"]==true).into();
-                if let Some(newest) = samples.iter().max_by_key(|s| (s.at,s.id)) {
-                    state["last_sample_id"] = newest.id.into();
-                    state["last_sample_at"] = datetime(newest.at).into();
+        let previous = self.store.shared_snapshot()?;
+        let projected = slow_projection(&previous, &grouped, &accounts, at);
+        if projected["slow_ttft"] == previous["slow_ttft"]
+            && projected["alerts"].as_array().unwrap().is_empty()
+        {
+            return Ok(());
+        }
+        let matched = self.store.transaction(|data| {
+            // Recalculate under the file lock: a manual mark or another scan may
+            // have changed eligibility since the shared snapshot was read.
+            let projected = slow_projection(data, &grouped, &accounts, at);
+            data["slow_ttft"] = projected["slow_ttft"].clone();
+            for alert in projected["alerts"].as_array().unwrap() {
+                let key = alert["key"].as_str().unwrap();
+                if !alert["event"].is_null() {
+                    data["detection_events"][key] = alert["event"].clone();
                 }
-                if let Some(fast) = fast {
-                    state["alerted"] = false.into();
-                    state["reset_sample_id"] = fast.id.into();
+                if !data["notifications"].is_object() {
+                    data["notifications"] = json!({});
                 }
-                if state["active"]==true && state["alerted"]!=true {
-                    let warning=warning.unwrap();let event_key=format!("slow:{id}:{}",warning["latest_sample_id"]);let mark=&data["marks"][&key];let created=parse_datetime(&warning["latest_at"]);let changed=parse_datetime(&mark["changed_at"]);let allowed=parse_datetime(&data["detection_since"]).zip(created).is_some_and(|(since,t)|t>since && !truthy(&mark["marked"]) && changed.is_none_or(|c|t>c));
-                    let reason=if allowed {Value::Null} else if truthy(&mark["marked"]) {json!("degradation_mark")} else {json!("historical")};
-                    if allowed && data["detection_events"].get(&event_key).is_none() {data["detection_events"][&event_key]=json!({"account_id":id,"created_at":datetime(created.unwrap())});}
-                    state["alerted"]=true.into();state["last_at"]=warning["latest_at"].clone();if data.get("notifications").is_none() {data["notifications"]=json!({});}data["notifications"][event_key]=json!({"status":if allowed {"clue"} else {"suppressed"},"reason":reason,"at":datetime(at)});self.audit("slow_ttft_matched",json!({"account_id":id,"sample_id":warning["latest_sample_id"]}));
-                }
-                data["slow_ttft"][key]=state;
-            }Ok(())
-        })
+                data["notifications"][key] = alert["notification"].clone();
+            }
+            Ok(projected["alerts"].clone())
+        })?;
+        for alert in matched.as_array().unwrap() {
+            self.audit("slow_ttft_matched", alert["audit"].clone());
+        }
+        Ok(())
     }
+}
+
+fn slow_projection(
+    data: &Value,
+    grouped: &BTreeMap<i64, Vec<Value>>,
+    accounts: &BTreeMap<i64, Value>,
+    at: DateTime<Utc>,
+) -> Value {
+    let mut states = data["slow_ttft"].clone();
+    if !states.is_object() {
+        states = json!({});
+    }
+    states.as_object_mut().unwrap().retain(|key, _| {
+        key.parse::<i64>()
+            .is_ok_and(|id| accounts.contains_key(&id))
+    });
+    let mut alerts = Vec::new();
+    for (id, rows) in grouped {
+        let samples = rows
+            .iter()
+            .filter_map(|row| slow_sample(row, &accounts[id]))
+            .collect::<Vec<_>>();
+        let warning = slow_warning(&samples, at);
+        let key = id.to_string();
+        let mut state = states
+            .get(&key)
+            .cloned()
+            .unwrap_or(json!({"active":false,"alerted":false}));
+        let prior = parse_datetime(if truthy(&state["last_sample_at"]) {
+            &state["last_sample_at"]
+        } else {
+            &state["last_at"]
+        });
+        let prior_id = integer(&state["last_sample_id"]).unwrap_or(0);
+        let fast = samples
+            .iter()
+            .filter(|s| s.first <= 10000.0 && prior.is_none_or(|p| (s.at, s.id) > (p, prior_id)))
+            .max_by_key(|s| (s.at, s.id));
+        state["active"] = warning.as_ref().is_some_and(|v| v["active"] == true).into();
+        if let Some(newest) = samples.iter().max_by_key(|s| (s.at, s.id)) {
+            state["last_sample_id"] = newest.id.into();
+            state["last_sample_at"] = datetime(newest.at).into();
+        }
+        if let Some(fast) = fast {
+            state["alerted"] = false.into();
+            state["reset_sample_id"] = fast.id.into();
+        }
+        if state["active"] == true && state["alerted"] != true {
+            let warning = warning.unwrap();
+            let event_key = format!("slow:{id}:{}", warning["latest_sample_id"]);
+            let mark = &data["marks"][&key];
+            let created = parse_datetime(&warning["latest_at"]);
+            let changed = parse_datetime(&mark["changed_at"]);
+            let allowed = parse_datetime(&data["detection_since"])
+                .zip(created)
+                .is_some_and(|(since, t)| {
+                    t > since && !truthy(&mark["marked"]) && changed.is_none_or(|c| t > c)
+                });
+            let reason = if allowed {
+                Value::Null
+            } else if truthy(&mark["marked"]) {
+                json!("degradation_mark")
+            } else {
+                json!("historical")
+            };
+            let event = if allowed && data["detection_events"].get(&event_key).is_none() {
+                json!({"account_id":id,"created_at":datetime(created.unwrap())})
+            } else {
+                Value::Null
+            };
+            state["alerted"] = true.into();
+            state["last_at"] = warning["latest_at"].clone();
+            alerts.push(json!({"key":event_key,"event":event,"notification":{"status":if allowed {"clue"} else {"suppressed"},"reason":reason,"at":datetime(at)},"audit":{"account_id":id,"sample_id":warning["latest_sample_id"]}}));
+        }
+        states[key] = state;
+    }
+    json!({"slow_ttft":states,"alerts":alerts})
 }

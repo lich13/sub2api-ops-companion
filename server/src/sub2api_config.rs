@@ -49,7 +49,7 @@ pub fn parse_yaml(bytes: &[u8]) -> Result<Value> {
     if bytes.len() > MAX_CONFIG_BYTES {
         return Err(Error::new(422, "配置文件超过 1 MiB 上限"));
     }
-    let value: serde_yaml_ng::Value = serde_yaml_ng::from_slice(bytes).map_err(|e| {
+    let value: yaml_serde::Value = yaml_serde::from_slice(bytes).map_err(|e| {
         let location = e
             .location()
             .map(|l| format!("（第 {} 行，第 {} 列）", l.line(), l.column()))
@@ -463,7 +463,7 @@ pub fn prepare(
     if !errors.is_empty() {
         return Err(Error::new(422, json!({"errors":errors})));
     }
-    let output = serde_yaml_ng::to_string(&config)
+    let output = yaml_serde::to_string(&config)
         .map_err(|_| Error::internal())?
         .into_bytes();
     if output.len() > MAX_CONFIG_BYTES {
