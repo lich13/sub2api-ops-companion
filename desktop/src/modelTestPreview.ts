@@ -34,7 +34,7 @@ export function modelTestPreview(method: string, path: string, body: Record<stri
       account_name: accounts.find((a) => a.id === aid)?.name ?? "账号", requested_model: String(body.model_id), forwarded_model: String(body.model_id),
       returned_models: [], status: "running", completed_groups: 0, valid_groups: 0, attempts: 0, duration_ms: 0,
       engine: lm ? "lm_detector" : "modeltrace", planned_groups: count, tokenizer_probe: lm && body.tokenizer_probe === true,
-      bank_version: { revision: "a".repeat(40), sha256: "b".repeat(64), built_at: "2026-10-24T00:00:00Z", analyzer_version: lm ? "lmfpd-0.1.0" : 1 },
+      bank_version: { revision: "a".repeat(40), sha256: "b".repeat(64), built_at: "2026-10-24T00:00:00Z", analyzer_version: lm ? "lmfpd-0.2.0" : 1 },
       concurrency: Number(body.concurrency) || 1, started: Date.now(), error: "", groups: Array.from({ length: count }, (_, i) => i + 1).map((index) => ({ index, status: "queued", attempts: 0, ttft_ms: null, duration_ms: null })) };
     jobs.set(aid, job); return structuredClone(job);
   }

@@ -8,6 +8,24 @@ const job: Operation = { id: 'a'.repeat(32), account_id: 421, account_name: 'Key
 beforeEach(() => { vi.clearAllMocks(); setOperations([]); bindOperationConnection(crypto.randomUUID()); });
 afterEach(() => vi.useRealTimers());
 describe('durable operations', () => {
+  it('keeps a stable in-memory client ID when access to browser storage is denied', async () => {
+    vi.resetModules();
+    const { clientId } = await import('./accountOperations');
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      get() { throw new DOMException('fixture storage denied', 'SecurityError'); },
+    });
+    try {
+      const first = clientId();
+      expect(first).toMatch(/^[0-9a-f-]{36}$/);
+      expect(clientId()).toBe(first);
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor);
+      else Reflect.deleteProperty(globalThis, 'localStorage');
+    }
+  });
+
   it('submits delete and group changes as one idempotent account batch', async () => {
     const batch: OperationBatch = {
       batch_id: 'b'.repeat(32),

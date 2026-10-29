@@ -24,8 +24,9 @@ let rows: Operation[] = [], epoch = 0, connection = '', memoryClientId = '';
 const clientKey = 'sub2ops-operation-client';
 export function clientId() {
   if (memoryClientId) return memoryClientId;
-  const storage = typeof globalThis.localStorage === 'undefined' ? null : globalThis.localStorage;
+  let storage: Storage | null = null;
   try {
+    storage = globalThis.localStorage ?? null;
     const saved = storage?.getItem(clientKey);
     if (saved) { memoryClientId = saved; return saved; }
   } catch { /* Restricted or full WebView storage falls back to in-memory client ID. */ }

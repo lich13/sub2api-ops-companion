@@ -49,7 +49,7 @@ export function detectionPreview(method: string, path: string, body: Record<stri
   }
   if (path.startsWith('/modeltrace/fingerprint-bank') || path.startsWith('/lm-detector/fingerprint-bank')) {
     if (method === 'POST') { bank.status = 'checking'; setTimeout(() => { bank.status = 'idle'; bank.checked_at = Date.now()/1000; }, 800); }
-    return structuredClone(path.startsWith("/lm-detector/") ? { ...bank, version: { ...bank.version, analyzer_version: "lmfpd-0.1.0" } } : bank);
+    return structuredClone(path.startsWith("/lm-detector/") ? { ...bank, version: { ...bank.version, analyzer_version: "lmfpd-0.2.0" } } : bank);
   }
   const aid = Number(path.split('/')[2]);
   let value = detections.get(aid) || { account_id: aid, version: 'd'.repeat(64), enabled: false, interval_minutes: 15, schedule_mode: 'smart', min_interval_minutes: 5, recent_request_count: aid === 102 ? 0 : 60, effective_interval_minutes: aid === 102 ? null : 10, schedule_anchor_at: null, model_id: 'gpt-6-luna', status: 'disabled', next_at: null,

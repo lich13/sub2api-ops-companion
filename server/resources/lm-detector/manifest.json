@@ -1,17 +1,17 @@
 {
   "repository": "Ikaleio/lm-detector",
-  "revision": "567e11d65a48d4fbba2713cc4dfbe685cdd05a73",
-  "analyzer_version": "lmfpd-0.1.0",
+  "revision": "fd9b4caf6feafbec64d45a1552432515bf4efa39",
+  "analyzer_version": "lmfpd-0.2.0",
   "files": {
     "sdk/rust/Cargo.toml": {
-      "sha256": "c83fe3e50e5822566b20f2ad1dfacfc04f52e3b9c58dc3d2b6d90390aba29854",
-      "git_blob": "c6140839f22af35a30a8ee929a69b0cdf6bdd8e1",
+      "sha256": "406a2a6a90e9d432eaf7325d3d0fcc0ff998c063bc64c2a490b16e19f8a98d38",
+      "git_blob": "c79b38df0d620bb8758e27563021f1e76d1a9421",
       "bytes": 664
     },
     "sdk/rust/README.md": {
-      "sha256": "717cffae89eed19b7bea56b32a638643c7efe69c4ed1fdf2bfbded0145bc6cbd",
-      "git_blob": "a77c5b7bd64d77a29f4023d0ead5f01cd2c7f620",
-      "bytes": 3634
+      "sha256": "16fbd84480f4c16100ce1be1daf44752e0f08a33015acc649d551eed6cfeac95",
+      "git_blob": "818271c01ebb3bd3097b8bd60ef6690d8fafa902",
+      "bytes": 5100
     },
     "sdk/rust/src/analysis.rs": {
       "sha256": "802f12b68b031409e70f7c2a8caa4dc360bc279c9c7b463df29ad14bba5fa1f1",
@@ -44,9 +44,9 @@
       "bytes": 8114
     },
     "sdk/rust/src/lib.rs": {
-      "sha256": "060e83263bc5c226326cfe74cdbf93e194eca8a1aebbb90e4a21527a2bc36553",
-      "git_blob": "cd06cd18860ffebfd0b72cb829444e8f0bcab9e9",
-      "bytes": 10639
+      "sha256": "c69c6d148c54317dc686bad996138344966536bee48b36506134d63c9890a293",
+      "git_blob": "2e070817da68b41f0824d4ad801626a3fbcc7840",
+      "bytes": 12940
     },
     "sdk/rust/src/ranker.rs": {
       "sha256": "d23f246f65d571d27e000187081a8adef18f35e48519963ed2d9226fb87f0c6a",
@@ -54,14 +54,14 @@
       "bytes": 9992
     },
     "sdk/rust/src/request.rs": {
-      "sha256": "844e6d2701dd21936dbbfe40f70dc6b20af60ae3461cfd551d1a82f673adee9f",
-      "git_blob": "ad720d6e4c20fad855f68084f90c04071674dcfb",
-      "bytes": 7957
+      "sha256": "91c6899d037c14a47818aa37bd514274b11b8ded16e005a0660b5493a78104d1",
+      "git_blob": "3289caff9945aa41b8ef2d7c2b28119882581320",
+      "bytes": 8002
     },
     "sdk/rust/src/sample.rs": {
-      "sha256": "db55194a1606c0af7bbfca65a910d0126763d712739af372689ec0a983ef0d2c",
-      "git_blob": "dea6e15fdcb8d397738d42fdef8f82b5ea26a1b3",
-      "bytes": 19082
+      "sha256": "34a7f0092fafc7af9afb4a1ed54cde80021790c7f21161a9f8adf62c4b3f089a",
+      "git_blob": "f8d3f4de72a0009379ebc6b39f517a773439c7ca",
+      "bytes": 19801
     },
     "sdk/rust/src/templates.json": {
       "sha256": "b3af91a3f889a534638308221cc3db3cada36f68395fdc75ed71a9571ac2c5df",
@@ -74,14 +74,14 @@
       "bytes": 1064
     },
     "data/unified_bank.json": {
-      "sha256": "fa036cef46d2655d119be797b17f3a4a3d665c8bbc62f8aad554b3708e29b9bb",
-      "git_blob": "a653c29a3cfab358056cce296f3c9df529f59cf4",
-      "bytes": 12537380
+      "sha256": "7117831989ca8e1793cd954899ec5f614541a37ea65a4174b711f80e6036fb1b",
+      "git_blob": "647f2e8d301698ee48117f0aa6d3f13405ccd00d",
+      "bytes": 12928618
     },
     "data/shared_detector.bin": {
-      "sha256": "0ef1e825ff08370cda23bdf54678bfc0dbeaedea16cbcc63e5f45a721d601ac7",
-      "git_blob": "6eae4fa9045d85447f31bfda97df250f5b6a3c7f",
-      "bytes": 4526464
+      "sha256": "9ac93e5e580f5bac887f97a20bfae15d0a3ad08c6372e4b3552fce6708078a80",
+      "git_blob": "0e19e0220716d71607c84b1a2149dd9ca7e13902",
+      "bytes": 4667588
     },
     "data/tokenizer_bank.json": {
       "sha256": "6dbf15a693deabfc36c4dfab9da64e9cdeee518f54eecf9cc69567ff5af26723",

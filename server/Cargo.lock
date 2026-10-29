@@ -903,7 +903,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "lmfpd"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "getrandom 0.4.3",
  "regex",
@@ -1681,7 +1681,7 @@ dependencies = [
 
 [[package]]
 name = "sub2ops-server"
-version = "0.1.75"
+version = "0.1.76"
 dependencies = [
  "axum",
  "base64 0.22.1",

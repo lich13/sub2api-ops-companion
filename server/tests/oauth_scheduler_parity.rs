@@ -5436,7 +5436,13 @@ async fn early_wait(h: &Harness, condition: impl Fn(&Value) -> bool) -> Value {
         }
     })
     .await
-    .expect("early reset workers did not finish")
+    .unwrap_or_else(|_| {
+        let state = h.runtime.monitor.state().unwrap();
+        let intents = state["scheduler"].as_object().into_iter().flatten().map(|(id, meta)| {
+            (id.clone(), json!({"status":meta["recovery_intent"]["status"],"error_code":meta["recovery_intent"]["last_error_code"],"reason":meta["recovery_intent"]["waiting_reason"]}))
+        }).collect::<BTreeMap<_, _>>();
+        panic!("early reset workers did not finish: {intents:?}")
+    })
 }
 async fn early_baseline(h: &Harness, ids: &[i64], used: i64) {
     let mut data = default_usage(h.now());
@@ -5531,10 +5537,16 @@ async fn early_reset_fixed_representative_reselects_after_disable_and_interval_c
     let b = h
         .seed_account("plus", "fixture-observer-b", json!({}))
         .await;
+    let b_row = b.clone();
     let a = integer(&a["id"]).unwrap();
     let b = integer(&b["id"]).unwrap();
     early_config(&h, 60).await;
     early_baseline(&h, &[a], 80).await;
+    // A newly depleted peer must not replace a still-valid representative or
+    // reset its baseline before the next observation.
+    let mut depleted = default_usage(h.now());
+    depleted["five_hour"]["utilization"] = 100.into();
+    save_cached(&h, b, cached_result(&b_row, h.now(), depleted)).await;
     h.set_now(h.now() + Duration::seconds(2));
     early_config(&h, 2).await;
     h.mock.set_usage(
@@ -5697,6 +5709,21 @@ async fn early_reset_isolates_plans_and_confirms_quota_and_verification_per_acco
     );
     h.mock.mark_unschedulable_on_test(ids[3]);
     let state = early_wait(&h, |s| {
+        // Three eligible accounts share two test slots. Advance the fixture
+        // clock to a real capacity retry instead of waiting with frozen time.
+        if let Some(due) = ids
+            .iter()
+            .filter_map(|id| {
+                let intent = &s["scheduler"][id.to_string()]["recovery_intent"];
+                (intent["waiting_reason"] == "test_slots")
+                    .then(|| parse_datetime(&intent["next_retry_at"]))
+                    .flatten()
+                    .filter(|due| *due > h.now())
+            })
+            .min()
+        {
+            h.set_now(due);
+        }
         s["scheduler"][ids[0].to_string()]["recovery_intent"]["status"] == "recovered"
             && s["scheduler"][ids[1].to_string()]["recovery_intent"]["status"] == "blocked"
             && s["scheduler"][ids[2].to_string()]["recovery_intent"]["status"] == "retry_exhausted"

@@ -348,6 +348,7 @@ impl Runtime {
         startup("priority_orders", self.priorities.recover_startup().await)?;
         startup("legacy_recovery", self.migrate_legacy_recovery().await)?;
         startup("model_tests", self.tests.startup())?;
+        startup("lm_detector", self.tests.lm_bank.migrate_bundled().await)?;
         startup(
             "capacity",
             self.detection.capacity.retire_legacy(chrono::Utc::now()),

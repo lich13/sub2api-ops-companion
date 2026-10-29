@@ -2,6 +2,7 @@
 FROM rust:1.99.0-slim-bookworm@sha256:2c3a22f0a5533ea2dd5a16627bc841228151faa2d4de2644ac9987e4a2f1f2fa AS build
 WORKDIR /build/server
 COPY server/Cargo.toml server/Cargo.lock ./
+COPY server/build.rs ./
 COPY server/vendor ./vendor
 COPY server/src ./src
 COPY server/resources ./resources
@@ -28,7 +29,7 @@ COPY server/resources/lm-detector/LICENSE.txt /usr/share/doc/sub2ops/LM-Detector
 ARG BUILD_REVISION=development
 LABEL org.opencontainers.image.title="Sub2Ops Companion" \
       org.opencontainers.image.revision=$BUILD_REVISION \
-      org.opencontainers.image.version="0.1.75"
+      org.opencontainers.image.version="0.1.76"
 ENV APP_PORT=18081
 USER 10001:10001
 EXPOSE 18081

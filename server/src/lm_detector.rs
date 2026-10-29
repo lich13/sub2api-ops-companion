@@ -17,11 +17,12 @@ use std::{
 };
 
 pub const ENGINE: &str = "lm_detector";
-const REVISION: &str = "567e11d65a48d4fbba2713cc4dfbe685cdd05a73";
+const REVISION: &str = "fd9b4caf6feafbec64d45a1552432515bf4efa39";
+const PREVIOUS_BUNDLED_REVISION: &str = "567e11d65a48d4fbba2713cc4dfbe685cdd05a73";
 const FILES: [(&str, &[u8], usize); 3] = [
     (
         "unified_bank.json",
-        include_bytes!("../resources/lm-detector/unified_bank.json"),
+        include_bytes!(concat!(env!("OUT_DIR"), "/lm-detector-bank.json")),
         32 * 1024 * 1024,
     ),
     (
@@ -55,6 +56,26 @@ pub struct Snapshot {
     pub version: Value,
 }
 impl Snapshot {
+    fn bundled() -> Result<Self> {
+        let bundled = manifest();
+        let files: serde_json::Map<String, Value> = FILES
+            .iter()
+            .map(|(name, _, _)| {
+                (
+                    (*name).into(),
+                    bundled["files"][format!("data/{name}")].clone(),
+                )
+            })
+            .collect();
+        let mut meta = json!({"revision":REVISION,"files":files});
+        // The build verifies the full source bank; runtime verifies its compact
+        // projection. Reports still identify the unchanged upstream source files.
+        meta["files"]["unified_bank.json"]["sha256"] =
+            include_str!(concat!(env!("OUT_DIR"), "/lm-detector-bank.sha256")).into();
+        let mut snapshot = Self::load_bytes(FILES[0].1, FILES[1].1, FILES[2].1, &meta)?;
+        snapshot.version["files"] = Value::Object(files);
+        Ok(snapshot)
+    }
     fn load_bytes(
         bank_bytes: &[u8],
         detector_bytes: &[u8],
@@ -82,7 +103,7 @@ impl Snapshot {
             .map(|m| m.id.clone())
             .collect();
         let tokenizer = tokenizer::Bank::parse(tokenizer_bytes)?;
-        let version = json!({"revision":meta["revision"],"sha256":meta["files"]["shared_detector.bin"]["sha256"],"files":meta["files"],"built_at":detector.built_at(),"tokenizer_built_at":tokenizer.built_at(),"analyzer_version":"lmfpd-0.1.0"});
+        let version = json!({"revision":meta["revision"],"sha256":meta["files"]["shared_detector.bin"]["sha256"],"files":meta["files"],"built_at":detector.built_at(),"tokenizer_built_at":tokenizer.built_at(),"analyzer_version":manifest()["analyzer_version"]});
         Ok(Self {
             detector,
             tokenizer,
@@ -179,15 +200,7 @@ impl Bank {
         }
         let path = self.root.join(revision);
         let loaded = if revision == REVISION && !path.exists() {
-            let bundled = manifest();
-            let mut files = json!({});
-            for (name, _, _) in FILES {
-                files[name] = bundled["files"][format!("data/{name}")].clone();
-            }
-            let meta = json!({"revision":revision,"files":files});
-            Arc::new(Snapshot::load_bytes(
-                FILES[0].1, FILES[1].1, FILES[2].1, &meta,
-            )?)
+            Arc::new(Snapshot::bundled()?)
         } else {
             let meta: Value = serde_json::from_slice(
                 &std::fs::read(path.join("manifest.json")).map_err(|_| unavailable())?,
@@ -210,6 +223,36 @@ impl Bank {
         let this = self.clone();
         crate::supervision::join(tokio::task::spawn_blocking(move || {
             this.snapshot(&revision)
+        }))
+        .await
+        .map_err(|_| unavailable())?
+    }
+    pub async fn migrate_bundled(&self) -> Result<()> {
+        if self.settings.read_only || self.revision()? != PREVIOUS_BUNDLED_REVISION {
+            return Ok(());
+        }
+        let _lock = self.sync_lock.lock().await;
+        let this = self.clone();
+        crate::supervision::join(tokio::task::spawn_blocking(move || {
+            let snapshot = Arc::new(Snapshot::bundled()?);
+            let changed = this.state.transaction(|state| {
+                if state["revision"] != PREVIOUS_BUNDLED_REVISION {
+                    return Ok(false);
+                }
+                state["revision"] = REVISION.into();
+                state["synced_at"] = crate::compat::now().into();
+                state["error"] = "".into();
+                state["result"] = "updated".into();
+                Ok(true)
+            })?;
+            if changed {
+                let mut cache = this.snapshots.lock().unwrap_or_else(|e| e.into_inner());
+                cache
+                    .history
+                    .insert(REVISION.into(), Arc::downgrade(&snapshot));
+                cache.active = Some(snapshot);
+            }
+            Ok(())
         }))
         .await
         .map_err(|_| unavailable())?
@@ -282,9 +325,23 @@ impl Bank {
             .timeout(Duration::from_secs(90))
             .user_agent("Sub2Ops-LM-Detector")
             .build()?;
-        let api = "https://api.github.com/repos/Ikaleio/lm-detector";
+        self.download_from(
+            &client,
+            "https://api.github.com/repos/Ikaleio/lm-detector",
+            "https://raw.githubusercontent.com/Ikaleio/lm-detector",
+            &manifest(),
+        )
+        .await
+    }
+    async fn download_from(
+        &self,
+        client: &reqwest::Client,
+        api: &str,
+        raw: &str,
+        fixed: &Value,
+    ) -> Result<()> {
         let head: Value = serde_json::from_slice(
-            &fetch(&client, &format!("{api}/commits/main"), 2 * 1024 * 1024).await?,
+            &fetch(client, &format!("{api}/commits/main"), 2 * 1024 * 1024).await?,
         )
         .map_err(|_| unavailable())?;
         let revision = string(&head["sha"]);
@@ -297,7 +354,7 @@ impl Bank {
         // Resolve directories separately: the full repository tree can be much larger than the data itself.
         let root: Value = serde_json::from_slice(
             &fetch(
-                &client,
+                client,
                 &format!("{api}/git/trees/{revision}"),
                 2 * 1024 * 1024,
             )
@@ -307,7 +364,7 @@ impl Bank {
         let data_sha = tree_entry(&root, "data", "tree")?;
         let data: Value = serde_json::from_slice(
             &fetch(
-                &client,
+                client,
                 &format!("{api}/git/trees/{data_sha}"),
                 2 * 1024 * 1024,
             )
@@ -315,7 +372,6 @@ impl Bank {
         )
         .map_err(|_| unavailable())?;
         // Changes to the scoring/challenge/tokenizer algorithms require a service release.
-        let fixed = manifest();
         for (path, expected) in fixed["files"]
             .as_object()
             .ok_or_else(unavailable)?
@@ -327,32 +383,30 @@ impl Bank {
                         && !p.ends_with("sample.rs")
             })
         {
-            let bytes = fetch(
-                &client,
-                &format!("https://raw.githubusercontent.com/Ikaleio/lm-detector/{revision}/{path}"),
-                256 * 1024,
-            )
-            .await?;
+            let bytes = fetch(client, &format!("{raw}/{revision}/{path}"), 256 * 1024).await?;
             if sha256(bytes) != expected["sha256"] {
                 return Err(Error::new(
                     409,
-                    "上游算法已变化，请升级服务端；当前检测库已保留",
+                    "上游 SDK 已变化，请升级服务端；当前检测库已保留",
                 ));
             }
+        }
+        let blobs = FILES
+            .iter()
+            .map(|(name, _, _)| tree_entry(&data, name, "blob"))
+            .collect::<Result<Vec<_>>>()?;
+        if self.load(self.revision()?).await.is_ok_and(|active| {
+            FILES.iter().zip(&blobs).all(|((name, _, _), blob)| {
+                active.version["files"][*name]["git_blob"].as_str() == Some(blob.as_str())
+            })
+        }) {
+            return Ok(());
         }
         std::fs::create_dir_all(&self.root)?;
         let stage = tempfile::tempdir_in(&self.root)?;
         let mut files = json!({});
-        for (name, _, limit) in FILES {
-            let blob = tree_entry(&data, name, "blob")?;
-            let bytes = fetch(
-                &client,
-                &format!(
-                    "https://raw.githubusercontent.com/Ikaleio/lm-detector/{revision}/data/{name}"
-                ),
-                limit,
-            )
-            .await?;
+        for ((name, _, limit), blob) in FILES.into_iter().zip(blobs) {
+            let bytes = fetch(client, &format!("{raw}/{revision}/data/{name}"), limit).await?;
             if git_blob_digest(&bytes) != blob {
                 return Err(unavailable());
             }
@@ -465,6 +519,106 @@ async fn fetch(client: &reqwest::Client, url: &str, limit: usize) -> Result<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+    const FULL_BANK: &[u8] = include_bytes!("../resources/lm-detector/unified_bank.json");
+
+    fn full_files() -> [(&'static str, &'static [u8], usize); 3] {
+        let mut files = FILES;
+        files[0].1 = FULL_BANK;
+        files
+    }
+
+    struct MockUpstream {
+        base: String,
+        requests: Arc<Mutex<Vec<String>>>,
+        task: tokio::task::JoinHandle<()>,
+    }
+    impl Drop for MockUpstream {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+    impl MockUpstream {
+        async fn serve(responses: BTreeMap<String, (u16, Vec<u8>)>) -> Self {
+            use axum::{body::Body, extract::Request, response::Response, routing::get, Router};
+            let requests = Arc::new(Mutex::new(Vec::new()));
+            let seen = requests.clone();
+            let responses = Arc::new(responses);
+            let router = Router::new().route(
+                "/{*path}",
+                get(move |request: Request| {
+                    let seen = seen.clone();
+                    let responses = responses.clone();
+                    async move {
+                        let path = request.uri().path();
+                        seen.lock().unwrap().push(path.into());
+                        let (status, bytes) = responses.get(path).cloned().unwrap_or((404, vec![]));
+                        Response::builder()
+                            .status(status)
+                            .body(Body::from(bytes))
+                            .unwrap()
+                    }
+                }),
+            );
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let base = format!("http://{}", listener.local_addr().unwrap());
+            let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+            Self {
+                base,
+                requests,
+                task,
+            }
+        }
+        async fn update(&self, bank: &Bank) -> Result<()> {
+            let client = reqwest::Client::builder().no_proxy().build().unwrap();
+            bank.download_from(
+                &client,
+                &self.base,
+                &self.base,
+                &json!({"files":{
+                    "sdk/rust/src/analysis.rs":{"sha256":sha256(b"fixture algorithm")}
+                }}),
+            )
+            .await
+        }
+    }
+    fn update_responses(revision: &str, changed: bool) -> BTreeMap<String, (u16, Vec<u8>)> {
+        let tree = "d".repeat(40);
+        let mut responses = BTreeMap::from([
+            (
+                "/commits/main".into(),
+                (200, serde_json::to_vec(&json!({"sha":revision})).unwrap()),
+            ),
+            (
+                format!("/git/trees/{revision}"),
+                (
+                    200,
+                    serde_json::to_vec(&json!({"tree":[{"path":"data","type":"tree","sha":tree}]}))
+                        .unwrap(),
+                ),
+            ),
+            (
+                format!("/{revision}/sdk/rust/src/analysis.rs"),
+                (200, b"fixture algorithm".to_vec()),
+            ),
+        ]);
+        let entries = full_files()
+            .into_iter()
+            .map(|(name, bytes, _)| {
+                let mut bytes = bytes.to_vec();
+                if changed && name == "unified_bank.json" {
+                    bytes.push(b'\n');
+                }
+                let blob = git_blob_digest(&bytes);
+                responses.insert(format!("/{revision}/data/{name}"), (200, bytes));
+                json!({"path":name,"type":"blob","sha":blob})
+            })
+            .collect::<Vec<_>>();
+        responses.insert(
+            format!("/git/trees/{tree}"),
+            (200, serde_json::to_vec(&json!({"tree":entries})).unwrap()),
+        );
+        responses
+    }
     fn test_bank(root: &Path, read_only: bool) -> Bank {
         let env = BTreeMap::from([
             (
@@ -499,6 +653,239 @@ mod tests {
         );
         assert!(!bank.root.exists());
         assert!(bank.request_sync().await.is_err());
+    }
+    #[tokio::test]
+    async fn known_bundled_upgrade_preserves_cached_and_pinned_history() {
+        let root = tempfile::tempdir().unwrap();
+        let bank = test_bank(root.path(), false);
+        let (stage, mut meta) = fixture();
+        meta["revision"] = PREVIOUS_BUNDLED_REVISION.into();
+        bank.activate(stage, meta).await.unwrap();
+        let pinned = bank.load(PREVIOUS_BUNDLED_REVISION.into()).await.unwrap();
+        let old_version = pinned.version.clone();
+        let old_bytes = std::fs::read(
+            bank.root
+                .join(PREVIOUS_BUNDLED_REVISION)
+                .join("manifest.json"),
+        )
+        .unwrap();
+        bank.state
+            .transaction(|state| {
+                state["error"] = "上游 SDK 已变化，请升级服务端；当前检测库已保留".into();
+                state["result"] = "failed".into();
+                Ok(())
+            })
+            .unwrap();
+        bank.migrate_bundled().await.unwrap();
+        let status = bank.public().await.unwrap();
+        assert_eq!(status["version"]["revision"], REVISION);
+        assert_eq!(status["version"]["analyzer_version"], "lmfpd-0.2.0");
+        assert_eq!(status["source"], "bundled");
+        assert_eq!(status["error"], "");
+        assert_eq!(status["result"], "updated");
+        assert_eq!(pinned.version, old_version);
+        assert!(Arc::ptr_eq(
+            &pinned,
+            &bank.load(PREVIOUS_BUNDLED_REVISION.into()).await.unwrap()
+        ));
+        assert_eq!(
+            std::fs::read(
+                bank.root
+                    .join(PREVIOUS_BUNDLED_REVISION)
+                    .join("manifest.json")
+            )
+            .unwrap(),
+            old_bytes
+        );
+        let saved = std::fs::read(bank.state.path()).unwrap();
+        let restarted = test_bank(root.path(), false);
+        restarted.migrate_bundled().await.unwrap();
+        assert_eq!(std::fs::read(bank.state.path()).unwrap(), saved);
+        assert_eq!(
+            restarted.public().await.unwrap()["version"]["revision"],
+            REVISION
+        );
+        assert_eq!(
+            restarted
+                .load(PREVIOUS_BUNDLED_REVISION.into())
+                .await
+                .unwrap()
+                .version,
+            old_version
+        );
+    }
+    #[tokio::test]
+    async fn migration_handles_unextracted_old_bundle_and_leaves_other_versions_alone() {
+        let root = tempfile::tempdir().unwrap();
+        let bank = test_bank(root.path(), false);
+        bank.state
+            .transaction(|state| {
+                state["revision"] = PREVIOUS_BUNDLED_REVISION.into();
+                Ok(())
+            })
+            .unwrap();
+        assert!(!bank.root.join(PREVIOUS_BUNDLED_REVISION).exists());
+        bank.migrate_bundled().await.unwrap();
+        assert_eq!(
+            bank.public().await.unwrap()["version"]["revision"],
+            REVISION
+        );
+        let (stage, mut meta) = fixture();
+        meta["revision"] = "3".repeat(40).into();
+        bank.activate(stage, meta).await.unwrap();
+        let saved = std::fs::read(bank.state.path()).unwrap();
+        bank.migrate_bundled().await.unwrap();
+        assert_eq!(std::fs::read(bank.state.path()).unwrap(), saved);
+        assert_eq!(
+            bank.public().await.unwrap()["version"]["revision"],
+            "3".repeat(40)
+        );
+    }
+    #[tokio::test]
+    async fn migration_failure_and_read_only_mode_preserve_the_old_state() {
+        let root = tempfile::tempdir().unwrap();
+        let bank = test_bank(root.path(), false);
+        bank.state
+            .transaction(|state| {
+                state["revision"] = PREVIOUS_BUNDLED_REVISION.into();
+                Ok(())
+            })
+            .unwrap();
+        let saved = std::fs::read(bank.state.path()).unwrap();
+        let read_only = test_bank(root.path(), true);
+        read_only.migrate_bundled().await.unwrap();
+        let failing = Bank {
+            state: Store::new(bank.state.path(), json!({}), valid_object, true),
+            ..bank.clone()
+        };
+        assert!(failing.migrate_bundled().await.is_err());
+        assert_eq!(std::fs::read(bank.state.path()).unwrap(), saved);
+        assert_eq!(bank.revision().unwrap(), PREVIOUS_BUNDLED_REVISION);
+        assert!(bank.snapshots.lock().unwrap().active.is_none());
+    }
+    #[tokio::test]
+    async fn compatible_unchanged_data_skips_downloads_and_preserves_the_revision() {
+        let root = tempfile::tempdir().unwrap();
+        let bank = test_bank(root.path(), false);
+        let revision = "1".repeat(40);
+        let upstream = MockUpstream::serve(update_responses(&revision, false)).await;
+        upstream.update(&bank).await.unwrap();
+        assert_eq!(bank.revision().unwrap(), REVISION);
+        assert!(!bank.root.exists());
+        let requests = upstream.requests.lock().unwrap();
+        assert!(requests.iter().any(|p| p.ends_with("analysis.rs")));
+        assert!(!requests.iter().any(|p| p.contains("/data/")));
+    }
+    #[tokio::test]
+    async fn changed_data_is_downloaded_once_and_reused_after_restart() {
+        let root = tempfile::tempdir().unwrap();
+        let bank = test_bank(root.path(), false);
+        let pinned = bank.load(REVISION.into()).await.unwrap();
+        let revision = "1".repeat(40);
+        let upstream = MockUpstream::serve(update_responses(&revision, true)).await;
+        upstream.update(&bank).await.unwrap();
+        assert_eq!(bank.revision().unwrap(), revision);
+        assert_eq!(pinned.version["revision"], REVISION);
+        assert_eq!(
+            upstream
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|p| p.contains("/data/"))
+                .count(),
+            3
+        );
+        let next_revision = "2".repeat(40);
+        let next = MockUpstream::serve(update_responses(&next_revision, true)).await;
+        let restarted = test_bank(root.path(), false);
+        next.update(&restarted).await.unwrap();
+        assert_eq!(restarted.revision().unwrap(), revision);
+        assert!(!restarted.root.join(next_revision).exists());
+        assert!(!next
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|p| p.contains("/data/")));
+    }
+    #[tokio::test]
+    async fn unreadable_active_cache_does_not_prevent_a_verified_new_revision() {
+        let root = tempfile::tempdir().unwrap();
+        let bank = test_bank(root.path(), false);
+        let (stage, mut meta) = fixture();
+        let old_revision = "1".repeat(40);
+        meta["revision"] = old_revision.clone().into();
+        bank.activate(stage, meta).await.unwrap();
+        let old_detector = bank.root.join(&old_revision).join("shared_detector.bin");
+        std::fs::write(&old_detector, b"damaged fixture cache").unwrap();
+        drop(bank);
+
+        let restarted = test_bank(root.path(), false);
+        assert!(restarted.public().await.is_err());
+        let revision = "2".repeat(40);
+        let upstream = MockUpstream::serve(update_responses(&revision, false)).await;
+        upstream.update(&restarted).await.unwrap();
+        assert_eq!(
+            restarted.public().await.unwrap()["version"]["revision"],
+            revision
+        );
+        assert_eq!(
+            upstream
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|p| p.contains("/data/"))
+                .count(),
+            3
+        );
+        assert_eq!(
+            std::fs::read(old_detector).unwrap(),
+            b"damaged fixture cache"
+        );
+    }
+    #[tokio::test]
+    async fn incompatible_sdk_network_failure_and_invalid_downloads_keep_the_active_bank() {
+        let revision = "1".repeat(40);
+        for (path, status, bytes) in [
+            (
+                format!("/{revision}/sdk/rust/src/analysis.rs"),
+                200,
+                b"changed algorithm".to_vec(),
+            ),
+            (format!("/{revision}/data/shared_detector.bin"), 503, vec![]),
+            (
+                format!("/{revision}/data/shared_detector.bin"),
+                200,
+                b"invalid blob".to_vec(),
+            ),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let bank = test_bank(root.path(), false);
+            let mut responses = update_responses(&revision, true);
+            responses.insert(path.clone(), (status, bytes));
+            let upstream = MockUpstream::serve(responses).await;
+            let error = upstream.update(&bank).await.unwrap_err();
+            if path.ends_with("analysis.rs") {
+                assert_eq!(
+                    error.detail,
+                    "上游 SDK 已变化，请升级服务端；当前检测库已保留"
+                );
+                assert!(!upstream
+                    .requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|p| p.contains("/data/")));
+            }
+            assert_eq!(bank.revision().unwrap(), REVISION);
+            assert!(!bank.root.join(&revision).exists());
+            assert_eq!(
+                bank.public().await.unwrap()["version"]["revision"],
+                REVISION
+            );
+        }
     }
     #[tokio::test]
     async fn updates_validate_all_files_and_keep_pinned_snapshots_across_restart() {
@@ -557,9 +944,9 @@ mod tests {
     fn fixture() -> (tempfile::TempDir, Value) {
         let root = tempfile::tempdir().unwrap();
         let mut files = json!({});
-        for (name, bytes, _) in FILES {
+        for (name, bytes, _) in full_files() {
             std::fs::write(root.path().join(name), bytes).unwrap();
-            files[name] = json!({"sha256":sha256(bytes)});
+            files[name] = manifest()["files"][format!("data/{name}")].clone();
         }
         (root, json!({"revision":REVISION,"files":files}))
     }
@@ -567,6 +954,9 @@ mod tests {
     fn pinned_sdk_conformance_covers_single_three_and_invalid_samples() {
         let (root, meta) = fixture();
         let snapshot = Snapshot::load(root.path(), &meta).unwrap();
+        let compact = Snapshot::bundled().unwrap();
+        assert_eq!(manifest()["revision"], REVISION);
+        assert_eq!(compact.version, snapshot.version);
         let fixture: Value = serde_json::from_str(include_str!(
             "../../tests/contracts/lm-detector/analyze.json"
         ))
@@ -581,41 +971,17 @@ mod tests {
                     .unwrap(),
             )
             .unwrap();
-            let expected = &case["expected"];
-            for key in [
-                "decision",
-                "prediction",
-                "prediction_name",
-                "used_outputs",
-                "probability_status",
-                "diagnostics",
-                "sequence",
-            ] {
-                if key != "sequence" {
-                    assert_eq!(actual[key], expected[key], "{} {key}", case["name"]);
-                }
-            }
-            for (a, b) in actual["results"]
-                .as_array()
+            assert_analysis(&actual, &case["expected"], string(&case["name"]));
+            assert_eq!(
+                actual,
+                serde_json::to_value(
+                    compact
+                        .detector
+                        .analyze(&outputs, case["strict"] == true)
+                        .unwrap()
+                )
                 .unwrap()
-                .iter()
-                .zip(expected["results"].as_array().unwrap())
-            {
-                assert_eq!(a["model"], b["model"]);
-                let (x, y) = (a["score"].as_f64().unwrap(), b["score"].as_f64().unwrap());
-                assert!(
-                    (x - y).abs() <= 1e-9_f64 * x.abs().max(y.abs()).max(1.0),
-                    "{} {} delta={}",
-                    case["name"],
-                    a["model"],
-                    (x - y).abs()
-                );
-                if let Some(probability) = b["probability"].as_f64() {
-                    assert!((a["probability"].as_f64().unwrap() - probability).abs() < 1e-9);
-                } else {
-                    assert!(a["probability"].is_null());
-                }
-            }
+            );
         }
         for count in [1, 3] {
             let c = lmfpd::generate_challenges(count).unwrap();
@@ -625,6 +991,30 @@ mod tests {
                 .all(|c| (292..=332).contains(&c.expected_count) && !c.prompt.is_empty()));
         }
         assert!(snapshot.merged("gpt-6-astra"));
+    }
+    fn assert_analysis(actual: &Value, expected: &Value, path: &str) {
+        match (actual, expected) {
+            (Value::Number(a), Value::Number(b)) => {
+                let (a, b) = (a.as_f64().unwrap(), b.as_f64().unwrap());
+                assert!(
+                    (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0),
+                    "{path}: {a} != {b}"
+                );
+            }
+            (Value::Array(a), Value::Array(b)) => {
+                assert_eq!(a.len(), b.len(), "{path}");
+                for (i, (a, b)) in a.iter().zip(b).enumerate() {
+                    assert_analysis(a, b, &format!("{path}[{i}]"));
+                }
+            }
+            (Value::Object(a), Value::Object(b)) => {
+                assert_eq!(a.len(), b.len(), "{path}");
+                for (key, value) in b {
+                    assert_analysis(a.get(key).unwrap(), value, &format!("{path}.{key}"));
+                }
+            }
+            _ => assert_eq!(actual, expected, "{path}"),
+        }
     }
     #[test]
     fn no_calibration_keeps_ranking_and_null_confidence() {
@@ -660,7 +1050,7 @@ mod tests {
         meta["files"]["shared_detector.bin"]["sha256"] = "0".repeat(64).into();
         assert!(Snapshot::load(root.path(), &meta).is_err());
         meta["files"]["shared_detector.bin"]["sha256"] = sha256(FILES[1].1).into();
-        let mut bank: Value = serde_json::from_slice(FILES[0].1).unwrap();
+        let mut bank: Value = serde_json::from_slice(FULL_BANK).unwrap();
         bank["models"].as_array_mut().unwrap().swap(0, 1);
         let bytes = serde_json::to_vec(&bank).unwrap();
         std::fs::write(root.path().join("unified_bank.json"), &bytes).unwrap();

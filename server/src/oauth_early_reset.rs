@@ -230,17 +230,7 @@ impl Monitor {
         observers
             .representatives
             .retain(|plan, _| groups.contains_key(plan));
-        for (plan, mut members) in groups {
-            members.sort_by_key(|row| {
-                let id = integer(&row["id"]).unwrap_or(0);
-                let result = quota::latest_result(row, &state["oauth_results"][id.to_string()], at);
-                let descriptor =
-                    recovery_rules::quota_descriptor(&quota::summary_from_result(row, &result), at);
-                (
-                    !parse_datetime(&descriptor["due_at"]).is_some_and(|due| due > at),
-                    id,
-                )
-            });
+        for (plan, members) in groups {
             let existing = observers.representatives.get(&plan);
             if !existing.is_some_and(|old| {
                 members.iter().any(|row| {
@@ -248,7 +238,22 @@ impl Monitor {
                         && oauth_admission::credential_fingerprint(row) == old.credentials
                 })
             }) {
-                let row = members[0];
+                let row = members
+                    .iter()
+                    .min_by_key(|row| {
+                        let id = integer(&row["id"]).unwrap_or(0);
+                        let result =
+                            quota::latest_result(row, &state["oauth_results"][id.to_string()], at);
+                        let descriptor = recovery_rules::quota_descriptor(
+                            &quota::summary_from_result(row, &result),
+                            at,
+                        );
+                        (
+                            !parse_datetime(&descriptor["due_at"]).is_some_and(|due| due > at),
+                            id,
+                        )
+                    })
+                    .expect("nonempty plan group");
                 observers.representatives.insert(
                     plan.clone(),
                     Representative {
