@@ -493,6 +493,9 @@ struct PanicModelHooks {
 }
 
 impl ModelHooks for PanicModelHooks {
+    fn verdict_policy(&self, _: i64) -> Result<Value> {
+        Ok(json!({}))
+    }
     fn guard(&self, job: Value) -> BoxFuture<'_, Result<Value>> {
         Box::pin(async move { Ok(job) })
     }

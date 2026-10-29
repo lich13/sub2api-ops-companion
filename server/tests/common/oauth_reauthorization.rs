@@ -78,6 +78,10 @@ async fn reauthorization_preserves_configuration_rejects_overlap_and_never_repla
     assert_eq!(after["proxy_id"], before["proxy_id"]);
     assert_eq!(after["model_mapping"]["fixture-alias"], "fixture-new-model");
     assert_eq!(after["extra"]["fixture_setting"], true);
+    assert_eq!(
+        h.upstream.matching(Method::POST, &native)[0].body["type"],
+        "oauth"
+    );
     assert_eq!(h.linked_groups(id).await, vec![group]);
     assert_eq!(
         h.request(Method::POST, &path, Some(body.clone())).await.0,
@@ -93,6 +97,7 @@ async fn reauthorization_preserves_configuration_rejects_overlap_and_never_repla
     changed["credentials"]["access_token"] = "fixture-unknown-access".into();
     let (status, _, text) = h.request(Method::POST, &path, Some(changed)).await;
     assert_eq!(status, 502);
+    assert!(text.contains("授权保存结果未确认"));
     assert!(!text.contains("fixture-unknown-access"));
     assert!(!text.contains("fixture-sensitive-upstream"));
     assert_eq!(h.upstream.matching(Method::POST, &native).len(), 2);
@@ -103,6 +108,15 @@ async fn reauthorization_preserves_configuration_rejects_overlap_and_never_repla
         409,
         "readback must confirm actual credentials"
     );
+    for rejected in [400, 401, 403, 404, 409, 422] {
+        h.upstream.update_status.store(rejected, Ordering::Release);
+        let writes = h.upstream.matching(Method::POST, &native).len();
+        let (status, _, text) = h.request(Method::POST, &path, Some(body.clone())).await;
+        assert_eq!(status, 502);
+        assert!(text.contains("授权保存被拒绝"));
+        assert!(!text.contains("fixture-sensitive-upstream"));
+        assert_eq!(h.upstream.matching(Method::POST, &native).len(), writes + 1);
+    }
     for (platform, kind) in [
         ("openai", "apikey"),
         ("anthropic", "oauth"),

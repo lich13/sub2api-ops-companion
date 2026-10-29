@@ -52,7 +52,7 @@ export function detectionPreview(method: string, path: string, body: Record<stri
     return structuredClone(path.startsWith("/lm-detector/") ? { ...bank, version: { ...bank.version, analyzer_version: "lmfpd-0.2.0" } } : bank);
   }
   const aid = Number(path.split('/')[2]);
-  let value = detections.get(aid) || { account_id: aid, version: 'd'.repeat(64), enabled: false, interval_minutes: 15, schedule_mode: 'smart', min_interval_minutes: 5, recent_request_count: aid === 102 ? 0 : 60, effective_interval_minutes: aid === 102 ? null : 10, schedule_anchor_at: null, model_id: 'gpt-6-luna', status: 'disabled', next_at: null,
+  let value = detections.get(aid) || { account_id: aid, version: 'd'.repeat(64), enabled: false, verdict_mode: 'strict', degraded_model_id: 'gpt-5.6-luna', interval_minutes: 15, schedule_mode: 'smart', min_interval_minutes: 5, recent_request_count: aid === 102 ? 0 : 60, effective_interval_minutes: aid === 102 ? null : 10, schedule_anchor_at: null, model_id: 'gpt-6-luna', status: 'disabled', next_at: null,
     last_automatic_started_at: aid === 102 ? '2026-10-01T02:30:00Z' : null,
     last_result: aid === 102 ? { status: 'completed', report: { prediction_name: '预览模型' }, completed_at: '2026-10-01T02:30:12Z' } : null };
   const account = accounts.find(a => a.id === aid);
@@ -66,6 +66,11 @@ export function detectionPreview(method: string, path: string, body: Record<stri
   detections.set(aid, value);
   if (method === 'PUT') {
     if (body.expected_version !== value.version) throw new Error('检测设置已变化');
+    const mode = body.verdict_mode ?? value.verdict_mode;
+    const target = String(body.degraded_model_id ?? value.degraded_model_id).trim().toLowerCase();
+    if (!['strict', 'relaxed'].includes(String(mode)) || !/^[A-Za-z0-9._:/-]{1,200}$/.test(target)) throw new Error('判定规则无效');
+    value = { ...value, verdict_mode: mode, degraded_model_id: target };
+    if (body.enabled === undefined) { value = { ...value, version: version() }; detections.set(aid, value); return structuredClone(value); }
     const account = accounts.find((a) => a.id === aid);
     if (body.model_override !== undefined && account?.type !== "apikey") throw new Error('仅 API Key 账号可单独指定检测模型');
     const requested = body.model_override !== undefined ? body.model_override : value.model_override;

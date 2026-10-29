@@ -458,6 +458,12 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
 
     if let Some(id) = id_from_path(&path, "/apply-oauth-credentials") {
         assert_eq!(method, Method::POST);
+        if body["type"] != "oauth" || !body["credentials"].is_object() {
+            return response(
+                StatusCode::BAD_REQUEST,
+                json!({"code":400,"message":"Invalid request"}),
+            );
+        }
         if state.apply_updates.load(Ordering::Acquire) {
             sqlx::query("UPDATE accounts SET credentials=credentials || $2,extra=extra || $3,status='active',error_message=NULL,updated_at=now() WHERE id=$1")
                 .bind(id).bind(SqlJson(body["credentials"].clone())).bind(SqlJson(body.get("extra").cloned().unwrap_or(json!({}))))

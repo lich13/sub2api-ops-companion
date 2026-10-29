@@ -50,7 +50,7 @@ impl Drop for Running {
 struct Gates {
     marks: Arc<Value>,
     detection: Arc<Value>,
-    oauth: Value,
+    oauth: Arc<Value>,
     models: BTreeSet<i64>,
     operations: BTreeSet<i64>,
 }
@@ -146,7 +146,7 @@ impl Keepalive {
         Ok(Gates {
             marks: self.detection.capacity.store.shared_snapshot()?,
             detection: self.detection.store.read_shared()?,
-            oauth: self.detection.monitor.state()?,
+            oauth: self.detection.monitor.shared_state()?,
             models: active(
                 self.detection.tests.shared_data()?.as_ref(),
                 crate::model_tests::ACTIVE,

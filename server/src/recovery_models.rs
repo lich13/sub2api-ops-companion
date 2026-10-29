@@ -46,7 +46,7 @@ impl Detection {
             return Ok("账号不符合恢复验证条件".into());
         }
         let config = self.monitor.config.current()?;
-        let state = self.monitor.state()?;
+        let state = self.monitor.shared_state()?;
         let meta = &state["scheduler"][id.to_string()];
         let early =
             context["kind"] == "recovery" && meta["recovery_intent"]["kind"] == "early_reset";
@@ -144,7 +144,7 @@ impl Detection {
             return Err(Error::read_only());
         }
         let value = self.control(id)?;
-        let state = self.monitor.state()?;
+        let state = self.monitor.shared_state()?;
         let meta = &state["scheduler"][id.to_string()];
         let mut context = json!({
             "account_id": id,
@@ -160,7 +160,7 @@ impl Detection {
         identity.as_object_mut().unwrap().shift_remove("consume");
         // A config change must not create another job for an already registered
         // recovery attempt, including requests persisted by older releases.
-        let jobs = self.tests.data()?;
+        let jobs = self.tests.shared_data()?;
         let registered = jobs["requests"].as_object().ok_or_else(Error::internal)?;
         let registered_jobs = registered
             .values()
@@ -242,11 +242,20 @@ impl Detection {
                 return Ok(result.clone());
             }
             let report = &job["report"];
-            let valid = job["status"] == "completed" && valid_report(report);
-            let degraded = is_downgrade(
-                string(&job["requested_model"]),
-                string(&report["prediction"]),
-            );
+            let policy_verdict = crate::verdict_policy::classify(&job);
+            let valid = if crate::verdict_policy::relaxed(&job) {
+                matches!(string(&policy_verdict["outcome"]), "normal" | "degraded")
+            } else {
+                job["status"] == "completed" && valid_report(report)
+            };
+            let degraded = if crate::verdict_policy::relaxed(&job) {
+                policy_verdict["outcome"] == "degraded"
+            } else {
+                is_downgrade(
+                    string(&job["requested_model"]),
+                    string(&report["prediction"]),
+                )
+            };
             if valid && !degraded {
                 if let Err(error) = self.guard(&job).await {
                     self.log_receipt(string(&job["id"]), "verification", &json!({"status":"failed","reason":crate::security::safe_error(&error.detail,200),"completed_at":datetime(self.now())}));
@@ -335,7 +344,11 @@ impl Detection {
             );
         }
         let bank = self.tests.bank.snapshot();
-        if !bank_contains(&bank.0, TARGET) {
+        if if crate::verdict_policy::relaxed(&value) {
+            !crate::verdict_policy::bank_contains(&bank.0, &value)
+        } else {
+            !bank_contains(&bank.0, TARGET)
+        } {
             return Ok(
                 json!({"success":false,"error":"指纹库缺少降智判定模型","error_code":"bank_unavailable"}),
             );

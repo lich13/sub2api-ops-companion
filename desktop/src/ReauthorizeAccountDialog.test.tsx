@@ -31,12 +31,32 @@ it("uses the account proxy, verifies callback state and applies identity only on
   expect(command).toHaveBeenCalledWith("open_authorization_url", { url: "https://example.invalid/authorize?state=fixture-state" });
   expect(api).toHaveBeenCalledWith("POST", "/account-creation/auth/openai/authorize", { proxy_id: 11 });
   await input("https://example.invalid/callback?code=fixture-code&state=wrong"); await click("完成授权");
+  expect(container.querySelector("textarea")?.value).toBe("fixture-code");
+  expect(vi.mocked(api).mock.calls.some(([, path]) => path.endsWith("/exchange"))).toBe(false);
   expect(container.textContent).toContain("不属于本次授权");
   await input("https://example.invalid/callback?code=fixture-code&state=fixture-state");
   await act(async () => { button("完成授权").click(); button("完成授权").click(); });
   expect(api).toHaveBeenCalledWith("POST", "/account-creation/auth/openai/exchange", { session_id: "fixture-session", code: "fixture-code", state: "fixture-state", proxy_id: 11 });
   expect(vi.mocked(api).mock.calls.filter(([, p]) => p.endsWith("/apply-oauth-credentials"))).toHaveLength(1);
   expect(close).toHaveBeenCalledTimes(1); expect(storage).not.toHaveBeenCalled(); storage.mockRestore();
+});
+it.each(["code=fixture-code&state=fixture-state", "?state=fixture-state&code=fixture-code", "fixture-code"])("extracts %s immediately and accepts raw codes", async value => {
+  await render(); await click("生成授权链接"); await input(value);
+  expect(container.querySelector("textarea")?.value).toBe("fixture-code");
+  await click("完成授权");
+  expect(api).toHaveBeenCalledWith("POST", "/account-creation/auth/openai/exchange", expect.objectContaining({ code: "fixture-code", state: "fixture-state" }));
+});
+it.each(["code=a&code=b", "state=fixture-state", "error=access_denied", "https://example.invalid/callback"])("rejects malformed callbacks before exchange: %s", async value => {
+  await render(); await click("生成授权链接"); await input(value);
+  expect(button("完成授权").disabled).toBe(true);
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  expect(vi.mocked(api).mock.calls.some(([, path]) => path.endsWith("/exchange"))).toBe(false);
+});
+it.each([false, true])("distinguishes exchange failure from a definite save rejection: %s", async applying => {
+  vi.mocked(api).mockImplementation((method, path) => path.endsWith(applying ? "/apply-oauth-credentials" : "/exchange") ? Promise.reject(new Error(applying ? "授权保存被拒绝，请重新生成链接后授权" : "fixture-sensitive")) : baseline(method, path));
+  await render(); await click("生成授权链接"); await input("fixture-code"); await click("完成授权");
+  expect(container.textContent).toContain(applying ? "授权保存被拒绝" : "授权码交换失败");
+  expect(container.textContent).not.toContain("fixture-sensitive");
 });
 it("discards a late exchange after closing or changing connection", async () => {
   let resolve!: (v: unknown) => void;

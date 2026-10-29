@@ -30,10 +30,11 @@ struct Run {
 }
 impl ModelTests {
     fn progress(&self, id: &str, run: &Run) -> Result<()> {
+        let groups = run.groups.lock().unwrap_or_else(|e| e.into_inner());
         self.update(
             id,
             json!({
-                "groups": run.groups.lock().unwrap_or_else(|e|e.into_inner()).clone(),
+                "groups": *groups,
                 "attempts": run.attempts.load(Ordering::Acquire),
                 "duration_ms": run.started.elapsed().as_millis(),
             }),
@@ -164,14 +165,14 @@ impl ModelTests {
         } else {
             "completed"
         };
-        if crate::lm_verdict::is_lm(&current) {
+        if crate::lm_verdict::is_lm(&current) || crate::verdict_policy::relaxed(&current) {
             let mut finished = current.clone();
             finished["status"] = status.into();
             finished["groups"] = json!(groups);
             finished["can_retry"] = retryable.into();
             finished["uncertain"] = fatal.as_ref().is_some_and(|f| f.uncertain).into();
             finished["error_code"] = json!(fatal.as_ref().map(|f| f.code));
-            let verdict = crate::lm_verdict::classify(&finished);
+            let verdict = crate::verdict_policy::classify(&finished);
             current = self.update(id, json!({"classification":verdict,"groups":groups}))?;
             if current["automatic"] == true && verdict["outcome"] == "degraded" {
                 finished["classification"] = verdict.clone();
@@ -185,6 +186,7 @@ impl ModelTests {
             }
         }
         if !crate::lm_verdict::is_lm(&current)
+            && !crate::verdict_policy::relaxed(&current)
             && status == "completed"
             && current["automatic"] == true
             && crate::model_tests::ACTIVE.contains(&string(&current["status"]))
@@ -542,12 +544,12 @@ impl ModelTests {
                         report.clone()
                     };
                     let first = independent.clone();
-                    self.group(id, &run, index, json!({
+                    let group_result = json!({
                         "status":"completed", "analysis_ms":analysis_started.elapsed().as_millis(),
                         "error": if context.lm.is_some() && independent.is_null() { "样本已完成，本地分析失败" } else { error },
                         "report": if context.lm.is_some() { independent } else { Value::Null },
                         "transport_complete": matches!(string(&diagnostics["end_reason"]),"completed"|"stop"|"done"|"end_turn"|"stop_sequence"|"message_stop"),
-                    })).map_err(internal)?;
+                    });
                     let current = self.get(id).map_err(internal)?;
                     let first_group_valid = if index == 0 {
                         valid_report(&first)
@@ -559,7 +561,16 @@ impl ModelTests {
                     } else {
                         &current["first_group_prediction"]
                     };
-                    self.update(id, json!({
+                    {
+                        let mut groups = run.groups.lock().unwrap_or_else(|e| e.into_inner());
+                        groups[index]
+                            .as_object_mut()
+                            .ok_or_else(|| internal(Error::internal()))?
+                            .extend(group_result.as_object().unwrap().clone());
+                        self.update(id, json!({
+                        "groups": *groups,
+                        "attempts": run.attempts.load(Ordering::Acquire),
+                        "duration_ms": run.started.elapsed().as_millis(),
                         "completed_groups": samples.len(),
                         "valid_groups": integer(&report["used_outputs"]).unwrap_or(0),
                         "returned_models": run.returned.lock().unwrap_or_else(|e| e.into_inner()).clone(),
@@ -568,7 +579,9 @@ impl ModelTests {
                         "first_group_prediction": first_group_prediction,
                         "first_group_probability": if index == 0 { &first["probability"] } else { &current["first_group_probability"] },
                     })).map_err(internal)?;
+                    }
                     if context.lm.is_none()
+                        && !crate::verdict_policy::relaxed(job)
                         && index == 0
                         && job["automatic"] == true
                         && valid_report(&first)
@@ -597,6 +610,7 @@ impl ModelTests {
                         })).map_err(internal)?;
                     }
                     if context.lm.is_none()
+                        && !crate::verdict_policy::relaxed(job)
                         && report["probability"]
                             .as_f64()
                             .is_some_and(|value| value >= 0.99)

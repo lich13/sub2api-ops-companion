@@ -19,7 +19,7 @@
 .reauthorize-dialog footer { justify-content: flex-end; border-top: 1px solid var(--line); }
 .reauthorize-body { display: grid; gap: 14px; padding: 16px 18px; overflow: auto; min-height: 0; }
 .reauthorize-account { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.reauthorize-body label { display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+.reauthorize-body label { display: grid; gap: 6px; font-size: inherit; color: var(--muted); }
 .reauthorize-body input, .reauthorize-body textarea { width: 100%; min-width: 0; min-height: var(--control-h-field); padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--canvas); color: var(--ink); font: inherit; }
 .reauthorize-body textarea { resize: vertical; min-height: 84px; }
 .reauthorize-links { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -27,6 +27,8 @@
 .reauthorize-dialog header .icon-button { min-height: 30px; min-width: 30px; }
 .reauthorize-dialog button svg { flex-shrink: 0; }
 .reauthorize-error { margin: 0; color: var(--bad); line-height: 1.6; overflow-wrap: anywhere; }
+.app.mobile .reauthorize-dialog { font-size: 16px; }
+.app.mobile .reauthorize-heading h2 { font-size: 18px; }
 .app.mobile .reauthorize-dialog button,
 .app.mobile .reauthorize-dialog header .icon-button { min-height: 48px; min-width: 48px; }
 .app.mobile .reauthorize-dialog input, .app.mobile .reauthorize-dialog textarea { min-height: 48px; font-size: 16px; }

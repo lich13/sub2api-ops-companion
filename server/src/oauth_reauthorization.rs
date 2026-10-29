@@ -101,16 +101,33 @@ impl Runtime {
         if !applied(&current, body) {
             // Native merging preserves mappings, groups and proxy settings, including
             // edits made in Sub2API while this authorization dialog was open.
+            let mut native = body.clone();
+            native["type"] = "oauth".into();
             self.actions
                 .json(
                     reqwest::Method::POST,
                     &format!("{path}/apply-oauth-credentials"),
                     key,
-                    Some(body),
+                    Some(&native),
                     120,
                 )
                 .await
-                .map_err(|_| Error::new(502, "授权保存结果未确认，请刷新账号核对；未重放请求"))?;
+                .map_err(|error| {
+                    let rejected = [400, 401, 403, 404, 409, 422].iter().any(|status| {
+                        error
+                            .detail
+                            .as_str()
+                            .is_some_and(|text| text == format!("Sub2API 请求失败 [http_{status}]"))
+                    });
+                    Error::new(
+                        502,
+                        if rejected {
+                            "授权保存被拒绝，请重新生成链接后授权"
+                        } else {
+                            "授权保存结果未确认，请刷新账号核对；未重放请求"
+                        },
+                    )
+                })?;
         }
         let confirmed = self
             .actions

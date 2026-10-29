@@ -14,7 +14,7 @@ const triggers: Record<string, string> = { scheduled: "定时检测", recheck: "
 const notices: Record<string, string> = { pending: "待推送", queued: "待推送", retry: "待重试", delivered: "已推送", suppressed: "已取消", failed: "投递失败" };
 const basis = (summary: DetectionLog["summary"]) => summary.disposition?.basis ?? summary.recovery?.basis;
 const evidence = (row: DetectionLog) => { const kind = basis(row.summary) ?? row.summary.classification?.basis; return kind === "sample_family" ? `第 ${(row.summary.disposition?.group_indexes ?? row.summary.classification?.group_indexes ?? []).join("、")} 组跨家族证据` : kind === "aggregate" ? "最终汇总" : "单组预测"; };
-const result = (row: DetectionLog) => row.summary.engine === "lm_detector" ? ({ degraded: "判定降智", unavailable: "无法判断", normal: "未确认降智" } as Record<string, string>)[row.summary.outcome] || outcomes[row.summary.outcome] || "待核对" : basis(row.summary) === "aggregate" ? "最终汇总判定降智" : outcomes[row.summary.outcome] || "待核对";
+const result = (row: DetectionLog) => (row.summary.engine === "lm_detector" || row.summary.verdict_mode === "relaxed") ? ({ degraded: "判定降智", unavailable: "无法判断", normal: "未确认降智" } as Record<string, string>)[row.summary.outcome] || outcomes[row.summary.outcome] || "待核对" : basis(row.summary) === "aggregate" ? "最终汇总判定降智" : outcomes[row.summary.outcome] || "待核对";
 const executionTone: Record<string, string> = { completed: "neutral", failed: "bad", cancelled: "neutral", interrupted: "interrupted", needs_confirmation: "warning" };
 const outcomeTone: Record<string, string> = { normal: "good", degraded: "bad", aggregate_degraded: "bad", unavailable: "warning", ...executionTone };
 const noticeTone: Record<string, string> = { pending: "warning", queued: "warning", retry: "warning", delivered: "neutral", suppressed: "neutral", failed: "bad" };
@@ -37,8 +37,9 @@ function Facts({ row }: { row: DetectionLog }) {
   return <dl className="detection-meta">
     <dt>请求模型</dt><dd>{row.model_id}</dd><dt>触发</dt><dd>{row.triggers.map(t => triggers[t] || "自动检测").join("、") || "自动检测"}</dd>
     <dt>检测源</dt><dd>{engineName(summary.engine)} · {summary.sample_count ?? 3} 组</dd>
+    <dt>判定模式</dt><dd>{summary.verdict_mode === "relaxed" ? `宽松模式 · ${summary.degraded_model_id ?? "gpt-5.6-luna"}` : "严格模式"}</dd>
     <dt>执行状态</dt><dd>{statuses[row.status] || "待核对"}</dd><dt>检测结论</dt><dd>{result(row)}</dd>
-    {(basis(summary) || summary.classification?.basis) && <><dt>处置依据</dt><dd>{summary.engine === "lm_detector" ? evidence(row) : basis(summary) === "aggregate" ? "最终汇总" : "首组指纹"}</dd></>}
+    {(basis(summary) || summary.classification?.basis) && <><dt>处置依据</dt><dd>{summary.engine === "lm_detector" || summary.verdict_mode === "relaxed" ? evidence(row) : basis(summary) === "aggregate" ? "最终汇总" : "首组指纹"}</dd></>}
     {summary.engine === "lm_detector" && <><dt>分析状态</dt><dd>{({ partial: "初步结果", scored: "汇总结果", not_model: "序列异常", unscorable: "样本不足" } as Record<string, string>)[summary.decision ?? ""] || "—"}</dd>{summary.reason && <><dt>无法判断原因</dt><dd>{summary.reason}</dd></>}{summary.group_predictions?.map(g => <div className="detection-meta-group" key={g.index}><dt>第 {g.index} 组</dt><dd>{g.prediction || "无排名"}</dd></div>)}<dt>资源版本</dt><dd>{summary.bank_version?.revision || "—"}</dd></>}
     <dt>首组预测</dt><dd>{summary.first_prediction || "暂无记录"}</dd><dt>汇总预测</dt><dd>{summary.prediction_name || summary.prediction || "暂无记录"}</dd>
     <dt>汇总匹配度</dt><dd>{summary.probability == null ? "—" : `${(summary.probability * 100).toFixed(1)}%`}</dd>

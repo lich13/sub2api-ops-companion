@@ -894,7 +894,12 @@ fn shape_valid(path: &str, data: &Value) -> bool {
             templates_valid(data)
         }
         p if p.ends_with("/model-detection") => {
-            data["account_id"].is_u64()
+            data.get("verdict_mode")
+                .is_none_or(|v| v == "strict" || v == "relaxed")
+                && data
+                    .get("degraded_model_id")
+                    .is_none_or(|v| v.as_str().is_some_and(|v| !v.is_empty() && v.len() <= 200))
+                && data["account_id"].is_u64()
                 && data["version"].is_string()
                 && data["enabled"].is_boolean()
                 && data["interval_minutes"].as_u64().is_some_and(|v| v > 0)
@@ -1844,6 +1849,19 @@ mod tests {
         assert!(!shape_valid("/config", &config));
         let mut detection = json!({"account_id":1,"version":"fixture","enabled":false,"interval_minutes":15,"model_id":"","model_source":"account","global_model_id":"","model_override":null,"status":"disabled","engine":"lm_detector","sample_count":1});
         assert!(shape_valid("/accounts/1/model-detection", &detection));
+        let mut policy = detection.clone();
+        policy["verdict_mode"] = "relaxed".into();
+        policy["degraded_model_id"] = "gpt-5.6-luna".into();
+        assert!(shape_valid("/accounts/1/model-detection", &policy));
+        for (field, value) in [
+            ("verdict_mode", json!("unknown")),
+            ("degraded_model_id", json!(false)),
+            ("degraded_model_id", json!("")),
+        ] {
+            let mut bad = policy.clone();
+            bad[field] = value;
+            assert!(!shape_valid("/accounts/1/model-detection", &bad));
+        }
         detection["enabled"] = true.into();
         assert!(!shape_valid("/accounts/1/model-detection", &detection));
         detection["model_id"] = "claude-opus-4-6".into();

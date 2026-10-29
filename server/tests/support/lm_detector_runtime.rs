@@ -329,6 +329,72 @@ async fn lm_three_scheduled_samples_wait_and_settings_only_affect_new_jobs() {
     assert!(h.runtime.tests.start(id, &payload, None).await.is_err());
     h.close().await;
 }
+
+#[tokio::test]
+async fn relaxed_lm_requires_complete_sampling_and_exact_target_without_manual_disposition() {
+    for (target, provider_mode, expected) in [
+        ("claude-haiku-4.5", 6, "degraded"),
+        ("gpt-5.6-luna", 0, "normal"),
+        ("claude-haiku-4.5", 4, "unavailable"),
+    ] {
+        let h = RuntimeHarness::new().await;
+        let p = provider(&h, provider_mode).await;
+        let id = h.seed_account("apikey", None, json!({})).await;
+        h.runtime
+            .detection
+            .update(
+                id,
+                json!({"verdict_mode":"relaxed","degraded_model_id":target}),
+            )
+            .unwrap();
+        let job = start(&h, id, 3, false, 1).await;
+        let key = job["id"].as_str().unwrap();
+        if provider_mode == 6 {
+            let partial = wait(&h, key, |v| v["completed_groups"] == 2).await;
+            assert_eq!(partial["status"], "running");
+            assert!(partial["classification"].is_null());
+            let current = h.runtime.detection.view(id).await.unwrap();
+            h.runtime
+                .detection
+                .save(
+                    id,
+                    &json!({"expected_version":current["version"],"verdict_mode":"strict"}),
+                )
+                .await
+                .unwrap();
+            p.state.release.add_permits(1);
+        }
+        let completed = h.wait_for_terminal(key).await;
+        assert_eq!(completed["classification"]["outcome"], expected);
+        assert_eq!(completed["degraded_model_id"], target);
+        assert_eq!(completed["verdict_mode"], "relaxed");
+        assert_eq!(p.state.numeric.load(Ordering::SeqCst), 3);
+        assert!(completed["automatic_disposition"].is_null());
+        h.close().await;
+    }
+}
+
+#[tokio::test]
+async fn relaxed_missing_target_is_rejected_before_any_request_for_both_engines() {
+    let h = RuntimeHarness::new().await;
+    let p = provider(&h, 0).await;
+    let id = h.seed_account("apikey", None, json!({})).await;
+    h.runtime
+        .detection
+        .update(
+            id,
+            json!({"verdict_mode":"relaxed","degraded_model_id":"fixture-unknown-model"}),
+        )
+        .unwrap();
+    let row = h.runtime.actions.account(id, None).await.unwrap();
+    for engine in ["modeltrace", "lm_detector"] {
+        let error = h.runtime.tests.start(id,&json!({"model_id":"gpt-6-luna","expected_version":account_version(&row),"request_id":uuid::Uuid::new_v4().simple().to_string(),"engine":engine,"sample_count":3}),None).await.unwrap_err();
+        assert_eq!(error.status.as_u16(), 422);
+        assert!(error.detail.as_str().unwrap().contains("无法识别"));
+    }
+    assert_eq!(p.state.numeric.load(Ordering::SeqCst), 0);
+    h.close().await;
+}
 #[tokio::test]
 async fn lm_only_scheduled_and_rechecks_use_platform_engine_and_normal_rechecks_clear_marks() {
     let h = RuntimeHarness::new().await;
@@ -521,12 +587,29 @@ async fn lm_retry_preserves_successes_and_original_probes_and_rejects_changed_co
     let h = RuntimeHarness::new().await;
     let p = provider(&h, 9).await;
     let id = h.seed_account("apikey", None, json!({})).await;
+    h.runtime
+        .detection
+        .update(
+            id,
+            json!({"verdict_mode":"relaxed","degraded_model_id":"claude-haiku-4.5"}),
+        )
+        .unwrap();
     let job = start(&h, id, 3, true, 1).await;
     let key = job["id"].as_str().unwrap();
     let failed = h.wait_for_terminal(key).await;
     assert_eq!(failed["can_retry"], true);
     assert_eq!(failed["completed_groups"], 2);
     assert_eq!(p.state.baselines.load(Ordering::SeqCst), 0);
+    assert_eq!(failed["classification"]["outcome"], "unavailable");
+    let current = h.runtime.detection.view(id).await.unwrap();
+    h.runtime
+        .detection
+        .save(
+            id,
+            &json!({"expected_version":current["version"],"verdict_mode":"strict"}),
+        )
+        .await
+        .unwrap();
     let retry = uuid::Uuid::new_v4().simple().to_string();
     let first = h.runtime.tests.retry_failed(key, &retry).await.unwrap();
     assert_eq!(
@@ -535,6 +618,9 @@ async fn lm_retry_preserves_successes_and_original_probes_and_rejects_changed_co
     );
     let completed = h.wait_for_terminal(key).await;
     assert_eq!(completed["status"], "completed");
+    assert_eq!(completed["verdict_mode"], "relaxed");
+    assert_eq!(completed["degraded_model_id"], "claude-haiku-4.5");
+    assert_eq!(completed["classification"]["outcome"], "degraded");
     assert_eq!(completed["bank_version"], failed["bank_version"]);
     for i in [0, 2] {
         assert_eq!(completed["groups"][i], failed["groups"][i]);

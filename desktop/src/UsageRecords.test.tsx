@@ -288,14 +288,8 @@ async function setInput(label: string, value: string) {
     node.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
-async function applyFilters() {
-  await act(async () =>
-    container
-      .querySelector<HTMLButtonElement>(
-        '.records-toolbar button[type="submit"]',
-      )!
-      .click(),
-  );
+async function submitModel() {
+  await act(async () => container.querySelector<HTMLInputElement>('[aria-label="模型筛选"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
 }
 async function escape(selector: string) {
   await act(async () =>
@@ -1186,11 +1180,11 @@ describe("record view", () => {
   });
 
   it.each(["close", "Escape", "Back", "backdrop"])(
-    "discards mobile filter drafts when closed with %s and applies them only on submit",
+    "keeps mobile filter changes when closed with %s and applies without submit",
     async (action) => {
       await renderView({ mobile: true, desktop: false });
       await click("筛选记录");
-      await setInput("模型筛选", "discarded-model");
+      await setInput("模型筛选", "retained-model");
       const fallback = vi.fn();
       if (action === "close") await click("关闭记录筛选");
       else if (action === "Escape")
@@ -1205,21 +1199,22 @@ describe("record view", () => {
       expect(
         container.querySelector('.records-toolbar[role="dialog"]'),
       ).toBeNull();
-      expect(api).toHaveBeenCalledTimes(1);
+      await advance(300);
+      expect(params(paths().at(-1)!).get("model")).toBe("retained-model");
       expect(fallback).not.toHaveBeenCalled();
       await click("筛选记录");
       expect(
         container.querySelector<HTMLInputElement>('[aria-label="模型筛选"]')
           ?.value,
-      ).toBe("");
+      ).toBe("retained-model");
       await setInput("模型筛选", "committed-model");
-      await applyFilters();
+      await submitModel();
+
       expect(params(paths().at(-1)!).get("model")).toBe("committed-model");
       expect(params(paths().at(-1)!).get("include_summary")).toBe("true");
-      expect(
-        container.querySelector('.records-toolbar[role="dialog"]'),
-      ).toBeNull();
-      expect(api).toHaveBeenCalledTimes(2);
+      expect(container.querySelector('.records-toolbar[role="dialog"]')).not.toBeNull();
+      await advance(300);
+      expect(api).toHaveBeenCalledTimes(3);
     },
   );
 
@@ -1413,8 +1408,7 @@ describe("record view", () => {
       await setInput("搜索账户", "#22");
       expect(list().querySelectorAll('[role="option"]')).toHaveLength(2);
       await click("Current East#22");
-      expect(api).toHaveBeenCalledTimes(1);
-      await applyFilters();
+
       expect(api).toHaveBeenCalledTimes(2);
       expect(params(paths().at(-1)!).get("account_id")).toBe("22");
       expect(paths().every((path) => path.startsWith("/usage-records?"))).toBe(
@@ -1425,20 +1419,15 @@ describe("record view", () => {
     },
   );
 
-  it.each(["draft", "applied"])(
-    "clears a removed account from the %s selection when the online snapshot changes",
-    async (stage) => {
+  it("clears a removed account when the online snapshot changes", async () => {
       const accounts = [account(22, "Current East")];
       await renderView({ accounts });
       await click("账户筛选");
       await click("Current East#22");
-      if (stage === "applied") {
-        await applyFilters();
-        expect(params(paths().at(-1)!).get("account_id")).toBe("22");
-      }
+      expect(params(paths().at(-1)!).get("account_id")).toBe("22");
       await renderView({ accounts: [account(33, "Current West")] });
       expect(button("账户筛选").textContent).toBe("全部账户");
-      await applyFilters();
+
       await click("刷新记录");
       expect(params(paths().at(-1)!).has("account_id")).toBe(false);
       await click("账户筛选");
@@ -1455,7 +1444,7 @@ describe("record view", () => {
     await renderView({ accounts: [account(22, "Current East")] });
     await click("账户筛选");
     await click("Current East#22");
-    await applyFilters();
+
     const before = paths().length;
     await renderView({ online: false, accounts: [] });
     await advance(30000);
@@ -1520,7 +1509,7 @@ describe("record view", () => {
       "owner-71 #71",
     );
     await choose("unused-key#171");
-    await click("筛选");
+
     expect(params(paths().at(-1)!).get("user_id")).toBe("71");
     expect(params(paths().at(-1)!).get("api_key_id")).toBe("171");
 
@@ -1528,7 +1517,7 @@ describe("record view", () => {
     await advance(0);
     await choose("user-two#72");
     expect(button("API 密钥筛选").textContent).toBe("全部API 密钥");
-    await click("筛选");
+
     expect(params(paths().at(-1)!).get("user_id")).toBe("72");
     expect(params(paths().at(-1)!).has("api_key_id")).toBe(false);
     await click("API 密钥筛选");
@@ -1539,7 +1528,7 @@ describe("record view", () => {
     await advance(0);
     await choose("全部用户");
     expect(button("API 密钥筛选").textContent).toBe("全部API 密钥");
-    await click("筛选");
+
     expect(params(paths().at(-1)!).has("user_id")).toBe(false);
     expect(params(paths().at(-1)!).has("api_key_id")).toBe(false);
     expect(
@@ -1724,7 +1713,8 @@ describe("record view", () => {
       "正在读取记录",
     );
     await setInput("模型筛选", "next-model");
-    await click("筛选");
+    await submitModel();
+
     expect(container.querySelector("[role=dialog]")).toBeNull();
     await act(async () => stale.resolve(record(100)));
     expect(container.querySelector("[role=dialog]")).toBeNull();
@@ -2092,15 +2082,33 @@ it("applies platform to the record feed and clears an incompatible account", asy
   await renderView({ accounts: [account(9, "Codex fixture"), { ...account(10, "Claude fixture"), platform: "anthropic" }] });
   await click("账户筛选");
   await click("Codex fixture#9");
-  await applyFilters();
+
   expect(params(paths().at(-1)!).get("account_id")).toBe("9");
   const platform = container.querySelector<HTMLSelectElement>('[aria-label="记录平台"]')!;
   expect([...platform.options].map(option => option.textContent)).toEqual(expect.arrayContaining(["全部平台", "Codex", "Claude", "Gemini", "DeepSeek"]));
+  const before = paths().filter(path => path.startsWith("/usage-records?")).length;
   await act(async () => { platform.value = "anthropic"; platform.dispatchEvent(new Event("change", { bubbles: true })); });
-  await click("筛选");
+  expect(paths().filter(path => path.startsWith("/usage-records?"))).toHaveLength(before + 1);
+
   expect(button("账户筛选").textContent).toBe("全部账户");
   expect(params(paths().at(-1)!).has("account_id")).toBe(false);
   expect(paths().filter(path => path.startsWith("/usage-records?")).at(-1)).toContain("platform=anthropic");
   await advance(10_000);
   expect(paths().filter(path => path.startsWith("/usage-records?")).every(path => !params(path).has("after_id") || params(path).get("platform") === "anthropic")).toBe(true);
+});
+
+it("debounces model text for 300ms, submits Enter immediately, and applies mismatch without a filter button", async () => {
+  await renderView();
+  expect(container.querySelector('.records-toolbar button[type="submit"]')).toBeNull();
+  const before = paths().length;
+  await setInput("模型筛选", "fixture-first"); await advance(200);
+  await setInput("模型筛选", "fixture-second"); await advance(299);
+  expect(paths()).toHaveLength(before);
+  await advance(1); expect(paths()).toHaveLength(before + 1);
+  expect(params(paths().at(-1)!).get("model")).toBe("fixture-second");
+  await setInput("模型筛选", "fixture-enter"); await submitModel();
+  expect(params(paths().at(-1)!).get("model")).toBe("fixture-enter");
+  await advance(300); expect(paths()).toHaveLength(before + 2);
+  await act(async () => container.querySelector<HTMLInputElement>('.records-mismatch-filter input')!.click());
+  expect(params(paths().at(-1)!).get("mismatch_only")).toBe("true");
 });

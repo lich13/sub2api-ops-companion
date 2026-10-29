@@ -39,6 +39,7 @@ pub fn error_text(code: &str) -> &'static str {
     }
 }
 pub trait ModelHooks: Send + Sync {
+    fn verdict_policy(&self, id: i64) -> Result<Value>;
     fn guard(&self, job: Value) -> BoxFuture<'_, Result<Value>>;
     fn next_allowed_at(&self, id: i64) -> Result<Value>;
     fn register_dispatch(&self, job: &Value) -> Result<()>;
@@ -92,7 +93,10 @@ fn validate(value: &Value) -> Result<()> {
         || value["version"] != 1
         || value["accounts"].as_object().is_none_or(|rows| {
             rows.values().any(|v| {
-                !v.is_object() || string(&v["id"]).is_empty() || v["account_id"].as_i64().is_none()
+                !v.is_object()
+                    || string(&v["id"]).is_empty()
+                    || v["account_id"].as_i64().is_none()
+                    || crate::verdict_policy::validate(v).is_err()
             })
         })
         || value.get("requests").is_some_and(|v| !v.is_object())
@@ -101,6 +105,7 @@ fn validate(value: &Value) -> Result<()> {
                 rows.values().any(|v| {
                     !v.is_object()
                         || string(&v["id"]).is_empty()
+                        || crate::verdict_policy::validate(v).is_err()
                         || !crate::detection_logs::valid_summary(&v["result_summary"])
                 })
             })
@@ -194,6 +199,21 @@ fn interruption(job: &Value, error: &str, at: Value) -> Value {
     changes
 }
 impl ModelTests {
+    fn check_policy_bank(
+        policy: &Value,
+        bank: &Value,
+        lm: Option<&crate::lm_detector::Snapshot>,
+    ) -> Result<()> {
+        let present = if let Some(lm) = lm {
+            crate::verdict_policy::lm_contains(lm, policy)
+        } else {
+            crate::verdict_policy::bank_contains(bank, policy)
+        };
+        if !present {
+            return Err(Error::new(422, "当前检测库无法识别指定的降智模型"));
+        }
+        Ok(())
+    }
     pub fn new(
         actions: Actions,
         bank: FingerprintBank,
@@ -442,6 +462,11 @@ impl ModelTests {
         let (target, owner) = model_target::target(&self.actions, &row, model).await?;
         let job_id = uuid::Uuid::new_v4().simple().to_string();
         let auto = automatic.cloned().unwrap_or(json!({}));
+        let policy = self.hooks.verdict_policy(id)?;
+        crate::verdict_policy::validate(&policy)?;
+        if automatic.is_some() && policy["generation"] != auto["detection_generation"] {
+            return Err(Error::new(409, "检测设置已变化，请重新读取"));
+        }
         let groups = if payload["engine"] == crate::lm_detector::ENGINE {
             integer(&payload["sample_count"]).unwrap_or(1)
         } else {
@@ -454,6 +479,10 @@ impl ModelTests {
         };
         let mut job = json!({"id":job_id,"request_id":request,"account_id":id,"account_name":row["name"],"requested_model":model,"forwarded_model":target.model,"returned_models":[],"status":if conflict {"needs_confirmation"}else {"queued"},"completed_groups":0,"valid_groups":0,"attempts":0,"queued_at":crate::compat::now(),"started_at":null,"completed_at":null,"duration_ms":0,"error":if conflict {"测试目标已变化，请重新确认"}else {""},"report":null,"bank_version":null,"concurrency":payload["concurrency"],"trigger_source":if automatic.is_some() {"automatic"}else {"manual"},"automatic":automatic.is_some(),"triggers":auto["triggers"].as_array().into_iter().flatten().filter_map(|v|v.as_str()).collect::<std::collections::BTreeSet<_>>(),"degradation_recheck":auto["degradation_recheck"]==true,"planned_groups":groups,"first_group_prediction":null,"first_group_valid":false,"automatic_disposition":null,"target_signature":model_target::signature(&row),"owner_signature":model_target::signature(&owner),"groups":(0..groups).map(|i|json!({"index":i+1,"status":"queued","attempts":0,"ttft_ms":null,"duration_ms":null,"error":""})).collect::<Vec<_>>()});
         job["engine"] = payload["engine"].clone();
+        crate::verdict_policy::copy(&policy, &mut job);
+        if crate::verdict_policy::relaxed(&policy) {
+            Self::check_policy_bank(&policy, &self.bank.snapshot().0, lm.as_deref())?;
+        }
         job["sample_count"] = groups.into();
         job["tokenizer_probe"] = payload["tokenizer_probe"].clone();
         if let Some(lm) = lm {
@@ -640,7 +669,11 @@ impl ModelTests {
                 None
             };
             let (snapshot, compiled) = self.bank.compiled_snapshot();
+            if crate::verdict_policy::relaxed(job) {
+                Self::check_policy_bank(job, &snapshot.0, lm.as_deref())?;
+            }
             if job["automatic"] == true
+                && !crate::verdict_policy::relaxed(job)
                 && lm.is_none()
                 && !crate::model_downgrade::bank_contains(
                     &snapshot.0,

@@ -89,6 +89,7 @@ pub mod upstream;
 pub mod usage;
 pub mod usage_records;
 pub mod validation;
+pub mod verdict_policy;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const BUILD_REVISION: &str = match option_env!("SUB2OPS_BUILD_REVISION") {

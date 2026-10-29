@@ -7639,6 +7639,137 @@ async fn final_aggregate_disposes_when_first_group_has_no_valid_verdict() {
 }
 
 #[tokio::test]
+async fn verdict_policy_partial_saves_preserve_schedule_and_legacy_clients_preserve_policy() {
+    let h = Harness::new(sample_text("above_99", 0)).await;
+    let row = h.seed_account("apikey", true, json!({})).await;
+    let id = integer(&row["id"]).unwrap();
+    let initial = h.enable_detection(id, 17).await;
+    assert_eq!(initial["verdict_mode"], "strict");
+    assert_eq!(initial["degraded_model_id"], "gpt-5.6-luna");
+    let changed = h.runtime().detection.save(id, &json!({"expected_version":initial["version"],"verdict_mode":"relaxed","degraded_model_id":" GPT-6-LUNA "})).await.unwrap();
+    for field in [
+        "enabled",
+        "interval_minutes",
+        "next_at",
+        "schedule_mode",
+        "schedule_anchor_at",
+        "model_override",
+    ] {
+        assert_eq!(changed[field], initial[field], "{field}");
+    }
+    assert_eq!(changed["degraded_model_id"], "gpt-6-luna");
+    assert_eq!(
+        integer(&changed["generation"]),
+        integer(&initial["generation"]).map(|v| v + 1)
+    );
+    assert_eq!(
+        h.runtime()
+            .detection
+            .save(
+                id,
+                &json!({"expected_version":initial["version"],"verdict_mode":"strict"})
+            )
+            .await
+            .unwrap_err()
+            .status
+            .as_u16(),
+        409
+    );
+    let saved = h
+        .runtime()
+        .detection
+        .save(
+            id,
+            &json!({"expected_version":changed["version"],"enabled":false,"interval_minutes":20}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(saved["verdict_mode"], "relaxed");
+    assert_eq!(saved["degraded_model_id"], "gpt-6-luna");
+    h.close().await;
+}
+
+#[tokio::test]
+async fn relaxed_modeltrace_waits_for_all_samples_and_only_aggregate_target_disposes() {
+    for target in ["gpt-5.6-luna", "gpt-6-luna"] {
+        let h = Harness::new(sample_text("automatic_first_group", 0)).await;
+        let row = h.seed_account("apikey", true, json!({})).await;
+        let id = integer(&row["id"]).unwrap();
+        let initial = h.enable_detection(id, 1).await;
+        h.runtime().detection.save(id, &json!({"expected_version":initial["version"],"verdict_mode":"relaxed","degraded_model_id":target})).await.unwrap();
+        let job = h
+            .runtime()
+            .detection
+            .trigger(id, &["error:fixture-relaxed".into()])
+            .await
+            .unwrap();
+        let job = h.wait_job_terminal(job["id"].as_str().unwrap()).await;
+        assert_eq!(job["completed_groups"], 3);
+        assert_eq!(job["report"]["used_outputs"], 3);
+        assert_eq!(h.mock.count("POST", "/v1/responses"), 3);
+        assert_eq!(job["verdict_mode"], "relaxed");
+        assert_eq!(job["degraded_model_id"], target);
+        let degraded = target == "gpt-5.6-luna";
+        assert_eq!(
+            job["classification"]["outcome"],
+            if degraded { "degraded" } else { "normal" }
+        );
+        assert_eq!(job["automatic_disposition"]["marked"] == true, degraded);
+        let summary = sub2ops_server::detection_logs::summary(&job);
+        assert_eq!(summary["verdict_mode"], "relaxed");
+        assert_eq!(summary["outcome"], job["classification"]["outcome"]);
+        assert!(summary["first_downgrade"].is_null());
+        h.close().await;
+    }
+}
+
+#[tokio::test]
+async fn policy_change_during_automatic_sampling_keeps_snapshot_and_prevents_stale_disposition() {
+    let h = Harness::new(sample_text("automatic_first_group", 0)).await;
+    let id = integer(&h.seed_account("apikey", true, json!({})).await["id"]).unwrap();
+    let initial = h.enable_detection(id, 1).await;
+    let saved = h
+        .runtime()
+        .detection
+        .save(
+            id,
+            &json!({"expected_version":initial["version"],"verdict_mode":"relaxed"}),
+        )
+        .await
+        .unwrap();
+    let gate = Gate::new();
+    h.mock.set_model_gate(Some(gate.clone()));
+    let job = h
+        .runtime()
+        .detection
+        .trigger(id, &["error:fixture-policy-change".into()])
+        .await
+        .unwrap();
+    tokio::time::timeout(StdDuration::from_secs(8), gate.entered.notified())
+        .await
+        .unwrap();
+    h.runtime()
+        .detection
+        .save(
+            id,
+            &json!({"expected_version":saved["version"],"verdict_mode":"strict"}),
+        )
+        .await
+        .unwrap();
+    h.mock.set_model_gate(None);
+    gate.release.notify_waiters();
+    let finished = h.wait_job_terminal(job["id"].as_str().unwrap()).await;
+    assert_eq!(finished["verdict_mode"], "relaxed");
+    assert_ne!(finished["automatic_disposition"]["marked"], true);
+    assert_eq!(
+        h.mock
+            .count("POST", &format!("/api/v1/admin/accounts/{id}/schedulable")),
+        0
+    );
+    h.close().await;
+}
+
+#[tokio::test]
 async fn normal_first_group_still_allows_aggregate_degradation_disposition() {
     let h = Harness::new(sample_text("automatic_first_group", 0)).await;
     h.mock.set_model_outputs([

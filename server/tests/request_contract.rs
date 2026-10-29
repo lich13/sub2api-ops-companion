@@ -119,3 +119,33 @@ fn smart_detection_fields_are_optional_strict_and_preserved_by_request_validatio
         assert!(detection_request(&request).is_err());
     }
 }
+
+#[test]
+fn verdict_policy_accepts_partial_saves_without_defaulting_schedule_fields() {
+    use serde_json::json;
+    use sub2ops_server::model_detection::detection_request;
+    let base = json!({"expected_version":"a".repeat(64),"verdict_mode":"relaxed","degraded_model_id":" OPENAI/GPT-5.6-LUNA "});
+    let parsed = detection_request(&base).unwrap();
+    assert_eq!(parsed["degraded_model_id"], "gpt-5.6-luna");
+    assert!(parsed.get("enabled").is_none());
+    assert!(parsed.get("interval_minutes").is_none());
+    for (field, value) in [
+        ("verdict_mode", json!("unknown")),
+        ("verdict_mode", json!(null)),
+        ("degraded_model_id", json!(true)),
+        ("degraded_model_id", json!(" ")),
+        ("degraded_model_id", json!("bad model")),
+        ("interval_minutes", json!(30)),
+        ("schedule_mode", json!("smart")),
+        ("enabled", json!(null)),
+    ] {
+        let mut invalid = base.clone();
+        invalid[field] = value;
+        assert!(detection_request(&invalid).is_err(), "{invalid}");
+    }
+    assert!(detection_request(&json!({"expected_version":"a".repeat(64)})).is_err());
+    let legacy =
+        detection_request(&json!({"expected_version":"a".repeat(64),"enabled":false})).unwrap();
+    assert!(legacy.get("verdict_mode").is_none());
+    assert!(legacy.get("degraded_model_id").is_none());
+}

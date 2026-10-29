@@ -23,6 +23,7 @@ pub(crate) fn valid_summary(value: &Value) -> bool {
         return true;
     }
     value.is_object()
+        && crate::verdict_policy::validate(value).is_ok()
         && ["outcome", "first_prediction", "prediction"]
             .iter()
             .all(|key| value.get(*key).is_none_or(|v| v.is_null() || v.is_string()))
@@ -116,6 +117,7 @@ pub fn summary(job: &Value) -> Value {
     } else {
         json!({})
     };
+    crate::verdict_policy::copy(job, &mut out);
     if job["engine"].is_string() {
         out["engine"] = job["engine"].clone();
         out["sample_count"] = job["planned_groups"].clone();
@@ -172,11 +174,11 @@ pub fn summary(job: &Value) -> Value {
             "normal".into()
         };
     }
-    if crate::lm_verdict::is_lm(job) {
+    if crate::lm_verdict::is_lm(job) || crate::verdict_policy::relaxed(job) {
         let classification = if job["classification"].is_object() {
             job["classification"].clone()
         } else {
-            crate::lm_verdict::classify(job)
+            crate::verdict_policy::classify(job)
         };
         out["engine"] = job["engine"].clone();
         out["sample_count"] = job["planned_groups"].clone();
@@ -214,7 +216,7 @@ pub fn preserve_summary(job: &mut Value) {
 }
 
 fn summary_view(value: &Value) -> Value {
-    json!({"engine":value["engine"],"sample_count":value["sample_count"],"decision":value["decision"],"reason":value["reason"],"prediction_name":value["prediction_name"],"classification":value["classification"],"bank_version":value["bank_version"],"group_predictions":value["group_predictions"],"outcome":text(&value["outcome"],40),"analysis_available":value["analysis_available"]==true,
+    json!({"verdict_mode":value["verdict_mode"],"degraded_model_id":value["degraded_model_id"],"engine":value["engine"],"sample_count":value["sample_count"],"decision":value["decision"],"reason":value["reason"],"prediction_name":value["prediction_name"],"classification":value["classification"],"bank_version":value["bank_version"],"group_predictions":value["group_predictions"],"outcome":text(&value["outcome"],40),"analysis_available":value["analysis_available"]==true,
         "first_prediction":text(&value["first_prediction"],200),"prediction":text(&value["prediction"],200),
         "probability":probability(&value["probability"]),"first_probability":probability(&value["first_probability"]),"used_outputs":value["used_outputs"].as_u64(),
         "first_downgrade":value["first_downgrade"].as_bool(),"aggregate_downgrade":value["aggregate_downgrade"].as_bool(),
@@ -381,10 +383,12 @@ impl Detection {
             if before.as_ref().is_some_and(|before| &key >= before) {
                 continue;
             }
-            selected.push((key, job));
             // Keep only one response page, independent of history size.
-            selected.sort_unstable_by(|a, b| b.0.cmp(&a.0));
-            selected.truncate(limit + 1);
+            let index = selected.partition_point(|(existing, _)| existing > &key);
+            if index <= limit {
+                selected.insert(index, (key, job));
+                selected.truncate(limit + 1);
+            }
         }
         let more = selected.len() > limit;
         selected.truncate(limit);

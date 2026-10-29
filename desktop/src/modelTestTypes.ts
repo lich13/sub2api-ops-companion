@@ -5,6 +5,7 @@ export const supportsModelDetection = (account: { platform: string; type: string
   || account.type === "apikey" && ["anthropic", "grok", "deepseek"].includes(account.platform);
 
 export type DetectionEngine = "modeltrace" | "lm_detector";
+export type VerdictMode = "strict" | "relaxed";
 export type ModelTestPreference = { engine: DetectionEngine; sample_count: 1 | 3 };
 export const engineName = (engine?: string | null) => engine === "lm_detector" ? "LM Detector" : "ModelTrace";
 export type FingerprintReport = {
@@ -13,6 +14,7 @@ export type FingerprintReport = {
   results?: { model: string; display_name: string; score?: number | null; probability?: number | null }[];
 };
 export type ModelTestResult = {
+  verdict_mode?: VerdictMode; degraded_model_id?: string;
   id: string; account_id: number; account_name: string; requested_model: string;
   forwarded_model: string; returned_models: string[]; status: string; phase?: string; automatic?: boolean;
   engine?: DetectionEngine; tokenizer_probe?: boolean; planned_groups?: number; completed_groups: number; valid_groups: number; attempts: number;

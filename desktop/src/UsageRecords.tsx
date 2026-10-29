@@ -569,8 +569,14 @@ export default function UsageRecords({
   columns: Preferences["record_columns"];
   saveColumns: (columns: string[]) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState(defaultFilters),
-    [filters, setFilters] = useState(defaultFilters);
+  const [filters, setFilters] = useState(defaultFilters);
+  const [modelFilter, setModelFilter] = useState("");
+  useEffect(() => {
+    const model = modelFilter.trim();
+    if (model === filters.model) return;
+    const timer = setTimeout(() => setFilters(previous => ({ ...previous, model })), 300);
+    return () => clearTimeout(timer);
+  }, [modelFilter, filters.model]);
   const [range, setRange] = useState<RecordDateRange>(() =>
     presetRange("today"),
   );
@@ -609,12 +615,10 @@ export default function UsageRecords({
       value.account && !current.has(value.account)
         ? { ...value, account: "" }
         : value;
-    setDraft(clearRemoved);
     setFilters(clearRemoved);
   }, [accountOptions, online]);
   const closeFilters = () => {
     setFiltersOpen(false);
-    setDraft(filters);
   };
   useBackAction(filtersOpen, closeFilters);
   useBackAction(columnsOpen, () => {
@@ -806,7 +810,6 @@ export default function UsageRecords({
             aria-label="筛选记录"
             aria-expanded={filtersOpen}
             onClick={() => {
-              setDraft(filters);
               setFiltersOpen(true);
             }}
           >
@@ -838,8 +841,7 @@ export default function UsageRecords({
               onSubmit={(e) => {
                 e.preventDefault();
                 setFilterError("");
-                setFilters({ ...draft });
-                setFiltersOpen(false);
+                setFilters(previous => ({ ...previous, model: modelFilter.trim() }));
               }}
             >
               {mobile && (
@@ -855,57 +857,57 @@ export default function UsageRecords({
                   </button>
                 </header>
               )}
-              <div className="records-platform-select"><select aria-label="记录平台" value={draft.platform} onChange={e => {
+              <div className="records-platform-select"><select aria-label="记录平台" value={filters.platform} onChange={e => {
                 const platform = e.target.value;
-                const selected = accounts.find(account => String(account.id) === draft.account);
-                setDraft({ ...draft, platform, account: platform && selected?.platform !== platform ? "" : draft.account });
+                setFilters(previous => {
+                  const selected = accounts.find(account => String(account.id) === previous.account);
+                  return { ...previous, platform, account: platform && selected?.platform !== platform ? "" : previous.account };
+                });
               }}><option value="">全部平台</option>{platforms.map(({ platform }) => <option key={platform} value={platform}>{priorityPlatformName(platform)}</option>)}</select><ChevronDown size={16} aria-hidden="true"/></div>
               <RecordFilter
                 kind="users"
                 onOpenChange={pickerChanged}
                 active={active}
-                value={draft.user}
-                onChange={(user) => setDraft({ ...draft, user, key: null })}
+                value={filters.user}
+                onChange={(user) => setFilters(previous => ({ ...previous, user, key: null }))}
               />
               <RecordFilter
                 kind="accounts"
                 onOpenChange={pickerChanged}
                 active={active}
-                value={accountOptions.find((account) => String(account.id) === draft.account) ?? null}
-                options={accountOptions.filter(option => !draft.platform || option.platform === draft.platform)}
+                value={accountOptions.find((account) => String(account.id) === filters.account) ?? null}
+                options={accountOptions.filter(option => !filters.platform || option.platform === filters.platform)}
                 onChange={(account) =>
-                  setDraft({ ...draft, account: account ? String(account.id) : "" })
+                  setFilters(previous => ({ ...previous, account: account ? String(account.id) : "" }))
                 }
               />
               <RecordFilter
                 kind="api_keys"
                 onOpenChange={pickerChanged}
                 active={active}
-                value={draft.key}
-                userId={draft.user?.id}
-                onChange={(key) => setDraft({ ...draft, key })}
+                value={filters.key}
+                userId={filters.user?.id}
+                onChange={(key) => setFilters(previous => ({ ...previous, key }))}
               />
               <input
                 className="records-model-filter"
                 aria-label="模型筛选"
                 placeholder="搜索模型"
                 maxLength={200}
-                value={draft.model}
-                onChange={(e) => setDraft({ ...draft, model: e.target.value })}
+                value={modelFilter}
+                onChange={(e) => setModelFilter(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); setFilterError(""); setFilters(previous => ({ ...previous, model: modelFilter.trim() })); } }}
               />
               <label className="records-mismatch-filter">
                 <input
                   type="checkbox"
-                  checked={draft.mismatch}
+                  checked={filters.mismatch}
                   onChange={(e) =>
-                    setDraft({ ...draft, mismatch: e.target.checked })
+                    setFilters(previous => ({ ...previous, mismatch: e.target.checked }))
                   }
                 />
                 返回差异
               </label>
-              <button type="submit" disabled={!active || feed.loading}>
-                筛选
-              </button>
             </form>
           </div>
         )}

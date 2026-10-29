@@ -42,6 +42,7 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   vi.mocked(api).mockImplementation(async (_method, path) => {
+    if (path.endsWith("/model-detection")) return { version: "d".repeat(64), verdict_mode: "strict", degraded_model_id: "gpt-5.6-luna" } as never;
     if (path === "/modeltrace/fingerprint-bank") return fingerprintBank as never;
     if (path === "/accounts/101/models?purpose=model_test") {
       return ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra", "codex-auto-review"].map((id) => ({ id, display_name: id, type: "model" })) as never;
@@ -92,6 +93,7 @@ describe("ModelTestDialog candidates", () => {
 
   it("disables start and offers retry when candidate loading fails", async () => {
     vi.mocked(api).mockImplementation(async (_method, path) => {
+    if (path.endsWith("/model-detection")) return { version: "d".repeat(64), verdict_mode: "strict", degraded_model_id: "gpt-5.6-luna" } as never;
       if (path === "/modeltrace/fingerprint-bank") return fingerprintBank as never;
       if (path === "/accounts/101/models?purpose=model_test") throw new Error("目录失败");
       if (path === "/accounts/101/model-tests/latest") return {
@@ -178,6 +180,7 @@ describe("ModelTestDialog candidates", () => {
     let resolveModels!: (value: unknown) => void;
     const pendingModels = new Promise((resolve) => { resolveModels = resolve; });
     vi.mocked(api).mockImplementation(async (_method, path) => {
+    if (path.endsWith("/model-detection")) return { version: "d".repeat(64), verdict_mode: "strict", degraded_model_id: "gpt-5.6-luna" } as never;
       if (path === "/modeltrace/fingerprint-bank") return fingerprintBank as never;
       if (path === "/accounts/101/model-tests/latest") return latest as never;
       if (path === "/accounts/101/models?purpose=model_test") {
@@ -214,6 +217,7 @@ describe("ModelTestDialog candidates", () => {
     let resolveOldModels!: (value: unknown) => void;
     const oldModels = new Promise((resolve) => { resolveOldModels = resolve; });
     vi.mocked(api).mockImplementation(async (_method, path) => {
+    if (path.endsWith("/model-detection")) return { version: "d".repeat(64), verdict_mode: "strict", degraded_model_id: "gpt-5.6-luna" } as never;
       if (path === "/modeltrace/fingerprint-bank") return fingerprintBank as never;
       if (path === "/accounts/101/models?purpose=model_test") return oldModels as never;
       if (path === "/accounts/101/model-tests/latest") return null as never;
@@ -344,6 +348,7 @@ describe("ModelTestDialog candidates", () => {
     const report = vi.fn();
     const close = vi.fn(() => root.render(null));
     vi.mocked(api).mockImplementation(async (_method, path) => {
+    if (path.endsWith("/model-detection")) return { version: "d".repeat(64), verdict_mode: "strict", degraded_model_id: "gpt-5.6-luna" } as never;
       if (path === "/modeltrace/fingerprint-bank") return fingerprintBank as never;
       if (path === "/accounts/101/models?purpose=model_test") return pendingModels as never;
       if (path === "/accounts/101/model-tests/latest") return null as never;
@@ -492,12 +497,54 @@ async function settle() {
   });
 }
 
+describe("account verdict policy", () => {
+  const mode = () => container.querySelector<HTMLSelectElement>('[aria-label="判定模式"]')!;
+  const target = () => container.querySelector<HTMLInputElement>('[aria-label="降智模型"]')!;
+  const start = () => [...container.querySelectorAll<HTMLButtonElement>('footer button')].find(button => button.textContent?.includes("开始测试"))!;
+  async function changeMode(value: string) { await act(async () => { mode().value = value; mode().dispatchEvent(new Event("change", { bubbles: true })); }); }
+  async function changeTarget(value: string) { await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(target(), value); target().dispatchEvent(new Event("input", { bubbles: true })); }); }
+  it("saves selection immediately, disables start while saving, and retains settings after reopening", async () => {
+    const original = vi.mocked(api).getMockImplementation()!;
+    let stored = { version: "d".repeat(64), verdict_mode: "strict", degraded_model_id: "gpt-5.6-luna" };
+    let resolve!: () => void;
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (!path.endsWith("/model-detection")) return original(method, path, body);
+      if (method === "PUT") { await new Promise<void>(done => { resolve = done; }); stored = { ...stored, ...body as object, version: "e".repeat(64) }; }
+      return stored as never;
+    });
+    await act(async () => root.render(<ModelTestDialog account={account} online close={vi.fn()} report={vi.fn()}/>));
+    await changeMode("relaxed");
+    expect(target().value).toBe("gpt-5.6-luna"); expect(start().disabled).toBe(true);
+    expect(api).toHaveBeenCalledWith("PUT", "/accounts/101/model-detection", { expected_version: "d".repeat(64), verdict_mode: "relaxed", degraded_model_id: "gpt-5.6-luna" });
+    await act(async () => resolve()); expect(start().disabled).toBe(false);
+    await act(async () => root.render(<ModelTestDialog key="reopen-policy" account={account} online close={vi.fn()} report={vi.fn()}/>));
+    expect(mode().value).toBe("relaxed"); expect(target().value).toBe("gpt-5.6-luna");
+  });
+  it.each(["Enter", "blur"])("saves target on %s and preserves a rejected draft for retry", async event => {
+    const original = vi.mocked(api).getMockImplementation()!;
+    let rejected = true;
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (!path.endsWith("/model-detection")) return original(method, path, body);
+      if (method === "PUT" && rejected) throw new Error("检测设置已变化，请重新读取");
+      return { version: "d".repeat(64), verdict_mode: "relaxed", degraded_model_id: "gpt-5.6-luna", ...(method === "PUT" ? body as object : {}) } as never;
+    });
+    await act(async () => root.render(<ModelTestDialog account={account} online close={vi.fn()} report={vi.fn()}/>));
+    await changeTarget("gpt-6-luna"); expect(start().disabled).toBe(true);
+    expect(vi.mocked(api).mock.calls.some(([method]) => method === "PUT")).toBe(false);
+    await act(async () => target().dispatchEvent(event === "Enter" ? new KeyboardEvent("keydown", { key: "Enter", bubbles: true }) : new FocusEvent("focusout", { bubbles: true })));
+    expect(target().value).toBe("gpt-6-luna"); expect(start().disabled).toBe(true); expect(container.textContent).toContain("检测设置已变化");
+    rejected = false;
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === "重试")!.click());
+    expect(start().disabled).toBe(false); expect(target().value).toBe("gpt-6-luna");
+  });
+});
+
 
 describe("Key model test preference", () => {
   it("prefers the saved detection model over a completed historical test", async () => {
     const original = vi.mocked(api).getMockImplementation()!;
     vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (path.endsWith("/model-detection")) return { model_override: "gpt-6-astra" } as never;
+      if (path.endsWith("/model-detection")) return { version: "d".repeat(64), model_override: "gpt-6-astra" } as never;
       if (path.endsWith("/latest")) return { id: "fixture-previous", status: "completed", requested_model: "gpt-6-luna", returned_models: [], completed_groups: 1, valid_groups: 1, duration_ms: 10 } as never;
       return original(method, path, body);
     });
@@ -520,7 +567,7 @@ describe("Key model test preference", () => {
     await act(async () => { model.value = "gpt-6-sol"; model.dispatchEvent(new Event("change", { bubbles: true })); });
     const start = [...container.querySelectorAll("button")].find(button => button.textContent?.includes("开始测试"))!;
     expect(start.disabled).toBe(true);
-    await act(async () => resolve({ model_override: "gpt-6-astra" }));
+    await act(async () => resolve({ version: "d".repeat(64), model_override: "gpt-6-astra" }));
     expect(model.value).toBe("gpt-6-sol");
     expect(start.disabled).toBe(false);
   });
@@ -575,7 +622,7 @@ describe("additional API Key platforms", () => {
     const original = vi.mocked(api).getMockImplementation()!;
     vi.mocked(api).mockImplementation(async (method, path, body) => {
       if (path.endsWith("/latest")) return latest as never;
-      if (path.endsWith("/model-detection")) return { model_id: "gpt-6-sol" } as never;
+      if (path.endsWith("/model-detection")) return { version: "d".repeat(64), model_id: "gpt-6-sol" } as never;
       if (path.endsWith("/retry")) return { ...latest, can_retry: false } as never;
       return original(method, path, body);
     });

@@ -20,6 +20,7 @@ pub use crate::model_downgrade::LEGACY_TARGET as TARGET;
 pub fn defaults() -> Value {
     json!({
         "enabled":false, "interval_minutes":15, "model_id":crate::settings::DEFAULT_DETECTION_MODEL, "model_override":null,
+        "verdict_mode":"strict", "degraded_model_id":TARGET,
         "generation":0, "next_at":null, "status":"disabled", "reason":"",
         "job_id":null, "hold":false,
         "schedule_mode":"smart", "min_interval_minutes":5,
@@ -37,6 +38,8 @@ pub fn version(value: &Value) -> String {
             "min_interval_minutes",
             "model_id",
             "model_override",
+            "verdict_mode",
+            "degraded_model_id",
             "generation",
         ],
     ))
@@ -46,6 +49,8 @@ fn validate(value: &Value) -> Result<()> {
         return Err(Error::new(503, "模型检测状态无效"));
     }
     for control in value["accounts"].as_object().unwrap().values() {
+        crate::verdict_policy::validate(control)
+            .map_err(|_| Error::new(503, "模型判定设置无效"))?;
         if control["enabled"].as_bool().is_none()
             || control["hold"].as_bool().is_none()
             || control["generation"].as_i64().is_none()
@@ -128,6 +133,7 @@ impl Detection {
     }
     fn effective_version(value: &Value, model: &str) -> String {
         let mut effective = value.clone();
+        crate::verdict_policy::copy(value, &mut effective);
         effective["model_id"] = model.into();
         effective
             .as_object_mut()
@@ -247,6 +253,8 @@ impl Detection {
             .into();
         value["model_override"] = value["model_override"].clone();
         value["global_model_id"] = global_model.into();
+        let policy = value.clone();
+        crate::verdict_policy::copy(&policy, &mut value);
         value["account_id"] = id.into();
         let platform = &config["model_detection_platforms"][string(&row["platform"])];
         value["engine"] = platform["engine"].clone();
@@ -305,10 +313,42 @@ impl Detection {
         let current = self.control(id)?;
         let previous_model = self.effective_model(&current, &row)?;
         let mut candidate = current.clone();
-        for field in ["schedule_mode", "min_interval_minutes"] {
+        for field in [
+            "schedule_mode",
+            "min_interval_minutes",
+            "verdict_mode",
+            "degraded_model_id",
+        ] {
             if let Some(value) = request.get(field) {
                 candidate[field] = value.clone();
             }
+        }
+        if !request.get("enabled").is_some_and(Value::is_boolean) {
+            let _config = self.monitor.config.lock.lock().await;
+            let _guard = self.actions.locks.control(id).await;
+            self.store.transaction(|data| {
+                let value = data["accounts"]
+                    .as_object_mut()
+                    .unwrap()
+                    .entry(id.to_string())
+                    .or_insert_with(defaults);
+                if Self::effective_version(value, &self.effective_model(value, &row)?)
+                    != request["expected_version"]
+                {
+                    return Err(Error::new(409, "检测设置已变化，请重新读取"));
+                }
+                if crate::verdict_policy::relaxed(value)
+                    != crate::verdict_policy::relaxed(&candidate)
+                    || crate::verdict_policy::target(value)
+                        != crate::verdict_policy::target(&candidate)
+                {
+                    crate::verdict_policy::copy(&candidate, value);
+                    value["generation"] = json!(integer(&value["generation"]).unwrap_or(0) + 1);
+                    value["pending_request_id"] = Value::Null;
+                }
+                Ok(())
+            })?;
+            return self.view_account(&row);
         }
         if let Some(model) = request.get("model_override") {
             candidate["model_override"] = model.clone();
@@ -372,6 +412,7 @@ impl Detection {
                 .as_object_mut()
                 .unwrap()
                 .extend(changes.as_object().unwrap().clone());
+            crate::verdict_policy::copy(&candidate, value);
             Ok(())
         })?;
         if crate::detection_schedule::smart(&candidate) && request["enabled"] == true {
@@ -601,9 +642,16 @@ impl Detection {
                 .lm_bank
                 .load(self.tests.lm_bank.revision()?)
                 .await
-                .is_ok()
+                .is_ok_and(|bank| {
+                    !crate::verdict_policy::relaxed(&value)
+                        || crate::verdict_policy::lm_contains(&bank, &value)
+                })
         } else {
-            bank_contains(&self.tests.bank.snapshot().0, TARGET)
+            if crate::verdict_policy::relaxed(&value) {
+                crate::verdict_policy::bank_contains(&self.tests.bank.snapshot().0, &value)
+            } else {
+                bank_contains(&self.tests.bank.snapshot().0, TARGET)
+            }
         };
         if !allowed || !ready {
             let reason = if !allowed {
@@ -666,8 +714,8 @@ impl Detection {
     }
     pub async fn verdict(&self, job: &Value, report: &Value) -> Result<Value> {
         // The runner supplies either the independent first group or the final aggregate.
-        let degraded = if crate::lm_verdict::is_lm(job) {
-            crate::lm_verdict::classify(job)["outcome"] == "degraded"
+        let degraded = if crate::lm_verdict::is_lm(job) || crate::verdict_policy::relaxed(job) {
+            crate::verdict_policy::classify(job)["outcome"] == "degraded"
         } else {
             valid_report(report)
                 && is_downgrade(
@@ -849,16 +897,36 @@ pub fn detection_request(payload: &Value) -> Result<Value> {
             "min_interval_minutes",
             "model_id",
             "model_override",
+            "verdict_mode",
+            "degraded_model_id",
         ]
         .contains(&key.as_str())
     }) || payload["expected_version"]
         .as_str()
         .is_none_or(|v| v.chars().count() != 64)
-        || !payload["enabled"].is_boolean()
+        || payload
+            .get("enabled")
+            .is_some_and(|value| !value.is_boolean())
     {
         return Err(Error::invalid());
     }
     let mut value = payload.clone();
+    if let Some(model) = value.get_mut("degraded_model_id") {
+        *model = crate::lm_verdict::normalize(model.as_str().ok_or_else(Error::invalid)?).into();
+    }
+    crate::verdict_policy::validate(&value)?;
+    if value.get("enabled").is_none() {
+        if !["verdict_mode", "degraded_model_id"]
+            .iter()
+            .any(|key| value.get(*key).is_some())
+            || object.keys().any(|key| {
+                !["expected_version", "verdict_mode", "degraded_model_id"].contains(&key.as_str())
+            })
+        {
+            return Err(Error::invalid());
+        }
+        return Ok(value);
+    }
     if value
         .get("schedule_mode")
         .is_some_and(|v| v != "fixed" && v != "smart")

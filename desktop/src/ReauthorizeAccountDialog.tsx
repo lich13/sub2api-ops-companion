@@ -9,11 +9,34 @@ import "./reauthorize-account.css";
 
 type Authorization = { auth_url: string; session_id: string; state?: string; proxy_id?: number };
 
+function authorizationInput(input: string) {
+  const value = input.trim();
+  if (!/(?:^|[?&])(?:code|state|error)=/.test(value) && !/^https?:/i.test(value)) return { code: value, state: undefined };
+  let params: URLSearchParams;
+  try {
+    params = /^https?:/i.test(value) ? new URL(value).searchParams : new URLSearchParams(value.replace(/^\?/, ""));
+  } catch { throw new Error("回调地址格式无效"); }
+  if (params.has("error")) throw new Error("浏览器授权未完成，请重新授权");
+  const code = params.get("code");
+  if (!code || params.getAll("code").length !== 1 || params.getAll("state").length > 1) throw new Error("回调地址缺少有效授权码");
+  return { code, state: params.get("state") || undefined };
+}
+
+const saveErrors = [
+  "授权保存被拒绝，请重新生成链接后授权",
+  "授权保存结果未确认，请刷新账号核对；未重放请求",
+  "授权回读未完成，请刷新账号核对；未重放请求",
+  "授权结果已变化或未确认，请刷新账号核对；未重放请求",
+  "仅 OpenAI OAuth 账号支持重新授权，请刷新账号核对",
+];
+
 export default function ReauthorizeAccountDialog({ account, online, close, report }: {
   account: Account; online: boolean; close: () => void; report: (message: unknown) => void;
 }) {
   const [authorization, setAuthorization] = useState<Authorization | null>(null);
   const [code, setCode] = useState(""), [busy, setBusy] = useState(false), [submitted, setSubmitted] = useState(false);
+  const [callbackState, setCallbackState] = useState<string | undefined>();
+  const [inputError, setInputError] = useState("");
   const [error, setError] = useState(""), [copied, setCopied] = useState(false);
   const alive = useRef(false), guard = useRef(false);
   const dialog = useRef<HTMLElement>(null);
@@ -23,7 +46,7 @@ export default function ReauthorizeAccountDialog({ account, online, close, repor
 
   async function generate() {
     if (!online || guard.current) return;
-    guard.current = true; setBusy(true); setError(""); setCode(""); setAuthorization(null); setSubmitted(false); setCopied(false);
+    guard.current = true; setBusy(true); setError(""); setCode(""); setCallbackState(undefined); setInputError(""); setAuthorization(null); setSubmitted(false); setCopied(false);
     try {
       const settings = await api<{ proxy_id: number | null }>("GET", `/accounts/${account.id}/settings`);
       if (!alive.current) return;
@@ -44,15 +67,9 @@ export default function ReauthorizeAccountDialog({ account, online, close, repor
     catch { if (alive.current) setError("复制失败，请手动复制授权链接"); }
   }
   async function submit() {
-    if (!online || guard.current || !authorization || submitted || !code.trim()) return;
-    let value = code.trim(), state = authorization.state;
-    try {
-      const callback = new URL(value);
-      value = callback.searchParams.get("code") || "";
-      const returnedState = callback.searchParams.get("state");
-      if (returnedState && state && returnedState !== state) { setError("回调地址不属于本次授权，请重新粘贴"); return; }
-      state = returnedState || state;
-    } catch { /* Raw authorization codes are also accepted. */ }
+    if (!online || guard.current || !authorization || submitted || !code.trim() || inputError) return;
+    const value = code.trim(), state = callbackState || authorization.state;
+    if (callbackState && authorization.state && callbackState !== authorization.state) { setError("回调地址不属于本次授权，请重新粘贴"); return; }
     if (!value) { setError("请填写授权码或完整回调地址"); return; }
     guard.current = true; setBusy(true); setError(""); setSubmitted(true); setCode("");
     let applying = false;
@@ -71,8 +88,9 @@ export default function ReauthorizeAccountDialog({ account, online, close, repor
       report(`${account.name}：重新授权完成`);
       void command("refresh").catch(() => {});
       close();
-    } catch {
-      if (alive.current) setError(applying ? "授权保存结果未确认，请刷新账号核对；未重放请求" : "授权未完成，请重新生成链接后授权");
+    } catch (failure) {
+      const message = String(failure instanceof Error ? failure.message : failure);
+      if (alive.current) setError(applying ? saveErrors.find(text => message.startsWith(text)) || saveErrors[1] : "授权码交换失败，请重新生成链接后授权");
     } finally {
       guard.current = false;
       if (alive.current) { setAuthorization(null); setBusy(false); }
@@ -87,11 +105,17 @@ export default function ReauthorizeAccountDialog({ account, online, close, repor
         {authorization && <>
           <label>授权链接<input readOnly value={authorization.auth_url} autoComplete="off" spellCheck={false}/></label>
           <div className="reauthorize-links"><button disabled={!online || busy} onClick={() => void open()}><ExternalLink size={16}/>浏览器授权</button><button disabled={busy} onClick={() => void copy()}><Copy size={16}/>{copied ? "已复制" : "复制链接"}</button></div>
-          <label>授权码或回调地址<textarea value={code} onChange={e => setCode(e.target.value)} disabled={busy || submitted} autoComplete="off" spellCheck={false} rows={3}/></label>
+          <label>授权码或回调地址<textarea value={code} onChange={e => {
+            setError("");
+            try {
+              const parsed = authorizationInput(e.target.value);
+              setCode(parsed.code); setCallbackState(parsed.state); setInputError("");
+            } catch (failure) { setCode(e.target.value); setCallbackState(undefined); setInputError((failure as Error).message); }
+          }} disabled={busy || submitted} autoComplete="off" spellCheck={false} rows={3}/></label>
         </>}
-        {error && <p className="reauthorize-error" role="alert">{error}</p>}
+        {(error || inputError) && <p className="reauthorize-error" role="alert">{error || inputError}</p>}
       </div>
-      <footer><button onClick={close}>取消</button><button className="primary" disabled={!online || busy || submitted || !authorization || !code.trim()} onClick={() => void submit()}>{busy && submitted ? <LoaderCircle size={16} className="spin"/> : <Link2 size={16}/>}完成授权</button></footer>
+      <footer><button onClick={close}>取消</button><button className="primary" disabled={!online || busy || submitted || !authorization || !code.trim() || !!inputError} onClick={() => void submit()}>{busy && submitted ? <LoaderCircle size={16} className="spin"/> : <Link2 size={16}/>}完成授权</button></footer>
     </section>
   </div>;
 }

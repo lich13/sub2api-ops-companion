@@ -11,7 +11,7 @@ pub fn is_lm(job: &Value) -> bool {
     job["engine"] == ENGINE
 }
 // Model identity and comparison rules match lich13-switch 6cdef7a.
-fn normalize(model: &str) -> String {
+pub(crate) fn normalize(model: &str) -> String {
     let value = model.trim().to_ascii_lowercase();
     let value = value
         .rsplit('/')

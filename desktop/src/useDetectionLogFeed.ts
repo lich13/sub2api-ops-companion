@@ -6,7 +6,7 @@ export type DetectionLog = {
   job_id: string; account_id: number; account_name: string; model_id: string;
   status: string; created_at: string; started_at: string | null; completed_at: string | null;
   triggers: string[]; error: string; details_available: boolean;
-  summary: { engine?: string; sample_count?: number; reason?: string; prediction_name?: string; decision?: string;
+  summary: { verdict_mode?: "strict" | "relaxed"; degraded_model_id?: string; engine?: string; sample_count?: number; reason?: string; prediction_name?: string; decision?: string;
     classification?: { basis?: string; group_indexes?: number[] }; bank_version?: { revision?: string }; group_predictions?: { index: number; prediction?: string }[]; outcome: string; analysis_available: boolean; first_prediction: string; prediction: string;
     probability: number | null; first_probability?: number | null; used_outputs: number | null; first_downgrade: boolean | null; aggregate_downgrade: boolean | null;
     disposition: DetectionReceipt | null; recovery: DetectionReceipt | null; verification?: DetectionReceipt | null; restoration?: DetectionReceipt | null };

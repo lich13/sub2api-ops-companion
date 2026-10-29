@@ -136,6 +136,9 @@ impl oauth_monitor::RecoveryHooks for Hooks {
     }
 }
 impl model_tests::ModelHooks for Hooks {
+    fn verdict_policy(&self, id: i64) -> Result<Value> {
+        self.runtime()?.detection.control(id)
+    }
     fn guard(&self, job: Value) -> BoxFuture<'_, Result<Value>> {
         Box::pin(async move { self.runtime()?.detection.guard(&job).await })
     }

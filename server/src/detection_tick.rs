@@ -257,24 +257,32 @@ impl Detection {
             };
             value = self.control(id)?;
             let report = &job["report"];
-            let valid = job["status"] == "completed" && valid_report(report);
-            // Historical aggregate summaries alone must never initiate disposition.
-            let confirmed = if crate::lm_verdict::is_lm(&job) {
-                job["automatic_disposition"].is_object()
-                    && crate::lm_verdict::classify(&job)["outcome"] == "degraded"
+            let valid = if crate::verdict_policy::relaxed(&job) {
+                matches!(
+                    string(&crate::verdict_policy::classify(&job)["outcome"]),
+                    "normal" | "degraded"
+                )
             } else {
-                valid
-                    && (job["first_group_valid"] == true
-                        && is_downgrade(
-                            string(&job["requested_model"]),
-                            string(&job["first_group_prediction"]),
-                        )
-                        || job["automatic_disposition"]["basis"] == "aggregate"
+                job["status"] == "completed" && valid_report(report)
+            };
+            // Historical aggregate summaries alone must never initiate disposition.
+            let confirmed =
+                if crate::lm_verdict::is_lm(&job) || crate::verdict_policy::relaxed(&job) {
+                    job["automatic_disposition"].is_object()
+                        && crate::verdict_policy::classify(&job)["outcome"] == "degraded"
+                } else {
+                    valid
+                        && (job["first_group_valid"] == true
                             && is_downgrade(
                                 string(&job["requested_model"]),
-                                string(&report["prediction"]),
-                            ))
-            };
+                                string(&job["first_group_prediction"]),
+                            )
+                            || job["automatic_disposition"]["basis"] == "aggregate"
+                                && is_downgrade(
+                                    string(&job["requested_model"]),
+                                    string(&report["prediction"]),
+                                ))
+                };
             let triggers = job["triggers"]
                 .as_array()
                 .into_iter()
@@ -308,7 +316,7 @@ impl Detection {
                 },
                 job["id"].as_str(),
             )?;
-            let mut changes = json!({"handled_job":job["id"],"handled_completed_at":job["completed_at"],"last_result":pick(&job,&["id","status","report","completed_at","error","bank_version","engine","planned_groups","classification"])});
+            let mut changes = json!({"handled_job":job["id"],"handled_completed_at":job["completed_at"],"last_result":pick(&job,&["id","status","report","completed_at","error","bank_version","engine","planned_groups","classification","verdict_mode","degraded_model_id"])});
             changes["last_result"]["disposition"] = job["automatic_disposition"].clone();
             if value["generation"] == job["detection_generation"] {
                 let ended = parse_datetime(&job["completed_at"]).unwrap_or_else(|| self.now());
@@ -414,9 +422,16 @@ impl Detection {
                     .lm_bank
                     .load(self.tests.lm_bank.revision()?)
                     .await
-                    .is_ok()
+                    .is_ok_and(|bank| {
+                        !crate::verdict_policy::relaxed(value)
+                            || crate::verdict_policy::lm_contains(&bank, value)
+                    })
             } else {
-                bank_contains(&self.tests.bank.snapshot().0, TARGET)
+                if crate::verdict_policy::relaxed(value) {
+                    crate::verdict_policy::bank_contains(&self.tests.bank.snapshot().0, value)
+                } else {
+                    bank_contains(&self.tests.bank.snapshot().0, TARGET)
+                }
             };
             if !allowed || !ready {
                 self.update(

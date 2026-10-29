@@ -13,10 +13,10 @@ pub fn owns_pause(value: &Value) -> bool {
         && value["disposition"]["schedule_verified"] == true
 }
 pub fn normal_result(job: &Value) -> bool {
-    if crate::lm_verdict::is_lm(job) {
+    if crate::lm_verdict::is_lm(job) || crate::verdict_policy::relaxed(job) {
         return job["automatic"] == true
             && job["degradation_recheck"] == true
-            && crate::lm_verdict::classify(job)["outcome"] == "normal";
+            && crate::verdict_policy::classify(job)["outcome"] == "normal";
     }
     let report = &job["report"];
     let first = string(&job["first_group_prediction"]);

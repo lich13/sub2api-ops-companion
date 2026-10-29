@@ -1050,6 +1050,47 @@ async fn recovery_model_one_valid_group_really_recovers_with_durable_history() {
 }
 
 #[tokio::test]
+async fn relaxed_recovery_requires_complete_aggregate_and_uses_the_account_target() {
+    for (target, output, outcome) in [
+        ("gpt-6-luna", sample("automatic_first_group"), "normal"),
+        ("gpt-5.6-luna", sample("automatic_first_group"), "degraded"),
+        ("gpt-5.6-luna", "1, 2, 3".into(), "unavailable"),
+    ] {
+        let h = Harness::new().await;
+        let (row, usage, intent) = seed_recovery_with_model(&h, false, "gpt-6-astra").await;
+        let id = integer(&row["id"]).unwrap();
+        h.runtime
+            .detection
+            .update(
+                id,
+                json!({"verdict_mode":"relaxed","degraded_model_id":target}),
+            )
+            .unwrap();
+        *h.mock.model_output.lock().unwrap() = output;
+        let job = run_natural_model(&h, id, &intent, &usage).await;
+        assert_eq!(job["verdict_mode"], "relaxed");
+        assert_eq!(job["degraded_model_id"], target);
+        assert_eq!(job["planned_groups"], 1);
+        assert_eq!(job["classification"]["outcome"], outcome, "{job}");
+        if outcome == "normal" {
+            assert_eq!(job["report"]["prediction"], "gpt-5.6-luna");
+        }
+        let result = natural_cycle(&h, id, &intent, &usage).await;
+        assert_eq!(result["recovered"] == true, outcome == "normal", "{result}");
+        assert_eq!(
+            h.mock.count("POST", "/recover-state"),
+            usize::from(outcome == "normal")
+        );
+        assert_eq!(h.mock.count("POST", "/v1/responses"), 1);
+        assert_eq!(
+            h.runtime.detection.mark(id).unwrap()["marked"] == true,
+            outcome == "degraded"
+        );
+        h.close().await;
+    }
+}
+
+#[tokio::test]
 async fn legacy_recovery_without_reliable_test_count_does_not_infer_a_total() {
     let h = Harness::new().await;
     let (row, usage, mut intent) = seed_recovery(&h, false).await;

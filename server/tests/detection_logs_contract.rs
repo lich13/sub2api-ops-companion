@@ -88,6 +88,32 @@ fn lm_summary_retains_source_null_confidence_and_group_evidence_after_compaction
     assert_eq!(value["result_summary"], summary);
 }
 
+#[test]
+fn relaxed_summary_keeps_its_rule_and_verdict_after_compaction() {
+    for engine in ["modeltrace", "lm_detector"] {
+        let mut value = job(91, "completed", AT);
+        value["engine"] = engine.into();
+        value["verdict_mode"] = "relaxed".into();
+        value["degraded_model_id"] = "gpt-6-luna".into();
+        value["planned_groups"] = 1.into();
+        value["report"] =
+            json!({"prediction":"gpt-5.6-luna","decision":"partial","used_outputs":1});
+        value["groups"] = json!([{"index":1,"status":"completed","transport_complete":true,"report":value["report"]}]);
+        value["classification"] = sub2ops_server::verdict_policy::classify(&value);
+        detection_logs::preserve_summary(&mut value);
+        let saved = value["result_summary"].clone();
+        assert_eq!(saved["outcome"], "normal");
+        assert_eq!(saved["verdict_mode"], "relaxed");
+        assert_eq!(saved["degraded_model_id"], "gpt-6-luna");
+        assert!(saved["first_downgrade"].is_null());
+        assert!(saved["aggregate_downgrade"].is_null());
+        value["report"] = Value::Null;
+        value["groups"] = json!([]);
+        detection_logs::preserve_summary(&mut value);
+        assert_eq!(value["result_summary"], saved);
+    }
+}
+
 fn receipt(status: &str, job_id: &str) -> Value {
     json!({
         "status":status,
