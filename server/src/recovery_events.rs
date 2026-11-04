@@ -138,12 +138,20 @@ pub fn discover(
             continue;
         }
         let old = &meta["recovery_intent"];
-        if recovery_rules::early_quota_release(row, &saved, meta, at)
+        if recovery_rules::quota_release(row, &saved, meta, at)
             && integer(&old["connection_attempt_count"]).unwrap_or(0) == 0
             && !truthy(&old["verification_dispatched"])
             && !truthy(&old["verification_receipt"])
             && !truthy(&old["recovery_write_dispatched"])
         {
+            if old["status"] == "retry" && truthy(&old["tested_at"])
+                || old["status"] == "ready"
+                    && parse_datetime(&old["due_at"]) <= parse_datetime(&saved["queried_at"])
+            {
+                // Released quota stays reusable while execution waits for a slot,
+                // a model result, or its existing retry deadline.
+                continue;
+            }
             let mut intent = old.clone();
             intent["status"] = "ready".into();
             intent["due_at"] = saved["queried_at"].clone();
@@ -409,7 +417,7 @@ fn quota_update_inner(
         &threshold
     };
     let depleted = truthy(&quota_descriptor);
-    let released_early = recovery_rules::early_quota_release(row, result, meta, at);
+    let released = recovery_rules::quota_release(row, result, meta, at);
     let transition = recovery_transition(&item["previous_summary"], &summary, at);
     if !truthy(descriptor)
         && !truthy(&transition)
@@ -438,7 +446,7 @@ fn quota_update_inner(
             intent["last_error_code"] = "quota_not_released".into();
         }
         metadata["recovery_intent"] = intent.clone();
-        if !released_early
+        if !released
             && (due.is_none() || due.is_some_and(|t| at < t) || depleted || threshold_blocked)
         {
             update.scheduler.insert(id, metadata);
@@ -463,13 +471,15 @@ fn quota_update_inner(
         update.scheduler.insert(id, metadata);
         return (update, None, depleted);
     }
-    if released_early {
+    if released {
         intent["due_at"] = result["queried_at"].clone();
-        intent["next_retry_at"] = "".into();
-        intent["waiting_reason"] = "".into();
-        intent["waiting_until"] = "".into();
+        if intent["status"] != "retry" || !truthy(&intent["tested_at"]) {
+            intent["next_retry_at"] = "".into();
+            intent["waiting_reason"] = "".into();
+            intent["waiting_until"] = "".into();
+        }
     }
-    if !released_early
+    if !released
         && truthy(&transition)
         && truthy(&transition["fingerprint"])
         && transition["fingerprint"] != intent["fingerprint"]
@@ -520,6 +530,7 @@ fn quota_update_inner(
         metadata["recovery_intent"] = intent.clone();
         Some(intent)
     } else {
+        metadata["recovery_intent"] = intent;
         None
     };
     update.scheduler.insert(id, metadata);
@@ -599,7 +610,7 @@ pub fn project(meta: &Value) -> Value {
             _ => "等待恢复验证",
         }
     };
-    let mut projected = json!({"status":if truthy(&intent["status"]) {string(&intent["status"])} else {"pending"},"label":label,"reason":reason,"next_at":if truthy(&intent["waiting_until"]) {&intent["waiting_until"]} else if truthy(&intent["next_retry_at"]) {&intent["next_retry_at"]} else {&Value::Null}});
+    let mut projected = json!({"status":if truthy(&intent["status"]) {string(&intent["status"])} else {"pending"},"label":label,"reason":reason,"next_at":if reason == "worker_slots" {&Value::Null} else if truthy(&intent["waiting_until"]) {&intent["waiting_until"]} else if truthy(&intent["next_retry_at"]) {&intent["next_retry_at"]} else {&Value::Null}});
     if let Some(attempts) = intent.get("connection_attempt_count") {
         projected["attempt_count"] = attempts.clone();
         projected["next_retry_at"] = if truthy(&intent["next_retry_at"]) {

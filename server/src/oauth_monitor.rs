@@ -17,7 +17,7 @@ use chrono::{DateTime, Duration, Utc};
 use futures_util::{future::BoxFuture, stream, StreamExt};
 use serde_json::{json, Value};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -244,6 +244,7 @@ impl Monitor {
         if self.actions.settings.read_only {
             return Ok(());
         }
+        self.store.recover_interrupted()?;
         let rows = self.inventory(true).await?;
         self.schedule.startup(&self.config.current()?, self.now())?;
         for row in rows.iter() {
@@ -259,6 +260,12 @@ impl Monitor {
         until: Option<DateTime<Utc>>,
         generation: i64,
     ) -> Result<()> {
+        let until = until.map(datetime).unwrap_or_default();
+        let snapshot = self.shared_state()?;
+        let intent = &snapshot["scheduler"][id.to_string()]["recovery_intent"];
+        if intent["waiting_reason"] == reason && string(&intent["waiting_until"]) == until {
+            return Ok(());
+        }
         self.store.transaction(|state| {
             if credit_ownership::generation(state, id) != generation {
                 return Ok(());
@@ -271,7 +278,7 @@ impl Monitor {
                 )
             {
                 intent["waiting_reason"] = reason.into();
-                intent["waiting_until"] = until.map(datetime).unwrap_or_default().into();
+                intent["waiting_until"] = until.into();
             }
             Ok(())
         })
@@ -362,6 +369,12 @@ impl Monitor {
         if self.is_closed() {
             return Ok(());
         }
+        let queued = candidates
+            .iter()
+            .filter_map(|item| integer(&item["account_id"]))
+            .filter(|id| !workers.contains_key(id))
+            .skip(limit.saturating_sub(workers.len()))
+            .collect::<BTreeSet<_>>();
         let mut waiting = Update::default();
         let mut generations = BTreeMap::new();
         let mut methods = BTreeMap::new();
@@ -415,13 +428,9 @@ impl Monitor {
             ) {
                 reason = string(&intent["waiting_reason"]);
                 until = None;
-            } else if workers.len() >= limit
-                && candidates
-                    .iter()
-                    .any(|item| integer(&item["account_id"]) == Some(id))
-            {
+            } else if queued.contains(&id) {
                 reason = "worker_slots";
-                until = Some(now + Duration::seconds(2));
+                until = None;
             } else if reason.is_empty() {
                 until = None;
             }
@@ -456,12 +465,6 @@ impl Monitor {
                 continue;
             }
             if workers.len() >= limit {
-                self.waiting(
-                    id,
-                    "worker_slots",
-                    Some(now + Duration::seconds(2)),
-                    self.generation(id)?,
-                )?;
                 continue;
             }
             let this = self.clone();
@@ -555,12 +558,7 @@ impl Monitor {
         item["row"] = row.clone();
         let generation = self.generation(id)?;
         let Ok(_permit) = self.budget.clone().try_acquire_owned() else {
-            self.waiting(
-                id,
-                "worker_slots",
-                Some(self.now() + Duration::seconds(2)),
-                generation,
-            )?;
+            self.waiting(id, "worker_slots", None, generation)?;
             return Ok(json!({"success":false,"skipped":true,"error_code":"worker_slots"}));
         };
         let lease = match self.lease(&row) {

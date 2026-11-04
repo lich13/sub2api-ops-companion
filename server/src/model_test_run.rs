@@ -497,10 +497,14 @@ impl ModelTests {
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
                         .clone();
+                    let completed_groups = samples.len();
+                    // With one sample the aggregate is already its independent report.
+                    let independent_sample = (completed_groups > 1
+                        && (context.lm.is_some() || index == 0 && job["automatic"] == true))
+                        .then(|| BTreeMap::from([(index, samples[&index].clone())]));
                     let scorer = context.clone();
-                    let scoring_samples = samples.clone();
                     let report = crate::supervision::join(tokio::task::spawn_blocking(move || {
-                        scorer.analyze(&scoring_samples)
+                        scorer.analyze(&samples)
                     }))
                     .await;
                     let report = match report {
@@ -524,11 +528,8 @@ impl ModelTests {
                     }
                     // Retried first groups must be scored independently even
                     // when later groups already contributed to the aggregate.
-                    let independent = if context.lm.is_some()
-                        || index == 0 && job["automatic"] == true && samples.len() > 1
-                    {
+                    let independent = if let Some(one) = independent_sample {
                         let scorer = context.clone();
-                        let one = BTreeMap::from([(index, samples[&index].clone())]);
                         match crate::supervision::join(tokio::task::spawn_blocking(move || {
                             scorer.analyze(&one)
                         }))
@@ -570,7 +571,7 @@ impl ModelTests {
                         "groups": *groups,
                         "attempts": run.attempts.load(Ordering::Acquire),
                         "duration_ms": run.started.elapsed().as_millis(),
-                        "completed_groups": samples.len(),
+                        "completed_groups": completed_groups,
                         "valid_groups": integer(&report["used_outputs"]).unwrap_or(0),
                         "returned_models": run.returned.lock().unwrap_or_else(|e| e.into_inner()).clone(),
                         "report": report,
@@ -619,18 +620,17 @@ impl ModelTests {
                     return Ok(());
                 }
                 Err(failure) => {
-                    self.group(
-                        id,
-                        &run,
-                        index,
-                        json!({
-                            "error": error_text(failure.code),
-                            "retryable": failure.retryable && !failure.uncertain,
-                            "uncertain": failure.uncertain,
-                            "diagnostics":diagnostics,
-                        }),
-                    )
-                    .map_err(internal)?;
+                    let retryable = failure.retryable && !failure.uncertain;
+                    let mut changes = json!({
+                        "error": error_text(failure.code),
+                        "retryable": retryable,
+                        "uncertain": failure.uncertain,
+                        "diagnostics":diagnostics,
+                    });
+                    if retryable {
+                        changes["status"] = if attempt == 2 { "failed" } else { "retrying" }.into();
+                    }
+                    self.group(id, &run, index, changes).map_err(internal)?;
 
                     // A missing terminal can represent a billed request. Only a
                     // definite upstream rejection is eligible for the old retry loop.
@@ -638,12 +638,8 @@ impl ModelTests {
                         return Err(failure);
                     }
                     if attempt == 2 {
-                        self.group(id, &run, index, json!({"status":"failed"}))
-                            .map_err(internal)?;
                         return Ok(());
                     }
-                    self.group(id, &run, index, json!({"status":"retrying"}))
-                        .map_err(internal)?;
                 }
             }
             drop(permit);

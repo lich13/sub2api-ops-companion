@@ -143,6 +143,7 @@ fn post_reset_quota_supersedes_only_the_old_rate_limit_estimate() {
     }
     let mut before = result.clone();
     before["queried_at"] = compat::datetime(reset - Duration::seconds(1)).into();
+    before["oauth_quota"]["ui_windows"][1]["reset_at"] = compat::datetime(reset).into();
     assert!(!recovery_rules::quota_ready(&row, &before, &meta, at));
     let mut incomplete = result.clone();
     incomplete["oauth_quota"]["ui_windows"]
@@ -227,6 +228,304 @@ fn manual_cancellation_does_not_follow_the_account_into_a_new_quota_cycle() {
     ));
     meta.as_object_mut().unwrap().remove("recovery_intent");
     assert!(recovery_rules::control_allows(&row, &result, &meta, at));
+}
+
+#[test]
+fn active_recovery_keeps_query_failures_and_unusable_available_quota() {
+    use chrono::Duration;
+    use sub2ops_server::{quota, recovery_events};
+    let (mut row, _, mut meta, at) = reset_fixture();
+    row["rate_limited_at"] = compat::datetime(at - Duration::days(10)).into();
+    row["rate_limit_reset_at"] = compat::datetime(at - Duration::seconds(1)).into();
+    meta["manual_control"] = json!({"at":compat::datetime(at - Duration::days(8)),
+        "evidence_at":compat::datetime(at - Duration::days(8)),"enabled":true,"generation":1});
+    for status in ["pending", "retry", "waiting_quota"] {
+        meta["recovery_intent"]["status"] = status.into();
+        for code in ["network_error", "incomplete_quota", "http_401"] {
+            // A local state failure may not include a provider observation timestamp.
+            let failed = json!({"success":false,"error_code":code,"error":"fixture failure"});
+            let (update, runnable, _) = recovery_events::quota_update(
+                &json!({"account_id":73,"row":row,"reason":"recovery_intent"}),
+                &failed,
+                &json!({"scheduler":{"73":meta}}),
+                at,
+                true,
+                false,
+            );
+            assert!(runnable.is_none());
+            let saved = &update.scheduler[&73];
+            assert_eq!(saved["last_error_code"], code);
+            assert_eq!(saved["recovery_intent"]["last_error_code"], code);
+            if code == "http_401" {
+                assert_eq!(saved["recovery_intent"]["status"], "auth_failed");
+                assert_eq!(update.pending.len(), 1);
+            } else {
+                assert_eq!(saved["recovery_intent"]["status"], "retry");
+                assert_eq!(saved["recovery_intent"]["attempt_count"], 1);
+                assert_eq!(
+                    saved["recovery_intent"]["next_retry_at"],
+                    recovery_rules::retry_at(at, 1)
+                );
+            }
+        }
+    }
+    meta["recovery_intent"]["status"] = "pending".into();
+    row["extra"]["codex_usage_updated_at"] = compat::datetime(at).into();
+    row["extra"]["codex_7d_used_percent"] = 0.into();
+    row["extra"]["codex_7d_reset_at"] = compat::datetime(at + Duration::days(7)).into();
+    let available = quota::latest_result(&row, &Value::Null, at);
+    for status in ["pending", "retry", "waiting_quota"] {
+        meta["recovery_intent"]["status"] = status.into();
+        meta["recovery_intent"]["next_retry_at"] = compat::datetime(at).into();
+        let stale_at = at + Duration::hours(2);
+        assert!(!recovery_rules::quota_ready(
+            &row, &available, &meta, stale_at
+        ));
+        assert!(recovery_rules::control_allows(
+            &row, &available, &meta, stale_at
+        ));
+        let candidates = recovery_rules::candidates(
+            &[row.clone()],
+            &json!({"73":available}),
+            &json!({"73":meta}),
+            stale_at,
+            true,
+        )
+        .unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0]["reuse_quota"].is_null());
+        let mut overloaded = row.clone();
+        overloaded["overload_until"] = compat::datetime(at + Duration::minutes(5)).into();
+        assert!(recovery_rules::control_allows(
+            &overloaded,
+            &available,
+            &meta,
+            at
+        ));
+        assert!(!recovery_rules::quota_ready(
+            &overloaded,
+            &available,
+            &meta,
+            at
+        ));
+        let mut failed = meta.clone();
+        failed["last_error_at"] = compat::datetime(at).into();
+        failed["last_error_code"] = "http_429".into();
+        assert!(recovery_rules::control_allows(
+            &row, &available, &failed, at
+        ));
+        assert!(!recovery_rules::quota_ready(&row, &available, &failed, at));
+    }
+}
+
+#[test]
+fn manual_cancellation_uses_each_window_and_captures_the_current_cycle() {
+    use chrono::Duration;
+    use sub2ops_server::{quota, recovery_events};
+    let (mut row, _, mut meta, at) = reset_fixture();
+    row["rate_limited_at"] = compat::datetime(at - Duration::days(10)).into();
+    row["extra"]["codex_usage_updated_at"] = compat::datetime(at - Duration::days(7)).into();
+    meta["manual_control"] = json!({"at":compat::datetime(at - Duration::days(7) - Duration::hours(1)),
+        "evidence_at":compat::datetime(at - Duration::days(8)),"enabled":true,"generation":1});
+    meta["recovery_intent"] = json!({"status":"cancelled","fingerprint":"codex_5h@2031-03-29T12:40:00+00:00",
+        "due_at":"2031-03-29T12:40:00Z","window_keys":["codex_5h"]});
+    let result = quota::latest_result(&row, &Value::Null, at);
+    assert!(
+        recovery_rules::control_allows(&row, &result, &meta, at),
+        "a later weekly depletion is independent of the cancelled five-hour boundary"
+    );
+    // With two cancelled windows, only the matching window's boundary matters.
+    meta["recovery_intent"]["fingerprint"] =
+        "codex_5h@2031-04-12T12:40:00+00:00|codex_7d@2031-03-29T09:00:00+00:00".into();
+    meta["recovery_intent"]["due_at"] = "2031-04-12T12:40:00Z".into();
+    assert!(recovery_rules::control_allows(&row, &result, &meta, at));
+    let root = tempfile::tempdir().unwrap();
+    let store = OAuthState::new(root.path().join("state.json"), false);
+    store
+        .transaction(|state| {
+            state["scheduler"]["73"] = meta.clone();
+            Ok(())
+        })
+        .unwrap();
+    store
+        .manual_control(&row, true, at - Duration::minutes(1), "manual")
+        .unwrap();
+    let captured = store.snapshot().unwrap()["scheduler"]["73"].clone();
+    let descriptor =
+        recovery_rules::quota_descriptor(&quota::summary_from_result(&row, &result), at);
+    assert_eq!(
+        captured["recovery_intent"]["fingerprint"],
+        descriptor["fingerprint"]
+    );
+    assert_eq!(captured["recovery_intent"]["status"], "cancelled");
+    row["extra"]["codex_usage_updated_at"] = compat::datetime(at).into();
+    let refreshed = quota::latest_result(&row, &Value::Null, at);
+    assert!(!recovery_rules::control_allows(
+        &row, &refreshed, &captured, at
+    ));
+    store.manual_control(&row, false, at, "manual").unwrap();
+    row["schedulable"] = false.into();
+    assert!(!recovery_rules::control_allows(
+        &row,
+        &refreshed,
+        &store.snapshot().unwrap()["scheduler"]["73"],
+        at
+    ));
+    // Manual control also captures a cycle before discovery has created an intent.
+    let empty = OAuthState::new(root.path().join("empty.json"), false);
+    row["schedulable"] = true.into();
+    empty.manual_control(&row, true, at, "manual").unwrap();
+    assert_eq!(
+        empty.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"]["fingerprint"],
+        descriptor["fingerprint"]
+    );
+    let mut threshold_row = row.clone();
+    threshold_row["schedulable"] = false.into();
+    threshold_row["rate_limited_at"] = Value::Null;
+    threshold_row["rate_limit_reset_at"] = Value::Null;
+    threshold_row["extra"]["codex_7d_used_percent"] = 0.into();
+    threshold_row["extra"]["codex_5h_used_percent"] = 80.into();
+    let until = at + Duration::hours(1);
+    threshold_row["temp_unschedulable_until"] = compat::datetime(until).into();
+    threshold_row["temp_unschedulable_reason"] = json!({"source":"account_scheduling_threshold",
+        "platform":"openai","window":"5h","threshold_percent":80,"until_unix":until.timestamp()})
+    .to_string()
+    .into();
+    let threshold_store = OAuthState::new(root.path().join("threshold.json"), false);
+    threshold_store
+        .manual_control(&threshold_row, false, at, "manual")
+        .unwrap();
+    let captured =
+        threshold_store.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"].clone();
+    assert_eq!(captured["status"], "cancelled");
+    assert_eq!(captured["kind"], "account_scheduling_threshold");
+    assert_eq!(captured["window_keys"], json!(["codex_5h"]));
+    assert_eq!(captured["due_at"], compat::datetime(until));
+    recovery_events::discover(
+        &empty,
+        &[row],
+        &json!({"oauth_recovery_connection_account_ids":[73]}),
+        at,
+    )
+    .unwrap();
+    assert_eq!(
+        empty.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"]["status"],
+        "cancelled"
+    );
+}
+
+#[test]
+fn fresh_release_before_the_old_boundary_accepts_fractional_429_deadlines() {
+    use chrono::Duration;
+    use sub2ops_server::{quota, recovery_events};
+    let (mut row, _, mut meta, reset) = reset_fixture();
+    let at = reset - Duration::minutes(4);
+    row["rate_limit_reset_at"] = compat::datetime(reset + Duration::microseconds(1_280_691)).into();
+    row["extra"]["codex_usage_updated_at"] = compat::datetime(at - Duration::seconds(1)).into();
+    row["extra"]["codex_7d_used_percent"] = 0.into();
+    row["extra"]["codex_7d_reset_at"] = compat::datetime(at + Duration::days(7)).into();
+    let result = quota::latest_result(&row, &Value::Null, at);
+    meta["quota_query"]["last_query_at"] = result["queried_at"].clone();
+    assert!(recovery_rules::quota_release(&row, &result, &meta, at));
+    let root = tempfile::tempdir().unwrap();
+    let store = OAuthState::new(root.path().join("state.json"), false);
+    store
+        .transaction(|state| {
+            state["scheduler"]["73"] = meta.clone();
+            Ok(())
+        })
+        .unwrap();
+    recovery_events::discover(
+        &store,
+        &[row.clone()],
+        &json!({"oauth_recovery_connection_account_ids":[73]}),
+        at,
+    )
+    .unwrap();
+    let state = store.snapshot().unwrap();
+    assert_eq!(
+        state["scheduler"]["73"]["recovery_intent"]["due_at"],
+        result["queried_at"]
+    );
+    let candidates = recovery_rules::candidates(
+        &[row.clone()],
+        &json!({"73":result}),
+        &state["scheduler"],
+        at,
+        true,
+    )
+    .unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0]["reuse_quota"], result);
+    let (update, runnable, _) = recovery_events::quota_update(
+        &candidates[0],
+        &result,
+        &json!({"scheduler":{"73":meta}}),
+        at,
+        true,
+        true,
+    );
+    assert!(runnable.is_some());
+    assert_eq!(
+        update.scheduler[&73]["recovery_intent"]["due_at"],
+        result["queried_at"]
+    );
+    for reason in [
+        "worker_slots",
+        "model_verification_pending",
+        "model_cooldown",
+        "",
+    ] {
+        let mut waiting = state["scheduler"]["73"].clone();
+        let intent = &mut waiting["recovery_intent"];
+        intent["waiting_reason"] = reason.into();
+        intent["waiting_until"] = Value::Null;
+        if reason != "worker_slots" {
+            intent["status"] = "retry".into();
+            intent["tested_at"] = compat::datetime(at - Duration::seconds(2)).into();
+            intent["next_retry_at"] = compat::datetime(at + Duration::seconds(60)).into();
+            if reason.is_empty() {
+                intent["test_completed_at"] = intent["tested_at"].clone();
+                intent["last_error_code"] = "model_test_failed".into();
+            }
+        }
+        store
+            .transaction(|state| {
+                state["scheduler"]["73"] = waiting.clone();
+                Ok(())
+            })
+            .unwrap();
+        let saved = std::fs::read(store.0.path()).unwrap();
+        recovery_events::discover(
+            &store,
+            std::slice::from_ref(&row),
+            &json!({"oauth_recovery_model_account_ids":[73]}),
+            at,
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(store.0.path()).unwrap(), saved);
+        if reason != "worker_slots" {
+            let (update, runnable, _) = recovery_events::quota_update(
+                &candidates[0],
+                &result,
+                &json!({"scheduler":{"73":waiting}}),
+                at,
+                true,
+                true,
+            );
+            assert!(runnable.is_none());
+            assert_eq!(
+                update.scheduler[&73]["recovery_intent"]["next_retry_at"],
+                waiting["recovery_intent"]["next_retry_at"]
+            );
+            assert_eq!(
+                update.scheduler[&73]["recovery_intent"]["waiting_reason"],
+                reason
+            );
+        }
+    }
+    row["rate_limited_at"] = result["queried_at"].clone();
+    assert!(!recovery_rules::quota_release(&row, &result, &meta, at));
 }
 
 fn candidate_projection(value: &Value) -> Value {
@@ -961,9 +1260,7 @@ fn early_new_cycle_bypasses_only_obsolete_quota_waits_before_recovery_verificati
         "extra":{"codex_plan_type":"plus","codex_usage_updated_at":"2031-04-05T09:59:00Z","codex_5h_used_percent":0,"codex_7d_used_percent":0,"codex_5h_reset_at":"2031-04-05T15:00:00Z","codex_7d_reset_at":"2031-04-12T10:00:00Z"}});
     let result = quota::latest_result(&row, &Value::Null, at);
     let meta = json!({"recovery_intent":{"kind":"quota_exhausted","status":"pending","fingerprint":"codex_7d@2031-04-06T10:00:00+00:00","window_keys":["codex_7d"],"due_at":"2031-04-06T10:00:00Z","next_retry_at":"2031-04-06T10:00:00Z","waiting_reason":"waiting_reset","waiting_until":"2031-04-06T10:00:00Z"},"quota_query":{"last_query_at":"2031-04-05T09:59:00Z","automatic_attempts":[]}});
-    assert!(recovery_rules::early_quota_release(
-        &row, &result, &meta, at
-    ));
+    assert!(recovery_rules::quota_release(&row, &result, &meta, at));
     assert!(recovery_rules::quota_ready(&row, &result, &meta, at));
     assert!(!recovery_rules::obsolete_healthy_intent(
         &row, &result, &meta, at
@@ -974,6 +1271,9 @@ fn early_new_cycle_bypasses_only_obsolete_quota_waits_before_recovery_verificati
     verifying["recovery_intent"]["verification_dispatched"] = true.into();
     assert!(recovery_rules::quota_ready(&row, &result, &verifying, at));
     verifying["recovery_intent"]["status"] = "retry".into();
+    verifying["recovery_intent"]["waiting_reason"] = "model_verification_pending".into();
+    assert!(recovery_rules::quota_ready(&row, &result, &verifying, at));
+    verifying["recovery_intent"]["test_completed_at"] = "2031-04-05T10:00:00Z".into();
     assert!(!recovery_rules::quota_ready(&row, &result, &verifying, at));
     let directory = tempfile::tempdir().unwrap();
     let store = OAuthState::new(directory.path().join("state.json"), false);
@@ -1014,7 +1314,7 @@ fn early_new_cycle_bypasses_only_obsolete_quota_waits_before_recovery_verificati
     assert!(runnable.is_some());
     for patch in [
         json!({"rate_limited_at":"2031-04-05T10:00:00Z"}),
-        json!({"rate_limit_reset_at":"2031-04-07T10:00:00Z"}),
+        json!({"rate_limit_reset_at":"2031-04-07T10:00:00Z", "rate_limited_at":"2031-04-05T10:00:00Z"}),
         json!({"schedulable":false}),
         json!({"overload_until":"2031-04-05T11:00:00Z"}),
     ] {
@@ -1023,18 +1323,12 @@ fn early_new_cycle_bypasses_only_obsolete_quota_waits_before_recovery_verificati
             .as_object_mut()
             .unwrap()
             .extend(patch.as_object().unwrap().clone());
-        assert!(!recovery_rules::early_quota_release(
-            &changed, &result, &meta, at
-        ));
+        assert!(!recovery_rules::quota_release(&changed, &result, &meta, at));
     }
     let mut stale = meta.clone();
     stale["recovery_intent"]["fingerprint"] = "codex_7d@2031-04-12T10:00:00+00:00".into();
-    assert!(!recovery_rules::early_quota_release(
-        &row, &result, &stale, at
-    ));
+    assert!(!recovery_rules::quota_release(&row, &result, &stale, at));
     stale = meta.clone();
     stale["last_error_at"] = "2031-04-05T10:00:00Z".into();
-    assert!(!recovery_rules::early_quota_release(
-        &row, &result, &stale, at
-    ));
+    assert!(!recovery_rules::quota_release(&row, &result, &stale, at));
 }

@@ -958,11 +958,11 @@ fn legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempo
     );
     assert_eq!(
         migrated["scheduler"]["7"]["recovery_intent"]["status"],
-        "retry"
+        "testing"
     );
     assert_eq!(
         migrated["scheduler"]["7"]["recovery_intent"]["next_retry_at"],
-        "2026-09-29T19:30:00+00:00"
+        Value::Null
     );
     assert!(migrated["scheduler"]["7"].get("last_regular_at").is_none());
     assert!(migrated["scheduler"]["7"].get("last_reason").is_none());
@@ -4842,17 +4842,12 @@ async fn renewed_temporary_restriction_during_test_prevents_recovery() {
         .await
         .unwrap();
     gate.release.notify_one();
-    tokio::time::timeout(StdDuration::from_secs(8), async {
-        loop {
-            let state = harness.runtime.monitor.state().unwrap();
-            if state["scheduler"][id.to_string()]["recovery_intent"]["status"] == "retry" {
-                break;
-            }
-            tokio::time::sleep(StdDuration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("renewed block must end verification without recovery");
+    harness.runtime.monitor.drain(8).await;
+    let intent = harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+        ["recovery_intent"]
+        .clone();
+    assert_eq!(intent["status"], "blocked");
+    assert_eq!(intent["last_error_code"], "recovery_state_changed");
     assert_eq!(harness.mock.count("POST", "/test"), 1);
     assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
     assert_ne!(

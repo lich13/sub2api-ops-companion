@@ -1287,6 +1287,136 @@ async fn pre_reset_manual_query_does_not_delay_recovery_until_cooldown_or_old_42
 }
 
 #[tokio::test]
+async fn manual_refresh_recovers_before_old_quota_and_fractional_rate_deadlines() {
+    let mut harness = Harness::new().await;
+    let now = harness.now();
+    let reset = now + Duration::minutes(4);
+    let row = harness
+        .seed_account("early-manual-refresh", true, true, false)
+        .await;
+    let id = integer(&row["id"]).unwrap();
+    configure_recovery(&harness, &[id], 1, 1, "connection").await;
+    update_block(
+        &harness,
+        id,
+        Some(now - Duration::days(1)),
+        Some(reset + Duration::microseconds(1_280_691)),
+    )
+    .await;
+    save_result(
+        &harness,
+        id,
+        cached_result(
+            &row,
+            now - Duration::minutes(1),
+            usage_data(0, 100, now + Duration::hours(5), reset),
+        ),
+    )
+    .await;
+    harness.runtime.monitor.startup().await.unwrap();
+    harness.runtime.monitor.tick().await.unwrap();
+    assert_eq!(harness.mock.count_for(id, "GET", "/usage"), 0);
+    let refreshed = harness
+        .runtime
+        .monitor
+        .queries
+        .query(
+            id,
+            ADMIN_KEY,
+            sub2ops_server::oauth_queries::QueryOptions {
+                source: Source::Manual,
+                reason: "manual".into(),
+                at: now,
+                requested_at: None,
+                timeout: 10,
+                generation: None,
+            },
+        )
+        .await;
+    assert_eq!(refreshed["success"], true);
+    harness.runtime.monitor.tick().await.unwrap();
+    wait_for_recovered(&harness, id).await;
+    assert_eq!(harness.mock.count_for(id, "GET", "/usage"), 1);
+    assert_eq!(harness.mock.count_for(id, "POST", "/test"), 1);
+    assert_eq!(harness.mock.count_for(id, "POST", "/recover-state"), 1);
+    assert!(harness.now() < reset);
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn recovery_worker_queue_keeps_stable_waits_and_dispatches_after_slots_clear() {
+    let mut harness = Harness::new().await;
+    let now = harness.now();
+    let mut ids = vec![];
+    let mut gates = vec![];
+    for index in 0..3 {
+        let row = harness
+            .seed_account("worker-queue", true, true, index == 0)
+            .await;
+        let id = integer(&row["id"]).unwrap();
+        save_result(
+            &harness,
+            id,
+            cached_result(
+                &row,
+                now - Duration::hours(2),
+                usage_data(0, 0, now + Duration::hours(5), now + Duration::days(7)),
+            ),
+        )
+        .await;
+        seed_intent(&harness, &row, "pending", now).await;
+        let gate = Gate::new();
+        if index == 0 {
+            harness.mock.set_test_gate(id, gate.clone());
+        } else {
+            harness.mock.set_usage_gate(id, gate.clone());
+        }
+        ids.push(id);
+        gates.push(gate);
+    }
+    configure_recovery(&harness, &ids, 1, 1, "connection").await;
+    harness.runtime.monitor.startup().await.unwrap();
+    harness.runtime.monitor.tick().await.unwrap();
+    harness
+        .mock
+        .wait_for_account(ids[0], "POST", "/test", 1)
+        .await;
+    harness
+        .mock
+        .wait_for_account(ids[1], "GET", "/usage", 1)
+        .await;
+    let queued = harness.runtime.monitor.state().unwrap()["scheduler"][ids[2].to_string()].clone();
+    assert_eq!(queued["recovery_intent"]["waiting_reason"], "worker_slots");
+    assert!(recovery_events::project(&queued)["next_at"].is_null());
+    harness.set_now(now + Duration::seconds(2));
+    harness.runtime.monitor.tick().await.unwrap();
+    assert_eq!(
+        harness.runtime.monitor.state().unwrap()["scheduler"][ids[2].to_string()],
+        queued
+    );
+    assert_eq!(harness.mock.count_for(ids[2], "GET", "/usage"), 0);
+    for gate in gates {
+        gate.release.notify_one();
+    }
+    tokio::time::timeout(StdDuration::from_secs(8), async {
+        loop {
+            harness.runtime.monitor.tick().await.unwrap();
+            if harness.runtime.monitor.state().unwrap()["scheduler"][ids[2].to_string()]
+                ["recovery_intent"]["status"]
+                == "recovered"
+            {
+                break;
+            }
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the existing scheduler must dispatch the queued account after slots clear");
+    assert_eq!(harness.mock.count_for(ids[2], "GET", "/usage"), 1);
+    harness.close().await;
+}
+
+#[tokio::test]
 async fn passive_available_quota_dispatches_at_its_deadline_without_a_query_delay() {
     let mut harness = Harness::new().await;
     let now = harness.now();

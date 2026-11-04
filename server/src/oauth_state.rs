@@ -412,15 +412,6 @@ pub fn normalize(raw: &Value) -> Value {
                 intent["deferred_until"] = "".into();
                 intent["next_retry_at"] = "".into();
             }
-            if intent["status"] == "testing" {
-                intent["status"] = "retry".into();
-                intent["next_retry_at"] = ["next_retry_at", "tested_at", "confirmed_at", "due_at"]
-                    .into_iter()
-                    .map(|k| &intent[k])
-                    .find(|v| truthy(v))
-                    .cloned()
-                    .unwrap_or(json!(""));
-            }
         }
         scheduler.insert(id.to_string(), value);
     }
@@ -668,6 +659,32 @@ impl OAuthState {
             Ok(out)
         })
     }
+    pub(crate) fn recover_interrupted(&self) -> Result<()> {
+        if !self.shared_snapshot()?["scheduler"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .any(|(_, meta)| meta["recovery_intent"]["status"] == "testing")
+        {
+            return Ok(());
+        }
+        self.transaction(|state| {
+            for meta in state["scheduler"].as_object_mut().unwrap().values_mut() {
+                let intent = &mut meta["recovery_intent"];
+                if intent["status"] == "testing" {
+                    intent["status"] = "retry".into();
+                    intent["next_retry_at"] =
+                        ["next_retry_at", "tested_at", "confirmed_at", "due_at"]
+                            .into_iter()
+                            .map(|key| &intent[key])
+                            .find(|value| truthy(value))
+                            .cloned()
+                            .unwrap_or(json!(""));
+                }
+            }
+            Ok(())
+        })
+    }
     pub fn admin_token(&self) -> Result<String> {
         Ok(
             string(&self.0.read_shared()?["settings"]["sub2api_admin_token"])
@@ -768,10 +785,30 @@ impl OAuthState {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         self.transaction(|state| {
             let evidence = quota::latest_result(row,&state["oauth_results"][id.to_string()],at);
+            let summary = quota::summary_from_result(row, &evidence);
+            let mut descriptor = crate::recovery_rules::quota_descriptor(&summary, at);
+            if !truthy(&descriptor) {
+                // Capture the threshold even when this operation just disabled scheduling.
+                let mut enabled_row = row.clone();
+                enabled_row["schedulable"] = true.into();
+                descriptor = crate::recovery_rules::threshold_descriptor(&enabled_row, &summary, at);
+            }
             let meta = &mut state["scheduler"][id.to_string()]; if !meta.is_object() { *meta = json!({}); }
             let generation = integer(&meta["manual_control"]["generation"]).unwrap_or(0)+1;
             meta["manual_control"] = json!({"generation":generation,"at":datetime(at),"enabled":enabled,"event_fingerprint":block_signature(row),"evidence_at":evidence["queried_at"],"origin":if origin == "model_detection" {"model_detection"} else {"manual"}});
-            if truthy(&meta["recovery_intent"]) { meta["recovery_intent"]["status"] = "cancelled".into(); meta["recovery_intent"]["next_retry_at"] = "".into(); }
+            if truthy(&descriptor) || truthy(&meta["recovery_intent"]) {
+                let intent = &mut meta["recovery_intent"];
+                if !intent.is_object() { *intent = json!({}); }
+                for key in ["fingerprint", "due_at", "source", "window_keys", "kind", "threshold_percent"] {
+                    if let Some(value) = descriptor.get(key) {
+                        intent[key] = value.clone();
+                    } else {
+                        intent.as_object_mut().unwrap().shift_remove(key);
+                    }
+                }
+                intent["status"] = "cancelled".into();
+                intent["next_retry_at"] = "".into();
+            }
             let card = &mut meta["auto_reset_credit"];
             if truthy(card) && (!matches!(string(&card["stage"]),"recovered"|"closed"|"finished") || card["stage"] == "finished" && truthy(&card["owns_pause"])) {
                 if card["stage"] != "finished" { card["stage"] = "manual".into(); card["next_at"] = Value::Null; }
@@ -788,6 +825,44 @@ impl OAuthState {
 #[cfg(test)]
 mod shared_tests {
     use super::*;
+
+    #[test]
+    fn live_testing_survives_reads_and_writes_until_startup_reconciliation() {
+        let root = tempfile::tempdir().unwrap();
+        let state = OAuthState::new(root.path().join("oauth.json"), false);
+        let intent = json!({"status":"testing","tested_at":"2031-04-05T10:00:00Z",
+            "next_retry_at":"","verification_dispatched":true,"fingerprint":"fixture-cycle"});
+        state
+            .transaction(|value| {
+                value["scheduler"]["73"] = json!({"recovery_intent":intent});
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            state.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"],
+            intent
+        );
+        state
+            .transaction(|value| {
+                value["scheduler"]["74"] = json!({});
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            state.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"],
+            intent
+        );
+        state.recover_interrupted().unwrap();
+        let resumed = state.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"].clone();
+        assert_eq!(resumed["status"], "retry");
+        assert_eq!(resumed["next_retry_at"], intent["tested_at"]);
+        assert_eq!(resumed["verification_dispatched"], true);
+        state.recover_interrupted().unwrap();
+        assert_eq!(
+            state.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"],
+            resumed
+        );
+    }
 
     #[test]
     fn normalized_snapshots_reuse_reads_and_observe_external_changes_and_damage() {

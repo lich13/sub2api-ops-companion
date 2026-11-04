@@ -1050,6 +1050,82 @@ async fn recovery_model_one_valid_group_really_recovers_with_durable_history() {
 }
 
 #[tokio::test]
+async fn early_quota_model_recovery_survives_queueing_before_fractional_429_deadline() {
+    let h = Harness::new().await;
+    let (row, usage, _) = seed_recovery(&h, false).await;
+    let id = integer(&row["id"]).unwrap();
+    let now = h.now();
+    let reset = now + Duration::minutes(4);
+    sqlx::query("UPDATE accounts SET rate_limit_reset_at=$1 WHERE id=$2")
+        .bind(reset + Duration::microseconds(1_280_691))
+        .bind(id)
+        .execute(&h.runtime.db.pool)
+        .await
+        .unwrap();
+    let row = h.runtime.monitor.row(id).await.unwrap();
+    let intent = recovery_events::new_intent(
+        &json!({"kind":"quota_exhausted",
+        "fingerprint":format!("codex_7d@{}",datetime(reset)),"due_at":datetime(reset),
+        "window_keys":["codex_7d"],"source":"server_exact"}),
+        "pending",
+        None,
+    );
+    h.runtime
+        .monitor
+        .store
+        .transaction(|state| {
+            state["scheduler"][id.to_string()]["recovery_intent"] = intent.clone();
+            Ok(())
+        })
+        .unwrap();
+    recovery_events::discover(
+        &h.runtime.monitor.store,
+        std::slice::from_ref(&row),
+        &h.runtime.config.current().unwrap(),
+        now,
+    )
+    .unwrap();
+    let intent =
+        h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"].clone();
+    assert_eq!(intent["due_at"], usage["queried_at"]);
+    let job = run_natural_model(&h, id, &intent, &usage).await;
+    assert_eq!(job["status"], "completed", "{job}");
+    let pending =
+        h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"].clone();
+    recovery_events::discover(
+        &h.runtime.monitor.store,
+        std::slice::from_ref(&row),
+        &h.runtime.config.current().unwrap(),
+        now + Duration::seconds(1),
+    )
+    .unwrap();
+    assert_eq!(
+        h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"],
+        pending
+    );
+    h.set_now(now + Duration::seconds(6));
+    let state = h.runtime.monitor.state().unwrap();
+    let candidates = recovery_rules::candidates(
+        &[row],
+        &state["oauth_results"],
+        &state["scheduler"],
+        h.now(),
+        true,
+    )
+    .unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert!(candidates[0]["reuse_quota"].is_object());
+    assert_eq!(
+        natural_cycle(&h, id, &intent, &usage).await["recovered"],
+        true
+    );
+    assert_eq!(h.mock.count("POST", "/v1/responses"), 1);
+    assert_eq!(h.mock.count("POST", "/recover-state"), 1);
+    assert!(h.now() < reset);
+    h.close().await;
+}
+
+#[tokio::test]
 async fn relaxed_recovery_requires_complete_aggregate_and_uses_the_account_target() {
     for (target, output, outcome) in [
         ("gpt-6-luna", sample("automatic_first_group"), "normal"),

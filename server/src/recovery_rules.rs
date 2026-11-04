@@ -268,16 +268,7 @@ pub fn cancel_healthy_intent(intent: &Value) -> Value {
     next["last_error"] = "额度已可用且账号限制已解除，无需恢复测试".into();
     next
 }
-pub fn early_quota_release(row: &Value, result: &Value, meta: &Value, at: DateTime<Utc>) -> bool {
-    quota_release(row, result, meta, at, false)
-}
-fn quota_release(
-    row: &Value,
-    result: &Value,
-    meta: &Value,
-    at: DateTime<Utc>,
-    allow_elapsed_reset: bool,
-) -> bool {
+pub fn quota_release(row: &Value, result: &Value, meta: &Value, at: DateTime<Utc>) -> bool {
     let intent = &meta["recovery_intent"];
     let summary = quota::summary_from_result(row, result);
     let Some(observed) = parse_datetime(&result["queried_at"]) else {
@@ -297,7 +288,7 @@ fn quota_release(
             .filter_map(parse_datetime)
             .any(|changed| changed >= observed)
         || intent["status"] == "retry"
-            && parse_datetime(&intent["tested_at"]).is_some_and(|tested| tested >= observed)
+            && parse_datetime(&intent["test_completed_at"]).is_some_and(|failed| failed >= observed)
         || parse_datetime(&row["overload_until"]).is_some_and(|until| until > at)
     {
         return false;
@@ -328,24 +319,16 @@ fn quota_release(
         changed |= observed < old_reset && new_reset != old_reset;
         old_boundaries.push(old_reset);
     }
-    if allow_elapsed_reset
-        && old_boundaries.iter().max().is_some_and(|last| {
-            observed >= *last
-                && parse_datetime(&row["rate_limited_at"]).is_none_or(|limited| limited < *last)
-        })
+    let Some(last) = old_boundaries.into_iter().max() else {
+        return false;
+    };
+    // Usage windows and the upstream 429 deadline have different clocks and
+    // precision. A confirmed release supersedes only this cycle's old limit.
+    (changed || observed >= last)
+        && parse_datetime(&row["rate_limited_at"])
+            .is_none_or(|limited| limited < observed.min(last))
         && parse_datetime(&row["temp_unschedulable_until"])
-            .is_none_or(|until| until <= at || old_boundaries.contains(&until))
-    {
-        return true;
-    }
-    changed
-        && [
-            &row["rate_limit_reset_at"],
-            &row["temp_unschedulable_until"],
-        ]
-        .into_iter()
-        .filter_map(parse_datetime)
-        .all(|until| until <= at || old_boundaries.contains(&until))
+            .is_none_or(|until| until <= at || truthy(&threshold))
 }
 pub fn reset_not_before(
     row: &Value,
@@ -353,7 +336,7 @@ pub fn reset_not_before(
     meta: &Value,
     at: DateTime<Utc>,
 ) -> Option<DateTime<Utc>> {
-    if quota_release(row, result, meta, at, true) {
+    if quota_release(row, result, meta, at) {
         None
     } else {
         // Query the depleted quota at its own boundary. A later rate-limit
@@ -391,7 +374,7 @@ pub fn quota_ready(row: &Value, result: &Value, meta: &Value, at: DateTime<Utc>)
     if !all_available(&summary) {
         return false;
     }
-    if !quota_release(row, result, meta, at, true)
+    if !quota_release(row, result, meta, at)
         && [
             &row["rate_limit_reset_at"],
             &row["temp_unschedulable_until"],
@@ -422,6 +405,15 @@ pub fn control_allows(row: &Value, result: &Value, meta: &Value, at: DateTime<Ut
     if parse_datetime(&row["rate_limited_at"]).is_some_and(|blocked| blocked > changed) {
         return true;
     }
+    let cancelled = &meta["recovery_intent"];
+    // Manual control cancels the current intent. A replacement active intent
+    // must keep processing failures and refreshing expired quota evidence.
+    if matches!(
+        string(&cancelled["status"]),
+        "pending" | "ready" | "retry" | "waiting_quota" | "testing"
+    ) {
+        return true;
+    }
     let Some(observed) = parse_datetime(&result["queried_at"]).filter(|observed| {
         *observed > changed
             && *observed <= at
@@ -445,17 +437,29 @@ pub fn control_allows(row: &Value, result: &Value, meta: &Value, at: DateTime<Ut
     if !truthy(&descriptor) {
         return false;
     }
-    let cancelled = &meta["recovery_intent"];
-    // Manual control cancels the intent already present. An active intent that
-    // replaced it belongs to a later cycle and must remain runnable.
     if cancelled["status"] != "cancelled" {
         return true;
     }
-    descriptor["fingerprint"] != cancelled["fingerprint"]
-        && parse_datetime(&cancelled["due_at"]).is_none_or(|previous| {
-            observed >= previous
-                && parse_datetime(&descriptor["due_at"]).is_some_and(|next| next > previous)
-        })
+    if descriptor["fingerprint"] == cancelled["fingerprint"] {
+        return false;
+    }
+    string(&descriptor["fingerprint"]).split('|').any(|part| {
+        let Some((key, next)) = part.split_once('@') else {
+            return false;
+        };
+        let previous = string(&cancelled["fingerprint"])
+            .trim_start_matches("early:")
+            .split('|')
+            .filter_map(|part| part.split_once('@'))
+            .find(|(old_key, _)| *old_key == key);
+        match previous {
+            None => true,
+            Some((_, previous)) => parse_datetime(&json!(previous)).is_none_or(|previous| {
+                observed >= previous
+                    && parse_datetime(&json!(next)).is_some_and(|next| next > previous)
+            }),
+        }
+    })
 }
 pub fn candidates(
     rows: &[impl std::borrow::Borrow<Value>],
