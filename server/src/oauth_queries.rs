@@ -417,7 +417,7 @@ impl Coordinator {
                     quota::percent(&windows.get(*key).unwrap_or(&Value::Null)["used_percent"])
                         .is_some_and(|v| v >= 100.0)
                 });
-            let until = oauth_admission::reset_not_before(row, &result);
+            let until = crate::recovery_rules::reset_not_before(row, &result, meta, at);
             let mut unresolved =
                 !truthy(&result["success"]) || full && until.is_none_or(|t| t <= at);
             let threshold: Value = serde_json::from_str(string(&row["temp_unschedulable_reason"]))

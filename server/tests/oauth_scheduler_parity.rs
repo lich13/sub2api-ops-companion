@@ -4291,6 +4291,12 @@ async fn due_quota_still_depleted_waits_one_hour() {
         .await;
     let id = integer(&row["id"]).unwrap();
     prepare_expired_recovery(&harness, &row, due).await;
+    sqlx::query("UPDATE accounts SET rate_limit_reset_at=$1 WHERE id=$2")
+        .bind(due + Duration::minutes(4))
+        .bind(id)
+        .execute(&harness.runtime.db.pool)
+        .await
+        .expect("retain a later estimate from the old fixture rate limit");
     let mut depleted = default_usage(due);
     depleted["five_hour"]["utilization"] = json!(100);
     depleted["five_hour"]["resets_at"] = json!(datetime(due));
@@ -4315,6 +4321,10 @@ async fn due_quota_still_depleted_waits_one_hour() {
     })
     .await
     .expect("still depleted 5h quota must retry at the one-hour deadline");
+    let state = harness.runtime.monitor.state().unwrap();
+    let query = &state["scheduler"][id.to_string()]["quota_query"];
+    assert_eq!(query["failure_count"], 1);
+    assert_eq!(query["retry_at"], datetime(due + Duration::hours(1)));
 
     harness.set_now(due + Duration::seconds(3599));
     harness.runtime.monitor.tick().await.unwrap();

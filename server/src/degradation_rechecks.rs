@@ -112,7 +112,7 @@ impl Detection {
             return Ok(receipt);
         }
         let row = self.actions.account(id, None).await?;
-        let state = self.capacity.store.snapshot()?["marks"][id.to_string()].clone();
+        let state = self.capacity.store.shared_snapshot()?["marks"][id.to_string()].clone();
         let mark = self.mark(id)?;
         let adopted = mark["marked"] == false && state["detection_job_id"] == receipt["job_id"];
         let changed = value["generation"] != receipt["generation"]
@@ -143,7 +143,7 @@ impl Detection {
             )?;
         }
         let verified = self.mark(id)?;
-        let state = self.capacity.store.snapshot()?["marks"][id.to_string()].clone();
+        let state = self.capacity.store.shared_snapshot()?["marks"][id.to_string()].clone();
         if verified["marked"] != false || state["detection_job_id"] != receipt["job_id"] {
             return Err(Error::new(503, "降智标记取消结果尚未确认"));
         }

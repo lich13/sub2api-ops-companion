@@ -437,8 +437,6 @@ impl ModelTests {
             )
             .await
             .unwrap_or_else(|_| Err(Failure::new("timeout", false)));
-            self.group(id, &run, index, json!({"diagnostics":diagnostics}))
-                .map_err(internal)?;
             let mut transport = diagnostics.clone();
             transport.as_object_mut().unwrap().extend(
                 json!({"account_id":aid,"job_id":id,"group":index+1,"attempt":attempt+1,"engine":job["engine"],"sample_count":job["planned_groups"],"resource_revision":job["resource_revision"]})
@@ -489,7 +487,8 @@ impl ModelTests {
                         _ => "",
                     };
                     self.group(id, &run, index, json!({
-                        "status":"analyzing", "duration_ms":started.elapsed().as_millis(), "error":error
+                        "status":"analyzing", "duration_ms":started.elapsed().as_millis(), "error":error,
+                        "diagnostics":diagnostics
                     })).map_err(internal)?;
                     let _analysis = run.analysis.lock().await;
                     let analysis_started = Instant::now();
@@ -628,6 +627,7 @@ impl ModelTests {
                             "error": error_text(failure.code),
                             "retryable": failure.retryable && !failure.uncertain,
                             "uncertain": failure.uncertain,
+                            "diagnostics":diagnostics,
                         }),
                     )
                     .map_err(internal)?;

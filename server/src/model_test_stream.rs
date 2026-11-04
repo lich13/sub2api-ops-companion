@@ -687,7 +687,7 @@ async fn received(
         .extend(collector.metadata.as_object().unwrap().clone());
     diag["response_protocol"] = json!(collector.protocol);
     result?;
-    if !isolated_answer(&collector.text()).is_empty() && diag.get("ttft_ms").is_none() {
+    if diag.get("ttft_ms").is_none() && !isolated_answer(&collector.text()).is_empty() {
         diag["ttft_ms"] = json!(started.elapsed().as_millis());
         if let Some(callback) = callback {
             callback(json!({"ttft_ms":diag["ttft_ms"],"diagnostics":diag}))

@@ -19,6 +19,216 @@ fn date(value: &Value) -> DateTime<Utc> {
         .with_timezone(&Utc)
 }
 
+fn reset_fixture() -> (Value, Value, Value, DateTime<Utc>) {
+    let at = date(&json!("2031-04-05T10:00:00Z"));
+    let row = json!({"id":73,"platform":"openai","type":"oauth","status":"active","schedulable":true,
+        "rate_limited_at":"2031-04-04T10:00:00Z","rate_limit_reset_at":"2031-04-05T10:04:00Z",
+        "extra":{"codex_plan_type":"plus","codex_usage_updated_at":"2031-04-05T09:59:49Z",
+            "codex_5h_used_percent":0,"codex_5h_reset_at":"2031-04-05T15:00:00Z",
+            "codex_7d_used_percent":100,"codex_7d_reset_at":"2031-04-05T10:00:00Z"}});
+    let result = sub2ops_server::quota::latest_result(&row, &Value::Null, at);
+    let descriptor = recovery_rules::quota_descriptor(
+        &sub2ops_server::quota::summary_from_result(&row, &result),
+        at,
+    );
+    let intent = sub2ops_server::recovery_events::new_intent(&descriptor, "pending", None);
+    let meta = json!({"recovery_intent":intent,"quota_query":{"last_query_at":result["queried_at"],
+        "last_source":"manual","automatic_attempts":[]}});
+    (row, result, meta, at)
+}
+
+#[test]
+fn quota_reset_shortens_only_the_pre_reset_query_interval() {
+    use chrono::Duration;
+    let (row, result, mut meta, at) = reset_fixture();
+    let gate = |meta: &Value, now| {
+        oauth_admission::automatic_gate(&row, &result, meta, now, true, false, 1).unwrap()
+    };
+    assert_eq!(
+        gate(&meta, at - Duration::seconds(1)),
+        ("waiting_reset", Some(at))
+    );
+    assert_eq!(gate(&meta, at), ("", None));
+    meta["quota_query"]["last_query_at"] = compat::datetime(at).into();
+    assert_eq!(
+        gate(&meta, at),
+        ("query_cooldown", Some(at + Duration::hours(1)))
+    );
+
+    meta["quota_query"]["last_query_at"] = result["queried_at"].clone();
+    meta["quota_query"]["retry_at"] = compat::datetime(at + Duration::minutes(30)).into();
+    assert_eq!(
+        gate(&meta, at),
+        ("query_backoff", Some(at + Duration::minutes(30)))
+    );
+    meta["quota_query"]["retry_at"] = "".into();
+    meta["quota_query"]["automatic_attempts"] =
+        json!(vec![compat::datetime(at - Duration::hours(1)); 6]);
+    assert_eq!(
+        gate(&meta, at),
+        ("query_budget", Some(at + Duration::hours(23)))
+    );
+    meta["quota_query"]["auth_fingerprint"] = oauth_admission::credential_fingerprint(&row).into();
+    assert_eq!(gate(&meta, at), ("auth_paused", None));
+}
+
+#[test]
+fn post_reset_quota_supersedes_only_the_old_rate_limit_estimate() {
+    use chrono::Duration;
+    let (mut row, _, meta, reset) = reset_fixture();
+    let at = reset + Duration::seconds(1);
+    row["extra"]["codex_usage_updated_at"] = compat::datetime(at).into();
+    row["extra"]["codex_7d_used_percent"] = 0.into();
+    row["extra"]["codex_7d_reset_at"] = compat::datetime(reset + Duration::days(7)).into();
+    let result = sub2ops_server::quota::latest_result(&row, &Value::Null, at);
+    assert!(recovery_rules::quota_ready(&row, &result, &meta, at));
+    assert_eq!(
+        recovery_rules::reset_not_before(&row, &result, &meta, at),
+        None
+    );
+    let candidates = recovery_rules::candidates(
+        std::slice::from_ref(&row),
+        &json!({"73":result}),
+        &json!({"73":meta}),
+        at,
+        true,
+    )
+    .unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert!(candidates[0]["reuse_quota"].is_object());
+    let root = tempfile::tempdir().unwrap();
+    let store = OAuthState::new(root.path().join("state.json"), false);
+    store
+        .transaction(|state| {
+            state["scheduler"]["73"] = meta.clone();
+            Ok(())
+        })
+        .unwrap();
+    sub2ops_server::recovery_events::discover(
+        &store,
+        std::slice::from_ref(&row),
+        &json!({"oauth_recovery_connection_account_ids":[73]}),
+        at,
+    )
+    .unwrap();
+    let discovered = store.snapshot().unwrap();
+    assert_eq!(
+        discovered["scheduler"]["73"]["recovery_intent"]["kind"],
+        "quota_exhausted"
+    );
+    assert_eq!(
+        recovery_rules::candidates(
+            std::slice::from_ref(&row),
+            &json!({"73":result}),
+            &discovered["scheduler"],
+            at,
+            true
+        )
+        .unwrap()
+        .len(),
+        1
+    );
+
+    for patch in [
+        json!({"rate_limited_at":compat::datetime(reset)}),
+        json!({"overload_until":compat::datetime(at + Duration::minutes(5))}),
+        json!({"temp_unschedulable_until":compat::datetime(at + Duration::minutes(5)),"temp_unschedulable_reason":"fixture manual pause"}),
+    ] {
+        let mut changed = row.clone();
+        changed
+            .as_object_mut()
+            .unwrap()
+            .extend(patch.as_object().unwrap().clone());
+        assert!(!recovery_rules::quota_ready(&changed, &result, &meta, at));
+    }
+    let mut before = result.clone();
+    before["queried_at"] = compat::datetime(reset - Duration::seconds(1)).into();
+    assert!(!recovery_rules::quota_ready(&row, &before, &meta, at));
+    let mut incomplete = result.clone();
+    incomplete["oauth_quota"]["ui_windows"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|window| window["key"] != "codex_5h");
+    assert!(!recovery_rules::quota_ready(&row, &incomplete, &meta, at));
+    let mut rate_only = meta.clone();
+    rate_only["recovery_intent"]["kind"] = "rate_limit_block".into();
+    assert!(!recovery_rules::quota_ready(&row, &result, &rate_only, at));
+    let mut failed = meta.clone();
+    failed["last_error_at"] = result["queried_at"].clone();
+    failed["last_error_code"] = "http_429".into();
+    assert!(!recovery_rules::quota_ready(&row, &result, &failed, at));
+}
+
+#[test]
+fn manual_cancellation_does_not_follow_the_account_into_a_new_quota_cycle() {
+    use chrono::Duration;
+    use sub2ops_server::{quota, recovery_events};
+    let (mut row, result, mut meta, at) = reset_fixture();
+    row["rate_limited_at"] = compat::datetime(at - Duration::days(10)).into();
+    meta["manual_control"] = json!({"at":compat::datetime(at - Duration::days(8)),"enabled":true,
+        "generation":1,"evidence_at":compat::datetime(at - Duration::days(8))});
+    meta["recovery_intent"]["status"] = "cancelled".into();
+    assert!(
+        !recovery_rules::control_allows(&row, &result, &meta, at),
+        "a new observation alone cannot revive the cancelled cycle"
+    );
+    let mut corrected = meta.clone();
+    corrected["recovery_intent"]["fingerprint"] = "codex_7d@2031-04-05T10:01:00+00:00".into();
+    corrected["recovery_intent"]["due_at"] = "2031-04-05T10:01:00Z".into();
+    assert!(
+        !recovery_rules::control_allows(&row, &result, &corrected, at),
+        "correcting a pending reset estimate does not establish a new cycle"
+    );
+
+    meta["recovery_intent"]["fingerprint"] = "codex_7d@2031-03-29T10:00:00+00:00".into();
+    meta["recovery_intent"]["due_at"] = "2031-03-29T10:00:00Z".into();
+    assert!(recovery_rules::control_allows(&row, &result, &meta, at));
+    let root = tempfile::tempdir().unwrap();
+    let store = OAuthState::new(root.path().join("state.json"), false);
+    store
+        .transaction(|state| {
+            state["scheduler"]["73"] = meta.clone();
+            Ok(())
+        })
+        .unwrap();
+    recovery_events::discover(
+        &store,
+        std::slice::from_ref(&row),
+        &json!({"oauth_recovery_connection_account_ids":[73]}),
+        at,
+    )
+    .unwrap();
+    let state = store.snapshot().unwrap();
+    let next = &state["scheduler"]["73"];
+    assert_eq!(next["recovery_intent"]["status"], "pending");
+    assert_eq!(
+        next["recovery_intent"]["fingerprint"],
+        recovery_rules::quota_descriptor(&quota::summary_from_result(&row, &result), at)
+            ["fingerprint"]
+    );
+    assert_eq!(next["manual_control"], meta["manual_control"]);
+    assert!(recovery_rules::control_allows(&row, &result, next, at));
+    assert_eq!(
+        recovery_rules::candidates(
+            std::slice::from_ref(&row),
+            &json!({"73":result}),
+            &state["scheduler"],
+            at,
+            true
+        )
+        .unwrap()
+        .len(),
+        1
+    );
+    let mut disabled = row.clone();
+    disabled["schedulable"] = false.into();
+    assert!(!recovery_rules::control_allows(
+        &disabled, &result, next, at
+    ));
+    meta.as_object_mut().unwrap().remove("recovery_intent");
+    assert!(recovery_rules::control_allows(&row, &result, &meta, at));
+}
+
 fn candidate_projection(value: &Value) -> Value {
     json!({
         "account_id": value["account_id"],

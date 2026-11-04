@@ -1230,6 +1230,63 @@ async fn dispatcher_waits_for_live_reset_deadline_and_uses_advanced_account_stat
 }
 
 #[tokio::test]
+async fn pre_reset_manual_query_does_not_delay_recovery_until_cooldown_or_old_429() {
+    let mut harness = Harness::new().await;
+    let reset = harness.now();
+    let row = harness
+        .seed_account("cross-reset-manual-query", true, true, false)
+        .await;
+    let id = integer(&row["id"]).unwrap();
+    configure_recovery(&harness, &[id], 1, 1, "connection").await;
+    update_block(
+        &harness,
+        id,
+        Some(reset - Duration::hours(1)),
+        Some(reset + Duration::minutes(4)),
+    )
+    .await;
+    save_result(
+        &harness,
+        id,
+        cached_result(
+            &row,
+            reset - Duration::seconds(11),
+            usage_data(0, 100, reset + Duration::hours(4), reset),
+        ),
+    )
+    .await;
+    harness.runtime.monitor.store.transaction(|state| {
+        state["scheduler"][id.to_string()]["quota_query"] = json!({
+            "last_query_at":datetime(reset - Duration::seconds(11)),"last_source":"manual","automatic_attempts":[]});
+        Ok(())
+    }).unwrap();
+    harness.set_now(reset - Duration::seconds(1));
+    harness.runtime.monitor.startup().await.unwrap();
+    harness.runtime.monitor.tick().await.unwrap();
+    let state = harness.runtime.monitor.state().unwrap();
+    let projected = recovery_events::project(&state["scheduler"][id.to_string()]);
+    assert_eq!(projected["next_at"], datetime(reset));
+    assert_eq!(harness.mock.count_for(id, "GET", "/usage"), 0);
+
+    harness.set_now(reset);
+    harness.runtime.monitor.tick().await.unwrap();
+    let state = wait_for_recovered(&harness, id).await;
+    assert_eq!(harness.mock.count_for(id, "GET", "/usage"), 1);
+    assert_eq!(harness.mock.count_for(id, "POST", "/test"), 1);
+    assert_eq!(
+        state["scheduler"][id.to_string()]["quota_query"]["automatic_attempts"],
+        json!([datetime(reset)])
+    );
+    harness.restart_runtime().await;
+    harness.runtime.monitor.startup().await.unwrap();
+    harness.runtime.monitor.tick().await.unwrap();
+    assert_eq!(harness.mock.count_for(id, "GET", "/usage"), 1);
+    assert_eq!(harness.mock.count_for(id, "POST", "/test"), 1);
+    assert!(harness.mock.unexpected().is_empty());
+    harness.close().await;
+}
+
+#[tokio::test]
 async fn passive_available_quota_dispatches_at_its_deadline_without_a_query_delay() {
     let mut harness = Harness::new().await;
     let now = harness.now();

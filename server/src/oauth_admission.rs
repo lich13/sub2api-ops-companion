@@ -77,17 +77,10 @@ pub fn automatic_eligible(row: &Value, at: DateTime<Utc>) -> bool {
         && truthy(&row["expires_at"])
         && parse_datetime(&row["expires_at"]).is_none_or(|expiry| expiry <= at))
 }
-pub fn reset_not_before(row: &Value, result: &Value) -> Option<DateTime<Utc>> {
+pub fn quota_reset_not_before(row: &Value, result: &Value) -> Option<DateTime<Utc>> {
     let summary = quota::summary_from_result(row, result);
     let windows = quota::windows_by_key(&summary["ui_windows"]);
-    let mut deadlines = [
-        "rate_limit_reset_at",
-        "temp_unschedulable_until",
-        "overload_until",
-    ]
-    .into_iter()
-    .filter_map(|k| parse_datetime(&row[k]))
-    .collect::<Vec<_>>();
+    let mut deadlines = vec![];
     for key in quota::required_windows(&summary["plan_type"]) {
         let win = windows.get(*key).unwrap_or(&Value::Null);
         if quota::percent(&win["used_percent"]).is_some_and(|v| v >= 100.0) {
@@ -103,6 +96,17 @@ pub fn reset_not_before(row: &Value, result: &Value) -> Option<DateTime<Utc>> {
         }
     }
     deadlines.into_iter().max()
+}
+pub fn reset_not_before(row: &Value, result: &Value) -> Option<DateTime<Utc>> {
+    [
+        "rate_limit_reset_at",
+        "temp_unschedulable_until",
+        "overload_until",
+    ]
+    .into_iter()
+    .filter_map(|key| parse_datetime(&row[key]))
+    .chain(quota_reset_not_before(row, result))
+    .max()
 }
 pub fn automatic_gate(
     row: &Value,
@@ -127,7 +131,13 @@ pub fn automatic_gate(
     let mut bounds = vec![];
     if !bypass_interval {
         if let Some(t) = parse_datetime(&query["last_query_at"]) {
-            bounds.push((t + Duration::seconds(MIN_QUERY_SECONDS), "query_cooldown"));
+            let interval = t + Duration::seconds(MIN_QUERY_SECONDS);
+            // Admission records the query before dispatch, so a reset can shorten
+            // only an interval that began before that reset, including after restart.
+            let deadline = quota_reset_not_before(row, saved)
+                .filter(|reset| t < *reset)
+                .map_or(interval, |reset| interval.min(reset));
+            bounds.push((deadline, "query_cooldown"));
         }
     }
     if let Some(t) = parse_datetime(&query["retry_at"]) {
