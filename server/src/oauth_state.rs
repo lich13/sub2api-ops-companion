@@ -9,7 +9,7 @@ use serde_json::{json, Map, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 fn invalid(message: &str) -> Error {
@@ -149,6 +149,15 @@ pub fn limit_fingerprint(row: &Value) -> String {
     ]))
 }
 pub fn validate_observation(value: &Value) -> Result<()> {
+    validate_observation_shape(value)?;
+    let content =
+        json!({"available_count":value["available_count"],"expires_at":value["expires_at"]});
+    if compact_digest(&content) != value["snapshot_sha256"] {
+        return Err(invalid("重置卡观测内容无效"));
+    }
+    Ok(())
+}
+fn validate_observation_shape(value: &Value) -> Result<()> {
     let keys: BTreeSet<&str> = [
         "version",
         "observed_at",
@@ -194,9 +203,16 @@ pub fn validate_observation(value: &Value) -> Result<()> {
     let expires = value["expires_at"]
         .as_array()
         .ok_or_else(|| invalid("重置卡到期信息无效"))?;
-    let content = normalized_credits(&json!({"available_count":value["available_count"],"credits":expires.iter().map(|v|json!({"expires_at":v})).collect::<Vec<_>>()})).ok_or_else(||invalid("重置卡观测内容无效"))?;
-    if content["expires_at"] != value["expires_at"]
-        || compact_digest(&content) != value["snapshot_sha256"]
+    if value["available_count"]
+        .as_u64()
+        .is_none_or(|count| count > expires.len() as u64)
+        || expires.len() > 10_000
+        || expires
+            .iter()
+            .any(|v| parse_datetime(v).is_none_or(|at| *v != datetime(at)))
+        || expires
+            .windows(2)
+            .any(|pair| string(&pair[0]) > string(&pair[1]))
     {
         return Err(invalid("重置卡观测内容无效"));
     }
@@ -248,6 +264,37 @@ pub fn query_metadata(meta: &Value, saved: &Value) -> Result<Value> {
 }
 
 pub fn validate(value: &Value) -> Result<()> {
+    validate_shape(value)?;
+    validate_observation_digests(value)
+}
+fn validate_observation_digests(value: &Value) -> Result<()> {
+    for meta in value["scheduler"]
+        .as_object()
+        .into_iter()
+        .flat_map(|v| v.values())
+    {
+        if let Some(observation) = meta.get("reset_credit_observation") {
+            validate_observation(observation)?;
+        }
+    }
+    Ok(())
+}
+fn load(value: &mut Value) -> Result<bool> {
+    validate_observation_digests(value)?;
+    // Validate these rows before legacy normalization can discard them.
+    if ["pending_events", "recovery_history"].iter().any(|key| {
+        value[*key]
+            .as_object()
+            .is_some_and(|rows| rows.values().any(|row| !row.is_object()))
+    }) {
+        return Err(invalid("检测恢复状态无效"));
+    }
+    let normalized = normalize(value);
+    let migrated = *value != normalized;
+    *value = normalized;
+    Ok(migrated)
+}
+fn validate_shape(value: &Value) -> Result<()> {
     if !value.is_object() || value["version"].as_i64().is_some_and(|v| v > 5) {
         return Err(invalid("OAuth 状态文件无效"));
     }
@@ -306,7 +353,7 @@ pub fn validate(value: &Value) -> Result<()> {
             }
         }
         if let Some(observation) = meta.get("reset_credit_observation") {
-            validate_observation(observation)?;
+            validate_observation_shape(observation)?;
         }
         if let Some(admission) = meta.get("credit_admission").filter(|v| !v.is_null()) {
             if !admission.is_object()
@@ -600,12 +647,7 @@ fn prune_credit_history(state: &mut Value) {
 }
 
 #[derive(Clone)]
-pub struct OAuthState(pub Store, Arc<Mutex<Option<Normalized>>>);
-
-struct Normalized {
-    source: Arc<Value>,
-    value: Arc<Value>,
-}
+pub struct OAuthState(pub Store);
 
 #[derive(Default)]
 pub struct Update {
@@ -622,38 +664,23 @@ pub struct Update {
 impl OAuthState {
     pub fn new(path: PathBuf, read_only: bool) -> Self {
         let lock = PathBuf::from(format!("{}.lock", path.display()));
-        Self(
-            Store::with_lock(path, lock, json!({}), validate, read_only),
-            Arc::new(Mutex::new(None)),
-        )
+        Self(Store::with_loader(
+            path,
+            lock,
+            normalize(&json!({})),
+            validate_shape,
+            load,
+            read_only,
+        ))
     }
     pub fn snapshot(&self) -> Result<Value> {
         self.shared_snapshot().map(|value| (*value).clone())
     }
     pub fn shared_snapshot(&self) -> Result<Arc<Value>> {
-        // Always consult Store first: its file stamp also catches external
-        // replacements and corrupt writes even when this projection is cached.
-        let source = self.0.read_shared()?;
-        Ok(self.normalized_snapshot(source))
-    }
-    pub(crate) fn normalized_snapshot(&self, source: Arc<Value>) -> Arc<Value> {
-        let mut cache = self.1.lock().unwrap_or_else(|error| error.into_inner());
-        if let Some(cached) = cache
-            .as_ref()
-            .filter(|cached| Arc::ptr_eq(&cached.source, &source))
-        {
-            return cached.value.clone();
-        }
-        let value = Arc::new(normalize(&source));
-        *cache = Some(Normalized {
-            source,
-            value: value.clone(),
-        });
-        value
+        self.0.read_shared()
     }
     pub fn transaction<T>(&self, action: impl FnOnce(&mut Value) -> Result<T>) -> Result<T> {
         self.0.transaction(|value| {
-            *value = normalize(value);
             let out = action(value)?;
             prune_credit_history(value);
             Ok(out)
@@ -884,14 +911,37 @@ mod shared_tests {
         state
             .transaction(|value| {
                 value["scheduler"]["1"]["last_reason"] = "fixture".into();
+                value["scheduler"]["1"]["fixture_score"] = json!(0.44714893675825557);
                 Ok(())
             })
             .unwrap();
         let second = state.shared_snapshot().unwrap();
         assert!(!Arc::ptr_eq(&first, &second));
         assert!(first["scheduler"]["1"]["last_reason"].is_null());
-        assert_eq!(*state.normalized_snapshot(original_source), *first);
+        assert_eq!(*original_source, *first);
         assert_eq!(*state.shared_snapshot().unwrap(), *second);
+        assert_eq!(
+            *second,
+            serde_json::from_slice::<Value>(&std::fs::read(&path).unwrap()).unwrap()
+        );
+        state
+            .transaction(|value| {
+                value["scheduler"]["1"]["last_regular_at"] = "fixture-retired-field".into();
+                Ok(())
+            })
+            .unwrap();
+        state
+            .transaction(|value| {
+                value["scheduler"]["2"] = json!({});
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            state.snapshot().unwrap()["scheduler"]["1"]["last_regular_at"],
+            "fixture-retired-field"
+        );
+        let reloaded = OAuthState::new(path.clone(), false);
+        assert!(reloaded.snapshot().unwrap()["scheduler"]["1"]["last_regular_at"].is_null());
         let replacement = root.path().join("replacement.json");
         std::fs::write(&replacement, b"{}").unwrap();
         std::fs::rename(replacement, &path).unwrap();

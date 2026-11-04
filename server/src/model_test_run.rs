@@ -303,23 +303,21 @@ impl ModelTests {
             )
             .await;
         if let Err(failure) = result {
-            self.group(
-                id,
-                &run,
-                index,
-                json!({
-                    "status":"failed", "error":error_text(failure.code), "retryable":false,
-                    "uncertain":failure.uncertain
-                }),
-            )?;
+            if run.groups.lock().unwrap_or_else(|e| e.into_inner())[index]["status"] != "failed" {
+                self.group(
+                    id,
+                    &run,
+                    index,
+                    json!({
+                        "status":"failed", "error":error_text(failure.code), "retryable":false,
+                        "uncertain":failure.uncertain, "duration_ms":started.elapsed().as_millis()
+                    }),
+                )?;
+            }
             *run.fatal.lock().unwrap_or_else(|e| e.into_inner()) = Some(failure);
         }
-        self.group(
-            id,
-            &run,
-            index,
-            json!({"duration_ms":started.elapsed().as_millis()}),
-        )?;
+        run.groups.lock().unwrap_or_else(|e| e.into_inner())[index]["duration_ms"] =
+            json!(started.elapsed().as_millis());
         Ok(())
     }
     #[expect(
@@ -358,17 +356,17 @@ impl ModelTests {
             // ModelTrace keeps the caller's 1–3 sample concurrency, within its
             // two-job limit and the shared task budget. Native connection
             // probes have a separate configurable recovery-test limit.
-            if job["automatic"] == true {
+            let latest = if job["automatic"] == true {
                 self.hooks
                     .guard(self.get(id).map_err(internal)?)
                     .await
-                    .map_err(|_| Failure::new("account_changed", false))?;
-            }
-            if model_target::signature(
-                &model_target::account(&self.actions, aid)
+                    .map_err(|_| Failure::new("account_changed", false))?
+            } else {
+                model_target::account(&self.actions, aid)
                     .await
-                    .map_err(internal)?,
-            ) != model_target::signature(&context.row)
+                    .map_err(internal)?
+            };
+            if model_target::signature(&latest) != model_target::signature(&context.row)
                 || context.owner["id"] != aid
                     && model_target::signature(
                         &model_target::account(
@@ -545,7 +543,7 @@ impl ModelTests {
                     };
                     let first = independent.clone();
                     let group_result = json!({
-                        "status":"completed", "analysis_ms":analysis_started.elapsed().as_millis(),
+                        "status":"completed", "duration_ms":started.elapsed().as_millis(), "analysis_ms":analysis_started.elapsed().as_millis(),
                         "error": if context.lm.is_some() && independent.is_null() { "样本已完成，本地分析失败" } else { error },
                         "report": if context.lm.is_some() { independent } else { Value::Null },
                         "transport_complete": matches!(string(&diagnostics["end_reason"]),"completed"|"stop"|"done"|"end_turn"|"stop_sequence"|"message_stop"),
@@ -627,9 +625,13 @@ impl ModelTests {
                         "uncertain": failure.uncertain,
                         "diagnostics":diagnostics,
                     });
-                    if retryable {
-                        changes["status"] = if attempt == 2 { "failed" } else { "retrying" }.into();
+                    changes["status"] = if retryable && attempt < 2 {
+                        "retrying"
+                    } else {
+                        "failed"
                     }
+                    .into();
+                    changes["duration_ms"] = json!(started.elapsed().as_millis());
                     self.group(id, &run, index, changes).map_err(internal)?;
 
                     // A missing terminal can represent a billed request. Only a

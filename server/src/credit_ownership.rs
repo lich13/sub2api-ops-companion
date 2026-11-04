@@ -118,63 +118,50 @@ pub fn save(store: &OAuthState, id: i64, task: &Value, changes: Value) -> Result
         Ok(updated.clone())
     })
 }
-pub fn reconcile(store: &OAuthState, row: &Value) -> Result<Value> {
+pub fn parameter_change(
+    store: &OAuthState,
+    row: &Value,
+    field: &str,
+    value: &Value,
+) -> Result<Option<(Value, String)>> {
     let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
     let state = store.shared_snapshot()?;
-    let task = state["scheduler"][id.to_string()]["auto_reset_credit"]
-        .as_object()
-        .cloned()
-        .unwrap_or_default();
-    let task = Value::Object(task);
-    let pending = &task["parameter_edit"];
-    if !pending.is_object()
-        || task["owns_pause"] != true
-        || integer(&pending["generation"]) != Some(generation(&state, id))
-        || row["schedulable"] != false
-    {
-        return Ok(task);
-    }
-    if pending["guard"] == parameter_guard(row) {
-        save(
-            store,
-            id,
-            &task,
-            json!({"signature":signature(row),"owned_version":row["updated_at"],"parameter_edit":null}),
-        )
-    } else if owned(row, &task, &state, true) {
-        save(store, id, &task, json!({"parameter_edit":null}))
-    } else {
-        Ok(task)
-    }
-}
-pub fn prepare(store: &OAuthState, row: &Value, field: &str, value: &Value) -> Result<()> {
-    if !matches!(field, "priority" | "concurrency" | "load_factor") {
-        return Err(Error::invalid());
-    }
-    let task = reconcile(store, row)?;
+    let task = &state["scheduler"][id.to_string()]["auto_reset_credit"];
     if task["owns_pause"] != true {
-        return Ok(());
+        return Ok(None);
     }
-    let state = store.shared_snapshot()?;
-    if !owned(row, &task, &state, true) {
+    if !owned(row, task, &state, true) {
         return Err(Error::new(409, "用卡暂停归属待核对，未修改参数"));
     }
-    let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
     let mut desired = row.clone();
     if field == "priority" {
-        for key in ["account_priority", "priority"] {
-            if desired.get(key).is_some() {
-                desired[key] = value.clone();
-            }
-        }
+        desired["account_priority"] = value.clone();
     } else {
         desired[field] = value.clone();
+    }
+    Ok(Some((task.clone(), parameter_guard(&desired))))
+}
+
+pub fn finish_parameter_change(
+    store: &OAuthState,
+    row: &Value,
+    task: &Value,
+    expected: &str,
+) -> Result<()> {
+    let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
+    let state = store.shared_snapshot()?;
+    if parameter_guard(row) != expected
+        || task["control_generation"]
+            .as_i64()
+            .is_some_and(|expected| expected != generation(&state, id))
+    {
+        return Err(Error::new(409, "改参后的用卡暂停归属已变化，请重新核对"));
     }
     save(
         store,
         id,
-        &task,
-        json!({"parameter_edit":{"field":field,"target":value,"guard":parameter_guard(&desired),"generation":generation(&state,id)}}),
+        task,
+        json!({"signature":signature(row),"owned_version":row["updated_at"]}),
     )?;
     Ok(())
 }

@@ -258,6 +258,14 @@ impl Detection {
             };
             if valid && !degraded {
                 if let Err(error) = self.guard(&job).await {
+                    if error.status.is_server_error() {
+                        return Ok(self.recovery_wait(
+                            "账号状态暂不可读取，等待复核",
+                            None,
+                            job["id"].as_str(),
+                            "model_verification_pending",
+                        ));
+                    }
                     self.log_receipt(string(&job["id"]), "verification", &json!({"status":"failed","reason":crate::security::safe_error(&error.detail,200),"completed_at":datetime(self.now())}));
                     return Ok(json!({
                         "success":false, "error_code":"recovery_state_changed",

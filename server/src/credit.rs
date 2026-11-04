@@ -86,7 +86,11 @@ impl CreditController {
             other => other,
         }
     }
-    pub fn save(&self, id: i64, task: &Value, changes: Value) -> Result<Value> {
+    pub fn save(&self, id: i64, task: &Value, mut changes: Value) -> Result<Value> {
+        if truthy(&task["policy_version"]) {
+            changes["policy_checked_at"] =
+                datetime(credit_rules::policy_now(task, self.now())).into();
+        }
         credit_ownership::save(&self.store, id, task, changes)
     }
     pub fn audit(&self, id: i64, action: &str, fields: Value) {

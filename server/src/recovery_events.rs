@@ -98,6 +98,18 @@ pub fn new_intent(descriptor: &Value, status: &str, at: Option<DateTime<Utc>>) -
     intent.as_object_mut().unwrap().extend(json!({"status":status,"deferred_until":"","next_retry_at":"","attempt_count":0,"block_signature":"","confirmed_at":at.map(datetime).unwrap_or_default(),"tested_at":"","recovered_at":"","last_error":"","last_error_code":""}).as_object().unwrap().clone());
     intent
 }
+fn verification_waiting(intent: &Value) -> bool {
+    intent["status"] == "retry"
+        && matches!(
+            string(&intent["waiting_reason"]),
+            "model_verification_pending"
+                | "model_cooldown"
+                | "model_busy"
+                | "test_slots"
+                | "account_busy"
+        )
+}
+
 pub fn discover(
     store: &OAuthState,
     rows: &[impl std::borrow::Borrow<Value>],
@@ -144,7 +156,7 @@ pub fn discover(
             && !truthy(&old["verification_receipt"])
             && !truthy(&old["recovery_write_dispatched"])
         {
-            if old["status"] == "retry" && truthy(&old["tested_at"])
+            if verification_waiting(old)
                 || old["status"] == "ready"
                     && parse_datetime(&old["due_at"]) <= parse_datetime(&saved["queried_at"])
             {
@@ -427,7 +439,7 @@ fn quota_update_inner(
         update.scheduler.insert(id, metadata);
         return (update, None, false);
     }
-    if truthy(descriptor) {
+    if !released && truthy(descriptor) {
         if descriptor["fingerprint"] != intent["fingerprint"] {
             intent = new_intent(descriptor, "pending", None);
         } else {
@@ -473,7 +485,7 @@ fn quota_update_inner(
     }
     if released {
         intent["due_at"] = result["queried_at"].clone();
-        if intent["status"] != "retry" || !truthy(&intent["tested_at"]) {
+        if !verification_waiting(&intent) {
             intent["next_retry_at"] = "".into();
             intent["waiting_reason"] = "".into();
             intent["waiting_until"] = "".into();

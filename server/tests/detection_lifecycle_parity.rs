@@ -7911,3 +7911,61 @@ async fn disposition_notification_caps_retries_at_five_attempts() {
     assert_eq!(harness.mock.count("POST", "/push"), 5);
     harness.close().await;
 }
+
+#[tokio::test]
+async fn temporary_database_failure_keeps_an_automatic_job_queued() {
+    let harness = Harness::new(sample_text("above_99", 0)).await;
+    let row = harness.seed_account("apikey", true, json!({})).await;
+    let id = integer(&row["id"]).unwrap();
+    harness.enable_detection(id, 1).await;
+    let budget = harness
+        .runtime()
+        .budget
+        .clone()
+        .acquire_many_owned(24)
+        .await
+        .unwrap();
+    let job = harness
+        .runtime()
+        .detection
+        .trigger(id, &["fixture".into()])
+        .await
+        .unwrap();
+    assert_eq!(job["status"], "queued");
+    sqlx::query("ALTER TABLE accounts RENAME TO fixture_unavailable_accounts")
+        .execute(&harness.fixture_db.pool)
+        .await
+        .unwrap();
+    let result = harness.runtime().detection.tick().await;
+    sqlx::query("ALTER TABLE fixture_unavailable_accounts RENAME TO accounts")
+        .execute(&harness.fixture_db.pool)
+        .await
+        .unwrap();
+    assert!(result.unwrap_err().status.is_server_error());
+    assert_eq!(
+        harness
+            .runtime()
+            .tests
+            .get(job["id"].as_str().unwrap())
+            .unwrap()["status"],
+        "queued"
+    );
+    harness.runtime().detection.tick().await.unwrap();
+    assert_eq!(
+        harness
+            .runtime()
+            .tests
+            .get(job["id"].as_str().unwrap())
+            .unwrap()["status"],
+        "queued"
+    );
+    assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
+    harness
+        .runtime()
+        .tests
+        .cancel(job["id"].as_str().unwrap())
+        .await
+        .unwrap();
+    drop(budget);
+    harness.close().await;
+}

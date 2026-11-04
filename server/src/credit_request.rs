@@ -156,16 +156,7 @@ impl CreditController {
                     active=self.save(id,&active,json!({"stage":"resetting","owns_pause":true,"owned_version":after["updated_at"]}))?;
                 }
                 let final_row = self.row(id).await?;
-                let depletion = if final_row.is_object() {
-                    self.depletion(&final_row, self.now(), true).await?
-                } else {
-                    Value::Null
-                };
-                if !self.owned(&final_row, &active, true)?
-                    || !truthy(&depletion)
-                    || depletion["reset_at"] != task["reset_at"]
-                    || depletion["evidence_fingerprint"] != task["evidence_fingerprint"]
-                {
+                if !self.owned(&final_row, &active, true)? {
                     self.save(
                         id,
                         &active,

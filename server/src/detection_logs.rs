@@ -342,7 +342,7 @@ impl Detection {
         }) {
             return Err(Error::new(503, "检测恢复状态无效"));
         }
-        let oauth = self.monitor.store.normalized_snapshot(raw_oauth);
+        let oauth = raw_oauth;
         if detection.get("disposition_notifications").is_some_and(|v| {
             v.as_object().is_none_or(|notices| {
                 notices

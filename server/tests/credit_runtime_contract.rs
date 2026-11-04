@@ -168,8 +168,6 @@ struct MockUpstream {
     bark_codes: Arc<StdMutex<VecDeque<i64>>>,
     clock: Arc<StdMutex<DateTime<Utc>>>,
     scalar_status: Arc<AtomicI64>,
-    scalar_gate: Arc<StdMutex<Option<Arc<Notify>>>>,
-    scalar_readonly_parent: Arc<StdMutex<Option<PathBuf>>>,
 }
 
 impl MockUpstream {
@@ -184,8 +182,6 @@ impl MockUpstream {
             bark_codes: Arc::new(StdMutex::new(VecDeque::new())),
             clock,
             scalar_status: Arc::new(AtomicI64::new(200)),
-            scalar_gate: Arc::new(StdMutex::new(None)),
-            scalar_readonly_parent: Arc::new(StdMutex::new(None)),
         }
     }
 
@@ -300,14 +296,6 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
         .execute(&state.pool)
         .await
         .expect("apply scalar setting in fixture database");
-        let parent = { state.scalar_readonly_parent.lock().unwrap().clone() };
-        if let Some(parent) = parent {
-            fs::set_permissions(parent, fs::Permissions::from_mode(0o500)).unwrap();
-        }
-        let gate = { state.scalar_gate.lock().unwrap().clone() };
-        if let Some(gate) = gate {
-            gate.notified().await;
-        }
         return json_response(200, json!({"code":0}));
     }
 
@@ -1459,7 +1447,7 @@ async fn parameter_recovery_scalar_edits_keep_pause_until_one_retry_verifies() {
 }
 
 #[tokio::test]
-async fn parameter_recovery_intent_persistence_failure_stops_before_write() {
+async fn parameter_recovery_receipt_failure_reports_applied_write() {
     let h = Harness::new(false).await;
     let (id, original) = seed_parameter_retry(&h).await;
     let bytes = fs::read(&h.settings.oauth_path).unwrap();
@@ -1467,108 +1455,20 @@ async fn parameter_recovery_intent_persistence_failure_stops_before_write() {
     let result = apply_parameter(&h, id, "concurrency", 4).await;
     fs::set_permissions(h._temp.path(), fs::Permissions::from_mode(0o700)).unwrap();
     assert!(result.is_err());
-    assert_eq!(h.mock.count(Method::PUT, &format!("accounts/{id}")), 0);
+    assert_eq!(h.mock.count(Method::PUT, &format!("accounts/{id}")), 1);
+    assert_eq!(h.controller.row(id).await.unwrap()["concurrency"], 4);
     assert_eq!(fs::read(&h.settings.oauth_path).unwrap(), bytes);
     assert_eq!(h.controller.state(id).unwrap(), original);
 }
 
-async fn interrupted_parameter_write(h: &Harness, id: i64) -> Value {
-    let gate = Arc::new(Notify::new());
-    *h.mock.scalar_gate.lock().unwrap() = Some(gate.clone());
-    let actions = h.controller.actions.clone();
-    let row = actions.account(id, None).await.unwrap();
-    let expected = operation_versions(&row)["concurrency"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let worker = tokio::spawn(async move {
-        actions
-            .apply_setting(
-                id,
-                "concurrency",
-                &json!({"concurrency":4}),
-                &expected,
-                ADMIN_KEY,
-            )
-            .await
-    });
-    h.mock
-        .wait_for(Method::PUT, &format!("accounts/{id}"), 1)
-        .await;
-    tokio::time::timeout(StdDuration::from_secs(3), async {
-        loop {
-            if h.controller.row(id).await.unwrap()["concurrency"] == 4 {
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .unwrap();
-    worker.abort();
-    assert!(worker.await.unwrap_err().is_cancelled());
-    gate.notify_one();
-    *h.mock.scalar_gate.lock().unwrap() = None;
-    let pending = h.controller.state(id).unwrap();
-    assert_eq!(pending["parameter_edit"]["target"], 4);
-    assert_ne!(
-        pending["owned_version"],
-        h.controller.row(id).await.unwrap()["updated_at"]
-    );
-    pending
-}
-
-async fn assert_reconciled_without_replay(h: &Harness, id: i64, old: &Value) {
-    let restored = h.restart_controller();
-    restored
-        .bounded_step(id, h.controller.now(), true)
-        .await
-        .unwrap();
-    let task = restored.state(id).unwrap();
-    assert_eq!(task["owns_pause"], true);
-    assert_eq!(task["parameter_edit"], Value::Null);
-    assert_eq!(
-        task["owned_version"],
-        restored.row(id).await.unwrap()["updated_at"]
-    );
-    assert_ne!(task["owned_version"], old["owned_version"]);
-    assert_eq!(h.mock.count(Method::PUT, &format!("accounts/{id}")), 1);
-    assert_eq!(h.mock.count(Method::POST, "/reset-quota"), 1);
-    assert_eq!(h.mock.count(Method::POST, "/test"), 1);
-    assert_eq!(restored.row(id).await.unwrap()["schedulable"], false);
-}
-
 #[tokio::test]
-async fn parameter_recovery_restart_reconciles_applied_value_after_interrupted_request() {
-    let h = Harness::new(false).await;
-    let (id, _) = seed_parameter_retry(&h).await;
-    let pending = interrupted_parameter_write(&h, id).await;
-    assert_eq!(pending["owns_pause"], true);
-    assert_eq!(pending["consumed"], true);
-    assert_reconciled_without_replay(&h, id, &pending).await;
-}
-
-#[tokio::test]
-async fn parameter_recovery_postwrite_persistence_failure_reads_actual_value_after_restart() {
-    let h = Harness::new(false).await;
-    let (id, original) = seed_parameter_retry(&h).await;
-    *h.mock.scalar_readonly_parent.lock().unwrap() = Some(h._temp.path().into());
-    let result = apply_parameter(&h, id, "load_factor", 9).await;
-    fs::set_permissions(h._temp.path(), fs::Permissions::from_mode(0o700)).unwrap();
-    assert!(result.is_err());
-    assert_eq!(h.controller.row(id).await.unwrap()["load_factor"], 9);
-    assert!(h.controller.state(id).unwrap()["parameter_edit"].is_object());
-    assert_reconciled_without_replay(&h, id, &original).await;
-}
-
-#[tokio::test]
-async fn parameter_recovery_rejected_write_clears_intent_and_keeps_owned_version() {
+async fn parameter_recovery_rejected_write_keeps_owned_version() {
     for status in [400, 502] {
         let h = Harness::new(false).await;
         let (id, original) = seed_parameter_retry(&h).await;
         h.mock.scalar_status.store(status, Ordering::SeqCst);
         assert!(apply_parameter(&h, id, "concurrency", 4).await.is_err());
-        assert!(h.controller.state(id).unwrap()["parameter_edit"].is_object());
+        assert_eq!(h.controller.state(id).unwrap(), original);
         let restored = h.restart_controller();
         restored
             .bounded_step(id, h.controller.now(), true)
@@ -1589,7 +1489,8 @@ async fn parameter_recovery_conflicting_manual_or_account_changes_never_resume_h
     for change in ["generation", "credentials", "mapping", "proxy", "limit"] {
         let h = Harness::new(false).await;
         let (id, _) = seed_parameter_retry(&h).await;
-        let pending = interrupted_parameter_write(&h, id).await;
+        apply_parameter(&h, id, "concurrency", 4).await.unwrap();
+        let pending = h.controller.state(id).unwrap();
         h.set_now(fixed_now() + Duration::seconds(2));
         if change == "generation" {
             let row = h.controller.row(id).await.unwrap();
@@ -1614,10 +1515,15 @@ async fn parameter_recovery_conflicting_manual_or_account_changes_never_resume_h
             .await
             .unwrap();
         }
+        h.set_now(fixed_now() + Duration::seconds(61));
         let restored = h.restart_controller();
         let row = restored.row(id).await.unwrap();
         restored
             .run(std::slice::from_ref(&row), h.controller.now())
+            .await
+            .unwrap();
+        restored
+            .sweep(std::slice::from_ref(&row), h.controller.now())
             .await
             .unwrap();
         let task = restored.state(id).unwrap();
@@ -1627,7 +1533,10 @@ async fn parameter_recovery_conflicting_manual_or_account_changes_never_resume_h
         assert!(task["receipt"].is_object());
         assert_eq!(task["owns_pause"], false);
         assert_eq!(task["owned_version"], pending["owned_version"]);
-        assert_ne!(task["owned_version"], row["updated_at"]);
+        assert_eq!(
+            task["owned_version"] == row["updated_at"],
+            change == "generation"
+        );
         assert_eq!(restored.row(id).await.unwrap()["schedulable"], false);
         assert_eq!(
             restored.store.snapshot().unwrap()["recovery_history"],

@@ -181,6 +181,14 @@ fn manual_cancellation_does_not_follow_the_account_into_a_new_quota_cycle() {
         "correcting a pending reset estimate does not establish a new cycle"
     );
 
+    let mut early_reset = row.clone();
+    early_reset["extra"]["codex_7d_reset_at"] = compat::datetime(at + Duration::days(7)).into();
+    let early_result = quota::latest_result(&early_reset, &Value::Null, at);
+    assert!(
+        recovery_rules::control_allows(&early_reset, &early_result, &corrected, at),
+        "an early reset followed by depletion belongs to the later window"
+    );
+
     meta["recovery_intent"]["fingerprint"] = "codex_7d@2031-03-29T10:00:00+00:00".into();
     meta["recovery_intent"]["due_at"] = "2031-03-29T10:00:00Z".into();
     assert!(recovery_rules::control_allows(&row, &result, &meta, at));
@@ -239,7 +247,14 @@ fn active_recovery_keeps_query_failures_and_unusable_available_quota() {
     row["rate_limit_reset_at"] = compat::datetime(at - Duration::seconds(1)).into();
     meta["manual_control"] = json!({"at":compat::datetime(at - Duration::days(8)),
         "evidence_at":compat::datetime(at - Duration::days(8)),"enabled":true,"generation":1});
-    for status in ["pending", "retry", "waiting_quota"] {
+    for status in [
+        "pending",
+        "retry",
+        "waiting_quota",
+        "retry_exhausted",
+        "blocked",
+        "auth_failed",
+    ] {
         meta["recovery_intent"]["status"] = status.into();
         for code in ["network_error", "incomplete_quota", "http_401"] {
             // A local state failure may not include a provider observation timestamp.
@@ -474,6 +489,9 @@ fn fresh_release_before_the_old_boundary_accepts_fractional_429_deadlines() {
         "worker_slots",
         "model_verification_pending",
         "model_cooldown",
+        "model_busy",
+        "test_slots",
+        "account_busy",
         "",
     ] {
         let mut waiting = state["scheduler"]["73"].clone();
@@ -503,7 +521,14 @@ fn fresh_release_before_the_old_boundary_accepts_fractional_429_deadlines() {
             at,
         )
         .unwrap();
-        assert_eq!(std::fs::read(store.0.path()).unwrap(), saved);
+        if reason.is_empty() {
+            assert_eq!(
+                store.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"]["status"],
+                "ready"
+            );
+        } else {
+            assert_eq!(std::fs::read(store.0.path()).unwrap(), saved);
+        }
         if reason != "worker_slots" {
             let (update, runnable, _) = recovery_events::quota_update(
                 &candidates[0],
@@ -513,16 +538,43 @@ fn fresh_release_before_the_old_boundary_accepts_fractional_429_deadlines() {
                 true,
                 true,
             );
-            assert!(runnable.is_none());
+            assert_eq!(runnable.is_some(), reason.is_empty(), "{reason}");
             assert_eq!(
                 update.scheduler[&73]["recovery_intent"]["next_retry_at"],
-                waiting["recovery_intent"]["next_retry_at"]
+                if reason.is_empty() {
+                    json!("")
+                } else {
+                    waiting["recovery_intent"]["next_retry_at"].clone()
+                }
             );
             assert_eq!(
                 update.scheduler[&73]["recovery_intent"]["waiting_reason"],
                 reason
             );
         }
+    }
+    let until = at + Duration::hours(1);
+    row["temp_unschedulable_until"] = compat::datetime(until).into();
+    row["temp_unschedulable_reason"] = json!({"source":"account_scheduling_threshold",
+        "platform":"openai","window":"5h","threshold_percent":80,"until_unix":until.timestamp()})
+    .to_string()
+    .into();
+    meta["recovery_intent"]["attempt_count"] = 2.into();
+    meta["recovery_intent"]["last_error_code"] = "model_test_failed".into();
+    let (update, runnable, _) = recovery_events::quota_update(
+        &json!({"account_id":73,"row":row,"reason":"recovery_intent"}),
+        &result,
+        &json!({"scheduler":{"73":meta}}),
+        at,
+        true,
+        true,
+    );
+    assert!(runnable.is_some());
+    for field in ["kind", "fingerprint", "attempt_count", "last_error_code"] {
+        assert_eq!(
+            update.scheduler[&73]["recovery_intent"][field], meta["recovery_intent"][field],
+            "{field}"
+        );
     }
     row["rate_limited_at"] = result["queried_at"].clone();
     assert!(!recovery_rules::quota_release(&row, &result, &meta, at));
@@ -738,6 +790,9 @@ fn recovery_quota_and_manual_control_gates_match_pinned_python() {
         );
     }
     for case in rules["manual_control"].as_array().unwrap() {
+        // 0.1.80: the old cancellation cycle only gates an explicitly cancelled intent.
+        let expected =
+            case["name"] == "observation_at_manual_change" || case["expected"].as_bool().unwrap();
         assert_eq!(
             recovery_rules::control_allows(
                 &case["row"],
@@ -745,7 +800,7 @@ fn recovery_quota_and_manual_control_gates_match_pinned_python() {
                 &case["metadata"],
                 date(&case["now"]),
             ),
-            case["expected"].as_bool().unwrap(),
+            expected,
             "{}",
             case["name"],
         );

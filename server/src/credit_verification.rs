@@ -301,11 +301,7 @@ impl CreditController {
             return Ok(());
         }
         if !truthy(&task["clear_requested_at"]) {
-            task = self.save(
-                id,
-                &task,
-                json!({"clear_requested_at":datetime(self.now())}),
-            )?;
+            task["clear_requested_at"] = datetime(self.now()).into();
             let _ = self.hooks.recover(id, self.store.admin_token()?).await;
         }
         let cleared = self.row(id).await?;
@@ -314,11 +310,11 @@ impl CreditController {
             confirmed["schedulable"] = true.into();
         }
         if !self.owned(&cleared, &task, false)? || !recovery_rules::confirmed(&confirmed) {
-            self.save(id,&task,json!({"stage":"confirming","error_code":"recovery_failed","next_at":datetime(at+Duration::seconds(2))}))?;
+            self.save(id,&task,json!({"stage":"confirming","clear_requested_at":task["clear_requested_at"],"error_code":"recovery_failed","next_at":datetime(at+Duration::seconds(2))}))?;
             return Ok(());
         }
         task=self.save(id,&task,json!({"stage":"releasing","owned_version":cleared["updated_at"],"next_at":null,"release_requested_at":datetime(self.now()),"release_control_generation":credit_ownership::generation(self.store.shared_snapshot()?.as_ref(),id),"release_credential_fingerprint":credential_fingerprint(&cleared)}))?;
-        let verified = self.row(id).await?;
+        let verified = cleared;
         if !self.owned(&verified, &task, true)?
             || !self.processing_eligible(&verified, &task, self.now())?
         {

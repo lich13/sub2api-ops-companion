@@ -204,7 +204,11 @@ impl Monitor {
         let ids = rows
             .iter()
             .filter_map(|v| integer(&v["id"]))
-            .filter(|id| truthy(&state["scheduler"][id.to_string()]["auto_reset_credit"]))
+            .filter(|id| {
+                let task = &state["scheduler"][id.to_string()]["auto_reset_credit"];
+                truthy(task)
+                    && !matches!(string(&task["stage"]), "finished" | "recovered" | "closed")
+            })
             .collect::<Vec<_>>();
         if ids.is_empty() {
             return Ok(rows.iter().map(std::borrow::Cow::Borrowed).collect());
@@ -219,7 +223,10 @@ impl Monitor {
         let mut live = vec![];
         for original in rows {
             let id = integer(&original["id"]).unwrap_or(0);
-            if !truthy(&state["scheduler"][id.to_string()]["auto_reset_credit"]) {
+            let task = &state["scheduler"][id.to_string()]["auto_reset_credit"];
+            if !truthy(task)
+                || matches!(string(&task["stage"]), "finished" | "recovered" | "closed")
+            {
                 live.push(std::borrow::Cow::Borrowed(original));
                 continue;
             }

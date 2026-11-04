@@ -457,26 +457,24 @@ impl Actions {
             return Err(Error::new(409, "相关字段已变化，请核对后重新提交"));
         }
         let scalar = matches!(action, "priority" | "concurrency" | "load_factor");
-        if scalar {
-            credit_ownership::prepare(
+        let credit_change = if scalar
+            && self.queries.oauth.shared_snapshot()?["scheduler"][id.to_string()]
+                ["auto_reset_credit"]["owns_pause"]
+                == true
+        {
+            credit_ownership::parameter_change(
                 &self.queries.oauth,
                 &credit_ownership::account(&self.queries.db, id).await?,
                 action,
                 &payload[action],
-            )?;
-        }
+            )?
+        } else {
+            None
+        };
         if action == "priority" {
-            if let Err(error) = self
-                .priorities
+            self.priorities
                 .before_write(&self.queries.db, id, expected, &payload[action])
-                .await
-            {
-                credit_ownership::reconcile(
-                    &self.queries.oauth,
-                    &credit_ownership::account(&self.queries.db, id).await?,
-                )?;
-                return Err(error);
-            }
+                .await?;
         }
         let result = if action == "sync_models" {
             let data = self
@@ -534,10 +532,12 @@ impl Actions {
             if !target_reached(&actual, action, payload) {
                 return Err(Error::new(502, "字段写入尚未确认，正在核对实际值"));
             }
-            if scalar {
-                credit_ownership::reconcile(
+            if let Some((task, expected)) = &credit_change {
+                credit_ownership::finish_parameter_change(
                     &self.queries.oauth,
                     &credit_ownership::account(&self.queries.db, id).await?,
+                    task,
+                    expected,
                 )?;
             }
             if action == "priority" {

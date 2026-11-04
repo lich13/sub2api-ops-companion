@@ -1,7 +1,7 @@
 use crate::{
     compat::{datetime, integer, parse_datetime, string, truthy},
     credit::CreditController,
-    credit_ownership, credit_rules,
+    credit_rules,
     error::{Error, Result},
     oauth_queries::Source,
     recovery_policy, recovery_rules,
@@ -28,109 +28,78 @@ impl CreditController {
             .filter_map(|row| integer(&row["id"]).map(|id| (id, Cow::Borrowed(row))))
             .collect::<BTreeMap<_, _>>();
         let state = self.store.shared_snapshot()?;
-        let mut checked = Vec::new();
-        let result = async {
-            for (key, meta) in state["scheduler"].as_object().into_iter().flatten() {
-                let id = key.parse::<i64>().map_err(|_| Error::internal())?;
-                let mut task = meta["auto_reset_credit"]
-                    .as_object()
-                    .cloned()
-                    .map(Value::Object)
-                    .unwrap_or(json!({}));
-                if truthy(&task)
-                    && !truthy(&task["attempt_at"])
-                    && !truthy(&task["credit_admitted_at"])
-                {
-                    let row = if let Some(row) = live.get(&id) {
-                        row.clone()
-                    } else {
-                        Cow::Owned(self.row(id).await?)
-                    };
-                    task = self.migrate_admission(id, &row, &task, at)?;
-                }
-                if !truthy(&task)
-                    || credit_rules::manual(&task)
-                    || credit_rules::LEGACY_ENDED.contains(&string(&task["stage"]))
-                        && !truthy(&task["policy_version"])
-                    || matches!(string(&task["stage"]), "finished" | "recovered" | "closed")
-                {
-                    continue;
-                }
-                if let std::collections::btree_map::Entry::Vacant(e) = live.entry(id) {
-                    e.insert(Cow::Owned(self.row(id).await?));
-                }
-                let row = &live[&id];
-                task = self.policy(id, &task, at).await?;
-                let current = credit_rules::policy_now(&task, at);
-                let control = &meta["manual_control"];
-                let expected = integer(&task["policy_control_generation"]).unwrap_or(0);
-                let generation = integer(&control["generation"]).unwrap_or(0);
-                let finishing = truthy(&task["degradation_pending"])
-                    && (generation == expected
-                        || control["origin"] == "model_detection" && generation == expected + 1);
-                let mut reason = if finishing {
-                    ""
+        for (key, meta) in state["scheduler"].as_object().into_iter().flatten() {
+            let id = key.parse::<i64>().map_err(|_| Error::internal())?;
+            let mut task = meta["auto_reset_credit"]
+                .as_object()
+                .cloned()
+                .map(Value::Object)
+                .unwrap_or(json!({}));
+            if truthy(&task) && !truthy(&task["attempt_at"]) && !truthy(&task["credit_admitted_at"])
+            {
+                let row = if let Some(row) = live.get(&id) {
+                    row.clone()
                 } else {
-                    self.guard_reason(id, row, &task, current)?
+                    Cow::Owned(self.row(id).await?)
                 };
-                if reason.is_empty() && credit_rules::expired(&task, current) {
-                    reason = if truthy(&task["consumed"]) {
-                        "verification_deadline"
-                    } else {
-                        "consume_deadline"
-                    };
-                }
-                if matches!(string(&task["stage"]), "manual" | "blocked")
-                    && !finishing
-                    && reason.is_empty()
+                task = self.migrate_admission(id, &row, &task, at)?;
+            }
+            if !truthy(&task)
+                || credit_rules::manual(&task)
+                || credit_rules::LEGACY_ENDED.contains(&string(&task["stage"]))
+                    && !truthy(&task["policy_version"])
+                || matches!(string(&task["stage"]), "finished" | "recovered" | "closed")
+            {
+                continue;
+            }
+            if let std::collections::btree_map::Entry::Vacant(e) = live.entry(id) {
+                e.insert(Cow::Owned(self.row(id).await?));
+            }
+            let row = &live[&id];
+            task = self.policy(id, &task, at).await?;
+            let current = credit_rules::policy_now(&task, at);
+            let control = &meta["manual_control"];
+            let expected = integer(&task["policy_control_generation"]).unwrap_or(0);
+            let generation = integer(&control["generation"]).unwrap_or(0);
+            let finishing = truthy(&task["degradation_pending"])
+                && (generation == expected
+                    || control["origin"] == "model_detection" && generation == expected + 1);
+            let mut reason = if finishing {
+                ""
+            } else {
+                self.guard_reason(id, row, &task, current)?
+            };
+            if reason.is_empty() && credit_rules::expired(&task, current) {
+                reason = if truthy(&task["consumed"]) {
+                    "verification_deadline"
+                } else {
+                    "consume_deadline"
+                };
+            }
+            if matches!(string(&task["stage"]), "manual" | "blocked")
+                && !finishing
+                && reason.is_empty()
+            {
+                reason = if truthy(&task["error_code"]) {
+                    string(&task["error_code"])
+                } else {
+                    "manual_intervention"
+                };
+            }
+            if !reason.is_empty() {
+                if let Err(error) = self
+                    .finish(id, &task, reason, current, row, true, &Value::Null)
+                    .await
                 {
-                    reason = if truthy(&task["error_code"]) {
-                        string(&task["error_code"])
-                    } else {
-                        "manual_intervention"
-                    };
-                }
-                if !reason.is_empty() {
-                    if let Err(error) = self
-                        .finish(id, &task, reason, current, row, true, &Value::Null)
-                        .await
-                    {
-                        if error.status.as_u16() != 409 {
-                            return Err(error);
-                        }
+                    if error.status.as_u16() != 409 {
+                        return Err(error);
                     }
-                } else if task["policy_checked_at"] != datetime(current) {
-                    checked.push((key.clone(), task, current));
                 }
             }
-            Ok(())
         }
-        .await;
-        if !checked.is_empty() {
-            self.store.transaction(|state| {
-                for (key, expected, at) in &checked {
-                    let meta = &mut state["scheduler"][key];
-                    if integer(&meta["manual_control"]["generation"]).unwrap_or(0)
-                        != integer(&expected["policy_control_generation"]).unwrap_or(0)
-                        || integer(&meta["recovery_method_generation"]).unwrap_or(0)
-                            != integer(&expected["policy_method_generation"]).unwrap_or(0)
-                    {
-                        continue;
-                    }
-                    let value = &mut meta["auto_reset_credit"];
-                    if value["episode"] == expected["episode"]
-                        && value["revision"] == expected["revision"]
-                        && parse_datetime(&value["policy_checked_at"])
-                            .is_none_or(|previous| previous < *at)
-                    {
-                        value["policy_checked_at"] = datetime(*at).into();
-                    }
-                }
-                Ok(())
-            })?;
-        }
-        result
+        Ok(())
     }
+
     pub async fn run(&self, rows: &[Value], at: DateTime<Utc>) -> Result<()> {
         if self.actions.settings.read_only {
             return Ok(());
@@ -260,9 +229,6 @@ impl CreditController {
     pub async fn bounded_step(&self, id: i64, at: DateTime<Utc>, enabled: bool) -> Result<()> {
         let mut row = self.row(id).await?;
         let mut task = self.state(id)?;
-        if row.is_object() {
-            task = credit_ownership::reconcile(&self.store, &row)?;
-        }
         task = self.migrate_admission(id, &row, &task, at)?;
         self.observe_recovery(&row, at)?;
         if truthy(&task["credit_gate_skipped"]) && !truthy(&task["owns_pause"]) && enabled {

@@ -27,6 +27,11 @@ pub fn parse_datetime(value: &Value) -> Option<DateTime<Utc>> {
     } else {
         return None;
     };
+    parse_datetime_text(text)
+}
+
+pub fn parse_datetime_text(text: &str) -> Option<DateTime<Utc>> {
+    let text = text.trim();
     if let Ok(mut epoch) = text.parse::<f64>() {
         if !epoch.is_finite() {
             return None;

@@ -1027,8 +1027,36 @@ async fn recovery_model_one_valid_group_really_recovers_with_durable_history() {
     assert_eq!(job["valid_groups"], 1);
     assert_eq!(job["attempts"], 1);
     assert_eq!(h.mock.count("POST", "/v1/responses"), 1);
+    let context = &job["recovery_context"];
+    sqlx::query("ALTER TABLE accounts RENAME TO fixture_unavailable_accounts")
+        .execute(&h.db.pool)
+        .await
+        .unwrap();
+    let unavailable = h
+        .runtime
+        .detection
+        .recovery_job(
+            id,
+            context["kind"].as_str().unwrap(),
+            context["fingerprint"].as_str().unwrap(),
+            integer(&context["attempt"]).unwrap(),
+            false,
+        )
+        .await;
+    sqlx::query("ALTER TABLE fixture_unavailable_accounts RENAME TO accounts")
+        .execute(&h.db.pool)
+        .await
+        .unwrap();
+    let unavailable = unavailable.unwrap();
+    assert_eq!(unavailable["deferred"], true);
+    assert_eq!(unavailable["waiting_reason"], "model_verification_pending");
+    assert_eq!(
+        h.runtime.tests.get(job["id"].as_str().unwrap()).unwrap()["status"],
+        "completed"
+    );
     let result = natural_cycle(&h, id, &intent, &usage).await;
     assert_eq!(result["recovered"], true, "{result}");
+    assert_eq!(h.mock.count("POST", "/v1/responses"), 1);
     assert_eq!(h.mock.count("POST", "/recover-state"), 1);
     let state = h.runtime.monitor.state().unwrap();
     assert_eq!(
@@ -3216,5 +3244,41 @@ async fn early_reset_model_receipt_finishes_after_disable_and_restart_with_regul
     assert_eq!(h.mock.count("POST", "/v1/responses"), 1);
     assert_eq!(h.mock.count("POST", "/recover-state"), 1);
     assert_eq!(h.mock.count("POST", "/test"), 0);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn terminal_credit_tasks_use_inventory_while_waiting_tasks_refresh_live_rows() {
+    let h = Harness::new().await;
+    let row = h.seed_account("oauth", true, false).await;
+    let id = integer(&row["id"]).unwrap();
+    sqlx::query("UPDATE accounts SET schedulable=false WHERE id=$1")
+        .bind(id)
+        .execute(&h.db.pool)
+        .await
+        .unwrap();
+    for stage in ["finished", "recovered", "closed", "waiting"] {
+        h.runtime
+            .monitor
+            .store
+            .transaction(|state| {
+                state["scheduler"][id.to_string()]["auto_reset_credit"] =
+                    json!({"stage":stage,"episode":"fixture-live-rows"});
+                Ok(())
+            })
+            .unwrap();
+        let live = h
+            .runtime
+            .monitor
+            .live_rows(std::slice::from_ref(&row))
+            .await
+            .unwrap();
+        assert_eq!(live.len(), 1);
+        assert_eq!(live[0]["schedulable"], stage != "waiting");
+        assert_eq!(
+            matches!(live[0], std::borrow::Cow::Borrowed(_)),
+            stage != "waiting"
+        );
+    }
     h.close().await;
 }

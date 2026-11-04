@@ -16,7 +16,8 @@ use std::{
 };
 
 type Validator = fn(&Value) -> Result<()>;
-type CachedSnapshot = Option<(FileStamp, u64, Arc<Value>)>;
+type Loader = fn(&mut Value) -> Result<bool>;
+type CachedSnapshot = Option<(FileStamp, u64, Arc<Value>, bool)>;
 
 static NEXT_CACHE_REVISION: AtomicU64 = AtomicU64::new(1);
 
@@ -57,6 +58,7 @@ struct Inner {
     mutex: Mutex<()>,
     read_only: bool,
     validate: Validator,
+    load: Loader,
     cache: Mutex<CachedSnapshot>,
 }
 
@@ -99,6 +101,24 @@ impl Store {
         validate: Validator,
         read_only: bool,
     ) -> Self {
+        Self::with_loader(
+            path,
+            lock_path,
+            defaults,
+            validate,
+            |_| Ok(false),
+            read_only,
+        )
+    }
+
+    pub(crate) fn with_loader(
+        path: PathBuf,
+        lock_path: PathBuf,
+        defaults: Value,
+        validate: Validator,
+        load: Loader,
+        read_only: bool,
+    ) -> Self {
         let existed = path.exists() || lock_path.exists();
         Self(Arc::new(Inner {
             path,
@@ -109,6 +129,7 @@ impl Store {
             mutex: Mutex::new(()),
             read_only,
             validate,
+            load,
             cache: Mutex::new(None),
         }))
     }
@@ -145,13 +166,18 @@ impl Store {
     }
 
     pub(crate) fn read_shared_versioned(&self) -> Result<(u64, Arc<Value>)> {
+        let (revision, value, _) = self.read_snapshot()?;
+        Ok((revision, value))
+    }
+
+    fn read_snapshot(&self) -> Result<(u64, Arc<Value>, bool)> {
         match fs::metadata(&self.0.path) {
             Ok(metadata) => {
                 let stamp = FileStamp::from(&metadata);
                 let cache = self.0.cache.lock().map_err(|_| Error::internal())?;
-                if let Some((cached_stamp, rev, value)) = cache.as_ref() {
+                if let Some((cached_stamp, rev, value, migrated)) = cache.as_ref() {
                     if *cached_stamp == stamp {
-                        return Ok((*rev, value.clone()));
+                        return Ok((*rev, value.clone(), *migrated));
                     }
                 }
             }
@@ -162,15 +188,16 @@ impl Store {
         self.read_disk()
     }
 
-    fn read_disk(&self) -> Result<(u64, Arc<Value>)> {
+    fn read_disk(&self) -> Result<(u64, Arc<Value>, bool)> {
         match File::open(&self.0.path) {
             Ok(mut file) => {
                 let before = FileStamp::from(&file.metadata()?);
                 let mut bytes = Vec::new();
                 file.read_to_end(&mut bytes)?;
-                let value: Value = serde_json::from_slice(&bytes)
+                let mut value: Value = serde_json::from_slice(&bytes)
                     .map_err(|_| Error::new(503, "控制状态文件无效"))?;
                 (self.0.validate)(&value)?;
+                let migrated = (self.0.load)(&mut value)?;
                 let value = Arc::new(value);
                 self.0.existed.store(true, Ordering::Release);
                 // Never label bytes with metadata from a replacement file.
@@ -181,24 +208,26 @@ impl Store {
                         .is_ok_and(|metadata| FileStamp::from(&metadata) == before);
                 let mut cache = self.0.cache.lock().map_err(|_| Error::internal())?;
                 if stable {
-                    if let Some((cached_stamp, cached_rev, cached_val)) = cache.as_ref() {
+                    if let Some((cached_stamp, cached_rev, cached_val, cached_migrated)) =
+                        cache.as_ref()
+                    {
                         if *cached_stamp == before && **cached_val == *value {
-                            return Ok((*cached_rev, cached_val.clone()));
+                            return Ok((*cached_rev, cached_val.clone(), *cached_migrated));
                         }
                     }
                     let rev = next_cache_revision();
-                    *cache = Some((before, rev, value.clone()));
-                    Ok((rev, value))
+                    *cache = Some((before, rev, value.clone(), migrated));
+                    Ok((rev, value, migrated))
                 } else {
                     *cache = None;
-                    Ok((next_cache_revision(), value))
+                    Ok((next_cache_revision(), value, migrated))
                 }
             }
             Err(e)
                 if e.kind() == std::io::ErrorKind::NotFound
                     && !self.0.existed.load(Ordering::Acquire) =>
             {
-                Ok((self.0.default_revision, self.0.defaults.clone()))
+                Ok((self.0.default_revision, self.0.defaults.clone(), false))
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 Err(Error::new(503, "控制状态文件丢失"))
@@ -236,23 +265,20 @@ impl Store {
         private_permissions(&lock)?;
         // Recheck the current file stamp under the cross-process lock. Reuse
         // validated bytes only while that identity is unchanged.
-        let (_, previous) = self.read_shared_versioned()?;
+        let (_, previous, migrated) = self.read_snapshot()?;
         let mut value = (*previous).clone();
         let result = action(&mut value)?;
         (self.0.validate)(&value)?;
-        if value != *previous || !self.0.existed.load(Ordering::Acquire) {
-            let bytes = write_json_bytes(&self.0.path, &value)?;
-            let cached = serde_json::from_slice::<Value>(&bytes)
-                .ok()
-                .and_then(|persisted| {
-                    fs::metadata(&self.0.path).ok().map(|metadata| {
-                        (
-                            FileStamp::from(&metadata),
-                            next_cache_revision(),
-                            Arc::new(persisted),
-                        )
-                    })
-                });
+        if migrated || value != *previous || !self.0.existed.load(Ordering::Acquire) {
+            write_json(&self.0.path, &value)?;
+            let cached = fs::metadata(&self.0.path).ok().map(|metadata| {
+                (
+                    FileStamp::from(&metadata),
+                    next_cache_revision(),
+                    Arc::new(value),
+                    false,
+                )
+            });
             *self.0.cache.lock().map_err(|_| Error::internal())? = cached;
         }
         self.0.existed.store(true, Ordering::Release);
@@ -262,10 +288,6 @@ impl Store {
 }
 
 pub fn write_json(path: &Path, value: &Value) -> Result<()> {
-    write_json_bytes(path, value).map(|_| ())
-}
-
-fn write_json_bytes(path: &Path, value: &Value) -> Result<Vec<u8>> {
     let parent = path.parent().ok_or_else(Error::internal)?;
     fs::create_dir_all(parent)?;
     let mut bytes = serde_json::to_vec(value)?;
@@ -279,7 +301,7 @@ fn write_json_bytes(path: &Path, value: &Value) -> Result<Vec<u8>> {
     temporary.as_file().sync_all()?;
     temporary.persist(path).map_err(|_| Error::internal())?;
     File::open(parent)?.sync_all()?;
-    Ok(bytes)
+    Ok(())
 }
 
 /// Tighten the opened file, without following a path that could be replaced.

@@ -428,7 +428,9 @@ impl Monitor {
             );
             let receipt = json!({"result":safe,"manual_generation":generation,"credential_fingerprint":oauth_admission::credential_fingerprint(&row),"block_state":state_block(&row)});
             intent["verification_receipt"] = receipt.clone();
-            if !self.save_intent(id, original, &intent, generation, method_generation)? {
+            if method == "model"
+                && !self.save_intent(id, original, &intent, generation, method_generation)?
+            {
                 return Ok(
                     json!({"success":false,"skipped":true,"error_code":"manual_intervention"}),
                 );
@@ -460,6 +462,7 @@ impl Monitor {
             }
         }
         let _held_lease = lease;
+        let _control = self.actions.locks.control(id).await;
         let after = self.row(id).await?;
         if !truthy(&result["success"]) {
             self.recovery_failed(id, &after, &intent, &result, generation, method_generation)?;
@@ -533,30 +536,11 @@ impl Monitor {
                 method_generation,
             );
         }
-        let _control = self.actions.locks.control(id).await;
-        let fresh = self.row(id).await?;
-        if !self.selected(id, generation, method_generation, method)?
-            || self.hooks.detection_held(id)?
-            || early
-                && !crate::oauth_early_reset::eligible(
-                    &fresh,
-                    &self.shared_state()?["scheduler"][id.to_string()],
-                    self.now(),
-                )
-            || !recovery_rules::change_is_safe(&result["block_state"], &fresh)
-            || result["credential_fingerprint"] != oauth_admission::credential_fingerprint(&fresh)
-        {
-            return self.blocked_intent(
-                id,
-                &intent,
-                "recovery_state_changed",
-                generation,
-                method_generation,
-            );
-        }
         intent["recovery_write_dispatched"] = true.into();
         intent["recovery_write_at"] = datetime(self.now()).into();
-        if !self.save_intent(id, original, &intent, generation, method_generation)? {
+        if method == "model"
+            && !self.save_intent(id, original, &intent, generation, method_generation)?
+        {
             return Ok(json!({"success":false,"skipped":true,"error_code":"manual_intervention"}));
         }
         let _response = self.hooks.recover(id, self.store.admin_token()?).await;

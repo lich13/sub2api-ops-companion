@@ -457,7 +457,19 @@ impl Detection {
     }
     pub async fn guard(&self, job: &Value) -> Result<Value> {
         let id = integer(&job["account_id"]).ok_or_else(Error::invalid)?;
-        let row = self.actions.account(id, None).await?;
+        // This internal projection also supplies the sample's target identity.
+        static SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+            crate::sql::DESKTOP_ACCOUNT_SQL
+                .replacen("SELECT a.id,", "SELECT a.credentials, a.id,", 1)
+                .replace("{filter}", "AND a.id=$1")
+        });
+        let row = self
+            .actions
+            .queries
+            .db
+            .one(&SQL, &[id.into()])
+            .await?
+            .ok_or_else(|| Error::new(404, "账号不存在"))?;
         let value = self.control(id)?;
         let mark = self.mark(id)?;
         if value["generation"] != job["detection_generation"]

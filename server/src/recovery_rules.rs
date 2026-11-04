@@ -307,7 +307,7 @@ pub fn quota_release(row: &Value, result: &Value, meta: &Value, at: DateTime<Utc
         let Some((key, old_reset)) = part.split_once('@') else {
             return false;
         };
-        let Some(old_reset) = parse_datetime(&json!(old_reset)) else {
+        let Some(old_reset) = crate::compat::parse_datetime_text(old_reset) else {
             return false;
         };
         let Some(new_reset) = windows
@@ -406,15 +406,11 @@ pub fn control_allows(row: &Value, result: &Value, meta: &Value, at: DateTime<Ut
         return true;
     }
     let cancelled = &meta["recovery_intent"];
-    // Manual control cancels the current intent. A replacement active intent
-    // must keep processing failures and refreshing expired quota evidence.
-    if matches!(
-        string(&cancelled["status"]),
-        "pending" | "ready" | "retry" | "waiting_quota" | "testing"
-    ) {
+    // Only the cancelled intent belongs to the old manual intervention.
+    if cancelled["status"] != "cancelled" {
         return true;
     }
-    let Some(observed) = parse_datetime(&result["queried_at"]).filter(|observed| {
+    let Some(_) = parse_datetime(&result["queried_at"]).filter(|observed| {
         *observed > changed
             && *observed <= at
             && parse_datetime(&control["evidence_at"]).is_none_or(|base| *observed > base)
@@ -437,9 +433,6 @@ pub fn control_allows(row: &Value, result: &Value, meta: &Value, at: DateTime<Ut
     if !truthy(&descriptor) {
         return false;
     }
-    if cancelled["status"] != "cancelled" {
-        return true;
-    }
     if descriptor["fingerprint"] == cancelled["fingerprint"] {
         return false;
     }
@@ -454,10 +447,11 @@ pub fn control_allows(row: &Value, result: &Value, meta: &Value, at: DateTime<Ut
             .find(|(old_key, _)| *old_key == key);
         match previous {
             None => true,
-            Some((_, previous)) => parse_datetime(&json!(previous)).is_none_or(|previous| {
-                observed >= previous
-                    && parse_datetime(&json!(next)).is_some_and(|next| next > previous)
-            }),
+            Some((_, previous)) => {
+                crate::compat::parse_datetime_text(previous).is_none_or(|previous| {
+                    crate::compat::parse_datetime_text(next).is_some_and(|next| next > previous)
+                })
+            }
         }
     })
 }

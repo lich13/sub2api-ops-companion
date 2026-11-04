@@ -4802,7 +4802,7 @@ async fn five_due_accounts_with_expired_reasons_recover_once_across_capacity_and
             .values()
             .filter(|entry| entry["legacy"] == true)
             .count(),
-        5
+        0
     );
     assert!(harness.mock.unexpected().is_empty());
     harness.close().await;

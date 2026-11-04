@@ -230,7 +230,10 @@ impl Detection {
             if value["disposition"]["job_id"] == job["id"] {
                 return Ok(None);
             }
-            if self.guard(&job).await.is_err() {
+            if let Err(error) = self.guard(&job).await {
+                if error.status.is_server_error() {
+                    return Err(error);
+                }
                 self.tests.cancel(string(&job["id"])).await?;
                 return Ok(None);
             }

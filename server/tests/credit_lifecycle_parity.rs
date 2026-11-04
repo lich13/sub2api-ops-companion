@@ -2045,6 +2045,19 @@ async fn unissued_episode_requires_manual_reopen_recovery_and_newer_depletion_af
         assert_eq!(waiting["stage"], "waiting");
         assert!(waiting["attempt_at"].is_null());
         old_episode = waiting["episode"].as_str().unwrap().to_owned();
+        let snapshot = harness.controller.store.shared_snapshot().unwrap();
+        harness
+            .controller
+            .sweep(std::slice::from_ref(&row), now + Duration::seconds(2))
+            .await
+            .unwrap();
+        assert!(
+            Arc::ptr_eq(
+                &snapshot,
+                &harness.controller.store.shared_snapshot().unwrap()
+            ),
+            "an unchanged waiting task must not write a policy heartbeat"
+        );
         assert_eq!(harness.mock.total(), 0);
         drop(slot_a);
         drop(slot_b);
@@ -4520,6 +4533,7 @@ async fn corrupt_native_observation_cannot_fall_back_to_a_legacy_fetched_timesta
     let now = fixed_now();
     for (field, bad_value) in [
         ("snapshot_sha256", json!("invalid")),
+        ("snapshot_sha256", json!("0".repeat(64))),
         ("observed_at", json!("invalid-time")),
     ] {
         let harness = Harness::new(false).await;

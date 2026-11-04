@@ -3,7 +3,6 @@
 use crate::{
     actions::Actions,
     compat::{digest, integer, now, operation_versions, parse_datetime, string},
-    credit_ownership,
     error::{Error, Result},
     operations::{self, Operations, PENDING},
     queries::settings_capabilities,
@@ -805,14 +804,6 @@ impl PriorityOrders {
                     .into_iter()
                     .find(|row| row["id"] == item["account_id"])
                 {
-                    credit_ownership::reconcile(
-                        &self.actions.queries.oauth,
-                        &credit_ownership::account(
-                            &self.actions.queries.db,
-                            integer(&item["account_id"]).unwrap(),
-                        )
-                        .await?,
-                    )?;
                     observed = Some(row);
                 }
             }
@@ -936,20 +927,12 @@ impl PriorityOrders {
                         item["observed_priority"] = row["priority"].clone();
                         Ok(())
                     })?;
-                    credit_ownership::reconcile(
-                        &self.actions.queries.oauth,
-                        &credit_ownership::account(&self.actions.queries.db, aid).await?,
-                    )?;
                     return self.finish(
                         id,
                         "needs_confirmation",
                         "已派发写入未确认，未重复执行；请重新核对",
                     );
                 }
-                credit_ownership::reconcile(
-                    &self.actions.queries.oauth,
-                    &credit_ownership::account(&self.actions.queries.db, aid).await?,
-                )?;
                 record_verified(&self.store, id, aid, row)?;
                 continue;
             }
