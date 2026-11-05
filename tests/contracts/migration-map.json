@@ -1328,11 +1328,11 @@
   ],
   "rust_coverage_policy": {
     "coverage_counts": {
-      "mapped": 770,
+      "mapped": 769,
       "not_collected": 2,
       "partial": 0,
       "passed": 0,
-      "superseded": 112,
+      "superseded": 113,
       "uncovered": 0
     },
     "mapping_input": "tests/contracts/coverage-map.json",
@@ -40331,7 +40331,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/manual_dispatch_parity.rs",
-          "rust_source_line": 2026,
+          "rust_source_line": 2029,
           "verification_command": ".venv/bin/python scripts/server_test.py --test manual_dispatch_parity"
         },
         "gap": null,
@@ -40408,7 +40408,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/manual_dispatch_parity.rs",
-          "rust_source_line": 1926,
+          "rust_source_line": 1929,
           "verification_command": ".venv/bin/python scripts/server_test.py --test manual_dispatch_parity"
         },
         "gap": null,
@@ -40446,7 +40446,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/manual_dispatch_parity.rs",
-          "rust_source_line": 1982,
+          "rust_source_line": 1985,
           "verification_command": ".venv/bin/python scripts/server_test.py --test manual_dispatch_parity"
         },
         "gap": null,
@@ -40483,7 +40483,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/manual_dispatch_parity.rs",
-          "rust_source_line": 2093,
+          "rust_source_line": 2096,
           "verification_command": ".venv/bin/python scripts/server_test.py --test manual_dispatch_parity"
         },
         "gap": null,
@@ -41759,7 +41759,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/manual_dispatch_parity.rs",
-          "rust_source_line": 1810,
+          "rust_source_line": 1813,
           "verification_command": ".venv/bin/python scripts/server_test.py --test manual_dispatch_parity"
         },
         "gap": null,
@@ -41789,12 +41789,14 @@
             "expect(\"the loopback recovery response must inject the synthetic final-state write fault\")",
             "harness.restart_runtime().await;",
             "assert_eq!(harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"], Value::Null)",
-            "assert_eq!(state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"], \"recovered\")",
-            "assert_eq!(state[\"recovery_history\"].as_object().unwrap().len(), 1)",
+            "assert_eq!(state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"], \"blocked\")",
+            "assert!(state[\"recovery_history\"].as_object().unwrap().is_empty())",
             "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1)",
-            "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 1)"
+            "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 1)",
+            "assert_eq!(intent[\"last_error_code\"], \"verification_uncertain\")",
+            "assert!(intent[\"verification_receipt\"].is_null())"
           ],
-          "coverage_note": "回环恢复写已清除临时 PostgreSQL block 后，合成 state path 故障使最终 history commit 失败；恢复文件并重启后从已确认 receipt 完成 history，不重放 HTTP。",
+          "coverage_note": "0.1.80 同步恢复省去中间回执落盘；最终历史提交失败后保持待核对，不记成功、不重放测试或恢复请求。",
           "execution_status": "mapping_only",
           "fixtures": [],
           "helper_assertions": [],
@@ -41806,9 +41808,15 @@
         },
         "gap": null,
         "module": "manual_dispatch_parity",
-        "replacement": null,
-        "status": "mapped",
-        "test_name": "confirmed_receipt_resumes_after_final_history_commit_failure_without_retest"
+        "replacement": {
+          "approved_requirement": "0.1.80 精简同步连接恢复，取消两次中间落盘，保留异步模型回执、已有重启核对和写后确认。",
+          "legacy_assertions": [
+            "同步测试后单独保存回执，最终历史写入失败后凭该回执补记成功。"
+          ],
+          "replacement_contract": "没有持久回执的同步恢复在历史写入失败后标记 verification_uncertain，历史保持为空且 HTTP 请求不重放。"
+        },
+        "status": "superseded",
+        "test_name": "synchronous_history_failure_remains_unconfirmed_without_replaying_requests"
       },
       "service_capability": "recovery",
       "source": {
@@ -41843,7 +41851,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/manual_dispatch_parity.rs",
-          "rust_source_line": 1879,
+          "rust_source_line": 1882,
           "verification_command": ".venv/bin/python scripts/server_test.py --test manual_dispatch_parity"
         },
         "gap": null,
@@ -41920,7 +41928,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/manual_dispatch_parity.rs",
-          "rust_source_line": 1763,
+          "rust_source_line": 1766,
           "verification_command": ".venv/bin/python scripts/server_test.py --test manual_dispatch_parity"
         },
         "gap": null,
@@ -42183,7 +42191,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/manual_dispatch_parity.rs",
-          "rust_source_line": 2123,
+          "rust_source_line": 2126,
           "verification_command": ".venv/bin/python scripts/server_test.py --test manual_dispatch_parity"
         },
         "gap": null,

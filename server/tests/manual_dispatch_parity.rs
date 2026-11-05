@@ -1706,7 +1706,7 @@ async fn connection_test_http_capacity_is_global_across_recovery_workers() {
 }
 
 #[tokio::test]
-async fn confirmed_receipt_resumes_after_final_history_commit_failure_without_retest() {
+async fn synchronous_history_failure_remains_unconfirmed_without_replaying_requests() {
     let mut harness = Harness::new().await;
     let now = harness.now();
     let row = harness
@@ -1749,12 +1749,15 @@ async fn confirmed_receipt_resumes_after_final_history_commit_failure_without_re
     harness.restart_runtime().await;
     harness.runtime.monitor.startup().await.unwrap();
     harness.runtime.monitor.tick().await.unwrap();
-    let state = wait_for_recovered(&harness, id).await;
+    let state = wait_for_intent(&harness, id, |intent| intent["status"] == "blocked").await;
     assert_eq!(
         state["scheduler"][id.to_string()]["recovery_intent"]["status"],
-        "recovered"
+        "blocked"
     );
-    assert_eq!(state["recovery_history"].as_object().unwrap().len(), 1);
+    let intent = &state["scheduler"][id.to_string()]["recovery_intent"];
+    assert_eq!(intent["last_error_code"], "verification_uncertain");
+    assert!(intent["verification_receipt"].is_null());
+    assert!(state["recovery_history"].as_object().unwrap().is_empty());
     assert_eq!(harness.mock.count_for(id, "POST", "/test"), 1);
     assert_eq!(harness.mock.count_for(id, "POST", "/recover-state"), 1);
     assert!(harness.mock.unexpected().is_empty());
