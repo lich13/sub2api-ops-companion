@@ -489,6 +489,7 @@ async fn operation_panic_closes_runtime_and_restart_checks_dispatched_work_once(
 }
 
 struct PanicModelHooks {
+    actions: Actions,
     dispatched: Notify,
 }
 
@@ -497,7 +498,13 @@ impl ModelHooks for PanicModelHooks {
         Ok(json!({}))
     }
     fn guard(&self, job: Value) -> BoxFuture<'_, Result<Value>> {
-        Box::pin(async move { Ok(job) })
+        Box::pin(async move {
+            sub2ops_server::model_target::account(
+                &self.actions,
+                job["account_id"].as_i64().unwrap(),
+            )
+            .await
+        })
     }
 
     fn next_allowed_at(&self, _id: i64) -> Result<Value> {
@@ -543,6 +550,7 @@ async fn model_hook_panic_child(directory: &Path) -> ! {
     wait_for_http(&format!("http://{address}/healthz")).await;
 
     let hooks = Arc::new(PanicModelHooks {
+        actions: runtime.actions.clone(),
         dispatched: Notify::new(),
     });
     let budget = Arc::new(Semaphore::new(1));
