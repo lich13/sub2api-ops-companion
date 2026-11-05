@@ -61,11 +61,8 @@ pub fn validate_credit(value: &Value) -> Result<()> {
         "consume_deadline_at",
         "verification_deadline_at",
         "completed_at",
-        "policy_checked_at",
         "supplement_attempt_at",
         "clear_requested_at",
-        "pause_undo_requested_at",
-        "pause_undo_confirmed_at",
         "recovered_evidence_at",
     ] {
         if !optional_time(&value[key]) {
@@ -353,7 +350,9 @@ fn validate_shape(value: &Value) -> Result<()> {
             }
         }
         if let Some(observation) = meta.get("reset_credit_observation") {
-            validate_observation_shape(observation)?;
+            if !observation.is_object() {
+                return Err(invalid("重置卡观测状态无效"));
+            }
         }
         if let Some(admission) = meta.get("credit_admission").filter(|v| !v.is_null()) {
             if !admission.is_object()
@@ -383,21 +382,6 @@ fn validate_shape(value: &Value) -> Result<()> {
                 .is_some_and(|value| value.as_u64().is_none())
             {
                 return Err(invalid("连接测试尝试次数无效"));
-            }
-            if intent
-                .get("verification_dispatched")
-                .is_some_and(|v| !v.is_boolean())
-            {
-                return Err(invalid("恢复验证派发状态无效"));
-            }
-            if let Some(receipt) = intent.get("verification_receipt").filter(|v| !v.is_null()) {
-                if !receipt.is_object()
-                    || !receipt["result"].is_object()
-                    || !receipt["block_state"].is_object()
-                    || string(&receipt["credential_fingerprint"]).len() != 64
-                {
-                    return Err(invalid("恢复验证回执无效"));
-                }
             }
         }
     }
@@ -441,6 +425,42 @@ pub fn normalize(raw: &Value) -> Value {
             continue;
         }
         let mut value = value.clone();
+        let intent = &mut value["recovery_intent"];
+        if intent["status"] == "retry"
+            && intent["waiting_reason"] == "account_busy"
+            && intent["verification_receipt"]["result"]["recovery_method"] == "model"
+        {
+            for field in ["attempt_count", "model_attempt_count"] {
+                if let Some(count) = integer(&intent[field]) {
+                    intent[field] = count.saturating_sub(1).into();
+                }
+            }
+        }
+        for (field, retired) in [
+            (
+                "auto_reset_credit",
+                &[
+                    "policy_checked_at",
+                    "pause_undo_requested_at",
+                    "pause_undo_confirmed_at",
+                ][..],
+            ),
+            (
+                "recovery_intent",
+                &[
+                    "verification_receipt",
+                    "verification_dispatched",
+                    "recovery_write_dispatched",
+                    "recovery_write_at",
+                ][..],
+            ),
+        ] {
+            if let Some(record) = value.get_mut(field).and_then(Value::as_object_mut) {
+                for key in retired {
+                    record.shift_remove(*key);
+                }
+            }
+        }
         for retired in ["last_regular_at", "last_7d_probe_at"] {
             value.as_object_mut().unwrap().shift_remove(retired);
         }
@@ -686,19 +706,24 @@ impl OAuthState {
             Ok(out)
         })
     }
-    pub(crate) fn recover_interrupted(&self) -> Result<()> {
+    pub(crate) fn recover_interrupted(&self, account: Option<i64>) -> Result<()> {
         if !self.shared_snapshot()?["scheduler"]
             .as_object()
             .into_iter()
             .flatten()
-            .any(|(_, meta)| meta["recovery_intent"]["status"] == "testing")
+            .any(|(id, meta)| {
+                account.is_none_or(|account| id == &account.to_string())
+                    && meta["recovery_intent"]["status"] == "testing"
+            })
         {
             return Ok(());
         }
         self.transaction(|state| {
-            for meta in state["scheduler"].as_object_mut().unwrap().values_mut() {
+            for (id, meta) in state["scheduler"].as_object_mut().unwrap() {
                 let intent = &mut meta["recovery_intent"];
-                if intent["status"] == "testing" {
+                if account.is_none_or(|account| id == &account.to_string())
+                    && intent["status"] == "testing"
+                {
                     intent["status"] = "retry".into();
                     intent["next_retry_at"] =
                         ["next_retry_at", "tested_at", "confirmed_at", "due_at"]
@@ -858,7 +883,7 @@ mod shared_tests {
         let root = tempfile::tempdir().unwrap();
         let state = OAuthState::new(root.path().join("oauth.json"), false);
         let intent = json!({"status":"testing","tested_at":"2031-04-05T10:00:00Z",
-            "next_retry_at":"","verification_dispatched":true,"fingerprint":"fixture-cycle"});
+            "next_retry_at":"","fingerprint":"fixture-cycle"});
         state
             .transaction(|value| {
                 value["scheduler"]["73"] = json!({"recovery_intent":intent});
@@ -879,12 +904,12 @@ mod shared_tests {
             state.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"],
             intent
         );
-        state.recover_interrupted().unwrap();
+        state.recover_interrupted(None).unwrap();
         let resumed = state.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"].clone();
         assert_eq!(resumed["status"], "retry");
         assert_eq!(resumed["next_retry_at"], intent["tested_at"]);
-        assert_eq!(resumed["verification_dispatched"], true);
-        state.recover_interrupted().unwrap();
+        assert!(resumed["verification_dispatched"].is_null());
+        state.recover_interrupted(None).unwrap();
         assert_eq!(
             state.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"],
             resumed

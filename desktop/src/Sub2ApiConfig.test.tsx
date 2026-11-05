@@ -47,8 +47,7 @@ async function yaml(path: string, value: string) {
 const changesSent = () =>
   (
     vi.mocked(api).mock.calls.find((c) => c[1].endsWith("/validate"))?.[2] as
-      | { changes?: unknown }
-      | undefined
+      { changes?: unknown } | undefined
   )?.changes;
 beforeEach(() => {
   fixture = structuredClone(
@@ -74,12 +73,16 @@ afterEach(async () => {
 });
 it("shows only supported editable fields and removes unknown and environment sections", async () => {
   await act(async () => root.render(<Sub2ApiConfig active online />));
-  expect(container.textContent).toContain("运行 0.2.18");
+  expect(container.textContent).toContain("运行 0.2.19");
   expect(input("server.port")).toBeNull();
   expect(container.textContent).not.toContain("SERVER_PORT");
   expect(container.textContent).not.toContain("未识别或失效字段");
   expect(container.querySelector('option[value="environment"]')).toBeNull();
-  for (const path of ["jwt.expire_hour", "jwt.refresh_window_minutes", "rate_limit.requests_per_minute"]) {
+  for (const path of [
+    "jwt.expire_hour",
+    "jwt.refresh_window_minutes",
+    "rate_limit.requests_per_minute",
+  ]) {
     await fill(input("搜索配置字段"), path);
     expect(container.querySelectorAll(".config-field")).toHaveLength(0);
   }
@@ -112,12 +115,24 @@ it("keeps edits across tab changes and preserves draft after automatic restorati
     ],
   });
 });
-it("blocks writes for an unmatched version", async () => {
-  fixture.editable = false;
-  fixture.reason = "运行版本没有匹配的配置目录";
+it("keeps existing fields editable with a version notice", async () => {
+  fixture.version = "0.2.20";
+  fixture.reason = "运行版本与配置说明不同；已有字段仍可编辑";
   await act(async () => root.render(<Sub2ApiConfig active online />));
   expect(container.textContent).toContain(fixture.reason);
-  expect(button("应用并重启").disabled).toBe(true);
+  await fill(input("搜索配置字段"), "max_same_account_retries_gemini");
+  const field = input("gateway.max_same_account_retries_gemini");
+  expect(field.disabled).toBe(false);
+  await fill(field, "5");
+  await act(async () => button("检查配置").click());
+  expect(changesSent()).toEqual([
+    {
+      path: "gateway.max_same_account_retries_gemini",
+      remove: false,
+      value: 5,
+    },
+  ]);
+  expect(button("应用并重启").disabled).toBe(false);
 });
 it("refreshes runtime identity on reopening and stops stale drafts", async () => {
   await act(async () => root.render(<Sub2ApiConfig active online />));
@@ -295,10 +310,20 @@ it("keeps editable entries reachable with filtered counts and no empty groups", 
   await act(async () => root.render(<Sub2ApiConfig active online />));
   const seen = new Set<string>();
   const internal = new Set<string>();
-  const editable = fixture.catalog.fields.filter(f => !f.internal && f.status === "supported" && f.editable && fixture.values[f.path]?.editable);
+  const editable = fixture.catalog.fields.filter(
+    (f) =>
+      !f.internal &&
+      f.status === "supported" &&
+      f.editable &&
+      fixture.values[f.path]?.editable,
+  );
   for (const group of fixture.catalog.groups) {
-    if (!editable.some(f => f.group === group.id)) {
-      expect(container.querySelector(`.config-mobile-group option[value="${group.id}"]`)).toBeNull();
+    if (!editable.some((f) => f.group === group.id)) {
+      expect(
+        container.querySelector(
+          `.config-mobile-group option[value="${group.id}"]`,
+        ),
+      ).toBeNull();
       continue;
     }
     await select("选择配置分组", group.id);
@@ -308,20 +333,29 @@ it("keeps editable entries reachable with filtered counts and no empty groups", 
       seen.add(element.dataset.configPath!);
     for (const element of container.querySelectorAll(".config-child > code"))
       internal.add(element.textContent!);
-    const expected = editable.filter(f => f.group === group.id);
-    expect(container.querySelector(`.config-mobile-group option[value="${group.id}"]`)?.textContent).toContain(`（${expected.length}）`);
+    const expected = editable.filter((f) => f.group === group.id);
+    expect(
+      container.querySelector(
+        `.config-mobile-group option[value="${group.id}"]`,
+      )?.textContent,
+    ).toContain(`（${expected.length}）`);
     expect(container.querySelectorAll(".config-field")).toHaveLength(
       expected.length,
     );
   }
-  expect([...seen].sort()).toEqual(
-    editable
-      .map((f) => f.path)
-      .sort(),
-  );
+  expect([...seen].sort()).toEqual(editable.map((f) => f.path).sort());
   expect([...internal].sort()).toEqual(
     fixture.catalog.fields
-      .filter(f => f.internal && f.status === "internal" && editable.some(parent => f.path.startsWith(`${parent.path}.`) || f.path.startsWith(`${parent.path}[`)))
+      .filter(
+        (f) =>
+          f.internal &&
+          f.status === "internal" &&
+          editable.some(
+            (parent) =>
+              f.path.startsWith(`${parent.path}.`) ||
+              f.path.startsWith(`${parent.path}[`),
+          ),
+      )
       .map((f) => f.path)
       .sort(),
   );

@@ -1332,20 +1332,22 @@
         "path": "server/src/oauth_state.rs",
         "test_name": "live_testing_survives_reads_and_writes_until_startup_reconciliation",
         "assertions": [
-          "assert_eq!(resumed[\"status\"], \"retry\");",
-          "assert_eq!(resumed[\"next_retry_at\"], intent[\"tested_at\"]);",
-          "assert_eq!(resumed[\"verification_dispatched\"], true);",
-          "state.recover_interrupted().unwrap();"
+          "assert_eq!(\n            state.snapshot().unwrap()[\"scheduler\"][\"73\"][\"recovery_intent\"],\n            intent\n        )",
+          "assert_eq!(\n            state.snapshot().unwrap()[\"scheduler\"][\"73\"][\"recovery_intent\"],\n            intent\n        )",
+          "assert_eq!(resumed[\"status\"], \"retry\")",
+          "assert_eq!(resumed[\"next_retry_at\"], intent[\"tested_at\"])",
+          "assert!(resumed[\"verification_dispatched\"].is_null())",
+          "assert_eq!(\n            state.snapshot().unwrap()[\"scheduler\"][\"73\"][\"recovery_intent\"],\n            resumed\n        )"
         ],
         "fixtures": []
       },
-      "coverage_note": "0.1.79 保留运行时 testing，将中断转换移到启动恢复；验证状态读取、无关账号保存、派发标记保留及启动恢复幂等。",
+      "coverage_note": "普通读取保持 testing；启动和已中断 worker 使用原重试状态，移除专用派发与回执字段。",
       "replacement": {
         "legacy_assertions": [
-          "普通归一化将 testing 改为 retry，并用已有时间填充 next_retry_at。"
+          "test_v2_testing_intent_migrates_to_retry_in_v5"
         ],
-        "approved_requirement": "运行时读取和保存保留 testing；仅现有启动恢复流程处理遗留验证任务，沿用派发标记与回执。",
-        "replacement_contract": "运行时读取和无关账号保存均保持原意图；启动恢复改为 retry、使用 tested_at，保留 verification_dispatched，重复调用无变化。"
+        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
+        "replacement_contract": "普通读取保持 testing；启动和已中断 worker 使用原重试状态，移除专用派发与回执字段。"
       }
     },
     {
@@ -1688,7 +1690,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_recover_state_runs_after_test_when_block_remains",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/oauth_scheduler_parity.rs",
@@ -1702,7 +1704,7 @@
           "assert_eq!(harness.mock.count(\"DELETE\", \"/temp-unschedulable\"), 0)",
           "assert_eq!(intent[\"last_error_code\"], \"recovery_uncertain\")",
           "assert_eq!(intent[\"next_retry_at\"], \"\")",
-          "assert_eq!(intent[\"recovery_write_dispatched\"], true)",
+          "assert!(intent[\"recovery_write_dispatched\"].is_null())",
           "assert_eq!(\n                after_write[\"rate_limited_at\"],\n                blocked_before_write[\"rate_limited_at\"]\n            )",
           "assert_eq!(\n                after_write[\"rate_limit_reset_at\"],\n                blocked_before_write[\"rate_limit_reset_at\"]\n            )",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
@@ -1719,7 +1721,14 @@
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“recover state runs after test when block remains”映射到 monitor_test_success_falls_back_to_recover_state_and_retries_failure；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "恢复写入失败保留 blocked 及原阻断签名；重启不重置该失败，同一阻断不重放。",
+      "replacement": {
+        "legacy_assertions": [
+          "test_recover_state_runs_after_test_when_block_remains"
+        ],
+        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
+        "replacement_contract": "恢复写入失败保留 blocked 及原阻断签名；重启不重置该失败，同一阻断不重放。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_threshold_block_recovers_at_due_time_below_custom_threshold",
@@ -1796,7 +1805,7 @@
           "assert_eq!(harness.mock.count(\"DELETE\", \"/temp-unschedulable\"), 0)",
           "assert_eq!(intent[\"last_error_code\"], \"recovery_uncertain\")",
           "assert_eq!(intent[\"next_retry_at\"], \"\")",
-          "assert_eq!(intent[\"recovery_write_dispatched\"], true)",
+          "assert!(intent[\"recovery_write_dispatched\"].is_null())",
           "assert_eq!(\n                after_write[\"rate_limited_at\"],\n                blocked_before_write[\"rate_limited_at\"]\n            )",
           "assert_eq!(\n                after_write[\"rate_limit_reset_at\"],\n                blocked_before_write[\"rate_limit_reset_at\"]\n            )",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
@@ -1813,16 +1822,15 @@
         ],
         "fixtures": []
       },
-      "coverage_note": "旧 Python recovery_success=False runner 期望收到 failure 后生成 recovery_failed 事件，将 intent 置为 retry 并在 +60s 重试；该 runner 把已派发 recover-state 的 HTTP 500 当作确定失败。实际 HTTP 500 不能证明状态写入未生效，按批准的未知写入禁止重放规则 superseded。",
+      "coverage_note": "恢复写入失败保留 blocked 及原阻断签名；重启不重置该失败，同一阻断不重放。",
       "superseded_by": "monitor_test_success_falls_back_and_unknown_recovery_write_is_not_replayed",
       "approved_behavior": "recover-state 状态写入响应为 500 时只读核对账号状态；无法确认时标记 blocked/recovery_uncertain，禁止按 +60s 自动重放。",
       "replacement": {
         "legacy_assertions": [
-          "recovery runner 被调用一次后 events[0].status == recovery_failed。",
-          "intent.status == retry 且 next_retry_at == RUN + 60s。"
+          "test_recovery_failure_keeps_intent_for_backoff_retry"
         ],
-        "approved_requirement": "已派发状态写入的 HTTP 500 结果未知；先只读核对，无法确认时阻止重放。",
-        "replacement_contract": "loopback 收到一次 recover-state POST 并返回 500；PG 只读账号复查仍显示原限额阻塞；intent 为 blocked/recovery_uncertain；推进 61s 后 tick 及新 Runtime startup/tick 均不增加 usage、test 或 recover-state 请求。"
+        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
+        "replacement_contract": "恢复写入失败保留 blocked 及原阻断签名；重启不重置该失败，同一阻断不重放。"
       }
     },
     {

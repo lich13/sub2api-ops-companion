@@ -21,7 +21,7 @@ export function configPreview(
       available: true,
       editable: true,
       reason: "",
-      version: "0.2.18",
+      version: catalog.version,
       commit: catalog.revision,
       healthy: true,
       revision: String(revision).repeat(64),

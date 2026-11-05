@@ -251,13 +251,9 @@ impl Monitor {
         if self.actions.settings.read_only {
             return Ok(());
         }
-        self.store.recover_interrupted()?;
-        let rows = self.inventory(true).await?;
+        self.store.recover_interrupted(None)?;
+        self.inventory(true).await?;
         self.schedule.startup(&self.config.current()?, self.now())?;
-        for row in rows.iter() {
-            self.reconcile_unknown(integer(&row["id"]).unwrap_or(0))
-                .await?;
-        }
         Ok(())
     }
     pub fn waiting(
@@ -315,7 +311,7 @@ impl Monitor {
         };
         for (id, handle) in completed {
             if !matches!(handle.await, Ok(Ok(_))) {
-                self.reconcile_unknown(id).await?;
+                self.store.recover_interrupted(Some(id))?;
             }
         }
         {

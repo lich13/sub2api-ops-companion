@@ -36,18 +36,6 @@ pub(crate) fn state_block(row: &Value) -> Value {
     );
     block
 }
-fn receipt_result(receipt: &Value) -> Value {
-    if !receipt.is_object() {
-        return Value::Null;
-    }
-    let mut result = receipt["result"].clone();
-    for key in ["credential_fingerprint", "block_state", "manual_generation"] {
-        if let Some(value) = receipt.get(key) {
-            result[key] = value.clone();
-        }
-    }
-    result
-}
 impl Monitor {
     fn selected(
         &self,
@@ -108,56 +96,6 @@ impl Monitor {
         self.save_intent(id, intent, &next, generation, method_generation)?;
         Ok(json!({"success":false,"skipped":true,"error_code":code}))
     }
-    pub async fn reconcile_unknown(&self, id: i64) -> Result<()> {
-        let state = self.shared_state()?;
-        let meta = &state["scheduler"][id.to_string()];
-        let intent = &meta["recovery_intent"];
-        if !truthy(intent) || matches!(string(&intent["status"]), "recovered" | "cancelled") {
-            return Ok(());
-        }
-        let generation = credit_ownership::generation(&state, id);
-        let method_generation = integer(&meta["recovery_method_generation"]).unwrap_or(0);
-        if truthy(&intent["verification_dispatched"]) && !truthy(&intent["verification_receipt"]) {
-            self.blocked_intent(
-                id,
-                intent,
-                "verification_uncertain",
-                generation,
-                method_generation,
-            )?;
-        } else if truthy(&intent["verification_receipt"]) {
-            let row = self.row(id).await?;
-            let receipt = receipt_result(&intent["verification_receipt"]);
-            if receipt["success"] == true
-                && integer(&receipt["recovery_method_generation"]).unwrap_or(0) == method_generation
-                && integer(&receipt["manual_generation"]).is_none_or(|value| value == generation)
-                && self.selected(
-                    id,
-                    generation,
-                    method_generation,
-                    string(&receipt["recovery_method"]),
-                )?
-                && recovery_rules::confirmed(&row)
-                && (intent["kind"] != "early_reset"
-                    || crate::oauth_early_reset::eligible(&row, meta, self.now()))
-                && receipt["credential_fingerprint"]
-                    == oauth_admission::credential_fingerprint(&row)
-                && recovery_rules::change_is_safe(&receipt["block_state"], &row)
-                && !self.hooks.detection_held(id)?
-            {
-                self.recovery_complete(id, &row, intent, &receipt, generation, method_generation)?;
-            } else if truthy(&intent["recovery_write_dispatched"]) {
-                self.blocked_intent(
-                    id,
-                    intent,
-                    "recovery_uncertain",
-                    generation,
-                    method_generation,
-                )?;
-            }
-        }
-        Ok(())
-    }
     #[expect(
         clippy::too_many_arguments,
         reason = "Recovery must carry separate manual and method generations with its account lease"
@@ -195,12 +133,7 @@ impl Monitor {
         }
         let row = match self.row(id).await {
             Ok(row) => row,
-            Err(error)
-                if error.status.as_u16() >= 500
-                    && !truthy(&intent["verification_dispatched"])
-                    && !truthy(&intent["verification_receipt"])
-                    && !truthy(&intent["recovery_write_dispatched"]) =>
-            {
+            Err(error) if error.status.as_u16() >= 500 => {
                 let attempts = integer(&intent["attempt_count"]).unwrap_or(0) + 1;
                 let mut retry = intent.clone();
                 retry["status"] = "retry".into();
@@ -213,21 +146,6 @@ impl Monitor {
             }
             Err(error) => return Err(error),
         };
-        if truthy(&intent["recovery_write_dispatched"]) {
-            self.reconcile_unknown(id).await?;
-            return Ok(
-                json!({"success":self.shared_state()?["scheduler"][id.to_string()]["recovery_intent"]["status"]=="recovered","recovered":self.shared_state()?["scheduler"][id.to_string()]["recovery_intent"]["status"]=="recovered","reused":true}),
-            );
-        }
-        if truthy(&intent["verification_dispatched"]) && !truthy(&intent["verification_receipt"]) {
-            return self.blocked_intent(
-                id,
-                &intent,
-                "verification_uncertain",
-                generation,
-                method_generation,
-            );
-        }
         if self.hooks.detection_held(id)? {
             return self.blocked_intent(
                 id,
@@ -269,12 +187,10 @@ impl Monitor {
             .iter()
             .map(|v| (*v).to_owned())
             .collect::<Vec<_>>();
-        let prior = receipt_result(&intent["verification_receipt"]);
         if !(recovery_rules::eligible(&row, &windows, self.now())
             || early
                 && recovery_rules::confirmed(&row)
-                && crate::oauth_early_reset::eligible(&row, meta, self.now())
-            || truthy(&prior["success"]) && recovery_rules::confirmed(&row))
+                && crate::oauth_early_reset::eligible(&row, meta, self.now()))
         {
             return self.blocked_intent(
                 id,
@@ -284,23 +200,7 @@ impl Monitor {
                 method_generation,
             );
         }
-        let result = if truthy(&prior) {
-            if prior["credential_fingerprint"] != oauth_admission::credential_fingerprint(&row)
-                || !recovery_rules::change_is_safe(&prior["block_state"], &row)
-                || integer(&prior["manual_generation"]).is_some_and(|value| value != generation)
-                || integer(&prior["recovery_method_generation"]).unwrap_or(0) != method_generation
-                || prior["recovery_method"] != method
-            {
-                return self.blocked_intent(
-                    id,
-                    &intent,
-                    "verification_state_changed",
-                    generation,
-                    method_generation,
-                );
-            }
-            prior
-        } else {
+        let result = {
             intent["status"] = "testing".into();
             intent["block_signature"] = block_signature(&row).into();
             intent["tested_at"] = datetime(self.now()).into();
@@ -321,7 +221,6 @@ impl Monitor {
                     intent["model_attempt_count"] = (attempts + 1).into();
                 }
             }
-            intent["verification_dispatched"] = true.into();
             intent["next_retry_at"] = "".into();
             intent["waiting_reason"] = "".into();
             if !self.save_intent(id, original, &intent, generation, method_generation)? {
@@ -349,15 +248,6 @@ impl Monitor {
             let mut result = output.unwrap_or_else(
                 |_| json!({"success":false,"uncertain":true,"error_code":"account_test_error"}),
             );
-            if method == "model"
-                && !truthy(&result["deferred"])
-                && !truthy(&result["uncertain"])
-                && !result["job_id"].is_string()
-            {
-                if let Some(attempts) = integer(&intent["model_attempt_count"]) {
-                    intent["model_attempt_count"] = attempts.saturating_sub(1).into();
-                }
-            }
             if !self.selected(id, generation, method_generation, method)? {
                 return Ok(
                     json!({"success":false,"skipped":true,"error_code":"manual_intervention"}),
@@ -391,10 +281,6 @@ impl Monitor {
                     .get("waiting_reason")
                     .unwrap_or(&result["error_code"])
                     .clone();
-                intent
-                    .as_object_mut()
-                    .unwrap()
-                    .shift_remove("verification_dispatched");
                 self.save_intent(id, original, &intent, generation, method_generation)?;
                 return Ok(result);
             }
@@ -409,7 +295,7 @@ impl Monitor {
             }
             result["recovery_method"] = method.into();
             result["recovery_method_generation"] = method_generation.into();
-            let safe = pick(
+            let mut safe = pick(
                 &result,
                 &[
                     "success",
@@ -424,28 +310,15 @@ impl Monitor {
                     "duration_ms",
                     "recovery_method",
                     "recovery_method_generation",
+                    "job_id",
+                    "retryable",
                 ],
             );
-            let receipt = json!({"result":safe,"manual_generation":generation,"credential_fingerprint":oauth_admission::credential_fingerprint(&row),"block_state":state_block(&row)});
-            intent["verification_receipt"] = receipt.clone();
-            if method == "model"
-                && !self.save_intent(id, original, &intent, generation, method_generation)?
-            {
-                return Ok(
-                    json!({"success":false,"skipped":true,"error_code":"manual_intervention"}),
-                );
-            }
-            receipt_result(&receipt)
+            safe["manual_generation"] = generation.into();
+            safe["credential_fingerprint"] = oauth_admission::credential_fingerprint(&row).into();
+            safe["block_state"] = state_block(&row);
+            safe
         };
-        if truthy(&result["uncertain"]) {
-            return self.blocked_intent(
-                id,
-                &intent,
-                "verification_uncertain",
-                generation,
-                method_generation,
-            );
-        }
         if lease.is_none() {
             let current = self.row(id).await?;
             match self.lease(&current) {
@@ -455,6 +328,13 @@ impl Monitor {
                     next["status"] = "retry".into();
                     next["next_retry_at"] = datetime(self.now() + Duration::seconds(5)).into();
                     next["waiting_reason"] = "account_busy".into();
+                    // The existing model job owns this attempt. Waiting for the
+                    // account lease must ask for that same result next time.
+                    for field in ["attempt_count", "model_attempt_count"] {
+                        if let Some(count) = integer(&next[field]) {
+                            next[field] = count.saturating_sub(1).into();
+                        }
+                    }
                     self.save_intent(id, &intent, &next, generation, method_generation)?;
                     return Ok(json!({"deferred":true,"error_code":"account_busy"}));
                 }
@@ -462,6 +342,11 @@ impl Monitor {
             }
         }
         let _held_lease = lease;
+        if method == "model" && !truthy(&result["uncertain"]) && !result["job_id"].is_string() {
+            if let Some(attempts) = integer(&intent["model_attempt_count"]) {
+                intent["model_attempt_count"] = attempts.saturating_sub(1).into();
+            }
+        }
         let _control = self.actions.locks.control(id).await;
         let after = self.row(id).await?;
         if !truthy(&result["success"]) {
@@ -535,13 +420,6 @@ impl Monitor {
                 generation,
                 method_generation,
             );
-        }
-        intent["recovery_write_dispatched"] = true.into();
-        intent["recovery_write_at"] = datetime(self.now()).into();
-        if method == "model"
-            && !self.save_intent(id, original, &intent, generation, method_generation)?
-        {
-            return Ok(json!({"success":false,"skipped":true,"error_code":"manual_intervention"}));
         }
         let _response = self.hooks.recover(id, self.store.admin_token()?).await;
         let current = self.row(id).await?;
@@ -633,7 +511,8 @@ impl Monitor {
         let auth = recovery_events::auth_code(code);
         let mut next = intent.clone();
         let connection = test["recovery_method"] == "connection";
-        let connection_next = if connection && crate::connection_retry::retryable(test) {
+        let retryable = crate::connection_retry::retryable(test) || test["uncertain"] == true;
+        let connection_next = if connection && retryable {
             crate::connection_retry::Policy::saved(intent)?
                 .unwrap_or_default()
                 .next(
@@ -644,8 +523,7 @@ impl Monitor {
         } else {
             None
         };
-        let exhausted =
-            connection && crate::connection_retry::retryable(test) && connection_next.is_none();
+        let exhausted = connection && retryable && connection_next.is_none();
         next["status"] = if !auth.is_empty() {
             "auth_failed"
         } else if exhausted {
@@ -669,12 +547,6 @@ impl Monitor {
         next["test_completed_at"] = test["completed_at"].clone();
         next["waiting_reason"] = "".into();
         next["waiting_until"] = "".into();
-        next.as_object_mut()
-            .unwrap()
-            .shift_remove("verification_dispatched");
-        next.as_object_mut()
-            .unwrap()
-            .shift_remove("verification_receipt");
         let mut update = Update::default();
         let mut meta = json!({"recovery_intent":next});
         if !auth.is_empty() {
@@ -730,9 +602,6 @@ impl Monitor {
             "账号阻断签名已变化，已停止自动恢复"
         }
         .into();
-        // The verification has a definitive receipt and no recovery write was
-        // dispatched. Keep the established retry/notification semantics while
-        // leaving unknown verification and write outcomes on the no-replay path.
         self.recovery_failed(id, row, intent, &result, generation, method_generation)?;
         result["success"] = false.into();
         Ok(result)
@@ -748,14 +617,6 @@ impl Monitor {
     ) -> Result<Value> {
         let at = self.now();
         let mut next = intent.clone();
-        for key in [
-            "verification_receipt",
-            "verification_dispatched",
-            "recovery_write_dispatched",
-            "recovery_write_at",
-        ] {
-            next.as_object_mut().unwrap().shift_remove(key);
-        }
         next["test_completed_at"] = test["completed_at"].clone();
         next["deferred_until"] = "".into();
         next["status"] = "recovered".into();

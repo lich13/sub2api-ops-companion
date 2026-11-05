@@ -56,8 +56,8 @@ impl CreditController {
                 e.insert(Cow::Owned(self.row(id).await?));
             }
             let row = &live[&id];
-            task = self.policy(id, &task, at).await?;
-            let current = credit_rules::policy_now(&task, at);
+            task = self.policy(id, &task).await?;
+            let current = at;
             let control = &meta["manual_control"];
             let expected = integer(&task["policy_control_generation"]).unwrap_or(0);
             let generation = integer(&control["generation"]).unwrap_or(0);
@@ -342,8 +342,7 @@ impl CreditController {
         {
             return Ok(());
         }
-        task = self.policy(id, &task, at).await?;
-        let at = credit_rules::policy_now(&task, at);
+        task = self.policy(id, &task).await?;
         let reason = self.guard_reason(id, &row, &task, at)?;
         if !reason.is_empty() {
             self.finish(id, &task, reason, at, &row, true, &Value::Null)
@@ -476,7 +475,7 @@ impl CreditController {
                 .await?;
             return Ok(());
         }
-        let at = credit_rules::policy_now(&task, self.now());
+        let at = self.now();
         if credit_rules::expired(&task, at) {
             self.finish(id, &task, "consume_deadline", at, &row, true, &Value::Null)
                 .await?;

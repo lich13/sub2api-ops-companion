@@ -1056,6 +1056,18 @@ async fn recovery_model_one_valid_group_really_recovers_with_durable_history() {
     );
     let result = natural_cycle(&h, id, &intent, &usage).await;
     assert_eq!(result["recovered"], true, "{result}");
+    assert_eq!(result["job_id"], job["id"]);
+    let linked = h.runtime.monitor.state().unwrap();
+    assert!(linked["recovery_history"]
+        .as_object()
+        .unwrap()
+        .values()
+        .any(|history| history["model_test_job_id"] == job["id"]));
+    assert!(linked["pending_events"]
+        .as_object()
+        .unwrap()
+        .values()
+        .any(|event| event["model_test_job_id"] == job["id"]));
     assert_eq!(h.mock.count("POST", "/v1/responses"), 1);
     assert_eq!(h.mock.count("POST", "/recover-state"), 1);
     let state = h.runtime.monitor.state().unwrap();
@@ -1233,27 +1245,57 @@ async fn legacy_recovery_without_reliable_test_count_does_not_infer_a_total() {
 
 #[tokio::test]
 async fn model_rejected_before_test_execution_does_not_increment_recovery_count() {
-    let h = Harness::new().await;
-    let (row, usage, intent) = seed_recovery(&h, false).await;
-    let id = integer(&row["id"]).unwrap();
-    h.runtime
-        .config
-        .oauth
-        .transaction(|raw| {
-            raw["model_detection_model_id"] = "unlisted-model".into();
-            Ok(())
-        })
-        .unwrap();
-
-    let result = natural_cycle(&h, id, &intent, &usage).await;
-    assert_eq!(result["attempt_count"], 0);
-    assert_eq!(h.mock.count("POST", "/v1/responses"), 0);
-    assert_eq!(
-        h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
-            ["model_attempt_count"],
-        0
-    );
-    h.close().await;
+    for account_busy in [false, true] {
+        let h = Harness::new().await;
+        let (row, usage, intent) = seed_recovery(&h, false).await;
+        let id = integer(&row["id"]).unwrap();
+        h.runtime
+            .config
+            .oauth
+            .transaction(|raw| {
+                raw["model_detection_model_id"] = "unlisted-model".into();
+                Ok(())
+            })
+            .unwrap();
+        if account_busy {
+            let hooks = Arc::new(HoldAfterModelResult {
+                inner: h.runtime.monitor.hooks.clone(),
+                locks: h.runtime.actions.locks.clone(),
+                row: row.clone(),
+                held: StdMutex::new(None),
+            });
+            let mut monitor = h.runtime.monitor.clone();
+            monitor.hooks = hooks.clone();
+            let waiting = monitor
+                .verify_recovery(
+                    id,
+                    &intent,
+                    &usage,
+                    0,
+                    0,
+                    "model",
+                    monitor.lease(&row).unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(waiting["error_code"], "account_busy");
+            let state = monitor.state().unwrap();
+            let saved = &state["scheduler"][id.to_string()]["recovery_intent"];
+            assert_eq!(saved["attempt_count"], 0);
+            assert_eq!(saved["model_attempt_count"], 0);
+            hooks.held.lock().unwrap().take();
+            h.set_now(h.now() + Duration::seconds(5));
+        }
+        let result = natural_cycle(&h, id, &intent, &usage).await;
+        assert_eq!(result["attempt_count"], 0);
+        assert_eq!(h.mock.count("POST", "/v1/responses"), 0);
+        assert_eq!(
+            h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
+                ["model_attempt_count"],
+            0
+        );
+        h.close().await;
+    }
 }
 
 #[tokio::test]
@@ -3185,8 +3227,75 @@ async fn batched_waiting_accounts_handle_deleted_and_changed_configuration() {
     h.close().await;
 }
 
+struct HoldAfterModelResult {
+    inner: Arc<dyn crate::oauth_monitor::RecoveryHooks>,
+    locks: crate::account_locks::AccountLocks,
+    row: Value,
+    held: StdMutex<Option<crate::account_locks::Lease>>,
+}
+impl crate::credit::Hooks for HoldAfterModelResult {
+    fn config(&self) -> crate::error::Result<Value> {
+        self.inner.config()
+    }
+    fn detection_held(&self, id: i64) -> crate::error::Result<bool> {
+        self.inner.detection_held(id)
+    }
+    fn detection_version(&self, id: i64) -> crate::error::Result<Value> {
+        self.inner.detection_version(id)
+    }
+    fn model_verify(
+        &self,
+        id: i64,
+        episode: String,
+        attempt: i64,
+        consume: bool,
+    ) -> futures_util::future::BoxFuture<'_, crate::error::Result<Value>> {
+        self.inner.model_verify(id, episode, attempt, consume)
+    }
+    fn cancel_verification(
+        &self,
+        job: String,
+        episode: String,
+    ) -> futures_util::future::BoxFuture<'_, crate::error::Result<()>> {
+        self.inner.cancel_verification(job, episode)
+    }
+    fn connection_test(
+        &self,
+        id: i64,
+        model: String,
+        generation: i64,
+        seconds: u64,
+        reserved: bool,
+    ) -> futures_util::future::BoxFuture<'_, crate::error::Result<Value>> {
+        self.inner
+            .connection_test(id, model, generation, seconds, reserved)
+    }
+    fn recover(
+        &self,
+        id: i64,
+        key: String,
+    ) -> futures_util::future::BoxFuture<'_, crate::error::Result<Value>> {
+        self.inner.recover(id, key)
+    }
+}
+impl crate::oauth_monitor::RecoveryHooks for HoldAfterModelResult {
+    fn model_recovery(
+        &self,
+        id: i64,
+        fingerprint: String,
+        attempt: i64,
+    ) -> futures_util::future::BoxFuture<'_, crate::error::Result<Value>> {
+        Box::pin(async move {
+            let result = self.inner.model_recovery(id, fingerprint, attempt).await?;
+            *self.held.lock().unwrap() = Some(self.locks.try_account(&self.row)?);
+            Ok(result)
+        })
+    }
+}
+
 #[tokio::test]
-async fn early_reset_model_receipt_finishes_after_disable_and_restart_with_regular_monitor_off() {
+async fn early_reset_completed_model_waits_for_account_lock_then_finishes_after_disable_and_restart(
+) {
     let mut h = Harness::new().await;
     let (row, mut usage, mut intent) = seed_recovery(&h, false).await;
     let id = integer(&row["id"]).unwrap();
@@ -3217,6 +3326,35 @@ async fn early_reset_model_receipt_finishes_after_disable_and_restart_with_regul
         .unwrap();
     let job = run_natural_model(&h, id, &intent, &usage).await;
     assert_eq!(job["status"], "completed");
+    let hooks = Arc::new(HoldAfterModelResult {
+        inner: h.runtime.monitor.hooks.clone(),
+        locks: h.runtime.actions.locks.clone(),
+        row: row.clone(),
+        held: StdMutex::new(None),
+    });
+    let mut waiting_monitor = h.runtime.monitor.clone();
+    waiting_monitor.hooks = hooks.clone();
+    let deferred = waiting_monitor
+        .verify_recovery(
+            id,
+            &intent,
+            &usage,
+            0,
+            0,
+            "model",
+            waiting_monitor.lease(&row).unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(deferred["error_code"], "account_busy");
+    let waiting =
+        waiting_monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"].clone();
+    assert_eq!(waiting["attempt_count"], 0);
+    assert_eq!(waiting["model_attempt_count"], 0);
+    assert!(waiting["verification_receipt"].is_null());
+    hooks.held.lock().unwrap().take();
+    drop(waiting_monitor);
+    drop(hooks);
     h.runtime
         .config
         .oauth
@@ -3280,5 +3418,88 @@ async fn terminal_credit_tasks_use_inventory_while_waiting_tasks_refresh_live_ro
             stage != "waiting"
         );
     }
+    h.close().await;
+}
+
+#[tokio::test]
+async fn monitor_skips_ended_credit_workers_but_records_recovery_and_releases_owned_pause() {
+    let h = Harness::new().await;
+    let row = h.seed_account("oauth", true, false).await;
+    let id = integer(&row["id"]).unwrap();
+    h.runtime
+        .config
+        .oauth
+        .transaction(|c| {
+            c["oauth_daily_test_enabled"] = false.into();
+            c["oauth_recovery_connection_account_ids"] = json!([id]);
+            Ok(())
+        })
+        .unwrap();
+    let usage = usage_result(&row, h.now());
+    for stage in ["finished", "recovered", "closed"] {
+        h.runtime.monitor.store.transaction(|s| {
+            s["oauth_results"][id.to_string()] = usage.clone();
+            s["scheduler"][id.to_string()]["auto_reset_credit"] = json!({"episode":"fixture-ended","stage":stage,"policy_version":1,"owns_pause":false,"recovered_evidence_at":datetime(h.now())});
+            Ok(())
+        }).unwrap();
+        for _ in 0..3 {
+            h.runtime.monitor.tick().await.unwrap();
+            assert!(
+                h.runtime.monitor.workers.lock().await.is_empty(),
+                "{stage} spawned a worker"
+            );
+        }
+    }
+    h.runtime
+        .monitor
+        .store
+        .transaction(|s| {
+            let task = &mut s["scheduler"][id.to_string()]["auto_reset_credit"];
+            task["stage"] = "finished".into();
+            task.as_object_mut()
+                .unwrap()
+                .shift_remove("recovered_evidence_at");
+            Ok(())
+        })
+        .unwrap();
+    h.runtime.monitor.tick().await.unwrap();
+    let workers = std::mem::take(&mut *h.runtime.monitor.workers.lock().await);
+    assert_eq!(workers.len(), 1);
+    for (_, worker) in workers {
+        worker.await.unwrap().unwrap();
+    }
+    assert!(h.runtime.monitor.credits.state(id).unwrap()["recovered_evidence_at"].is_string());
+    h.runtime.monitor.tick().await.unwrap();
+    assert!(h.runtime.monitor.workers.lock().await.is_empty());
+
+    sqlx::query("UPDATE accounts SET schedulable=false WHERE id=$1")
+        .bind(id)
+        .execute(&h.db.pool)
+        .await
+        .unwrap();
+    let paused = h.runtime.monitor.row(id).await.unwrap();
+    h.runtime.monitor.store.transaction(|s| {
+        s["scheduler"][id.to_string()]["auto_reset_credit"] = json!({
+            "episode":"fixture-unissued","stage":"finished","policy_version":1,"owns_pause":true,
+            "signature":crate::credit_ownership::signature(&paused),"owned_version":paused["updated_at"],
+            "control_generation":0,"policy_credential_fingerprint":oauth_admission::credential_fingerprint(&paused)
+        }); Ok(())
+    }).unwrap();
+    h.runtime.monitor.inventory(true).await.unwrap();
+    h.runtime.monitor.tick().await.unwrap();
+    let workers = std::mem::take(&mut *h.runtime.monitor.workers.lock().await);
+    assert_eq!(workers.len(), 1);
+    for (_, worker) in workers {
+        worker.await.unwrap().unwrap();
+    }
+    assert_eq!(
+        h.runtime.monitor.credits.state(id).unwrap()["owns_pause"],
+        false
+    );
+    assert_eq!(
+        h.runtime.monitor.row(id).await.unwrap()["schedulable"],
+        true
+    );
+    assert_eq!(h.mock.count("POST", "/schedulable"), 1);
     h.close().await;
 }

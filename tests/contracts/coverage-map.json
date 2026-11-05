@@ -2235,7 +2235,7 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "fixed_five_minute_admission_boundary_and_clock_rollback_never_extend_dispatch",
+        "test_name": "fixed_five_minute_admission_boundary_uses_current_time",
         "assertions": [
           "assert_eq!(\n            harness.mock.count(Method::POST, \"/reset-quota\") - before,\n            dispatches,\n            \"trigger offset {offset}\"\n        )",
           "assert_eq!(harness.controller.state(id).unwrap()[\"stage\"], \"recovered\")",
@@ -2250,35 +2250,7 @@
           "assert_eq!(harness.mock.count(Method::GET, &format!(\"/{id}/usage\")), 1)",
           "assert_eq!(\n        harness\n            .mock\n            .count(Method::POST, &format!(\"/{id}/reset-quota\")),\n        1\n    )",
           "assert_eq!(harness.mock.count(Method::POST, &format!(\"/{id}/test\")), 1)",
-          "assert_eq!(\n        harness.controller.store.snapshot().unwrap()[\"scheduler\"][id.to_string()]\n            [\"credit_admission\"][\"reason\"],\n        \"consume_deadline\"\n    )",
-          "assert_eq!(\n        harness.mock.count(Method::POST, \"/reset-quota\"),\n        reset_before\n    )",
-          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_admission\"][\"trigger_at\"],\n        datetime(trigger)\n    )",
-          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_admission\"][\"reason\"],\n        \"clock_untrusted\"\n    )",
-          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_admission\"][\"checked_at\"],\n        datetime(at_deadline)\n    )"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "run_automatic",
-            "assertions": [
-              ".run_account(row, at)",
-              "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
-            ]
-          },
-          {
-            "name": "reload_account",
-            "assertions": [
-              "credit_ownership::account(&harness.db, id)",
-              "expect(\"reload synthetic account from PostgreSQL\")"
-            ]
-          }
+          "assert_eq!(\n        harness.controller.store.snapshot().unwrap()[\"scheduler\"][id.to_string()]\n            [\"credit_admission\"][\"reason\"],\n        \"consume_deadline\"\n    )"
         ],
         "fixtures": [
           {
@@ -2293,7 +2265,7 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_original_evidence_starts_fixed_five_minute_consumption_window 已完整通过。Rust fixed_five_minute_admission_boundary_and_clock_rollback_never_extend_dispatch 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "固定触发点决定五分钟期限，当前时间参与到期判断；保留卡到达前后及 299/300 秒边界。"
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset037:AutoReset037BoundedWindowTests.test_recent_quota_does_not_trigger_card_supplement_without_consumption",
@@ -2457,11 +2429,11 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset037_boundaries:AutoReset037AdmissionBoundaryTests.test_policy_clock_never_moves_deadline_forward_after_clock_rollback",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "fixed_five_minute_admission_boundary_and_clock_rollback_never_extend_dispatch",
+        "test_name": "fixed_five_minute_admission_boundary_uses_current_time",
         "assertions": [
           "assert_eq!(\n            harness.mock.count(Method::POST, \"/reset-quota\") - before,\n            dispatches,\n            \"trigger offset {offset}\"\n        )",
           "assert_eq!(harness.controller.state(id).unwrap()[\"stage\"], \"recovered\")",
@@ -2476,35 +2448,7 @@
           "assert_eq!(harness.mock.count(Method::GET, &format!(\"/{id}/usage\")), 1)",
           "assert_eq!(\n        harness\n            .mock\n            .count(Method::POST, &format!(\"/{id}/reset-quota\")),\n        1\n    )",
           "assert_eq!(harness.mock.count(Method::POST, &format!(\"/{id}/test\")), 1)",
-          "assert_eq!(\n        harness.controller.store.snapshot().unwrap()[\"scheduler\"][id.to_string()]\n            [\"credit_admission\"][\"reason\"],\n        \"consume_deadline\"\n    )",
-          "assert_eq!(\n        harness.mock.count(Method::POST, \"/reset-quota\"),\n        reset_before\n    )",
-          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_admission\"][\"trigger_at\"],\n        datetime(trigger)\n    )",
-          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_admission\"][\"reason\"],\n        \"clock_untrusted\"\n    )",
-          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_admission\"][\"checked_at\"],\n        datetime(at_deadline)\n    )"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "run_automatic",
-            "assertions": [
-              ".run_account(row, at)",
-              "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
-            ]
-          },
-          {
-            "name": "reload_account",
-            "assertions": [
-              "credit_ownership::account(&harness.db, id)",
-              "expect(\"reload synthetic account from PostgreSQL\")"
-            ]
-          }
+          "assert_eq!(\n        harness.controller.store.snapshot().unwrap()[\"scheduler\"][id.to_string()]\n            [\"credit_admission\"][\"reason\"],\n        \"consume_deadline\"\n    )"
         ],
         "fixtures": [
           {
@@ -2519,7 +2463,14 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_policy_clock_never_moves_deadline_forward_after_clock_rollback 已完整通过。Rust fixed_five_minute_admission_boundary_and_clock_rollback_never_extend_dispatch 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "固定触发点决定五分钟期限，当前时间参与到期判断；保留卡到达前后及 299/300 秒边界。",
+      "replacement": {
+        "legacy_assertions": [
+          "test_policy_clock_never_moves_deadline_forward_after_clock_rollback"
+        ],
+        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
+        "replacement_contract": "固定触发点决定五分钟期限，当前时间参与到期判断；保留卡到达前后及 299/300 秒边界。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset037_boundaries:AutoReset037AdmissionBoundaryTests.test_trigger_at_299_seconds_dispatches_but_exact_300_seconds_does_not",
@@ -2527,7 +2478,7 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "fixed_five_minute_admission_boundary_and_clock_rollback_never_extend_dispatch",
+        "test_name": "fixed_five_minute_admission_boundary_uses_current_time",
         "assertions": [
           "assert_eq!(\n            harness.mock.count(Method::POST, \"/reset-quota\") - before,\n            dispatches,\n            \"trigger offset {offset}\"\n        )",
           "assert_eq!(harness.controller.state(id).unwrap()[\"stage\"], \"recovered\")",
@@ -2542,35 +2493,7 @@
           "assert_eq!(harness.mock.count(Method::GET, &format!(\"/{id}/usage\")), 1)",
           "assert_eq!(\n        harness\n            .mock\n            .count(Method::POST, &format!(\"/{id}/reset-quota\")),\n        1\n    )",
           "assert_eq!(harness.mock.count(Method::POST, &format!(\"/{id}/test\")), 1)",
-          "assert_eq!(\n        harness.controller.store.snapshot().unwrap()[\"scheduler\"][id.to_string()]\n            [\"credit_admission\"][\"reason\"],\n        \"consume_deadline\"\n    )",
-          "assert_eq!(\n        harness.mock.count(Method::POST, \"/reset-quota\"),\n        reset_before\n    )",
-          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_admission\"][\"trigger_at\"],\n        datetime(trigger)\n    )",
-          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_admission\"][\"reason\"],\n        \"clock_untrusted\"\n    )",
-          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_admission\"][\"checked_at\"],\n        datetime(at_deadline)\n    )"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "run_automatic",
-            "assertions": [
-              ".run_account(row, at)",
-              "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
-            ]
-          },
-          {
-            "name": "reload_account",
-            "assertions": [
-              "credit_ownership::account(&harness.db, id)",
-              "expect(\"reload synthetic account from PostgreSQL\")"
-            ]
-          }
+          "assert_eq!(\n        harness.controller.store.snapshot().unwrap()[\"scheduler\"][id.to_string()]\n            [\"credit_admission\"][\"reason\"],\n        \"consume_deadline\"\n    )"
         ],
         "fixtures": [
           {
@@ -2585,7 +2508,7 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_trigger_at_299_seconds_dispatches_but_exact_300_seconds_does_not 已完整通过。Rust fixed_five_minute_admission_boundary_and_clock_rollback_never_extend_dispatch 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "固定触发点决定五分钟期限，当前时间参与到期判断；保留卡到达前后及 299/300 秒边界。"
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset037_boundaries:AutoReset037BarkTests.test_real_loopback_bark_retries_five_times_with_parameters_without_replaying_card",
@@ -3265,7 +3188,7 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "fixed_five_minute_admission_boundary_and_clock_rollback_never_extend_dispatch",
+        "test_name": "fixed_five_minute_admission_boundary_uses_current_time",
         "assertions": [
           "assert_eq!(\n            harness.mock.count(Method::POST, \"/reset-quota\") - before,\n            dispatches,\n            \"trigger offset {offset}\"\n        )",
           "assert_eq!(harness.controller.state(id).unwrap()[\"stage\"], \"recovered\")",
@@ -3280,35 +3203,7 @@
           "assert_eq!(harness.mock.count(Method::GET, &format!(\"/{id}/usage\")), 1)",
           "assert_eq!(\n        harness\n            .mock\n            .count(Method::POST, &format!(\"/{id}/reset-quota\")),\n        1\n    )",
           "assert_eq!(harness.mock.count(Method::POST, &format!(\"/{id}/test\")), 1)",
-          "assert_eq!(\n        harness.controller.store.snapshot().unwrap()[\"scheduler\"][id.to_string()]\n            [\"credit_admission\"][\"reason\"],\n        \"consume_deadline\"\n    )",
-          "assert_eq!(\n        harness.mock.count(Method::POST, \"/reset-quota\"),\n        reset_before\n    )",
-          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_admission\"][\"trigger_at\"],\n        datetime(trigger)\n    )",
-          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_admission\"][\"reason\"],\n        \"clock_untrusted\"\n    )",
-          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_admission\"][\"checked_at\"],\n        datetime(at_deadline)\n    )"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "run_automatic",
-            "assertions": [
-              ".run_account(row, at)",
-              "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
-            ]
-          },
-          {
-            "name": "reload_account",
-            "assertions": [
-              "credit_ownership::account(&harness.db, id)",
-              "expect(\"reload synthetic account from PostgreSQL\")"
-            ]
-          }
+          "assert_eq!(\n        harness.controller.store.snapshot().unwrap()[\"scheduler\"][id.to_string()]\n            [\"credit_admission\"][\"reason\"],\n        \"consume_deadline\"\n    )"
         ],
         "fixtures": [
           {
@@ -3323,7 +3218,7 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_card_arriving_after_original_deadline_does_not_reopen_or_extend_window 已完整通过。Rust fixed_five_minute_admission_boundary_and_clock_rollback_never_extend_dispatch 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "固定触发点决定五分钟期限，当前时间参与到期判断；保留卡到达前后及 299/300 秒边界。"
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset038:AutoReset038AdmissionTests.test_card_arriving_before_deadline_reuses_original_depletion_trigger",
@@ -3331,7 +3226,7 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "fixed_five_minute_admission_boundary_and_clock_rollback_never_extend_dispatch",
+        "test_name": "fixed_five_minute_admission_boundary_uses_current_time",
         "assertions": [
           "assert_eq!(\n            harness.mock.count(Method::POST, \"/reset-quota\") - before,\n            dispatches,\n            \"trigger offset {offset}\"\n        )",
           "assert_eq!(harness.controller.state(id).unwrap()[\"stage\"], \"recovered\")",
@@ -3346,35 +3241,7 @@
           "assert_eq!(harness.mock.count(Method::GET, &format!(\"/{id}/usage\")), 1)",
           "assert_eq!(\n        harness\n            .mock\n            .count(Method::POST, &format!(\"/{id}/reset-quota\")),\n        1\n    )",
           "assert_eq!(harness.mock.count(Method::POST, &format!(\"/{id}/test\")), 1)",
-          "assert_eq!(\n        harness.controller.store.snapshot().unwrap()[\"scheduler\"][id.to_string()]\n            [\"credit_admission\"][\"reason\"],\n        \"consume_deadline\"\n    )",
-          "assert_eq!(\n        harness.mock.count(Method::POST, \"/reset-quota\"),\n        reset_before\n    )",
-          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_admission\"][\"trigger_at\"],\n        datetime(trigger)\n    )",
-          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_admission\"][\"reason\"],\n        \"clock_untrusted\"\n    )",
-          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_admission\"][\"checked_at\"],\n        datetime(at_deadline)\n    )"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "run_automatic",
-            "assertions": [
-              ".run_account(row, at)",
-              "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
-            ]
-          },
-          {
-            "name": "reload_account",
-            "assertions": [
-              "credit_ownership::account(&harness.db, id)",
-              "expect(\"reload synthetic account from PostgreSQL\")"
-            ]
-          }
+          "assert_eq!(\n        harness.controller.store.snapshot().unwrap()[\"scheduler\"][id.to_string()]\n            [\"credit_admission\"][\"reason\"],\n        \"consume_deadline\"\n    )"
         ],
         "fixtures": [
           {
@@ -3389,7 +3256,7 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_card_arriving_before_deadline_reuses_original_depletion_trigger 已完整通过。Rust fixed_five_minute_admission_boundary_and_clock_rollback_never_extend_dispatch 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "固定触发点决定五分钟期限，当前时间参与到期判断；保留卡到达前后及 299/300 秒边界。"
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset038:AutoReset038AdmissionTests.test_confirmed_consumption_with_zero_balance_still_runs_verification",
@@ -6183,43 +6050,25 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetLifecycleTests.test_releasing_restart_finishes_same_history_without_repeating_mutations",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
         "test_name": "releasing_restart_reconciles_the_confirmed_history_without_repeating_mutations",
         "assertions": [
-          "assert_eq!(at_release[\"stage\"], \"releasing\");",
-          "assert_eq!(at_release[\"consumed\"], true);",
-          "assert!(at_release[\"release_requested_at\"].is_string());",
-          "assert!(operation.await.unwrap().is_err());",
-          "assert!(lock_path.is_dir());",
-          "assert_eq!(harness.controller.state(id).unwrap()[\"stage\"], \"releasing\");",
-          "assert_eq!(counts, [1, 1, 1, 2]);",
-          "assert_eq!(finished[\"stage\"], \"recovered\");",
-          "assert_eq!(finished[\"outcome\"], \"restored\");",
-          "assert_eq!(finished[\"consumed\"], true);",
-          "assert_eq!(finished[\"receipt\"][\"business_code\"], \"success\");",
-          "assert_eq!( [ harness.mock.count(Method::POST, \"/reset-quota\"), harness.mock.count(Method::POST, \"/test\"), harness.mock.count(Method::POST, \"/recover-state\"), harness.mock.count(Method::POST, \"/schedulable\"), ], counts );",
-          "assert_eq!(state[\"recovery_history\"].as_object().unwrap().len(), 1);",
-          "assert_eq!( state[\"scheduler\"][id.to_string()][\"credit_result_notifications\"] .as_object() .unwrap() .len(), 1 );"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "wait_for",
-            "assertions": [
-              "self.count(method.clone(), suffix) >= count",
-              "expect(\"mock request did not arrive\")"
-            ]
-          }
+          "assert_eq!(at_release[\"stage\"], \"testing\")",
+          "assert_eq!(at_release[\"consumed\"], true)",
+          "assert!(at_release[\"release_requested_at\"].is_null())",
+          "assert!(operation.await.unwrap().is_err())",
+          "assert_eq!(harness.controller.state(id).unwrap()[\"stage\"], \"releasing\")",
+          "assert_eq!(counts, [1, 1, 1, 2])",
+          "assert_eq!(finished[\"stage\"], \"recovered\")",
+          "assert_eq!(finished[\"outcome\"], \"restored\")",
+          "assert_eq!(finished[\"consumed\"], true)",
+          "assert_eq!(finished[\"receipt\"][\"business_code\"], \"success\")",
+          "assert_eq!(\n        [\n            harness.mock.count(Method::POST, \"/reset-quota\"),\n            harness.mock.count(Method::POST, \"/test\"),\n            harness.mock.count(Method::POST, \"/recover-state\"),\n            harness.mock.count(Method::POST, \"/schedulable\"),\n        ],\n        counts\n    )",
+          "assert_eq!(state[\"recovery_history\"].as_object().unwrap().len(), 1)",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_result_notifications\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        1\n    )"
         ],
         "fixtures": [
           {
@@ -6234,48 +6083,31 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_releasing_restart_finishes_same_history_without_repeating_mutations 已完整通过。Rust releasing_restart_reconciles_the_confirmed_history_without_repeating_mutations 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "成功释放前没有 releasing 落盘；写后读取失败才保存待复核，重启读回成功补记历史且不重复修改。",
+      "replacement": {
+        "legacy_assertions": [
+          "test_releasing_restart_finishes_same_history_without_repeating_mutations"
+        ],
+        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
+        "replacement_contract": "成功释放前没有 releasing 落盘；写后读取失败才保存待复核，重启读回成功补记历史且不重复修改。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetLifecycleTests.test_releasing_restart_preserves_manual_changes_and_new_blocks",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
         "test_name": "releasing_restart_preserves_manual_changes_and_new_account_blocks",
         "assertions": [
-          "assert_eq!( release.state_at_arrival.as_ref().unwrap()[\"scheduler\"][id.to_string()][\"auto_reset_credit\"] [\"stage\"], \"releasing\", \"{change}\" );",
-          "assert!(operation.await.unwrap().is_err(), \"{change}\");",
-          "assert!(lock_path.is_dir());",
-          "assert_ne!(harness.controller.state(id).unwrap()[\"stage\"], \"recovered\");",
-          "assert_eq!(actual[field], expected[field], \"{change}: {field}\");",
-          "assert_eq!(harness.mock.total(), before_calls, \"{change} replayed I/O\");",
-          "assert_eq!( harness.controller.store.snapshot().unwrap()[\"scheduler\"][id.to_string()][\"manual_control\"] [\"generation\"], generation_before, \"{change} changed manual generation\" );",
-          "assert!( harness.controller.store.snapshot().unwrap()[\"recovery_history\"] .as_object() .unwrap() .is_empty() );"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "reload_account",
-            "assertions": [
-              "credit_ownership::account(&harness.db, id)",
-              "expect(\"reload synthetic account from PostgreSQL\")"
-            ]
-          },
-          {
-            "name": "wait_for",
-            "assertions": [
-              "self.count(method.clone(), suffix) >= count",
-              "expect(\"mock request did not arrive\")"
-            ]
-          }
+          "assert_eq!(\n            release.state_at_arrival.as_ref().unwrap()[\"scheduler\"][id.to_string()]\n                [\"auto_reset_credit\"][\"stage\"],\n            \"testing\",\n            \"{change}\"\n        )",
+          "assert!(operation.await.unwrap().is_err(), \"{change}\")",
+          "assert_eq!(harness.controller.state(id).unwrap()[\"stage\"], \"releasing\")",
+          "assert_eq!(actual[field], expected[field], \"{change}: {field}\")",
+          "assert_eq!(harness.mock.total(), before_calls, \"{change} replayed I/O\")",
+          "assert_ne!(harness.controller.state(id).unwrap()[\"stage\"], \"recovered\")",
+          "assert_eq!(\n            harness.controller.store.snapshot().unwrap()[\"scheduler\"][id.to_string()]\n                [\"manual_control\"][\"generation\"],\n            generation_before,\n            \"{change} changed manual generation\"\n        )",
+          "assert!(\n            harness.controller.store.snapshot().unwrap()[\"recovery_history\"]\n                .as_object()\n                .unwrap()\n                .is_empty()\n        )"
         ],
         "fixtures": [
           {
@@ -6290,7 +6122,14 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_releasing_restart_preserves_manual_changes_and_new_blocks 已完整通过。Rust releasing_restart_preserves_manual_changes_and_new_account_blocks 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "释放结果待复核时保留新的人工控制与阻断，重启不覆盖账号状态。",
+      "replacement": {
+        "legacy_assertions": [
+          "test_releasing_restart_preserves_manual_changes_and_new_blocks"
+        ],
+        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
+        "replacement_contract": "释放结果待复核时保留新的人工控制与阻断，重启不覆盖账号状态。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetLifecycleTests.test_restart_preserves_retry_deadline_and_consumption",
@@ -19694,7 +19533,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_recover_state_runs_after_test_when_block_remains",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/oauth_scheduler_parity.rs",
@@ -19708,7 +19547,7 @@
           "assert_eq!(harness.mock.count(\"DELETE\", \"/temp-unschedulable\"), 0)",
           "assert_eq!(intent[\"last_error_code\"], \"recovery_uncertain\")",
           "assert_eq!(intent[\"next_retry_at\"], \"\")",
-          "assert_eq!(intent[\"recovery_write_dispatched\"], true)",
+          "assert!(intent[\"recovery_write_dispatched\"].is_null())",
           "assert_eq!(\n                after_write[\"rate_limited_at\"],\n                blocked_before_write[\"rate_limited_at\"]\n            )",
           "assert_eq!(\n                after_write[\"rate_limit_reset_at\"],\n                blocked_before_write[\"rate_limit_reset_at\"]\n            )",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
@@ -19725,7 +19564,14 @@
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“recover state runs after test when block remains”映射到 monitor_test_success_falls_back_to_recover_state_and_retries_failure；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "恢复写入失败保留 blocked 及原阻断签名；重启不重置该失败，同一阻断不重放。",
+      "replacement": {
+        "legacy_assertions": [
+          "test_recover_state_runs_after_test_when_block_remains"
+        ],
+        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
+        "replacement_contract": "恢复写入失败保留 blocked 及原阻断签名；重启不重置该失败，同一阻断不重放。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_recovery_failure_keeps_intent_for_backoff_retry",
@@ -19743,7 +19589,7 @@
           "assert_eq!(harness.mock.count(\"DELETE\", \"/temp-unschedulable\"), 0)",
           "assert_eq!(intent[\"last_error_code\"], \"recovery_uncertain\")",
           "assert_eq!(intent[\"next_retry_at\"], \"\")",
-          "assert_eq!(intent[\"recovery_write_dispatched\"], true)",
+          "assert!(intent[\"recovery_write_dispatched\"].is_null())",
           "assert_eq!(\n                after_write[\"rate_limited_at\"],\n                blocked_before_write[\"rate_limited_at\"]\n            )",
           "assert_eq!(\n                after_write[\"rate_limit_reset_at\"],\n                blocked_before_write[\"rate_limit_reset_at\"]\n            )",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
@@ -19760,16 +19606,15 @@
         ],
         "fixtures": []
       },
-      "coverage_note": "旧 Python recovery_success=False runner 期望收到 failure 后生成 recovery_failed 事件，将 intent 置为 retry 并在 +60s 重试；该 runner 把已派发 recover-state 的 HTTP 500 当作确定失败。实际 HTTP 500 不能证明状态写入未生效，按批准的未知写入禁止重放规则 superseded。",
+      "coverage_note": "恢复写入失败保留 blocked 及原阻断签名；重启不重置该失败，同一阻断不重放。",
       "superseded_by": "monitor_test_success_falls_back_and_unknown_recovery_write_is_not_replayed",
       "approved_behavior": "recover-state 状态写入响应为 500 时只读核对账号状态；无法确认时标记 blocked/recovery_uncertain，禁止按 +60s 自动重放。",
       "replacement": {
         "legacy_assertions": [
-          "recovery runner 被调用一次后 events[0].status == recovery_failed。",
-          "intent.status == retry 且 next_retry_at == RUN + 60s。"
+          "test_recovery_failure_keeps_intent_for_backoff_retry"
         ],
-        "approved_requirement": "已派发状态写入的 HTTP 500 结果未知；先只读核对，无法确认时阻止重放。",
-        "replacement_contract": "loopback 收到一次 recover-state POST 并返回 500；PG 只读账号复查仍显示原限额阻塞；intent 为 blocked/recovery_uncertain；推进 61s 后 tick 及新 Runtime startup/tick 均不增加 usage、test 或 recover-state 请求。"
+        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
+        "replacement_contract": "恢复写入失败保留 blocked 及原阻断签名；重启不重置该失败，同一阻断不重放。"
       }
     },
     {
@@ -20526,20 +20371,22 @@
         "path": "server/src/oauth_state.rs",
         "test_name": "live_testing_survives_reads_and_writes_until_startup_reconciliation",
         "assertions": [
-          "assert_eq!(resumed[\"status\"], \"retry\");",
-          "assert_eq!(resumed[\"next_retry_at\"], intent[\"tested_at\"]);",
-          "assert_eq!(resumed[\"verification_dispatched\"], true);",
-          "state.recover_interrupted().unwrap();"
+          "assert_eq!(\n            state.snapshot().unwrap()[\"scheduler\"][\"73\"][\"recovery_intent\"],\n            intent\n        )",
+          "assert_eq!(\n            state.snapshot().unwrap()[\"scheduler\"][\"73\"][\"recovery_intent\"],\n            intent\n        )",
+          "assert_eq!(resumed[\"status\"], \"retry\")",
+          "assert_eq!(resumed[\"next_retry_at\"], intent[\"tested_at\"])",
+          "assert!(resumed[\"verification_dispatched\"].is_null())",
+          "assert_eq!(\n            state.snapshot().unwrap()[\"scheduler\"][\"73\"][\"recovery_intent\"],\n            resumed\n        )"
         ],
         "fixtures": []
       },
-      "coverage_note": "0.1.79 保留运行时 testing，将中断转换移到启动恢复；验证状态读取、无关账号保存、派发标记保留及启动恢复幂等。",
+      "coverage_note": "普通读取保持 testing；启动和已中断 worker 使用原重试状态，移除专用派发与回执字段。",
       "replacement": {
         "legacy_assertions": [
-          "普通归一化将 testing 改为 retry，并用已有时间填充 next_retry_at。"
+          "test_v2_testing_intent_migrates_to_retry_in_v5"
         ],
-        "approved_requirement": "运行时读取和保存保留 testing；仅现有启动恢复流程处理遗留验证任务，沿用派发标记与回执。",
-        "replacement_contract": "运行时读取和无关账号保存均保持原意图；启动恢复改为 retry、使用 tested_at，保留 verification_dispatched，重复调用无变化。"
+        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
+        "replacement_contract": "普通读取保持 testing；启动和已中断 worker 使用原重试状态，移除专用派发与回执字段。"
       }
     },
     {
@@ -24072,48 +23919,50 @@
         "path": "server/tests/manual_dispatch_parity.rs",
         "test_name": "synchronous_history_failure_remains_unconfirmed_without_replaying_requests",
         "assertions": [
-          ".fail_final_state_write_after_recovery(state_path.clone(), backup.clone())",
-          "expect(\"the loopback recovery response must inject the synthetic final-state write fault\")",
-          "harness.restart_runtime().await;",
-          "assert_eq!(harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"], Value::Null)",
-          "assert_eq!(state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"], \"blocked\")",
+          "assert_eq!(\n        harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"],\n        Value::Null\n    )",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"],\n        \"cancelled\"\n    )",
+          "assert_eq!(intent[\"last_error_code\"], \"already_serving\")",
+          "assert!(intent[\"verification_receipt\"].is_null())",
           "assert!(state[\"recovery_history\"].as_object().unwrap().is_empty())",
           "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1)",
           "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 1)",
-          "assert_eq!(intent[\"last_error_code\"], \"verification_uncertain\")",
-          "assert!(intent[\"verification_receipt\"].is_null())"
+          "assert!(harness.mock.unexpected().is_empty())"
         ],
         "fixtures": []
       },
-      "coverage_note": "0.1.80 同步恢复省去中间回执落盘；最终历史提交失败后保持待核对，不记成功、不重放测试或恢复请求。",
+      "coverage_note": "中断后沿用重试；账号已经正常服务时取消旧意图，不推测补写恢复历史，也不重复发出测试或恢复请求。",
       "replacement": {
         "legacy_assertions": [
-          "同步测试后单独保存回执，最终历史写入失败后凭该回执补记成功。"
+          "test_confirmed_receipt_resumes_after_final_commit_failure_without_retest"
         ],
-        "approved_requirement": "0.1.80 精简同步连接恢复，取消两次中间落盘，保留异步模型回执、已有重启核对和写后确认。",
-        "replacement_contract": "没有持久回执的同步恢复在历史写入失败后标记 verification_uncertain，历史保持为空且 HTTP 请求不重放。"
+        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
+        "replacement_contract": "中断后沿用重试；账号已经正常服务时取消旧意图，不推测补写恢复历史，也不重复发出测试或恢复请求。"
       }
     },
     {
       "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_failed_verification_receipt_is_marked_uncertain_and_restart_does_not_replay",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/manual_dispatch_parity.rs",
-        "test_name": "failed_test_receipt_persistence_is_uncertain_and_restart_does_not_replay",
+        "test_name": "interrupted_test_persistence_retries_after_restart_without_private_receipts",
         "assertions": [
-          ".fail_state_write_after_test(state_path.clone(), backup.clone())",
-          "expect(\"successful test must inject only the synthetic receipt-state failure\")",
-          "harness.restart_runtime().await;",
-          "assert_eq!(intent[\"status\"], \"blocked\")",
-          "assert_eq!(intent[\"last_error_code\"], \"verification_uncertain\")",
+          "assert_eq!(intent[\"status\"], \"retry\")",
           "assert!(intent[\"verification_receipt\"].is_null())",
-          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1)",
-          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0)"
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 2)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 1)",
+          "assert!(harness.mock.unexpected().is_empty())"
         ],
         "fixtures": []
       },
-      "coverage_note": "本地测试 HTTP 成功后注入 OAuth state receipt 持久化故障；恢复文件并重启后 intent 标记 verification_uncertain，实际 POST 不重复。"
+      "coverage_note": "验证中断及结果保存失败后沿用重试；重启后的测试成功才执行恢复，且没有专用回执。",
+      "replacement": {
+        "legacy_assertions": [
+          "test_failed_verification_receipt_is_marked_uncertain_and_restart_does_not_replay"
+        ],
+        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
+        "replacement_contract": "验证中断及结果保存失败后沿用重试；重启后的测试成功才执行恢复，且没有专用回执。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_manual_intervention_cancels_dispatched_verification",
@@ -24134,21 +23983,31 @@
     },
     {
       "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_method_generation_change_rejects_stale_recovery_result",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/manual_dispatch_parity.rs",
         "test_name": "method_generation_change_blocks_completed_test_without_replay",
         "assertions": [
-          "assert_eq!(intent[\"status\"], \"blocked\")",
-          "assert_eq!(intent[\"last_error_code\"], \"verification_uncertain\")",
+          "assert_eq!(intent[\"status\"], \"cancelled\")",
+          "assert_eq!(\n        before_restart[\"scheduler\"][id.to_string()][\"recovery_method_generation\"],\n        1\n    )",
           "assert!(intent[\"verification_receipt\"].is_null())",
           "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1)",
-          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0)"
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0)",
+          "assert!(harness.mock.unexpected().is_empty())"
         ],
         "fixtures": []
       },
-      "coverage_note": "真实测试在 loopback gate 内改变 method generation 并运行 reconcile_unknown；迟到成功没有 receipt，被持久阻塞且重启后不重放。"
+      "coverage_note": "人工修改恢复方式通过现有配置入口取消旧意图；完成的旧测试及重启均不覆盖取消状态。",
+      "replacement": {
+        "legacy_assertions": [
+          "test_method_generation_change_rejects_stale_recovery_result"
+        ],
+        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
+        "replacement_contract": "人工修改恢复方式通过现有配置入口取消旧意图；完成的旧测试及重启均不覆盖取消状态。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_passive_available_quota_dispatches_without_sixty_second_delay",

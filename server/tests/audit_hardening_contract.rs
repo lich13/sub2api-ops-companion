@@ -268,3 +268,76 @@ fn operation_batch_job_ids_reject_malformed_references() {
         assert_eq!(error.detail, "操作状态无法读取", "{case}");
     }
 }
+
+#[test]
+fn audit_rotation_bounds_old_logs_preserves_inode_and_serializes_waiting_writers() {
+    use std::io::Write;
+    const CAP: u64 = 20 * 1024 * 1024;
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("audit.jsonl");
+    let previous = root.path().join("audit.jsonl.1");
+    let record = format!(
+        "{}\n",
+        json!({"event":"fixture.legacy","payload":{"padding":"x".repeat(4096),"api_key":"fixture-legacy-secret"}})
+    );
+    let mut old = fs::File::create(&path).unwrap();
+    for _ in 0..5500 {
+        old.write_all(record.as_bytes()).unwrap();
+    }
+    old.write_all(b"{incomplete fixture record").unwrap();
+    let before = old.metadata().unwrap();
+    drop(old);
+    assert!(before.len() > CAP);
+    std::thread::scope(|scope| {
+        for worker in 0..8 {
+            let path = &path;
+            scope.spawn(move || {
+                for item in 0..50 {
+                    audit::write(
+                        path,
+                        "fixture.concurrent",
+                        json!({"worker":worker,"item":item,"token":"fixture-private"}),
+                        false,
+                    );
+                }
+            });
+        }
+    });
+    for file in [&path, &previous] {
+        let metadata = fs::metadata(file).unwrap();
+        assert!(metadata.len() <= CAP);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+        }
+        for line in std::io::BufRead::lines(std::io::BufReader::new(fs::File::open(file).unwrap()))
+        {
+            serde_json::from_str::<Value>(&line.unwrap()).unwrap();
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        assert_eq!(before.ino(), fs::metadata(&path).unwrap().ino());
+    }
+    let written = audit::read(&path, 600, Some("fixture.concurrent"));
+    assert_eq!(written.len(), 400);
+    let identities = written
+        .iter()
+        .map(|r| {
+            (
+                r["payload"]["worker"].as_u64().unwrap(),
+                r["payload"]["item"].as_u64().unwrap(),
+            )
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(identities.len(), 400);
+    assert!(written
+        .iter()
+        .all(|r| r["payload"]["token"] == "[REDACTED]"));
+    let across = audit::read(&path, 401, None);
+    assert_eq!(across[400]["event"], "fixture.legacy");
+    assert_eq!(across[400]["payload"]["api_key"], "[REDACTED]");
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 2);
+}

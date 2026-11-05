@@ -402,15 +402,39 @@ impl Detection {
         } else {
             None
         };
-        let items = selected.into_iter().map(|((at,_),job)| {
+        let mut restorations = selected
+            .iter()
+            .map(|(_, job)| {
+                (
+                    (string(&job["id"]), integer(&job["account_id"]).unwrap()),
+                    None,
+                )
+            })
+            .collect::<std::collections::BTreeMap<_, Option<&Value>>>();
+        for history in oauth["recovery_history"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .map(|(_, value)| value)
+        {
+            let key = (
+                string(&history["model_test_job_id"]),
+                integer(&history["account_id"]).unwrap_or(0),
+            );
+            if let Some(found) = restorations.get_mut(&key) {
+                if found.is_none() && parse_datetime(&history["recovered_at"]).is_some() {
+                    *found = Some(history);
+                }
+            }
+        }
+        let items = selected.iter().map(|((at,_),job)| {
             let id = integer(&job["account_id"]).unwrap();
             let mut view = summary(job);
             let control = &detection["accounts"][id.to_string()];
             for (field,kind) in [("disposition","disposition"),("recheck_recovery","recovery")] {
                 if control[field]["job_id"]==job["id"] { view[kind]=receipt(&control[field]); }
             }
-            if let Some(history) = oauth["recovery_history"].as_object().into_iter().flatten().map(|(_,v)|v)
-                .find(|v| v["model_test_job_id"]==job["id"] && v["account_id"]==id && parse_datetime(&v["recovered_at"]).is_some()) {
+            if let Some(Some(history)) = restorations.get(&(string(&job["id"]), id)) {
                 view["restoration"]=json!({"status":"restored","completed_at":history["recovered_at"]});
             }
             let recovered = &detection["disposition_notifications"][string(&job["id"])];

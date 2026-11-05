@@ -766,7 +766,9 @@ impl PriorityOrders {
         if self.actions.settings.read_only {
             return Ok(());
         }
-        self.retire_legacy().await?;
+        if !self.retire_legacy().await? {
+            return Err(Error::new(409, "旧排序任务无法收束，账号正在执行其他操作"));
+        }
         if active(&data).is_some() {
             self.store.transaction(|data| {
                 if let Some(id) = active(data).map(str::to_owned) {
@@ -1028,9 +1030,6 @@ impl PriorityOrders {
             || self.actions.supervisor.is_stopping()
             || self.running.load(Ordering::Acquire)
         {
-            return Ok(());
-        }
-        if !self.retire_legacy().await? {
             return Ok(());
         }
         let Some(id) = active(self.store.read_shared()?.as_ref()).map(str::to_owned) else {

@@ -76,6 +76,11 @@ impl CreditController {
         key: &str,
     ) -> Result<Value> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
+        let control = if source == Source::Automatic && action == "reset" {
+            Some(self.actions.locks.control(id).await)
+        } else {
+            None
+        };
         let live = self.row(id).await?;
         if !live.is_object() {
             return Ok(failed("reset_state_changed"));
@@ -119,7 +124,6 @@ impl CreditController {
                     return Ok(failed(reason));
                 }
                 {
-                    let _control = self.actions.locks.control(id).await;
                     active=self.save(id,task,json!({"stage":"pausing","signature":credit_ownership::signature(&live),"next_at":null,"control_generation":credit_ownership::generation(self.store.shared_snapshot()?.as_ref(),id)}))?;
                     let paused = actions::set_schedulable(&self.actions, id, false, key, 3).await;
                     let after = self.row(id).await?;
@@ -153,21 +157,26 @@ impl CreditController {
                         )?;
                         return Ok(failed("pause_uncertain"));
                     }
-                    active=self.save(id,&active,json!({"stage":"resetting","owns_pause":true,"owned_version":after["updated_at"]}))?;
-                }
-                let final_row = self.row(id).await?;
-                if !self.owned(&final_row, &active, true)? {
-                    self.save(
+                    active["owns_pause"] = true.into();
+                    active["owned_version"] = after["updated_at"].clone();
+                    let requested = self.now();
+                    let reason = self.guard_reason(id, &after, &active, requested)?;
+                    let reason = if !reason.is_empty() {
+                        reason
+                    } else if credit_rules::expired(&active, requested) {
+                        "consume_deadline"
+                    } else {
+                        self.positive_credit_reason(&after, &depletion, requested)?
+                    };
+                    if !reason.is_empty() {
+                        self.save(id, &active, json!({"stage":"blocked","error_code":reason}))?;
+                        return Ok(failed(reason));
+                    }
+                    active = self.save(
                         id,
                         &active,
-                        json!({"stage":"blocked","error_code":"ownership_changed"}),
+                        json!({"stage":"resetting","attempt_at":datetime(requested)}),
                     )?;
-                    return Ok(failed("ownership_changed"));
-                }
-                let reason = self.positive_credit_reason(&final_row, &depletion, self.now())?;
-                if !reason.is_empty() {
-                    self.save(id, &active, json!({"stage":"blocked","error_code":reason}))?;
-                    return Ok(failed(reason));
                 }
             } else if truthy(&task["owns_pause"]) && !self.owned(&live, task, true)? {
                 return Ok(failed("ownership_changed"));
@@ -187,17 +196,7 @@ impl CreditController {
             return Ok(failed("manual_intervention"));
         }
         let requested = self.now();
-        if source == Source::Automatic && action == "reset" {
-            let _control = self.actions.locks.control(id).await;
-            let reason = self.guard_reason(id, &self.row(id).await?, &active, requested)?;
-            if !reason.is_empty() {
-                return Ok(failed(reason));
-            }
-            if credit_rules::expired(&active, requested) {
-                return Ok(failed("consume_deadline"));
-            }
-            active = self.save(id, &active, json!({"attempt_at":datetime(requested)}))?;
-        }
+        drop(control);
         let mut result = credit_rules::execute(&self.actions, action, id, key, 90).await;
         let completed = self.now();
         let diagnostics = result
@@ -205,6 +204,7 @@ impl CreditController {
             .filter(|v| truthy(v))
             .cloned()
             .unwrap_or_else(|| reset_credit_observation::diagnostics(None, &result["data"]));
+        let after = self.row(id).await;
         if action == "reset" {
             let consumed = truthy(&result["consumed"]);
             let outcome = if truthy(&result["consumption_outcome"]) {
@@ -257,7 +257,13 @@ impl CreditController {
             } else {
                 "uncertain"
             };
-            active=self.save(id,&active,json!({"stage":stage,"consumed":consumed,"reset_completed_at":if consumed {json!(datetime(completed))} else {Value::Null},"consumption_outcome":outcome,"error_code":receipt_code,"receipt":diagnostics,"verification_deadline_at":if consumed && source==Source::Automatic {json!(datetime(completed+Duration::seconds(300)))} else {Value::Null}}))?;
+            let mut receipt = json!({"stage":stage,"consumed":consumed,"reset_completed_at":if consumed {json!(datetime(completed))} else {Value::Null},"consumption_outcome":outcome,"error_code":receipt_code,"receipt":diagnostics,"verification_deadline_at":if consumed && source==Source::Automatic {json!(datetime(completed+Duration::seconds(300)))} else {Value::Null}});
+            if let Ok(row) = &after {
+                if truthy(&active["owns_pause"]) && self.owned(row, &active, false)? {
+                    receipt["owned_version"] = row["updated_at"].clone();
+                }
+            }
+            active = self.save(id, &active, receipt)?;
         }
         if result["data"].is_object() {
             result["quota_result"] =
@@ -267,7 +273,11 @@ impl CreditController {
                 result["error_code"] = "incomplete_quota".into();
             }
         }
-        let after = self.row(id).await?;
+        let after = match after {
+            Ok(row) => row,
+            Err(_) if action == "reset" => return Ok(result),
+            Err(error) => return Err(error),
+        };
         if action == "query" {
             if let Some(observation) =
                 credit_rules::credit_observation(&live, &after, &result, at, completed)
@@ -286,7 +296,10 @@ impl CreditController {
                 }
             }
         }
-        if truthy(&active["owns_pause"]) && self.owned(&after, &active, false)? {
+        if action != "reset"
+            && truthy(&active["owns_pause"])
+            && self.owned(&after, &active, false)?
+        {
             self.save(id, &active, json!({"owned_version":after["updated_at"]}))?;
         }
         Ok(result)

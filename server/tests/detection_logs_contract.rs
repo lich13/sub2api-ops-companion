@@ -611,9 +611,12 @@ async fn outcomes_receipts_and_merged_or_late_notifications_remain_independent()
         .store
         .transaction(|state| {
             state["pending_events"]["fixture-pending-46"] = json!({"model_test_job_id":job_id(46)});
+            state["recovery_history"]["fixture-wrong-account"] = json!({"model_test_job_id":job_id(44),"account_id":account_id(45),"recovered_at":AT});
+            state["recovery_history"]["fixture-invalid-time"] = json!({"model_test_job_id":job_id(44),"account_id":account_id(44),"recovered_at":"invalid"});
             state["recovery_history"]["fixture-recovery-44"] = json!({
                 "model_test_job_id":job_id(44),"account_id":account_id(44),"recovered_at":AT
             });
+            state["recovery_history"]["fixture-later-match"] = json!({"model_test_job_id":job_id(44),"account_id":account_id(44),"recovered_at":"2026-10-21T12:00:00Z"});
             state["scheduler"][account_id(45).to_string()]["credit_result_notifications"]
                 [credit_fingerprint] = json!({
                 "status":"delivered","episode":credit_fingerprint,"outcome":"restored",
@@ -865,4 +868,30 @@ fn sol_rule_changes_only_future_verdicts_and_keeps_saved_history() {
     assert_eq!(fresh["aggregate_downgrade"], false);
     old["completion_reason"] = "automatic_degradation".into();
     assert_eq!(detection_logs::summary(&old)["outcome"], "degraded");
+}
+
+#[tokio::test]
+async fn restart_removes_retry_controls_without_losing_failed_reports_or_latest_projection() {
+    let h = Harness::new().await;
+    let mut failed = job(71, "failed", AT);
+    failed["can_retry"] = true.into();
+    failed["report"] = report("gpt-6-astra", 0.88, 5);
+    failed["result_summary"] = saved_summary();
+    let mut cancelled = job(72, "cancelled", AT);
+    cancelled["can_retry"] = false.into();
+    insert_jobs(&h.runtime, [failed.clone(), cancelled.clone()]);
+    h.runtime
+        .tests
+        .transaction(|data| {
+            data["accounts"][account_id(71).to_string()] = failed.clone();
+            Ok(())
+        })
+        .unwrap();
+    h.runtime.tests.startup().unwrap();
+    let data = h.runtime.tests.data().unwrap();
+    failed["can_retry"] = false.into();
+    assert_eq!(data["jobs"][job_id(71)], failed);
+    assert_eq!(data["accounts"][account_id(71).to_string()], failed);
+    assert_eq!(data["jobs"][job_id(72)], cancelled);
+    h.close().await;
 }

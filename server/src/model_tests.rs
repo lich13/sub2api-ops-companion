@@ -342,8 +342,9 @@ impl ModelTests {
             return Ok(());
         }
         if !data["jobs"].as_object().is_some_and(|jobs| {
-            jobs.values()
-                .any(|job| matches!(string(&job["status"]), "running" | "retrying"))
+            jobs.values().any(|job| {
+                matches!(string(&job["status"]), "running" | "retrying") || job["can_retry"] == true
+            })
         }) {
             return Ok(());
         }
@@ -357,6 +358,9 @@ impl ModelTests {
                         .unwrap()
                         .extend(changes.as_object().unwrap().clone());
                     crate::detection_logs::preserve_summary(job);
+                    changed.push(job.clone());
+                } else if job["can_retry"] == true {
+                    job["can_retry"] = false.into();
                     changed.push(job.clone());
                 }
             }
@@ -401,7 +405,7 @@ impl ModelTests {
             return Err(Error::new(503, "服务正在停止"));
         }
         let _guard = self.start.lock().await;
-        let payload = model_request(payload)?;
+        let payload = validate_request(payload, automatic.is_some())?;
         if automatic.is_some_and(|auto| {
             payload["tokenizer_probe"] == true
                 || payload["engine"] == crate::lm_detector::ENGINE
@@ -897,6 +901,9 @@ impl ModelTests {
     }
 }
 pub fn model_request(payload: &Value) -> Result<Value> {
+    validate_request(payload, false)
+}
+fn validate_request(payload: &Value, automatic: bool) -> Result<Value> {
     let object = payload.as_object().ok_or_else(Error::invalid)?;
     if object.keys().any(|key| {
         ![
@@ -915,7 +922,14 @@ pub fn model_request(payload: &Value) -> Result<Value> {
         return Err(Error::invalid());
     }
     let version = string(&payload["expected_version"]);
-    if version.chars().count() != 64 {
+    if version.chars().count() != 64
+        && !(automatic
+            && payload.get("expected_version").is_none()
+            && string(&payload["expected_operation_version"])
+                .chars()
+                .count()
+                == 64)
+    {
         return Err(Error::invalid());
     }
     if payload

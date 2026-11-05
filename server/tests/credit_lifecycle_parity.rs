@@ -115,6 +115,7 @@ struct MockUpstream {
     bark_codes: Arc<StdMutex<VecDeque<i64>>>,
     state_path: Arc<StdMutex<Option<PathBuf>>>,
     trip_lock_after: Arc<StdMutex<Option<(Method, String)>>>,
+    fail_account_read_after: Arc<StdMutex<Option<String>>>,
     clock: Arc<StdMutex<DateTime<Utc>>>,
 }
 
@@ -138,6 +139,7 @@ impl MockUpstream {
             bark_codes: Arc::new(StdMutex::new(VecDeque::new())),
             state_path: Arc::new(StdMutex::new(None)),
             trip_lock_after: Arc::new(StdMutex::new(None)),
+            fail_account_read_after: Arc::new(StdMutex::new(None)),
             clock,
         }
     }
@@ -278,6 +280,24 @@ impl MockUpstream {
         *self.trip_lock_after.lock().unwrap() = Some((method, suffix.into()));
     }
 
+    async fn maybe_fail_account_read(&self, path: &str) {
+        let fail = {
+            let mut suffix = self.fail_account_read_after.lock().unwrap();
+            if suffix.as_ref().is_some_and(|suffix| path.ends_with(suffix)) {
+                suffix.take();
+                true
+            } else {
+                false
+            }
+        };
+        if fail {
+            sqlx::query("ALTER TABLE accounts RENAME TO fixture_unavailable_accounts")
+                .execute(&self.pool)
+                .await
+                .unwrap();
+        }
+    }
+
     fn maybe_trip_state_lock(&self, method: &Method, path: &str) {
         let trip = self.trip_lock_after.lock().unwrap().clone();
         let Some((expected_method, suffix)) = trip else {
@@ -412,10 +432,12 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
                 .await
                 .expect("apply synthetic credential fingerprint change");
             }
+            state.maybe_fail_account_read(&path).await;
             state.maybe_trip_state_lock(&method, &path);
             return json_response(scenario.status, scenario.body);
         }
         let at = state.now();
+        state.maybe_fail_account_read(&path).await;
         state.maybe_trip_state_lock(&method, &path);
         return json_response(200, json!({"code": 0, "data": usage_data(at, 20.0)}));
     }
@@ -445,6 +467,7 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
             .execute(&state.pool)
             .await
             .expect("apply synthetic schedulable write to fixture PostgreSQL");
+        state.maybe_fail_account_read(&path).await;
         state.maybe_trip_state_lock(&method, &path);
         return json_response(
             200,
@@ -489,6 +512,7 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
             .await
             .expect("apply synthetic redeemed-card readback");
         }
+        state.maybe_fail_account_read(&path).await;
         state.maybe_trip_state_lock(&method, &path);
         return json_response(scenario.status, scenario.body);
     }
@@ -508,6 +532,7 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
             .remove(&id)
             .unwrap_or(200);
         if !(200..300).contains(&status) {
+            state.maybe_fail_account_read(&path).await;
             state.maybe_trip_state_lock(&method, &path);
             return json_response(status, json!({"code":1,"message":"fixture-status"}));
         }
@@ -518,6 +543,7 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
             .get_mut(&id)
             .and_then(VecDeque::pop_front)
             .unwrap_or_else(|| "data: {\"type\":\"test_complete\",\"success\":true}\n\n".into());
+        state.maybe_fail_account_read(&path).await;
         state.maybe_trip_state_lock(&method, &path);
         return Response::builder()
             .status(StatusCode::OK)
@@ -538,6 +564,7 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
             .copied()
             .unwrap_or(200);
         if !(200..300).contains(&status) {
+            state.maybe_fail_account_read(&path).await;
             state.maybe_trip_state_lock(&method, &path);
             return json_response(
                 status,
@@ -557,6 +584,7 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
             entered.notify_one();
             release.notified().await;
         }
+        state.maybe_fail_account_read(&path).await;
         state.maybe_trip_state_lock(&method, &path);
         return json_response(200, json!({"code":0,"data":{"success":true}}));
     }
@@ -1164,13 +1192,13 @@ fn legacy_python_oracle_and_migration_fragment_cover_the_fixed_scope() {
     assert_eq!(oracle["legacy_test_ids"].as_array().unwrap().len(), 100);
     assert_eq!(migration["reference_sha"], REFERENCE_SHA);
     assert_eq!(migration["mappings"].as_array().unwrap().len(), 100);
-    let mapped = migration["mappings"]
+    let covered = migration["mappings"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|entry| entry["status"] == "mapped")
+        .filter(|entry| matches!(entry["status"].as_str(), Some("mapped" | "superseded")))
         .count();
-    assert_eq!(mapped, 100);
+    assert_eq!(covered, 100);
     assert_eq!(
         migration["mappings"]
             .as_array()
@@ -1403,7 +1431,7 @@ async fn raw_weekly_exhaustion_and_observation_time_are_required() {
 }
 
 #[tokio::test]
-async fn fixed_five_minute_admission_boundary_and_clock_rollback_never_extend_dispatch() {
+async fn fixed_five_minute_admission_boundary_uses_current_time() {
     let harness = Harness::new(false).await;
     let now = fixed_now();
     for (offset, dispatches) in [(299, 1), (300, 0)] {
@@ -1523,33 +1551,6 @@ async fn fixed_five_minute_admission_boundary_and_clock_rollback_never_extend_di
         harness.controller.store.snapshot().unwrap()["scheduler"][id.to_string()]
             ["credit_admission"]["reason"],
         "consume_deadline"
-    );
-    let rolled_back = trigger + Duration::seconds(299);
-    let positive = set_credit_snapshot(
-        &harness,
-        id,
-        snapshot(1, now + Duration::days(2), rolled_back),
-    )
-    .await;
-    harness.set_now(rolled_back);
-    let reset_before = harness.mock.count(Method::POST, "/reset-quota");
-    run_automatic(&harness, &positive, rolled_back).await;
-    assert_eq!(
-        harness.mock.count(Method::POST, "/reset-quota"),
-        reset_before
-    );
-    let state = harness.controller.store.snapshot().unwrap();
-    assert_eq!(
-        state["scheduler"][id.to_string()]["credit_admission"]["trigger_at"],
-        datetime(trigger)
-    );
-    assert_eq!(
-        state["scheduler"][id.to_string()]["credit_admission"]["reason"],
-        "clock_untrusted"
-    );
-    assert_eq!(
-        state["scheduler"][id.to_string()]["credit_admission"]["checked_at"],
-        datetime(at_deadline)
     );
 }
 
@@ -2446,16 +2447,17 @@ async fn releasing_restart_reconciles_the_confirmed_history_without_repeating_mu
         .expect("final schedule release request");
     let at_release = &release.state_at_arrival.as_ref().unwrap()["scheduler"][id.to_string()]
         ["auto_reset_credit"];
-    assert_eq!(at_release["stage"], "releasing");
+    assert_eq!(at_release["stage"], "testing");
     assert_eq!(at_release["consumed"], true);
-    assert!(at_release["release_requested_at"].is_string());
+    assert!(at_release["release_requested_at"].is_null());
 
-    harness.mock.trip_lock_after(Method::POST, "/schedulable");
+    *harness.mock.fail_account_read_after.lock().unwrap() = Some("/schedulable".into());
     harness.mock.release_schedule();
     assert!(operation.await.unwrap().is_err());
-    let lock_path = PathBuf::from(format!("{}.lock", harness.settings.oauth_path.display()));
-    assert!(lock_path.is_dir());
-    fs::remove_dir(&lock_path).expect("remove only the fixture release-write fault");
+    sqlx::query("ALTER TABLE fixture_unavailable_accounts RENAME TO accounts")
+        .execute(&harness.db.pool)
+        .await
+        .unwrap();
     assert_eq!(harness.controller.state(id).unwrap()["stage"], "releasing");
     let counts = [
         harness.mock.count(Method::POST, "/reset-quota"),
@@ -2534,15 +2536,16 @@ async fn releasing_restart_preserves_manual_changes_and_new_account_blocks() {
         assert_eq!(
             release.state_at_arrival.as_ref().unwrap()["scheduler"][id.to_string()]
                 ["auto_reset_credit"]["stage"],
-            "releasing",
+            "testing",
             "{change}"
         );
-        harness.mock.trip_lock_after(Method::POST, "/schedulable");
+        *harness.mock.fail_account_read_after.lock().unwrap() = Some("/schedulable".into());
         harness.mock.release_schedule();
         assert!(operation.await.unwrap().is_err(), "{change}");
-        let lock_path = PathBuf::from(format!("{}.lock", harness.settings.oauth_path.display()));
-        assert!(lock_path.is_dir());
-        fs::remove_dir(&lock_path).expect("remove only this fixture release-write fault");
+        sqlx::query("ALTER TABLE fixture_unavailable_accounts RENAME TO accounts")
+            .execute(&harness.db.pool)
+            .await
+            .unwrap();
         assert_eq!(harness.controller.state(id).unwrap()["stage"], "releasing");
 
         let changed_at = now + Duration::seconds(10);
@@ -3514,7 +3517,7 @@ async fn detection_version_hold_and_failed_readback_are_fail_closed() {
         .begin_episode(id, &initial, &evidence)
         .await
         .unwrap();
-    harness.controller.policy(id, &task, now).await.unwrap();
+    harness.controller.policy(id, &task).await.unwrap();
     harness.set_detection_version(json!("2".repeat(64)));
     run_automatic(&harness, &row, now).await;
     let invalidated = harness.controller.state(id).unwrap();
@@ -3553,7 +3556,7 @@ async fn detection_version_hold_and_failed_readback_are_fail_closed() {
         .unwrap();
     third_task = harness
         .controller
-        .policy(third_id, &third_task, now)
+        .policy(third_id, &third_task)
         .await
         .unwrap();
     third_task = harness
@@ -5142,4 +5145,38 @@ async fn confirmed_receipt_survives_a_later_state_write_failure_without_reset_re
     assert_eq!(after_restart["consumed"], true);
     assert_eq!(after_restart["receipt"], receipt);
     assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 1);
+}
+
+#[tokio::test]
+async fn consumed_reset_result_survives_failed_account_readback_without_replaying_reset() {
+    let harness = Harness::new(false).await;
+    let now = fixed_now();
+    let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
+    harness.set_config(recovery_config(id, "connection"));
+    let (row, _) = harness.seed_depletion(&harness.controller).await;
+    harness.mock.set_reset(
+        id,
+        200,
+        reset_response(now, 20.0, 20.0, "success", json!(1)),
+    );
+    harness.mock.set_sse(id, successful_sse());
+    *harness.mock.fail_account_read_after.lock().unwrap() = Some("/reset-quota".into());
+    let _ = harness.controller.run_account(&row, now).await;
+    let saved = harness.controller.state(id).unwrap();
+    assert_eq!(saved["consumed"], true);
+    assert_eq!(saved["consumption_outcome"], "consumed");
+    assert_eq!(saved["receipt"]["business_code"], "success");
+    assert!(saved["reset_completed_at"].is_string());
+    assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 1);
+    sqlx::query("ALTER TABLE fixture_unavailable_accounts RENAME TO accounts")
+        .execute(&harness.db.pool)
+        .await
+        .unwrap();
+    harness
+        .restart_controller()
+        .run_account(&row, now + Duration::seconds(30))
+        .await
+        .unwrap();
+    assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 1);
+    assert_eq!(harness.controller.state(id).unwrap()["consumed"], true);
 }

@@ -110,8 +110,9 @@ impl Runtime {
 
     pub async fn migrate_legacy_recovery(&self) -> Result<()> {
         self.writable()?;
-        self.monitor.store.transaction(|_| Ok(()))?;
-        if self.monitor.state()?["settings"]["legacy_recovery_cleanup_completed"] == true {
+        if self.monitor.store.shared_snapshot()?["settings"]["legacy_recovery_cleanup_completed"]
+            == true
+        {
             return Ok(());
         }
         let deleted = self

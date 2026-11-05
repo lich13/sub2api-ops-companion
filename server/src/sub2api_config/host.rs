@@ -228,7 +228,7 @@ impl Host {
             }
             let path = string(&f["path"]);
             let overridden = environment_override(f, &config, &o.env);
-            values[path] = json!({"configured":get(&config,path).is_some(),"yaml":get(&config,path),"effective":get(&effective,path),"source":if overridden.is_some(){"environment"}else if get(&config,path).is_some(){"yaml"}else{"default"},"environment":overridden.as_ref().map(|(k,_)|k),"editable":supported&&f["editable"]==true&&overridden.is_none()});
+            values[path] = json!({"configured":get(&config,path).is_some(),"yaml":get(&config,path),"effective":get(&effective,path),"source":if overridden.is_some(){"environment"}else if get(&config,path).is_some(){"yaml"}else{"default"},"environment":overridden.as_ref().map(|(k,_)|k),"editable":f["editable"]==true&&overridden.is_none()});
         }
         let mut unknown = vec![];
         fn walk(v: &Value, path: &str, out: &mut Vec<Value>) {
@@ -253,14 +253,11 @@ impl Host {
         }
         walk(&config, "", &mut unknown);
         Ok(
-            json!({"available":true,"editable":supported,"reason":if supported{""}else{"运行版本没有匹配的配置目录，请更新 Sub2Ops"},"version":o.version,"commit":o.commit,"healthy":o.healthy,"runtime_revision":o.process,"revision":sha256(&bytes),"catalog":*CATALOG,"values":values,"unknown":unknown}),
+            json!({"available":true,"editable":true,"reason":if supported{""}else{"运行版本与配置说明不同；已有字段仍可编辑，请按运行版本核对新增或变更项。"},"version":o.version,"commit":o.commit,"healthy":o.healthy,"runtime_revision":o.process,"revision":sha256(&bytes),"catalog":*CATALOG,"values":values,"unknown":unknown}),
         )
     }
     async fn checked(&self, payload: &Value) -> Result<(Observed, Vec<u8>, Vec<u8>)> {
         let (o, before) = self.current().await?;
-        if o.version != CATALOG["version"] || o.commit != CATALOG["revision"] {
-            return Err(Error::new(409, "运行版本与配置目录不匹配"));
-        }
         if o.process != payload["runtime_revision"] {
             return Err(Error::conflict("运行进程已变化，请刷新配置"));
         }

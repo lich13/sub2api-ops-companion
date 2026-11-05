@@ -97,16 +97,10 @@ pub fn manual(task: &Value) -> bool {
             && !truthy(&task["evidence_at"])
             && !truthy(&task["owns_pause"])
 }
-pub fn policy_now(task: &Value, at: DateTime<Utc>) -> DateTime<Utc> {
-    parse_datetime(&task["policy_checked_at"])
-        .unwrap_or(at)
-        .max(at)
-}
 pub fn expired(task: &Value, at: DateTime<Utc>) -> bool {
     if truthy(&task["attempt_at"]) && !truthy(&task["consumed"]) {
         return false;
     }
-    let at = policy_now(task, at);
     parse_datetime(
         &task[if truthy(&task["consumed"]) {
             "verification_deadline_at"

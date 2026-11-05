@@ -3438,7 +3438,7 @@ async fn monitor_test_success_falls_back_and_unknown_recovery_write_is_not_repla
         if recovery_status == 500 {
             assert_eq!(intent["last_error_code"], "recovery_uncertain");
             assert_eq!(intent["next_retry_at"], "");
-            assert_eq!(intent["recovery_write_dispatched"], true);
+            assert!(intent["recovery_write_dispatched"].is_null());
             let after_write = harness.runtime.monitor.row(id).await.unwrap();
             assert_eq!(
                 after_write["rate_limited_at"],
@@ -5338,7 +5338,7 @@ async fn scheduled_bark_queue_survives_delivery_failure_restart_and_disabled_pus
 }
 
 #[tokio::test]
-async fn recovery_failure_receipt_restart_preserves_original_retry_deadline_without_retesting() {
+async fn recovery_failure_restart_preserves_retry_deadline_and_discards_legacy_receipt() {
     let mut h = Harness::new().await;
     let due = h.now() + Duration::hours(1);
     let row = h
@@ -5355,10 +5355,13 @@ async fn recovery_failure_receipt_restart_preserves_original_retry_deadline_with
         &quota::summary_from_result(&row, &usage),
         due,
     );
-    let mut intent = sub2ops_server::recovery_events::new_intent(&descriptor, "testing", Some(due));
+    let mut intent = sub2ops_server::recovery_events::new_intent(&descriptor, "retry", Some(due));
     intent["attempt_count"] = 1.into();
     intent["connection_attempt_count"] = 1.into();
     intent["tested_at"] = datetime(due).into();
+    intent["test_completed_at"] = datetime(due).into();
+    intent["next_retry_at"] = datetime(due + Duration::seconds(10)).into();
+    intent["last_error_code"] = "http_500".into();
     intent["retry_policy"] = json!({"interval_seconds":10,"max_retries":3});
     intent["verification_dispatched"] = true.into();
     intent["verification_receipt"] = json!({"result":{"success":false,"error_code":"http_500","error":"fixture failure","completed_at":datetime(due),"recovery_method":"connection","recovery_method_generation":0},"manual_generation":0,"credential_fingerprint":sub2ops_server::oauth_admission::credential_fingerprint(&row),"block_state":row});
@@ -5379,11 +5382,14 @@ async fn recovery_failure_receipt_restart_preserves_original_retry_deadline_with
         .verify_recovery(id, &intent, &usage, 0, 0, "connection", lease)
         .await
         .unwrap();
-    assert_eq!(result["attempt_count"], 1);
-    assert_eq!(
-        result["next_retry_at"],
-        datetime(due + Duration::seconds(10))
-    );
+    assert_eq!(result["deferred"], true);
+    let restored =
+        h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"].clone();
+    assert_eq!(restored["status"], "retry");
+    assert_eq!(restored["last_error_code"], "http_500");
+    assert_eq!(restored["attempt_count"], 1);
+    assert!(restored.get("verification_receipt").is_none());
+    assert!(restored.get("verification_dispatched").is_none());
     assert_eq!(h.mock.count("POST", "/test"), 0);
     assert_eq!(
         h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
@@ -5497,6 +5503,21 @@ async fn early_reset_observes_one_per_plan_and_recovers_each_account_without_que
     // Both plans recover independently with the same observed reset.
     h.mock.set_usage(200, Some(default_usage(h.now())));
     let state = early_wait(&h, |s| {
+        // Advance the injected clock when concurrent verifications wait for a
+        // slot; production time continues while this fixture otherwise freezes.
+        if let Some(next) = [a, b, pro]
+            .iter()
+            .filter_map(|id| {
+                let intent = &s["scheduler"][id.to_string()]["recovery_intent"];
+                (intent["waiting_reason"] == "test_slots")
+                    .then(|| parse_datetime(&intent["next_retry_at"]))
+                    .flatten()
+            })
+            .filter(|next| *next > h.now())
+            .min()
+        {
+            h.set_now(next);
+        }
         [a, b, pro]
             .iter()
             .all(|id| s["scheduler"][id.to_string()]["recovery_intent"]["status"] == "recovered")
@@ -5763,7 +5784,7 @@ async fn early_reset_disable_finishes_dispatched_verification_without_starting_a
     let gate = Gate::new();
     *h.mock.test_gate.lock().unwrap() = Some(gate.clone());
     early_wait(&h, |s| {
-        s["scheduler"][id.to_string()]["recovery_intent"]["verification_dispatched"] == true
+        s["scheduler"][id.to_string()]["recovery_intent"]["status"] == "testing"
     })
     .await;
     tokio::time::timeout(StdDuration::from_secs(5), gate.entered.notified())

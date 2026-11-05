@@ -98,7 +98,7 @@ pub fn new_intent(descriptor: &Value, status: &str, at: Option<DateTime<Utc>>) -
     intent.as_object_mut().unwrap().extend(json!({"status":status,"deferred_until":"","next_retry_at":"","attempt_count":0,"block_signature":"","confirmed_at":at.map(datetime).unwrap_or_default(),"tested_at":"","recovered_at":"","last_error":"","last_error_code":""}).as_object().unwrap().clone());
     intent
 }
-fn verification_waiting(intent: &Value) -> bool {
+pub(crate) fn verification_waiting(intent: &Value) -> bool {
     intent["status"] == "retry"
         && matches!(
             string(&intent["waiting_reason"]),
@@ -150,11 +150,14 @@ pub fn discover(
             continue;
         }
         let old = &meta["recovery_intent"];
+        if old["status"] == "blocked"
+            && old["block_signature"] == crate::oauth_state::block_signature(row)
+        {
+            continue;
+        }
         if recovery_rules::quota_release(row, &saved, meta, at)
             && integer(&old["connection_attempt_count"]).unwrap_or(0) == 0
-            && !truthy(&old["verification_dispatched"])
-            && !truthy(&old["verification_receipt"])
-            && !truthy(&old["recovery_write_dispatched"])
+            && old["status"] != "testing"
         {
             if verification_waiting(old)
                 || old["status"] == "ready"
@@ -186,9 +189,7 @@ pub fn discover(
             changes.push((id, recovery_rules::cancel_obsolete_rate_intent(old)));
             continue;
         }
-        if truthy(&old["verification_dispatched"])
-            && !matches!(string(&old["status"]), "cancelled" | "recovered")
-        {
+        if old["status"] == "testing" || verification_waiting(old) {
             continue;
         }
         let descriptor = recovery_rules::quota_descriptor(&summary, at);
@@ -598,8 +599,7 @@ pub fn project(meta: &Value) -> Value {
     } else {
         string(&intent["last_error_code"])
     };
-    let label = if truthy(&intent["verification_dispatched"]) && reason != "verification_uncertain"
-    {
+    let label = if intent["status"] == "testing" {
         "验证中"
     } else {
         match reason {

@@ -304,7 +304,13 @@ impl CreditController {
             task["clear_requested_at"] = datetime(self.now()).into();
             let _ = self.hooks.recover(id, self.store.admin_token()?).await;
         }
-        let cleared = self.row(id).await?;
+        let cleared = match self.row(id).await {
+            Ok(row) => row,
+            Err(error) => {
+                self.save(id, &task, json!({"stage":"confirming","clear_requested_at":task["clear_requested_at"],"error_code":"recovery_failed","next_at":datetime(self.now()+Duration::seconds(2))}))?;
+                return Err(error);
+            }
+        };
         let mut confirmed = cleared.clone();
         if confirmed.is_object() {
             confirmed["schedulable"] = true.into();
@@ -313,11 +319,7 @@ impl CreditController {
             self.save(id,&task,json!({"stage":"confirming","clear_requested_at":task["clear_requested_at"],"error_code":"recovery_failed","next_at":datetime(at+Duration::seconds(2))}))?;
             return Ok(());
         }
-        task=self.save(id,&task,json!({"stage":"releasing","owned_version":cleared["updated_at"],"next_at":null,"release_requested_at":datetime(self.now()),"release_control_generation":credit_ownership::generation(self.store.shared_snapshot()?.as_ref(),id),"release_credential_fingerprint":credential_fingerprint(&cleared)}))?;
-        let verified = cleared;
-        if !self.owned(&verified, &task, true)?
-            || !self.processing_eligible(&verified, &task, self.now())?
-        {
+        if !self.processing_eligible(&cleared, &task, self.now())? {
             self.save(
                 id,
                 &task,
@@ -325,13 +327,13 @@ impl CreditController {
             )?;
             return Ok(());
         }
-        if !self.available(&verified, &task, self.now())? {
+        if !self.available(&cleared, &task, self.now())? {
             self.finish(
                 id,
                 &task,
                 "incomplete_quota",
                 self.now(),
-                &verified,
+                &cleared,
                 true,
                 &Value::Null,
             )
@@ -344,21 +346,28 @@ impl CreditController {
                 &task,
                 "verification_deadline",
                 self.now(),
-                &verified,
+                &cleared,
                 true,
                 &Value::Null,
             )
             .await?;
             return Ok(());
         }
+        task["owned_version"] = cleared["updated_at"].clone();
+        task["release_requested_at"] = datetime(self.now()).into();
+        task["release_control_generation"] =
+            credit_ownership::generation(self.store.shared_snapshot()?.as_ref(), id).into();
+        task["release_credential_fingerprint"] = credential_fingerprint(&cleared).into();
         let _ =
             actions::set_schedulable(&self.actions, id, true, &self.store.admin_token()?, 3).await;
-        let final_row = self.row(id).await?;
-        if !self.release_confirmed(&final_row, &task, self.now())? {
-            self.save(id,&task,json!({"error_code":"recovery_failed","next_at":datetime(self.now()+Duration::seconds(30))}))?;
-            return Ok(());
+        let final_row = self.row(id).await;
+        if let Ok(row) = &final_row {
+            if self.release_confirmed(row, &task, self.now())? {
+                return self.finish_release(row, &task);
+            }
         }
-        self.finish_release(&final_row, &task)
+        self.save(id, &task, json!({"stage":"releasing","error_code":"recovery_failed","next_at":datetime(self.now()+Duration::seconds(30))}))?;
+        final_row.map(|_| ())
     }
     pub fn release_confirmed(&self, row: &Value, task: &Value, at: DateTime<Utc>) -> Result<bool> {
         if !row.is_object() {
@@ -423,7 +432,7 @@ impl CreditController {
         self.store.transaction(|state| {
             let current = &state["scheduler"][id.to_string()]["auto_reset_credit"];
             if current["episode"] != task["episode"]
-                || current["stage"] != "releasing"
+                || current["stage"] != task["stage"]
                 || current["revision"] != task["revision"]
                 || json!(credit_ownership::generation(state, id))
                     != task["release_control_generation"]
@@ -475,7 +484,6 @@ impl CreditController {
         at: DateTime<Utc>,
     ) -> Result<()> {
         if !row.is_object()
-            || !truthy(&task["pause_undo_requested_at"]) && !self.owned(row, task, true)?
             || !self.eligible(row, at, true)?
             || task["policy_credential_fingerprint"] != credential_fingerprint(row)
         {
@@ -486,40 +494,25 @@ impl CreditController {
         if latest["episode"] != task["episode"] || latest["revision"] != task["revision"] {
             return Ok(());
         }
-        let actual = self.row(id).await?;
-        if truthy(&task["pause_undo_requested_at"]) {
-            if actual["schedulable"] == true
-                && json!(credit_ownership::generation(
-                    self.store.shared_snapshot()?.as_ref(),
-                    id
-                )) == task["control_generation"]
-            {
-                self.save(
-                    id,
-                    task,
-                    json!({"owns_pause":false,"pause_undo_confirmed_at":datetime(at)}),
-                )?;
+        let mut actual = self.row(id).await?;
+        if actual["schedulable"] != true {
+            if !self.owned(&actual, task, true)? || !self.eligible(&actual, at, true)? {
+                return Ok(());
             }
-            return Ok(());
+            let _ =
+                actions::set_schedulable(&self.actions, id, true, &self.store.admin_token()?, 3)
+                    .await;
+            actual = self.row(id).await?;
         }
-        if !self.owned(&actual, task, true)? || !self.eligible(&actual, at, true)? {
-            return Ok(());
-        }
-        let task = self.save(id, task, json!({"pause_undo_requested_at":datetime(at)}))?;
-        let _ =
-            actions::set_schedulable(&self.actions, id, true, &self.store.admin_token()?, 3).await;
-        let actual = self.row(id).await?;
         if actual["schedulable"] == true
+            && credit_ownership::signature(&actual) == task["signature"]
+            && credential_fingerprint(&actual) == task["policy_credential_fingerprint"]
             && json!(credit_ownership::generation(
                 self.store.shared_snapshot()?.as_ref(),
                 id
             )) == task["control_generation"]
         {
-            self.save(
-                id,
-                &task,
-                json!({"owns_pause":false,"pause_undo_confirmed_at":datetime(self.now())}),
-            )?;
+            self.save(id, task, json!({"owns_pause":false}))?;
         }
         Ok(())
     }

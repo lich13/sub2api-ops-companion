@@ -181,6 +181,12 @@ impl Store {
                     }
                 }
             }
+            Err(error)
+                if error.kind() == std::io::ErrorKind::NotFound
+                    && !self.0.existed.load(Ordering::Acquire) =>
+            {
+                return Ok((self.0.default_revision, self.0.defaults.clone(), false));
+            }
             Err(_) => {
                 *self.0.cache.lock().map_err(|_| Error::internal())? = None;
             }

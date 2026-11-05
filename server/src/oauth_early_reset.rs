@@ -151,10 +151,11 @@ impl Monitor {
             self.early_reset.lock().await.representatives.clear();
             let cancellable = |intent: &Value| {
                 pending(intent)
-                    && intent["waiting_reason"] != "model_verification_pending"
-                    && !truthy(&intent["verification_dispatched"])
-                    && !truthy(&intent["verification_receipt"])
-                    && !truthy(&intent["recovery_write_dispatched"])
+                    && intent["status"] != "testing"
+                    && !matches!(
+                        string(&intent["waiting_reason"]),
+                        "model_verification_pending" | "account_busy"
+                    )
             };
             if state["scheduler"]
                 .as_object()
@@ -187,9 +188,11 @@ impl Monitor {
             let Ok(id) = id.parse::<i64>() else { continue };
             if !pending(intent)
                 || !enabled
-                    && intent["waiting_reason"] != "model_verification_pending"
-                    && !truthy(&intent["verification_receipt"])
-                    && !truthy(&intent["recovery_write_dispatched"])
+                    && intent["status"] != "testing"
+                    && !matches!(
+                        string(&intent["waiting_reason"]),
+                        "model_verification_pending" | "account_busy"
+                    )
                 || workers.contains_key(&id)
                 || workers.len() >= limit
                 || parse_datetime(&intent["next_retry_at"]).is_some_and(|due| at < due)
@@ -383,13 +386,8 @@ impl Monitor {
                     if integer(&meta["manual_control"]["generation"]).unwrap_or(0) != *generation
                         || !eligible(row, meta, self.now())
                         || pending(previous)
-                        || (truthy(&previous["verification_dispatched"])
-                            || truthy(&previous["verification_receipt"])
-                            || truthy(&previous["recovery_write_dispatched"]))
-                            && !matches!(
-                                string(&previous["status"]),
-                                "recovered" | "cancelled" | "retry_exhausted"
-                            )
+                        || previous["status"] == "testing"
+                        || recovery_events::verification_waiting(previous)
                     {
                         continue;
                     }

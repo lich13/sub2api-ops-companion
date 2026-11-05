@@ -474,7 +474,8 @@ export default function Sub2ApiConfig({
       const next = await api<ConfigDocument>("GET", "/sub2api-config");
       if (alive.current && seq === loadSeq.current) {
         const currentDoc = documentRef.current;
-        if (reset || !Object.keys(draftRef.current).length) conflicted.current = false;
+        if (reset || !Object.keys(draftRef.current).length)
+          conflicted.current = false;
         else if (
           protectDraft &&
           currentDoc?.available &&
@@ -666,7 +667,12 @@ export default function Sub2ApiConfig({
         .filter((f) => !f.internal)
         .map((f) => [
           f.path,
-          fields.filter((c) => c.internal && c.status === "internal" && containsPath(f.path, c.path)),
+          fields.filter(
+            (c) =>
+              c.internal &&
+              c.status === "internal" &&
+              containsPath(f.path, c.path),
+          ),
         ]),
     );
   }, [document]);
@@ -678,8 +684,11 @@ export default function Sub2ApiConfig({
     return document.catalog.fields.filter((field) => {
       const value = document.values[field.path];
       return (
-        !field.internal && field.status === "supported" && field.editable &&
-        value?.editable && value.source !== "environment" &&
+        !field.internal &&
+        field.status === "supported" &&
+        field.editable &&
+        value?.editable &&
+        value.source !== "environment" &&
         (!needle ||
           matches(field) ||
           childrenByPath.get(field.path)?.some(matches)) &&
@@ -691,13 +700,16 @@ export default function Sub2ApiConfig({
   }, [document, needle, childrenByPath, filter, draft]);
   const groupCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const field of fields) counts.set(field.group, (counts.get(field.group) ?? 0) + 1);
+    for (const field of fields)
+      counts.set(field.group, (counts.get(field.group) ?? 0) + 1);
     return counts;
   }, [fields]);
   const groups = useMemo(
     () =>
       document?.available
-        ? document.catalog.groups.filter((g) => (groupCounts.get(g.id) ?? 0) > 0)
+        ? document.catalog.groups.filter(
+            (g) => (groupCounts.get(g.id) ?? 0) > 0,
+          )
         : [],
     [document, groupCounts],
   );
@@ -892,7 +904,10 @@ export default function Sub2ApiConfig({
                   </p>
                 )}
                 {(error || document.reason) && (
-                  <p role="alert" className="config-notice bad-text">
+                  <p
+                    role={error || !document.editable ? "alert" : "status"}
+                    className={`config-notice${error || !document.editable ? " bad-text" : ""}`}
+                  >
                     {error || document.reason}
                   </p>
                 )}

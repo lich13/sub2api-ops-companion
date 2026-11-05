@@ -13,7 +13,7 @@ impl Driver for Fixture {
         Box::pin(async move {
             let n = self.restarts.load(Ordering::SeqCst);
             Ok(Observed {
-                version: "0.2.18".into(),
+                version: string(&CATALOG["version"]).into(),
                 commit: string(&CATALOG["revision"]).into(),
                 process: sha256(n.to_string()),
                 healthy: !self.fail_all && (!self.fail_first || n != 1),
@@ -150,37 +150,43 @@ async fn stale_file_or_process_is_rejected_before_write() {
 }
 
 #[tokio::test]
-async fn unrecognized_running_version_is_read_only_even_with_a_valid_configuration() {
-    struct Unsupported;
-    impl Driver for Unsupported {
+async fn version_or_commit_mismatch_warns_and_preserves_read_validate_apply() {
+    struct Different(Arc<Fixture>, bool);
+    impl Driver for Different {
         fn observe(&self) -> BoxFuture<'_, Result<Observed>> {
-            Box::pin(async {
-                Ok(Observed {
-                    version: "0.2.11".into(),
-                    commit: "fixture-unknown-commit".into(),
-                    process: sha256("fixture-process"),
-                    healthy: true,
-                    env: BTreeMap::new(),
-                })
+            Box::pin(async move {
+                let mut observed = self.0.observe().await?;
+                if self.1 {
+                    observed.version = "0.2.20".into();
+                } else {
+                    observed.commit = "f".repeat(40);
+                }
+                Ok(observed)
             })
         }
         fn restart(&self) -> BoxFuture<'_, Result<()>> {
-            Box::pin(async { panic!("read-only target must not restart") })
+            self.0.restart()
         }
     }
-    let (_dir, fixture, _, before) = fixture(false, false, false);
-    let host = Host::new(
-        fixture.config.clone(),
-        Arc::new(Unsupported),
-        vec!["http://127.0.0.1".into()],
-    );
-    let snapshot = host.snapshot().await.unwrap();
-    assert_eq!(snapshot["version"], "0.2.11");
-    assert_eq!(snapshot["editable"], false);
-    assert_eq!(snapshot["values"]["log.level"]["editable"], false);
-    let request = json!({"expected_revision":sha256(before),"runtime_revision":snapshot["runtime_revision"],"changes":[{"path":"log.level","remove":false,"value":"debug"}]});
-    assert_eq!(
-        host.checked(&request).await.err().unwrap().status.as_u16(),
-        409
-    );
+    for different_version in [false, true] {
+        let (_dir, fixture, driver, before) = fixture(false, false, false);
+        let host = Arc::new(Host::new(
+            fixture.config.clone(),
+            Arc::new(Different(driver, different_version)),
+            vec!["http://127.0.0.1".into()],
+        ));
+        let snapshot = host.snapshot().await.unwrap();
+        assert_eq!(snapshot["editable"], true);
+        assert_eq!(snapshot["values"]["log.level"]["editable"], true);
+        assert!(!string(&snapshot["reason"]).is_empty());
+        let request = json!({"expected_revision":sha256(&before),"runtime_revision":snapshot["runtime_revision"],"changes":[{"path":"log.level","remove":false,"value":"debug"}]});
+        let (observed, before, after) = host.checked(&request).await.unwrap();
+        let lock = host.gate.clone().lock_owned().await;
+        host.clone().apply(observed, before, after, lock).await;
+        assert_eq!(host.operation.lock().unwrap()["status"], "succeeded");
+        assert_eq!(
+            host.snapshot().await.unwrap()["values"]["log.level"]["yaml"],
+            "debug"
+        );
+    }
 }

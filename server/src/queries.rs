@@ -347,6 +347,36 @@ impl Queries {
             .await?
             .ok_or_else(|| Error::new(404, "账号不存在"))
     }
+    pub(crate) async fn setting_account(&self, id: i64) -> Result<(Value, Value)> {
+        static SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+            sql::DESKTOP_ACCOUNT_SQL
+                .replace("{filter}", "AND a.id=$1")
+                .replacen(
+                    "SELECT a.id,",
+                    "SELECT a.credentials, a.rate_limited_at, a.temp_unschedulable_reason, a.id,",
+                    1,
+                )
+        });
+        let mut row = self
+            .db
+            .one(&SQL, &[id.into()])
+            .await?
+            .ok_or_else(|| Error::new(404, "账号不存在"))?;
+        let mut credit = row.clone();
+        credit["account_priority"] = credit
+            .as_object_mut()
+            .unwrap()
+            .shift_remove("priority")
+            .unwrap();
+        for key in [
+            "credentials",
+            "rate_limited_at",
+            "temp_unschedulable_reason",
+        ] {
+            row.as_object_mut().unwrap().shift_remove(key);
+        }
+        Ok((row, credit))
+    }
     pub async fn groups(&self, accounts: &[Value]) -> Result<Vec<Value>> {
         let memberships = accounts
             .iter()

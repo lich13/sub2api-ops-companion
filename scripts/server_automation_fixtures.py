@@ -666,47 +666,21 @@ def terminate_process_group(process: subprocess.Popen[str]) -> None:
             process.wait(timeout=5)
 
 
-def check_exported_receipt(app_root: Path, export_path: Path) -> dict[str, Any]:
-    require(export_path.is_file(), "Rust recovery checkpoint export is missing")
+def check_exported_recovery(app_root: Path, export_path: Path) -> dict[str, Any]:
+    require(export_path.is_file(), "Rust recovery state export is missing")
     sys.path.insert(0, str(app_root.parent))
     from app.oauth_monitor import OAuthStateStore
 
     state = OAuthStateStore(str(export_path)).snapshot()
-    candidates = [
-        metadata.get("recovery_intent") or {}
-        for metadata in state.get("scheduler", {}).values()
-    ]
-    intent = next(
-        (item for item in candidates if item.get("verification_receipt")),
-        None,
-    )
-    require(intent is not None, "pinned reader did not recover the Rust verification receipt")
-    receipt = intent["verification_receipt"]
-    required_keys = {"result", "credential_fingerprint", "block_state"}
-    allowed_keys = required_keys | {"manual_generation"}
-    require(set(receipt) == allowed_keys,
-            "Rust receipt contains fields outside the pinned envelope and manual-generation extension")
-    require(isinstance(receipt["result"], dict), "receipt result is not an object")
-    require(len(receipt["credential_fingerprint"]) == 64,
-            "receipt credential fingerprint is not a SHA-256 hex string")
-    require(isinstance(receipt["block_state"], dict), "receipt block state is not an object")
-    require(receipt["result"].get("success") is True, "pinned reader did not preserve successful verification")
-    require(receipt["result"].get("recovery_method") == "connection",
-            "pinned reader did not preserve the selected recovery method")
-    scheduler_meta = state.get("scheduler", {}).get(str(ACCOUNT_ID), {})
-    control = scheduler_meta.get("manual_control") or {}
-    expected_generation = control.get("generation", 0)
-    require(type(expected_generation) is int, "pinned reader did not preserve manual generation state")
-    require(receipt["manual_generation"] == expected_generation,
-            "pinned reader did not preserve receipt manual_generation")
-    return {
-        "status": "readable",
-        "receipt_keys": sorted(receipt),
-        "result_success": receipt["result"]["success"],
-        "recovery_method": receipt["result"]["recovery_method"],
-        "fingerprint_length": len(receipt["credential_fingerprint"]),
-        "manual_generation": receipt["manual_generation"],
-    }
+    intents = [meta.get("recovery_intent") or {} for meta in state.get("scheduler", {}).values()]
+    intent = next((item for item in intents if item.get("fingerprint")), None)
+    require(intent is not None, "pinned reader did not preserve the recovery intent")
+    require(intent.get("status") == "retry", "pinned reader changed the interrupted retry")
+    retired = {"verification_receipt", "verification_dispatched", "recovery_write_dispatched", "recovery_write_at"}
+    require(not retired.intersection(intent), "retired recovery fields remain in Rust output")
+    require(intent.get("attempt_count") == 1, "pinned reader changed completed attempt count")
+    require(not state.get("recovery_history"), "interruption must not fabricate recovery history")
+    return {"status": "readable", "intent_status": intent["status"], "attempt_count": intent["attempt_count"]}
 
 
 def parse_args() -> argparse.Namespace:
@@ -836,14 +810,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     result["implementation_sha256_after"] == result["source_sha256"]["implementation"],
                     "Rust implementation changed while automation Cargo target was running",
                 )
-                exported_state = export_dir / "automation-recovery-receipt.json"
+                exported_state = export_dir / "automation-recovery-state.json"
                 if exported_state.is_file():
                     try:
-                        result["python_receipt_reader"] = check_exported_receipt(app_root, exported_state)
+                        result["python_recovery_reader"] = check_exported_recovery(app_root, exported_state)
                     except BaseException as exc:
-                        result["python_receipt_reader"] = {"status": "failed", "error": type(exc).__name__}
+                        result["python_recovery_reader"] = {"status": "failed", "error": type(exc).__name__}
                 else:
-                    result["python_receipt_reader"] = {"status": "missing"}
+                    result["python_recovery_reader"] = {"status": "missing"}
             finally:
                 pg_pid = postgres.postgres_pid
                 try:
@@ -862,7 +836,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         and summary.get("status") == "passed"
         and summary.get("passed", 0) == 9
         and summary.get("failed", 0) == 0
-        and result.get("python_receipt_reader", {}).get("status") == "readable"
+        and result.get("python_recovery_reader", {}).get("status") == "readable"
         and result.get("postgres", {}).get("stopped") is True
         and result.get("postgres", {}).get("process_absent") is True
         and result.get("temporary_directory_removed") is True

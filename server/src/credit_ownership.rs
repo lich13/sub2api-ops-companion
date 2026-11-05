@@ -107,13 +107,6 @@ pub fn save(store: &OAuthState, id: i64, task: &Value, changes: Value) -> Result
         if changes.get("model_test_job_id").is_none() && truthy(&current["model_test_job_id"]) {
             updated["model_test_job_id"] = current["model_test_job_id"].clone();
         }
-        let checked = [&current["policy_checked_at"], &updated["policy_checked_at"]]
-            .into_iter()
-            .filter_map(crate::compat::parse_datetime)
-            .max();
-        if let Some(at) = checked {
-            updated["policy_checked_at"] = crate::compat::datetime(at).into();
-        }
         meta["auto_reset_credit"] = updated.clone();
         Ok(updated.clone())
     })

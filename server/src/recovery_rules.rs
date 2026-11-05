@@ -223,9 +223,8 @@ pub fn obsolete_rate_intent(
     at: DateTime<Utc>,
 ) -> bool {
     intent["kind"] == "rate_limit_block"
-        && !truthy(&intent["verification_dispatched"])
-        && !truthy(&intent["verification_receipt"])
-        && !truthy(&intent["recovery_write_dispatched"])
+        && intent["status"] != "testing"
+        && !crate::recovery_events::verification_waiting(intent)
         && !matches!(string(&intent["status"]), "recovered" | "cancelled")
         && stale_rate_block(row, summary, at)
 }
@@ -250,9 +249,7 @@ pub fn obsolete_healthy_intent(
     matches!(
         string(&intent["status"]),
         "pending" | "ready" | "retry" | "waiting_quota"
-    ) && !truthy(&intent["verification_dispatched"])
-        && !truthy(&intent["verification_receipt"])
-        && !truthy(&intent["recovery_write_dispatched"])
+    ) && !crate::recovery_events::verification_waiting(intent)
         && confirmed(row)
         && oauth_admission::fresh_quota(row, result, at)
         && all_available(&quota::summary_from_result(row, result))
@@ -486,12 +483,12 @@ pub fn candidates(
         }
         let summary = quota::summary_from_result(row, &result);
         let intent = &meta["recovery_intent"];
-        if obsolete_rate_intent(row, &summary, intent, at) {
+        if intent["status"] == "blocked"
+            && intent["block_signature"] == crate::oauth_state::block_signature(row)
+        {
             continue;
         }
-        if truthy(&intent["verification_dispatched"])
-            && (!truthy(&intent["verification_receipt"]) || intent["status"] == "blocked")
-        {
+        if obsolete_rate_intent(row, &summary, intent, at) {
             continue;
         }
         let status = string(&intent["status"]);

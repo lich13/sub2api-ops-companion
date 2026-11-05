@@ -776,7 +776,7 @@ async fn daily_worker_runs_once_in_window_and_persists_missed_work_without_repla
 }
 
 #[tokio::test]
-async fn recovery_unknown_test_is_blocked_and_never_replayed() {
+async fn interrupted_recovery_verification_uses_existing_retry_without_private_receipts() {
     for error_code in [
         None,
         Some("network_error"),
@@ -793,51 +793,70 @@ async fn recovery_unknown_test_is_blocked_and_never_replayed() {
         }
         let id = integer(&row["id"]).unwrap();
         let generation = harness.runtime.monitor.generation(id).unwrap();
-        let lease = harness.runtime.monitor.lease(&row).unwrap();
         let result = harness
             .runtime
             .monitor
-            .verify_recovery(id, &intent, &usage, generation, 0, "connection", lease)
+            .verify_recovery(
+                id,
+                &intent,
+                &usage,
+                generation,
+                0,
+                "connection",
+                harness.runtime.monitor.lease(&row).unwrap(),
+            )
             .await
-            .expect("run real connection verification against synthetic incomplete SSE");
-        assert_eq!(result["error_code"], "verification_uncertain");
+            .unwrap();
+        assert_eq!(result["success"], false);
         let after = harness.runtime.monitor.state().unwrap();
         let saved = &after["scheduler"][id.to_string()]["recovery_intent"];
-        assert_eq!(saved["status"], "blocked");
-        assert_eq!(saved["last_error_code"], "verification_uncertain");
-        assert_eq!(saved["verification_dispatched"], true);
-        assert_eq!(saved["verification_receipt"]["result"]["uncertain"], true);
+        assert_eq!(saved["status"], "retry");
+        assert_eq!(saved["connection_attempt_count"], 1);
+        assert!(saved["verification_dispatched"].is_null());
+        assert!(saved["verification_receipt"].is_null());
         assert_eq!(harness.mock.count("POST", "/test"), 1);
         assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
-
-        harness.runtime.monitor.reconcile_unknown(id).await.unwrap();
-        harness.runtime.monitor.reconcile_unknown(id).await.unwrap();
-        let retry_row = harness.runtime.monitor.row(id).await.unwrap();
-        let lease = harness.runtime.monitor.lease(&retry_row).unwrap();
-        let retry = harness
+        let deferred = harness
             .runtime
             .monitor
-            .verify_recovery(id, &intent, &usage, generation, 0, "connection", lease)
+            .verify_recovery(
+                id,
+                &intent,
+                &usage,
+                generation,
+                0,
+                "connection",
+                harness.runtime.monitor.lease(&row).unwrap(),
+            )
             .await
-            .expect("re-read uncertain verification without dispatching it again");
-        assert_eq!(retry["error_code"], "verification_uncertain");
-        assert_eq!(
-            harness.mock.count("POST", "/test"),
-            1,
-            "uncertain test must not be replayed"
-        );
-        assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
-        assert!(
-            harness.mock.unexpected().is_empty(),
-            "unexpected loopback calls: {:?}",
-            harness.mock.unexpected()
-        );
+            .unwrap();
+        assert_eq!(deferred["deferred"], true);
+        assert_eq!(harness.mock.count("POST", "/test"), 1);
+        harness.set_now(parse_datetime(&saved["next_retry_at"]).unwrap());
+        harness.mock.set_test_sse(SUCCESS_TEST_SSE);
+        let success = harness
+            .runtime
+            .monitor
+            .verify_recovery(
+                id,
+                &intent,
+                &usage,
+                generation,
+                0,
+                "connection",
+                harness.runtime.monitor.lease(&row).unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(success["recovered"], true);
+        assert_eq!(harness.mock.count("POST", "/test"), 2);
+        assert_eq!(harness.mock.count("POST", "/recover-state"), 1);
         harness.close().await;
     }
 }
 
 #[tokio::test]
-async fn legacy_recovery_receipt_survives_interrupted_write_and_old_reader_restart() {
+async fn legacy_recovery_fields_are_retired_and_interruption_remains_readable_to_old_versions() {
     let harness = Harness::new().await;
     let (row, usage, intent) = seed_recovery(&harness, false).await;
     let id = integer(&row["id"]).unwrap();
@@ -870,134 +889,61 @@ async fn legacy_recovery_receipt_survives_interrupted_write_and_old_reader_resta
     let synchronous_intent = &state["scheduler"][id.to_string()]["recovery_intent"];
     assert!(synchronous_intent["verification_receipt"].is_null());
     assert!(synchronous_intent["recovery_write_dispatched"].is_null());
-    // Exercise the checkpoint written before 0.1.80. Synchronous recovery no
-    // longer writes this intermediate state, but existing receipts remain valid.
-    harness
-        .runtime
-        .monitor
-        .store
-        .transaction(|state| {
-            let saved = &mut state["scheduler"][id.to_string()]["recovery_intent"];
-            saved["verification_receipt"] = json!({
-                "result": {
-                    "success": true,
-                    "completed_at": datetime(harness.now()),
-                    "recovery_method": "connection",
-                    "recovery_method_generation": 0
-                },
-                "manual_generation": generation,
-                "credential_fingerprint": oauth_admission::credential_fingerprint(&row),
-                "block_state": row
-            });
-            saved["recovery_write_dispatched"] = true.into();
-            Ok(())
-        })
-        .unwrap();
-
-    let state = harness.runtime.monitor.state().unwrap();
-    let durable_intent = &state["scheduler"][id.to_string()]["recovery_intent"];
-    let receipt = &durable_intent["verification_receipt"];
-    let receipt_keys = receipt
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    gate.release.notify_one();
+    harness.runtime.monitor.store.transaction(|state| {
+        let saved = &mut state["scheduler"][id.to_string()]["recovery_intent"];
+        saved["verification_dispatched"] = true.into();
+        saved["verification_receipt"] = json!({"result":{"success":true},"block_state":row,"credential_fingerprint":oauth_admission::credential_fingerprint(&row)});
+        saved["recovery_write_dispatched"] = true.into();
+        Ok(())
+    }).unwrap();
+    let reopened = OAuthState::new(harness.runtime.settings.usage_path.clone(), false);
+    reopened.transaction(|_| Ok(())).unwrap();
+    let normalized = reopened.snapshot().unwrap();
+    let saved = &normalized["scheduler"][id.to_string()]["recovery_intent"];
+    assert_eq!(saved["status"], "testing");
+    assert!(saved["verification_receipt"].is_null());
+    assert!(saved["verification_dispatched"].is_null());
+    assert!(saved["recovery_write_dispatched"].is_null());
+    harness.runtime.monitor.startup().await.unwrap();
+    let restarted = harness.runtime.monitor.state().unwrap();
+    assert_eq!(
+        restarted["scheduler"][id.to_string()]["recovery_intent"]["status"],
+        "retry"
+    );
+    assert!(restarted["recovery_history"]
         .as_object()
         .unwrap()
-        .keys()
-        .cloned()
-        .collect::<Vec<_>>();
-    let reference = fixture();
-    let required_keys = reference["recovery_receipt"]["required_keys"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|value| value.as_str().unwrap().to_owned())
-        .collect::<std::collections::BTreeSet<_>>();
-    let actual_keys = receipt_keys
-        .iter()
-        .cloned()
-        .collect::<std::collections::BTreeSet<_>>();
-    assert!(required_keys.is_subset(&actual_keys));
-    let mut allowed_keys = required_keys.clone();
-    allowed_keys.insert("manual_generation".into());
-    assert_eq!(actual_keys, allowed_keys);
-    assert_eq!(durable_intent["verification_dispatched"], true);
-    assert_eq!(durable_intent["recovery_write_dispatched"], true);
-    assert_eq!(receipt["manual_generation"], generation);
-    assert_eq!(receipt["result"]["success"], true);
-    assert_eq!(receipt["result"]["recovery_method"], "connection");
-    assert_eq!(receipt["result"]["recovery_method_generation"], 0);
-    assert_eq!(
-        receipt["credential_fingerprint"].as_str().unwrap().len(),
-        64
-    );
-    assert!(receipt["block_state"].is_object());
-
+        .is_empty());
     if let Some(export_dir) = std::env::var_os("AUTOMATION_STATE_EXPORT_DIR") {
         let export_dir = PathBuf::from(export_dir);
-        fs::create_dir_all(&export_dir).expect("create runner-owned receipt export directory");
+        fs::create_dir_all(&export_dir).unwrap();
         fs::copy(
             &harness.runtime.settings.usage_path,
-            export_dir.join("automation-recovery-receipt.json"),
+            export_dir.join("automation-recovery-state.json"),
         )
-        .expect("export the exact durable state while its successful receipt is pending");
+        .unwrap();
     }
-    let reopened = OAuthState::new(harness.runtime.settings.usage_path.clone(), false)
-        .snapshot()
-        .expect("fresh Rust OAuthState must read the interrupted-write receipt");
-    assert_eq!(
-        reopened["scheduler"][id.to_string()]["recovery_intent"]["verification_receipt"],
-        *receipt
-    );
+    let actual = harness.runtime.monitor.row(id).await.unwrap();
+    let result = harness
+        .runtime
+        .monitor
+        .verify_recovery(
+            id,
+            &intent,
+            &usage,
+            generation,
+            0,
+            "connection",
+            harness.runtime.monitor.lease(&actual).unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result["error_code"], "already_serving");
     assert_eq!(harness.mock.count("POST", "/test"), 1);
     assert_eq!(harness.mock.count("POST", "/recover-state"), 1);
-    assert_eq!(
-        sqlx::query_scalar::<_, Option<DateTime<Utc>>>(
-            "SELECT rate_limited_at FROM accounts WHERE id=$1"
-        )
-        .bind(id)
-        .fetch_one(&harness.runtime.db.pool)
-        .await
-        .unwrap(),
-        None,
-        "mock recovery applied before the response was released"
-    );
-
-    task.abort();
-    assert!(
-        task.await.unwrap_err().is_cancelled(),
-        "simulate process loss waiting on response"
-    );
-    gate.release.notify_one();
-
-    harness.runtime.monitor.reconcile_unknown(id).await.unwrap();
-    harness.runtime.monitor.reconcile_unknown(id).await.unwrap();
-    let recovered = harness.runtime.monitor.state().unwrap();
-    assert_eq!(
-        recovered["scheduler"][id.to_string()]["recovery_intent"]["status"],
-        "recovered"
-    );
-    let key = format!(
-        "recovery:{id}:{}:success",
-        intent["fingerprint"].as_str().unwrap()
-    );
-    assert!(recovered["pending_events"][&key].is_object());
-    assert!(recovered["recovery_history"][&key].is_object());
-    assert_eq!(recovered["pending_events"].as_object().unwrap().len(), 1);
-    assert_eq!(recovered["recovery_history"].as_object().unwrap().len(), 1);
-    assert_eq!(recovered["recovery_history"][&key]["dedupe_key"], key);
-    assert_eq!(
-        harness.mock.count("POST", "/test"),
-        1,
-        "receipt recovery must not repeat connection test"
-    );
-    assert_eq!(
-        harness.mock.count("POST", "/recover-state"),
-        1,
-        "unknown write response must not repeat recovery write"
-    );
-    assert!(
-        harness.mock.unexpected().is_empty(),
-        "unexpected loopback calls: {:?}",
-        harness.mock.unexpected()
-    );
     harness.close().await;
 }
 

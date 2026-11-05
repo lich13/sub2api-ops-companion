@@ -86,11 +86,7 @@ impl CreditController {
             other => other,
         }
     }
-    pub fn save(&self, id: i64, task: &Value, mut changes: Value) -> Result<Value> {
-        if truthy(&task["policy_version"]) {
-            changes["policy_checked_at"] =
-                datetime(credit_rules::policy_now(task, self.now())).into();
-        }
+    pub fn save(&self, id: i64, task: &Value, changes: Value) -> Result<Value> {
         credit_ownership::save(&self.store, id, task, changes)
     }
     pub fn audit(&self, id: i64, action: &str, fields: Value) {
@@ -221,8 +217,8 @@ impl CreditController {
         };
         let mut changed = false;
         let result=self.store.transaction(|state| {let meta=&mut state["scheduler"][id.to_string()];if !meta.is_object() {*meta=json!({});}let previous=&meta["credit_admission"];let recovered=parse_datetime(&previous["recovered_at"]);let is_new=!truthy(previous) || recovered.is_some_and(|t|observed>t);
-            let trigger=if is_new {Some(observed)} else {parse_datetime(&previous["trigger_at"])};let checked=parse_datetime(&previous["checked_at"]).unwrap_or(at).max(at);
-            let why=if parse_datetime(&previous["checked_at"]).is_some_and(|t|at<t-Duration::seconds(1)) {"clock_untrusted"} else if trigger.is_none_or(|t|checked>=t+Duration::seconds(300)) {"consume_deadline"} else if recovered.is_some_and(|t|observed<=t) {"block_cleared"} else {reason};
+            let trigger=if is_new {Some(observed)} else {parse_datetime(&previous["trigger_at"])};let checked=at;
+            let why=if trigger.is_none_or(|t|checked>=t+Duration::seconds(300)) {"consume_deadline"} else if recovered.is_some_and(|t|observed<=t) {"block_cleared"} else {reason};
             let trigger=trigger.ok_or_else(||Error::new(503,"自动用卡触发时间无效"))?;let mut value=json!({"trigger_at":datetime(trigger),"checked_at":datetime(checked),"reason":why,"evidence_fingerprint":if is_new {&evidence["evidence_fingerprint"]} else {&previous["evidence_fingerprint"]}});if !is_new {if let Some(recovered)=recovered {value["recovered_at"]=datetime(recovered).into();}}
             let without_clock=|v:&Value|v.as_object().into_iter().flatten().filter(|(key,_)|key.as_str()!="checked_at").map(|(k,v)|(k.clone(),v.clone())).collect::<serde_json::Map<_,_>>();changed=without_clock(previous)!=without_clock(&value);meta["credit_admission"]=value;
             if !why.is_empty() {Ok(Value::Null)} else {let mut evidence=evidence.clone();evidence["evidence_at"]=datetime(trigger).into();Ok(evidence)}
@@ -253,8 +249,29 @@ impl CreditController {
         Ok(())
     }
     pub async fn candidate_ready(&self, row: &Value, at: DateTime<Utc>) -> Result<bool> {
-        let task = self.state(integer(&row["id"]).ok_or_else(Error::invalid)?)?;
-        if truthy(&task) && (!truthy(&task["credit_gate_skipped"]) || truthy(&task["owns_pause"])) {
+        let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
+        let task = self.state(id)?;
+        let ended = matches!(string(&task["stage"]), "finished" | "recovered" | "closed");
+        if ended {
+            if task["stage"] == "finished" {
+                if truthy(&task["owns_pause"]) && !truthy(&task["attempt_at"]) {
+                    return Ok(true);
+                }
+                if !truthy(&task["recovered_evidence_at"])
+                    && self.eligible(row, at, false)?
+                    && recovery_rules::confirmed(row)
+                    && self.available(row, &task, at)?
+                {
+                    return Ok(true);
+                }
+                if !truthy(&task["recovered_evidence_at"]) && !truthy(&task["credit_gate_skipped"])
+                {
+                    return Ok(false);
+                }
+            }
+        } else if truthy(&task)
+            && (!truthy(&task["credit_gate_skipped"]) || truthy(&task["owns_pause"]))
+        {
             return Ok(true);
         }
         if self.hooks.config()?["oauth_auto_reset_credit_enabled"] != true {
@@ -264,6 +281,21 @@ impl CreditController {
         if !truthy(&evidence) {
             self.observe_recovery(row, at)?;
             return Ok(false);
+        }
+        if ended {
+            let observed = parse_datetime(&evidence["evidence_at"]);
+            let state = self.store.shared_snapshot()?;
+            if [
+                &task["recovered_evidence_at"],
+                &task["recovered_at"],
+                &state["scheduler"][id.to_string()]["manual_control"]["at"],
+            ]
+            .into_iter()
+            .filter_map(parse_datetime)
+            .any(|boundary| observed.is_none_or(|at| at <= boundary))
+            {
+                return Ok(false);
+            }
         }
         Ok(truthy(&self.admit_episode(row, &evidence, at)?))
     }
@@ -329,7 +361,7 @@ impl CreditController {
         self.audit(id, "credit_admission_migrated", json!({"reason":reason}));
         Ok(updated)
     }
-    pub async fn policy(&self, id: i64, task: &Value, at: DateTime<Utc>) -> Result<Value> {
+    pub async fn policy(&self, id: i64, task: &Value) -> Result<Value> {
         if !truthy(task)
             || credit_rules::manual(task)
             || truthy(&task["policy_version"])
@@ -341,7 +373,7 @@ impl CreditController {
         let completed = parse_datetime(&task["reset_completed_at"]);
         let state = self.store.shared_snapshot()?;
         let meta = &state["scheduler"][id.to_string()];
-        self.save(id,task,json!({"policy_version":1,"trigger_at":trigger.map(datetime),"consume_deadline_at":trigger.map(|t|datetime(t+Duration::seconds(300))),"verification_deadline_at":completed.map(|t|datetime(t+Duration::seconds(300))),"policy_credential_fingerprint":credential_fingerprint(&self.row(id).await?),"policy_control_generation":task.get("control_generation").filter(|v|!v.is_null()).cloned().unwrap_or(json!(credit_ownership::generation(&state,id))),"policy_detection_version":self.hooks.detection_version(id)?,"policy_method":recovery_policy::method(&self.hooks.config()?,id),"policy_method_generation":integer(&meta["recovery_method_generation"]).unwrap_or(0),"verification_dispatched":truthy(&task["verification_dispatched"]) || task["stage"]=="testing" && integer(&task["test_attempts"]).unwrap_or(0)>0 && !truthy(&task["test_completed_at"]),"policy_checked_at":datetime(at)}))
+        self.save(id,task,json!({"policy_version":1,"trigger_at":trigger.map(datetime),"consume_deadline_at":trigger.map(|t|datetime(t+Duration::seconds(300))),"verification_deadline_at":completed.map(|t|datetime(t+Duration::seconds(300))),"policy_credential_fingerprint":credential_fingerprint(&self.row(id).await?),"policy_control_generation":task.get("control_generation").filter(|v|!v.is_null()).cloned().unwrap_or(json!(credit_ownership::generation(&state,id))),"policy_detection_version":self.hooks.detection_version(id)?,"policy_method":recovery_policy::method(&self.hooks.config()?,id),"policy_method_generation":integer(&meta["recovery_method_generation"]).unwrap_or(0),"verification_dispatched":truthy(&task["verification_dispatched"]) || task["stage"]=="testing" && integer(&task["test_attempts"]).unwrap_or(0)>0 && !truthy(&task["test_completed_at"])}))
     }
     pub fn guard_reason(
         &self,
@@ -352,11 +384,6 @@ impl CreditController {
     ) -> Result<&'static str> {
         let state = self.store.shared_snapshot()?;
         let meta = &state["scheduler"][id.to_string()];
-        if parse_datetime(&task["policy_checked_at"])
-            .is_some_and(|checked| self.now() < checked - Duration::seconds(1))
-        {
-            return Ok("clock_untrusted");
-        }
         if !row.is_object() || truthy(&row["deleted_at"]) {
             return Ok("account_deleted");
         }

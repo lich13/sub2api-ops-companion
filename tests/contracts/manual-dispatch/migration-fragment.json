@@ -19,7 +19,9 @@
         "fixtures": [
           {
             "path": "tests/contracts/manual-dispatch/fixtures.json",
-            "json_paths": ["scope.controls022"]
+            "json_paths": [
+              "scope.controls022"
+            ]
           }
         ]
       },
@@ -98,7 +100,10 @@
         "fixtures": [
           {
             "path": "tests/contracts/manual-dispatch/fixtures.json",
-            "json_paths": ["manual_generation.row.id", "reference_time"]
+            "json_paths": [
+              "manual_generation.row.id",
+              "reference_time"
+            ]
           }
         ]
       },
@@ -243,45 +248,53 @@
         "path": "server/tests/manual_dispatch_parity.rs",
         "test_name": "synchronous_history_failure_remains_unconfirmed_without_replaying_requests",
         "assertions": [
-          ".fail_final_state_write_after_recovery(state_path.clone(), backup.clone())",
-          "expect(\"the loopback recovery response must inject the synthetic final-state write fault\")",
-          "harness.restart_runtime().await;",
-          "assert_eq!(harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"], Value::Null)",
-          "assert_eq!(state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"], \"blocked\")",
+          "assert_eq!(\n        harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"],\n        Value::Null\n    )",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"],\n        \"cancelled\"\n    )",
+          "assert_eq!(intent[\"last_error_code\"], \"already_serving\")",
+          "assert!(intent[\"verification_receipt\"].is_null())",
           "assert!(state[\"recovery_history\"].as_object().unwrap().is_empty())",
           "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1)",
           "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 1)",
-          "assert_eq!(intent[\"last_error_code\"], \"verification_uncertain\")",
-          "assert!(intent[\"verification_receipt\"].is_null())"
+          "assert!(harness.mock.unexpected().is_empty())"
         ],
         "fixtures": []
       },
-      "coverage_note": "0.1.80 同步恢复省去中间回执落盘；最终历史提交失败后保持待核对，不记成功、不重放测试或恢复请求。",
+      "coverage_note": "中断后沿用重试；账号已经正常服务时取消旧意图，不推测补写恢复历史，也不重复发出测试或恢复请求。",
       "replacement": {
         "legacy_assertions": [
-          "同步测试后单独保存回执，最终历史写入失败后凭该回执补记成功。"
+          "test_confirmed_receipt_resumes_after_final_commit_failure_without_retest"
         ],
-        "approved_requirement": "0.1.80 精简同步连接恢复，取消两次中间落盘，保留异步模型回执、已有重启核对和写后确认。",
-        "replacement_contract": "没有持久回执的同步恢复在历史写入失败后标记 verification_uncertain，历史保持为空且 HTTP 请求不重放。"
+        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
+        "replacement_contract": "中断后沿用重试；账号已经正常服务时取消旧意图，不推测补写恢复历史，也不重复发出测试或恢复请求。"
       }
     },
     {
       "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_method_generation_change_rejects_stale_recovery_result",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/manual_dispatch_parity.rs",
         "test_name": "method_generation_change_blocks_completed_test_without_replay",
         "assertions": [
-          "assert_eq!(intent[\"status\"], \"blocked\")",
-          "assert_eq!(intent[\"last_error_code\"], \"verification_uncertain\")",
+          "assert_eq!(intent[\"status\"], \"cancelled\")",
+          "assert_eq!(\n        before_restart[\"scheduler\"][id.to_string()][\"recovery_method_generation\"],\n        1\n    )",
           "assert!(intent[\"verification_receipt\"].is_null())",
           "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1)",
-          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0)"
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0)",
+          "assert!(harness.mock.unexpected().is_empty())"
         ],
         "fixtures": []
       },
-      "coverage_note": "真实测试在 loopback gate 内改变 method generation 并运行 reconcile_unknown；迟到成功没有 receipt，被持久阻塞且重启后不重放。"
+      "coverage_note": "人工修改恢复方式通过现有配置入口取消旧意图；完成的旧测试及重启均不覆盖取消状态。",
+      "replacement": {
+        "legacy_assertions": [
+          "test_method_generation_change_rejects_stale_recovery_result"
+        ],
+        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
+        "replacement_contract": "人工修改恢复方式通过现有配置入口取消旧意图；完成的旧测试及重启均不覆盖取消状态。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_busy_account_does_not_overwrite_cancelled_method_selection",
@@ -302,24 +315,28 @@
     },
     {
       "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_failed_verification_receipt_is_marked_uncertain_and_restart_does_not_replay",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/manual_dispatch_parity.rs",
-        "test_name": "failed_test_receipt_persistence_is_uncertain_and_restart_does_not_replay",
+        "test_name": "interrupted_test_persistence_retries_after_restart_without_private_receipts",
         "assertions": [
-          ".fail_state_write_after_test(state_path.clone(), backup.clone())",
-          "expect(\"successful test must inject only the synthetic receipt-state failure\")",
-          "harness.restart_runtime().await;",
-          "assert_eq!(intent[\"status\"], \"blocked\")",
-          "assert_eq!(intent[\"last_error_code\"], \"verification_uncertain\")",
+          "assert_eq!(intent[\"status\"], \"retry\")",
           "assert!(intent[\"verification_receipt\"].is_null())",
-          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1)",
-          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0)"
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 2)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 1)",
+          "assert!(harness.mock.unexpected().is_empty())"
         ],
         "fixtures": []
       },
-      "coverage_note": "本地测试 HTTP 成功后注入 OAuth state receipt 持久化故障；恢复文件并重启后 intent 标记 verification_uncertain，实际 POST 不重复。"
+      "coverage_note": "验证中断及结果保存失败后沿用重试；重启后的测试成功才执行恢复，且没有专用回执。",
+      "replacement": {
+        "legacy_assertions": [
+          "test_failed_verification_receipt_is_marked_uncertain_and_restart_does_not_replay"
+        ],
+        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
+        "replacement_contract": "验证中断及结果保存失败后沿用重试；重启后的测试成功才执行恢复，且没有专用回执。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_manual_intervention_cancels_dispatched_verification",

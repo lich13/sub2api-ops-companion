@@ -808,7 +808,7 @@ fn recovery_quota_and_manual_control_gates_match_pinned_python() {
 }
 
 #[test]
-fn recovery_candidates_do_not_replay_dispatched_verification_without_receipt() {
+fn recovery_candidates_retry_interrupted_verification_without_private_dispatch_flags() {
     let fixture = fixtures();
     let candidate_fixture = &fixture["recovery_rules"]["candidates"];
     let candidates = recovery_rules::candidates(
@@ -823,14 +823,10 @@ fn recovery_candidates_do_not_replay_dispatched_verification_without_receipt() {
         .iter()
         .map(candidate_projection)
         .collect::<Vec<_>>();
-    assert_eq!(
-        Value::Array(projected.clone()),
-        candidate_fixture["expected"]
-    );
-    assert!(
-        projected.iter().all(|item| item["account_id"] != 74),
-        "a dispatched verification with no receipt must never become a retry candidate",
-    );
+    let mut expected = candidate_fixture["expected"].as_array().unwrap().clone();
+    expected.push(json!({"account_id":74,"reason":"recovery_intent","priority":0,"exact_fingerprint":"fixture-reset-boundary","reuse_quota":true}));
+    assert_eq!(projected, expected);
+    assert!(projected.iter().any(|item| item["account_id"] == 74));
     assert!(
         projected
             .iter()
@@ -1196,9 +1192,9 @@ fn rate_only_recovery_requires_fresh_evidence_and_preserves_real_blocks() {
     assert!(!recovery_rules::stale_rate_block(&row, &depleted, now));
     for patch in [
         json!({"kind":"quota"}),
-        json!({"verification_dispatched":true}),
-        json!({"verification_receipt":{"success":true}}),
-        json!({"recovery_write_dispatched":true}),
+        json!({"status":"testing"}),
+        json!({"status":"retry","waiting_reason":"model_verification_pending"}),
+        json!({"status":"retry","waiting_reason":"account_busy"}),
     ] {
         let mut changed = intent.clone();
         changed
@@ -1255,7 +1251,7 @@ fn early_quota_release_retires_old_waits_without_erasing_query_budget_or_live_re
         ));
     }
     let mut inflight = meta.clone();
-    inflight["recovery_intent"]["verification_dispatched"] = true.into();
+    inflight["recovery_intent"]["status"] = "testing".into();
     assert!(!recovery_rules::obsolete_healthy_intent(
         &row, &result, &inflight, at
     ));

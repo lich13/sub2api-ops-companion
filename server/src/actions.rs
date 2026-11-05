@@ -430,7 +430,7 @@ impl Actions {
             row["parent_account_id"] = row["extra"]["parent_account_id"].clone();
         }
         let _lease = self.locks.try_account(&row)?;
-        let live = self.account(id, None).await?;
+        let (mut live, mut credit_row) = self.queries.setting_account(id).await?;
         if live["parent_account_id"] != original_parent
             || operation_versions(&live)[action] != expected
         {
@@ -443,17 +443,18 @@ impl Actions {
         if capability["editable"] != true {
             return Err(Error::new(409, capability["reason"].clone()));
         }
-        if action == "proxy"
-            && !payload["proxy_id"].is_null()
-            && !self
+        if action == "proxy" && !payload["proxy_id"].is_null() {
+            if !self
                 .proxies(key)
                 .await?
                 .iter()
                 .any(|v| v["id"] == payload["proxy_id"] && v["status"] == "active")
-        {
-            return Err(Error::new(409, "所选代理已不可用，请重新选择"));
+            {
+                return Err(Error::new(409, "所选代理已不可用，请重新选择"));
+            }
+            (live, credit_row) = self.queries.setting_account(id).await?;
         }
-        if operation_versions(&self.account(id, None).await?)[action] != expected {
+        if operation_versions(&live)[action] != expected {
             return Err(Error::new(409, "相关字段已变化，请核对后重新提交"));
         }
         let scalar = matches!(action, "priority" | "concurrency" | "load_factor");
@@ -464,7 +465,7 @@ impl Actions {
         {
             credit_ownership::parameter_change(
                 &self.queries.oauth,
-                &credit_ownership::account(&self.queries.db, id).await?,
+                &credit_row,
                 action,
                 &payload[action],
             )?
@@ -521,21 +522,21 @@ impl Actions {
                     json!({field:if action == "proxy" && payload[field].is_null() {json!(0)} else {payload[field].clone()}}),
                 )
             };
-            if let Err(error) = self.json(method, &path, key, Some(&body), 10).await {
-                if !matches!(error.status.as_u16(), 502 | 504)
-                    || !target_reached(&self.account(id, None).await?, action, payload)
-                {
-                    return Err(error);
+            let response = self.json(method, &path, key, Some(&body), 10).await;
+            if let Err(error) = &response {
+                if !matches!(error.status.as_u16(), 502 | 504) {
+                    return response;
                 }
             }
-            let actual = self.account(id, None).await?;
+            let (actual, credit_row) = self.queries.setting_account(id).await?;
             if !target_reached(&actual, action, payload) {
+                response?;
                 return Err(Error::new(502, "字段写入尚未确认，正在核对实际值"));
             }
             if let Some((task, expected)) = &credit_change {
                 credit_ownership::finish_parameter_change(
                     &self.queries.oauth,
-                    &credit_ownership::account(&self.queries.db, id).await?,
+                    &credit_row,
                     task,
                     expected,
                 )?;

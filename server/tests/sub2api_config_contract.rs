@@ -10,7 +10,7 @@ fn payload(path: &str, value: serde_json::Value) -> serde_json::Value {
 #[test]
 fn catalogue_matches_reviewed_version_and_fields_have_explanations() {
     let fields = CATALOG["fields"].as_array().unwrap();
-    assert_eq!(fields.len(), 545);
+    assert_eq!(fields.len(), 546);
     assert_eq!(fields.iter().filter(|f| f["internal"] == true).count(), 16);
     assert_eq!(CATALOG["groups"].as_array().unwrap().len(), 41);
     assert!(fields
@@ -230,4 +230,21 @@ fn diagnostic_text_is_complete_including_credentials_and_line_breaks() {
     let quality=sub2ops_server::proxy_diagnostics::safe_result("quality-check",&json!({"score":0,"grade":"F","summary":text,"items":[{"target":"https://example.invalid","status":"fail","message":text}]})).unwrap();
     assert_eq!(quality["items"][0]["message"], text);
     assert_eq!(quality["summary"], text);
+}
+
+#[test]
+fn gemini_same_account_retry_bounds_default_and_environment_override() {
+    let path = "gateway.max_same_account_retries_gemini";
+    assert_eq!(field(path).unwrap()["default_value"], 4);
+    for value in [-1, 11] {
+        assert!(prepare(&bytes(), &BTreeMap::new(), &payload(path, json!(value))).is_err());
+    }
+    for value in [0, 4, 10] {
+        let (_, config) =
+            prepare(&bytes(), &BTreeMap::new(), &payload(path, json!(value))).unwrap();
+        assert_eq!(config["gateway"]["max_same_account_retries_gemini"], value);
+    }
+    let env = BTreeMap::from([("GATEWAY_MAX_SAME_ACCOUNT_RETRIES_GEMINI".into(), "3".into())]);
+    assert_eq!(override_value(field(path).unwrap(), &env).unwrap().1, 3);
+    assert!(prepare(&bytes(), &env, &payload(path, json!(5))).is_err());
 }

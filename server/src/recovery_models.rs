@@ -372,7 +372,6 @@ impl Detection {
                 id,
                 &json!({
                     "model_id": model,
-                    "expected_version": "0".repeat(64),
                     "expected_operation_version": operation_versions(&row)["model_test"],
                     "request_id": request,
                     "concurrency": 1,

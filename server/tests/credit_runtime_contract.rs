@@ -983,7 +983,7 @@ async fn automatic_pause_is_read_back_owned_before_consumption_result() {
     assert!(task["episode"].is_string());
     let task = harness
         .controller
-        .policy(id, &task, fixed_now())
+        .policy(id, &task)
         .await
         .expect("persist fixture policy before consuming");
 
@@ -1046,7 +1046,7 @@ async fn five_minute_deadlines_and_unknown_unissued_pause_undo_are_read_back_onl
         .expect("persist deadline fixture");
     let policy = harness
         .controller
-        .policy(id, &task, now)
+        .policy(id, &task)
         .await
         .expect("derive bounded credit policy");
     assert_eq!(
@@ -1125,8 +1125,8 @@ async fn five_minute_deadlines_and_unknown_unissued_pause_undo_are_read_back_onl
             .collect::<Vec<_>>()
     );
     assert_eq!(final_task["owns_pause"], false);
-    assert!(final_task["pause_undo_requested_at"].is_string());
-    assert!(final_task["pause_undo_confirmed_at"].is_string());
+    assert!(final_task["pause_undo_requested_at"].is_null());
+    assert!(final_task["pause_undo_confirmed_at"].is_null());
     assert_eq!(harness.mock.count(Method::POST, "/schedulable"), 1);
     assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 0);
 }
@@ -1211,7 +1211,7 @@ async fn manual_generation_change_keeps_consumption_receipt_and_never_unpauses()
         .expect("admit fixture episode");
     let task = harness
         .controller
-        .policy(id, &task, fixed_now())
+        .policy(id, &task)
         .await
         .expect("persist fixture policy before consuming");
     let consume_result = harness

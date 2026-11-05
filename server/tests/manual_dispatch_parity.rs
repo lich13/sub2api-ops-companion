@@ -1749,13 +1749,13 @@ async fn synchronous_history_failure_remains_unconfirmed_without_replaying_reque
     harness.restart_runtime().await;
     harness.runtime.monitor.startup().await.unwrap();
     harness.runtime.monitor.tick().await.unwrap();
-    let state = wait_for_intent(&harness, id, |intent| intent["status"] == "blocked").await;
+    let state = wait_for_intent(&harness, id, |intent| intent["status"] == "cancelled").await;
     assert_eq!(
         state["scheduler"][id.to_string()]["recovery_intent"]["status"],
-        "blocked"
+        "cancelled"
     );
     let intent = &state["scheduler"][id.to_string()]["recovery_intent"];
-    assert_eq!(intent["last_error_code"], "verification_uncertain");
+    assert_eq!(intent["last_error_code"], "already_serving");
     assert!(intent["verification_receipt"].is_null());
     assert!(state["recovery_history"].as_object().unwrap().is_empty());
     assert_eq!(harness.mock.count_for(id, "POST", "/test"), 1);
@@ -1782,22 +1782,29 @@ async fn method_generation_change_blocks_completed_test_without_replay() {
         .await
         .expect("the recovery test must be in flight before changing its method generation");
 
+    let snapshot = harness.runtime.config.snapshot(Some("oauth")).unwrap();
     harness
         .runtime
-        .monitor
-        .store
-        .transaction(|state| {
-            state["scheduler"][id.to_string()]["recovery_method_generation"] = 1.into();
-            Ok(())
-        })
+        .config
+        .save(
+            "oauth",
+            &json!({
+                "oauth_recovery_connection_account_ids":[], "oauth_recovery_model_account_ids":[id]
+            }),
+            "fixture-manual-dispatch",
+            Some(snapshot["oauth"]["revision"].as_str().unwrap()),
+        )
+        .await
         .unwrap();
     gate.release.notify_one();
     harness.runtime.monitor.drain(8).await;
-    harness.runtime.monitor.reconcile_unknown(id).await.unwrap();
     let before_restart = harness.runtime.monitor.state().unwrap();
     let intent = &before_restart["scheduler"][id.to_string()]["recovery_intent"];
-    assert_eq!(intent["status"], "blocked");
-    assert_eq!(intent["last_error_code"], "verification_uncertain");
+    assert_eq!(intent["status"], "cancelled");
+    assert_eq!(
+        before_restart["scheduler"][id.to_string()]["recovery_method_generation"],
+        1
+    );
     assert!(intent["verification_receipt"].is_null());
     assert_eq!(harness.mock.count_for(id, "POST", "/test"), 1);
     assert_eq!(harness.mock.count_for(id, "POST", "/recover-state"), 0);
@@ -1880,7 +1887,7 @@ async fn busy_account_does_not_overwrite_cancelled_method_selection() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn failed_test_receipt_persistence_is_uncertain_and_restart_does_not_replay() {
+async fn interrupted_test_persistence_retries_after_restart_without_private_receipts() {
     let mut harness = Harness::new().await;
     let now = harness.now();
     let row = harness
@@ -1917,12 +1924,12 @@ async fn failed_test_receipt_persistence_is_uncertain_and_restart_does_not_repla
     harness.runtime.monitor.startup().await.unwrap();
     let state = harness.runtime.monitor.state().unwrap();
     let intent = &state["scheduler"][id.to_string()]["recovery_intent"];
-    assert_eq!(intent["status"], "blocked");
-    assert_eq!(intent["last_error_code"], "verification_uncertain");
+    assert_eq!(intent["status"], "retry");
     assert!(intent["verification_receipt"].is_null());
     harness.runtime.monitor.tick().await.unwrap();
-    assert_eq!(harness.mock.count_for(id, "POST", "/test"), 1);
-    assert_eq!(harness.mock.count_for(id, "POST", "/recover-state"), 0);
+    wait_for_recovered(&harness, id).await;
+    assert_eq!(harness.mock.count_for(id, "POST", "/test"), 2);
+    assert_eq!(harness.mock.count_for(id, "POST", "/recover-state"), 1);
     assert!(harness.mock.unexpected().is_empty());
     harness.close().await;
 }
