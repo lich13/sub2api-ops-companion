@@ -129,7 +129,7 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/automation_runtime_contract.rs",
-        "test_name": "successful_recovery_receipt_survives_interrupted_write_and_old_reader_restart",
+        "test_name": "legacy_recovery_receipt_survives_interrupted_write_and_old_reader_restart",
         "assertions": [
           "assert!(required_keys.is_subset(&actual_keys));",
           "assert_eq!(actual_keys, allowed_keys);",
@@ -149,7 +149,7 @@
           }
         ]
       },
-      "coverage_note": "Rust 在 loopback recovery 已清除临时 PostgreSQL 限流字段、HTTP 响应仍被 gate 阻塞时持久化成功回执；重开 OAuthState 并 reconcile 后验证 history/event 仅一条、外部 test/write 各一次。runner 另调用固定旧 Python OAuthStateStore reader，校验必需 envelope 键及 manual_generation 扩展均可保留。",
+      "coverage_note": "Rust 在 loopback recovery 已清除临时 PostgreSQL 限流字段、HTTP 响应仍被 gate 阻塞时，确认同步路径没有中间落盘，再显式写入旧版成功回执夹具；重开 OAuthState 并 reconcile 后验证 history/event 仅一条、外部 test/write 各一次。runner 另调用固定旧 Python OAuthStateStore reader，校验必需 envelope 键及 manual_generation 扩展均可保留。",
       "uncovered_assertions": [
         "旧测试通过 recovery_history 最终 commit 失败触发续跑；Rust 模拟远端已写入但客户端等待响应时中断，故故障点不同。",
         "旧测试关闭并重新构建 Monitor，再验证恢复历史恰一条；Rust 重开 OAuthState 并在原 Monitor 上 reconcile，没有完整 Monitor 重启。"

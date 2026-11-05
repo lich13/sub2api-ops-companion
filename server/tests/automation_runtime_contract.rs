@@ -837,7 +837,7 @@ async fn recovery_unknown_test_is_blocked_and_never_replayed() {
 }
 
 #[tokio::test]
-async fn successful_recovery_receipt_survives_interrupted_write_and_old_reader_restart() {
+async fn legacy_recovery_receipt_survives_interrupted_write_and_old_reader_restart() {
     let harness = Harness::new().await;
     let (row, usage, intent) = seed_recovery(&harness, false).await;
     let id = integer(&row["id"]).unwrap();
@@ -865,6 +865,34 @@ async fn successful_recovery_receipt_survives_interrupted_write_and_old_reader_r
     tokio::time::timeout(StdDuration::from_secs(8), gate.entered.notified())
         .await
         .expect("synthetic recovery write did not enter its response gate");
+
+    let state = harness.runtime.monitor.state().unwrap();
+    let synchronous_intent = &state["scheduler"][id.to_string()]["recovery_intent"];
+    assert!(synchronous_intent["verification_receipt"].is_null());
+    assert!(synchronous_intent["recovery_write_dispatched"].is_null());
+    // Exercise the checkpoint written before 0.1.80. Synchronous recovery no
+    // longer writes this intermediate state, but existing receipts remain valid.
+    harness
+        .runtime
+        .monitor
+        .store
+        .transaction(|state| {
+            let saved = &mut state["scheduler"][id.to_string()]["recovery_intent"];
+            saved["verification_receipt"] = json!({
+                "result": {
+                    "success": true,
+                    "completed_at": datetime(harness.now()),
+                    "recovery_method": "connection",
+                    "recovery_method_generation": 0
+                },
+                "manual_generation": generation,
+                "credential_fingerprint": oauth_admission::credential_fingerprint(&row),
+                "block_state": row
+            });
+            saved["recovery_write_dispatched"] = true.into();
+            Ok(())
+        })
+        .unwrap();
 
     let state = harness.runtime.monitor.state().unwrap();
     let durable_intent = &state["scheduler"][id.to_string()]["recovery_intent"];
