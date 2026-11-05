@@ -223,17 +223,8 @@ impl Detection {
     }
     async fn tick_account(&self, id: i64) -> Result<Option<(Value, Value, bool)>> {
         let mut value = self.control(id)?;
-        if matches!(
-            string(&value["disposition"]["status"]),
-            "pending" | "marked" | "writing" | "checking"
-        ) || (value["disposition"]["status"] == "needs_confirmation"
-            && value["disposition"]["reason"] == "停调度结果未确认，未重复写入")
-        {
+        if value["disposition"]["status"] == "pending" {
             self.finish_disposition(id).await?;
-            value = self.control(id)?;
-        }
-        if value["recheck_recovery"]["status"] == "pending" {
-            self.finish_recheck_recovery(id).await?;
             value = self.control(id)?;
         }
         let mut job = Value::Null;

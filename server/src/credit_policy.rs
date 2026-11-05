@@ -30,24 +30,13 @@ impl CreditController {
         let state = self.store.shared_snapshot()?;
         for (key, meta) in state["scheduler"].as_object().into_iter().flatten() {
             let id = key.parse::<i64>().map_err(|_| Error::internal())?;
-            let mut task = meta["auto_reset_credit"]
+            let task = meta["auto_reset_credit"]
                 .as_object()
                 .cloned()
                 .map(Value::Object)
                 .unwrap_or(json!({}));
-            if truthy(&task) && !truthy(&task["attempt_at"]) && !truthy(&task["credit_admitted_at"])
-            {
-                let row = if let Some(row) = live.get(&id) {
-                    row.clone()
-                } else {
-                    Cow::Owned(self.row(id).await?)
-                };
-                task = self.migrate_admission(id, &row, &task, at)?;
-            }
             if !truthy(&task)
                 || credit_rules::manual(&task)
-                || credit_rules::LEGACY_ENDED.contains(&string(&task["stage"]))
-                    && !truthy(&task["policy_version"])
                 || matches!(string(&task["stage"]), "finished" | "recovered" | "closed")
             {
                 continue;
@@ -56,7 +45,6 @@ impl CreditController {
                 e.insert(Cow::Owned(self.row(id).await?));
             }
             let row = &live[&id];
-            task = self.policy(row, &task).await?;
             let current = at;
             let control = &meta["manual_control"];
             let expected = integer(&task["policy_control_generation"]).unwrap_or(0);
@@ -126,8 +114,7 @@ impl CreditController {
                 continue;
             };
             let task = &meta["auto_reset_credit"];
-            let task_needs_step = if !truthy(task) || (!enabled && !truthy(&task["policy_version"]))
-            {
+            let task_needs_step = if !truthy(task) || credit_rules::manual(task) {
                 false
             } else {
                 let stage = string(&task["stage"]);
@@ -135,10 +122,7 @@ impl CreditController {
                 !((matches!(stage, "recovered" | "closed") && !truthy(&task["owns_pause"]))
                     || (stage == "finished"
                         && truthy(&task["recovered_evidence_at"])
-                        && !owns_unissued)
-                    || (credit_rules::LEGACY_ENDED.contains(&stage)
-                        && !truthy(&task["policy_version"])
-                        && stage != "manual"))
+                        && !owns_unissued))
             };
             let admission = &meta["credit_admission"];
             let admission_unrecovered =
@@ -197,7 +181,7 @@ impl CreditController {
         }
         let id = integer(&item["id"]).ok_or_else(Error::invalid)?;
         let enabled = self.hooks.config()?["oauth_auto_reset_credit_enabled"] == true;
-        if !enabled && !truthy(&self.state(id)?["policy_version"]) {
+        if !enabled && !truthy(&self.state(id)?) {
             return Ok(());
         }
         let Ok(_budget) = self.budget.clone().try_acquire_owned() else {
@@ -219,19 +203,20 @@ impl CreditController {
     pub async fn bounded_step(&self, id: i64, at: DateTime<Utc>, enabled: bool) -> Result<()> {
         let mut row = self.row(id).await?;
         let mut task = self.state(id)?;
-        task = self.migrate_admission(id, &row, &task, at)?;
+        let mut admitted = false;
         self.observe_recovery(&row, at)?;
-        if truthy(&task["credit_gate_skipped"]) && !truthy(&task["owns_pause"]) && enabled {
-            let evidence = self.depletion(&row, at, false).await?;
-            if truthy(&evidence) {
-                task = self.begin_episode(&row, &task, &evidence, at).await?;
-                if !truthy(&task) {
-                    return Ok(());
-                }
-            }
-        }
+        let evidence = if row.is_object()
+            && enabled
+            && (!truthy(&task["attempt_at"])
+                || credit_rules::manual(&task)
+                || matches!(string(&task["stage"]), "finished" | "recovered" | "closed"))
+        {
+            self.depletion(&row, at, truthy(&task["owns_pause"]))
+                .await?
+        } else {
+            Value::Null
+        };
         if credit_rules::manual(&task) && !matches!(string(&task["stage"]), "recovered" | "closed")
-            || task["stage"] == "manual" && !truthy(&task["policy_version"])
         {
             if row.is_object()
                 && self.eligible(&row, at, false)?
@@ -249,8 +234,8 @@ impl CreditController {
                 ["manual_control"]
                 .clone();
             let changed = parse_datetime(&control["at"]);
-            let evidence = if row.is_object() && enabled && !truthy(&task["attempt_at"]) {
-                self.depletion(&row, at, false).await?
+            let evidence = if row.is_object() && enabled {
+                evidence.clone()
             } else {
                 Value::Null
             };
@@ -268,6 +253,7 @@ impl CreditController {
             if !truthy(&task) {
                 return Ok(());
             }
+            admitted = true;
         }
         if task["stage"] == "finished" {
             if truthy(&task["owns_pause"]) && !truthy(&task["attempt_at"]) {
@@ -285,7 +271,7 @@ impl CreditController {
             }
             let recovered = parse_datetime(&task["recovered_evidence_at"]);
             let evidence = if row.is_object() && recovered.is_some() && enabled {
-                self.depletion(&row, at, false).await?
+                evidence.clone()
             } else {
                 Value::Null
             };
@@ -300,10 +286,11 @@ impl CreditController {
             if !truthy(&task) {
                 return Ok(());
             }
+            admitted = true;
         }
         if !truthy(&task) || matches!(string(&task["stage"]), "recovered" | "closed") {
             let evidence = if row.is_object() && enabled {
-                self.depletion(&row, at, false).await?
+                evidence.clone()
             } else {
                 Value::Null
             };
@@ -325,13 +312,8 @@ impl CreditController {
             if !truthy(&task) {
                 return Ok(());
             }
+            admitted = true;
         }
-        if credit_rules::LEGACY_ENDED.contains(&string(&task["stage"]))
-            && !truthy(&task["policy_version"])
-        {
-            return Ok(());
-        }
-        task = self.policy(&row, &task).await?;
         let reason = self.guard_reason(id, &row, &task, at)?;
         if !reason.is_empty() {
             self.finish(id, &task, reason, at, &row, true, &Value::Null)
@@ -382,13 +364,7 @@ impl CreditController {
                 return Ok(());
             }
             if truthy(&task["test_success"]) {
-                if self.available(&row, &task, at)? {
-                    self.release(&row, &task, at).await?;
-                } else {
-                    self.finish(id, &task, "incomplete_quota", at, &row, true, &Value::Null)
-                        .await?;
-                }
-                return Ok(());
+                return self.release(&row, &task, at).await;
             }
             if truthy(&task["verification_dispatched"]) && !truthy(&task["model_test_job_id"]) {
                 self.finish(
@@ -426,9 +402,7 @@ impl CreditController {
                 .await?;
             return Ok(());
         }
-        let evidence = self
-            .depletion(&row, at, truthy(&task["owns_pause"]))
-            .await?;
+
         if !truthy(&evidence) {
             self.finish(id, &task, "block_cleared", at, &row, true, &Value::Null)
                 .await?;
@@ -455,11 +429,13 @@ impl CreditController {
         if parse_datetime(&task["next_at"]).is_some_and(|due| due > at) {
             return Ok(());
         }
-        let reason = self.positive_credit_reason(&row, &evidence, at)?;
-        if !reason.is_empty() {
-            self.finish(id, &task, reason, at, &row, true, &Value::Null)
-                .await?;
-            return Ok(());
+        if !admitted {
+            let reason = self.positive_credit_reason(&row, &evidence, at)?;
+            if !reason.is_empty() {
+                self.finish(id, &task, reason, at, &row, true, &Value::Null)
+                    .await?;
+                return Ok(());
+            }
         }
         let at = self.now();
         if credit_rules::expired(&task, at) {
@@ -522,16 +498,25 @@ impl CreditController {
             .await?;
             return Ok(());
         };
-        let result = self
-            .request(&row, "reset", &task, at, Source::Automatic, None)
+        let (result, latest_row) = self
+            .request(
+                &row,
+                "reset",
+                &task,
+                at,
+                Source::Automatic,
+                None,
+                Some(&evidence),
+            )
             .await?;
         task = self.state(id)?;
         if task["stage"] == "finished" {
             return Ok(());
         }
         if truthy(&task["consumed"]) && !truthy(&result["uncertain"]) {
-            self.test(&self.row(id).await?, &task, self.now(), true)
-                .await?;
+            if let Some(live) = latest_row {
+                self.test(&live, &task, self.now(), true).await?;
+            }
         } else if truthy(&task["attempt_at"]) {
             self.finish(
                 id,

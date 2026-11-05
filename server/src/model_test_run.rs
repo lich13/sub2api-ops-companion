@@ -49,7 +49,12 @@ impl ModelTests {
             .extend(changes.as_object().cloned().ok_or_else(Error::internal)?);
         self.progress(id, run)
     }
-    pub(crate) async fn run(&self, job: Value, context: Arc<Context>) -> Result<()> {
+    pub(crate) async fn run(
+        &self,
+        job: Value,
+        context: Arc<Context>,
+        prepared_row: Option<Value>,
+    ) -> Result<()> {
         let id = string(&job["id"]);
         let aid = integer(&job["account_id"]).ok_or_else(Error::internal)?;
         let run = Arc::new(Run {
@@ -99,6 +104,7 @@ impl ModelTests {
                 index,
                 &client,
                 group_slots.clone(),
+                prepared_row,
             )
             .await?;
         }
@@ -118,6 +124,7 @@ impl ModelTests {
                     index,
                     &client,
                     group_slots.clone(),
+                    None,
                 ));
             }
             while let Some(result) = children.next().await {
@@ -282,6 +289,10 @@ impl ModelTests {
             .retain(|key, old| key == id && retryable || old.row["id"] != aid);
         Ok(())
     }
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Pass the first prepared account through to its sample"
+    )]
     async fn sample(
         &self,
         job: &Value,
@@ -290,6 +301,7 @@ impl ModelTests {
         index: usize,
         client: &reqwest::Client,
         group_slots: Arc<tokio::sync::Semaphore>,
+        prepared_row: Option<Value>,
     ) -> Result<()> {
         let id = string(&job["id"]);
         let started = Instant::now();
@@ -302,6 +314,7 @@ impl ModelTests {
                 client,
                 group_slots,
                 started,
+                prepared_row,
             )
             .await;
         if let Err(failure) = result {
@@ -335,17 +348,24 @@ impl ModelTests {
         client: &reqwest::Client,
         group_slots: Arc<tokio::sync::Semaphore>,
         started: Instant,
+        mut prepared_row: Option<Value>,
     ) -> std::result::Result<(), Failure> {
         let internal = |_: Error| Failure::new("internal_error", false);
         let id = string(&job["id"]);
         let aid = integer(&job["account_id"]).unwrap();
         let (expected, prompt) = &context.challenges[index];
         for attempt in 0..3 {
-            let permit = group_slots
-                .clone()
-                .acquire_owned()
-                .await
-                .map_err(|_| Failure::new("internal_error", false))?;
+            let permit = match group_slots.clone().try_acquire_owned() {
+                Ok(permit) => permit,
+                Err(_) => {
+                    prepared_row = None;
+                    group_slots
+                        .clone()
+                        .acquire_owned()
+                        .await
+                        .map_err(|_| Failure::new("internal_error", false))?
+                }
+            };
             if run.early.load(Ordering::Acquire)
                 || run
                     .fatal
@@ -360,7 +380,7 @@ impl ModelTests {
             // probes have a separate configurable recovery-test limit.
             let latest = if job["automatic"] == true {
                 self.hooks
-                    .guard(self.get(id).map_err(internal)?)
+                    .guard(self.get(id).map_err(internal)?, prepared_row.take())
                     .await
                     .map_err(|_| Failure::new("account_changed", false))?
             } else {

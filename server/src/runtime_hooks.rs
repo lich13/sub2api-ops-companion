@@ -139,8 +139,8 @@ impl model_tests::ModelHooks for Hooks {
     fn verdict_policy(&self, id: i64) -> Result<Value> {
         self.runtime()?.detection.control(id)
     }
-    fn guard(&self, job: Value) -> BoxFuture<'_, Result<Value>> {
-        Box::pin(async move { self.runtime()?.detection.guard(&job).await })
+    fn guard(&self, job: Value, row: Option<Value>) -> BoxFuture<'_, Result<Value>> {
+        Box::pin(async move { self.runtime()?.detection.guard_row(&job, row).await })
     }
     fn next_allowed_at(&self, id: i64) -> Result<Value> {
         self.runtime()?.detection.next_allowed_at(id)
@@ -148,7 +148,7 @@ impl model_tests::ModelHooks for Hooks {
     fn register_dispatch(&self, job: &Value) -> Result<()> {
         self.runtime()?.detection.register_dispatch(job)
     }
-    fn prepare_recovery(&self, job: Value) -> BoxFuture<'_, Result<Value>> {
+    fn prepare_recovery(&self, job: Value) -> BoxFuture<'_, Result<(Value, Option<Value>)>> {
         Box::pin(async move { self.runtime()?.detection.prepare_recovery(&job).await })
     }
     fn verdict(&self, job: Value, report: Value) -> BoxFuture<'_, Result<Value>> {
@@ -175,14 +175,28 @@ impl operations::Backend for Hooks {
     ) -> BoxFuture<'a, Result<operations::CycleObservation>> {
         Box::pin(async move {
             let runtime = self.runtime()?;
-            let mut row = runtime.monitor.row(id).await?;
+            let mut row = crate::model_target::account(&runtime.actions, id).await?;
             if row["platform"] != "openai" || row["type"] != "oauth" {
                 return Err(Error::new(422, "持续预约仅支持 OpenAI OAuth 账号"));
             }
             if refresh {
-                let account = runtime.actions.account(id, None).await?;
-                runtime.usage_action(id, &json!({"action":"query_usage","expected_version":crate::compat::account_version(&account)}), key, None).await?;
-                row = runtime.monitor.row(id).await?;
+                let state = runtime.monitor.store.shared_snapshot()?;
+                let saved = Self::cycle_saved(&row, &state, runtime.monitor.now())?;
+                if Self::cycle_needs_evidence(&row, &saved) {
+                    let evidence = crate::credit_rules::upstream_evidence(
+                        &runtime.db,
+                        &row,
+                        runtime.monitor.now(),
+                    )
+                    .await?;
+                    let observation =
+                        operations::observe_cycle(&row, &saved, &evidence, runtime.monitor.now())?;
+                    if observation.stopped {
+                        return Ok(observation);
+                    }
+                }
+                runtime.usage_action(id, &json!({"action":"query_usage","expected_version":crate::compat::account_version(&row)}), key, None).await?;
+                row = crate::model_target::account(&runtime.actions, id).await?;
             }
             let at = runtime.monitor.now();
             let state = runtime.monitor.store.shared_snapshot()?;

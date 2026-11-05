@@ -343,7 +343,7 @@ impl Detection {
         if ACTIVE.contains(&string(&self.tests.latest(id)?["status"])) {
             return Ok(self.recovery_wait("等待当前模型测试结束", None, None, "model_busy"));
         }
-        let row = self.actions.queries.internal_account(id).await?;
+        let row = crate::model_target::account(&self.actions, id).await?;
         context["block_signature"] = block_signature(&row).into();
         let reason = self.recovery_reason(&row, &context, consume).await?;
         if !reason.is_empty() {
@@ -401,43 +401,60 @@ impl Detection {
             "model_verification_pending",
         ))
     }
-    pub async fn prepare_recovery(&self, job: &Value) -> Result<Value> {
+    pub async fn prepare_recovery(&self, job: &Value) -> Result<(Value, Option<Value>)> {
         let context = &job["recovery_context"];
         if !truthy(context) || context["consume"] != true {
-            return Ok(Value::Null);
+            return Ok((Value::Null, None));
         }
         let id = integer(&job["account_id"]).ok_or_else(Error::invalid)?;
         let controller = &self.monitor.credits;
-        let row = controller.row(id).await?;
+        let row = crate::model_target::account(&self.actions, id).await?;
         let task = controller.state(id)?;
         if truthy(&task["attempt_at"]) {
-            return Ok(if task["consumed"] == true && task["stage"] == "testing" {
-                Value::Null
-            } else {
-                json!({"success":false,"error_code":"reset_uncertain","error":"重置结果待确认"})
-            });
+            return Ok((
+                if task["consumed"] == true && task["stage"] == "testing" {
+                    Value::Null
+                } else {
+                    json!({"success":false,"error_code":"reset_uncertain","error":"重置结果待确认"})
+                },
+                Some(row),
+            ));
         }
         let reason = self.recovery_reason(&row, context, true).await?;
         if !reason.is_empty() {
-            return Ok(json!({"success":false,"error_code":"recovery_ineligible","error":reason}));
+            return Ok((
+                json!({"success":false,"error_code":"recovery_ineligible","error":reason}),
+                Some(row),
+            ));
         }
         let task = controller.save(id, &task, json!({"model_test_job_id":job["id"]}))?;
-        let result = controller
-            .request(&row, "reset", &task, self.now(), Source::Automatic, None)
+        let (result, latest_row) = controller
+            .request(
+                &row,
+                "reset",
+                &task,
+                self.now(),
+                Source::Automatic,
+                None,
+                None,
+            )
             .await?;
         if result["consumed"] == true
             && result["uncertain"] != true
             && controller.state(id)?["stage"] == "testing"
         {
-            Ok(Value::Null)
+            Ok((Value::Null, latest_row))
         } else {
-            Ok(json!({
-                "success": false,
-                "deferred": truthy(&result["next_query_at"]),
-                "error_code": result["error_code"].as_str().filter(|v|!v.is_empty()).unwrap_or("reset_uncertain"),
-                "error": "重置尚未确认成功",
-                "next_at": result["next_query_at"],
-            }))
+            Ok((
+                json!({
+                    "success": false,
+                    "deferred": truthy(&result["next_query_at"]),
+                    "error_code": result["error_code"].as_str().filter(|v|!v.is_empty()).unwrap_or("reset_uncertain"),
+                    "error": "重置尚未确认成功",
+                    "next_at": result["next_query_at"],
+                }),
+                latest_row,
+            ))
         }
     }
 }

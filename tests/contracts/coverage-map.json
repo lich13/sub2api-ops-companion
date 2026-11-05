@@ -2323,7 +2323,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset037:AutoReset037NotificationTests.test_disabled_bark_suppresses_notice_without_business_replay",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
@@ -2335,8 +2335,6 @@
           "assert_eq!(push.len(), 1);",
           "assert_eq!( push[0].headers.get(\"content-type\").unwrap(), \"application/json\" );",
           "assert_eq!(push[0].body[\"device_key\"], \"fixture-bark-device-key\");",
-          "assert_eq!(push[0].body[\"level\"], \"critical\");",
-          "assert_eq!(push[0].body[\"sound\"], \"alarm\");",
           "assert_eq!(push[0].body[\"group\"], \"oauth-reset-credit\");",
           "assert!(!push[0].body.to_string().contains(ADMIN_KEY));",
           "assert_eq!(failed[\"status\"], \"failed\");",
@@ -2348,7 +2346,9 @@
           "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 0);",
           "assert_eq!(suppressed[\"status\"], \"suppressed\");",
           "assert_eq!(suppressed[\"attempts\"], 0);",
-          "assert!(suppressed[\"next_at\"].is_null());"
+          "assert!(suppressed[\"next_at\"].is_null());",
+          "assert!(push[0].body.get(\"level\").is_none());",
+          "assert!(push[0].body.get(\"sound\").is_none());"
         ],
         "helper_assertions": [
           {
@@ -2372,11 +2372,18 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_disabled_bark_suppresses_notice_without_business_replay 已完整通过。Rust bark_delivery_has_an_atomic_reservation_five_attempt_limit_and_no_business_replay 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "普通用卡通知省略 level 与 sound，仅确认降智保留 critical 与 alarm。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset037:AutoReset037NotificationTests.test_disabled_bark_suppresses_notice_without_business_replay"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "普通用卡通知省略 level 与 sound，仅确认降智保留 critical 与 alarm。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset037:AutoReset037NotificationTests.test_notification_retry_is_atomic_bounded_and_never_replays_reset",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
@@ -2388,8 +2395,6 @@
           "assert_eq!(push.len(), 1);",
           "assert_eq!( push[0].headers.get(\"content-type\").unwrap(), \"application/json\" );",
           "assert_eq!(push[0].body[\"device_key\"], \"fixture-bark-device-key\");",
-          "assert_eq!(push[0].body[\"level\"], \"critical\");",
-          "assert_eq!(push[0].body[\"sound\"], \"alarm\");",
           "assert_eq!(push[0].body[\"group\"], \"oauth-reset-credit\");",
           "assert!(!push[0].body.to_string().contains(ADMIN_KEY));",
           "assert_eq!(failed[\"status\"], \"failed\");",
@@ -2401,7 +2406,9 @@
           "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 0);",
           "assert_eq!(suppressed[\"status\"], \"suppressed\");",
           "assert_eq!(suppressed[\"attempts\"], 0);",
-          "assert!(suppressed[\"next_at\"].is_null());"
+          "assert!(suppressed[\"next_at\"].is_null());",
+          "assert!(push[0].body.get(\"level\").is_none());",
+          "assert!(push[0].body.get(\"sound\").is_none());"
         ],
         "helper_assertions": [
           {
@@ -2425,7 +2432,14 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_notification_retry_is_atomic_bounded_and_never_replays_reset 已完整通过。Rust bark_delivery_has_an_atomic_reservation_five_attempt_limit_and_no_business_replay 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "普通用卡通知省略 level 与 sound，仅确认降智保留 critical 与 alarm。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset037:AutoReset037NotificationTests.test_notification_retry_is_atomic_bounded_and_never_replays_reset"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "普通用卡通知省略 level 与 sound，仅确认降智保留 critical 与 alarm。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset037_boundaries:AutoReset037AdmissionBoundaryTests.test_policy_clock_never_moves_deadline_forward_after_clock_rollback",
@@ -2512,7 +2526,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset037_boundaries:AutoReset037BarkTests.test_real_loopback_bark_retries_five_times_with_parameters_without_replaying_card",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
@@ -2524,8 +2538,6 @@
           "assert_eq!(push.len(), 1);",
           "assert_eq!( push[0].headers.get(\"content-type\").unwrap(), \"application/json\" );",
           "assert_eq!(push[0].body[\"device_key\"], \"fixture-bark-device-key\");",
-          "assert_eq!(push[0].body[\"level\"], \"critical\");",
-          "assert_eq!(push[0].body[\"sound\"], \"alarm\");",
           "assert_eq!(push[0].body[\"group\"], \"oauth-reset-credit\");",
           "assert!(!push[0].body.to_string().contains(ADMIN_KEY));",
           "assert_eq!(failed[\"status\"], \"failed\");",
@@ -2537,7 +2549,9 @@
           "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 0);",
           "assert_eq!(suppressed[\"status\"], \"suppressed\");",
           "assert_eq!(suppressed[\"attempts\"], 0);",
-          "assert!(suppressed[\"next_at\"].is_null());"
+          "assert!(suppressed[\"next_at\"].is_null());",
+          "assert!(push[0].body.get(\"level\").is_none());",
+          "assert!(push[0].body.get(\"sound\").is_none());"
         ],
         "helper_assertions": [
           {
@@ -2561,7 +2575,14 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_real_loopback_bark_retries_five_times_with_parameters_without_replaying_card 已完整通过。Rust bark_delivery_has_an_atomic_reservation_five_attempt_limit_and_no_business_replay 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "普通用卡通知省略 level 与 sound，仅确认降智保留 critical 与 alarm。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset037_boundaries:AutoReset037BarkTests.test_real_loopback_bark_retries_five_times_with_parameters_without_replaying_card"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "普通用卡通知省略 level 与 sound，仅确认降智保留 critical 与 alarm。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset037_boundaries:AutoReset037BudgetTests.test_missing_card_does_not_consume_any_query_budget_slot",
@@ -2673,7 +2694,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset037_boundaries:AutoReset037RuntimeSafetyTests.test_clear_request_is_persisted_once_and_unknown_write_is_only_reconciled",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
@@ -2687,9 +2708,11 @@
           "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1);",
           "assert_eq!(harness.mock.count(Method::POST, \"/recover-state\"), 1);",
           "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 1);",
-          "assert_eq!(reconciled[\"stage\"], \"confirming\");",
           "assert_eq!( reconciled[\"clear_requested_at\"], first[\"clear_requested_at\"] );",
-          "assert_eq!(reconciled[\"consumed\"], true);"
+          "assert_eq!(reconciled[\"consumed\"], true);",
+          "assert_eq!(reconciled[\"stage\"], \"recovered\");",
+          "assert_eq!(reconciled[\"deadline_at\"], first[\"deadline_at\"]);",
+          "assert_eq!(harness.mock.count(Method::POST, \"/recover-state\"), 2);"
         ],
         "helper_assertions": [
           {
@@ -2721,7 +2744,14 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_clear_request_is_persisted_once_and_unknown_write_is_only_reconciled 已完整通过。Rust uncertain_recovery_write_persists_clear_request_and_only_reconciles_after_restart 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "清状态失败后重试幂等清状态及启用，保留原截止时间，不重复扣卡或测活。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset037_boundaries:AutoReset037RuntimeSafetyTests.test_clear_request_is_persisted_once_and_unknown_write_is_only_reconciled"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "清状态失败后重试幂等清状态及启用，保留原截止时间，不重复扣卡或测活。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset037_boundaries:AutoReset037RuntimeSafetyTests.test_degradation_disposition_finishes_with_notice_in_one_persisted_state",
@@ -3309,33 +3339,14 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset038:AutoReset038AdmissionTests.test_legacy_unissued_zero_card_task_is_hidden_and_pending_notice_suppressed",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
-        "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "legacy_unissued_zero_card_task_is_suppressed_and_unconfirmed_pause_stays_blocked",
+        "path": "server/tests/state_lifecycle_contract.rs",
+        "test_name": "state_0182_upgrade_preserves_receipts_and_compacts_observations",
         "assertions": [
-          "assert_eq!(migrated[\"stage\"], \"finished\", \"{kind}\");",
-          "assert_eq!(migrated[\"credit_gate_skipped\"], true, \"{kind}\");",
-          "assert_eq!(migrated[\"outcome\"], \"not_executed\", \"{kind}\");",
-          "assert_eq!(migrated[\"result_reason\"], expected_reason, \"{kind}\");",
-          "assert_eq!( state[\"scheduler\"][id.to_string()][\"credit_result_notifications\"][episode][\"status\"], \"suppressed\", \"{kind}\" );",
-          "assert!( credit_rules::project( &migrated, &state[\"scheduler\"][id.to_string()][\"credit_result_notifications\"] ) .is_null() );",
-          "assert_eq!(harness.mock.total(), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/push\"), 0);",
-          "assert_eq!(projected[\"stage\"], \"blocked\");",
-          "assert_eq!(projected[\"label\"], \"调度暂停待核对\");",
-          "assert!(projected[\"next_at\"].is_null());"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          }
+          "assert_eq!(meta[\"auto_reset_credit\"], credit);",
+          "assert_eq!(disk, migrated);"
         ],
         "fixtures": [
           {
@@ -3350,37 +3361,25 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_legacy_unissued_zero_card_task_is_hidden_and_pending_notice_suppressed 已完整通过。Rust legacy_unissued_zero_card_task_is_suppressed_and_unconfirmed_pause_stays_blocked 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "删除旧准入懒迁移；0.1.82 已派发扣卡记录及历史保留，加载后保存精简观测。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset038:AutoReset038AdmissionTests.test_legacy_unissued_zero_card_task_is_hidden_and_pending_notice_suppressed"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "删除旧准入懒迁移；0.1.82 已派发扣卡记录及历史保留，加载后保存精简观测。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset038:AutoReset038AdmissionTests.test_skipped_task_with_unconfirmed_pause_remains_blocked_in_projection",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
-        "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "legacy_unissued_zero_card_task_is_suppressed_and_unconfirmed_pause_stays_blocked",
+        "path": "server/tests/state_lifecycle_contract.rs",
+        "test_name": "state_0182_upgrade_preserves_receipts_and_compacts_observations",
         "assertions": [
-          "assert_eq!(migrated[\"stage\"], \"finished\", \"{kind}\");",
-          "assert_eq!(migrated[\"credit_gate_skipped\"], true, \"{kind}\");",
-          "assert_eq!(migrated[\"outcome\"], \"not_executed\", \"{kind}\");",
-          "assert_eq!(migrated[\"result_reason\"], expected_reason, \"{kind}\");",
-          "assert_eq!( state[\"scheduler\"][id.to_string()][\"credit_result_notifications\"][episode][\"status\"], \"suppressed\", \"{kind}\" );",
-          "assert!( credit_rules::project( &migrated, &state[\"scheduler\"][id.to_string()][\"credit_result_notifications\"] ) .is_null() );",
-          "assert_eq!(harness.mock.total(), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/push\"), 0);",
-          "assert_eq!(projected[\"stage\"], \"blocked\");",
-          "assert_eq!(projected[\"label\"], \"调度暂停待核对\");",
-          "assert!(projected[\"next_at\"].is_null());"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          }
+          "assert_eq!(meta[\"auto_reset_credit\"], credit);",
+          "assert_eq!(disk, migrated);"
         ],
         "fixtures": [
           {
@@ -3395,7 +3394,14 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_skipped_task_with_unconfirmed_pause_remains_blocked_in_projection 已完整通过。Rust legacy_unissued_zero_card_task_is_suppressed_and_unconfirmed_pause_stays_blocked 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "删除旧准入懒迁移；0.1.82 已派发扣卡记录及历史保留，加载后保存精简观测。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset038:AutoReset038AdmissionTests.test_skipped_task_with_unconfirmed_pause_remains_blocked_in_projection"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "删除旧准入懒迁移；0.1.82 已派发扣卡记录及历史保留，加载后保存精简观测。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset038:AutoReset038AdmissionTests.test_zero_unknown_expired_and_contradictory_cards_skip_without_any_io",
@@ -3453,7 +3459,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset038:AutoReset038ObservationTests.test_coordinator_keeps_quota_success_when_card_readback_fails",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
@@ -3464,17 +3470,14 @@
           "assert_eq!(observation.is_object(), expected_observation, \"{name}\");",
           "assert_eq!(observation[\"available_count\"], 1);",
           "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert_eq!( observation[\"credential_fingerprint\"], oauth_admission::credential_fingerprint(&row) );",
-          "assert_eq!(observation[\"window_minutes\"], 10080);",
-          "assert_eq!(observation.as_object().unwrap().len(), 9);",
-          "assert_eq!(observation[field].as_str().unwrap().len(), 64);",
           "assert!(!observation.to_string().contains(ADMIN_KEY));",
           "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true);",
           "assert!( state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"] .as_array() .is_none_or(|attempts| attempts.is_empty()) );",
           "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\");",
           "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null());",
           "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);"
+          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);",
+          "assert_eq!(observation.as_object().unwrap().len(), 4);"
         ],
         "helper_assertions": [
           {
@@ -3514,11 +3517,18 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_coordinator_keeps_quota_success_when_card_readback_fails 已完整通过。Rust coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset038:AutoReset038ObservationTests.test_coordinator_keeps_quota_success_when_card_readback_fails"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset038:AutoReset038ObservationTests.test_coordinator_persists_only_current_explicit_card_observation",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
@@ -3529,17 +3539,14 @@
           "assert_eq!(observation.is_object(), expected_observation, \"{name}\");",
           "assert_eq!(observation[\"available_count\"], 1);",
           "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert_eq!( observation[\"credential_fingerprint\"], oauth_admission::credential_fingerprint(&row) );",
-          "assert_eq!(observation[\"window_minutes\"], 10080);",
-          "assert_eq!(observation.as_object().unwrap().len(), 9);",
-          "assert_eq!(observation[field].as_str().unwrap().len(), 64);",
           "assert!(!observation.to_string().contains(ADMIN_KEY));",
           "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true);",
           "assert!( state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"] .as_array() .is_none_or(|attempts| attempts.is_empty()) );",
           "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\");",
           "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null());",
           "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);"
+          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);",
+          "assert_eq!(observation.as_object().unwrap().len(), 4);"
         ],
         "helper_assertions": [
           {
@@ -3579,38 +3586,26 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_coordinator_persists_only_current_explicit_card_observation 已完整通过。Rust coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset038:AutoReset038ObservationTests.test_coordinator_persists_only_current_explicit_card_observation"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset038:AutoReset038ObservationTests.test_observation_from_usage_requires_fresh_explicit_matching_card_data",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
-        "path": "server/tests/pinned_rule_traces.rs",
-        "test_name": "auto_reset038_autoreset038observationtests_test_observation_from_usage_requires_fresh_explicit_matching_card_data",
+        "path": "server/tests/recovery_rules_contract.rs",
+        "test_name": "reset_credit_observation_creation_and_evidence_gates_match_pinned_python",
         "assertions": [
-          "check(",
-          "\"py:tests.test_auto_reset038:AutoReset038ObservationTests.test_observation_from_usage_requires_fresh_explicit_matching_card_data\""
-        ],
-        "helper_assertions": [
-          {
-            "name": "check",
-            "assertions": [
-              "assert!(!cases.is_empty(),",
-              "assert_same(",
-              "assert!(actual.is_err(),",
-              "assert_eq!(args, case[\"arguments\"]);"
-            ]
-          },
-          {
-            "name": "assert_same",
-            "assertions": [
-              "assert_eq!(a.len(), b.len(),",
-              "assert!(a.contains_key(key),",
-              "_ => assert_eq!(actual, expected,",
-              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
-            ]
-          }
+          "assert_eq!(created, compact(&observation[\"expected\"]));",
+          "\"cache_not_persisted\" | \"fetched_before_start_window\"",
+          "assert_eq!(actual.is_none(), rejects"
         ],
         "fixtures": [
           {
@@ -3625,7 +3620,14 @@
           }
         ]
       },
-      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+      "coverage_note": "普通查询使用已确认响应构造四字段观测；不再读取账号比对凭据、限流摘要及窗口，保留刷新时效校验。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset038:AutoReset038ObservationTests.test_observation_from_usage_requires_fresh_explicit_matching_card_data"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "普通查询使用已确认响应构造四字段观测；不再读取账号比对凭据、限流摘要及窗口，保留刷新时效校验。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetEligibilityTests.test_account_and_current_future_limit_conditions_are_jointly_required",
@@ -4354,7 +4356,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_credit_consumes_after_explicit_observation_and_queries_keep_cooldown_and_budget",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
@@ -4363,14 +4365,14 @@
           "assert_eq!(query[\"success\"], true, \"{query}\");",
           "assert_eq!(observation[\"available_count\"], 2);",
           "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert_eq!( observation[\"window_reset_at\"], datetime(now + Duration::days(5)) );",
           "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), 1);",
           "assert_eq!(task[\"stage\"], \"recovered\");",
           "assert_eq!(task[\"consumption_outcome\"], \"consumed\");",
           "assert_eq!(task[\"receipt\"][\"business_code\"], \"success\");",
           "assert_eq!(automatic_attempts, 1);",
           "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1);"
+          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1);",
+          "assert_eq!(observation.as_object().unwrap().len(), 4);"
         ],
         "helper_assertions": [
           {
@@ -4402,7 +4404,7 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_credit_consumes_after_explicit_observation_and_queries_keep_cooldown_and_budget 已完整通过。Rust explicit_loopback_card_observation_authorizes_one_real_reset_and_immediate_test 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。",
+      "coverage_note": "普通查询观测删除五个摘要和窗口字段，保留四字段及时效判断。",
       "supporting_targets": [
         {
           "kind": "rust_test",
@@ -4434,7 +4436,14 @@
             }
           ]
         }
-      ]
+      ],
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_credit_consumes_after_explicit_observation_and_queries_keep_cooldown_and_budget"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：代码精简、改参及用卡恢复修复。",
+        "replacement_contract": "普通查询观测删除五个摘要和窗口字段，保留四字段及时效判断。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_missing_error_rows_use_account_block_fallback_once_and_merge_recovery_event",
@@ -4610,7 +4619,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_native_observation_requires_matching_database_snapshot_and_cache_confirmation",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
@@ -4621,17 +4630,14 @@
           "assert_eq!(observation.is_object(), expected_observation, \"{name}\");",
           "assert_eq!(observation[\"available_count\"], 1);",
           "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert_eq!( observation[\"credential_fingerprint\"], oauth_admission::credential_fingerprint(&row) );",
-          "assert_eq!(observation[\"window_minutes\"], 10080);",
-          "assert_eq!(observation.as_object().unwrap().len(), 9);",
-          "assert_eq!(observation[field].as_str().unwrap().len(), 64);",
           "assert!(!observation.to_string().contains(ADMIN_KEY));",
           "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true);",
           "assert!( state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"] .as_array() .is_none_or(|attempts| attempts.is_empty()) );",
           "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\");",
           "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null());",
           "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);"
+          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);",
+          "assert_eq!(observation.as_object().unwrap().len(), 4);"
         ],
         "helper_assertions": [
           {
@@ -4671,11 +4677,18 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_native_observation_requires_matching_database_snapshot_and_cache_confirmation 已完整通过。Rust coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_native_observation_requires_matching_database_snapshot_and_cache_confirmation"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_native_observation_write_failure_cannot_authorize_card_consumption",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
@@ -4686,17 +4699,14 @@
           "assert_eq!(observation.is_object(), expected_observation, \"{name}\");",
           "assert_eq!(observation[\"available_count\"], 1);",
           "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert_eq!( observation[\"credential_fingerprint\"], oauth_admission::credential_fingerprint(&row) );",
-          "assert_eq!(observation[\"window_minutes\"], 10080);",
-          "assert_eq!(observation.as_object().unwrap().len(), 9);",
-          "assert_eq!(observation[field].as_str().unwrap().len(), 64);",
           "assert!(!observation.to_string().contains(ADMIN_KEY));",
           "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true);",
           "assert!( state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"] .as_array() .is_none_or(|attempts| attempts.is_empty()) );",
           "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\");",
           "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null());",
           "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);"
+          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);",
+          "assert_eq!(observation.as_object().unwrap().len(), 4);"
         ],
         "helper_assertions": [
           {
@@ -4736,7 +4746,14 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_native_observation_write_failure_cannot_authorize_card_consumption 已完整通过。Rust coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_native_observation_write_failure_cannot_authorize_card_consumption"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_native_reset_receipt_recovers_through_scheduled_monitor_with_one_merged_event",
@@ -4854,7 +4871,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_native_snapshot_is_observed_once_then_reused_after_restart_without_hourly_wait",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
@@ -4927,7 +4944,7 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_native_snapshot_is_observed_once_then_reused_after_restart_without_hourly_wait 已完整通过。Rust automatic_pause_is_read_back_owned_before_receipt_and_recovery_is_once_only 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。",
+      "coverage_note": "普通查询观测删除五个摘要和窗口字段，保留四字段及时效判断。",
       "supporting_targets": [
         {
           "kind": "rust_test",
@@ -4937,14 +4954,14 @@
             "assert_eq!(query[\"success\"], true, \"{query}\");",
             "assert_eq!(observation[\"available_count\"], 2);",
             "assert_eq!(observation[\"observed_at\"], datetime(now));",
-            "assert_eq!( observation[\"window_reset_at\"], datetime(now + Duration::days(5)) );",
             "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), 1);",
             "assert_eq!(task[\"stage\"], \"recovered\");",
             "assert_eq!(task[\"consumption_outcome\"], \"consumed\");",
             "assert_eq!(task[\"receipt\"][\"business_code\"], \"success\");",
             "assert_eq!(automatic_attempts, 1);",
             "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1);",
-            "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1);"
+            "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1);",
+            "assert_eq!(observation.as_object().unwrap().len(), 4);"
           ],
           "fixtures": [
             {
@@ -4959,7 +4976,14 @@
             }
           ]
         }
-      ]
+      ],
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_native_snapshot_is_observed_once_then_reused_after_restart_without_hourly_wait"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：代码精简、改参及用卡恢复修复。",
+        "replacement_contract": "普通查询观测删除五个摘要和窗口字段，保留四字段及时效判断。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_native_snapshot_refresh_preserves_both_429_evidence_paths",
@@ -5223,7 +5247,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_refresh_timestamp_outside_read_interval_is_not_trusted",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
@@ -5234,17 +5258,14 @@
           "assert_eq!(observation.is_object(), expected_observation, \"{name}\");",
           "assert_eq!(observation[\"available_count\"], 1);",
           "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert_eq!( observation[\"credential_fingerprint\"], oauth_admission::credential_fingerprint(&row) );",
-          "assert_eq!(observation[\"window_minutes\"], 10080);",
-          "assert_eq!(observation.as_object().unwrap().len(), 9);",
-          "assert_eq!(observation[field].as_str().unwrap().len(), 64);",
           "assert!(!observation.to_string().contains(ADMIN_KEY));",
           "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true);",
           "assert!( state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"] .as_array() .is_none_or(|attempts| attempts.is_empty()) );",
           "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\");",
           "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null());",
           "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);"
+          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);",
+          "assert_eq!(observation.as_object().unwrap().len(), 4);"
         ],
         "helper_assertions": [
           {
@@ -5284,7 +5305,14 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_refresh_timestamp_outside_read_interval_is_not_trusted 已完整通过。Rust coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_refresh_timestamp_outside_read_interval_is_not_trusted"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_zero_or_expired_native_credit_does_not_repeat_refresh_on_each_step",
@@ -5853,45 +5881,15 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetLifecycleTests.test_manual_change_during_retry_relinquishes_pause_ownership",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "account_updated_at_change_during_retry_relinquishes_pause_without_second_test",
+        "test_name": "token_renewal_during_credit_retry_preserves_pause_and_does_not_replay_card",
         "assertions": [
-          "assert_eq!(retry[\"stage\"], \"retry\");",
-          "assert_eq!(retry[\"test_attempts\"], 1);",
-          "assert_eq!(relinquished[\"stage\"], \"blocked\");",
-          "assert_eq!(relinquished[\"owns_pause\"], false);",
-          "assert_eq!(relinquished[\"consumed\"], true);",
+          "assert_eq!(relinquished[\"stage\"], \"recovered\");",
           "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 1);",
-          "assert_eq!(reload_account(&harness, id).await[\"schedulable\"], false);"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "run_automatic",
-            "assertions": [
-              ".run_account(row, at)",
-              "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
-            ]
-          },
-          {
-            "name": "reload_account",
-            "assertions": [
-              "credit_ownership::account(&harness.db, id)",
-              "expect(\"reload synthetic account from PostgreSQL\")"
-            ]
-          }
+          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 2);"
         ],
         "fixtures": [
           {
@@ -5906,7 +5904,14 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_manual_change_during_retry_relinquishes_pause_ownership 已完整通过。Rust account_updated_at_change_during_retry_relinquishes_pause_without_second_test 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "正常 token 续期与更新时间变化不取消用卡恢复；扣卡仅一次，失败测活按既定策略重试。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset:AutoResetLifecycleTests.test_manual_change_during_retry_relinquishes_pause_ownership"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "正常 token 续期与更新时间变化不取消用卡恢复；扣卡仅一次，失败测活按既定策略重试。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetLifecycleTests.test_manual_disable_during_test_or_recovery_never_restores_scheduling",
@@ -6035,20 +6040,19 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetLifecycleTests.test_quota_result_write_failure_keeps_confirmed_consumption_on_disk",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
         "test_name": "confirmed_receipt_survives_a_later_state_write_failure_without_reset_replay",
         "assertions": [
-          "assert!( watcher.join().unwrap(), \"consumption receipt was not persisted\" );",
           "assert!(result.is_err());",
           "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 0);",
           "assert_eq!(consumed[\"consumed\"], true);",
           "assert_eq!(consumed[\"receipt\"][\"business_code\"], \"success\");",
           "assert_eq!(after_restart[\"consumed\"], true);",
-          "assert_eq!(after_restart[\"receipt\"], receipt);"
+          "assert_eq!(after_restart[\"receipt\"], receipt);",
+          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1);"
         ],
         "helper_assertions": [
           {
@@ -6073,7 +6077,14 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_quota_result_write_failure_keeps_confirmed_consumption_on_disk 已完整通过。Rust confirmed_receipt_survives_a_later_state_write_failure_without_reset_replay 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "合并相邻状态保存后，测试在单次连接测试期间注入后续保存失败；已确认扣卡回执保留，扣卡与已派发测试不重放。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset:AutoResetLifecycleTests.test_quota_result_write_failure_keeps_confirmed_consumption_on_disk"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：代码精简、改参及用卡恢复修复。",
+        "replacement_contract": "合并相邻状态保存后，测试在单次连接测试期间注入后续保存失败；已确认扣卡回执保留，扣卡与已派发测试不重放。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetLifecycleTests.test_releasing_restart_finishes_same_history_without_repeating_mutations",
@@ -12281,15 +12292,15 @@
     },
     {
       "legacy_test_id": "py:tests.test_detection030:DispositionNotificationTests.test_manual_override_during_schedule_write_prevents_completed_receipt",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
         "test_name": "manual_generation_change_during_schedule_write_blocks_receipt_and_bark",
         "assertions": [
-          "assert_eq!(current[\"disposition\"][\"status\"], \"overridden\");",
           "assert_eq!(current[\"disposition_notification\"], Value::Null);",
-          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);"
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);",
+          "assert!(current[\"disposition\"].is_null());"
         ],
         "fixtures": [
           {
@@ -12300,7 +12311,14 @@
           }
         ]
       },
-      "coverage_note": "人工 generation 变化与 schedule 写竞争时，迟到的 schedule 响应不能生成 completed receipt 或 Bark；对照的是 Runtime 持久结果，不要求暴露旧 Python 内部异常对象。"
+      "coverage_note": "成功处置不提前写 pending；请求期间人工接管仍阻止完成处置记录和通知。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_detection030:DispositionNotificationTests.test_manual_override_during_schedule_write_prevents_completed_receipt"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "成功处置不提前写 pending；请求期间人工接管仍阻止完成处置记录和通知。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_detection030:DispositionNotificationTests.test_mark_save_failure_cannot_stop_scheduling_or_enqueue_result",
@@ -12721,11 +12739,11 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "preexisting_writing_disposition_retries_after_restart",
+        "test_name": "pending_disposition_retries_after_restart",
         "assertions": [
-          "disposition[\"status\"], \"completed\"",
-          "harness.mock.count(\"POST\", \"/v1/responses\"), 0",
-          "harness.mock.count(\"POST\", \"/push\"), 0"
+          "\"status\":\"pending\"",
+          "assert_eq!(disposition[\"status\"], \"completed\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);"
         ],
         "fixtures": [
           {
@@ -12736,13 +12754,13 @@
           }
         ]
       },
-      "coverage_note": "旧 writing 状态重启后补齐停调度，确认完成后进入通知队列，不重新采样。",
+      "coverage_note": "删除旧 writing 恢复分支；停调度失败保存 pending，重启由现有巡检补齐，不重复模型采样。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_detection_disposition027:DetectionDispositionTests.test_restart_with_writing_disposition_marks_unknown_without_replay"
         ],
-        "approved_requirement": "Sub2Ops 0.1.82 已批准计划：网络失败留下的降智停调度状态继续重试。",
-        "replacement_contract": "旧 writing 状态重启后补齐停调度，确认完成后进入通知队列，不重新采样。"
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "删除旧 writing 恢复分支；停调度失败保存 pending，重启由现有巡检补齐，不重复模型采样。"
       }
     },
     {
@@ -12924,16 +12942,15 @@
     },
     {
       "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_pending_recovery_receipt_resumes_after_finish_boundary_failure",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "recovery_receipt_failure_is_adopted_after_restart_and_bark_uses_five_second_retry",
+        "test_name": "marked_recheck_waits_for_shared_cooldown_then_clears_mark_without_schedule_write",
         "assertions": [
-          "recovered[\"status\"], \"completed\"",
-          "recovered[\"job_id\"], job_id",
-          "harness.mock.count(\"POST\", \"/v1/responses\"), 0",
-          "harness.mock.count(\"POST\", \"/push\"), 0"
+          "assert_eq!(control[\"recheck_recovery\"][\"status\"], \"completed\");",
+          "assert_eq!(repeated_receipt[\"status\"], \"completed\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 1);"
         ],
         "fixtures": [
           {
@@ -12944,20 +12961,26 @@
           }
         ]
       },
-      "coverage_note": "recovery finish 边界本地提交失败后，重启采用持久 mark-clear receipt，不重发模型或 schedule 请求。"
+      "coverage_note": "删除旧 pending 复查恢复入口；正常清标记后保存完成结果，重启保持完成记录和通知去重。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_pending_recovery_receipt_resumes_after_finish_boundary_failure"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "删除旧 pending 复查恢复入口；正常清标记后保存完成结果，重启保持完成记录和通知去重。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_recovery_notification_retries_after_five_seconds_and_delivers_once",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "recovery_receipt_failure_is_adopted_after_restart_and_bark_uses_five_second_retry",
+        "test_name": "automatic_notification_retries_use_durable_backoff_and_send_once_after_success",
         "assertions": [
-          "retry[\"status\"], \"retry\"",
-          "retry[\"attempts\"], 1",
-          "Duration::seconds(5)",
-          "harness.mock.count(\"POST\", \"/push\"), 2"
+          "assert_eq!(event[\"status\"], \"retry\");",
+          "assert_eq!(event[\"attempts\"], attempt);",
+          "datetime(harness.now() + Duration::seconds(*delay))"
         ],
         "fixtures": [
           {
@@ -12968,7 +12991,14 @@
           }
         ]
       },
-      "coverage_note": "recovery Bark 事件按五秒退避；到期前保持一次请求，到期后成功并持久去重。"
+      "coverage_note": "复查与降智通知共用持久重试队列，保留五秒退避及成功去重；不再依赖旧 pending 复查回执。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_recovery_notification_retries_after_five_seconds_and_delivers_once"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "复查与降智通知共用持久重试队列，保留五秒退避及成功去重；不再依赖旧 pending 复查回执。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_recovery_receipt_and_delivery_survive_restart_and_duplicate_processing_is_once",
@@ -12997,16 +13027,15 @@
     },
     {
       "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_restart_adopts_mark_clear_when_control_receipt_save_fails_without_replaying_model_or_schedule",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "recovery_receipt_failure_is_adopted_after_restart_and_bark_uses_five_second_retry",
+        "test_name": "marked_recheck_waits_for_shared_cooldown_then_clears_mark_without_schedule_write",
         "assertions": [
-          "recovered[\"mark_cleared\"], true",
-          "recovered[\"mark_version_after\"].is_string()",
-          "harness.mock.count(\"POST\", \"/v1/responses\"), 0",
-          "harness.mock.count(\"POST\", \"/push\"), 0"
+          "assert_eq!(control[\"recheck_recovery\"][\"status\"], \"completed\");",
+          "assert_eq!(repeated_receipt[\"status\"], \"completed\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 1);"
         ],
         "fixtures": [
           {
@@ -13017,7 +13046,14 @@
           }
         ]
       },
-      "coverage_note": "control receipt 保存失败后重启从 mark version 采用已完成 recovery receipt，模型与 schedule 请求均不重放。"
+      "coverage_note": "删除旧 pending 复查恢复入口；正常清标记后保存完成结果，重启保持完成记录和通知去重。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_restart_adopts_mark_clear_when_control_receipt_save_fails_without_replaying_model_or_schedule"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "删除旧 pending 复查恢复入口；正常清标记后保存完成结果，重启保持完成记录和通知去重。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_same_job_id_with_new_completed_at_is_processed_after_a_retry",
@@ -19323,7 +19359,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_concurrency_signature_change_stops_recovery_mutation",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/oauth_scheduler_parity.rs",
@@ -19331,20 +19367,27 @@
         "assertions": [
           "assert_eq!(initial_concurrency, Some(2))",
           "assert_eq!(changed_concurrency, Some(3))",
-          "assert_eq!(intent[\"status\"], \"blocked\")",
           "assert_eq!(intent[\"last_error_code\"], \"recovery_state_changed\")",
-          "assert_eq!(intent[\"next_retry_at\"], \"\")",
           "assert_eq!(event[\"test_success\"], true)",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
           "assert_eq!(harness.mock.count(\"POST\", \"/clear-rate-limit\"), 0)",
           "assert_eq!(harness.mock.count(\"DELETE\", \"/temp-unschedulable\"), 0)",
-          "assert!(harness.mock.unexpected().is_empty())"
+          "assert!(harness.mock.unexpected().is_empty())",
+          "assert_eq!(intent[\"status\"], \"retry\");",
+          "datetime(due + Duration::seconds(10))"
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“concurrency signature change stops recovery mutation”映射到 monitor_recovery_stops_if_account_concurrency_changes_during_test；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked. 0.1.67 已批准仅重试明确失败且仍符合执行条件的连接请求；验证成功后账号条件变化保留停止恢复写入断言，状态改为 blocked。"
+      "coverage_note": "账号状态改变时停止本次清状态，沿用恢复退避重新评估，不永久 blocked。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_concurrency_signature_change_stops_recovery_mutation"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "账号状态改变时停止本次清状态，沿用恢复退避重新评估，不永久 blocked。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_concurrent_force_refresh_calls_share_one_cycle",
@@ -19594,31 +19637,29 @@
           "assert_eq!(harness.mock.count(\"POST\", \"/clear-rate-limit\"), 0)",
           "assert_eq!(harness.mock.count(\"DELETE\", \"/temp-unschedulable\"), 0)",
           "assert_eq!(intent[\"last_error_code\"], \"recovery_uncertain\")",
-          "assert_eq!(intent[\"next_retry_at\"], \"\")",
           "assert!(intent[\"recovery_write_dispatched\"].is_null())",
           "assert_eq!(\n                after_write[\"rate_limited_at\"],\n                blocked_before_write[\"rate_limited_at\"]\n            )",
           "assert_eq!(\n                after_write[\"rate_limit_reset_at\"],\n                blocked_before_write[\"rate_limit_reset_at\"]\n            )",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
-          "assert_eq!(restarted_intent[\"status\"], \"blocked\")",
-          "assert_eq!(restarted_intent[\"last_error_code\"], \"recovery_uncertain\")",
-          "assert_eq!(\n                after_restart[\"rate_limited_at\"],\n                after_write[\"rate_limited_at\"]\n            )",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
           "assert_eq!(\n                harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"],\n                Value::Null\n            )",
-          "assert!(harness.mock.unexpected().is_empty())"
+          "assert!(harness.mock.unexpected().is_empty())",
+          "assert_eq!(restarted_intent[\"status\"], \"recovered\",",
+          "assert!(restarted_intent[\"successful_test\"].is_null());"
         ],
         "fixtures": []
       },
-      "coverage_note": "恢复写入失败保留 blocked 及原阻断签名；重启不重置该失败，同一阻断不重放。",
+      "coverage_note": "清状态失败、未生效或读回失败仅保存最小测活证据；重启后重试清状态，真实身份变更重新测活，正常 token 续期复用成功结果。",
       "replacement": {
         "legacy_assertions": [
-          "test_recover_state_runs_after_test_when_block_remains"
+          "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_recover_state_runs_after_test_when_block_remains"
         ],
-        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
-        "replacement_contract": "恢复写入失败保留 blocked 及原阻断签名；重启不重置该失败，同一阻断不重放。"
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "清状态失败、未生效或读回失败仅保存最小测活证据；重启后重试清状态，真实身份变更重新测活，正常 token 续期复用成功结果。"
       }
     },
     {
@@ -19636,33 +19677,31 @@
           "assert_eq!(harness.mock.count(\"POST\", \"/clear-rate-limit\"), 0)",
           "assert_eq!(harness.mock.count(\"DELETE\", \"/temp-unschedulable\"), 0)",
           "assert_eq!(intent[\"last_error_code\"], \"recovery_uncertain\")",
-          "assert_eq!(intent[\"next_retry_at\"], \"\")",
           "assert!(intent[\"recovery_write_dispatched\"].is_null())",
           "assert_eq!(\n                after_write[\"rate_limited_at\"],\n                blocked_before_write[\"rate_limited_at\"]\n            )",
           "assert_eq!(\n                after_write[\"rate_limit_reset_at\"],\n                blocked_before_write[\"rate_limit_reset_at\"]\n            )",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
-          "assert_eq!(restarted_intent[\"status\"], \"blocked\")",
-          "assert_eq!(restarted_intent[\"last_error_code\"], \"recovery_uncertain\")",
-          "assert_eq!(\n                after_restart[\"rate_limited_at\"],\n                after_write[\"rate_limited_at\"]\n            )",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
           "assert_eq!(\n                harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"],\n                Value::Null\n            )",
-          "assert!(harness.mock.unexpected().is_empty())"
+          "assert!(harness.mock.unexpected().is_empty())",
+          "assert_eq!(restarted_intent[\"status\"], \"recovered\",",
+          "assert!(restarted_intent[\"successful_test\"].is_null());"
         ],
         "fixtures": []
       },
-      "coverage_note": "恢复写入失败保留 blocked 及原阻断签名；重启不重置该失败，同一阻断不重放。",
+      "coverage_note": "清状态失败、未生效或读回失败仅保存最小测活证据；重启后重试清状态，真实身份变更重新测活，正常 token 续期复用成功结果。",
       "superseded_by": "monitor_test_success_falls_back_and_unknown_recovery_write_is_not_replayed",
       "approved_behavior": "recover-state 状态写入响应为 500 时只读核对账号状态；无法确认时标记 blocked/recovery_uncertain，禁止按 +60s 自动重放。",
       "replacement": {
         "legacy_assertions": [
-          "test_recovery_failure_keeps_intent_for_backoff_retry"
+          "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_recovery_failure_keeps_intent_for_backoff_retry"
         ],
-        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
-        "replacement_contract": "恢复写入失败保留 blocked 及原阻断签名；重启不重置该失败，同一阻断不重放。"
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+        "replacement_contract": "清状态失败、未生效或读回失败仅保存最小测活证据；重启后重试清状态，真实身份变更重新测活，正常 token 续期复用成功结果。"
       }
     },
     {
@@ -21542,7 +21581,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_parameter_recovery035:ParameterRecovery035Tests.test_concurrent_generation_credentials_mapping_proxy_and_limit_do_not_resume_hold",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_runtime_contract.rs",
@@ -21552,14 +21591,14 @@
           "assert_eq!(task[\"outcome\"], \"unrecovered\")",
           "assert_eq!(task[\"consumed\"], true)",
           "assert!(task[\"receipt\"].is_object())",
-          "assert_eq!(task[\"owns_pause\"], false)",
           "assert_eq!(task[\"owned_version\"], pending[\"owned_version\"])",
           "assert_eq!(task[\"owned_version\"] == row[\"updated_at\"], change == \"generation\")",
           "assert_eq!(restored.row(id).await.unwrap()[\"schedulable\"], false)",
           "assert_eq!(\n            restored.store.snapshot().unwrap()[\"recovery_history\"],\n            json!({})\n        )",
           "assert_eq!(h.mock.count(Method::POST, \"/reset-quota\"), 1)",
           "assert_eq!(h.mock.count(Method::POST, \"/test\"), 1)",
-          "assert_eq!(h.mock.count(Method::POST, \"/schedulable\"), 1)"
+          "assert_eq!(h.mock.count(Method::POST, \"/schedulable\"), 1)",
+          "assert_eq!(task[\"owns_pause\"], change == \"limit\", \"{change}\");"
         ],
         "helper_assertions": [
           {
@@ -21576,7 +21615,14 @@
           }
         ]
       },
-      "coverage_note": "0.1.80 保留真实参数写后确认和暂停归属；移除 parameter_edit 预写及中断改参的跨重启协调。"
+      "coverage_note": "依据稳定身份、暂停归属和人工控制核对；保留新阻断不清理，正常 token 续期不作为改参冲突。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_parameter_recovery035:ParameterRecovery035Tests.test_concurrent_generation_credentials_mapping_proxy_and_limit_do_not_resume_hold"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：代码精简、改参及用卡恢复修复。",
+        "replacement_contract": "依据稳定身份、暂停归属和人工控制核对；保留新阻断不清理，正常 token 续期不作为改参冲突。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_parameter_recovery035:ParameterRecovery035Tests.test_intent_save_failure_stops_before_upstream_write",

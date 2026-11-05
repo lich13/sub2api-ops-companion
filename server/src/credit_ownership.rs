@@ -30,10 +30,7 @@ pub fn signature(row: &Value) -> String {
     );
     stable["account_priority"] = priority(row).clone();
     stable["priority"] = Value::Null;
-    stable["identity"] = pick(
-        &row["credentials"],
-        &["plan_type", "chatgpt_account_id", "email"],
-    );
+    stable["identity"] = identity(row);
     stable["extra"] = row["extra"]
         .as_object()
         .into_iter()
@@ -58,38 +55,27 @@ fn quota_extra(key: &str) -> bool {
 fn priority(row: &Value) -> &Value {
     row.get("account_priority").unwrap_or(&row["priority"])
 }
-fn same_parameters(before: &Value, after: &Value, field: &str) -> bool {
-    [
-        "id",
-        "name",
-        "platform",
-        "type",
-        "parent_account_id",
-        "concurrency",
-        "expires_at",
-        "auto_pause_on_expired",
-        "credentials",
-        "status",
-        "schedulable",
-        "load_factor",
-        "proxy_id",
-        "rate_limited_at",
-        "rate_limit_reset_at",
-        "overload_until",
-        "temp_unschedulable_until",
-        "temp_unschedulable_reason",
-    ]
-    .iter()
-    .filter(|key| **key != field)
-    .all(|key| before[*key] == after[*key])
-        && (field == "priority" || priority(before) == priority(after))
-        && before["extra"]
-            .as_object()
-            .into_iter()
-            .flatten()
-            .chain(after["extra"].as_object().into_iter().flatten())
-            .filter(|(key, _)| !quota_extra(key))
-            .all(|(key, _)| before["extra"][key] == after["extra"][key])
+pub fn identity(row: &Value) -> Value {
+    row.get("account_identity").cloned().unwrap_or_else(|| {
+        pick(
+            &row["credentials"],
+            &["plan_type", "chatgpt_account_id", "email"],
+        )
+    })
+}
+pub fn identity_signature(row: &Value) -> String {
+    let mut value = pick(
+        row,
+        &["id", "name", "platform", "type", "parent_account_id"],
+    );
+    value["identity"] = identity(row);
+    config_revision(&value)
+}
+pub fn same_identity(before: &Value, after: &Value) -> bool {
+    ["id", "name", "platform", "type", "parent_account_id"]
+        .iter()
+        .all(|key| before[*key] == after[*key])
+        && identity(before) == identity(after)
 }
 pub fn generation(state: &Value, id: i64) -> i64 {
     integer(&state["scheduler"][id.to_string()]["manual_control"]["generation"]).unwrap_or(0)
@@ -137,7 +123,7 @@ pub fn parameter_change(store: &OAuthState, row: &Value) -> Result<Option<Value>
     if task["owns_pause"] != true {
         return Ok(None);
     }
-    if !owned(row, task, &state, true) {
+    if !owned(row, task, &state, false) {
         return Err(Error::new(409, "用卡暂停归属待核对，未修改参数"));
     }
     Ok(Some(task.clone()))
@@ -148,11 +134,11 @@ pub fn finish_parameter_change(
     row: &Value,
     task: &Value,
     before: &Value,
-    field: &str,
 ) -> Result<()> {
     let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
     let state = store.shared_snapshot()?;
-    if !same_parameters(before, row, field)
+    if !same_identity(before, row)
+        || row["schedulable"] != false
         || task["control_generation"]
             .as_i64()
             .is_some_and(|expected| expected != generation(&state, id))

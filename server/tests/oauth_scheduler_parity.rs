@@ -169,6 +169,7 @@ struct MockUpstream {
     mark_unschedulable_on_test: Arc<StdMutex<Option<i64>>>,
     clear_block_on_test: Arc<StdMutex<Option<i64>>>,
     recovery_status: Arc<StdMutex<u16>>,
+    recovery_effect: Arc<StdMutex<String>>,
     clear_status: Arc<StdMutex<u16>>,
     temp_status: Arc<StdMutex<u16>>,
     readonly_after_usage: Arc<StdMutex<Option<PathBuf>>>,
@@ -195,6 +196,7 @@ impl MockUpstream {
             mark_unschedulable_on_test: Arc::new(StdMutex::new(None)),
             clear_block_on_test: Arc::new(StdMutex::new(None)),
             recovery_status: Arc::new(StdMutex::new(200)),
+            recovery_effect: Arc::new(StdMutex::new(String::new())),
             clear_status: Arc::new(StdMutex::new(200)),
             temp_status: Arc::new(StdMutex::new(200)),
             readonly_after_usage: Arc::new(StdMutex::new(None)),
@@ -424,7 +426,12 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
 
     if method == Method::POST && path.ends_with("/recover-state") {
         let status = *state.recovery_status.lock().unwrap();
-        if status == 200 {
+        let effect = state.recovery_effect.lock().unwrap().clone();
+        if effect == "timeout" {
+            tokio::time::sleep(StdDuration::from_secs(4)).await;
+            return json_response(500, json!({"code":1}));
+        }
+        if status == 200 && effect != "unchanged" {
             if let Some(id) = account_id(&path, "/recover-state") {
                 let now = *state.clock.lock().unwrap();
                 sqlx::query("UPDATE accounts SET rate_limited_at=NULL,rate_limit_reset_at=NULL,overload_until=NULL,temp_unschedulable_until=NULL,temp_unschedulable_reason=NULL,updated_at=$1 WHERE id=$2")
@@ -434,6 +441,12 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
                     .await
                     .expect("apply synthetic recovery only to temporary PostgreSQL");
             }
+        }
+        if effect == "read_failure" {
+            sqlx::query("ALTER TABLE accounts RENAME TO fixture_unavailable_accounts")
+                .execute(&state.pool)
+                .await
+                .unwrap();
         }
         return json_response(status, json!({"code":if status == 200 {0} else {1}}));
     }
@@ -3387,7 +3400,15 @@ async fn account_read_failure_marks_retry_without_model_or_recovery_and_recovers
 #[tokio::test]
 async fn monitor_test_success_falls_back_and_unknown_recovery_write_is_not_replayed() {
     let due = parse_datetime(&fixture()["daily"]["next_at_0500_beijing"]).unwrap();
-    for recovery_status in [200_u16, 500] {
+    for (recovery_status, effect) in [
+        (200_u16, ""),
+        (500, ""),
+        (200, "unchanged"),
+        (200, "read_failure"),
+        (500, "timeout"),
+        (500, "token_refresh"),
+        (500, "identity_change"),
+    ] {
         let mut harness = Harness::new().await;
         let row = harness
             .seed_account(
@@ -3403,15 +3424,16 @@ async fn monitor_test_success_falls_back_and_unknown_recovery_write_is_not_repla
         let blocked_before_write = harness.runtime.monitor.row(id).await.unwrap();
         harness.set_now(due);
         *harness.mock.recovery_status.lock().unwrap() = recovery_status;
+        *harness.mock.recovery_effect.lock().unwrap() = effect.into();
 
         harness.runtime.monitor.tick().await.unwrap();
         harness.mock.wait_for("GET", "/usage", 1).await;
         harness.mock.wait_for("POST", "/test", 1).await;
         harness.mock.wait_for("POST", "/recover-state", 1).await;
-        let expected_status = if recovery_status == 200 {
+        let expected_status = if recovery_status == 200 && effect.is_empty() {
             "recovered"
         } else {
-            "blocked"
+            "retry"
         };
         tokio::time::timeout(StdDuration::from_secs(8), async {
             loop {
@@ -3435,41 +3457,81 @@ async fn monitor_test_success_falls_back_and_unknown_recovery_write_is_not_repla
         assert_eq!(harness.mock.count("POST", "/recover-state"), 1);
         assert_eq!(harness.mock.count("POST", "/clear-rate-limit"), 0);
         assert_eq!(harness.mock.count("DELETE", "/temp-unschedulable"), 0);
-        if recovery_status == 500 {
+        if expected_status == "retry" {
             assert_eq!(intent["last_error_code"], "recovery_uncertain");
-            assert_eq!(intent["next_retry_at"], "");
+            assert_eq!(
+                intent["next_retry_at"],
+                datetime(due + Duration::seconds(10))
+            );
+            assert_eq!(intent["successful_test"]["result"]["success"], true);
             assert!(intent["recovery_write_dispatched"].is_null());
+            if effect == "read_failure" {
+                sqlx::query("ALTER TABLE fixture_unavailable_accounts RENAME TO accounts")
+                    .execute(&harness.runtime.db.pool)
+                    .await
+                    .unwrap();
+            }
             let after_write = harness.runtime.monitor.row(id).await.unwrap();
-            assert_eq!(
-                after_write["rate_limited_at"],
-                blocked_before_write["rate_limited_at"]
-            );
-            assert_eq!(
-                after_write["rate_limit_reset_at"],
-                blocked_before_write["rate_limit_reset_at"]
-            );
-
-            harness.set_now(due + Duration::seconds(61));
+            if effect != "read_failure" {
+                assert_eq!(
+                    after_write["rate_limited_at"],
+                    blocked_before_write["rate_limited_at"]
+                );
+                assert_eq!(
+                    after_write["rate_limit_reset_at"],
+                    blocked_before_write["rate_limit_reset_at"]
+                );
+            }
+            harness.set_now(due + Duration::seconds(9));
             harness.runtime.monitor.tick().await.unwrap();
-            assert_eq!(harness.mock.count("GET", "/usage"), 1);
-            assert_eq!(harness.mock.count("POST", "/test"), 1);
             assert_eq!(harness.mock.count("POST", "/recover-state"), 1);
-
+            if matches!(effect, "token_refresh" | "identity_change") {
+                sqlx::query("UPDATE accounts SET credentials=jsonb_set(credentials,ARRAY[$1::text],to_jsonb($2::text),true),updated_at=$3 WHERE id=$4")
+                    .bind(if effect == "token_refresh" { "access_token" } else { "chatgpt_account_id" })
+                    .bind("fixture-renewed").bind(harness.now()).bind(id).execute(&harness.runtime.db.pool).await.unwrap();
+            }
             harness.restart_runtime().await;
+            *harness.mock.recovery_status.lock().unwrap() = 200;
+            *harness.mock.recovery_effect.lock().unwrap() = String::new();
+            harness.set_now(due + Duration::seconds(10));
             harness.runtime.monitor.startup().await.unwrap();
             harness.runtime.monitor.tick().await.unwrap();
+            tokio::time::timeout(StdDuration::from_secs(8), async {
+                loop {
+                    if harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+                        ["recovery_intent"]["status"]
+                        == "recovered"
+                    {
+                        break;
+                    }
+                    tokio::time::sleep(StdDuration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap_or_else(|_| {
+                panic!(
+                    "saved successful test retry failed for {effect}: {}",
+                    harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+                        ["recovery_intent"]
+                )
+            });
             let restarted = harness.runtime.monitor.state().unwrap();
             let restarted_intent = &restarted["scheduler"][id.to_string()]["recovery_intent"];
-            assert_eq!(restarted_intent["status"], "blocked");
-            assert_eq!(restarted_intent["last_error_code"], "recovery_uncertain");
-            let after_restart = harness.runtime.monitor.row(id).await.unwrap();
             assert_eq!(
-                after_restart["rate_limited_at"],
-                after_write["rate_limited_at"]
+                restarted_intent["status"], "recovered",
+                "{restarted_intent}"
             );
+            assert!(restarted_intent["successful_test"].is_null());
+            assert!(harness.runtime.monitor.row(id).await.unwrap()["rate_limited_at"].is_null());
             assert_eq!(harness.mock.count("GET", "/usage"), 1);
-            assert_eq!(harness.mock.count("POST", "/test"), 1);
-            assert_eq!(harness.mock.count("POST", "/recover-state"), 1);
+            assert_eq!(
+                harness.mock.count("POST", "/test"),
+                if effect == "identity_change" { 2 } else { 1 }
+            );
+            assert_eq!(
+                harness.mock.count("POST", "/recover-state"),
+                if effect == "read_failure" { 1 } else { 2 }
+            );
         } else {
             assert_eq!(
                 harness.runtime.monitor.row(id).await.unwrap()["rate_limited_at"],
@@ -3557,9 +3619,9 @@ async fn monitor_recovery_stops_if_account_concurrency_changes_during_test() {
                         && event["test_success"] == true
                 })
             });
-            if intent["status"] == "blocked"
+            if intent["status"] == "retry"
                 && intent["last_error_code"] == "recovery_state_changed"
-                && intent["next_retry_at"] == ""
+                && intent["next_retry_at"] == datetime(due + Duration::seconds(10))
                 && event_committed
             {
                 break;
@@ -3572,9 +3634,12 @@ async fn monitor_recovery_stops_if_account_concurrency_changes_during_test() {
 
     let intent =
         &harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"];
-    assert_eq!(intent["status"], "blocked");
+    assert_eq!(intent["status"], "retry");
     assert_eq!(intent["last_error_code"], "recovery_state_changed");
-    assert_eq!(intent["next_retry_at"], "");
+    assert_eq!(
+        intent["next_retry_at"],
+        datetime(due + Duration::seconds(10))
+    );
     let state = harness.runtime.monitor.state().unwrap();
     let event = state["pending_events"]
         .as_object()
@@ -4846,7 +4911,7 @@ async fn renewed_temporary_restriction_during_test_prevents_recovery() {
     let intent = harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
         ["recovery_intent"]
         .clone();
-    assert_eq!(intent["status"], "blocked");
+    assert_eq!(intent["status"], "retry");
     assert_eq!(intent["last_error_code"], "recovery_state_changed");
     assert_eq!(harness.mock.count("POST", "/test"), 1);
     assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
@@ -5753,7 +5818,7 @@ async fn early_reset_isolates_plans_and_confirms_quota_and_verification_per_acco
         s["scheduler"][ids[0].to_string()]["recovery_intent"]["status"] == "recovered"
             && s["scheduler"][ids[1].to_string()]["recovery_intent"]["status"] == "blocked"
             && s["scheduler"][ids[2].to_string()]["recovery_intent"]["status"] == "retry_exhausted"
-            && s["scheduler"][ids[3].to_string()]["recovery_intent"]["status"] == "blocked"
+            && s["scheduler"][ids[3].to_string()]["recovery_intent"]["status"] == "retry_exhausted"
     })
     .await;
     assert_eq!(h.mock.count("POST", "/recover-state"), 1);

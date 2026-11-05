@@ -20,23 +20,12 @@ pub struct Control {
     pub restores: Vec<DateTime<Utc>>,
     #[serde(default)]
     pub paused_reason: String,
-    // Read legacy in-flight records until the next account observation resolves them.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pending: Option<Intent>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub reservations: Vec<Reservation>,
     #[serde(default)]
     pub failures: u32,
     #[serde(default)]
     pub retry_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub notifications: Vec<Notice>,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-pub struct Reservation {
-    pub id: String,
-    pub at: DateTime<Utc>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -78,25 +67,13 @@ pub fn validate(value: &Value) -> Result<()> {
         if control.generation > 9_007_199_254_740_991
             || !matches!(control.paused_reason.as_str(), "" | "恢复过于频繁")
             || control.restores.len() > LIMIT
-            || control.reservations.len() > LIMIT
             || control.notifications.iter().any(|n| {
                 n.attempts > 5
                     || n.id.is_empty()
                     || !matches!(
                         n.status.as_str(),
-                        "pending"
-                            | "sending"
-                            | "delivered"
-                            | "failed"
-                            | "suppressed"
-                            | "needs_confirmation"
+                        "pending" | "delivered" | "failed" | "suppressed"
                     )
-            })
-            || control.pending.as_ref().is_some_and(|p| {
-                p.id.is_empty()
-                    || p.fingerprint.len() != 64
-                    || !matches!(p.reason.as_str(), "临时错误策略" | "流响应超时")
-                    || !control.reservations.iter().any(|r| r.id == p.id)
             })
         {
             return Err(invalid());
@@ -112,19 +89,12 @@ impl Control {
     pub fn prune(&mut self, at: DateTime<Utc>) {
         self.restores
             .retain(|v| at.signed_duration_since(*v) < Duration::hours(1));
-        self.reservations.retain(|v| {
-            at.signed_duration_since(v.at) < Duration::hours(1)
-                || self.pending.as_ref().is_some_and(|p| p.id == v.id)
-        });
         // Keep all unsent notices and a small delivered tail. A notice belongs
         // to a unique generation, never to an account name or an upstream body.
         let mut completed = 0;
         self.notifications.reverse();
         self.notifications.retain(|n| {
-            if matches!(
-                n.status.as_str(),
-                "pending" | "sending" | "needs_confirmation"
-            ) {
+            if n.status == "pending" {
                 true
             } else {
                 completed += 1;

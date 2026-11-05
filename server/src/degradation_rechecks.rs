@@ -58,16 +58,18 @@ impl Detection {
             return Ok(Value::Null);
         }
         let id = integer(&job["account_id"]).ok_or_else(Error::invalid)?;
-        if self.control(id)?["recheck_recovery"]["job_id"] == job["id"] {
-            return self.finish_recheck_recovery(id).await;
-        }
         let _control = self.actions.locks.control(id).await;
-        let row = self.actions.queries.internal_account(id).await?;
-        self.check_smart_dispatch(job).await?;
         let value = self.control(id)?;
+        if value["recheck_recovery"]["job_id"] == job["id"]
+            && value["recheck_recovery"]["status"] == "completed"
+        {
+            return Ok(value["recheck_recovery"].clone());
+        }
+        let row = crate::model_target::account(&self.actions, id).await?;
+        self.check_smart_dispatch(job).await?;
         let report = &job["report"];
-        let receipt = json!({
-            "status": "pending",
+        let mut receipt = json!({
+            "status": "completed",
             "job_id": job["id"],
             "generation": job["detection_generation"],
             "mark_version": job["detection_mark_version"],
@@ -82,60 +84,24 @@ impl Detection {
             "probability": report["probability"],
             "valid_groups": report["used_outputs"],
         });
-        self.finish_recheck_locked(id, &row, &value, receipt).await
-    }
-    pub async fn finish_recheck_recovery(&self, id: i64) -> Result<Value> {
-        let _control = self.actions.locks.control(id).await;
-        let value = self.control(id)?;
-        let receipt = value["recheck_recovery"].clone();
-        if receipt["status"] != "pending" {
-            return Ok(receipt);
-        }
-        let row = self.actions.queries.internal_account(id).await?;
-        self.finish_recheck_locked(id, &row, &value, receipt).await
-    }
-    async fn finish_recheck_locked(
-        &self,
-        id: i64,
-        row: &Value,
-        value: &Value,
-        mut receipt: Value,
-    ) -> Result<Value> {
-        let state = self.capacity.store.shared_snapshot()?["marks"][id.to_string()].clone();
         let mark = self.mark(id)?;
-        let adopted = mark["marked"] == false && state["detection_job_id"] == receipt["job_id"];
-        let changed = value["generation"] != receipt["generation"]
-            || self.recheck_target_changed(row, value, &receipt)
-            || mark["version"] != receipt["mark_version"] && !adopted;
-        let reason = if changed {
-            "账号或人工操作已变化，旧复查不再解除标记".into()
-        } else if !adopted {
-            self.reason(row, &mark, true).await?
-        } else {
-            String::new()
-        };
-        if !reason.is_empty() {
-            if value["recheck_recovery"]["job_id"] != receipt["job_id"] {
-                return Err(Error::new(409, reason));
-            }
-            receipt["status"] = "overridden".into();
-            receipt["reason"] = reason.into();
-            receipt["mark_cleared"] = adopted.into();
-            self.update(id, json!({"recheck_recovery":receipt}))?;
-            self.log_receipt(string(&receipt["job_id"]), "recovery", &receipt);
-            return Ok(receipt);
+        if value["generation"] != receipt["generation"]
+            || self.recheck_target_changed(&row, &value, &receipt)
+            || mark["version"] != receipt["mark_version"]
+        {
+            return Err(Error::new(409, "账号或人工操作已变化，旧复查不再解除标记"));
         }
-        let verified = if adopted {
-            mark
-        } else {
-            self.capacity.store.set_mark(
-                id,
-                false,
-                string(&mark["version"]),
-                self.now(),
-                receipt["job_id"].as_str(),
-            )?
-        };
+        let reason = self.reason(&row, &mark, true).await?;
+        if !reason.is_empty() {
+            return Err(Error::new(409, reason));
+        }
+        let verified = self.capacity.store.set_mark(
+            id,
+            false,
+            string(&mark["version"]),
+            self.now(),
+            receipt["job_id"].as_str(),
+        )?;
         let now = datetime(self.now());
         receipt.as_object_mut().unwrap().extend(
             json!({

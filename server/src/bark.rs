@@ -526,14 +526,13 @@ impl Bark {
             return false;
         }
         let (title, body) = credit_message(event);
-        self.push_with_config(
-            &title,
-            &body,
-            3,
-            &json!({"level":"critical","sound":"alarm","group":"oauth-reset-credit"}),
-            &runtime,
-        )
-        .await
-        .success
+        let mut options = json!({"group":"oauth-reset-credit"});
+        if event["degradation_confirmed"] == true {
+            options["level"] = "critical".into();
+            options["sound"] = "alarm".into();
+        }
+        self.push_with_config(&title, &body, 3, &options, &runtime)
+            .await
+            .success
     }
 }

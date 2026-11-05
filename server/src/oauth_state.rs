@@ -134,61 +134,15 @@ pub fn available_credits(value: &Value, at: DateTime<Utc>) -> Option<i64> {
         .count();
     Some((content["available_count"].as_i64()? - expired as i64).max(0))
 }
-pub fn compact_digest(value: &Value) -> String {
-    sha256(py_json(value, true, true))
-}
-pub fn limit_fingerprint(row: &Value) -> String {
-    compact_digest(&json!([
-        crate::compat::text(&row["id"]),
-        parse_datetime(&row["rate_limited_at"]).map(datetime),
-        parse_datetime(&row["rate_limit_reset_at"]).map(datetime)
-    ]))
-}
 pub fn validate_observation(value: &Value) -> Result<()> {
     validate_observation_shape(value)
 }
 fn validate_observation_shape(value: &Value) -> Result<()> {
-    let keys: BTreeSet<&str> = [
-        "version",
-        "observed_at",
-        "available_count",
-        "expires_at",
-        "snapshot_sha256",
-        "credential_fingerprint",
-        "window_reset_at",
-        "window_minutes",
-        "limit_fingerprint",
-    ]
-    .into();
-    if value
-        .as_object()
-        .is_none_or(|v| v.keys().map(String::as_str).collect::<BTreeSet<_>>() != keys)
-        || value["version"].as_i64() != Some(1)
-    {
+    if !value.is_object() || value["version"].as_i64() != Some(1) {
         return Err(invalid("重置卡观测状态无效"));
     }
-    if [
-        "snapshot_sha256",
-        "credential_fingerprint",
-        "limit_fingerprint",
-    ]
-    .into_iter()
-    .any(|k| !hex_digest(&value[k]))
-    {
-        return Err(invalid("重置卡观测摘要无效"));
-    }
-    if ["observed_at", "window_reset_at"]
-        .into_iter()
-        .any(|k| parse_datetime(&value[k]).is_none())
-    {
+    if parse_datetime(&value["observed_at"]).is_none() {
         return Err(invalid("重置卡观测时间无效"));
-    }
-    if !value["window_minutes"].is_number()
-        || value["window_minutes"]
-            .as_f64()
-            .is_none_or(|v| v <= 0.0 || v > 5_256_000.0)
-    {
-        return Err(invalid("重置卡观测窗口无效"));
     }
     let expires = value["expires_at"]
         .as_array()
@@ -418,17 +372,11 @@ pub fn normalize(raw: &Value) -> Value {
             continue;
         }
         let mut value = value.clone();
-        if let Some(intent) = value.get_mut("recovery_intent") {
-            if intent["status"] == "retry"
-                && intent["waiting_reason"] == "account_busy"
-                && intent["verification_receipt"]["result"]["recovery_method"] == "model"
-            {
-                for field in ["attempt_count", "model_attempt_count"] {
-                    if let Some(count) = integer(&intent[field]) {
-                        intent[field] = count.saturating_sub(1).into();
-                    }
-                }
-            }
+        if let Some(observation) = value.get_mut("reset_credit_observation") {
+            *observation = pick(
+                observation,
+                &["version", "observed_at", "available_count", "expires_at"],
+            );
         }
         if let Some(task) = value.get_mut("auto_reset_credit") {
             if task["stage"] == "releasing" {
@@ -443,6 +391,7 @@ pub fn normalize(raw: &Value) -> Value {
                     "release_control_generation",
                     "release_credential_fingerprint",
                     "policy_checked_at",
+                    "policy_credential_fingerprint",
                     "pause_undo_requested_at",
                     "pause_undo_confirmed_at",
                 ][..],
@@ -473,6 +422,10 @@ pub fn normalize(raw: &Value) -> Value {
             value.as_object_mut().unwrap().shift_remove("last_reason");
         }
         if let Some(intent) = value.get_mut("recovery_intent") {
+            if intent["status"] == "blocked" && intent["last_error_code"] == "recovery_uncertain" {
+                intent["status"] = "ready".into();
+                intent["next_retry_at"] = "".into();
+            }
             if !intent.is_object() {
                 *intent = json!({});
             }

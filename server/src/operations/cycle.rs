@@ -3,6 +3,7 @@ use crate::{compat::parse_datetime, credit_rules, quota};
 use chrono::{DateTime, Duration as TimeDelta, Timelike, Utc};
 
 pub struct CycleObservation {
+    pub row: Value,
     pub windows: Vec<Value>,
     pub stopped: bool,
 }
@@ -32,6 +33,7 @@ pub fn observe_cycle(
         ));
     }
     Ok(CycleObservation {
+        row: row.clone(),
         windows: windows.into_iter().map(|(_, window)| window).collect(),
         stopped: credit_rules::depletion_evidence(row, saved, evidence, at).is_object(),
     })
@@ -134,13 +136,14 @@ impl Operations {
         })
     }
 
-    pub(super) async fn cycle_allowed(&self, job: &Value, refresh: bool) -> Result<bool> {
-        if job["repeat"] != "quota_cycle" {
-            return Ok(true);
-        }
+    pub(super) async fn cycle_allowed(
+        &self,
+        job: &Value,
+        refresh: bool,
+    ) -> Result<Option<CycleObservation>> {
         let jid = string(&job["id"]);
         if job["repeat_state"] != "active" {
-            return Ok(false);
+            return Ok(None);
         }
         let observation = self
             .backend
@@ -150,9 +153,8 @@ impl Operations {
                 refresh,
             )
             .await;
-        let allowed = matches!(&observation, Ok(obs) if !obs.stopped);
         self.apply_cycle_observation(job, observation.as_ref())?;
-        Ok(allowed)
+        Ok(observation.ok().filter(|obs| !obs.stopped))
     }
 
     fn apply_cycle_observation(
@@ -263,23 +265,11 @@ impl Operations {
         if self.store.read_shared()?["jobs"][jid]["repeat_state"] != "active" {
             return Ok(false);
         }
-        if !self.cycle_allowed(previous, false).await? {
+        let Some(observation) = self.cycle_allowed(previous, true).await? else {
             return Ok(self.store.read_shared()?["jobs"][jid]["repeat_state"] != "active");
-        }
+        };
         let aid = integer(&previous["account_id"]).unwrap();
         let key = self.key(jid)?;
-        let observation = match self.backend.cycle_observation(aid, &key, true).await {
-            Ok(observation) => observation,
-            Err(error) if error.detail["code"] == "account_busy" => return Ok(false),
-            Err(error) => {
-                self.pause_repeat(jid, &crate::security::safe_error(&error.detail, 240))?;
-                return Ok(true);
-            }
-        };
-        if observation.stopped {
-            self.stop_repeat(jid, DEPLETED, false)?;
-            return Ok(true);
-        }
         let Some(due) = next_cycle(
             &observation,
             self.backend.now(),

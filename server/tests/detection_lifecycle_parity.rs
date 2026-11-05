@@ -2931,7 +2931,7 @@ async fn automatic_notification_retries_use_durable_backoff_and_send_once_after_
 }
 
 #[tokio::test]
-async fn preexisting_writing_disposition_retries_after_restart() {
+async fn pending_disposition_retries_after_restart() {
     let mut harness = Harness::new(sample_text("above_99", 0)).await;
     let row = harness.seed_account("apikey", true, json!({})).await;
     let id = integer(&row["id"]).unwrap();
@@ -2962,7 +2962,7 @@ async fn preexisting_writing_disposition_retries_after_restart() {
                 "hold":true,
                 "status":"paused",
                 "disposition":{
-                    "status":"writing",
+                    "status":"pending",
                     "job_id":job_id,
                     "generation":control["generation"],
                     "mark_version":mark["version"],
@@ -3565,6 +3565,8 @@ async fn marked_recheck_waits_for_shared_cooldown_then_clears_mark_without_sched
         .as_str()
         .unwrap()
         .contains("检测恢复正常"));
+    assert!(bark[0].payload.get("level").is_none());
+    assert!(bark[0].payload.get("sound").is_none());
     assert!(bark[0].payload["body"]
         .as_str()
         .unwrap()
@@ -5246,7 +5248,7 @@ async fn disposition_outbox_and_bark_receipts_recover_from_local_write_failures(
             json!({
                 "hold":true,
                 "disposition":{
-                    "status":"marked",
+                    "status":"pending",
                     "job_id":"fixture-atomic-disposition",
                     "generation":before["generation"],
                     "mark_version":marked["version"],
@@ -5279,7 +5281,7 @@ async fn disposition_outbox_and_bark_receipts_recover_from_local_write_failures(
     );
     assert_eq!(
         harness.runtime().detection.control(id).unwrap()["disposition"]["status"],
-        "marked"
+        "pending"
     );
     let state_dir = harness.settings.data_dir();
     let read_only = DirectoryReadOnly::new(state_dir.clone());
@@ -5300,7 +5302,7 @@ async fn disposition_outbox_and_bark_receipts_recover_from_local_write_failures(
     );
     assert_eq!(
         harness.runtime().detection.control(id).unwrap()["disposition"]["status"],
-        "marked"
+        "pending"
     );
     assert!(object_field_is_empty_or_missing(
         &harness.runtime().detection.store.read().unwrap(),
@@ -5535,7 +5537,7 @@ async fn manual_generation_change_during_schedule_write_blocks_receipt_and_bark(
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 1);
     assert_eq!(
         harness.runtime().detection.control(id).unwrap()["disposition"]["status"],
-        "pending"
+        Value::Null
     );
     let generation = harness.runtime().detection.control(id).unwrap()["generation"]
         .as_i64()
@@ -5547,7 +5549,7 @@ async fn manual_generation_change_during_schedule_write_blocks_receipt_and_bark(
     );
     assert_eq!(
         harness.runtime().detection.control(id).unwrap()["disposition"]["status"],
-        "overridden"
+        Value::Null
     );
     gate.release.notify_one();
     harness.mock.set_schedulable_gate(None);
@@ -5567,7 +5569,7 @@ async fn manual_generation_change_during_schedule_write_blocks_receipt_and_bark(
     assert_eq!(job["automatic_disposition"]["status"], "overridden");
     assert_eq!(current["status"], "paused");
     assert_eq!(current["hold"], false);
-    assert_eq!(current["disposition"]["status"], "overridden");
+    assert!(current["disposition"].is_null());
     assert_eq!(current["disposition_notification"], Value::Null);
     assert_eq!(
         harness.runtime().detection.mark(id).unwrap()["marked"],
@@ -7061,193 +7063,6 @@ async fn stale_oauth_rejection_is_ignored_but_fresh_rejection_blocks_recheck() {
     assert!(harness.runtime().detection.control(id).unwrap()["recheck_recovery"].is_null());
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
     assert_eq!(harness.mock.count("POST", "/push"), 0);
-    assert!(harness.mock.unexpected().is_empty());
-    harness.close().await;
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn recovery_receipt_failure_is_adopted_after_restart_and_bark_uses_five_second_retry() {
-    let mut harness = Harness::new(sample_text("above_99", 0)).await;
-    let row = harness.seed_account("apikey", true, json!({})).await;
-    let id = integer(&row["id"]).unwrap();
-    harness.enable_detection(id, 15).await;
-    let initial_mark = harness.runtime().detection.mark(id).unwrap();
-    let job_id = "e".repeat(32);
-    harness
-        .runtime()
-        .detection
-        .capacity
-        .store
-        .set_mark(
-            id,
-            true,
-            initial_mark["version"].as_str().unwrap(),
-            harness.now(),
-            Some(&job_id),
-        )
-        .unwrap();
-    let marked = harness.runtime().detection.mark(id).unwrap();
-    let control = harness.runtime().detection.control(id).unwrap();
-    let account = harness.runtime().actions.account(id, None).await.unwrap();
-    let account_version =
-        sub2ops_server::compat::operation_versions(&account)["model_test"].clone();
-    let receipt = json!({
-        "status":"pending",
-        "job_id":job_id,
-        "generation":control["generation"],
-        "mark_version":marked["version"],
-        "mark_cleared":false,
-        "recheck_account_version":account_version,
-        "recheck_schedulable":true,
-        "created_at":datetime(harness.now()),
-        "model_id":"gpt-6-luna",
-        "prediction":"claude-sonnet-4-6",
-        "first_group_prediction":"claude-sonnet-4-6",
-        "probability":0.97,
-        "valid_groups":1
-    });
-    harness
-        .runtime()
-        .detection
-        .update(
-            id,
-            json!({
-                "hold":true,
-                "disposition":{"status":"completed","marked":true,"schedule_verified":true,"job_id":"fixture-prior-degradation"},
-                "recheck_recovery":receipt
-            }),
-        )
-        .unwrap();
-    harness
-        .runtime()
-        .detection
-        .capacity
-        .store
-        .set_mark(
-            id,
-            false,
-            marked["version"].as_str().unwrap(),
-            harness.now() + Duration::milliseconds(1),
-            Some(&job_id),
-        )
-        .unwrap();
-    let state_dir = harness.settings.data_dir();
-    let read_only = DirectoryReadOnly::new(state_dir);
-    assert!(harness
-        .runtime()
-        .detection
-        .finish_recheck_recovery(id)
-        .await
-        .is_err());
-    drop(read_only);
-    assert_eq!(
-        harness.runtime().detection.mark(id).unwrap()["marked"],
-        false
-    );
-    assert_eq!(
-        harness.runtime().detection.control(id).unwrap()["recheck_recovery"]["status"],
-        "pending"
-    );
-    assert!(object_field_is_empty_or_missing(
-        &harness.runtime().detection.store.read().unwrap(),
-        "disposition_notifications"
-    ));
-    assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
-    assert_eq!(harness.mock.count("POST", "/push"), 0);
-
-    harness.restart_runtime().await;
-    harness.runtime().detection.tick().await.unwrap();
-    let recovered = harness.runtime().detection.control(id).unwrap()["recheck_recovery"].clone();
-    assert_eq!(recovered["status"], "completed");
-    assert_eq!(recovered["job_id"], job_id);
-    assert_eq!(recovered["mark_cleared"], true);
-    assert!(recovered["completed_at"].is_string());
-    assert!(recovered["mark_version_after"].is_string());
-    assert_eq!(
-        harness.runtime().detection.mark(id).unwrap()["marked"],
-        false
-    );
-    let event = harness.runtime().detection.store.read().unwrap()["disposition_notifications"]
-        [&job_id]
-        .clone();
-    assert_eq!(event["kind"], "recovered");
-    assert_eq!(event["status"], "queued");
-    assert_eq!(event["attempts"], 0);
-    assert_eq!(event["account_id"], id);
-    assert_eq!(event["generation"], control["generation"]);
-    assert_eq!(event["mark_version"], recovered["mark_version_after"]);
-    assert_eq!(event["schedulable"], true);
-    assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
-    assert_eq!(
-        harness
-            .mock
-            .count("POST", &format!("/api/v1/admin/accounts/{id}/schedulable")),
-        0
-    );
-
-    harness.mock.set_bark_failures(1);
-    harness
-        .runtime()
-        .detection
-        .deliver_notifications()
-        .await
-        .unwrap();
-    let retry = harness.runtime().detection.store.read().unwrap()["disposition_notifications"]
-        [&job_id]
-        .clone();
-    assert_eq!(retry["kind"], "recovered");
-    assert_eq!(retry["status"], "retry");
-    assert_eq!(retry["attempts"], 1);
-    assert_eq!(
-        retry["next_at"],
-        datetime(harness.now() + Duration::seconds(5))
-    );
-    assert_eq!(harness.mock.count("POST", "/push"), 1);
-    harness
-        .runtime()
-        .detection
-        .deliver_notifications()
-        .await
-        .unwrap();
-    assert_eq!(harness.mock.count("POST", "/push"), 1);
-    harness.advance(5);
-    harness
-        .runtime()
-        .detection
-        .deliver_notifications()
-        .await
-        .unwrap();
-    assert_eq!(harness.mock.count("POST", "/push"), 2);
-    assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["disposition_notifications"][&job_id]
-            ["status"],
-        "delivered"
-    );
-    let completed_job = completed_recheck_job(
-        id,
-        &control["generation"],
-        &marked["version"],
-        &account_version,
-        &job_id,
-        harness.now(),
-    );
-    assert_eq!(
-        harness
-            .runtime()
-            .detection
-            .complete_recheck(&completed_job)
-            .await
-            .unwrap()["status"],
-        "completed"
-    );
-    harness
-        .runtime()
-        .detection
-        .deliver_notifications()
-        .await
-        .unwrap();
-    assert_eq!(harness.mock.count("POST", "/push"), 2);
     assert!(harness.mock.unexpected().is_empty());
     harness.close().await;
 }

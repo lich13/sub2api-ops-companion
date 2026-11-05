@@ -472,7 +472,14 @@ impl Backend for FixtureBackend {
                     return Err(Error::new(502, message));
                 }
             }
-            let row = sub2ops_server::credit_ownership::account(&self.cycle_db, id).await?;
+            let row = self
+                .cycle_db
+                .one(
+                    &sub2ops_server::sql::MODEL_ACCOUNT_SQL.replace("{filter}", "AND a.id=$1"),
+                    &[id.into()],
+                )
+                .await?
+                .ok_or_else(|| Error::new(404, "fixture account absent"))?;
             let at = self.now();
             let saved = sub2ops_server::quota::latest_result(&row, &Value::Null, at);
             let evidence =

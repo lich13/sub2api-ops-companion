@@ -348,18 +348,7 @@ impl Coordinator {
             result["error_code"] = "incomplete_quota".into();
             result["error"] = "额度响应缺少必要窗口".into();
         }
-        let observation = if truthy(&result["success"])
-            && result["data"].get("rate_limit_reset_credits").is_some()
-        {
-            match credit_ownership::account(&self.actions.queries.db, id).await {
-                Ok(after) => {
-                    reset_credit_observation::from_usage(row, &after, &result, at, (self.clock)())
-                }
-                Err(_) => None,
-            }
-        } else {
-            None
-        };
+        let observation = reset_credit_observation::from_usage(&result, at, (self.clock)());
         let finish = self.actions.queries.oauth.transaction(|state| {
             let meta = &mut state["scheduler"][&identity];
             if !meta.is_object() {
@@ -541,39 +530,39 @@ impl Coordinator {
         required_budget: usize,
         validate: V,
         operation: F,
-    ) -> Value
+    ) -> (Value, Option<Value>)
     where
         F: FnOnce() -> Fut + Send + 'static,
-        Fut: Future<Output = Value> + Send + 'static,
+        Fut: Future<Output = (Value, Option<Value>)> + Send + 'static,
         V: Fn(&Value) -> bool + Send + 'static,
     {
         if self.actions.settings.read_only {
-            return skipped("read_only");
+            return (skipped("read_only"), None);
         }
         if bypass_interval
             && (options.source != Source::Automatic || options.reason != "reset_credit_consume")
         {
-            return skipped("invalid_query_reservation");
+            return (skipped("invalid_query_reservation"), None);
         }
         let Some(id) = integer(&row["id"]) else {
-            return skipped("account_changed");
+            return (skipped("account_changed"), None);
         };
         let (tx, pending) = {
             let mut flights = self.flights.lock().unwrap_or_else(|e| e.into_inner());
             if flights.closed || self.actions.supervisor.is_stopping() {
-                return skipped("service_stopping");
+                return (skipped("service_stopping"), None);
             }
             if flights.pending.contains_key(&id) {
-                return skipped("query_busy");
+                return (skipped("query_busy"), None);
             }
             if flights.pending.len() >= (self.capacity)().clamp(1, 16) {
-                return Self::slot_wait(options.at);
+                return (Self::slot_wait(options.at), None);
             }
             let (tx, rx) = watch::channel(None);
             flights.pending.insert(id, rx.clone());
             (tx, rx)
         };
-        let (response_tx, response_rx) = watch::channel(None);
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         let this = self.clone();
         self.spawn_owned(id, async move {
             let mut admitted = false;
@@ -581,6 +570,7 @@ impl Coordinator {
             let reservation = at + TimeDelta::seconds(180);
             let identity = id.to_string();
             let mut result = skipped("query_state_unavailable");
+            let mut latest_row = None;
             let admission = this.actions.queries.oauth.transaction(|state| {
                 if !validate(state) {
                     return Ok(skipped("reset_state_changed"));
@@ -630,7 +620,7 @@ impl Coordinator {
                 result = decision;
                 if result["admitted"] == true {
                     admitted = true;
-                    result = operation().await;
+                    (result, latest_row) = operation().await;
                     let completed = (this.clock)().max(at);
                     let recorded = if truthy(&result["uncertain"])
                         || matches!(
@@ -735,10 +725,20 @@ impl Coordinator {
                 json!({"success":false,"error_code":"incomplete_quota"})
             };
             this.complete(id, &row, admitted, shared, tx);
-            let _ = response_tx.send(Some(result));
+            let _ = response_tx.send((result, latest_row));
         });
         drop(pending);
-        wait(response_rx, 300).await
+        match tokio::time::timeout(Duration::from_secs(300), response_rx).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => (
+                json!({"success":false,"uncertain":true,"error_code":"result_uncertain"}),
+                None,
+            ),
+            Err(_) => (
+                json!({"success":false,"uncertain":true,"error_code":"timeout"}),
+                None,
+            ),
+        }
     }
     pub async fn drain(&self, seconds: u64) {
         let pending = {

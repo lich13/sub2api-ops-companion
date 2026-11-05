@@ -48,6 +48,60 @@ fn database_url() -> String {
     std::env::var("DATABASE_URL").expect("state contract runner must provide temporary PostgreSQL")
 }
 
+#[test]
+fn state_0182_upgrade_preserves_receipts_and_compacts_observations() {
+    let temporary = tempfile::tempdir().unwrap();
+    let path = temporary.path().join("oauth.json");
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../tests/contracts/recovery-fixtures.json")).unwrap();
+    let at = "2031-04-05T06:07:08+00:00";
+    let credit = json!({"episode":"fixture-upgrade-card","source":"automatic","policy_version":1,
+        "stage":"uncertain","attempt_at":at,"consumed":false,"consumption_outcome":"unknown",
+        "owns_pause":true,"signature":"fixture-pause","control_generation":2,
+        "test_attempts":1,"receipt":{"http_status":502,"business_code":"unrecognized"}});
+    let raw = json!({"version":5,"settings":{"sub2api_admin_token":"fixture-admin"},
+        "scheduler":{"7":{"auto_reset_credit":credit,
+            "reset_credit_observation":fixture["reset_credit"]["observation"]["expected"],
+            "quota_query":{"automatic_attempts":[at],"last_query_at":at},
+            "manual_control":{"generation":2,"enabled":true,"at":at},
+            "recovery_intent":{"status":"blocked","last_error_code":"recovery_uncertain",
+                "fingerprint":"fixture-cycle","attempt_count":2,"connection_attempt_count":2,
+                "verification_receipt":{"result":{"success":true}}}}},
+        "pending_events":{"fixture-event":{"account_id":7,"status":"recovered"}},
+        "recovery_history":{"fixture-history":{"id":1,"account_id":7,"legacy":false,"kind":"reset_credit"}},
+        "daily_test":{"next_at":at},"oauth_results":{}});
+    fs::write(&path, serde_json::to_vec(&raw).unwrap()).unwrap();
+    let store = OAuthState::new(path.clone(), false);
+    store.transaction(|_| Ok(())).unwrap();
+    let migrated = OAuthState::new(path.clone(), false).snapshot().unwrap();
+    for field in [
+        "settings",
+        "pending_events",
+        "recovery_history",
+        "daily_test",
+    ] {
+        assert_eq!(migrated[field], raw[field], "{field}");
+    }
+    let meta = &migrated["scheduler"]["7"];
+    assert_eq!(meta["auto_reset_credit"], credit);
+    assert_eq!(meta["quota_query"], raw["scheduler"]["7"]["quota_query"]);
+    assert_eq!(
+        meta["manual_control"],
+        raw["scheduler"]["7"]["manual_control"]
+    );
+    assert_eq!(
+        meta["reset_credit_observation"].as_object().unwrap().len(),
+        4
+    );
+    assert_eq!(meta["recovery_intent"]["status"], "ready");
+    assert_eq!(meta["recovery_intent"]["attempt_count"], 2);
+    assert_eq!(meta["recovery_intent"]["connection_attempt_count"], 2);
+    assert!(meta["recovery_intent"]["successful_test"].is_null());
+    assert!(meta["recovery_intent"]["verification_receipt"].is_null());
+    let disk: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    assert_eq!(disk, migrated);
+}
+
 fn settings(root: &Path, database_url: String, read_only: bool) -> Settings {
     Settings {
         database_url,
@@ -562,7 +616,7 @@ async fn coordinator_drain_closes_aborts_owned_query_and_releases_state_lock() {
                     async move {
                         let _drop_notice = NotifyOnDrop(Some(drop_tx));
                         started_first.notify_one();
-                        std::future::pending::<Value>().await
+                        std::future::pending::<(Value, Option<Value>)>().await
                     }
                 },
             )
@@ -588,12 +642,12 @@ async fn coordinator_drain_closes_aborts_owned_query_and_releases_state_lock() {
             |_| true,
             move || async move {
                 duplicate_count_for_op.fetch_add(1, Ordering::SeqCst);
-                json!({"success":true})
+                (json!({"success":true}), None)
             },
         )
         .await;
     assert_eq!(
-        duplicate["error_code"],
+        duplicate.0["error_code"],
         fixture()["coordinator"]["pending_duplicate_error_code"]
     );
     assert_eq!(
@@ -611,7 +665,7 @@ async fn coordinator_drain_closes_aborts_owned_query_and_releases_state_lock() {
         .await
         .expect("aborted owned task releases external caller")
         .expect("external query waiter joined");
-    assert_eq!(uncertain["error_code"], "result_uncertain");
+    assert_eq!(uncertain.0["error_code"], "result_uncertain");
 
     let rejected_count = Arc::new(AtomicUsize::new(0));
     let rejected_count_for_op = rejected_count.clone();
@@ -629,14 +683,14 @@ async fn coordinator_drain_closes_aborts_owned_query_and_releases_state_lock() {
             |_| true,
             move || async move {
                 rejected_count_for_op.fetch_add(1, Ordering::SeqCst);
-                json!({"success":true})
+                (json!({"success":true}), None)
             },
         ),
     )
     .await
     .expect("closed Coordinator mutex remains available");
     assert_eq!(
-        rejected["error_code"],
+        rejected.0["error_code"],
         fixture()["coordinator"]["drain_rejects_new_work_error_code"]
     );
     assert_eq!(rejected_count.load(Ordering::SeqCst), 0);

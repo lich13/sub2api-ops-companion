@@ -497,7 +497,7 @@ impl ModelHooks for PanicModelHooks {
     fn verdict_policy(&self, _: i64) -> Result<Value> {
         Ok(json!({}))
     }
-    fn guard(&self, job: Value) -> BoxFuture<'_, Result<Value>> {
+    fn guard(&self, job: Value, _row: Option<Value>) -> BoxFuture<'_, Result<Value>> {
         Box::pin(async move {
             sub2ops_server::model_target::account(
                 &self.actions,
@@ -516,8 +516,8 @@ impl ModelHooks for PanicModelHooks {
         panic!("{PANIC_MARKER}")
     }
 
-    fn prepare_recovery(&self, _job: Value) -> BoxFuture<'_, Result<Value>> {
-        Box::pin(async { Ok(Value::Null) })
+    fn prepare_recovery(&self, _job: Value) -> BoxFuture<'_, Result<(Value, Option<Value>)>> {
+        Box::pin(async { Ok((Value::Null, None)) })
     }
 
     fn verdict(&self, _job: Value, _report: Value) -> BoxFuture<'_, Result<Value>> {

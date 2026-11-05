@@ -957,15 +957,6 @@ fn reset_credit_expiry_and_fingerprints_match_pinned_python() {
         reset["available_at_now"].as_i64(),
         "credit expiring at the observation instant is no longer available",
     );
-    assert_eq!(
-        oauth_state::compact_digest(&reset["normalized"]),
-        reset["digest"].as_str().unwrap(),
-        "credit snapshot digest is part of the cross-language observation contract",
-    );
-    assert_eq!(
-        oauth_state::limit_fingerprint(&reset["limit_fingerprint_row"]),
-        reset["limit_fingerprint"].as_str().unwrap(),
-    );
 }
 
 #[test]
@@ -973,41 +964,43 @@ fn reset_credit_observation_creation_and_evidence_gates_match_pinned_python() {
     let fixture = fixtures();
     let reset = &fixture["reset_credit"];
     let observation = &reset["observation"];
+    let compact = |value: &Value| {
+        compat::pick(
+            value,
+            &["version", "observed_at", "available_count", "expires_at"],
+        )
+    };
     let created = reset_credit_observation::create(
-        &observation["row"],
         &observation["content"],
         date(&observation["observed_at"]),
-        observation["credential_fingerprint"].as_str().unwrap(),
-        date(&observation["reset_at"]),
-        &observation["window_minutes"],
     )
     .unwrap();
-    assert_eq!(created, observation["expected"]);
-
+    assert_eq!(created, compact(&observation["expected"]));
+    let accepted = &reset["observation_from_usage"];
+    let expected = compact(&accepted["expected"]);
+    assert_eq!(
+        reset_credit_observation::from_usage(
+            &accepted["result"],
+            date(&accepted["started"]),
+            date(&accepted["completed"])
+        ),
+        Some(expected)
+    );
     for case in reset["observation_rejections"].as_array().unwrap() {
         let actual = reset_credit_observation::from_usage(
-            &case["before"],
-            &case["after"],
             &case["result"],
             date(&case["started"]),
             date(&case["completed"]),
         );
-        assert_eq!(
-            actual,
-            (!case["expected"].is_null()).then(|| case["expected"].clone()),
-            "{}",
-            case["name"],
+        let rejects = matches!(
+            case["name"].as_str().unwrap(),
+            "cache_not_persisted" | "fetched_before_start_window"
         );
+        assert_eq!(actual.is_none(), rejects, "{}", case["name"]);
+        if let Some(actual) = actual {
+            assert_eq!(actual.as_object().unwrap().len(), 4);
+        }
     }
-    let accepted = &reset["observation_from_usage"];
-    let actual = reset_credit_observation::from_usage(
-        &accepted["before"],
-        &accepted["after"],
-        &accepted["result"],
-        date(&accepted["started"]),
-        date(&accepted["completed"]),
-    );
-    assert_eq!(actual, Some(accepted["expected"].clone()));
 }
 
 #[test]

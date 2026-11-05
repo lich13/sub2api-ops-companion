@@ -456,8 +456,14 @@ impl Detection {
         Ok(detection_quota::reason(row, self.now(), result).into())
     }
     pub async fn guard(&self, job: &Value) -> Result<Value> {
+        self.guard_row(job, None).await
+    }
+    pub(crate) async fn guard_row(&self, job: &Value, row: Option<Value>) -> Result<Value> {
         let id = integer(&job["account_id"]).ok_or_else(Error::invalid)?;
-        let row = self.actions.queries.internal_account(id).await?;
+        let row = match row {
+            Some(row) => row,
+            None => crate::model_target::account(&self.actions, id).await?,
+        };
         let value = self.control(id)?;
         let mark = self.mark(id)?;
         if value["generation"] != job["detection_generation"]
@@ -763,31 +769,19 @@ impl Detection {
                     .save(id, &task, json!({"degradation_pending":job["id"]}))?;
             }
         }
-        self.update(
-            id,
-            json!({
-                "hold":true, "disposition":disposition, "recheck_recovery":null,
-                "status":"handling", "reason":"正在标记并停止调度"
-            }),
-        )?;
-        self.finish_disposition_locked(id, &row).await
+        self.finish_disposition_locked(id, &row, disposition).await
     }
     pub async fn finish_disposition(&self, id: i64) -> Result<Value> {
         let _control = self.actions.locks.control(id).await;
-        let row = self.actions.queries.internal_account(id).await?;
-        self.finish_disposition_locked(id, &row).await
-    }
-    async fn finish_disposition_locked(&self, id: i64, row: &Value) -> Result<Value> {
-        let value = self.control(id)?;
-        let mut d = value["disposition"].clone();
-        if !matches!(
-            string(&d["status"]),
-            "pending" | "marked" | "writing" | "checking"
-        ) && !(d["status"] == "needs_confirmation"
-            && d["reason"] == "停调度结果未确认，未重复写入")
-        {
-            return Ok(d);
+        let disposition = self.control(id)?["disposition"].clone();
+        if disposition["status"] != "pending" {
+            return Ok(disposition);
         }
+        let row = crate::model_target::account(&self.actions, id).await?;
+        self.finish_disposition_locked(id, &row, disposition).await
+    }
+    async fn finish_disposition_locked(&self, id: i64, row: &Value, mut d: Value) -> Result<Value> {
+        let value = self.control(id)?;
         if d["generation"] != value["generation"] {
             d["status"] = "overridden".into();
             d["reason"] = "人工操作已变化".into();
@@ -846,7 +840,7 @@ impl Detection {
                     Err(error) => {
                         d["status"] = "pending".into();
                         d["reason"] = "停调度待核对".into();
-                        self.update(id, json!({"disposition":d}))?;
+                        self.commit_disposition(id, &d, row).await?;
                         return Err(error);
                     }
                 };

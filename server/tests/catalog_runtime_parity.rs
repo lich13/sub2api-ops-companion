@@ -845,9 +845,6 @@ async fn keepalive_reads_preserve_history_and_validate_the_entire_changed_state(
     control["enabled"] = true.into();
     control["generation"] = 7.into();
     control["restores"] = json!(["2030-01-01T00:00:00Z"]);
-    control["reservations"] = json!([{"id":"fixture-reservation","at":"2030-01-01T00:01:00Z"}]);
-    control["pending"] = json!({"id":"fixture-reservation","generation":7,"fingerprint":"a".repeat(64),
-        "before_until":"2030-01-01T00:02:00Z","reason":"流响应超时","dispatched_at":"2030-01-01T00:01:00Z"});
     control["notifications"] = json!([{"id":"fixture-notice","generation":7,"status":"pending",
         "attempts":2,"next_at":"2030-01-01T00:03:00Z"}]);
     let mut state = json!({"version":1,"accounts":{"47007":control}});
@@ -886,7 +883,7 @@ async fn keepalive_reads_preserve_history_and_validate_the_entire_changed_state(
 }
 
 #[tokio::test]
-async fn keepalive_skips_database_while_waiting_and_still_reconciles_pending() {
+async fn keepalive_skips_database_while_waiting_or_disabled() {
     use sub2ops_server::store::write_json;
 
     let h = Harness::new().await;
@@ -920,23 +917,16 @@ async fn keepalive_skips_database_while_waiting_and_still_reconciles_pending() {
     let control = &mut state["accounts"]["47101"];
     control["enabled"] = false.into();
     control["last_restore_at"] = json!(now);
-    control["reservations"] = json!([{"id":"fixture-pending","at":now}]);
-    control["pending"] = json!({"id":"fixture-pending","generation":0,"fingerprint":"a".repeat(64),
-        "before_until":now + chrono::Duration::minutes(5),"reason":"流响应超时","dispatched_at":now});
     write_json(keepalive.store.path(), &state).unwrap();
-    assert!(
-        keepalive.tick().await.is_err(),
-        "pending results still require a read while disabled and cooling"
-    );
+    keepalive
+        .tick()
+        .await
+        .expect("disabled accounts need no database query");
     sqlx::query("ALTER TABLE fixture_waiting_accounts RENAME TO accounts")
         .execute(db)
         .await
         .unwrap();
     keepalive.tick().await.unwrap();
-    assert!(
-        keepalive.control(47_101).unwrap().pending.is_none(),
-        "missing account reconciles the pending result"
-    );
     assert!(!keepalive.control(47_101).unwrap().enabled);
     h.close().await;
 }

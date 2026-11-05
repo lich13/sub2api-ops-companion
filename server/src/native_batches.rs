@@ -116,7 +116,12 @@ impl Operations {
             .filter_map(|r| integer(&r["id"]).map(|id| (id, r)))
             .collect())
     }
-    async fn native_target(&self, row: &Value, job: &Value) -> Result<Value> {
+    async fn native_target(
+        &self,
+        row: &Value,
+        job: &Value,
+        scopes: &mut BTreeMap<BTreeSet<i64>, Vec<Value>>,
+    ) -> Result<Value> {
         let action = string(&job["action"]);
         let p = &job["payload"];
         if action == "account_template" {
@@ -151,15 +156,19 @@ impl Operations {
         {
             return Err(Error::new(409, "分组范围或平台不匹配"));
         }
-        let groups = self
-            .actions
-            .queries
-            .db
-            .all(
-                "SELECT id,platform FROM groups WHERE deleted_at IS NULL AND id=ANY($1)",
-                &[Param::Ints(scope.iter().copied().collect())],
-            )
-            .await?;
+        if !scopes.contains_key(&scope) {
+            let groups = self
+                .actions
+                .queries
+                .db
+                .all(
+                    "SELECT id,platform FROM groups WHERE deleted_at IS NULL AND id=ANY($1)",
+                    &[Param::Ints(scope.iter().copied().collect())],
+                )
+                .await?;
+            scopes.insert(scope.clone(), groups);
+        }
+        let groups = &scopes[&scope];
         if groups
             .iter()
             .filter_map(|g| integer(&g["id"]))
@@ -264,28 +273,25 @@ impl Operations {
             return Ok(());
         }
         self.actions.upstream.authenticate(&key, true).await?;
+        let mut scopes = BTreeMap::new();
         for chunk in candidates.chunks(100) {
             if self.actions.supervisor.is_stopping() {
                 return Ok(());
             }
-            self.native_chunk(bid, chunk, &key).await?;
+            self.native_chunk(bid, chunk, &key, &rows, &mut scopes)
+                .await?;
         }
         Ok(())
     }
-    async fn native_chunk(&self, bid: &str, jobs: &[Value], key: &str) -> Result<()> {
-        let rows = self.native_rows(jobs).await?;
+    async fn native_chunk(
+        &self,
+        bid: &str,
+        jobs: &[Value],
+        key: &str,
+        rows: &BTreeMap<i64, Value>,
+        scopes: &mut BTreeMap<BTreeSet<i64>, Vec<Value>>,
+    ) -> Result<()> {
         let delete = jobs[0]["action"] == "delete";
-        let descendants = if delete {
-            self.children(
-                &jobs
-                    .iter()
-                    .filter_map(|j| integer(&j["account_id"]))
-                    .collect::<Vec<_>>(),
-            )
-            .await?
-        } else {
-            BTreeMap::new()
-        };
         let mut needed = BTreeMap::new();
         for job in jobs {
             let aid = integer(&job["account_id"]).unwrap();
@@ -300,7 +306,9 @@ impl Operations {
             if parent != 0 {
                 ids.insert(parent);
             }
-            ids.extend(descendants.get(&aid).into_iter().flatten());
+            if delete {
+                ids.extend(crate::operations::ids(&job["child_account_ids"]));
+            }
             needed.insert(string(&job["id"]).to_owned(), ids);
         }
         // Acquire individual members of the union once, so two siblings in a
@@ -311,6 +319,11 @@ impl Operations {
                 held.insert(id, lease);
             }
         }
+        let choices = if jobs[0]["action"] == "proxy" && !jobs[0]["payload"]["proxy_id"].is_null() {
+            self.actions.proxies(key).await?
+        } else {
+            vec![]
+        };
         let rows = self.native_rows(jobs).await?;
         let descendants = if delete {
             self.children(
@@ -322,11 +335,6 @@ impl Operations {
             .await?
         } else {
             BTreeMap::new()
-        };
-        let choices = if jobs[0]["action"] == "proxy" && !jobs[0]["payload"]["proxy_id"].is_null() {
-            self.actions.proxies(key).await?
-        } else {
-            vec![]
         };
         let mut groups: BTreeMap<String, Vec<Value>> = BTreeMap::new();
         for job in jobs {
@@ -368,7 +376,7 @@ impl Operations {
                 {
                     return Err(Error::new(409, "所选代理已不可用"));
                 }
-                self.native_target(row, job).await
+                self.native_target(row, job, scopes).await
             }
             .await;
             match target {
@@ -407,43 +415,11 @@ impl Operations {
         Ok(())
     }
     async fn delete_native_chunk(&self, bid: &str, jobs: Vec<Value>, key: &str) -> Result<()> {
-        let rows = self.native_rows(&jobs).await?;
-        let children = self
-            .children(
-                &jobs
-                    .iter()
-                    .filter_map(|j| integer(&j["account_id"]))
-                    .collect::<Vec<_>>(),
-            )
-            .await?;
-        let mut allowed = vec![];
-        for job in jobs {
-            let aid = integer(&job["account_id"]).unwrap();
-            let jid = string(&job["id"]);
-            let row = rows.get(&aid);
-            if native_reached(row, &job) {
-                self.update(jid,json!({"status":"completed","reason":"","result":native_confirmed(row,&job,false)}))?;
-                self.notify_deleted_job(&job);
-                continue;
-            }
-            let children = children.get(&aid).cloned().unwrap_or_default();
-            if row.is_none()
-                || self.fingerprint(row.unwrap(), &job)? != string(&job["expected_version"])
-                || children
-                    != ids(&job["child_account_ids"])
-                        .into_iter()
-                        .collect::<Vec<_>>()
-            {
-                self.update(jid,json!({"status":"needs_confirmation","reason":"账号或关联账号已变化，请重新确认删除"}))?;
-            } else {
-                allowed.push(job);
-            }
-        }
         let compatibility = self.store.read_shared()?["batches"][bid]["native_unsupported"] == true;
         let groups = if compatibility {
-            allowed.into_iter().map(|j| vec![j]).collect::<Vec<_>>()
+            jobs.into_iter().map(|j| vec![j]).collect::<Vec<_>>()
         } else {
-            vec![allowed]
+            vec![jobs]
         };
         for group in groups {
             let selected = self.record_native(bid, &group, compatibility)?;

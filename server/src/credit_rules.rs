@@ -3,9 +3,8 @@ use crate::{
     compat::{config_revision, datetime, parse_datetime, sha256, string, text, truthy},
     db::Database,
     error::{Error, Result},
-    error_evidence,
-    oauth_admission::{self, credential_fingerprint},
-    oauth_state::{limit_fingerprint, normalized_credits, validate_observation},
+    error_evidence, oauth_admission,
+    oauth_state::{normalized_credits, validate_observation},
     quota, reset_credit_observation, sql,
     upstream::read_limited,
     usage,
@@ -17,7 +16,6 @@ static MESSAGES: LazyLock<Value> = LazyLock::new(|| {
     serde_json::from_str(include_str!("../resources/credit-messages.json"))
         .expect("credit messages")
 });
-pub const LEGACY_ENDED: [&str; 4] = ["finished", "recovered", "closed", "manual"];
 pub const TERMINAL: [&str; 5] = ["finished", "recovered", "closed", "manual", "blocked"];
 pub fn reason(code: &str) -> &'static str {
     if code.is_empty() {
@@ -60,9 +58,7 @@ pub fn project(value: &Value, notices: &Value) -> Value {
         value["error_code"] = "result_uncertain".into();
         value["next_at"] = Value::Null;
     }
-    if !truthy(&value["policy_version"])
-        && matches!(string(&value["stage"]), "manual" | "recovered" | "closed")
-    {
+    if manual(&value) && matches!(string(&value["stage"]), "manual" | "recovered" | "closed") {
         return Value::Null;
     }
     let code = if truthy(&value["result_reason"]) {
@@ -92,10 +88,6 @@ pub fn project(value: &Value, notices: &Value) -> Value {
 }
 pub fn manual(task: &Value) -> bool {
     task["source"] == "manual"
-        || !truthy(&task["policy_version"])
-            && matches!(string(&task["stage"]), "manual" | "uncertain")
-            && !truthy(&task["evidence_at"])
-            && !truthy(&task["owns_pause"])
 }
 pub fn expired(task: &Value, at: DateTime<Utc>) -> bool {
     if truthy(&task["attempt_at"]) && !truthy(&task["consumed"]) {
@@ -346,18 +338,7 @@ pub fn available(row: &Value, saved: &Value, task: &Value, at: DateTime<Utc>) ->
         return false;
     }
     if let Some(attempt) = parse_datetime(&task["attempt_at"]).filter(|t| observed < *t) {
-        let (Some(start), Some(completed)) = (
-            parse_datetime(&saved["read_started_at"]),
-            parse_datetime(&saved["read_completed_at"]),
-        ) else {
-            return false;
-        };
-        if !(attempt <= start
-            && start <= completed
-            && completed <= at
-            && start.with_nanosecond(0).unwrap() <= observed
-            && observed <= completed)
-        {
+        if parse_datetime(&saved["read_started_at"]).is_none_or(|start| start < attempt) {
             return false;
         }
     }
@@ -421,52 +402,22 @@ pub fn credit_reason(
     })
 }
 pub fn credit_observation(
-    before: &Value,
     after: &Value,
     result: &Value,
     started: DateTime<Utc>,
     completed: DateTime<Utc>,
 ) -> Option<Value> {
-    let payload = &result["data"];
-    if !truthy(&result["success"])
-        || payload["cache_persisted"] != true
-        || !after.is_object()
-        || credential_fingerprint(before) != credential_fingerprint(after)
-        || limit_fingerprint(before) != limit_fingerprint(after)
+    if result["data"]["cache_persisted"] != true || !after.is_object() {
+        return None;
+    }
+    let observation = reset_credit_observation::from_usage(result, started, completed)?;
+    let content = normalized_credits(&after["extra"]["codex_reset_credit_snapshot"])?;
+    if content["available_count"] != observation["available_count"]
+        || content["expires_at"] != observation["expires_at"]
     {
         return None;
     }
-    let content = normalized_credits(&payload["rate_limit_reset_credits"])?;
-    if Some(&content) != normalized_credits(&after["extra"]["codex_reset_credit_snapshot"]).as_ref()
-    {
-        return None;
-    }
-    let observed = if payload["fetched_at"].is_null() {
-        completed
-    } else {
-        parse_datetime(&payload["fetched_at"])?
-    };
-    if observed < started - TimeDelta::seconds(1) || observed > completed {
-        return None;
-    }
-    let summary = quota::summary_from_result(after, &result["quota_result"]);
-    let windows = quota::windows_by_key(&summary["ui_windows"]);
-    let win = windows.get("codex_7d")?;
-    let reset = parse_datetime(&win["reset_at"])?;
-    if reset <= observed {
-        return None;
-    }
-    reset_credit_observation::create(
-        after,
-        &content,
-        observed,
-        &credential_fingerprint(after),
-        reset,
-        win.get("window_minutes")
-            .filter(|v| truthy(v))
-            .unwrap_or(&json!(10080)),
-    )
-    .ok()
+    Some(observation)
 }
 pub async fn execute(actions: &Actions, action: &str, id: i64, key: &str, seconds: u64) -> Value {
     if actions.settings.read_only {

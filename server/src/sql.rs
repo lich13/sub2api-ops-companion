@@ -213,22 +213,23 @@ pub const DESKTOP_ERROR_FIELDS: &str = r####"e.id, e.account_id, e.group_id, e.c
  to_jsonb(e)->'upstream_errors' AS upstream_errors,
  e.request_id, e.resolved, a.name AS account_name, g.name AS group_name"####;
 
-pub const DESKTOP_ACCOUNT_SQL: &str = concat!(
-    r####"
-SELECT a.id, a.name, a.platform, a.type, a.status, a.schedulable, a.updated_at, a.priority, a.concurrency, a.load_factor, a.error_message, a.extra,
+macro_rules! desktop_account_sql {
+    ($private:literal) => { concat!(
+    "SELECT ", $private, r####"a.id, a.name, a.platform, a.type, a.status, a.schedulable, a.updated_at, a.priority, a.concurrency, a.load_factor, a.error_message, a.extra,
  nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id,
  coalesce(nullif(a.credentials->>'plan_type',''),nullif(a.credentials->>'chatgpt_plan_type',''),a.extra->>'plan_type') AS quota_plan_type,
  a.credentials->>'account_mode' AS usage_account_mode, a.credentials->>'base_url' AS usage_base_url,
  to_jsonb(a)->>'session_window_end' AS usage_session_window_end, to_jsonb(a)->>'session_window_status' AS usage_session_window_status,
  a.proxy_id, md5(a.credentials::text) AS credential_version,
  md5((a.credentials - 'model_mapping')::text) AS credential_settings_version,
+ jsonb_build_object('plan_type',a.credentials->'plan_type','chatgpt_account_id',a.credentials->'chatgpt_account_id','email',a.credentials->'email') AS account_identity,
  a.credentials->'model_mapping' AS model_mapping,
  nullif(a.credentials->>'project_id','') IS NOT NULL AS model_sync_project,
  md5(coalesce(a.credentials->'model_mapping','{}'::jsonb)::text) AS model_mapping_version,
  (SELECT md5(jsonb_agg(jsonb_build_array(g.id,g.model_allowlist) ORDER BY g.id)::text)
   FROM account_groups ag JOIN groups g ON g.id=ag.group_id AND g.deleted_at IS NULL WHERE ag.account_id=a.id) AS model_catalog_version,
  a.credentials->>'subscription_tier' AS quota_grok_tier, a.credentials->>'entitlement_status' AS quota_grok_entitlement,
- a.temp_unschedulable_until, a.rate_limit_reset_at, a.overload_until, a.expires_at, a.auto_pause_on_expired,
+ a.temp_unschedulable_until, a.temp_unschedulable_reason, a.rate_limited_at, a.rate_limit_reset_at, a.overload_until, a.expires_at, a.auto_pause_on_expired,
  coalesce(a.extra->>'grok_needs_reauth','false') = 'true' AS needs_reauth,
  ARRAY(SELECT ag.group_id FROM account_groups ag JOIN groups g ON g.id=ag.group_id AND g.deleted_at IS NULL WHERE ag.account_id=a.id ORDER BY ag.group_id) AS group_ids,
  u.created_at AS last_success_at, u.created_at AS last_called_at, e.created_at AS last_error_at, e.id AS last_error_id,
@@ -241,7 +242,10 @@ LEFT JOIN LATERAL (SELECT e.* FROM ops_error_logs e WHERE e.account_id=a.id AND 
     r####" ORDER BY e.created_at DESC,e.id DESC LIMIT 1) e ON true
 WHERE a.deleted_at IS NULL {filter} ORDER BY a.id
 "####
-);
+) };
+}
+pub const DESKTOP_ACCOUNT_SQL: &str = desktop_account_sql!("");
+pub const MODEL_ACCOUNT_SQL: &str = desktop_account_sql!("a.credentials, ");
 
 pub const DESKTOP_GROUP_SQL: &str = r####"
 SELECT g.id,g.name,g.platform,g.sort_order,u.id AS log_id,u.account_id,
@@ -377,12 +381,6 @@ mod tests {
                 DESKTOP_ERROR_FIELDS,
                 393,
                 "3a11331e2fd05e78c76b334fcbb50ce3f1de42bd8feb2bb14c156b5a4126a921",
-            ),
-            (
-                "DESKTOP_ACCOUNT_SQL",
-                DESKTOP_ACCOUNT_SQL,
-                23682,
-                "90e85737253b083d80575ed1cb9d9458886086422d42f0857a1d11538dac6844",
             ),
             (
                 "DESKTOP_GROUP_SQL",

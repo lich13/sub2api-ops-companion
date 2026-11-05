@@ -692,22 +692,10 @@ impl Harness {
             })
             .expect("persist synthetic quota result");
 
-        let saved = controller
-            .saved_quota(&row, now)
-            .expect("project synthetic quota result");
-        let reset = parse_datetime(&saved["oauth_quota"]["ui_windows"][1]["reset_at"])
-            .expect("fixture seven day reset");
         let credits = normalized_credits(&row["extra"]["codex_reset_credit_snapshot"])
             .expect("normalize synthetic credit snapshot");
-        let observation = reset_credit_observation::create(
-            &row,
-            &credits,
-            now - Duration::seconds(1),
-            &oauth_admission::credential_fingerprint(&row),
-            reset,
-            &json!(10080),
-        )
-        .expect("create fixture credit observation");
+        let observation = reset_credit_observation::create(&credits, now - Duration::seconds(1))
+            .expect("create fixture credit observation");
         controller
             .store
             .transaction(|state| {
@@ -981,13 +969,8 @@ async fn automatic_pause_is_read_back_owned_before_consumption_result() {
         .await
         .expect("admit synthetic credit episode");
     assert!(task["episode"].is_string());
-    let task = harness
-        .controller
-        .policy(&row, &task)
-        .await
-        .expect("persist fixture policy before consuming");
 
-    let result = harness
+    let (result, _) = harness
         .controller
         .request(
             &row,
@@ -996,6 +979,7 @@ async fn automatic_pause_is_read_back_owned_before_consumption_result() {
             fixed_now(),
             Source::Automatic,
             Some(ADMIN_KEY),
+            None,
         )
         .await
         .expect("run one automatic pause and consume attempt");
@@ -1025,43 +1009,28 @@ async fn five_minute_deadlines_and_unknown_unissued_pause_undo_are_read_back_onl
     let harness = Harness::new(false).await;
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(id, "connection"));
-    let row = harness.seed_account(false, true).await;
+    let (row, evidence) = harness.seed_depletion(&harness.controller).await;
     let id = integer(&row["id"]).unwrap();
     let now = fixed_now();
-    let task = json!({
-        "episode": "fixture-deadline-episode",
-        "stage": "waiting",
-        "revision": 0,
-        "evidence_at": datetime(now),
-        "reset_completed_at": datetime(now + Duration::seconds(10)),
-        "owns_pause": false
-    });
-    harness
-        .controller
-        .store
-        .transaction(|state| {
-            state["scheduler"][id.to_string()]["auto_reset_credit"] = task.clone();
-            Ok(())
-        })
-        .expect("persist deadline fixture");
     let policy = harness
         .controller
-        .policy(&row, &task)
+        .begin_episode(&row, &json!({}), &evidence, now)
         .await
-        .expect("derive bounded credit policy");
+        .unwrap();
+    assert_eq!(policy["policy_version"], 1);
     assert_eq!(
         policy["consume_deadline_at"],
-        datetime(now + Duration::seconds(300))
+        datetime(
+            sub2ops_server::compat::parse_datetime(&evidence["evidence_at"]).unwrap()
+                + Duration::seconds(300)
+        )
     );
-    assert_eq!(
-        policy["verification_deadline_at"],
-        datetime(now + Duration::seconds(310))
-    );
+    assert!(policy["verification_deadline_at"].is_null());
     assert!(!credit_rules::expired(
         &policy,
-        now + Duration::seconds(299)
+        now + Duration::seconds(239)
     ));
-    assert!(credit_rules::expired(&policy, now + Duration::seconds(300)));
+    assert!(credit_rules::expired(&policy, now + Duration::seconds(240)));
     let consumed = json!({
         "consumed": true,
         "verification_deadline_at": datetime(now + Duration::seconds(310))
@@ -1148,6 +1117,9 @@ async fn a_truncated_native_sse_receipt_finishes_without_a_second_test() {
         "episode": "fixture-sse-episode",
         "stage": "testing",
         "revision": 0,
+        "policy_version":1,"policy_control_generation":credit_ownership::generation(&state,id),
+        "policy_method_generation":0,"policy_method":"connection","policy_detection_version":harness.controller.hooks.detection_version(id).unwrap(),
+        "verification_deadline_at":datetime(now + Duration::seconds(298)),
         "owns_pause": true,
         "signature": credit_ownership::signature(&row),
         "owned_version": row["updated_at"],
@@ -1209,12 +1181,7 @@ async fn manual_generation_change_keeps_consumption_receipt_and_never_unpauses()
         .begin_episode(&row, &old, &evidence, fixed_now())
         .await
         .expect("admit fixture episode");
-    let task = harness
-        .controller
-        .policy(&row, &task)
-        .await
-        .expect("persist fixture policy before consuming");
-    let consume_result = harness
+    let (consume_result, _) = harness
         .controller
         .request(
             &row,
@@ -1223,6 +1190,7 @@ async fn manual_generation_change_keeps_consumption_receipt_and_never_unpauses()
             fixed_now(),
             Source::Automatic,
             Some(ADMIN_KEY),
+            None,
         )
         .await
         .expect("record one native consumption receipt");
@@ -1329,7 +1297,7 @@ async fn read_only_mode_creates_no_state_and_dispatches_no_query_card_or_bark() 
         )
         .await;
     assert_eq!(query["error_code"], "read_only");
-    let consume = harness
+    let (consume, _) = harness
         .controller
         .request(
             &row,
@@ -1338,6 +1306,7 @@ async fn read_only_mode_creates_no_state_and_dispatches_no_query_card_or_bark() 
             fixed_now(),
             Source::Manual,
             Some(ADMIN_KEY),
+            None,
         )
         .await
         .unwrap();
@@ -1486,7 +1455,7 @@ async fn parameter_recovery_rejected_write_keeps_owned_version() {
 
 #[tokio::test]
 async fn parameter_recovery_conflicting_manual_or_account_changes_never_resume_hold() {
-    for change in ["generation", "credentials", "mapping", "proxy", "limit"] {
+    for change in ["generation", "identity", "priority", "concurrency", "limit"] {
         let h = Harness::new(false).await;
         let (id, _) = seed_parameter_retry(&h).await;
         apply_parameter(&h, id, "concurrency", 4).await.unwrap();
@@ -1500,9 +1469,9 @@ async fn parameter_recovery_conflicting_manual_or_account_changes_never_resume_h
                 .unwrap();
         } else {
             let clause = match change {
-                "credentials" => "credentials=credentials || '{\"access_token\":\"fixture-replacement\"}'::jsonb",
-                "mapping" => "credentials=credentials || '{\"model_mapping\":{\"fixture-next\":\"fixture-next\"}}'::jsonb",
-                "proxy" => "proxy_id=99",
+                "identity" => "credentials=credentials || '{\"chatgpt_account_id\":\"fixture-replacement\"}'::jsonb",
+                "priority" => "priority=99",
+                "concurrency" => "concurrency=99",
                 "limit" => "rate_limited_at=$2,rate_limit_reset_at=$2 + interval '2 hours'",
                 _ => unreachable!(),
             };
@@ -1531,7 +1500,7 @@ async fn parameter_recovery_conflicting_manual_or_account_changes_never_resume_h
         assert_eq!(task["outcome"], "unrecovered");
         assert_eq!(task["consumed"], true);
         assert!(task["receipt"].is_object());
-        assert_eq!(task["owns_pause"], false);
+        assert_eq!(task["owns_pause"], change == "limit", "{change}");
         assert_eq!(task["owned_version"], pending["owned_version"]);
         assert_eq!(
             task["owned_version"] == row["updated_at"],

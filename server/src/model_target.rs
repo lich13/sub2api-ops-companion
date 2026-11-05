@@ -129,7 +129,10 @@ pub fn supported(row: &Value) -> bool {
             && matches!(string(&row["platform"]), "anthropic" | "grok" | "deepseek")
 }
 pub async fn account(actions: &Actions, id: i64) -> Result<Value> {
-    let row=actions.queries.db.one("SELECT id,name,platform,type,status,schedulable,credentials,extra,proxy_id,nullif(to_jsonb(accounts)->>'parent_account_id','')::bigint AS parent_account_id,ARRAY(SELECT ag.group_id FROM account_groups ag JOIN groups g ON g.id=ag.group_id AND g.deleted_at IS NULL WHERE ag.account_id=accounts.id ORDER BY ag.group_id) AS group_ids FROM accounts WHERE id=$1 AND deleted_at IS NULL",&[id.into()]).await?;
+    static SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+        crate::sql::MODEL_ACCOUNT_SQL.replace("{filter}", "AND a.id=$1")
+    });
+    let row = actions.queries.db.one(&SQL, &[id.into()]).await?;
     row.filter(supported)
         .ok_or_else(|| Error::new(422, "此账号类型不支持模型检测"))
 }

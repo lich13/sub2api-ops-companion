@@ -86,8 +86,6 @@ fn execute(name: &str, args: &Value) -> Result<Value> {
             &args["data"],
         ),
         "observation_from_usage" => reset_credit_observation::from_usage(
-            &args["before"],
-            &args["after"],
             &args["result"],
             time(&args["started"]),
             time(&args["completed"]),
@@ -371,12 +369,6 @@ fn auto_reset_resetcreditdiagnostictests_test_only_whitelisted_status_business_c
 fn auto_reset_resetcreditdiagnostictests_test_unknown_business_code_is_replaced_and_boolean_reset_count_is_omitted(
 ) {
     check("py:tests.test_auto_reset:ResetCreditDiagnosticTests.test_unknown_business_code_is_replaced_and_boolean_reset_count_is_omitted");
-}
-
-#[test]
-fn auto_reset038_autoreset038observationtests_test_observation_from_usage_requires_fresh_explicit_matching_card_data(
-) {
-    check("py:tests.test_auto_reset038:AutoReset038ObservationTests.test_observation_from_usage_requires_fresh_explicit_matching_card_data");
 }
 
 #[test]

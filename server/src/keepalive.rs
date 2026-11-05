@@ -214,8 +214,6 @@ impl Keepalive {
         control.prune(self.now());
         let (status, reason) = if self.inflight(id) {
             ("running", "正在恢复临时不可调度")
-        } else if control.pending.is_some() {
-            ("needs_confirmation", "恢复结果待核对")
         } else if !control.enabled {
             ("disabled", control.paused_reason.as_str())
         } else if self.detection.actions.settings.read_only {
@@ -268,49 +266,6 @@ impl Keepalive {
         })?;
         self.view(id).await
     }
-    pub fn startup(&self) -> Result<()> {
-        let data = self.store.read_shared()?;
-        if self.detection.actions.settings.read_only {
-            return Ok(());
-        }
-        // Resume the existing notice backoff after an interrupted delivery.
-        for (id, value) in data["accounts"].as_object().into_iter().flatten() {
-            let control: Control = Control::deserialize(value).map_err(|_| state::invalid())?;
-            if control
-                .notifications
-                .iter()
-                .any(|n| matches!(n.status.as_str(), "sending" | "needs_confirmation"))
-                || control.pending.is_none() && !control.reservations.is_empty()
-            {
-                self.change(id.parse().map_err(|_| state::invalid())?, |c| {
-                    if c.pending.is_none() {
-                        c.reservations.clear();
-                    }
-                    for notice in &mut c.notifications {
-                        if matches!(notice.status.as_str(), "sending" | "needs_confirmation") {
-                            notice.status = if notice.attempts >= 5 {
-                                "failed"
-                            } else {
-                                "pending"
-                            }
-                            .into();
-                            notice.next_at = (notice.attempts < 5).then(|| {
-                                notice.next_at.unwrap_or_else(|| {
-                                    self.now()
-                                        + Duration::seconds(
-                                            [5, 30, 120, 600]
-                                                [notice.attempts.saturating_sub(1).min(3) as usize],
-                                        )
-                                })
-                            });
-                        }
-                    }
-                    Ok(())
-                })?;
-            }
-        }
-        Ok(())
-    }
     pub async fn tick(&self) -> Result<()> {
         if self.detection.actions.settings.read_only || self.tasks.is_closed() {
             return Ok(());
@@ -322,7 +277,7 @@ impl Keepalive {
         let mut controls = BTreeMap::new();
         for (id, value) in data["accounts"].as_object().into_iter().flatten() {
             let control: Control = Control::deserialize(value).map_err(|_| state::invalid())?;
-            if control.pending.is_some() || control.enabled && !control.waiting(self.now()) {
+            if control.enabled && !control.waiting(self.now()) {
                 controls.insert(id.parse::<i64>().map_err(|_| state::invalid())?, control);
             }
         }
@@ -339,18 +294,6 @@ impl Keepalive {
                 &[Param::Ints(controls.keys().copied().collect())],
             )
             .await?;
-        for (id, control) in &controls {
-            if self.inflight(*id) {
-                continue;
-            }
-            if let Some(intent) = &control.pending {
-                self.reconcile(
-                    *id,
-                    intent,
-                    rows.iter().find(|r| integer(&r["id"]) == Some(*id)),
-                )?;
-            }
-        }
         let gates = self.gates()?;
         let cursor = *self.cursor.lock().map_err(|_| Error::internal())?;
         let mut rows = rows;
@@ -368,7 +311,6 @@ impl Keepalive {
                 continue;
             };
             if !control.enabled
-                || control.pending.is_some()
                 || control.waiting(self.now())
                 || !self.blocked_in(id, &row, &gates).is_empty()
             {
@@ -441,11 +383,7 @@ impl Keepalive {
             dispatched_at: at,
         };
         let control = self.control(id)?;
-        if !control.enabled
-            || control.generation != generation
-            || control.pending.is_some()
-            || control.waiting(at)
-        {
+        if !control.enabled || control.generation != generation || control.waiting(at) {
             return Ok(());
         }
         if self.tasks.is_closed() {
@@ -469,15 +407,12 @@ impl Keepalive {
                 return Err(error);
             }
         };
-        self.reconcile(id, &intent, row.as_ref())
-    }
-    fn reconcile(&self, id: i64, intent: &Intent, row: Option<&Value>) -> Result<()> {
-        let outcome = match row {
+        let outcome = match row.as_ref() {
             Some(row) if row["temp_unschedulable_until"].is_null() => Outcome::Confirmed,
             Some(row) if state::fingerprint(row) == intent.fingerprint => Outcome::Failed,
             _ => Outcome::Superseded,
         };
-        self.finish(id, intent, outcome)
+        self.finish(id, &intent, outcome)
     }
     fn finish(&self, id: i64, intent: &Intent, outcome: Outcome) -> Result<()> {
         let at = self.now();
@@ -487,15 +422,9 @@ impl Keepalive {
             Outcome::Superseded => "incident_changed",
         };
         let changed = self.change(id, |control| {
-            if let Some(pending) = &control.pending {
-                if pending.id != intent.id {
-                    return Ok(false);
-                }
-            } else if control.generation != intent.generation {
+            if control.generation != intent.generation {
                 return Ok(false);
             }
-            control.pending = None;
-            control.reservations.clear();
             control.prune(at);
             match outcome {
                 Outcome::Confirmed => {

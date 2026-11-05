@@ -264,14 +264,11 @@ impl CreditController {
                 {
                     return Ok(true);
                 }
-                if !truthy(&task["recovered_evidence_at"]) && !truthy(&task["credit_gate_skipped"])
-                {
+                if !truthy(&task["recovered_evidence_at"]) {
                     return Ok(false);
                 }
             }
-        } else if truthy(&task)
-            && (!truthy(&task["credit_gate_skipped"]) || truthy(&task["owns_pause"]))
-        {
+        } else if truthy(&task) {
             return Ok(true);
         }
         if self.hooks.config()?["oauth_auto_reset_credit_enabled"] != true {
@@ -337,58 +334,13 @@ impl CreditController {
         })?;
         Ok(task)
     }
-    pub fn migrate_admission(
-        &self,
-        id: i64,
-        row: &Value,
-        task: &Value,
-        at: DateTime<Utc>,
-    ) -> Result<Value> {
-        if !row.is_object()
-            || !truthy(task)
-            || truthy(&task["attempt_at"])
-            || truthy(&task["consumed"])
-            || truthy(&task["credit_admitted_at"])
-            || credit_rules::manual(task)
-            || matches!(string(&task["stage"]), "recovered" | "closed")
-            || truthy(&task["credit_gate_skipped"])
-        {
-            return Ok(task.clone());
-        }
-        let reason = self.positive_credit_reason(row, task, at)?;
-        if reason.is_empty() {
-            return Ok(task.clone());
-        }
-        let mut updated = task.clone();
-        updated["revision"] = json!(integer(&task["revision"]).unwrap_or(0) + 1);
-        updated["credit_gate_skipped"] = true.into();
-        if !credit_rules::LEGACY_ENDED.contains(&string(&task["stage"])) {
-            updated.as_object_mut().unwrap().extend(json!({"stage":"finished","outcome":"not_executed","result_reason":reason,"error_code":reason,"completed_at":datetime(at),"next_at":null}).as_object().unwrap().clone());
-        }
-        self.store.transaction(|state| {let meta=&mut state["scheduler"][id.to_string()];let current=&meta["auto_reset_credit"];if current["episode"]!=task["episode"] || current["revision"]!=task["revision"] {return Err(Error::new(409,"用卡任务已变化"));}meta["auto_reset_credit"]=updated.clone();let trigger=if truthy(&task["trigger_at"]) {&task["trigger_at"]} else {&task["evidence_at"]};if parse_datetime(trigger).is_some() && meta.get("credit_admission").is_none() {meta["credit_admission"]=json!({"trigger_at":trigger,"checked_at":datetime(at),"reason":reason,"evidence_fingerprint":string(&task["evidence_fingerprint"])});}
-            if let Some(notice)=meta.get_mut("credit_result_notifications").and_then(|v|v.get_mut(string(&task["episode"]))) {if notice["status"]=="pending" && notice["outcome"]=="not_executed" {notice["status"]="suppressed".into();notice["next_at"]=Value::Null;}}Ok(())})?;
-        self.audit(id, "credit_admission_migrated", json!({"reason":reason}));
-        Ok(updated)
-    }
-    pub async fn policy(&self, row: &Value, task: &Value) -> Result<Value> {
-        if !truthy(task)
-            || credit_rules::manual(task)
-            || truthy(&task["policy_version"])
-            || credit_rules::LEGACY_ENDED.contains(&string(&task["stage"]))
-        {
-            return Ok(task.clone());
-        }
-        let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
-        self.save(id, task, self.policy_fields(row, task)?)
-    }
     fn policy_fields(&self, row: &Value, task: &Value) -> Result<Value> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         let trigger = parse_datetime(&task["evidence_at"]);
-        let completed = parse_datetime(&task["reset_completed_at"]);
         let state = self.store.shared_snapshot()?;
         let meta = &state["scheduler"][id.to_string()];
         Ok(
-            json!({"policy_version":1,"trigger_at":trigger.map(datetime),"consume_deadline_at":trigger.map(|t|datetime(t+Duration::seconds(300))),"verification_deadline_at":completed.map(|t|datetime(t+Duration::seconds(300))),"policy_credential_fingerprint":credential_fingerprint(row),"policy_control_generation":task.get("control_generation").filter(|v|!v.is_null()).cloned().unwrap_or(json!(credit_ownership::generation(&state,id))),"policy_detection_version":self.hooks.detection_version(id)?,"policy_method":recovery_policy::method(&self.hooks.config()?,id),"policy_method_generation":integer(&meta["recovery_method_generation"]).unwrap_or(0),"verification_dispatched":truthy(&task["verification_dispatched"]) || task["stage"]=="testing" && integer(&task["test_attempts"]).unwrap_or(0)>0 && !truthy(&task["test_completed_at"])}),
+            json!({"policy_version":1,"policy_identity":credit_ownership::identity_signature(row),"trigger_at":trigger.map(datetime),"consume_deadline_at":trigger.map(|t|datetime(t+Duration::seconds(300))),"verification_deadline_at":null,"policy_control_generation":credit_ownership::generation(&state,id),"policy_detection_version":self.hooks.detection_version(id)?,"policy_method":recovery_policy::method(&self.hooks.config()?,id),"policy_method_generation":integer(&meta["recovery_method_generation"]).unwrap_or(0),"verification_dispatched":false}),
         )
     }
 
@@ -425,7 +377,9 @@ impl CreditController {
         {
             return Ok("manual_intervention");
         }
-        if task["policy_credential_fingerprint"] != credential_fingerprint(row) {
+        if task["policy_identity"].is_string()
+            && task["policy_identity"] != credit_ownership::identity_signature(row)
+        {
             return Ok("ownership_changed");
         }
         if task["policy_detection_version"] != self.hooks.detection_version(id)? {
@@ -453,6 +407,17 @@ impl CreditController {
         {
             return Ok("ownership_changed");
         }
+        if parse_datetime(&task["attempt_at"]).is_some_and(|attempt| {
+            [
+                "rate_limited_at",
+                "temp_unschedulable_until",
+                "overload_until",
+            ]
+            .iter()
+            .any(|key| parse_datetime(&row[key]).is_some_and(|time| time > attempt))
+        }) {
+            return Ok("quota_unavailable");
+        }
         Ok("")
     }
     pub fn notice(&self, id: i64, task: &Value, at: DateTime<Utc>, row: &Value) -> Value {
@@ -477,10 +442,7 @@ impl CreditController {
         cancel: bool,
         fields: &Value,
     ) -> Result<Value> {
-        if task["stage"] == "finished"
-            || credit_rules::LEGACY_ENDED.contains(&string(&task["stage"]))
-                && !truthy(&task["policy_version"])
-        {
+        if task["stage"] == "finished" {
             return Ok(task.clone());
         }
         let mut finished = task.clone();
@@ -599,13 +561,6 @@ impl CreditController {
                     continue;
                 }
                 let aid = id.parse::<i64>().map_err(|_| Error::internal())?;
-                let task = &meta["auto_reset_credit"];
-                if task["episode"] == episode.as_str()
-                    && !truthy(&task["attempt_at"])
-                    && !truthy(&task["credit_admitted_at"])
-                {
-                    self.migrate_admission(aid, &self.row(aid).await?, task, at)?;
-                }
                 let reserved = self.store.transaction(|state| {
                     let item = &mut state["scheduler"][id]["credit_result_notifications"][episode];
                     if item != notice {

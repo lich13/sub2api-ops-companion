@@ -155,6 +155,8 @@ impl Detection {
             if value["generation"] != disposition["generation"] {
                 return Err(Error::new(409, "人工操作已替代自动处置"));
             }
+            value["hold"] = true.into();
+            value["recheck_recovery"] = Value::Null;
             value["disposition"] = disposition.clone();
             value["status"] = "paused".into();
             value["reason"] = if disposition["schedule_verified"] == true {
@@ -280,15 +282,14 @@ impl Detection {
             return Ok(());
         }
         let (title, body) = notification_message(&reserved);
+        let mut options = json!({"group":"Sub2Ops 降智处置"});
+        if reserved["kind"] != "recovered" {
+            options["level"] = "critical".into();
+            options["sound"] = "alarm".into();
+        }
         let result = self
             .bark
-            .push_with_config(
-                title,
-                &body,
-                3,
-                &json!({"level":"critical","sound":"alarm","group":"Sub2Ops 降智处置"}),
-                &config,
-            )
+            .push_with_config(title, &body, 3, &options, &config)
             .await;
         let final_status = if result.success {
             "delivered"

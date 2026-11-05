@@ -1,67 +1,36 @@
 use crate::{
     compat::{datetime, integer, parse_datetime, string},
     error::Result,
-    oauth_admission::credential_fingerprint,
-    oauth_state::{compact_digest, limit_fingerprint, normalized_credits, validate_observation},
-    quota,
+    oauth_state::{normalized_credits, validate_observation},
 };
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{json, Value};
-pub fn create(
-    row: &Value,
-    content: &Value,
-    observed: DateTime<Utc>,
-    credential: &str,
-    reset: DateTime<Utc>,
-    minutes: &Value,
-) -> Result<Value> {
+pub fn create(content: &Value, observed: DateTime<Utc>) -> Result<Value> {
     let mut value = content.clone();
-    value.as_object_mut().unwrap().extend(json!({"version":1,"observed_at":datetime(observed),"snapshot_sha256":compact_digest(content),"credential_fingerprint":credential,"window_reset_at":datetime(reset),"window_minutes":minutes,"limit_fingerprint":limit_fingerprint(row)}).as_object().unwrap().clone());
+    value["version"] = 1.into();
+    value["observed_at"] = datetime(observed).into();
     validate_observation(&value)?;
     Ok(value)
 }
 pub fn from_usage(
-    before: &Value,
-    after: &Value,
     result: &Value,
     started: DateTime<Utc>,
     completed: DateTime<Utc>,
 ) -> Option<Value> {
     let data = &result["data"];
-    if result["success"] != true || !after.is_object() || !data.is_object() {
+    if result["success"] != true || !data.is_object() || data["cache_persisted"] == false {
         return None;
     }
     let content = normalized_credits(&data["rate_limit_reset_credits"])?;
-    let fetched = parse_datetime(&data["fetched_at"])?;
-    if fetched < started - Duration::seconds(1)
-        || fetched > completed
-        || data["cache_persisted"] == false
-        || credential_fingerprint(before) != credential_fingerprint(after)
-        || limit_fingerprint(before) != limit_fingerprint(after)
-        || Some(&content)
-            != normalized_credits(&after["extra"]["codex_reset_credit_snapshot"]).as_ref()
-    {
+    let fetched = if data["fetched_at"].is_null() {
+        completed
+    } else {
+        parse_datetime(&data["fetched_at"])?
+    };
+    if fetched < started - Duration::seconds(1) || fetched > completed {
         return None;
     }
-    let summary = quota::summary_from_result(after, result);
-    let windows = quota::windows_by_key(&summary["ui_windows"]);
-    let window = windows.get("codex_7d")?;
-    let reset = parse_datetime(&window["reset_at"])?;
-    if reset <= fetched {
-        return None;
-    }
-    create(
-        after,
-        &content,
-        fetched,
-        &credential_fingerprint(after),
-        reset,
-        window
-            .get("window_minutes")
-            .filter(|v| crate::compat::truthy(v))
-            .unwrap_or(&json!(10080)),
-    )
-    .ok()
+    create(&content, fetched).ok()
 }
 pub fn diagnostics(status: Option<u16>, data: &Value) -> Value {
     let mut out = json!({"http_status":status});

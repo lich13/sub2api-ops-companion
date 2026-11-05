@@ -3,7 +3,7 @@ use fs2::FileExt;
 use serde_json::{json, Value};
 use std::{
     fs::{self, OpenOptions},
-    io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
 
@@ -13,40 +13,6 @@ fn sibling(path: &Path, suffix: &str) -> PathBuf {
     let mut name = path.as_os_str().to_os_string();
     name.push(suffix);
     name.into()
-}
-
-// Oversized legacy logs retain only complete records from their bounded tail.
-fn trim_legacy(file: &mut fs::File, path: &Path, length: u64) -> std::io::Result<()> {
-    let mut end = length;
-    let mut buffer = [0; 8192];
-    while end > 0 {
-        let start = end.saturating_sub(buffer.len() as u64);
-        let count = (end - start) as usize;
-        file.seek(SeekFrom::Start(start))?;
-        file.read_exact(&mut buffer[..count])?;
-        if let Some(index) = buffer[..count].iter().rposition(|&b| b == b'\n') {
-            end = start + index as u64 + 1;
-            break;
-        }
-        end = start;
-    }
-    let start = end.saturating_sub(MAX_BYTES);
-    file.seek(SeekFrom::Start(start.saturating_sub(1)))?;
-    let mut reader = BufReader::new(file.take(end - start.saturating_sub(1)));
-    if start > 0 {
-        reader.skip_until(b'\n')?;
-    }
-    let mut options = OpenOptions::new();
-    options.create(true).write(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut old = options.open(sibling(path, ".1"))?;
-    crate::store::private_permissions(&old)?;
-    std::io::copy(&mut reader, &mut old)?;
-    reader.into_inner().into_inner().set_len(0)
 }
 
 fn options() -> OpenOptions {
@@ -62,13 +28,18 @@ fn options() -> OpenOptions {
 fn lock(path: &Path, exclusive: bool) -> std::io::Result<fs::File> {
     // Lock a stable inode before opening either data file: rename cannot leave
     // a waiting writer appending to a retired file.
-    let file = options().open(sibling(path, ".lock"))?;
+    let file = if exclusive {
+        let file = options().open(sibling(path, ".lock"))?;
+        crate::store::private_permissions(&file)?;
+        file
+    } else {
+        fs::File::open(sibling(path, ".lock"))?
+    };
     if exclusive {
         file.lock_exclusive()?;
     } else {
         FileExt::lock_shared(&file)?;
     }
-    crate::store::private_permissions(&file)?;
     Ok(file)
 }
 pub fn write(path: &Path, event: &str, payload: Value, read_only: bool) {
@@ -92,9 +63,7 @@ pub fn write(path: &Path, event: &str, payload: Value, read_only: bool) {
             ));
         }
         let length = file.metadata()?.len();
-        if length > MAX_BYTES {
-            trim_legacy(&mut file, path, length)?;
-        } else if length + bytes.len() as u64 > MAX_BYTES {
+        if length + bytes.len() as u64 > MAX_BYTES {
             drop(file);
             fs::rename(path, sibling(path, ".1"))?;
             file = options().open(path)?;

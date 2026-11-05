@@ -424,16 +424,15 @@ impl Actions {
         } else {
             None
         };
-        let mut row = self.account(id, None).await?;
+        let row = self.account(id, None).await?;
+        let mut lock_row = row.clone();
         let original_parent = row["parent_account_id"].clone();
-        if !truthy(&row["parent_account_id"]) {
-            row["parent_account_id"] = row["extra"]["parent_account_id"].clone();
+        if !truthy(&lock_row["parent_account_id"]) {
+            lock_row["parent_account_id"] = lock_row["extra"]["parent_account_id"].clone();
         }
-        let _lease = self.locks.try_account(&row)?;
-        let mut live = self.queries.internal_account(id).await?;
-        if live["parent_account_id"] != original_parent
-            || operation_versions(&live)[action] != expected
-        {
+        let _lease = self.locks.try_account(&lock_row)?;
+        let mut live = row;
+        if operation_versions(&live)[action] != expected {
             return Err(Error::new(
                 409,
                 "相关字段或账号资格已变化，请核对后重新提交",
@@ -452,10 +451,12 @@ impl Actions {
             {
                 return Err(Error::new(409, "所选代理已不可用，请重新选择"));
             }
-            live = self.queries.internal_account(id).await?;
-        }
-        if operation_versions(&live)[action] != expected {
-            return Err(Error::new(409, "相关字段已变化，请核对后重新提交"));
+            live = self.queries.account(id).await?;
+            if live["parent_account_id"] != original_parent
+                || operation_versions(&live)[action] != expected
+            {
+                return Err(Error::new(409, "相关字段已变化，请核对后重新提交"));
+            }
         }
         let scalar = matches!(action, "priority" | "concurrency" | "load_factor");
         let credit_change = if scalar
@@ -523,7 +524,7 @@ impl Actions {
                     return response;
                 }
             }
-            let actual = self.queries.internal_account(id).await?;
+            let actual = self.queries.account(id).await?;
             if !target_reached(&actual, action, payload) {
                 response?;
                 return Err(Error::new(502, "字段写入尚未确认，正在核对实际值"));
@@ -534,7 +535,6 @@ impl Actions {
                     &actual,
                     task,
                     &live,
-                    action,
                 )?;
             }
             if action == "priority" {

@@ -354,7 +354,6 @@ impl Runtime {
             self.detection.capacity.retire_legacy(chrono::Utc::now()),
         )?;
         startup("detection", self.detection.migrate_dispatches())?;
-        startup("keepalive", self.keepalive.startup())?;
         startup("legacy_templates", self.retire_legacy_templates().await)?;
         startup("monitor", self.monitor.startup().await)?;
         self.refresh_route().await;

@@ -1,6 +1,6 @@
 //! Runtime model recovery tests replace only the final HTTP destination with loopback.
 use crate::{
-    compat::{account_version, datetime, integer, parse_datetime},
+    compat::{account_version, datetime, integer},
     credit_rules,
     db::Database,
     model_target, modeltrace, oauth_admission, quota, recovery_events, recovery_rules,
@@ -1744,17 +1744,9 @@ async fn seed_credit(h: &Harness) -> (i64, Value) {
     let data = native_quota(now, 100);
     let result = credit_rules::quota_result(&data, &row, now, Some(now));
     assert!(oauth_admission::quota_complete(&row, &result));
-    let reset = parse_datetime(&result["oauth_quota"]["ui_windows"][1]["reset_at"]).unwrap();
     let normalized = crate::oauth_state::normalized_credits(&snapshot).unwrap();
-    let observation = reset_credit_observation::create(
-        &row,
-        &normalized,
-        now - Duration::seconds(1),
-        &oauth_admission::credential_fingerprint(&row),
-        reset,
-        &json!(10080),
-    )
-    .unwrap();
+    let observation =
+        reset_credit_observation::create(&normalized, now - Duration::seconds(1)).unwrap();
     h.runtime
         .monitor
         .store
@@ -2578,7 +2570,6 @@ async fn keepalive_defaults_off_persists_privately_and_preserves_corruption() {
     assert_eq!(stale.status.as_u16(), 409);
 
     h.restart().await;
-    h.runtime.keepalive.startup().unwrap();
     assert_eq!(h.runtime.keepalive.view(id).await.unwrap()["enabled"], true);
 
     fs::write(&path, b"{").unwrap();
@@ -2665,7 +2656,7 @@ async fn keepalive_delete_confirms_temp_pause_and_preserves_account_scheduling()
     h.runtime.keepalive.tick().await.unwrap();
     wait_delete_started(&h).await;
     let control = wait_control(&h, id, |c| {
-        c.pending.is_none() && c.last_restore_at == Some(now) && c.restores.len() == 1
+        c.last_restore_at == Some(now) && c.restores.len() == 1
     })
     .await;
     assert!(control.enabled);
@@ -2696,8 +2687,6 @@ async fn keepalive_unchanged_outcome_retries_after_restart_and_counts_only_succe
     wait_delete_started(&h).await;
     let control = wait_control(&h, id, |c| c.failures == 1).await;
     wait_view_status(&h, id, "waiting").await;
-    assert!(control.pending.is_none());
-    assert!(control.reservations.is_empty());
     assert_eq!(control.retry_at, Some(now + Duration::seconds(5)));
     assert_eq!(control.used(now), 0);
     let saved = h.runtime.keepalive.store.read().unwrap();
@@ -2706,7 +2695,6 @@ async fn keepalive_unchanged_outcome_retries_after_restart_and_counts_only_succe
         .get("reservations")
         .is_none());
     h.restart().await;
-    h.runtime.keepalive.startup().unwrap();
     h.set_now(now + Duration::seconds(4));
     h.runtime.keepalive.tick().await.unwrap();
     assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 1);
@@ -2716,7 +2704,6 @@ async fn keepalive_unchanged_outcome_retries_after_restart_and_counts_only_succe
     h.runtime.keepalive.tick().await.unwrap();
     wait_delete_started(&h).await;
     let confirmed = wait_control(&h, id, |c| c.last_restore_at == Some(restore_at)).await;
-    assert!(confirmed.reservations.is_empty());
     assert_eq!(confirmed.restores.len(), 1);
     assert_eq!(confirmed.used(restore_at), 1);
     assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 2);
@@ -2734,7 +2721,7 @@ async fn keepalive_explicit_failure_uses_injected_backoff_without_early_retry() 
 
     h.runtime.keepalive.tick().await.unwrap();
     wait_delete_started(&h).await;
-    let failed = wait_control(&h, id, |c| c.failures == 1 && c.pending.is_none()).await;
+    let failed = wait_control(&h, id, |c| c.failures == 1).await;
     assert_eq!(failed.retry_at, Some(now + Duration::seconds(5)));
     assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 1);
 
@@ -2745,7 +2732,7 @@ async fn keepalive_explicit_failure_uses_injected_backoff_without_early_retry() 
     h.set_now(now + Duration::seconds(5));
     h.runtime.keepalive.tick().await.unwrap();
     wait_delete_started(&h).await;
-    let retried = wait_control(&h, id, |c| c.failures == 2 && c.pending.is_none()).await;
+    let retried = wait_control(&h, id, |c| c.failures == 2).await;
     assert_eq!(retried.retry_at, Some(now + Duration::seconds(35)));
     assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 2);
     h.close().await;
@@ -2772,9 +2759,7 @@ async fn keepalive_spaces_restores_stops_at_five_and_keeps_rolling_budget_after_
         h.runtime.keepalive.tick().await.unwrap();
         wait_delete_started(&h).await;
         let complete = wait_control(&h, id, |c| {
-            c.pending.is_none()
-                && c.last_restore_at == Some(restore_at)
-                && c.restores.len() == attempt
+            c.last_restore_at == Some(restore_at) && c.restores.len() == attempt
         })
         .await;
         assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), attempt);
@@ -2822,10 +2807,7 @@ async fn keepalive_spaces_restores_stops_at_five_and_keeps_rolling_budget_after_
     h.set_now(one_hour);
     h.runtime.keepalive.tick().await.unwrap();
     wait_delete_started(&h).await;
-    let rolled = wait_control(&h, id, |c| {
-        c.pending.is_none() && c.last_restore_at == Some(one_hour)
-    })
-    .await;
+    let rolled = wait_control(&h, id, |c| c.last_restore_at == Some(one_hour)).await;
     assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 6);
     assert!(
         !rolled.enabled,
@@ -2848,9 +2830,9 @@ async fn keepalive_restart_resumes_interrupted_bark_notice_with_backoff() {
                 notifications: vec![crate::keepalive_state::Notice {
                     id: "fixture-interrupted-notice".into(),
                     generation: 3,
-                    status: "sending".into(),
+                    status: "pending".into(),
                     attempts: 1,
-                    next_at: None,
+                    next_at: Some(h.now() + Duration::seconds(5)),
                 }],
                 ..Default::default()
             };
@@ -2860,7 +2842,6 @@ async fn keepalive_restart_resumes_interrupted_bark_notice_with_backoff() {
         .unwrap();
 
     h.restart().await;
-    h.runtime.keepalive.startup().unwrap();
     let control = h.runtime.keepalive.control(id).unwrap();
     assert_eq!(control.notifications[0].status, "pending");
     h.runtime.keepalive.deliver().await.unwrap();
@@ -3029,10 +3010,7 @@ async fn keepalive_blocks_parent_manual_model_and_degradation_recovery_work() {
         .unwrap();
     h.runtime.keepalive.tick().await.unwrap();
     wait_delete_started(&h).await;
-    let restored = wait_control(&h, child, |c| {
-        c.pending.is_none() && c.last_restore_at == Some(now)
-    })
-    .await;
+    let restored = wait_control(&h, child, |c| c.last_restore_at == Some(now)).await;
     assert!(restored.enabled);
     assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 1);
     h.close().await;
@@ -3068,18 +3046,12 @@ async fn keepalive_sibling_dispatches_share_the_parent_account_lock() {
     assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 1);
 
     gate.release.notify_one();
-    let completed = wait_control(&h, first_id, |c| {
-        c.pending.is_none() && c.last_restore_at == Some(now)
-    })
-    .await;
+    let completed = wait_control(&h, first_id, |c| c.last_restore_at == Some(now)).await;
     assert_eq!(completed.restores.len(), 1);
     h.mock.set_temp_delete_gate(None);
     h.runtime.keepalive.tick().await.unwrap();
     wait_delete_started(&h).await;
-    let sibling_completed = wait_control(&h, blocked_id, |c| {
-        c.pending.is_none() && c.last_restore_at == Some(now)
-    })
-    .await;
+    let sibling_completed = wait_control(&h, blocked_id, |c| c.last_restore_at == Some(now)).await;
     assert_eq!(sibling_completed.restores.len(), 1);
     assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 2);
     assert_eq!(h.mock.count("POST", "/schedulable"), 0);
@@ -3128,10 +3100,7 @@ async fn keepalive_dispatch_is_limited_to_eight_and_releases_capacity_and_locks(
     gate.release.add_permits(8);
     let now = h.now();
     for id in &ids[..8] {
-        let completed = wait_control(&h, *id, |c| {
-            c.pending.is_none() && c.last_restore_at == Some(now)
-        })
-        .await;
+        let completed = wait_control(&h, *id, |c| c.last_restore_at == Some(now)).await;
         assert_eq!(completed.restores.len(), 1);
         wait_view_status(&h, *id, "waiting").await;
     }
@@ -3139,10 +3108,7 @@ async fn keepalive_dispatch_is_limited_to_eight_and_releases_capacity_and_locks(
     h.mock.set_bulk_delete_gate(None);
     h.runtime.keepalive.tick().await.unwrap();
     wait_delete_count(&h, 9).await;
-    let completed = wait_control(&h, ids[8], |c| {
-        c.pending.is_none() && c.last_restore_at == Some(now)
-    })
-    .await;
+    let completed = wait_control(&h, ids[8], |c| c.last_restore_at == Some(now)).await;
     assert_eq!(completed.restores.len(), 1);
     for id in &ids {
         wait_view_status(&h, *id, "waiting").await;
@@ -3543,55 +3509,4 @@ async fn keepalive_notice_failure_retries_at_most_five_times() {
     h.runtime.keepalive.deliver().await.unwrap();
     assert_eq!(h.mock.count("POST", "/push"), 5);
     h.close().await;
-}
-
-#[tokio::test]
-async fn keepalive_legacy_pending_is_resolved_without_reenabling_manual_control() {
-    for cleared in [false, true] {
-        let h = Harness::new().await;
-        let id = seed_keepalive_account(&h, None, false).await;
-        let now = h.now();
-        set_keepalive_incident(&h, id, now, now + Duration::minutes(5)).await;
-        let row = h.runtime.monitor.row(id).await.unwrap();
-        h.runtime
-            .keepalive
-            .store
-            .transaction(|data| {
-                data["accounts"][id.to_string()] =
-                    serde_json::to_value(crate::keepalive_state::Control {
-                        enabled: false,
-                        generation: 2,
-                        pending: Some(crate::keepalive_state::Intent {
-                            id: "fixture-legacy-pending".into(),
-                            generation: 1,
-                            fingerprint: crate::keepalive_state::fingerprint(&row),
-                            before_until: now + Duration::minutes(5),
-                            reason: "临时错误策略".into(),
-                            dispatched_at: now,
-                        }),
-                        reservations: vec![crate::keepalive_state::Reservation {
-                            id: "fixture-legacy-pending".into(),
-                            at: now,
-                        }],
-                        ..Default::default()
-                    })
-                    .unwrap();
-                Ok(())
-            })
-            .unwrap();
-        if cleared {
-            sqlx::query("UPDATE accounts SET temp_unschedulable_until=NULL,temp_unschedulable_reason=NULL WHERE id=$1")
-                .bind(id).execute(&h.runtime.db.pool).await.unwrap();
-        }
-        h.runtime.keepalive.startup().unwrap();
-        h.runtime.keepalive.tick().await.unwrap();
-        let control = h.runtime.keepalive.control(id).unwrap();
-        assert!(!control.enabled);
-        assert_eq!(control.generation, 2);
-        assert!(control.pending.is_none());
-        assert!(control.reservations.is_empty());
-        assert_eq!(control.restores.len(), usize::from(cleared));
-        assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 0);
-        h.close().await;
-    }
 }

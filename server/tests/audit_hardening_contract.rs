@@ -70,6 +70,8 @@ fn audit_write_redacts_nested_sensitive_values_and_preserves_public_structure() 
 fn audit_new_file_is_private_and_read_only_mode_does_not_write() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("nested").join("audit.jsonl");
+    assert!(audit::read(&path, 10, None).is_empty());
+    assert!(!path.parent().unwrap().exists());
     audit::write(&path, "fixture.private", json!({"value":1}), false);
     assert!(path.is_file());
 
@@ -79,6 +81,23 @@ fn audit_new_file_is_private_and_read_only_mode_does_not_write() {
         assert_eq!(
             fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o600
+        );
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let lock = path.with_extension("jsonl.lock");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+        fs::set_permissions(&lock, fs::Permissions::from_mode(0o640)).unwrap();
+        assert_eq!(audit::read(&path, 10, None).len(), 1);
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+        assert_eq!(
+            fs::metadata(&lock).unwrap().permissions().mode() & 0o777,
+            0o640
         );
     }
 
@@ -270,7 +289,7 @@ fn operation_batch_job_ids_reject_malformed_references() {
 }
 
 #[test]
-fn audit_rotation_trims_oversized_logs_and_serializes_waiting_writers() {
+fn audit_rotation_preserves_complete_logs_and_serializes_waiting_writers() {
     use std::io::Write;
     const CAP: u64 = 20 * 1024 * 1024;
     let root = tempfile::tempdir().unwrap();
@@ -281,13 +300,12 @@ fn audit_rotation_trims_oversized_logs_and_serializes_waiting_writers() {
         json!({"event":"fixture.legacy","payload":{"padding":"x".repeat(4096),"api_key":"fixture-legacy-secret"}})
     );
     let mut old = fs::File::create(&path).unwrap();
-    for _ in 0..5500 {
+    for _ in 0..(CAP / record.len() as u64) {
         old.write_all(record.as_bytes()).unwrap();
     }
-    old.write_all(b"{incomplete fixture record").unwrap();
     let before = old.metadata().unwrap();
     drop(old);
-    assert!(before.len() > CAP);
+    assert!(before.len() <= CAP);
     std::thread::scope(|scope| {
         for worker in 0..8 {
             let path = &path;
@@ -319,7 +337,7 @@ fn audit_rotation_trims_oversized_logs_and_serializes_waiting_writers() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        assert_eq!(before.ino(), fs::metadata(&path).unwrap().ino());
+        assert_eq!(before.ino(), fs::metadata(&previous).unwrap().ino());
     }
     let written = audit::read(&path, 600, Some("fixture.concurrent"));
     assert_eq!(written.len(), 400);

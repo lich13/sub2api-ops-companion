@@ -1657,18 +1657,11 @@ impl Operations {
             return Ok(());
         }
         self.actions.upstream.authenticate(&key, true).await?;
-        if !self.cycle_allowed(&job, true).await? {
-            return Ok(());
-        }
         if job["repeat"] == "quota_cycle" {
-            row = self.read_account(aid).await?;
-            if !row
-                .as_ref()
-                .is_some_and(|row| row["platform"] == "openai" && row["type"] == "oauth")
-            {
-                self.pause_repeat(jid, "账号状态无法确认，请检查账号后重新预约")?;
+            let Some(observation) = self.cycle_allowed(&job, true).await? else {
                 return Ok(());
-            }
+            };
+            row = Some(observation.row);
         }
         if self.actions.supervisor.is_stopping() {
             return Ok(());

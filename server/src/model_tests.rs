@@ -40,10 +40,10 @@ pub fn error_text(code: &str) -> &'static str {
 }
 pub trait ModelHooks: Send + Sync {
     fn verdict_policy(&self, id: i64) -> Result<Value>;
-    fn guard(&self, job: Value) -> BoxFuture<'_, Result<Value>>;
+    fn guard(&self, job: Value, row: Option<Value>) -> BoxFuture<'_, Result<Value>>;
     fn next_allowed_at(&self, id: i64) -> Result<Value>;
     fn register_dispatch(&self, job: &Value) -> Result<()>;
-    fn prepare_recovery(&self, job: Value) -> BoxFuture<'_, Result<Value>>;
+    fn prepare_recovery(&self, job: Value) -> BoxFuture<'_, Result<(Value, Option<Value>)>>;
     fn verdict(&self, job: Value, report: Value) -> BoxFuture<'_, Result<Value>>;
 }
 pub(crate) struct Context {
@@ -453,10 +453,7 @@ impl ModelTests {
             }
             return Ok(old);
         }
-        let row = self
-            .actions
-            .queries
-            .internal_account(id)
+        let row = model_target::account(&self.actions, id)
             .await
             .map_err(|error| {
                 if error.status.as_u16() == 404 {
@@ -606,7 +603,7 @@ impl ModelTests {
     async fn wait_and_run(&self, job: &Value, context: Option<Arc<Context>>) -> Result<()> {
         let id = string(&job["id"]);
         let aid = integer(&job["account_id"]).ok_or_else(Error::internal)?;
-        let (_lease, _job_slot, _budget) = loop {
+        let (_lease, _job_slot, _budget, row) = loop {
             if self.actions.supervisor.is_stopping() {
                 return Ok(());
             }
@@ -624,6 +621,15 @@ impl ModelTests {
                     continue;
                 }
             }
+            let Ok(slot) = self.jobs.clone().try_acquire_owned() else {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                continue;
+            };
+            let Ok(budget) = self.budget.clone().try_acquire_owned() else {
+                drop(slot);
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                continue;
+            };
             let mut manual_waiting = false;
             if job["automatic"] == true {
                 let ids = self.shared_data()?["jobs"]
@@ -644,20 +650,17 @@ impl ModelTests {
             }
             if !manual_waiting {
                 let row = model_target::account(&self.actions, aid).await?;
-                if let Ok(slot) = self.jobs.clone().try_acquire_owned() {
-                    if let Ok(budget) = self.budget.clone().try_acquire_owned() {
-                        if let Ok(lease) = self.actions.locks.try_account(&row) {
-                            break (lease, slot, budget);
-                        }
-                    }
+                if let Ok(lease) = self.actions.locks.try_account(&row) {
+                    break (lease, slot, budget, row);
                 }
             }
+            drop((slot, budget));
             tokio::time::sleep(Duration::from_millis(250)).await;
         };
         let row = if job["automatic"] == true {
-            self.hooks.guard(self.get(id)?).await?
+            self.hooks.guard(self.get(id)?, Some(row)).await?
         } else {
-            model_target::account(&self.actions, aid).await?
+            row
         };
         let (target, owner) =
             model_target::target(&self.actions, &row, string(&job["requested_model"])).await?;
@@ -734,8 +737,10 @@ impl ModelTests {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .insert(id.into(), context.clone());
+        let mut prepared_row = None;
         if truthy(&job["recovery_context"]) {
-            let result = self.hooks.prepare_recovery(job.clone()).await?;
+            let (result, row) = self.hooks.prepare_recovery(job.clone()).await?;
+            prepared_row = row;
             if truthy(&result) {
                 self.update(id,json!({"status":"failed","preflight_result":result,"completed_at":crate::compat::now(),"error":result.get("error").unwrap_or(&json!("恢复条件未确认"))}))?;
                 return Ok(());
@@ -744,11 +749,8 @@ impl ModelTests {
         if self.actions.supervisor.is_stopping() {
             return Ok(());
         }
-        if job["automatic"] == true && truthy(&job["recovery_context"]) {
-            self.hooks.guard(self.get(id)?).await?;
-        }
         let job=self.update(id,json!({"status":"running","started_at":crate::compat::now(),"error":"","completed_at":null,"waiting_until":null,"bank_version":context.lm.as_ref().map(|lm|&lm.version).unwrap_or(&context.snapshot.1),"can_retry":false}))?;
-        self.run(job, context).await
+        self.run(job, context, prepared_row).await
     }
     pub async fn retry_failed(&self, id: &str, request: &str) -> Result<Value> {
         if self.actions.settings.read_only {
