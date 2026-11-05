@@ -4535,11 +4535,11 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_native_observation_change_does_not_repeat_supplement_or_consume_stale_evidence",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "waiting_episode_rejects_changed_snapshot_credentials_window_and_limit_without_supplement",
+        "test_name": "waiting_episode_rejects_changed_cards_or_inflight_credentials_without_supplement",
         "assertions": [
           "assert_eq!(waiting[\"stage\"], \"waiting\", \"{change}\");",
           "assert_eq!( harness.mock.total(), 0, \"{change} dispatched before its test slot was available\" );",
@@ -4586,7 +4586,27 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_native_observation_change_does_not_repeat_supplement_or_consume_stale_evidence 已完整通过。Rust waiting_episode_rejects_changed_snapshot_credentials_window_and_limit_without_supplement 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "当前卡数和到期时间不变时，历史 token 刷新、新限流及窗口秒级变化不阻止用卡；仍拒绝卡内容变化、窗口外观测和已派发任务中的凭据变化。",
+      "replacement": {
+        "legacy_assertions": [
+          "历史卡观测必须匹配当前 token、限流指纹及精确窗口结束时间"
+        ],
+        "approved_requirement": "修复 7d 100% 且 429 有卡却不触发的实际故障，保留执行期间的账号复核。",
+        "replacement_contract": "当前卡数和到期时间不变时，历史 token 刷新、新限流及窗口秒级变化不阻止用卡；仍拒绝卡内容变化、窗口外观测和已派发任务中的凭据变化。"
+      },
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/credit_lifecycle_parity.rs",
+          "test_name": "unchanged_cards_remain_usable_after_token_refresh_new_limit_and_reset_rounding",
+          "assertions": [
+            "assert_eq!(task[\"stage\"], \"recovered\", \"{change}: {task}\");",
+            "assert_eq!(h.mock.count(Method::POST, \"/reset-quota\"), 1);",
+            "assert_eq!(h.mock.count(Method::GET, \"/usage\"), 0);"
+          ],
+          "fixtures": []
+        }
+      ]
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_native_observation_requires_matching_database_snapshot_and_cache_confirmation",
@@ -5050,7 +5070,7 @@
           "assert_eq!(saved[\"receipt\"], result[\"diagnostics\"], \"{name}\");",
           "assert!( !saved.to_string().contains(private_value), \"{name} retained {private_value}\" );",
           "assert_eq!(replay[\"error_code\"], \"result_uncertain\", \"{name}\");",
-          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 0);",
+          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), before_test + usize::from(expected_consumed));",
           "result[\"consumed\"].is_null() || result[\"consumed\"].is_boolean()",
           "result[\"consumed\"].as_bool().unwrap_or(false)"
         ],
@@ -5963,7 +5983,7 @@
           "assert_eq!(manual[\"stage\"], \"manual\");",
           "assert_eq!(manual[\"consumption_outcome\"], \"consumed\");",
           "assert!(manual[\"reset_completed_at\"].is_string());",
-          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 0);",
+          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1);",
           "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);",
           "assert_eq!(repeated[\"error_code\"], \"result_uncertain\");"
         ],
@@ -6004,13 +6024,13 @@
           }
         ]
       },
-      "coverage_note": "手动用卡沿用调用方持有的账号锁；并发请求不能再取得账号锁，确认及未知扣卡结果继续阻止重放。",
+      "coverage_note": "手动确认扣卡后追加一次连接测试，保存结果并用现有 Bark 队列通知；同账号并发、未知扣卡不重放及调度状态保持原有行为。",
       "replacement": {
         "legacy_assertions": [
-          "py:tests.test_auto_reset:AutoResetLifecycleTests.test_manual_reset_updates_shared_state_without_launching_an_automatic_test"
+          "手动重置不发送连接测试"
         ],
-        "approved_requirement": "Sub2Ops 0.1.82 已批准移除每账号文件锁，沿用单写实例、账号内存和状态事务锁。",
-        "replacement_contract": "手动用卡沿用调用方持有的账号锁；并发请求不能再取得账号锁，确认及未知扣卡结果继续阻止重放。"
+        "approved_requirement": "用户要求重置后立即追加一次测试连接并推送 Bark。",
+        "replacement_contract": "手动确认扣卡后追加一次连接测试，保存结果并用现有 Bark 队列通知；同账号并发、未知扣卡不重放及调度状态保持原有行为。"
       }
     },
     {
@@ -6968,7 +6988,7 @@
           "assert_eq!(saved[\"receipt\"], result[\"diagnostics\"], \"{name}\");",
           "assert!( !saved.to_string().contains(private_value), \"{name} retained {private_value}\" );",
           "assert_eq!(replay[\"error_code\"], \"result_uncertain\", \"{name}\");",
-          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 0);",
+          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), before_test + usize::from(expected_consumed));",
           "result[\"consumed\"].is_null() || result[\"consumed\"].is_boolean()",
           "result[\"consumed\"].as_bool().unwrap_or(false)"
         ],
@@ -7014,7 +7034,7 @@
           "assert_eq!(saved[\"receipt\"], result[\"diagnostics\"], \"{name}\");",
           "assert!( !saved.to_string().contains(private_value), \"{name} retained {private_value}\" );",
           "assert_eq!(replay[\"error_code\"], \"result_uncertain\", \"{name}\");",
-          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 0);",
+          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), before_test + usize::from(expected_consumed));",
           "result[\"consumed\"].is_null() || result[\"consumed\"].is_boolean()",
           "result[\"consumed\"].as_bool().unwrap_or(false)"
         ],
@@ -7060,7 +7080,7 @@
           "assert_eq!(saved[\"receipt\"], result[\"diagnostics\"], \"{name}\");",
           "assert!( !saved.to_string().contains(private_value), \"{name} retained {private_value}\" );",
           "assert_eq!(replay[\"error_code\"], \"result_uncertain\", \"{name}\");",
-          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 0);",
+          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), before_test + usize::from(expected_consumed));",
           "result[\"consumed\"].is_null() || result[\"consumed\"].is_boolean()",
           "result[\"consumed\"].as_bool().unwrap_or(false)"
         ],
@@ -7106,7 +7126,7 @@
           "assert_eq!(saved[\"receipt\"], result[\"diagnostics\"], \"{name}\");",
           "assert!( !saved.to_string().contains(private_value), \"{name} retained {private_value}\" );",
           "assert_eq!(replay[\"error_code\"], \"result_uncertain\", \"{name}\");",
-          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 0);",
+          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), before_test + usize::from(expected_consumed));",
           "result[\"consumed\"].is_null() || result[\"consumed\"].is_boolean()",
           "result[\"consumed\"].as_bool().unwrap_or(false)"
         ],
@@ -7195,7 +7215,7 @@
           "assert_eq!(saved[\"receipt\"], result[\"diagnostics\"], \"{name}\");",
           "assert!( !saved.to_string().contains(private_value), \"{name} retained {private_value}\" );",
           "assert_eq!(replay[\"error_code\"], \"result_uncertain\", \"{name}\");",
-          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 0);",
+          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), before_test + usize::from(expected_consumed));",
           "result[\"consumed\"].is_null() || result[\"consumed\"].is_boolean()",
           "result[\"consumed\"].as_bool().unwrap_or(false)"
         ],
@@ -7241,7 +7261,7 @@
           "assert_eq!(saved[\"receipt\"], result[\"diagnostics\"], \"{name}\");",
           "assert!( !saved.to_string().contains(private_value), \"{name} retained {private_value}\" );",
           "assert_eq!(replay[\"error_code\"], \"result_uncertain\", \"{name}\");",
-          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 0);",
+          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), before_test + usize::from(expected_consumed));",
           "result[\"consumed\"].is_null() || result[\"consumed\"].is_boolean()",
           "result[\"consumed\"].as_bool().unwrap_or(false)"
         ],

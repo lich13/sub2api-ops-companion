@@ -311,6 +311,15 @@ impl CreditController {
         if action == "reset" && truthy(&task["attempt_at"]) && task["stage"] != "recovered" {
             return Ok(failed("result_uncertain"));
         }
+        let _test_slot = if action == "reset" {
+            Some(
+                self.slots
+                    .acquire()
+                    .ok_or_else(crate::account_locks::busy)?,
+            )
+        } else {
+            None
+        };
         if action == "reset" || !truthy(&task) {
             task = json!({"episode":uuid::Uuid::new_v4().simple().to_string(),"stage":if action=="reset" {"manual"} else {"closed"},"source":"manual"});
             self.store.transaction(|state| {
@@ -325,15 +334,81 @@ impl CreditController {
         let result = self
             .request(row, action, &task, at, Source::Manual, Some(key))
             .await?;
-        let task = self.state(id)?;
+        let mut task = self.state(id)?;
         let live = self.row(id).await?;
-        if live.is_object()
+        let recovered = live.is_object()
             && !truthy(&task["owns_pause"])
             && truthy(&task["attempt_at"])
             && self.eligible(&live, self.now(), false)?
             && crate::recovery_rules::confirmed(&live)
-            && self.available(&live, &task, self.now())?
-        {
+            && self.available(&live, &task, self.now())?;
+        if action == "reset" && task["consumed"] == true {
+            let generation =
+                credit_ownership::generation(self.store.shared_snapshot()?.as_ref(), id);
+            let model = string(&self.hooks.config()?["oauth_recovery_test_model_id"]).to_owned();
+            let test = self
+                .hooks
+                .connection_test(id, model.clone(), generation, 30, true)
+                .await
+                .unwrap_or_else(|_| failed("test_failed"));
+            let completed = self.now();
+            let _control = self.actions.locks.control(id).await;
+            let current = self.state(id)?;
+            if current["episode"] != task["episode"] || current["revision"] != task["revision"] {
+                return Ok(result);
+            }
+            let unchanged =
+                credit_ownership::generation(self.store.shared_snapshot()?.as_ref(), id)
+                    == generation;
+            let verified = test["success"] == true && unchanged;
+            let code = if !unchanged {
+                "manual_intervention"
+            } else if !verified {
+                test["error_code"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("test_failed")
+            } else if !recovered {
+                "recovery_failed"
+            } else {
+                ""
+            };
+            let revision = task["revision"].clone();
+            task.as_object_mut().unwrap().extend(
+                json!({
+                    "revision":integer(&revision).unwrap_or(0)+1,
+                    "stage":if recovered {"recovered"} else {"manual"},
+                    "recovered_at":if recovered {json!(datetime(completed))} else {Value::Null},
+                    "next_at":null,"test_completed_at":datetime(completed),"test_success":verified,
+                    "test_attempts":1,"verification_method":"connection","model_id":model,
+                    "outcome":if verified && recovered {"restored"} else {"unrecovered"},
+                    "error_code":code,"result_reason":code,"completed_at":datetime(completed)
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            );
+            let mut notice = self.notice(id, &task, completed, &live);
+            notice["test_success"] = verified.into();
+            self.store.transaction(|state| {
+                let meta = &mut state["scheduler"][id.to_string()];
+                let current = &meta["auto_reset_credit"];
+                if current["episode"] != task["episode"] || current["revision"] != revision {
+                    return Err(Error::new(409, "用卡任务已变化"));
+                }
+                meta["auto_reset_credit"] = task.clone();
+                if !meta["credit_result_notifications"].is_object() {
+                    meta["credit_result_notifications"] = json!({});
+                }
+                meta["credit_result_notifications"][string(&task["episode"])] = notice;
+                Ok(())
+            })?;
+            self.audit(
+                id,
+                "test",
+                json!({"source":"manual","success":verified,"error_code":code}),
+            );
+        } else if recovered {
             self.save(id,&task,json!({"stage":"recovered","recovered_at":datetime(self.now()),"next_at":null,"error_code":""}))?;
         }
         Ok(result)

@@ -290,6 +290,12 @@ pub fn credit_message(event: &Value) -> (String, String) {
         ),
         format!("结果：{label}"),
     ];
+    if let Some(success) = event["test_success"].as_bool() {
+        lines.push(format!(
+            "连接测试：{}",
+            if success { "成功" } else { "失败" }
+        ));
+    }
     if truthy(&event["reason"]) && outcome != "restored" {
         lines.push(format!("原因：{}", safe(&event["reason"], 240)));
     }

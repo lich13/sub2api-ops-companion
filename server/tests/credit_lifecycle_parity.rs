@@ -3012,6 +3012,7 @@ async fn native_reset_receipt_matrix_preserves_integer_http_and_redaction_bounda
         let row = harness.seed_account(true, false).await;
         let id = integer(&row["id"]).unwrap();
         let before = harness.mock.count(Method::POST, "/reset-quota");
+        let before_test = harness.mock.count(Method::POST, "/test");
         harness
             .mock
             .set_reset(id, status, json!({"code":envelope,"data":data}));
@@ -3065,7 +3066,10 @@ async fn native_reset_receipt_matrix_preserves_integer_http_and_redaction_bounda
             .expect("an existing attempt returns a read-only uncertainty result");
         assert_eq!(replay["error_code"], "result_uncertain", "{name}");
         assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), before + 1);
-        assert_eq!(harness.mock.count(Method::POST, "/test"), 0);
+        assert_eq!(
+            harness.mock.count(Method::POST, "/test"),
+            before_test + usize::from(expected_consumed)
+        );
     }
 }
 
@@ -3766,7 +3770,9 @@ async fn manual_reset_uses_the_shared_receipt_and_two_controllers_dispatch_once(
     assert_eq!(manual["stage"], "manual");
     assert_eq!(manual["consumption_outcome"], "consumed");
     assert!(manual["reset_completed_at"].is_string());
-    assert_eq!(harness.mock.count(Method::POST, "/test"), 0);
+    assert_eq!(manual["test_success"], true);
+    assert!(manual["test_completed_at"].is_string());
+    assert_eq!(harness.mock.count(Method::POST, "/test"), 1);
     assert_eq!(harness.mock.count(Method::POST, "/schedulable"), 0);
 
     let repeated = harness
@@ -3777,8 +3783,20 @@ async fn manual_reset_uses_the_shared_receipt_and_two_controllers_dispatch_once(
     assert_eq!(repeated["error_code"], "result_uncertain");
     run_automatic(&harness, &row, now + Duration::seconds(2)).await;
     assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 1);
-    assert_eq!(harness.mock.count(Method::POST, "/test"), 0);
+    assert_eq!(harness.mock.count(Method::POST, "/test"), 1);
     assert_eq!(harness.mock.count(Method::POST, "/schedulable"), 0);
+    let bark = Bark::new(harness.settings.clone()).unwrap();
+    harness.controller.deliver_results(&bark).await.unwrap();
+    harness
+        .restart_controller()
+        .deliver_results(&bark)
+        .await
+        .unwrap();
+    assert_eq!(harness.mock.count(Method::POST, "/push"), 1);
+    assert!(bark_calls(&harness)[0].body["body"]
+        .as_str()
+        .unwrap()
+        .contains("连接测试：成功"));
 }
 
 #[tokio::test]
@@ -4860,11 +4878,15 @@ async fn explicit_loopback_card_observation_authorizes_one_real_reset_and_immedi
 }
 
 #[tokio::test]
-async fn waiting_episode_rejects_changed_snapshot_credentials_window_and_limit_without_supplement()
-{
+async fn waiting_episode_rejects_changed_cards_or_inflight_credentials_without_supplement() {
     let harness = Harness::new(false).await;
     let now = fixed_now();
-    for change in ["snapshot", "credentials", "window", "limit"] {
+    for change in [
+        "snapshot",
+        "credentials",
+        "old_observation",
+        "future_observation",
+    ] {
         let (row, _) = harness.seed_depletion(&harness.controller).await;
         let id = integer(&row["id"]).unwrap();
         harness.set_config(recovery_config(id, "connection"));
@@ -4893,29 +4915,21 @@ async fn waiting_episode_rejects_changed_snapshot_credentials_window_and_limit_w
                 .await
                 .unwrap();
             }
-            "window" => {
-                let mut quota = native_quota_data(now, 100.0, 100.0);
-                quota["seven_day"]["resets_at"] = json!(datetime(now + Duration::days(6)));
-                reset_stored_quota(&harness.controller, &row, now, quota);
-            }
-            "limit" => {
-                let new_limited = now - Duration::seconds(30);
-                sqlx::query("UPDATE accounts SET rate_limited_at=$1 WHERE id=$2")
-                    .bind(new_limited)
-                    .bind(id)
-                    .execute(&harness.db.pool)
-                    .await
+            "old_observation" | "future_observation" => {
+                let observed = if change == "old_observation" {
+                    now - Duration::days(8)
+                } else {
+                    now + Duration::days(1)
+                };
+                harness
+                    .controller
+                    .store
+                    .transaction(|state| {
+                        state["scheduler"][id.to_string()]["reset_credit_observation"]
+                            ["observed_at"] = datetime(observed).into();
+                        Ok(())
+                    })
                     .unwrap();
-                insert_error(
-                    &harness,
-                    id,
-                    id + 1_000_000_500,
-                    new_limited,
-                    429,
-                    "provider",
-                    "upstream",
-                )
-                .await;
             }
             _ => unreachable!(),
         }
@@ -5236,4 +5250,93 @@ async fn confirming_retries_only_schedule_enable_after_a_failed_write() {
     assert_eq!(h.mock.count(Method::POST, "/test"), 1);
     assert_eq!(h.mock.count(Method::POST, "/recover-state"), 1);
     assert_eq!(h.mock.count(Method::POST, "/schedulable"), 3);
+}
+
+#[tokio::test]
+async fn unchanged_cards_remain_usable_after_token_refresh_new_limit_and_reset_rounding() {
+    for change in ["token_refresh", "new_limit", "reset_rounding", "combined"] {
+        let h = Harness::new(false).await;
+        let now = fixed_now();
+        let (row, evidence) = h.seed_depletion(&h.controller).await;
+        let id = integer(&row["id"]).unwrap();
+        let mut observed_row = row.clone();
+        if matches!(change, "token_refresh" | "combined") {
+            observed_row["credentials"]["access_token"] = "fixture-previous-access-token".into();
+        }
+        if matches!(change, "new_limit" | "combined") {
+            observed_row["rate_limited_at"] = Value::Null;
+            observed_row["rate_limit_reset_at"] = Value::Null;
+        }
+        let reset = parse_datetime(&evidence["reset_at"]).unwrap()
+            - Duration::seconds(i64::from(matches!(change, "reset_rounding" | "combined")));
+        let observation = reset_credit_observation::create(
+            &observed_row,
+            &normalized_credits(&row["extra"]["codex_reset_credit_snapshot"]).unwrap(),
+            now - Duration::hours(1),
+            &oauth_admission::credential_fingerprint(&observed_row),
+            reset,
+            &json!(10080),
+        )
+        .unwrap();
+        h.controller
+            .store
+            .transaction(|state| {
+                state["scheduler"][id.to_string()]["reset_credit_observation"] =
+                    observation.clone();
+                Ok(())
+            })
+            .unwrap();
+        h.mock.set_reset(
+            id,
+            200,
+            reset_response(now, 20.0, 20.0, "success", json!(1)),
+        );
+        h.mock.set_sse(id, successful_sse());
+        assert!(
+            h.controller.candidate_ready(&row, now).await.unwrap(),
+            "{change}"
+        );
+        run_automatic(&h, &row, now).await;
+        let task = h.controller.state(id).unwrap();
+        assert_eq!(task["stage"], "recovered", "{change}: {task}");
+        assert_eq!(task["consumed"], true);
+        run_automatic(&h, &reload_account(&h, id).await, now).await;
+        assert_eq!(h.mock.count(Method::POST, "/reset-quota"), 1);
+        assert_eq!(h.mock.count(Method::GET, "/usage"), 0);
+        assert_eq!(h.mock.count(Method::POST, "/test"), 1);
+    }
+}
+
+#[tokio::test]
+async fn manual_reset_test_failure_notifies_once_without_replaying_the_card() {
+    let h = Harness::new(false).await;
+    let row = h.seed_account(true, true).await;
+    let id = integer(&row["id"]).unwrap();
+    h.set_config(recovery_config(id, "connection"));
+    h.mock.set_reset(
+        id,
+        200,
+        reset_response(fixed_now(), 20.0, 20.0, "success", json!(1)),
+    );
+    h.mock.set_sse(id, explicit_sse_error("http_429"));
+    let result = h.controller.manual(&row, "reset", ADMIN_KEY).await.unwrap();
+    assert_eq!(result["consumed"], true);
+    let task = h.controller.state(id).unwrap();
+    assert_eq!(task["test_success"], false);
+    assert_eq!(task["test_attempts"], 1);
+    assert_eq!(task["outcome"], "unrecovered");
+    assert_eq!(task["result_reason"], "http_429");
+    let bark = Bark::new(h.settings.clone()).unwrap();
+    h.controller.deliver_results(&bark).await.unwrap();
+    let restarted = h.restart_controller();
+    restarted.deliver_results(&bark).await.unwrap();
+    run_automatic(&h, &reload_account(&h, id).await, fixed_now()).await;
+    assert_eq!(h.mock.count(Method::POST, "/reset-quota"), 1);
+    assert_eq!(h.mock.count(Method::POST, "/test"), 1);
+    assert_eq!(h.mock.count(Method::POST, "/schedulable"), 0);
+    assert_eq!(h.mock.count(Method::POST, "/push"), 1);
+    assert!(bark_calls(&h)[0].body["body"]
+        .as_str()
+        .unwrap()
+        .contains("连接测试：失败"));
 }

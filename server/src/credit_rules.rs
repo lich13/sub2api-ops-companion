@@ -398,17 +398,9 @@ pub fn credit_reason(
         {
             return Ok("content_changed");
         }
-        if credential_fingerprint(row) != observation["credential_fingerprint"] {
-            return Ok("credentials_changed");
-        }
-        if limit_fingerprint(row) != observation["limit_fingerprint"] {
-            return Ok("limit_changed");
-        }
-        if parse_datetime(&observation["window_reset_at"]) != Some(reset)
-            || quota::number(&observation["window_minutes"]) != Some(minutes)
-        {
-            return Ok("window_changed");
-        }
+        // Unchanged cards remain usable across routine OAuth refreshes and a
+        // new rate limit. Validate their age against the current quota window;
+        // its reset timestamp can also move by a second in upstream responses.
         parse_datetime(&observation["observed_at"])
     } else {
         parse_datetime(&usage::reset_credits(&row["extra"], at)["observed_at"])

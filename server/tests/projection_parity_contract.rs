@@ -967,6 +967,7 @@ async fn apikey_capacity_watermark_clues_mark_suppression_and_restart_match_pinn
         false,
     );
     let alerts = CapacityAlerts::new(db.clone(), settings.as_ref());
+    alerts.retire_legacy(Utc::now()).unwrap();
     alerts
         .poll()
         .await
@@ -996,6 +997,7 @@ async fn apikey_capacity_watermark_clues_mark_suppression_and_restart_match_pinn
     )
     .await;
     tokio::time::sleep(StdDuration::from_millis(20)).await;
+    alerts.retire_legacy(Utc::now()).unwrap();
     alerts
         .poll()
         .await
@@ -1097,6 +1099,7 @@ async fn apikey_capacity_watermark_clues_mark_suppression_and_restart_match_pinn
         .await
         .expect("suppress new clues while the account is marked");
     let restarted = CapacityAlerts::new(db.clone(), settings.as_ref());
+    restarted.retire_legacy(Utc::now()).unwrap();
     restarted
         .poll()
         .await
@@ -1137,6 +1140,7 @@ async fn capacity_slow_ttft_poll_persists_one_clue_without_bark() {
         false,
     );
     let alerts = CapacityAlerts::new(db.clone(), settings.as_ref());
+    alerts.retire_legacy(Utc::now()).unwrap();
     alerts
         .poll()
         .await
