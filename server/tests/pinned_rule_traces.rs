@@ -160,9 +160,13 @@ fn execute(name: &str, args: &Value) -> Result<Value> {
             let before = std::fs::read(&path).unwrap();
             let result = credit_rules::project(&args["value"], &args["notices"]);
             assert_eq!(std::fs::read(&path).unwrap(), before);
+            let mut reloaded = args["value"].clone();
+            if reloaded["stage"] == "releasing" {
+                reloaded["stage"] = "confirming".into();
+            }
             assert_eq!(
                 OAuthState::new(path, false).snapshot()?["scheduler"]["31"]["auto_reset_credit"],
-                args["value"]
+                reloaded
             );
             result
         }

@@ -1328,11 +1328,11 @@
   ],
   "rust_coverage_policy": {
     "coverage_counts": {
-      "mapped": 759,
+      "mapped": 758,
       "not_collected": 2,
       "partial": 0,
       "passed": 0,
-      "superseded": 123,
+      "superseded": 124,
       "uncovered": 0
     },
     "mapping_input": "tests/contracts/coverage-map.json",
@@ -7185,7 +7185,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -7195,14 +7195,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 371,
+          "rust_source_line": 375,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -11827,7 +11827,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -11837,14 +11837,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 353,
+          "rust_source_line": 357,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -12165,7 +12165,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -12175,14 +12175,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 359,
+          "rust_source_line": 363,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -12367,7 +12367,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -12377,14 +12377,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 365,
+          "rust_source_line": 369,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -14266,7 +14266,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -14276,14 +14276,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 314,
+          "rust_source_line": 318,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -14332,7 +14332,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -14342,14 +14342,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 319,
+          "rust_source_line": 323,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -14398,7 +14398,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -14408,14 +14408,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 324,
+          "rust_source_line": 328,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -17984,7 +17984,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -17994,14 +17994,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 565,
+          "rust_source_line": 569,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18050,7 +18050,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -18060,14 +18060,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 572,
+          "rust_source_line": 576,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18116,7 +18116,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -18126,14 +18126,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 577,
+          "rust_source_line": 581,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18182,7 +18182,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -18192,14 +18192,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 582,
+          "rust_source_line": 586,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18315,7 +18315,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -18325,14 +18325,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 587,
+          "rust_source_line": 591,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18381,7 +18381,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -18391,14 +18391,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 592,
+          "rust_source_line": 596,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18525,7 +18525,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -18535,14 +18535,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 598,
+          "rust_source_line": 602,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18591,7 +18591,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -18601,14 +18601,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 603,
+          "rust_source_line": 607,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18657,7 +18657,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -18667,14 +18667,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 608,
+          "rust_source_line": 612,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18725,7 +18725,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -18735,14 +18735,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 613,
+          "rust_source_line": 617,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18791,7 +18791,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -18801,14 +18801,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 619,
+          "rust_source_line": 623,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -23519,7 +23519,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -23529,14 +23529,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 514,
+          "rust_source_line": 518,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -23592,7 +23592,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -23602,14 +23602,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 519,
+          "rust_source_line": 523,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -23663,7 +23663,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -23673,14 +23673,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 524,
+          "rust_source_line": 528,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -23764,7 +23764,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -23774,14 +23774,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 530,
+          "rust_source_line": 534,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -23836,7 +23836,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -23846,14 +23846,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 536,
+          "rust_source_line": 540,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -23991,7 +23991,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -24001,14 +24001,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 541,
+          "rust_source_line": 545,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -24077,7 +24077,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -24087,14 +24087,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 547,
+          "rust_source_line": 551,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -24154,7 +24154,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -24164,14 +24164,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 553,
+          "rust_source_line": 557,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -24223,7 +24223,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -24233,14 +24233,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 559,
+          "rust_source_line": 563,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -28807,7 +28807,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -28817,14 +28817,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 288,
+          "rust_source_line": 292,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -28876,7 +28876,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -28886,14 +28886,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 293,
+          "rust_source_line": 297,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -28944,7 +28944,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -28954,14 +28954,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 298,
+          "rust_source_line": 302,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -29024,7 +29024,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -29034,14 +29034,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 304,
+          "rust_source_line": 308,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -29093,7 +29093,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -29103,14 +29103,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 309,
+          "rust_source_line": 313,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -34759,7 +34759,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -34769,14 +34769,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 471,
+          "rust_source_line": 475,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -34825,7 +34825,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -34835,14 +34835,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 477,
+          "rust_source_line": 481,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -34892,7 +34892,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -34902,14 +34902,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 482,
+          "rust_source_line": 486,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -34958,7 +34958,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -34968,14 +34968,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 487,
+          "rust_source_line": 491,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -35025,7 +35025,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -35035,14 +35035,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 492,
+          "rust_source_line": 496,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -35116,7 +35116,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -35126,14 +35126,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 499,
+          "rust_source_line": 503,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -35189,7 +35189,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -35199,14 +35199,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 504,
+          "rust_source_line": 508,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -35259,7 +35259,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -35269,14 +35269,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 509,
+          "rust_source_line": 513,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -39430,7 +39430,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -39440,14 +39440,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 242,
+          "rust_source_line": 246,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -39496,7 +39496,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -39506,14 +39506,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 247,
+          "rust_source_line": 251,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -39567,7 +39567,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -39577,14 +39577,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 252,
+          "rust_source_line": 256,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -39634,7 +39634,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -39644,14 +39644,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 257,
+          "rust_source_line": 261,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -39700,7 +39700,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -39710,14 +39710,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 262,
+          "rust_source_line": 266,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -39769,7 +39769,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -39779,14 +39779,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 267,
+          "rust_source_line": 271,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -39837,7 +39837,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -39847,14 +39847,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 272,
+          "rust_source_line": 276,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -39906,7 +39906,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -39916,14 +39916,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 277,
+          "rust_source_line": 281,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -39972,7 +39972,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -39982,14 +39982,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 283,
+          "rust_source_line": 287,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -40366,7 +40366,7 @@
             "check(",
             "\"py:tests.test_recovery_config030:AutoResetProjection030Tests.test_active_recovery_steps_remain_visible\""
           ],
-          "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。",
+          "coverage_note": "保留固定旧版输入的只读投影结果及输入不变断言；旧 releasing 状态重读后仅收束为 confirming，其余字段保持不变。",
           "execution_status": "mapping_only",
           "fixtures": [
             {
@@ -40393,7 +40393,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -40403,7 +40403,7 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             },
             {
@@ -40418,13 +40418,19 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 330,
+          "rust_source_line": 334,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
         "module": "pinned_rule_traces",
-        "replacement": null,
-        "status": "mapped",
+        "replacement": {
+          "approved_requirement": "Sub2Ops 0.1.82 已批准计划：释放并入 confirming，由现有加载流程收束旧释放状态。",
+          "legacy_assertions": [
+            "重读旧释放任务后 stage 仍为 releasing"
+          ],
+          "replacement_contract": "保留固定旧版输入的只读投影结果及输入不变断言；旧 releasing 状态重读后仅收束为 confirming，其余字段保持不变。"
+        },
+        "status": "superseded",
         "test_name": "recovery_config030_autoresetprojection030tests_test_active_recovery_steps_remain_visible"
       },
       "service_capability": "recovery",
@@ -40469,7 +40475,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -40479,7 +40485,7 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             },
             {
@@ -40494,7 +40500,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 335,
+          "rust_source_line": 339,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -40543,7 +40549,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -40553,7 +40559,7 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             },
             {
@@ -40568,7 +40574,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 341,
+          "rust_source_line": 345,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -40618,7 +40624,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -40628,7 +40634,7 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             },
             {
@@ -40643,7 +40649,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 347,
+          "rust_source_line": 351,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44312,7 +44318,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -44322,14 +44328,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 377,
+          "rust_source_line": 381,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44430,7 +44436,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -44440,14 +44446,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 382,
+          "rust_source_line": 386,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44496,7 +44502,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -44506,14 +44512,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 387,
+          "rust_source_line": 391,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44563,7 +44569,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -44573,14 +44579,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 392,
+          "rust_source_line": 396,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44629,7 +44635,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -44639,14 +44645,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 397,
+          "rust_source_line": 401,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44696,7 +44702,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -44706,14 +44712,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 402,
+          "rust_source_line": 406,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44762,7 +44768,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -44772,14 +44778,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 407,
+          "rust_source_line": 411,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44830,7 +44836,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -44840,14 +44846,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 412,
+          "rust_source_line": 416,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44897,7 +44903,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -44907,14 +44913,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 417,
+          "rust_source_line": 421,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44964,7 +44970,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -44974,14 +44980,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 422,
+          "rust_source_line": 426,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45031,7 +45037,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -45041,14 +45047,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 427,
+          "rust_source_line": 431,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45098,7 +45104,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -45108,14 +45114,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 433,
+          "rust_source_line": 437,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45168,7 +45174,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -45178,14 +45184,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 438,
+          "rust_source_line": 442,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45234,7 +45240,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -45244,14 +45250,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 443,
+          "rust_source_line": 447,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45300,7 +45306,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -45310,14 +45316,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 449,
+          "rust_source_line": 453,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45368,7 +45374,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -45378,14 +45384,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 455,
+          "rust_source_line": 459,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45438,7 +45444,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -45448,14 +45454,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 461,
+          "rust_source_line": 465,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45509,7 +45515,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 202,
+              "line": 206,
               "name": "check"
             },
             {
@@ -45519,14 +45525,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 172,
+              "line": 176,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 466,
+          "rust_source_line": 470,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,

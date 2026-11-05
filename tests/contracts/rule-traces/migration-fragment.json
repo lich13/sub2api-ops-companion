@@ -778,7 +778,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_recovery_config030:AutoResetProjection030Tests.test_active_recovery_steps_remain_visible",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/pinned_rule_traces.rs",
@@ -831,7 +831,14 @@
           }
         ]
       },
-      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+      "coverage_note": "保留固定旧版输入的只读投影结果及输入不变断言；旧 releasing 状态重读后仅收束为 confirming，其余字段保持不变。",
+      "replacement": {
+        "legacy_assertions": [
+          "重读旧释放任务后 stage 仍为 releasing"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.82 已批准计划：释放并入 confirming，由现有加载流程收束旧释放状态。",
+        "replacement_contract": "保留固定旧版输入的只读投影结果及输入不变断言；旧 releasing 状态重读后仅收束为 confirming，其余字段保持不变。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_recovery_config030:AutoResetProjection030Tests.test_completed_or_relinquished_states_are_hidden_without_deleting_history",
