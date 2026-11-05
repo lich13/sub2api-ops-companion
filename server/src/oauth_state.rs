@@ -425,14 +425,15 @@ pub fn normalize(raw: &Value) -> Value {
             continue;
         }
         let mut value = value.clone();
-        let intent = &mut value["recovery_intent"];
-        if intent["status"] == "retry"
-            && intent["waiting_reason"] == "account_busy"
-            && intent["verification_receipt"]["result"]["recovery_method"] == "model"
-        {
-            for field in ["attempt_count", "model_attempt_count"] {
-                if let Some(count) = integer(&intent[field]) {
-                    intent[field] = count.saturating_sub(1).into();
+        if let Some(intent) = value.get_mut("recovery_intent") {
+            if intent["status"] == "retry"
+                && intent["waiting_reason"] == "account_busy"
+                && intent["verification_receipt"]["result"]["recovery_method"] == "model"
+            {
+                for field in ["attempt_count", "model_attempt_count"] {
+                    if let Some(count) = integer(&intent[field]) {
+                        intent[field] = count.saturating_sub(1).into();
+                    }
                 }
             }
         }

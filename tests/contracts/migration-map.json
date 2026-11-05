@@ -35615,7 +35615,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/oauth_state.rs",
-          "rust_source_line": 880,
+          "rust_source_line": 881,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter live_testing_survives_reads_and_writes_until_startup_reconciliation"
         },
         "gap": null,
