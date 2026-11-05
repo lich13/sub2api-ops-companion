@@ -457,19 +457,7 @@ impl Detection {
     }
     pub async fn guard(&self, job: &Value) -> Result<Value> {
         let id = integer(&job["account_id"]).ok_or_else(Error::invalid)?;
-        // This internal projection also supplies the sample's target identity.
-        static SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-            crate::sql::DESKTOP_ACCOUNT_SQL
-                .replacen("SELECT a.id,", "SELECT a.credentials, a.id,", 1)
-                .replace("{filter}", "AND a.id=$1")
-        });
-        let row = self
-            .actions
-            .queries
-            .db
-            .one(&SQL, &[id.into()])
-            .await?
-            .ok_or_else(|| Error::new(404, "账号不存在"))?;
+        let row = self.actions.queries.internal_account(id).await?;
         let value = self.control(id)?;
         let mark = self.mark(id)?;
         if value["generation"] != job["detection_generation"]
@@ -737,80 +725,67 @@ impl Detection {
         if !degraded {
             return Ok(Value::Null);
         }
-        self.guard(job).await?;
+        let id = integer(&job["account_id"]).ok_or_else(Error::invalid)?;
+        let _control = self.actions.locks.control(id).await;
+        let row = self.guard(job).await?;
         if job["degradation_recheck"] == true {
             return Ok(
                 json!({"kind":"recheck","status":"still_degraded","mark_cleared":false,"reason":"仍符合降智特征","basis":job["disposition_basis"].as_str().unwrap_or("first_group")}),
             );
         }
-        let id = integer(&job["account_id"]).ok_or_else(Error::invalid)?;
-        {
-            let _control = self.actions.locks.control(id).await;
-            let value = self.control(id)?;
-            let mark = self.mark(id)?;
-            if value["generation"] != job["detection_generation"]
-                || mark["version"] != job["detection_mark_version"]
-            {
-                return Err(Error::new(409, "人工操作已变化，旧检测不再处置"));
-            }
-            let row = self.actions.account(id, None).await?;
-            let reason = if truthy(&job["recovery_context"]) {
-                self.recovery_reason(&row, &job["recovery_context"], false)
-                    .await?
-            } else {
-                self.reason(&row, &mark, false).await?
-            };
-            if !reason.is_empty() {
-                return Err(Error::new(409, reason));
-            }
-            let mut disposition = json!({
-                "status": "pending",
-                "basis": job["disposition_basis"].as_str().unwrap_or("first_group"),
-                "group_indexes": job["classification"]["group_indexes"],
-                "engine": job["engine"],
-                "sample_count": job["planned_groups"],
-                "group_predictions": job["groups"].as_array().into_iter().flatten().filter(|g|job["classification"]["group_indexes"].as_array().is_some_and(|ids|ids.contains(&g["index"]))).map(|g|json!({"index":g["index"],"prediction":g["report"]["prediction_name"]})).collect::<Vec<_>>(),
-                "job_id": job["id"],
-                "generation": value["generation"],
-                "mark_version": mark["version"],
-                "marked": false,
-                "schedule_verified": false,
-                "created_at": datetime(self.now()),
-                "model_id": job["requested_model"],
-                "prediction": report["prediction"],
-                "probability": report["probability"],
-                "triggers": job["triggers"],
-            });
+        let value = self.control(id)?;
+        let mark = self.mark(id)?;
+        let mut disposition = json!({
+            "status": "pending",
+            "basis": job["disposition_basis"].as_str().unwrap_or("first_group"),
+            "group_indexes": job["classification"]["group_indexes"],
+            "engine": job["engine"],
+            "sample_count": job["planned_groups"],
+            "group_predictions": job["groups"].as_array().into_iter().flatten().filter(|g|job["classification"]["group_indexes"].as_array().is_some_and(|ids|ids.contains(&g["index"]))).map(|g|json!({"index":g["index"],"prediction":g["report"]["prediction_name"]})).collect::<Vec<_>>(),
+            "job_id": job["id"],
+            "generation": value["generation"],
+            "mark_version": mark["version"],
+            "marked": false,
+            "schedule_verified": false,
+            "created_at": datetime(self.now()),
+            "model_id": job["requested_model"],
+            "prediction": report["prediction"],
+            "probability": report["probability"],
+            "triggers": job["triggers"],
+        });
 
-            if job["recovery_context"]["kind"] == "credit" {
-                disposition["credit_episode"] = job["recovery_context"]["fingerprint"].clone();
-                let task = self.monitor.credits.state(id)?;
-                if truthy(&task["policy_version"]) {
-                    self.monitor.credits.save(
-                        id,
-                        &task,
-                        json!({"degradation_pending":job["id"]}),
-                    )?;
-                }
+        if job["recovery_context"]["kind"] == "credit" {
+            disposition["credit_episode"] = job["recovery_context"]["fingerprint"].clone();
+            let task = self.monitor.credits.state(id)?;
+            if truthy(&task["policy_version"]) {
+                self.monitor
+                    .credits
+                    .save(id, &task, json!({"degradation_pending":job["id"]}))?;
             }
-            self.update(
-                id,
-                json!({
-                    "hold":true, "disposition":disposition, "recheck_recovery":null,
-                    "status":"handling", "reason":"正在标记并停止调度"
-                }),
-            )?;
         }
-        self.finish_disposition(id).await
+        self.update(
+            id,
+            json!({
+                "hold":true, "disposition":disposition, "recheck_recovery":null,
+                "status":"handling", "reason":"正在标记并停止调度"
+            }),
+        )?;
+        self.finish_disposition_locked(id, &row).await
     }
     pub async fn finish_disposition(&self, id: i64) -> Result<Value> {
         let _control = self.actions.locks.control(id).await;
+        let row = self.actions.queries.internal_account(id).await?;
+        self.finish_disposition_locked(id, &row).await
+    }
+    async fn finish_disposition_locked(&self, id: i64, row: &Value) -> Result<Value> {
         let value = self.control(id)?;
         let mut d = value["disposition"].clone();
         if !matches!(
             string(&d["status"]),
             "pending" | "marked" | "writing" | "checking"
-        ) {
+        ) && !(d["status"] == "needs_confirmation"
+            && d["reason"] == "停调度结果未确认，未重复写入")
+        {
             return Ok(d);
         }
         if d["generation"] != value["generation"] {
@@ -819,8 +794,7 @@ impl Detection {
             self.update(id, json!({"disposition":d}))?;
             return Ok(d);
         }
-        let row = self.actions.account(id, None).await?;
-        if !model_target::supported(&row) {
+        if !model_target::supported(row) {
             d["status"] = "needs_confirmation".into();
             d["reason"] = "账号资格已变化".into();
             self.update(id, json!({"disposition":d}))?;
@@ -845,44 +819,48 @@ impl Detection {
                 )?;
             }
             d["marked"] = true.into();
-            d["status"] = "marked".into();
-            self.update(id, json!({"disposition":d}))?;
         }
         if row["type"] == "oauth" && d["recovery_revoked"] != true {
-            self.monitor
-                .store
-                .manual_control(&row, false, self.now(), "model_detection")?;
+            let state = self.monitor.shared_state()?;
+            let control = &state["scheduler"][id.to_string()]["manual_control"];
+            if control["enabled"] != false || control["origin"] != "model_detection" {
+                self.monitor
+                    .store
+                    .manual_control(row, false, self.now(), "model_detection")?;
+            }
             d["recovery_revoked"] = true.into();
-            self.update(id, json!({"disposition":d}))?;
         }
         if row["schedulable"] == false {
             d["status"] = "completed".into();
             d["schedule_verified"] = true.into();
             d["reason"] = "".into();
-        } else if matches!(string(&d["status"]), "writing" | "checking") {
-            d["status"] = "needs_confirmation".into();
-            d["reason"] = "停调度结果未确认，未重复写入".into();
         } else {
             let key = self.monitor.store.admin_token()?;
             if key.is_empty() {
                 d["status"] = "needs_confirmation".into();
                 d["reason"] = "管理员授权不可用".into();
             } else {
-                d["status"] = "writing".into();
-                self.update(id, json!({"disposition":d}))?;
                 let _ = actions::set_schedulable(&self.actions, id, false, &key, 3).await;
-                let live = self.actions.account(id, None).await?;
+                let live = match self.actions.account(id, None).await {
+                    Ok(row) => row,
+                    Err(error) => {
+                        d["status"] = "pending".into();
+                        d["reason"] = "停调度待核对".into();
+                        self.update(id, json!({"disposition":d}))?;
+                        return Err(error);
+                    }
+                };
                 if live["schedulable"] == false {
                     d["status"] = "completed".into();
                     d["schedule_verified"] = true.into();
                     d["reason"] = "".into();
                 } else {
-                    d["status"] = "checking".into();
+                    d["status"] = "pending".into();
                     d["reason"] = "停调度待核对".into();
                 }
             }
         }
-        self.commit_disposition(id, &d, &row).await?;
+        self.commit_disposition(id, &d, row).await?;
         self.audit(
             "model_detection_disposition",
             json!({

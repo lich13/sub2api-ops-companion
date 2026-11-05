@@ -173,7 +173,8 @@ impl ModelTests {
             finished["uncertain"] = fatal.as_ref().is_some_and(|f| f.uncertain).into();
             finished["error_code"] = json!(fatal.as_ref().map(|f| f.code));
             let verdict = crate::verdict_policy::classify(&finished);
-            current = self.update(id, json!({"classification":verdict,"groups":groups}))?;
+            current["classification"] = verdict.clone();
+            current["groups"] = json!(groups);
             if current["automatic"] == true && verdict["outcome"] == "degraded" {
                 finished["classification"] = verdict.clone();
                 finished["disposition_basis"] = verdict["basis"].clone();
@@ -227,23 +228,24 @@ impl ModelTests {
             && groups
                 .iter()
                 .all(|g| g["status"] == "completed" && g["transport_complete"] == true);
-        self.update(
-            id,
-            json!({
-                "status": if probe { "running" } else { status },
-                "phase": if probe { "tokenizer" } else { "finished" },
-                "error": error,
-                "error_code": fatal.as_ref().map(|f|f.code),
-                "uncertain": fatal.as_ref().is_some_and(|f|f.uncertain),
-                "can_retry": retryable,
-                "completion_reason": reason,
-                "automatic_disposition": disposition,
-                "groups": groups,
-                "completed_at": crate::compat::now(),
-                "duration_ms": run.started.elapsed().as_millis(),
-                "attempts": run.attempts.load(Ordering::Acquire),
-            }),
-        )?;
+        let mut changes = json!({
+            "status": if probe { "running" } else { status },
+            "phase": if probe { "tokenizer" } else { "finished" },
+            "error": error,
+            "error_code": fatal.as_ref().map(|f|f.code),
+            "uncertain": fatal.as_ref().is_some_and(|f|f.uncertain),
+            "can_retry": retryable,
+            "completion_reason": reason,
+            "automatic_disposition": disposition,
+            "groups": groups,
+            "completed_at": crate::compat::now(),
+            "duration_ms": run.started.elapsed().as_millis(),
+            "attempts": run.attempts.load(Ordering::Acquire),
+        });
+        if let Some(classification) = current.get("classification") {
+            changes["classification"] = classification.clone();
+        }
+        self.update(id, changes)?;
 
         if probe {
             self.update(
@@ -603,9 +605,6 @@ impl ModelTests {
 
                         *run.disposition.lock().unwrap_or_else(|e| e.into_inner()) =
                             disposition.clone();
-                        self.update(id, json!({
-                            "automatic_disposition":disposition, "completion_reason":"automatic_degradation"
-                        })).map_err(internal)?;
                     }
                     if context.lm.is_none()
                         && !crate::verdict_policy::relaxed(job)

@@ -1657,13 +1657,13 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "releasing_restart_reconciles_the_confirmed_history_without_repeating_mutations",
+        "test_name": "confirming_restart_reconciles_the_confirmed_history_without_repeating_mutations",
         "assertions": [
-          "assert_eq!(at_release[\"stage\"], \"testing\")",
+          "assert_eq!(at_release[\"stage\"], \"confirming\")",
           "assert_eq!(at_release[\"consumed\"], true)",
           "assert!(at_release[\"release_requested_at\"].is_null())",
           "assert!(operation.await.unwrap().is_err())",
-          "assert_eq!(harness.controller.state(id).unwrap()[\"stage\"], \"releasing\")",
+          "assert_eq!(harness.controller.state(id).unwrap()[\"stage\"], \"confirming\")",
           "assert_eq!(counts, [1, 1, 1, 2])",
           "assert_eq!(finished[\"stage\"], \"recovered\")",
           "assert_eq!(finished[\"outcome\"], \"restored\")",
@@ -1686,13 +1686,13 @@
           }
         ]
       },
-      "coverage_note": "成功释放前没有 releasing 落盘；写后读取失败才保存待复核，重启读回成功补记历史且不重复修改。",
+      "coverage_note": "恢复统一使用 confirming；兼容旧 releasing 状态，读回已启用后完成一次历史；人工操作、参数变化或新阻断不自动恢复。",
       "replacement": {
         "legacy_assertions": [
           "test_releasing_restart_finishes_same_history_without_repeating_mutations"
         ],
-        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
-        "replacement_contract": "成功释放前没有 releasing 落盘；写后读取失败才保存待复核，重启读回成功补记历史且不重复修改。"
+        "approved_requirement": "Sub2Ops 0.1.82 已批准计划：释放并入 confirming，保留验证结果、暂停归属及人工接管核对。",
+        "replacement_contract": "恢复统一使用 confirming；兼容旧 releasing 状态，读回已启用后完成一次历史；人工操作、参数变化或新阻断不自动恢复。"
       }
     },
     {
@@ -1701,11 +1701,11 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "releasing_restart_preserves_manual_changes_and_new_account_blocks",
+        "test_name": "confirming_restart_preserves_manual_changes_and_new_account_blocks",
         "assertions": [
-          "assert_eq!(\n            release.state_at_arrival.as_ref().unwrap()[\"scheduler\"][id.to_string()]\n                [\"auto_reset_credit\"][\"stage\"],\n            \"testing\",\n            \"{change}\"\n        )",
+          "assert_eq!(\n            release.state_at_arrival.as_ref().unwrap()[\"scheduler\"][id.to_string()]\n                [\"auto_reset_credit\"][\"stage\"],\n            \"confirming\",\n            \"{change}\"\n        )",
           "assert!(operation.await.unwrap().is_err(), \"{change}\")",
-          "assert_eq!(harness.controller.state(id).unwrap()[\"stage\"], \"releasing\")",
+          "assert_eq!(harness.controller.state(id).unwrap()[\"stage\"], \"confirming\")",
           "assert_eq!(actual[field], expected[field], \"{change}: {field}\")",
           "assert_eq!(harness.mock.total(), before_calls, \"{change} replayed I/O\")",
           "assert_ne!(harness.controller.state(id).unwrap()[\"stage\"], \"recovered\")",
@@ -1725,13 +1725,13 @@
           }
         ]
       },
-      "coverage_note": "释放结果待复核时保留新的人工控制与阻断，重启不覆盖账号状态。",
+      "coverage_note": "恢复统一使用 confirming；兼容旧 releasing 状态，读回已启用后完成一次历史；人工操作、参数变化或新阻断不自动恢复。",
       "replacement": {
         "legacy_assertions": [
           "test_releasing_restart_preserves_manual_changes_and_new_blocks"
         ],
-        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
-        "replacement_contract": "释放结果待复核时保留新的人工控制与阻断，重启不覆盖账号状态。"
+        "approved_requirement": "Sub2Ops 0.1.82 已批准计划：释放并入 confirming，保留验证结果、暂停归属及人工接管核对。",
+        "replacement_contract": "恢复统一使用 confirming；兼容旧 releasing 状态，读回已启用后完成一次历史；人工操作、参数变化或新阻断不自动恢复。"
       }
     },
     {
@@ -1931,11 +1931,11 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetLifecycleTests.test_two_controllers_share_disk_lock_and_only_one_consumption",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "two_automatic_controllers_share_the_disk_lease_and_only_one_consumes",
+        "test_name": "two_automatic_workers_share_the_account_lock_and_only_one_consumes",
         "assertions": [
           "second_controller.run_account(&row, now).await.unwrap();",
           "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
@@ -1975,17 +1975,24 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_two_controllers_share_disk_lock_and_only_one_consumption 已完整通过。Rust two_automatic_controllers_share_the_disk_lease_and_only_one_consumes 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "同一服务两个账号 worker 只派发一次扣卡；重启仍复用已持久化结果。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset:AutoResetLifecycleTests.test_two_controllers_share_disk_lock_and_only_one_consumption"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.82 已批准计划：用卡每账号文件锁移除，沿用服务单写实例锁、账号内存锁与状态事务锁。",
+        "replacement_contract": "同一服务两个账号 worker 只派发一次扣卡；重启仍复用已持久化结果。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetLifecycleTests.test_manual_reset_updates_shared_state_without_launching_an_automatic_test",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
         "test_name": "manual_reset_uses_the_shared_receipt_and_two_controllers_dispatch_once",
         "assertions": [
-          "assert!( second.is_err(), \"second controller must lose the disk lease\" );",
+          "assert!(second.is_err(), \"second request must wait for the account lock\");",
           "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1);",
           "assert_eq!(result[\"consumed\"], true);",
           "assert_eq!(manual[\"stage\"], \"manual\");",
@@ -2032,7 +2039,14 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_manual_reset_updates_shared_state_without_launching_an_automatic_test 已完整通过。Rust manual_reset_uses_the_shared_receipt_and_two_controllers_dispatch_once 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "手动用卡沿用调用方持有的账号锁；并发请求不能再取得账号锁，确认及未知扣卡结果继续阻止重放。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset:AutoResetLifecycleTests.test_manual_reset_updates_shared_state_without_launching_an_automatic_test"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.82 已批准移除每账号文件锁，沿用单写实例、账号内存和状态事务锁。",
+        "replacement_contract": "手动用卡沿用调用方持有的账号锁；并发请求不能再取得账号锁，确认及未知扣卡结果继续阻止重放。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetLifecycleTests.test_uncertain_manual_task_requires_account_recovery_after_low_quota",
@@ -4403,7 +4417,7 @@
           "assert_eq!(harness.mock.total(), 0);",
           "assert!(result.is_err());",
           "assert_eq!(waiting[\"stage\"], \"waiting\");",
-          "assert!(waiting[\"policy_version\"].is_null());",
+          "assert_eq!(waiting[\"policy_version\"], 1);",
           "assert_eq!(finished[\"stage\"], \"finished\");",
           "assert_eq!(finished[\"result_reason\"], \"detection_held\");",
           "assert!(merged);",
@@ -4457,7 +4471,7 @@
           "assert_eq!(harness.mock.total(), 0);",
           "assert!(result.is_err());",
           "assert_eq!(waiting[\"stage\"], \"waiting\");",
-          "assert!(waiting[\"policy_version\"].is_null());",
+          "assert_eq!(waiting[\"policy_version\"], 1);",
           "assert_eq!(finished[\"stage\"], \"finished\");",
           "assert_eq!(finished[\"result_reason\"], \"detection_held\");",
           "assert!(merged);",

@@ -769,7 +769,7 @@
         "path": "server/tests/notification_contract.rs",
         "test_name": "capacity_save_failures_do_not_advance_or_lose_cursor_and_evidence",
         "assertions": [
-          "restarted_after_failed_save.store.snapshot().is_err()",
+          "restarted_after_failed_save.store.snapshot().unwrap()[\"cursor\"].is_null()",
           "assert_eq!(unchanged[\"cursor\"], base + 1);",
           "assert_eq!(recovered[\"cursor\"], base + 2);",
           "fs::read(&path).unwrap(), bytes_before",
@@ -910,22 +910,29 @@
     },
     {
       "legacy_test_id": "py:tests.test_capacity_alerts:CapacityAlertTests.test_mark_and_account_guard_serialize_per_account",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/notification_contract.rs",
-        "test_name": "capacity_mark_and_account_guard_serialize_per_account",
+        "test_name": "capacity_mark_and_state_transaction_serialize_updates",
         "assertions": [
           ".recv_timeout(StdDuration::from_secs(2))",
           "assert!(started.load(Ordering::Acquire));",
-          "!marking.is_finished(),\n        \"mark waits for the per-account guard\"",
+          "!marking.is_finished(),\n        \"mark waits for the state transaction\"",
           "guarded.join().unwrap();",
           "assert_eq!(marking.join().unwrap()[\"marked\"], true);",
           "assert!(alerts.store.snapshot().unwrap()[\"pending\"]\n        .as_object()\n        .unwrap()\n        .is_empty());",
           "assert_eq!(capture.bark_request_count(), 0);"
         ]
       },
-      "coverage_note": "并发线程持有账户 guard 时 mark 等待，释放后完成并清空 pending。"
+      "coverage_note": "并发标记等待状态事务，完成后清空该账号待通知记录。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_capacity_alerts:CapacityAlertTests.test_mark_and_account_guard_serialize_per_account"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.82 已批准计划：每账号标记文件锁改为现有状态事务锁，保留版本冲突检查。",
+        "replacement_contract": "并发标记等待状态事务，完成后清空该账号待通知记录。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_gateway_alerts022:GatewayAlertTests.test_gateway_shapes_and_complete_phrases_without_request_body_false_positive",

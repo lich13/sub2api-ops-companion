@@ -55,7 +55,6 @@ pub fn validate_credit(value: &Value) -> Result<()> {
         "recovered_at",
         "evidence_at",
         "reset_completed_at",
-        "release_requested_at",
         "manual_at",
         "trigger_at",
         "consume_deadline_at",
@@ -146,13 +145,7 @@ pub fn limit_fingerprint(row: &Value) -> String {
     ]))
 }
 pub fn validate_observation(value: &Value) -> Result<()> {
-    validate_observation_shape(value)?;
-    let content =
-        json!({"available_count":value["available_count"],"expires_at":value["expires_at"]});
-    if compact_digest(&content) != value["snapshot_sha256"] {
-        return Err(invalid("重置卡观测内容无效"));
-    }
-    Ok(())
+    validate_observation_shape(value)
 }
 fn validate_observation_shape(value: &Value) -> Result<()> {
     let keys: BTreeSet<&str> = [
@@ -262,9 +255,9 @@ pub fn query_metadata(meta: &Value, saved: &Value) -> Result<Value> {
 
 pub fn validate(value: &Value) -> Result<()> {
     validate_shape(value)?;
-    validate_observation_digests(value)
+    validate_observations(value)
 }
-fn validate_observation_digests(value: &Value) -> Result<()> {
+fn validate_observations(value: &Value) -> Result<()> {
     for meta in value["scheduler"]
         .as_object()
         .into_iter()
@@ -277,7 +270,7 @@ fn validate_observation_digests(value: &Value) -> Result<()> {
     Ok(())
 }
 fn load(value: &mut Value) -> Result<bool> {
-    validate_observation_digests(value)?;
+    validate_observations(value)?;
     // Validate these rows before legacy normalization can discard them.
     if ["pending_events", "recovery_history"].iter().any(|key| {
         value[*key]
@@ -437,10 +430,18 @@ pub fn normalize(raw: &Value) -> Value {
                 }
             }
         }
+        if let Some(task) = value.get_mut("auto_reset_credit") {
+            if task["stage"] == "releasing" {
+                task["stage"] = "confirming".into();
+            }
+        }
         for (field, retired) in [
             (
                 "auto_reset_credit",
                 &[
+                    "release_requested_at",
+                    "release_control_generation",
+                    "release_credential_fingerprint",
                     "policy_checked_at",
                     "pause_undo_requested_at",
                     "pause_undo_confirmed_at",

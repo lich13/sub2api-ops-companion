@@ -5,7 +5,7 @@ use crate::{
     error::{Error, Result},
     error_evidence,
     oauth_admission::{self, credential_fingerprint},
-    oauth_state::{compact_digest, limit_fingerprint, normalized_credits, validate_observation},
+    oauth_state::{limit_fingerprint, normalized_credits, validate_observation},
     quota, reset_credit_observation, sql,
     upstream::read_limited,
     usage,
@@ -393,7 +393,9 @@ pub fn credit_reason(
     let observation = &meta["reset_credit_observation"];
     let observed = if !observation.is_null() {
         validate_observation(observation)?;
-        if compact_digest(&content) != observation["snapshot_sha256"] {
+        if content["available_count"] != observation["available_count"]
+            || content["expires_at"] != observation["expires_at"]
+        {
             return Ok("content_changed");
         }
         if credential_fingerprint(row) != observation["credential_fingerprint"] {

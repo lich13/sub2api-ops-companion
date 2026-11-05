@@ -886,6 +886,23 @@ async fn account_model_candidates_ignore_other_accounts_and_allowlists_but_retai
             .as_u16(),
         404
     );
+    let missing = harness
+        .runtime
+        .tests
+        .start(
+            child,
+            &json!({
+                "model_id":"gpt-6-luna",
+                "expected_version":"a".repeat(64),
+                "request_id":uuid::Uuid::new_v4().simple().to_string(),
+                "concurrency":1
+            }),
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(missing.status.as_u16(), 422);
+    assert_eq!(missing.detail, "此账号类型不支持模型检测");
     assert!(harness
         .state
         .directory_calls

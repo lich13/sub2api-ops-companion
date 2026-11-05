@@ -56,7 +56,7 @@ impl CreditController {
                 e.insert(Cow::Owned(self.row(id).await?));
             }
             let row = &live[&id];
-            task = self.policy(id, &task).await?;
+            task = self.policy(row, &task).await?;
             let current = at;
             let control = &meta["manual_control"];
             let expected = integer(&task["policy_control_generation"]).unwrap_or(0);
@@ -200,20 +200,10 @@ impl CreditController {
         if !enabled && !truthy(&self.state(id)?["policy_version"]) {
             return Ok(());
         }
-        let _disk = match self.disk_lease(id) {
-            Ok(lease) => lease,
-            Err(e) if e.status.as_u16() == 409 => return Ok(()),
-            Err(e) => return Err(e),
-        };
-        let live = self.row(id).await?;
-        let row = if live.is_object() { &live } else { item };
-        if !self.candidate_ready(row, at).await? {
-            return Ok(());
-        }
         let Ok(_budget) = self.budget.clone().try_acquire_owned() else {
             return Ok(());
         };
-        let _lease = match self.actions.locks.try_account(row) {
+        let _lease = match self.actions.locks.try_account(item) {
             Ok(v) => v,
             Err(e) if e.status.as_u16() == 409 => return Ok(()),
             Err(e) => return Err(e),
@@ -234,7 +224,7 @@ impl CreditController {
         if truthy(&task["credit_gate_skipped"]) && !truthy(&task["owns_pause"]) && enabled {
             let evidence = self.depletion(&row, at, false).await?;
             if truthy(&evidence) {
-                task = self.begin_episode(id, &task, &evidence).await?;
+                task = self.begin_episode(&row, &task, &evidence, at).await?;
                 if !truthy(&task) {
                     return Ok(());
                 }
@@ -274,16 +264,15 @@ impl CreditController {
             {
                 return Ok(());
             }
-            task = self.begin_episode(id, &task, &evidence).await?;
+            task = self.begin_episode(&row, &task, &evidence, at).await?;
             if !truthy(&task) {
                 return Ok(());
             }
         }
         if task["stage"] == "finished" {
             if truthy(&task["owns_pause"]) && !truthy(&task["attempt_at"]) {
-                self.undo_unissued_pause(id, &row, &task, at).await?;
+                row = self.undo_unissued_pause(id, &row, &task, at).await?;
                 task = self.state(id)?;
-                row = self.row(id).await?;
             }
             if row.is_object()
                 && self.eligible(&row, at, false)?
@@ -307,7 +296,7 @@ impl CreditController {
             {
                 return Ok(());
             }
-            task = self.begin_episode(id, &task, &evidence).await?;
+            task = self.begin_episode(&row, &task, &evidence, at).await?;
             if !truthy(&task) {
                 return Ok(());
             }
@@ -332,7 +321,7 @@ impl CreditController {
             {
                 return Ok(());
             }
-            task = self.begin_episode(id, &task, &evidence).await?;
+            task = self.begin_episode(&row, &task, &evidence, at).await?;
             if !truthy(&task) {
                 return Ok(());
             }
@@ -342,7 +331,7 @@ impl CreditController {
         {
             return Ok(());
         }
-        task = self.policy(id, &task).await?;
+        task = self.policy(&row, &task).await?;
         let reason = self.guard_reason(id, &row, &task, at)?;
         if !reason.is_empty() {
             self.finish(id, &task, reason, at, &row, true, &Value::Null)
@@ -370,9 +359,6 @@ impl CreditController {
             self.finish(id, &task, "conflict", at, &row, true, &Value::Null)
                 .await?;
             return Ok(());
-        }
-        if task["stage"] == "releasing" {
-            return self.reconcile_release(id, &task, at).await;
         }
         if truthy(&task["attempt_at"]) {
             if !truthy(&task["consumed"]) {

@@ -61,71 +61,63 @@ impl Detection {
         if self.control(id)?["recheck_recovery"]["job_id"] == job["id"] {
             return self.finish_recheck_recovery(id).await;
         }
-        self.guard(job).await?;
-        {
-            let _control = self.actions.locks.control(id).await;
-            let value = self.control(id)?;
-            let mark = self.mark(id)?;
-            let row = self.actions.account(id, None).await?;
-            if value["generation"] != job["detection_generation"]
-                || mark["version"] != job["detection_mark_version"]
-                || self.recheck_target_changed(&row, &value, job)
-            {
-                return Err(Error::new(409, "账号或人工操作已变化，旧复查不再解除标记"));
-            }
-            let reason = self.reason(&row, &mark, true).await?;
-            if !reason.is_empty() {
-                return Err(Error::new(409, reason));
-            }
-            let report = &job["report"];
-            self.update(
-                id,
-                json!({
-                    "recheck_recovery": {
-                        "status": "pending",
-                        "job_id": job["id"],
-                        "generation": value["generation"],
-                        "mark_version": mark["version"],
-                        "mark_cleared": false,
-                        "recheck_account_version": job["recheck_account_version"],
-                        "recheck_schedulable": job["recheck_schedulable"],
-                        "created_at": datetime(self.now()),
-                        "model_id": job["requested_model"],
-                        "engine":job["engine"],"sample_count":job["planned_groups"],"basis":job["classification"]["basis"],
-                        "prediction": report["prediction"],
-                        "first_group_prediction": job["first_group_prediction"],
-                        "probability": report["probability"],
-                        "valid_groups": report["used_outputs"],
-                    },
-                    "status": "handling",
-                    "reason": "正在取消降智标记",
-                }),
-            )?;
-        }
-        self.finish_recheck_recovery(id).await
+        let _control = self.actions.locks.control(id).await;
+        let row = self.actions.queries.internal_account(id).await?;
+        self.check_smart_dispatch(job).await?;
+        let value = self.control(id)?;
+        let report = &job["report"];
+        let receipt = json!({
+            "status": "pending",
+            "job_id": job["id"],
+            "generation": job["detection_generation"],
+            "mark_version": job["detection_mark_version"],
+            "mark_cleared": false,
+            "recheck_account_version": job["recheck_account_version"],
+            "recheck_schedulable": job["recheck_schedulable"],
+            "created_at": datetime(self.now()),
+            "model_id": job["requested_model"],
+            "engine":job["engine"],"sample_count":job["planned_groups"],"basis":job["classification"]["basis"],
+            "prediction": report["prediction"],
+            "first_group_prediction": job["first_group_prediction"],
+            "probability": report["probability"],
+            "valid_groups": report["used_outputs"],
+        });
+        self.finish_recheck_locked(id, &row, &value, receipt).await
     }
     pub async fn finish_recheck_recovery(&self, id: i64) -> Result<Value> {
         let _control = self.actions.locks.control(id).await;
         let value = self.control(id)?;
-        let mut receipt = value["recheck_recovery"].clone();
+        let receipt = value["recheck_recovery"].clone();
         if receipt["status"] != "pending" {
             return Ok(receipt);
         }
-        let row = self.actions.account(id, None).await?;
+        let row = self.actions.queries.internal_account(id).await?;
+        self.finish_recheck_locked(id, &row, &value, receipt).await
+    }
+    async fn finish_recheck_locked(
+        &self,
+        id: i64,
+        row: &Value,
+        value: &Value,
+        mut receipt: Value,
+    ) -> Result<Value> {
         let state = self.capacity.store.shared_snapshot()?["marks"][id.to_string()].clone();
         let mark = self.mark(id)?;
         let adopted = mark["marked"] == false && state["detection_job_id"] == receipt["job_id"];
         let changed = value["generation"] != receipt["generation"]
-            || self.recheck_target_changed(&row, &value, &receipt)
+            || self.recheck_target_changed(row, value, &receipt)
             || mark["version"] != receipt["mark_version"] && !adopted;
         let reason = if changed {
             "账号或人工操作已变化，旧复查不再解除标记".into()
         } else if !adopted {
-            self.reason(&row, &mark, true).await?
+            self.reason(row, &mark, true).await?
         } else {
             String::new()
         };
         if !reason.is_empty() {
+            if value["recheck_recovery"]["job_id"] != receipt["job_id"] {
+                return Err(Error::new(409, reason));
+            }
             receipt["status"] = "overridden".into();
             receipt["reason"] = reason.into();
             receipt["mark_cleared"] = adopted.into();
@@ -133,20 +125,17 @@ impl Detection {
             self.log_receipt(string(&receipt["job_id"]), "recovery", &receipt);
             return Ok(receipt);
         }
-        if !adopted {
+        let verified = if adopted {
+            mark
+        } else {
             self.capacity.store.set_mark(
                 id,
                 false,
                 string(&mark["version"]),
                 self.now(),
                 receipt["job_id"].as_str(),
-            )?;
-        }
-        let verified = self.mark(id)?;
-        let state = self.capacity.store.shared_snapshot()?["marks"][id.to_string()].clone();
-        if verified["marked"] != false || state["detection_job_id"] != receipt["job_id"] {
-            return Err(Error::new(503, "降智标记取消结果尚未确认"));
-        }
+            )?
+        };
         let now = datetime(self.now());
         receipt.as_object_mut().unwrap().extend(
             json!({

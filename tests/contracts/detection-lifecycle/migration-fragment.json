@@ -931,13 +931,13 @@
     },
     {
       "legacy_test_id": "py:tests.test_detection_disposition027:DetectionDispositionTests.test_restart_with_writing_disposition_marks_unknown_without_replay",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "preexisting_writing_disposition_becomes_unknown_after_restart_without_replay",
+        "test_name": "preexisting_writing_disposition_retries_after_restart",
         "assertions": [
-          "disposition[\"status\"], \"needs_confirmation\"",
+          "disposition[\"status\"], \"completed\"",
           "harness.mock.count(\"POST\", \"/v1/responses\"), 0",
           "harness.mock.count(\"POST\", \"/push\"), 0"
         ],
@@ -950,7 +950,14 @@
           }
         ]
       },
-      "coverage_note": "启动时从 PostgreSQL 读到预存 writing disposition 后转为 needs_confirmation；不重放 schedule POST 或 Bark。"
+      "coverage_note": "旧 writing 状态重启后补齐停调度，确认完成后进入通知队列，不重新采样。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_detection_disposition027:DetectionDispositionTests.test_restart_with_writing_disposition_marks_unknown_without_replay"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.82 已批准计划：网络失败留下的降智停调度状态继续重试。",
+        "replacement_contract": "旧 writing 状态重启后补齐停调度，确认完成后进入通知队列，不重新采样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_detection_disposition027:DetectionDispositionTests.test_manual_generation_change_rejects_stale_verdict_without_disposition",

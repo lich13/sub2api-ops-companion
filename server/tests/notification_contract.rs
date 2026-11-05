@@ -365,9 +365,15 @@ async fn runtime_for(
         valid,
         base_url,
     );
-    Runtime::new_with_clock(config, Arc::new(reference_time))
+    let runtime = Runtime::new_with_clock(config, Arc::new(reference_time))
         .await
-        .expect("construct Runtime against runner-owned PostgreSQL")
+        .expect("construct Runtime against runner-owned PostgreSQL");
+    runtime
+        .detection
+        .capacity
+        .retire_legacy(Utc::now())
+        .unwrap();
+    runtime
 }
 
 async fn assert_no_bark_call_from_notifications(runtime: &Runtime, capture: &CaptureServer) {
@@ -1895,6 +1901,11 @@ async fn capacity_save_failures_do_not_advance_or_lose_cursor_and_evidence() {
     let runtime = Runtime::new_with_clock(config.clone(), Arc::new(reference_time))
         .await
         .unwrap();
+    runtime
+        .detection
+        .capacity
+        .retire_legacy(Utc::now())
+        .unwrap();
     let database = runtime.db.clone();
     let account = account_id();
     insert_account(
@@ -1914,6 +1925,7 @@ async fn capacity_save_failures_do_not_advance_or_lose_cursor_and_evidence() {
     let path = first_attempt.store.0.path().to_owned();
     let lock_path = path.with_extension("lock");
     fs::write(&lock_path, b"").unwrap();
+    let initialized = fs::read(&path).unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -1926,10 +1938,10 @@ async fn capacity_save_failures_do_not_advance_or_lose_cursor_and_evidence() {
             "the first checkpoint must fail when atomic save is blocked"
         );
     }
-    assert!(!path.exists());
+    assert_eq!(fs::read(&path).unwrap(), initialized);
     assert!(first_attempt.store.snapshot().unwrap()["cursor"].is_null());
     let restarted_after_failed_save = CapacityAlerts::new(database.clone(), &config);
-    assert!(restarted_after_failed_save.store.snapshot().is_err());
+    assert!(restarted_after_failed_save.store.snapshot().unwrap()["cursor"].is_null());
 
     first_attempt.poll().await.unwrap();
     let initial = first_attempt.store.snapshot().unwrap();
@@ -2225,7 +2237,7 @@ async fn capacity_unmark_allows_only_newer_evidence_and_persists_across_restart(
 }
 
 #[tokio::test]
-async fn capacity_mark_and_account_guard_serialize_per_account() {
+async fn capacity_mark_and_state_transaction_serialize_updates() {
     let _serial = DB_TEST_LOCK.lock().await;
     let capture = CaptureServer::start(vec![]).await;
     let database = database().await;
@@ -2241,13 +2253,17 @@ async fn capacity_mark_and_account_guard_serialize_per_account() {
     let (entered_sender, entered_receiver) = mpsc::channel();
     let (release_sender, release_receiver) = mpsc::channel();
     let guarded = thread::spawn(move || {
-        let _guard = store.account_guard(1).unwrap();
-        entered_sender.send(()).unwrap();
-        release_receiver.recv().unwrap();
+        store
+            .transaction(|_| {
+                entered_sender.send(()).unwrap();
+                release_receiver.recv().unwrap();
+                Ok(())
+            })
+            .unwrap();
     });
     entered_receiver
         .recv_timeout(StdDuration::from_secs(2))
-        .expect("account guard acquired before mark begins");
+        .expect("state transaction acquired before mark begins");
 
     let started = Arc::new(AtomicBool::new(false));
     let mark_started = started.clone();
@@ -2267,7 +2283,7 @@ async fn capacity_mark_and_account_guard_serialize_per_account() {
     thread::sleep(StdDuration::from_millis(50));
     assert!(
         !marking.is_finished(),
-        "mark waits for the per-account guard"
+        "mark waits for the state transaction"
     );
     release_sender.send(()).unwrap();
     guarded.join().unwrap();

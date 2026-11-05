@@ -150,6 +150,7 @@ struct MockUpstream {
     temp_delete_gate: Arc<StdMutex<Option<Gate>>>,
     bulk_delete_gate: Arc<StdMutex<Option<BulkGate>>>,
     delete_started: Arc<Notify>,
+    bark_status: Arc<AtomicUsize>,
 }
 
 #[derive(Clone, Copy)]
@@ -181,6 +182,7 @@ impl MockUpstream {
             temp_delete_gate: Arc::new(StdMutex::new(None)),
             bulk_delete_gate: Arc::new(StdMutex::new(None)),
             delete_started: Arc::new(Notify::new()),
+            bark_status: Arc::new(AtomicUsize::new(200)),
         }
     }
 
@@ -442,7 +444,9 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
     }
 
     if method == Method::POST && path == "/push" {
-        return json_response(json!({"code":200,"data":"fixture-delivered"}));
+        return json_response(
+            json!({"code":state.bark_status.load(Ordering::SeqCst),"data":"fixture-delivery"}),
+        );
     }
 
     if method == Method::POST && path.ends_with("/v1/responses") {
@@ -2681,63 +2685,40 @@ async fn keepalive_delete_confirms_temp_pause_and_preserves_account_scheduling()
 }
 
 #[tokio::test]
-async fn keepalive_unknown_outcome_survives_restart_and_reserves_new_pause_budget() {
+async fn keepalive_unchanged_outcome_retries_after_restart_and_counts_only_success() {
     let mut h = Harness::new().await;
     let id = seed_keepalive_account(&h, None, false).await;
     let now = h.now();
     set_keepalive_incident(&h, id, now, now + Duration::minutes(5)).await;
     enable_keepalive(&h, id).await;
     h.mock.set_temp_delete(200, false);
-
     h.runtime.keepalive.tick().await.unwrap();
     wait_delete_started(&h).await;
-    let unknown = wait_view_status(&h, id, "needs_confirmation").await;
-    assert_eq!(unknown["enabled"], true);
-    assert_eq!(unknown["budget_used"], 1);
-    let control = h.runtime.keepalive.control(id).unwrap();
-    assert!(control.pending.is_some());
-    assert_eq!(control.reservations.len(), 1);
-    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 1);
-
+    let control = wait_control(&h, id, |c| c.failures == 1).await;
+    wait_view_status(&h, id, "waiting").await;
+    assert!(control.pending.is_none());
+    assert!(control.reservations.is_empty());
+    assert_eq!(control.retry_at, Some(now + Duration::seconds(5)));
+    assert_eq!(control.used(now), 0);
+    let saved = h.runtime.keepalive.store.read().unwrap();
+    assert!(saved["accounts"][id.to_string()].get("pending").is_none());
+    assert!(saved["accounts"][id.to_string()]
+        .get("reservations")
+        .is_none());
     h.restart().await;
     h.runtime.keepalive.startup().unwrap();
-    h.runtime.keepalive.tick().await.unwrap();
-    assert_eq!(
-        h.runtime.keepalive.view(id).await.unwrap()["status"],
-        "needs_confirmation"
-    );
-    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 1);
-
-    let next = h.now();
-    set_keepalive_incident(&h, id, next, next + Duration::minutes(6)).await;
-    h.runtime.keepalive.tick().await.unwrap();
-    let superseded = wait_control(&h, id, |c| c.pending.is_none()).await;
-    assert_eq!(superseded.reservations.len(), 1);
-    assert_eq!(
-        h.runtime.keepalive.view(id).await.unwrap()["budget_used"],
-        1
-    );
-    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 1);
-
-    h.set_now(next + Duration::seconds(59));
+    h.set_now(now + Duration::seconds(4));
     h.runtime.keepalive.tick().await.unwrap();
     assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 1);
-
-    let restore_at = next + Duration::seconds(60);
+    let restore_at = now + Duration::seconds(5);
     h.set_now(restore_at);
     h.mock.set_temp_delete(200, true);
     h.runtime.keepalive.tick().await.unwrap();
     wait_delete_started(&h).await;
-    let confirmed = wait_control(&h, id, |c| {
-        c.pending.is_none() && c.last_restore_at == Some(restore_at)
-    })
-    .await;
-    assert_eq!(confirmed.reservations.len(), 1);
+    let confirmed = wait_control(&h, id, |c| c.last_restore_at == Some(restore_at)).await;
+    assert!(confirmed.reservations.is_empty());
     assert_eq!(confirmed.restores.len(), 1);
-    assert_eq!(
-        h.runtime.keepalive.view(id).await.unwrap()["budget_used"],
-        2
-    );
+    assert_eq!(confirmed.used(restore_at), 1);
     assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 2);
     h.close().await;
 }
@@ -2854,7 +2835,7 @@ async fn keepalive_spaces_restores_stops_at_five_and_keeps_rolling_budget_after_
 }
 
 #[tokio::test]
-async fn keepalive_restart_never_redelivers_an_interrupted_bark_notice() {
+async fn keepalive_restart_resumes_interrupted_bark_notice_with_backoff() {
     let mut h = Harness::new().await;
     let id = seed_keepalive_account(&h, None, false).await;
     h.runtime
@@ -2881,14 +2862,22 @@ async fn keepalive_restart_never_redelivers_an_interrupted_bark_notice() {
     h.restart().await;
     h.runtime.keepalive.startup().unwrap();
     let control = h.runtime.keepalive.control(id).unwrap();
-    assert_eq!(control.notifications[0].status, "needs_confirmation");
+    assert_eq!(control.notifications[0].status, "pending");
     h.runtime.keepalive.deliver().await.unwrap();
     h.runtime.keepalive.deliver().await.unwrap();
     assert_eq!(h.mock.count("POST", "/push"), 0);
     assert_eq!(
         h.runtime.keepalive.control(id).unwrap().notifications[0].status,
-        "needs_confirmation"
+        "pending"
     );
+    let next = control.notifications[0].next_at.unwrap();
+    h.set_now(next);
+    h.runtime.keepalive.deliver().await.unwrap();
+    h.runtime.keepalive.deliver().await.unwrap();
+    let notice = &h.runtime.keepalive.control(id).unwrap().notifications[0];
+    assert_eq!(notice.status, "delivered");
+    assert_eq!(notice.attempts, 2);
+    assert_eq!(h.mock.count("POST", "/push"), 1);
     h.close().await;
 }
 
@@ -3502,4 +3491,107 @@ async fn monitor_skips_ended_credit_workers_but_records_recovery_and_releases_ow
     );
     assert_eq!(h.mock.count("POST", "/schedulable"), 1);
     h.close().await;
+}
+
+#[tokio::test]
+async fn keepalive_notice_failure_retries_at_most_five_times() {
+    let h = Harness::new().await;
+    let id = seed_keepalive_account(&h, None, false).await;
+    let mut at = h.now();
+    h.mock.bark_status.store(503, Ordering::SeqCst);
+    h.runtime
+        .keepalive
+        .store
+        .transaction(|data| {
+            data["accounts"][id.to_string()] =
+                serde_json::to_value(crate::keepalive_state::Control {
+                    notifications: vec![crate::keepalive_state::Notice {
+                        id: "fixture-retry-notice".into(),
+                        generation: 0,
+                        status: "pending".into(),
+                        attempts: 0,
+                        next_at: Some(at),
+                    }],
+                    ..Default::default()
+                })
+                .unwrap();
+            Ok(())
+        })
+        .unwrap();
+    for attempt in 1..=5 {
+        h.set_now(at);
+        h.runtime.keepalive.deliver().await.unwrap();
+        let notice = h
+            .runtime
+            .keepalive
+            .control(id)
+            .unwrap()
+            .notifications
+            .remove(0);
+        assert_eq!(notice.attempts, attempt);
+        assert_eq!(h.mock.count("POST", "/push"), attempt as usize);
+        if attempt < 5 {
+            assert_eq!(notice.status, "pending");
+            h.runtime.keepalive.deliver().await.unwrap();
+            assert_eq!(h.mock.count("POST", "/push"), attempt as usize);
+            at = notice.next_at.unwrap();
+        } else {
+            assert_eq!(notice.status, "failed");
+            assert!(notice.next_at.is_none());
+        }
+    }
+    h.runtime.keepalive.deliver().await.unwrap();
+    assert_eq!(h.mock.count("POST", "/push"), 5);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn keepalive_legacy_pending_is_resolved_without_reenabling_manual_control() {
+    for cleared in [false, true] {
+        let h = Harness::new().await;
+        let id = seed_keepalive_account(&h, None, false).await;
+        let now = h.now();
+        set_keepalive_incident(&h, id, now, now + Duration::minutes(5)).await;
+        let row = h.runtime.monitor.row(id).await.unwrap();
+        h.runtime
+            .keepalive
+            .store
+            .transaction(|data| {
+                data["accounts"][id.to_string()] =
+                    serde_json::to_value(crate::keepalive_state::Control {
+                        enabled: false,
+                        generation: 2,
+                        pending: Some(crate::keepalive_state::Intent {
+                            id: "fixture-legacy-pending".into(),
+                            generation: 1,
+                            fingerprint: crate::keepalive_state::fingerprint(&row),
+                            before_until: now + Duration::minutes(5),
+                            reason: "临时错误策略".into(),
+                            dispatched_at: now,
+                        }),
+                        reservations: vec![crate::keepalive_state::Reservation {
+                            id: "fixture-legacy-pending".into(),
+                            at: now,
+                        }],
+                        ..Default::default()
+                    })
+                    .unwrap();
+                Ok(())
+            })
+            .unwrap();
+        if cleared {
+            sqlx::query("UPDATE accounts SET temp_unschedulable_until=NULL,temp_unschedulable_reason=NULL WHERE id=$1")
+                .bind(id).execute(&h.runtime.db.pool).await.unwrap();
+        }
+        h.runtime.keepalive.startup().unwrap();
+        h.runtime.keepalive.tick().await.unwrap();
+        let control = h.runtime.keepalive.control(id).unwrap();
+        assert!(!control.enabled);
+        assert_eq!(control.generation, 2);
+        assert!(control.pending.is_none());
+        assert!(control.reservations.is_empty());
+        assert_eq!(control.restores.len(), usize::from(cleared));
+        assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 0);
+        h.close().await;
+    }
 }

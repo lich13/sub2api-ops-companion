@@ -200,7 +200,7 @@ fn store_preserves_permissions_identity_and_atomic_failure_invariants() {
 
 #[cfg(unix)]
 #[test]
-fn existing_lock_lease_audit_and_capacity_account_files_converge_to_private_modes() {
+fn existing_store_instance_and_audit_locks_converge_to_private_modes() {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
     fn mode(path: &Path) -> u32 {
@@ -252,17 +252,20 @@ fn existing_lock_lease_audit_and_capacity_account_files_converge_to_private_mode
         "audit hardening preserves append behavior"
     );
 
-    let capacity_lock_dir = root.join("capacity-alert-locks");
-    fs::create_dir_all(&capacity_lock_dir).unwrap();
-    let capacity_lock_path = capacity_lock_dir.join("71001.lock");
-    fs::write(&capacity_lock_path, b"synthetic account lock fixture").unwrap();
-    fs::set_permissions(&capacity_lock_path, fs::Permissions::from_mode(0o644)).unwrap();
+    let audit_lock = root.join("audit.jsonl.lock");
+    assert_eq!(mode(&audit_lock), 0o600);
     let capacity = CapacityStore::new(root.join("capacity-state.json"), false);
-    let guard = capacity
-        .account_guard(71001)
-        .expect("acquire and restrict the existing account guard file");
-    assert_eq!(mode(&capacity_lock_path), 0o600, "existing account guard");
-    drop(guard);
+    let expected = sub2ops_server::capacity_alerts::mark_view(71001, &Value::Null);
+    capacity
+        .set_mark(
+            71001,
+            true,
+            expected["version"].as_str().unwrap(),
+            chrono::Utc::now(),
+            None,
+        )
+        .unwrap();
+    assert!(!root.join("capacity-alert-locks").exists());
 }
 
 #[test]

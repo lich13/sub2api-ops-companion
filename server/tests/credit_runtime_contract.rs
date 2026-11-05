@@ -977,13 +977,13 @@ async fn automatic_pause_is_read_back_owned_before_consumption_result() {
     let old = harness.controller.state(id).unwrap();
     let task = harness
         .controller
-        .begin_episode(id, &old, &evidence)
+        .begin_episode(&row, &old, &evidence, fixed_now())
         .await
         .expect("admit synthetic credit episode");
     assert!(task["episode"].is_string());
     let task = harness
         .controller
-        .policy(id, &task)
+        .policy(&row, &task)
         .await
         .expect("persist fixture policy before consuming");
 
@@ -1046,7 +1046,7 @@ async fn five_minute_deadlines_and_unknown_unissued_pause_undo_are_read_back_onl
         .expect("persist deadline fixture");
     let policy = harness
         .controller
-        .policy(id, &task)
+        .policy(&row, &task)
         .await
         .expect("derive bounded credit policy");
     assert_eq!(
@@ -1206,12 +1206,12 @@ async fn manual_generation_change_keeps_consumption_receipt_and_never_unpauses()
     let old = harness.controller.state(id).unwrap();
     let task = harness
         .controller
-        .begin_episode(id, &old, &evidence)
+        .begin_episode(&row, &old, &evidence, fixed_now())
         .await
         .expect("admit fixture episode");
     let task = harness
         .controller
-        .policy(id, &task)
+        .policy(&row, &task)
         .await
         .expect("persist fixture policy before consuming");
     let consume_result = harness

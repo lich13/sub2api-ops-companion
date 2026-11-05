@@ -28,6 +28,8 @@ pub fn signature(row: &Value) -> String {
             "auto_pause_on_expired",
         ],
     );
+    stable["account_priority"] = priority(row).clone();
+    stable["priority"] = Value::Null;
     stable["identity"] = pick(
         &row["credentials"],
         &["plan_type", "chatgpt_account_id", "email"],
@@ -36,41 +38,58 @@ pub fn signature(row: &Value) -> String {
         .as_object()
         .into_iter()
         .flatten()
-        .filter(|(key, _)| {
-            ![
-                "codex_5h_",
-                "codex_7d_",
-                "codex_usage_",
-                "codex_reset_credit_",
-                "codex_credits_",
-            ]
-            .iter()
-            .any(|p| key.starts_with(p))
-        })
+        .filter(|(key, _)| !quota_extra(key))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect::<serde_json::Map<_, _>>()
         .into();
     config_revision(&stable)
 }
-pub fn parameter_guard(row: &Value) -> String {
-    config_revision(&json!([
-        signature(row),
-        row["credentials"],
-        pick(
-            row,
-            &[
-                "status",
-                "schedulable",
-                "load_factor",
-                "proxy_id",
-                "rate_limited_at",
-                "rate_limit_reset_at",
-                "overload_until",
-                "temp_unschedulable_until",
-                "temp_unschedulable_reason"
-            ]
-        )
-    ]))
+fn quota_extra(key: &str) -> bool {
+    [
+        "codex_5h_",
+        "codex_7d_",
+        "codex_usage_",
+        "codex_reset_credit_",
+        "codex_credits_",
+    ]
+    .iter()
+    .any(|prefix| key.starts_with(prefix))
+}
+fn priority(row: &Value) -> &Value {
+    row.get("account_priority").unwrap_or(&row["priority"])
+}
+fn same_parameters(before: &Value, after: &Value, field: &str) -> bool {
+    [
+        "id",
+        "name",
+        "platform",
+        "type",
+        "parent_account_id",
+        "concurrency",
+        "expires_at",
+        "auto_pause_on_expired",
+        "credentials",
+        "status",
+        "schedulable",
+        "load_factor",
+        "proxy_id",
+        "rate_limited_at",
+        "rate_limit_reset_at",
+        "overload_until",
+        "temp_unschedulable_until",
+        "temp_unschedulable_reason",
+    ]
+    .iter()
+    .filter(|key| **key != field)
+    .all(|key| before[*key] == after[*key])
+        && (field == "priority" || priority(before) == priority(after))
+        && before["extra"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .chain(after["extra"].as_object().into_iter().flatten())
+            .filter(|(key, _)| !quota_extra(key))
+            .all(|(key, _)| before["extra"][key] == after["extra"][key])
 }
 pub fn generation(state: &Value, id: i64) -> i64 {
     integer(&state["scheduler"][id.to_string()]["manual_control"]["generation"]).unwrap_or(0)
@@ -111,12 +130,7 @@ pub fn save(store: &OAuthState, id: i64, task: &Value, changes: Value) -> Result
         Ok(updated.clone())
     })
 }
-pub fn parameter_change(
-    store: &OAuthState,
-    row: &Value,
-    field: &str,
-    value: &Value,
-) -> Result<Option<(Value, String)>> {
+pub fn parameter_change(store: &OAuthState, row: &Value) -> Result<Option<Value>> {
     let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
     let state = store.shared_snapshot()?;
     let task = &state["scheduler"][id.to_string()]["auto_reset_credit"];
@@ -126,24 +140,19 @@ pub fn parameter_change(
     if !owned(row, task, &state, true) {
         return Err(Error::new(409, "用卡暂停归属待核对，未修改参数"));
     }
-    let mut desired = row.clone();
-    if field == "priority" {
-        desired["account_priority"] = value.clone();
-    } else {
-        desired[field] = value.clone();
-    }
-    Ok(Some((task.clone(), parameter_guard(&desired))))
+    Ok(Some(task.clone()))
 }
 
 pub fn finish_parameter_change(
     store: &OAuthState,
     row: &Value,
     task: &Value,
-    expected: &str,
+    before: &Value,
+    field: &str,
 ) -> Result<()> {
     let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
     let state = store.shared_snapshot()?;
-    if parameter_guard(row) != expected
+    if !same_parameters(before, row, field)
         || task["control_generation"]
             .as_i64()
             .is_some_and(|expected| expected != generation(&state, id))

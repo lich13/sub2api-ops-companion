@@ -71,7 +71,13 @@ impl Detection {
         if context["kind"] == "credit" {
             let controller = &self.monitor.credits;
             let task = controller.state(id)?;
-            let row = controller.row(id).await?;
+            let loaded = if row.get("credentials").is_none() || row.get("rate_limited_at").is_none()
+            {
+                Some(controller.row(id).await?)
+            } else {
+                None
+            };
+            let row = loaded.as_ref().unwrap_or(row);
             if task["stage"] == "finished"
                 || truthy(&task["policy_version"]) && credit_rules::expired(&task, now)
             {
@@ -82,22 +88,20 @@ impl Detection {
             }
             if before_reset && !truthy(&task["attempt_at"]) {
                 if config["oauth_auto_reset_credit_enabled"] != true
-                    || !truthy(&controller.depletion(&row, now, false).await?)
+                    || !truthy(&controller.depletion(row, now, false).await?)
                     || matches!(string(&task["stage"]), "manual" | "closed" | "blocked")
                 {
                     return Ok("账号不再符合自动用卡条件".into());
                 }
-            } else if !controller.owned(&row, &task, false)?
-                || !controller.processing_eligible(&row, &task, now)?
-                || !controller.available(&row, &task, now)?
+            } else if !controller.owned(row, &task, false)?
+                || !controller.processing_eligible(row, &task, now)?
+                || !controller.available(row, &task, now)?
             {
                 return Ok("用卡后的额度或暂停归属未确认".into());
             }
         } else {
             let intent = &meta["recovery_intent"];
-            // Detection guards receive the public account projection. Early
-            // recovery also verifies the plan and credential identity.
-            let identity = if early {
+            let identity = if early && row.get("credentials").is_none() {
                 Some(self.monitor.row(id).await?)
             } else {
                 None
@@ -339,7 +343,7 @@ impl Detection {
         if ACTIVE.contains(&string(&self.tests.latest(id)?["status"])) {
             return Ok(self.recovery_wait("等待当前模型测试结束", None, None, "model_busy"));
         }
-        let row = self.actions.account(id, None).await?;
+        let row = self.actions.queries.internal_account(id).await?;
         context["block_signature"] = block_signature(&row).into();
         let reason = self.recovery_reason(&row, &context, consume).await?;
         if !reason.is_empty() {

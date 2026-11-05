@@ -44,49 +44,68 @@ impl Detection {
                 }
             }
         }
-        for (key, event) in alerts["detection_events"].as_object().into_iter().flatten() {
-            if self.store.read_shared()?["consumed"].get(key).is_none() {
-                let id = integer(&event["account_id"]).ok_or_else(Error::invalid)?;
-                // A persisted job is also the receipt if the process stopped
-                // between enqueueing it and acknowledging this clue.
-                let existing = acknowledged.contains(&(id, key.clone()));
-                if !existing {
-                    if let Err(error) = self.trigger(id, std::slice::from_ref(key)).await {
-                        if error.status.as_u16() >= 500 {
-                            return Err(error);
+        let mut processed = Vec::new();
+        let consumed = self.store.read_shared()?;
+        let processed_result: Result<()> = async {
+            for (key, event) in alerts["detection_events"].as_object().into_iter().flatten() {
+                if consumed["consumed"].get(key).is_none() {
+                    let id = integer(&event["account_id"]).ok_or_else(Error::invalid)?;
+                    // A persisted job is also the receipt if the process stopped
+                    // between enqueueing it and acknowledging this clue.
+                    let existing = acknowledged.contains(&(id, key.clone()));
+                    if !existing {
+                        if let Err(error) = self.trigger(id, std::slice::from_ref(key)).await {
+                            if error.status.as_u16() >= 500 {
+                                return Err(error);
+                            }
+                            let reason = safe_error(&error.detail, 200);
+                            self.update(id, json!({"status":"paused","reason":reason}))?;
+                            self.clue_status(std::slice::from_ref(key), "failed", &reason, None)?;
                         }
-                        let reason = safe_error(&error.detail, 200);
-                        self.update(id, json!({"status":"paused","reason":reason}))?;
-                        self.clue_status(std::slice::from_ref(key), "failed", &reason, None)?;
+                        acknowledged.insert((id, key.clone()));
                     }
-                    acknowledged.insert((id, key.clone()));
                 }
-                self.store.transaction(|data| {
-                    data["consumed"][key] = datetime(self.now()).into();
-                    while data["consumed"].as_object().unwrap().len() > 10000 {
-                        let first = data["consumed"]
-                            .as_object()
-                            .unwrap()
-                            .keys()
-                            .next()
-                            .unwrap()
-                            .clone();
-                        data["consumed"]
-                            .as_object_mut()
-                            .unwrap()
-                            .shift_remove(&first);
-                    }
-                    Ok(())
-                })?;
+                processed.push(key.clone());
             }
+            Ok(())
+        }
+        .await;
+        if !processed.is_empty() {
+            let now = datetime(self.now());
+            self.store.transaction(|data| {
+                for key in &processed {
+                    data["consumed"]
+                        .as_object_mut()
+                        .unwrap()
+                        .entry(key.clone())
+                        .or_insert_with(|| now.clone().into());
+                }
+                while data["consumed"].as_object().unwrap().len() > 10000 {
+                    let first = data["consumed"]
+                        .as_object()
+                        .unwrap()
+                        .keys()
+                        .next()
+                        .unwrap()
+                        .clone();
+                    data["consumed"]
+                        .as_object_mut()
+                        .unwrap()
+                        .shift_remove(&first);
+                }
+                Ok(())
+            })?;
             self.capacity.store.transaction(|data| {
-                data["detection_events"]
-                    .as_object_mut()
-                    .unwrap()
-                    .shift_remove(key);
+                for key in &processed {
+                    data["detection_events"]
+                        .as_object_mut()
+                        .unwrap()
+                        .shift_remove(key);
+                }
                 Ok(())
             })?;
         }
+        processed_result?;
         let ids = self.store.read_shared()?["accounts"]
             .as_object()
             .unwrap()
@@ -207,7 +226,9 @@ impl Detection {
         if matches!(
             string(&value["disposition"]["status"]),
             "pending" | "marked" | "writing" | "checking"
-        ) {
+        ) || (value["disposition"]["status"] == "needs_confirmation"
+            && value["disposition"]["reason"] == "停调度结果未确认，未重复写入")
+        {
             self.finish_disposition(id).await?;
             value = self.control(id)?;
         }

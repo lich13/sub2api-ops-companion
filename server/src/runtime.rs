@@ -357,21 +357,6 @@ impl Runtime {
         startup("keepalive", self.keepalive.startup())?;
         startup("legacy_templates", self.retire_legacy_templates().await)?;
         startup("monitor", self.monitor.startup().await)?;
-        if self
-            .detection
-            .capacity
-            .store
-            .shared_snapshot()?
-            .get("detection_since")
-            .is_none()
-        {
-            self.detection.capacity.store.transaction(|state| {
-                if state.get("detection_since").is_none() {
-                    state["detection_since"] = crate::compat::now().into();
-                }
-                Ok(())
-            })?;
-        }
         self.refresh_route().await;
         self.tests.resume()?;
         for (kind, milliseconds) in [

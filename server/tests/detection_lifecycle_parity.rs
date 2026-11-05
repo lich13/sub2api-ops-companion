@@ -672,6 +672,11 @@ impl Harness {
         .await
         .expect("construct real Runtime over temporary PostgreSQL and injected clock");
         runtime
+            .detection
+            .capacity
+            .retire_legacy(Utc::now())
+            .unwrap();
+        runtime
             .tests
             .set_test_endpoint(&format!("{base_url}/v1/responses"))
             .expect("use the loopback-only ModelTrace endpoint for this test Runtime");
@@ -2393,6 +2398,12 @@ async fn capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queu
         })
         .unwrap();
     harness
+        .runtime()
+        .detection
+        .capacity
+        .retire_legacy(Utc::now())
+        .unwrap();
+    harness
         .insert_capacity_error(
             provider_error_id + 92,
             id,
@@ -2920,7 +2931,7 @@ async fn automatic_notification_retries_use_durable_backoff_and_send_once_after_
 }
 
 #[tokio::test]
-async fn preexisting_writing_disposition_becomes_unknown_after_restart_without_replay() {
+async fn preexisting_writing_disposition_retries_after_restart() {
     let mut harness = Harness::new(sample_text("above_99", 0)).await;
     let row = harness.seed_account("apikey", true, json!({})).await;
     let id = integer(&row["id"]).unwrap();
@@ -2971,11 +2982,8 @@ async fn preexisting_writing_disposition_becomes_unknown_after_restart_without_r
     harness.runtime().detection.tick().await.unwrap();
 
     let disposition = harness.runtime().detection.control(id).unwrap()["disposition"].clone();
-    assert_eq!(disposition["status"], "needs_confirmation");
-    assert!(disposition["reason"]
-        .as_str()
-        .unwrap()
-        .contains("未重复写入"));
+    assert_eq!(disposition["status"], "completed");
+    assert_eq!(disposition["schedule_verified"], true);
     assert_eq!(
         harness.runtime().detection.control(id).unwrap()["hold"],
         true
@@ -2986,13 +2994,13 @@ async fn preexisting_writing_disposition_becomes_unknown_after_restart_without_r
     );
     assert_eq!(
         harness.runtime().actions.account(id, None).await.unwrap()["schedulable"],
-        true
+        false
     );
     assert_eq!(
         harness
             .mock
             .count("POST", &format!("/api/v1/admin/accounts/{id}/schedulable")),
-        0
+        1
     );
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
     assert_eq!(harness.mock.count("POST", "/push"), 0);
@@ -5156,7 +5164,7 @@ async fn verified_schedule_response_is_required_before_a_degraded_result_enters_
     let current = harness.runtime().detection.view(id).await.unwrap();
     assert_eq!(current["disposition"]["marked"], true);
     assert_eq!(current["disposition"]["schedule_verified"], false);
-    assert_eq!(current["disposition"]["status"], "checking");
+    assert_eq!(current["disposition"]["status"], "pending");
     assert_eq!(current["disposition_notification"], Value::Null);
     assert_eq!(
         harness.runtime().detection.mark(id).unwrap()["marked"],
@@ -5262,7 +5270,7 @@ async fn disposition_outbox_and_bark_receipts_recover_from_local_write_failures(
     let finish = tokio::spawn(async move { detection.finish_disposition(id).await });
     tokio::time::timeout(StdDuration::from_secs(10), schedule_gate.entered.notified())
         .await
-        .expect("disposition must persist its writing state before the loopback schedule request");
+        .expect("disposition must retain its intent during the loopback schedule request");
     assert_eq!(
         harness
             .mock
@@ -5271,7 +5279,7 @@ async fn disposition_outbox_and_bark_receipts_recover_from_local_write_failures(
     );
     assert_eq!(
         harness.runtime().detection.control(id).unwrap()["disposition"]["status"],
-        "writing"
+        "marked"
     );
     let state_dir = harness.settings.data_dir();
     let read_only = DirectoryReadOnly::new(state_dir.clone());
@@ -5292,7 +5300,7 @@ async fn disposition_outbox_and_bark_receipts_recover_from_local_write_failures(
     );
     assert_eq!(
         harness.runtime().detection.control(id).unwrap()["disposition"]["status"],
-        "writing"
+        "marked"
     );
     assert!(object_field_is_empty_or_missing(
         &harness.runtime().detection.store.read().unwrap(),
@@ -5527,7 +5535,7 @@ async fn manual_generation_change_during_schedule_write_blocks_receipt_and_bark(
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 1);
     assert_eq!(
         harness.runtime().detection.control(id).unwrap()["disposition"]["status"],
-        "writing"
+        "pending"
     );
     let generation = harness.runtime().detection.control(id).unwrap()["generation"]
         .as_i64()
@@ -7968,4 +7976,43 @@ async fn temporary_database_failure_keeps_an_automatic_job_queued() {
         .unwrap();
     drop(budget);
     harness.close().await;
+}
+
+#[tokio::test]
+async fn clue_batch_failure_keeps_completed_acknowledgements_and_unprocessed_events() {
+    let h = Harness::new(sample_text("above_99", 0)).await;
+    let row = h.seed_account("apikey", false, json!({})).await;
+    let id = integer(&row["id"]).unwrap();
+    // Detection is disabled, so processing a valid clue records its ignored result.
+    h.runtime().detection.capacity.store.transaction(|state| {
+        for key in ["error:processed", "error:invalid", "error:remaining"] {
+            state["detection_events"][key] = json!({"account_id":if key == "error:invalid" {Value::Null} else {json!(id)},"created_at":datetime(h.now())});
+        }
+        Ok(())
+    }).unwrap();
+    assert!(h.runtime().detection.tick().await.is_err());
+    let state = h.runtime().detection.store.read().unwrap();
+    assert!(state["consumed"].get("error:processed").is_some());
+    assert!(state["consumed"].get("error:remaining").is_none());
+    let alerts = h.runtime().detection.capacity.store.snapshot().unwrap();
+    assert!(alerts["detection_events"].get("error:processed").is_none());
+    assert_eq!(alerts["detection_events"].as_object().unwrap().len(), 2);
+    h.runtime()
+        .detection
+        .capacity
+        .store
+        .transaction(|state| {
+            state["detection_events"]["error:invalid"]["account_id"] = id.into();
+            Ok(())
+        })
+        .unwrap();
+    h.runtime().detection.tick().await.unwrap();
+    assert!(
+        h.runtime().detection.capacity.store.snapshot().unwrap()["detection_events"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(h.mock.count("POST", "/v1/responses"), 0);
+    h.close().await;
 }

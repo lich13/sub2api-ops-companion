@@ -295,7 +295,7 @@ impl Monitor {
             }
             result["recovery_method"] = method.into();
             result["recovery_method_generation"] = method_generation.into();
-            let mut safe = pick(
+            pick(
                 &result,
                 &[
                     "success",
@@ -313,15 +313,12 @@ impl Monitor {
                     "job_id",
                     "retryable",
                 ],
-            );
-            safe["manual_generation"] = generation.into();
-            safe["credential_fingerprint"] = oauth_admission::credential_fingerprint(&row).into();
-            safe["block_state"] = state_block(&row);
-            safe
+            )
         };
+        let _control = self.actions.locks.control(id).await;
+        let after = self.row(id).await?;
         if lease.is_none() {
-            let current = self.row(id).await?;
-            match self.lease(&current) {
+            match self.lease(&after) {
                 Ok(acquired) => lease = Some(acquired),
                 Err(e) if e.status.as_u16() == 409 => {
                     let mut next = intent.clone();
@@ -347,8 +344,6 @@ impl Monitor {
                 intent["model_attempt_count"] = attempts.saturating_sub(1).into();
             }
         }
-        let _control = self.actions.locks.control(id).await;
-        let after = self.row(id).await?;
         if !truthy(&result["success"]) {
             self.recovery_failed(id, &after, &intent, &result, generation, method_generation)?;
             let mut result = result;
@@ -387,8 +382,9 @@ impl Monitor {
                 &self.shared_state()?["scheduler"][id.to_string()],
                 self.now(),
             )
-            || result["credential_fingerprint"] != oauth_admission::credential_fingerprint(&after)
-            || !recovery_rules::change_is_safe(&result["block_state"], &after)
+            || oauth_admission::credential_fingerprint(&row)
+                != oauth_admission::credential_fingerprint(&after)
+            || !recovery_rules::change_is_safe(&state_block(&row), &after)
         {
             return self.known_recovery_failure(
                 id,
@@ -426,8 +422,9 @@ impl Monitor {
         if self.selected(id, generation, method_generation, method)?
             && !self.hooks.detection_held(id)?
             && recovery_rules::confirmed(&current)
-            && recovery_rules::change_is_safe(&result["block_state"], &current)
-            && result["credential_fingerprint"] == oauth_admission::credential_fingerprint(&current)
+            && recovery_rules::change_is_safe(&state_block(&row), &current)
+            && oauth_admission::credential_fingerprint(&row)
+                == oauth_admission::credential_fingerprint(&current)
         {
             self.recovery_complete(
                 id,

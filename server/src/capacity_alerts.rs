@@ -8,13 +8,8 @@ use crate::{
     store::Store,
 };
 use chrono::{DateTime, Duration, Utc};
-use fs2::FileExt;
 use serde_json::{json, Value};
-use std::{
-    collections::BTreeMap,
-    fs::{File, OpenOptions},
-    path::PathBuf,
-};
+use std::{collections::BTreeMap, path::PathBuf};
 
 pub fn mark_view(id: i64, mark: &Value) -> Value {
     let mark = if truthy(mark) {
@@ -125,9 +120,6 @@ pub fn validate(data: &Value) -> Result<()> {
     }
     Ok(())
 }
-pub struct MarkGuard {
-    _file: File,
-}
 #[derive(Clone)]
 pub struct CapacityStore(pub Store);
 impl CapacityStore {
@@ -170,37 +162,6 @@ impl CapacityStore {
             Ok(out)
         })
     }
-    pub fn account_guard(&self, id: i64) -> Result<MarkGuard> {
-        if self.0.is_read_only() {
-            return Err(Error::read_only());
-        }
-        if id < 1 {
-            return Err(Error::invalid());
-        }
-        let parent = self
-            .0
-            .path()
-            .parent()
-            .ok_or_else(Error::internal)?
-            .join("capacity-alert-locks");
-        std::fs::create_dir_all(&parent)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o700))?;
-        }
-        let mut options = OpenOptions::new();
-        options.create(true).read(true).write(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let file = options.open(parent.join(format!("{id}.lock")))?;
-        file.lock_exclusive()?;
-        crate::store::private_permissions(&file)?;
-        Ok(MarkGuard { _file: file })
-    }
     pub fn set_mark(
         &self,
         id: i64,
@@ -209,17 +170,9 @@ impl CapacityStore {
         at: DateTime<Utc>,
         job: Option<&str>,
     ) -> Result<Value> {
-        let _guard = self.account_guard(id)?;
-        self.set_mark_guarded(id, marked, expected, at, job)
-    }
-    pub fn set_mark_guarded(
-        &self,
-        id: i64,
-        marked: bool,
-        expected: &str,
-        at: DateTime<Utc>,
-        job: Option<&str>,
-    ) -> Result<Value> {
+        if id < 1 {
+            return Err(Error::invalid());
+        }
         self.transaction(|data| {
             let key=id.to_string();if mark_view(id,&data["marks"][&key])["version"]!=expected {return Err(Error::new(409,"降智标记已变化，请刷新后重试"));}
             let stamp=datetime(at);let mut mark=json!({"marked":marked,"marked_at":if marked {json!(stamp)} else {Value::Null},"changed_at":stamp});if let Some(job)=job {mark["detection_job_id"]=job.into();}data["marks"][&key]=mark.clone();
@@ -295,6 +248,7 @@ pub struct CapacityAlerts {
     db: Database,
     audit_path: PathBuf,
     read_only: bool,
+    last_seen_cleanup: std::sync::Arc<std::sync::Mutex<Option<DateTime<Utc>>>>,
     slow_cache: std::sync::Arc<std::sync::Mutex<Option<SlowPollCache>>>,
 }
 impl CapacityAlerts {
@@ -309,6 +263,7 @@ impl CapacityAlerts {
             db,
             audit_path: settings.audit_path.clone(),
             read_only: settings.read_only,
+            last_seen_cleanup: std::sync::Arc::new(std::sync::Mutex::new(None)),
             slow_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
@@ -321,10 +276,24 @@ impl CapacityAlerts {
         );
     }
     pub fn retire_legacy(&self, at: DateTime<Utc>) -> Result<()> {
-        if truthy(&self.store.shared_snapshot()?["clue_mode_since"]) {
+        let state = self.store.shared_snapshot()?;
+        if [
+            "clue_mode_since",
+            "gateway_since",
+            "apikey_since",
+            "detection_since",
+        ]
+        .iter()
+        .all(|key| truthy(&state[*key]))
+        {
             return Ok(());
         }
         self.store.transaction(|data| {
+            for key in ["gateway_since", "apikey_since", "detection_since"] {
+                if !truthy(&data[key]) {
+                    data[key] = datetime(at).into();
+                }
+            }
             if truthy(&data["clue_mode_since"]) {
                 return Ok(());
             }
@@ -356,18 +325,7 @@ impl CapacityAlerts {
             return Err(Error::read_only());
         }
         let at = Utc::now();
-        self.retire_legacy(at)?;
         let state = self.store.shared_snapshot()?;
-        for key in ["gateway_since", "apikey_since"] {
-            if !truthy(&state[key]) {
-                self.store.transaction(|data| {
-                    if data.get(key).is_none() {
-                        data[key] = datetime(at).into();
-                    }
-                    Ok(())
-                })?;
-            }
-        }
         if state["cursor"].is_null() {
             let row = self
                 .db
@@ -440,7 +398,14 @@ impl CapacityAlerts {
             }
         }
         if !collected_any {
-            self.collect(&[], false, Utc::now())?;
+            let mut last = self
+                .last_seen_cleanup
+                .lock()
+                .map_err(|_| Error::internal())?;
+            if last.is_none_or(|last| at - last >= Duration::seconds(60)) {
+                self.collect(&[], false, at)?;
+                *last = Some(at);
+            }
         }
         self.poll_slow(Utc::now()).await
     }

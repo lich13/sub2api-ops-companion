@@ -307,7 +307,6 @@ impl CreditController {
     pub async fn manual(&self, row: &Value, action: &str, key: &str) -> Result<Value> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         let at = self.now();
-        let _lease = self.disk_lease(id)?;
         let mut task = self.state(id)?;
         if action == "reset" && truthy(&task["attempt_at"]) && task["stage"] != "recovered" {
             return Ok(failed("result_uncertain"));

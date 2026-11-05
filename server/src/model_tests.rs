@@ -453,15 +453,28 @@ impl ModelTests {
             }
             return Ok(old);
         }
-        let row = model_target::account(&self.actions, id).await?;
+        let row = self
+            .actions
+            .queries
+            .internal_account(id)
+            .await
+            .map_err(|error| {
+                if error.status.as_u16() == 404 {
+                    Error::new(422, "此账号类型不支持模型检测")
+                } else {
+                    error
+                }
+            })?;
+        if !model_target::supported(&row) {
+            return Err(Error::new(422, "此账号类型不支持模型检测"));
+        }
         if row["platform"] != "openai" && payload["engine"] != crate::lm_detector::ENGINE {
             return Err(Error::new(422, "此平台仅支持 LM Detector"));
         }
-        let live = self.actions.account(id, None).await?;
         let conflict = if truthy(&payload["expected_operation_version"]) {
-            operation_versions(&live)["model_test"] != payload["expected_operation_version"]
+            operation_versions(&row)["model_test"] != payload["expected_operation_version"]
         } else {
-            crate::compat::account_version(&live) != payload["expected_version"]
+            crate::compat::account_version(&row) != payload["expected_version"]
         };
         let (target, owner) = model_target::target(&self.actions, &row, model).await?;
         let job_id = uuid::Uuid::new_v4().simple().to_string();
@@ -641,18 +654,11 @@ impl ModelTests {
             }
             tokio::time::sleep(Duration::from_millis(250)).await;
         };
-        if job["automatic"] == true {
-            self.hooks.guard(self.get(id)?).await?;
-        }
-        let row = model_target::account(&self.actions, aid).await?;
-        if job["automatic"] == true
-            && !self
-                .actions
-                .model_allowed(&row, string(&job["requested_model"]))
-                .await?
-        {
-            return Err(Error::new(409, "所选模型已不在当前账号上游模型目录中"));
-        }
+        let row = if job["automatic"] == true {
+            self.hooks.guard(self.get(id)?).await?
+        } else {
+            model_target::account(&self.actions, aid).await?
+        };
         let (target, owner) =
             model_target::target(&self.actions, &row, string(&job["requested_model"])).await?;
         if model_target::signature(&row) != job["target_signature"]
@@ -738,7 +744,7 @@ impl ModelTests {
         if self.actions.supervisor.is_stopping() {
             return Ok(());
         }
-        if job["automatic"] == true {
+        if job["automatic"] == true && truthy(&job["recovery_context"]) {
             self.hooks.guard(self.get(id)?).await?;
         }
         let job=self.update(id,json!({"status":"running","started_at":crate::compat::now(),"error":"","completed_at":null,"waiting_until":null,"bank_version":context.lm.as_ref().map(|lm|&lm.version).unwrap_or(&context.snapshot.1),"can_retry":false}))?;

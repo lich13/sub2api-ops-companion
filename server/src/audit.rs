@@ -9,15 +9,14 @@ use std::{
 
 const MAX_BYTES: u64 = 20 * 1024 * 1024;
 
-fn previous(path: &Path) -> PathBuf {
+fn sibling(path: &Path, suffix: &str) -> PathBuf {
     let mut name = path.as_os_str().to_os_string();
-    name.push(".1");
+    name.push(suffix);
     name.into()
 }
 
-// Keep the current inode: writers may already have opened it before waiting
-// for its lock. Copy only complete records from the bounded tail of old logs.
-fn rotate(file: &mut fs::File, path: &Path, length: u64) -> std::io::Result<()> {
+// Oversized legacy logs retain only complete records from their bounded tail.
+fn trim_legacy(file: &mut fs::File, path: &Path, length: u64) -> std::io::Result<()> {
     let mut end = length;
     let mut buffer = [0; 8192];
     while end > 0 {
@@ -44,12 +43,34 @@ fn rotate(file: &mut fs::File, path: &Path, length: u64) -> std::io::Result<()> 
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut old = options.open(previous(path))?;
+    let mut old = options.open(sibling(path, ".1"))?;
     crate::store::private_permissions(&old)?;
     std::io::copy(&mut reader, &mut old)?;
     reader.into_inner().into_inner().set_len(0)
 }
 
+fn options() -> OpenOptions {
+    let mut options = OpenOptions::new();
+    options.create(true).read(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options
+}
+fn lock(path: &Path, exclusive: bool) -> std::io::Result<fs::File> {
+    // Lock a stable inode before opening either data file: rename cannot leave
+    // a waiting writer appending to a retired file.
+    let file = options().open(sibling(path, ".lock"))?;
+    if exclusive {
+        file.lock_exclusive()?;
+    } else {
+        FileExt::lock_shared(&file)?;
+    }
+    crate::store::private_permissions(&file)?;
+    Ok(file)
+}
 pub fn write(path: &Path, event: &str, payload: Value, read_only: bool) {
     if read_only {
         return;
@@ -58,15 +79,8 @@ pub fn write(path: &Path, event: &str, payload: Value, read_only: bool) {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let mut options = OpenOptions::new();
-        options.create(true).read(true).append(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options.open(path)?;
-        file.lock_exclusive()?;
+        let _lock = lock(path, true)?;
+        let mut file = options().open(path)?;
         crate::store::private_permissions(&file)?;
         let payload = crate::security::redact_json(&payload);
         let mut bytes = serde_json::to_vec(&json!({"ts":now(),"event":event,"payload":payload}))?;
@@ -78,44 +92,81 @@ pub fn write(path: &Path, event: &str, payload: Value, read_only: bool) {
             ));
         }
         let length = file.metadata()?.len();
-        if length + bytes.len() as u64 > MAX_BYTES {
-            rotate(&mut file, path, length)?;
+        if length > MAX_BYTES {
+            trim_legacy(&mut file, path, length)?;
+        } else if length + bytes.len() as u64 > MAX_BYTES {
+            drop(file);
+            fs::rename(path, sibling(path, ".1"))?;
+            file = options().open(path)?;
         }
         file.write_all(&bytes)
     })();
     let _ = result; // Audit failure must not undo an already confirmed operation.
 }
-pub fn read(path: &Path, limit: usize, prefix: Option<&str>) -> Vec<Value> {
-    let current = fs::File::open(path).ok();
-    if current
-        .as_ref()
-        .is_some_and(|file| FileExt::lock_shared(file).is_err())
-    {
-        return vec![];
-    }
-    let mut records = std::collections::VecDeque::new();
-    for file in [
-        fs::File::open(previous(path)).ok(),
-        current.as_ref().and_then(|file| file.try_clone().ok()),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        for line in BufReader::new(file)
-            .lines()
-            .map_while(std::result::Result::ok)
-        {
-            let Ok(value) = serde_json::from_str::<Value>(&line) else {
-                continue;
-            };
-            if prefix.is_some_and(|p| !value["event"].as_str().unwrap_or("").starts_with(p)) {
-                continue;
-            }
-            records.push_back(crate::security::redact_json(&value));
-            if records.len() > limit {
-                records.pop_front();
+fn tail(file: &mut fs::File, mut visit: impl FnMut(&[u8]) -> bool) -> std::io::Result<()> {
+    let mut offset = file.metadata()?.len();
+    let mut buffer = [0; 8192];
+    let mut line = Vec::new();
+    while offset > 0 {
+        let count = offset.min(buffer.len() as u64) as usize;
+        offset -= count as u64;
+        file.seek(SeekFrom::Start(offset))?;
+        file.read_exact(&mut buffer[..count])?;
+        for byte in buffer[..count].iter().rev() {
+            if *byte == b'\n' {
+                if !line.is_empty() {
+                    line.reverse();
+                    if !visit(&line) {
+                        return Ok(());
+                    }
+                    line.clear();
+                }
+            } else {
+                line.push(*byte);
             }
         }
     }
-    records.into_iter().rev().collect()
+    if !line.is_empty() {
+        line.reverse();
+        visit(&line);
+    }
+    Ok(())
+}
+
+pub fn read(path: &Path, limit: usize, prefix: Option<&str>) -> Vec<Value> {
+    if limit == 0 {
+        return vec![];
+    }
+    let Ok(_lock) = lock(path, false) else {
+        return vec![];
+    };
+    let mut records = Vec::new();
+    for path in [path.to_path_buf(), sibling(path, ".1")] {
+        let Ok(mut file) = fs::File::open(path) else {
+            continue;
+        };
+        let _ = tail(&mut file, |line| {
+            if let Some(prefix) = prefix {
+                #[derive(serde::Deserialize)]
+                struct Event<'a> {
+                    #[serde(borrow, default)]
+                    event: Option<std::borrow::Cow<'a, str>>,
+                }
+                let Ok(event) = serde_json::from_slice::<Event<'_>>(line) else {
+                    return true;
+                };
+                if !event.event.as_deref().unwrap_or("").starts_with(prefix) {
+                    return true;
+                }
+            }
+            if let Ok(value) = serde_json::from_slice::<Value>(line) {
+                records.push(crate::security::redact_json(&value));
+            }
+            records.len() < limit
+        });
+        if records.len() == limit {
+            break;
+        }
+    }
+    records
 }

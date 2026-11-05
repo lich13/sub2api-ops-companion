@@ -155,7 +155,7 @@ impl CreditController {
             .await?;
             return Ok(());
         }
-        task=self.save(id,&task,json!({"owned_version":live["updated_at"],"test_completed_at":datetime(completed),"test_success":truthy(&test["success"]),"verification_dispatched":false,"model_id":model,"verification_method":method,"verification_generation":selection}))?;
+        task=self.save(id,&task,json!({"stage":if truthy(&test["success"]) {json!("confirming")} else {task["stage"].clone()},"owned_version":live["updated_at"],"test_completed_at":datetime(completed),"test_success":truthy(&test["success"]),"verification_dispatched":false,"model_id":model,"verification_method":method,"verification_generation":selection}))?;
         if truthy(&task["policy_version"]) && credit_rules::expired(&task, completed) {
             self.finish(
                 id,
@@ -236,6 +236,8 @@ impl CreditController {
     async fn release_locked(&self, row: &Value, task: &Value, at: DateTime<Utc>) -> Result<()> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         let mut task = task.clone();
+        let fresh = self.row(id).await?;
+        let row = &fresh;
         if truthy(&task["policy_version"]) {
             let reason = self.guard_reason(id, row, &task, at)?;
             if !reason.is_empty() {
@@ -267,8 +269,10 @@ impl CreditController {
             .await?;
             return Ok(());
         }
-        let fresh = self.row(id).await?;
-        if !self.owned(&fresh, &task, !truthy(&task["clear_requested_at"]))?
+        if self.release_confirmed(&fresh, &task, at)? {
+            return self.finish_release(&fresh, &task);
+        }
+        if !self.owned(&fresh, &task, !task["owned_version"].is_null())?
             || !self.processing_eligible(&fresh, &task, at)?
             || !self.available(&fresh, &task, at)?
         {
@@ -300,16 +304,18 @@ impl CreditController {
             .await?;
             return Ok(());
         }
-        if !truthy(&task["clear_requested_at"]) {
+        let cleared = if !truthy(&task["clear_requested_at"]) {
             task["clear_requested_at"] = datetime(self.now()).into();
             let _ = self.hooks.recover(id, self.store.admin_token()?).await;
-        }
-        let cleared = match self.row(id).await {
-            Ok(row) => row,
-            Err(error) => {
-                self.save(id, &task, json!({"stage":"confirming","clear_requested_at":task["clear_requested_at"],"error_code":"recovery_failed","next_at":datetime(self.now()+Duration::seconds(2))}))?;
-                return Err(error);
+            match self.row(id).await {
+                Ok(row) => row,
+                Err(error) => {
+                    self.save(id, &task, json!({"stage":"confirming","clear_requested_at":task["clear_requested_at"],"owned_version":null,"error_code":"recovery_failed","next_at":datetime(self.now()+Duration::seconds(2))}))?;
+                    return Err(error);
+                }
             }
+        } else {
+            fresh
         };
         let mut confirmed = cleared.clone();
         if confirmed.is_object() {
@@ -354,10 +360,6 @@ impl CreditController {
             return Ok(());
         }
         task["owned_version"] = cleared["updated_at"].clone();
-        task["release_requested_at"] = datetime(self.now()).into();
-        task["release_control_generation"] =
-            credit_ownership::generation(self.store.shared_snapshot()?.as_ref(), id).into();
-        task["release_credential_fingerprint"] = credential_fingerprint(&cleared).into();
         let _ =
             actions::set_schedulable(&self.actions, id, true, &self.store.admin_token()?, 3).await;
         let final_row = self.row(id).await;
@@ -366,7 +368,7 @@ impl CreditController {
                 return self.finish_release(row, &task);
             }
         }
-        self.save(id, &task, json!({"stage":"releasing","error_code":"recovery_failed","next_at":datetime(self.now()+Duration::seconds(30))}))?;
+        self.save(id, &task, json!({"stage":"confirming","error_code":"recovery_failed","next_at":datetime(self.now()+Duration::seconds(30))}))?;
         final_row.map(|_| ())
     }
     pub fn release_confirmed(&self, row: &Value, task: &Value, at: DateTime<Utc>) -> Result<bool> {
@@ -377,12 +379,12 @@ impl CreditController {
         let state = self.store.shared_snapshot()?;
         let meta = &state["scheduler"][id.to_string()];
         Ok(truthy(&task["owns_pause"])
-            && truthy(&task["release_requested_at"])
+            && truthy(&task["clear_requested_at"])
             && task["test_success"] == true
             && parse_datetime(&task["test_completed_at"]).is_some()
-            && task["release_control_generation"]
-                == json!(credit_ownership::generation(&state, id))
-            && task["release_credential_fingerprint"] == credential_fingerprint(row)
+            && task["control_generation"] == json!(credit_ownership::generation(&state, id))
+            && (!truthy(&task["policy_version"])
+                || task["policy_credential_fingerprint"] == credential_fingerprint(row))
             && task["verification_method"]
                 == json!(recovery_policy::method(&self.hooks.config()?, id))
             && integer(&task["verification_generation"]).unwrap_or(0)
@@ -391,23 +393,6 @@ impl CreditController {
             && self.eligible(row, at, false)?
             && recovery_rules::confirmed(row)
             && self.available(row, task, at)?)
-    }
-    pub async fn reconcile_release(&self, id: i64, task: &Value, at: DateTime<Utc>) -> Result<()> {
-        if parse_datetime(&task["next_at"]).is_some_and(|t| t > at) {
-            return Ok(());
-        }
-        let _control = self.actions.locks.control(id).await;
-        let current = self.state(id)?;
-        if current["episode"] != task["episode"] || current["revision"] != task["revision"] {
-            return Ok(());
-        }
-        let row = self.row(id).await?;
-        if self.release_confirmed(&row, task, at)? {
-            self.finish_release(&row, task)?;
-        } else {
-            self.save(id,task,json!({"error_code":"recovery_failed","next_at":datetime(at+Duration::seconds(30))}))?;
-        }
-        Ok(())
     }
     pub fn finish_release(&self, row: &Value, task: &Value) -> Result<()> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
@@ -434,8 +419,7 @@ impl CreditController {
             if current["episode"] != task["episode"]
                 || current["stage"] != task["stage"]
                 || current["revision"] != task["revision"]
-                || json!(credit_ownership::generation(state, id))
-                    != task["release_control_generation"]
+                || json!(credit_ownership::generation(state, id)) != task["control_generation"]
             {
                 return Err(Error::new(409, "自动恢复状态已变化"));
             }
@@ -482,22 +466,22 @@ impl CreditController {
         row: &Value,
         task: &Value,
         at: DateTime<Utc>,
-    ) -> Result<()> {
+    ) -> Result<Value> {
         if !row.is_object()
             || !self.eligible(row, at, true)?
             || task["policy_credential_fingerprint"] != credential_fingerprint(row)
         {
-            return Ok(());
+            return Ok(row.clone());
         }
         let _control = self.actions.locks.control(id).await;
         let latest = self.state(id)?;
         if latest["episode"] != task["episode"] || latest["revision"] != task["revision"] {
-            return Ok(());
+            return Ok(row.clone());
         }
         let mut actual = self.row(id).await?;
         if actual["schedulable"] != true {
             if !self.owned(&actual, task, true)? || !self.eligible(&actual, at, true)? {
-                return Ok(());
+                return Ok(actual);
             }
             let _ =
                 actions::set_schedulable(&self.actions, id, true, &self.store.admin_token()?, 3)
@@ -514,7 +498,7 @@ impl CreditController {
         {
             self.save(id, task, json!({"owns_pause":false}))?;
         }
-        Ok(())
+        Ok(actual)
     }
     pub async fn merge_disposition(
         &self,

@@ -109,6 +109,7 @@ struct MockUpstream {
     usage_credential_change: Arc<StdMutex<BTreeMap<i64, bool>>>,
     recovery_gate: Arc<StdMutex<Option<RecoveryGate>>>,
     schedule_gate: Arc<StdMutex<Option<ScheduleGate>>>,
+    fail_enable: Arc<AtomicBool>,
     test_gate: Arc<StdMutex<Option<Arc<Notify>>>>,
     reset_gate: Arc<StdMutex<Option<Arc<Notify>>>>,
     push_gate: Arc<StdMutex<Option<Arc<Notify>>>>,
@@ -133,6 +134,7 @@ impl MockUpstream {
             usage_credential_change: Arc::new(StdMutex::new(BTreeMap::new())),
             recovery_gate: Arc::new(StdMutex::new(None)),
             schedule_gate: Arc::new(StdMutex::new(None)),
+            fail_enable: Arc::new(AtomicBool::new(false)),
             test_gate: Arc::new(StdMutex::new(None)),
             reset_gate: Arc::new(StdMutex::new(None)),
             push_gate: Arc::new(StdMutex::new(None)),
@@ -447,6 +449,9 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
             return json_response(404, json!({"code": 1}));
         };
         let enabled = payload["schedulable"].as_bool().unwrap_or(false);
+        if enabled && state.fail_enable.load(Ordering::SeqCst) {
+            return json_response(503, json!({"code":503}));
+        }
         let schedule_gate = {
             state
                 .schedule_gate
@@ -2418,7 +2423,7 @@ async fn automatic_pause_is_read_back_owned_before_receipt_and_recovery_is_once_
 }
 
 #[tokio::test]
-async fn releasing_restart_reconciles_the_confirmed_history_without_repeating_mutations() {
+async fn confirming_restart_reconciles_the_confirmed_history_without_repeating_mutations() {
     let harness = Harness::new(false).await;
     let now = fixed_now();
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
@@ -2447,7 +2452,7 @@ async fn releasing_restart_reconciles_the_confirmed_history_without_repeating_mu
         .expect("final schedule release request");
     let at_release = &release.state_at_arrival.as_ref().unwrap()["scheduler"][id.to_string()]
         ["auto_reset_credit"];
-    assert_eq!(at_release["stage"], "testing");
+    assert_eq!(at_release["stage"], "confirming");
     assert_eq!(at_release["consumed"], true);
     assert!(at_release["release_requested_at"].is_null());
 
@@ -2458,7 +2463,18 @@ async fn releasing_restart_reconciles_the_confirmed_history_without_repeating_mu
         .execute(&harness.db.pool)
         .await
         .unwrap();
-    assert_eq!(harness.controller.state(id).unwrap()["stage"], "releasing");
+    assert_eq!(harness.controller.state(id).unwrap()["stage"], "confirming");
+    let mut legacy = harness.controller.store.snapshot().unwrap();
+    let task = &mut legacy["scheduler"][id.to_string()]["auto_reset_credit"];
+    task["stage"] = "releasing".into();
+    task["release_requested_at"] = datetime(now).into();
+    task["release_control_generation"] = task["control_generation"].clone();
+    task["release_credential_fingerprint"] = task["policy_credential_fingerprint"].clone();
+    fs::write(
+        &harness.settings.oauth_path,
+        serde_json::to_vec(&legacy).unwrap(),
+    )
+    .unwrap();
     let counts = [
         harness.mock.count(Method::POST, "/reset-quota"),
         harness.mock.count(Method::POST, "/test"),
@@ -2474,6 +2490,13 @@ async fn releasing_restart_reconciles_the_confirmed_history_without_repeating_mu
         .unwrap();
     let finished = harness.controller.state(id).unwrap();
     assert_eq!(finished["stage"], "recovered");
+    for field in [
+        "release_requested_at",
+        "release_control_generation",
+        "release_credential_fingerprint",
+    ] {
+        assert!(finished.get(field).is_none());
+    }
     assert_eq!(finished["outcome"], "restored");
     assert_eq!(finished["consumed"], true);
     assert_eq!(finished["receipt"]["business_code"], "success");
@@ -2498,7 +2521,7 @@ async fn releasing_restart_reconciles_the_confirmed_history_without_repeating_mu
 }
 
 #[tokio::test]
-async fn releasing_restart_preserves_manual_changes_and_new_account_blocks() {
+async fn confirming_restart_preserves_manual_changes_and_new_account_blocks() {
     let now = fixed_now();
     for change in [
         "disabled",
@@ -2536,7 +2559,7 @@ async fn releasing_restart_preserves_manual_changes_and_new_account_blocks() {
         assert_eq!(
             release.state_at_arrival.as_ref().unwrap()["scheduler"][id.to_string()]
                 ["auto_reset_credit"]["stage"],
-            "testing",
+            "confirming",
             "{change}"
         );
         *harness.mock.fail_account_read_after.lock().unwrap() = Some("/schedulable".into());
@@ -2546,7 +2569,7 @@ async fn releasing_restart_preserves_manual_changes_and_new_account_blocks() {
             .execute(&harness.db.pool)
             .await
             .unwrap();
-        assert_eq!(harness.controller.state(id).unwrap()["stage"], "releasing");
+        assert_eq!(harness.controller.state(id).unwrap()["stage"], "confirming");
 
         let changed_at = now + Duration::seconds(10);
         match change {
@@ -2558,8 +2581,9 @@ async fn releasing_restart_preserves_manual_changes_and_new_account_blocks() {
                     .unwrap();
             }
             "schedule_off" => {
-                sqlx::query("UPDATE accounts SET schedulable=false WHERE id=$1")
+                sqlx::query("UPDATE accounts SET schedulable=false,updated_at=$2 WHERE id=$1")
                     .bind(id)
+                    .bind(changed_at)
                     .execute(&harness.db.pool)
                     .await
                     .unwrap();
@@ -3514,10 +3538,10 @@ async fn detection_version_hold_and_failed_readback_are_fail_closed() {
     let initial = harness.controller.state(id).unwrap();
     let task = harness
         .controller
-        .begin_episode(id, &initial, &evidence)
+        .begin_episode(&row, &initial, &evidence, fixed_now())
         .await
         .unwrap();
-    harness.controller.policy(id, &task).await.unwrap();
+    harness.controller.policy(&row, &task).await.unwrap();
     harness.set_detection_version(json!("2".repeat(64)));
     run_automatic(&harness, &row, now).await;
     let invalidated = harness.controller.state(id).unwrap();
@@ -3532,7 +3556,7 @@ async fn detection_version_hold_and_failed_readback_are_fail_closed() {
     let second_task = harness.controller.state(second_id).unwrap();
     harness
         .controller
-        .begin_episode(second_id, &second_task, &second_evidence)
+        .begin_episode(&second_row, &second_task, &second_evidence, fixed_now())
         .await
         .unwrap();
     harness.fail_detection_version(true);
@@ -3540,7 +3564,7 @@ async fn detection_version_hold_and_failed_readback_are_fail_closed() {
     assert!(result.is_err());
     let waiting = harness.controller.state(second_id).unwrap();
     assert_eq!(waiting["stage"], "waiting");
-    assert!(waiting["policy_version"].is_null());
+    assert_eq!(waiting["policy_version"], 1);
     assert_eq!(harness.mock.total(), 0);
 
     harness.fail_detection_version(false);
@@ -3551,12 +3575,12 @@ async fn detection_version_hold_and_failed_readback_are_fail_closed() {
     let old = harness.controller.state(third_id).unwrap();
     let mut third_task = harness
         .controller
-        .begin_episode(third_id, &old, &third_evidence)
+        .begin_episode(&third_row, &old, &third_evidence, fixed_now())
         .await
         .unwrap();
     third_task = harness
         .controller
-        .policy(third_id, &third_task)
+        .policy(&third_row, &third_task)
         .await
         .unwrap();
     third_task = harness
@@ -3722,16 +3746,17 @@ async fn manual_reset_uses_the_shared_receipt_and_two_controllers_dispatch_once(
     let first_controller = harness.controller.clone();
     let first_row = row.clone();
     let first = tokio::spawn(async move {
+        let _lease = first_controller.actions.locks.try_account(&first_row)?;
         first_controller
             .manual(&first_row, "reset", ADMIN_KEY)
             .await
     });
     harness.mock.wait_for(Method::POST, "/reset-quota", 1).await;
-    let second_controller = harness.restart_controller();
-    let second = second_controller.manual(&row, "reset", ADMIN_KEY).await;
+    let second_controller = harness.controller.clone();
+    let second = second_controller.actions.locks.try_account(&row);
     assert!(
         second.is_err(),
-        "second controller must lose the disk lease"
+        "second request must wait for the account lock"
     );
     assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 1);
     harness.mock.release_reset();
@@ -3757,7 +3782,7 @@ async fn manual_reset_uses_the_shared_receipt_and_two_controllers_dispatch_once(
 }
 
 #[tokio::test]
-async fn two_automatic_controllers_share_the_disk_lease_and_only_one_consumes() {
+async fn two_automatic_workers_share_the_account_lock_and_only_one_consumes() {
     let harness = Harness::new(false).await;
     let now = fixed_now();
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
@@ -3777,7 +3802,7 @@ async fn two_automatic_controllers_share_the_disk_lease_and_only_one_consumes() 
     let first = tokio::spawn(async move { first_controller.run_account(&first_row, now).await });
     harness.mock.wait_for(Method::POST, "/schedulable", 1).await;
 
-    let second_controller = harness.restart_controller();
+    let second_controller = harness.controller.clone();
     second_controller.run_account(&row, now).await.unwrap();
     assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 0);
     harness.mock.release_schedule();
@@ -4536,7 +4561,6 @@ async fn corrupt_native_observation_cannot_fall_back_to_a_legacy_fetched_timesta
     let now = fixed_now();
     for (field, bad_value) in [
         ("snapshot_sha256", json!("invalid")),
-        ("snapshot_sha256", json!("0".repeat(64))),
         ("observed_at", json!("invalid-time")),
     ] {
         let harness = Harness::new(false).await;
@@ -5179,4 +5203,37 @@ async fn consumed_reset_result_survives_failed_account_readback_without_replayin
         .unwrap();
     assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 1);
     assert_eq!(harness.controller.state(id).unwrap()["consumed"], true);
+}
+
+#[tokio::test]
+async fn confirming_retries_only_schedule_enable_after_a_failed_write() {
+    let h = Harness::new(false).await;
+    let now = fixed_now();
+    let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
+    h.set_config(recovery_config(id, "connection"));
+    let (row, _) = h.seed_depletion(&h.controller).await;
+    h.mock.set_reset(
+        id,
+        200,
+        reset_response(now, 20.0, 20.0, "success", json!(1)),
+    );
+    h.mock.set_sse(id, successful_sse());
+    h.mock.fail_enable.store(true, Ordering::SeqCst);
+    run_automatic(&h, &row, now).await;
+    assert_eq!(h.controller.state(id).unwrap()["stage"], "confirming");
+    assert_eq!(reload_account(&h, id).await["schedulable"], false);
+    h.set_now(now + Duration::seconds(29));
+    run_automatic(&h, &row, h.controller.now()).await;
+    assert_eq!(h.mock.count(Method::POST, "/schedulable"), 2);
+    h.mock.fail_enable.store(false, Ordering::SeqCst);
+    h.set_now(now + Duration::seconds(30));
+    h.restart_controller()
+        .run_account(&row, h.controller.now())
+        .await
+        .unwrap();
+    assert_eq!(h.controller.state(id).unwrap()["stage"], "recovered");
+    assert_eq!(h.mock.count(Method::POST, "/reset-quota"), 1);
+    assert_eq!(h.mock.count(Method::POST, "/test"), 1);
+    assert_eq!(h.mock.count(Method::POST, "/recover-state"), 1);
+    assert_eq!(h.mock.count(Method::POST, "/schedulable"), 3);
 }

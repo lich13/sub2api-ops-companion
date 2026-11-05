@@ -270,7 +270,7 @@ fn operation_batch_job_ids_reject_malformed_references() {
 }
 
 #[test]
-fn audit_rotation_bounds_old_logs_preserves_inode_and_serializes_waiting_writers() {
+fn audit_rotation_trims_oversized_logs_and_serializes_waiting_writers() {
     use std::io::Write;
     const CAP: u64 = 20 * 1024 * 1024;
     let root = tempfile::tempdir().unwrap();
@@ -339,5 +339,50 @@ fn audit_rotation_bounds_old_logs_preserves_inode_and_serializes_waiting_writers
     let across = audit::read(&path, 401, None);
     assert_eq!(across[400]["event"], "fixture.legacy");
     assert_eq!(across[400]["payload"]["api_key"], "[REDACTED]");
-    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 2);
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 3);
+}
+
+#[test]
+fn audit_normal_rotation_renames_and_filters_the_event_field_from_the_tail() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("audit.jsonl");
+    let mut record = serde_json::to_vec(
+        &json!({"event":"fixture.old","payload":{"padding":"x".repeat(20 * 1024 * 1024 - 100)}}),
+    )
+    .unwrap();
+    record.push(b'\n');
+    fs::write(&path, record).unwrap();
+    let original = fs::metadata(&path).unwrap();
+    std::thread::scope(|scope| {
+        for worker in 0..8 {
+            let path = &path;
+            scope.spawn(move || {
+                for item in 0..50 {
+                    audit::write(
+                        path,
+                        "fixture.new",
+                        json!({"worker":worker,"item":item}),
+                        false,
+                    );
+                    assert!(audit::read(path, 1, Some("fixture.new")).len() == 1);
+                }
+            });
+        }
+    });
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        assert_eq!(
+            original.ino(),
+            fs::metadata(root.path().join("audit.jsonl.1"))
+                .unwrap()
+                .ino()
+        );
+        assert_ne!(original.ino(), fs::metadata(&path).unwrap().ino());
+    }
+    assert_eq!(audit::read(&path, 500, Some("fixture.new")).len(), 400);
+    fs::write(&path, b"{\"event\":\"other\",\"payload\":{\"event\":\"fixture.new\"}}\ninvalid\n{\"event\":\"fixture.\\u006eew\",\"payload\":{\"token\":\"fixture-secret\"}}\n").unwrap();
+    let found = audit::read(&path, 1, Some("fixture.new"));
+    assert_eq!(found[0]["payload"]["token"], "[REDACTED]");
+    assert!(audit::read(&path, 0, None).is_empty());
 }

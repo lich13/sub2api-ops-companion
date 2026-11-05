@@ -20,11 +20,10 @@ pub struct Control {
     pub restores: Vec<DateTime<Utc>>,
     #[serde(default)]
     pub paused_reason: String,
-    #[serde(default)]
+    // Read legacy in-flight records until the next account observation resolves them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending: Option<Intent>,
-    // Unknown outcomes reserve capacity too, so uncertainty cannot evade the
-    // hourly budget when a new upstream incident replaces the previous one.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reservations: Vec<Reservation>,
     #[serde(default)]
     pub failures: u32,
@@ -139,17 +138,11 @@ impl Control {
             .iter()
             .filter(|t| at.signed_duration_since(**t) < Duration::hours(1))
             .count()
-            + self
-                .reservations
-                .iter()
-                .filter(|r| at.signed_duration_since(r.at) < Duration::hours(1))
-                .count()
     }
     pub fn next_allowed(&self, at: DateTime<Utc>) -> Option<DateTime<Utc>> {
         let mut next = self
             .last_restore_at
             .into_iter()
-            .chain(self.reservations.iter().map(|r| r.at))
             .filter_map(|t| t.checked_add_signed(Duration::seconds(60)))
             .max();
         if self.used(at) >= LIMIT {
@@ -157,7 +150,6 @@ impl Control {
                 .restores
                 .iter()
                 .copied()
-                .chain(self.reservations.iter().map(|r| r.at))
                 .filter(|t| at.signed_duration_since(*t) < Duration::hours(1))
                 .min();
             next = next
@@ -176,7 +168,6 @@ impl Control {
             || self
                 .last_restore_at
                 .into_iter()
-                .chain(self.reservations.iter().map(|r| r.at))
                 .any(|t| at.signed_duration_since(t) < Duration::seconds(60))
     }
 }

@@ -430,7 +430,7 @@ impl Actions {
             row["parent_account_id"] = row["extra"]["parent_account_id"].clone();
         }
         let _lease = self.locks.try_account(&row)?;
-        let (mut live, mut credit_row) = self.queries.setting_account(id).await?;
+        let mut live = self.queries.internal_account(id).await?;
         if live["parent_account_id"] != original_parent
             || operation_versions(&live)[action] != expected
         {
@@ -452,7 +452,7 @@ impl Actions {
             {
                 return Err(Error::new(409, "所选代理已不可用，请重新选择"));
             }
-            (live, credit_row) = self.queries.setting_account(id).await?;
+            live = self.queries.internal_account(id).await?;
         }
         if operation_versions(&live)[action] != expected {
             return Err(Error::new(409, "相关字段已变化，请核对后重新提交"));
@@ -463,12 +463,7 @@ impl Actions {
                 ["auto_reset_credit"]["owns_pause"]
                 == true
         {
-            credit_ownership::parameter_change(
-                &self.queries.oauth,
-                &credit_row,
-                action,
-                &payload[action],
-            )?
+            credit_ownership::parameter_change(&self.queries.oauth, &live)?
         } else {
             None
         };
@@ -528,17 +523,18 @@ impl Actions {
                     return response;
                 }
             }
-            let (actual, credit_row) = self.queries.setting_account(id).await?;
+            let actual = self.queries.internal_account(id).await?;
             if !target_reached(&actual, action, payload) {
                 response?;
                 return Err(Error::new(502, "字段写入尚未确认，正在核对实际值"));
             }
-            if let Some((task, expected)) = &credit_change {
+            if let Some(task) = &credit_change {
                 credit_ownership::finish_parameter_change(
                     &self.queries.oauth,
-                    &credit_row,
+                    &actual,
                     task,
-                    expected,
+                    &live,
+                    action,
                 )?;
             }
             if action == "priority" {
