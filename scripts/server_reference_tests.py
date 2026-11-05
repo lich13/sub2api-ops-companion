@@ -41,19 +41,41 @@ CONCURRENCY_FIXTURE_AFTER = """        for slots in (1, 2, 3):
                     return OUTPUT, 'gpt-6-luna'
                 finally: active -= 1
 """
+FATAL_TEST = "test_fatal_error_cancels_peers_without_retry"
+FATAL_FIXTURE_BEFORE = """        calls = 0
+        async def run(**kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                await asyncio.sleep(.04)
+                raise TestFailure('rate_limited')
+            await asyncio.sleep(30)
+"""
+FATAL_FIXTURE_AFTER = """        calls = 0
+        peers_started = asyncio.Event()
+        async def run(**kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                peers_started.set()
+            if calls == 1:
+                await asyncio.wait_for(peers_started.wait(), timeout=5)
+                raise TestFailure('rate_limited')
+            await asyncio.sleep(30)
+"""
 
 
-def _concurrency_method(source: str) -> ast.AsyncFunctionDef:
+def _concurrency_method(source: str, name: str) -> ast.AsyncFunctionDef:
     tree = ast.parse(source)
     matches = [
         method
         for node in tree.body
         if isinstance(node, ast.ClassDef) and node.name == "ModelConcurrencyTests"
         for method in node.body
-        if isinstance(method, ast.AsyncFunctionDef) and method.name == CONCURRENCY_TEST
+        if isinstance(method, ast.AsyncFunctionDef) and method.name == name
     ]
     if len(matches) != 1:
-        raise RuntimeError(f"Expected one {CONCURRENCY_TEST} fixture; found {len(matches)}")
+        raise RuntimeError(f"Expected one {name} fixture; found {len(matches)}")
     return matches[0]
 
 
@@ -72,33 +94,39 @@ def _self_assertions(method: ast.AsyncFunctionDef) -> tuple[str, ...]:
 
 
 def apply_concurrency_fixture_sync(reference: Path) -> None:
+    for name, before, after in (
+        (CONCURRENCY_TEST, CONCURRENCY_FIXTURE_BEFORE, CONCURRENCY_FIXTURE_AFTER),
+        (FATAL_TEST, FATAL_FIXTURE_BEFORE, FATAL_FIXTURE_AFTER),
+    ):
+        _sync_concurrency_method(reference, name, before, after)
+
+
+def _sync_concurrency_method(reference: Path, name: str, before: str, after: str) -> None:
     relative_path = Path("tests/test_modeltrace022.py")
     test_path = reference / relative_path
     source = test_path.read_bytes().decode("utf-8")
-    method = _concurrency_method(source)
+    method = _concurrency_method(source, name)
     if method.end_lineno is None:
-        raise RuntimeError(f"Cannot locate the end of {CONCURRENCY_TEST}")
+        raise RuntimeError(f"Cannot locate the end of {name}")
     lines = source.splitlines(keepends=True)
     method_start, method_end = method.lineno - 1, method.end_lineno
     method_source = "".join(lines[method_start:method_end])
-    matches = method_source.count(CONCURRENCY_FIXTURE_BEFORE)
+    matches = method_source.count(before)
     if matches != 1:
         raise RuntimeError(
             f"Expected one historical concurrency fixture in {relative_path}; found {matches}"
         )
 
-    patched_method = method_source.replace(
-        CONCURRENCY_FIXTURE_BEFORE, CONCURRENCY_FIXTURE_AFTER, 1
-    )
+    patched_method = method_source.replace(before, after, 1)
     patched_source = (
         "".join(lines[:method_start])
         + patched_method
         + "".join(lines[method_end:])
     )
     original_assertions = _self_assertions(method)
-    patched_assertions = _self_assertions(_concurrency_method(patched_source))
+    patched_assertions = _self_assertions(_concurrency_method(patched_source, name))
     if original_assertions != patched_assertions:
-        raise RuntimeError(f"{CONCURRENCY_TEST} assertion AST changed during fixture sync")
+        raise RuntimeError(f"{name} assertion AST changed during fixture sync")
     test_path.write_bytes(patched_source.encode("utf-8"))
 
 
@@ -129,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
         apply_concurrency_fixture_sync(reference)
         print(
             "Reference fixture sync override: temporary tests/test_modeltrace022.py only; "
-            "first-batch event barrier; assertion AST preserved; app files untouched by override."
+            "first-batch and fatal-peer event barriers; assertion AST preserved; app files untouched by override."
         )
         env = os.environ.copy()
         for key in tuple(env):
