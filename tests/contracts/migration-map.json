@@ -1328,11 +1328,11 @@
   ],
   "rust_coverage_policy": {
     "coverage_counts": {
-      "mapped": 735,
+      "mapped": 733,
       "not_collected": 2,
       "partial": 0,
       "passed": 0,
-      "superseded": 147,
+      "superseded": 149,
       "uncovered": 0
     },
     "mapping_input": "tests/contracts/coverage-map.json",
@@ -11860,7 +11860,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 355,
+          "rust_source_line": 374,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -12198,7 +12198,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 361,
+          "rust_source_line": 380,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -12400,7 +12400,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 367,
+          "rust_source_line": 386,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18017,7 +18017,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 561,
+          "rust_source_line": 580,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18083,7 +18083,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 568,
+          "rust_source_line": 587,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18149,7 +18149,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 573,
+          "rust_source_line": 592,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18215,7 +18215,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 578,
+          "rust_source_line": 597,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18348,7 +18348,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 583,
+          "rust_source_line": 602,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18414,7 +18414,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 588,
+          "rust_source_line": 607,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18558,7 +18558,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 594,
+          "rust_source_line": 613,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18624,7 +18624,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 599,
+          "rust_source_line": 618,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18690,7 +18690,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 604,
+          "rust_source_line": 623,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18758,7 +18758,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 609,
+          "rust_source_line": 628,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18824,7 +18824,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 615,
+          "rust_source_line": 634,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -23573,7 +23573,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 510,
+          "rust_source_line": 529,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -23646,7 +23646,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 515,
+          "rust_source_line": 534,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -23717,7 +23717,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 520,
+          "rust_source_line": 539,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -23818,7 +23818,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 526,
+          "rust_source_line": 545,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -23890,7 +23890,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 532,
+          "rust_source_line": 551,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -24045,7 +24045,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 537,
+          "rust_source_line": 556,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -24131,7 +24131,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 543,
+          "rust_source_line": 562,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -24208,7 +24208,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 549,
+          "rust_source_line": 568,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -24277,7 +24277,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 555,
+          "rust_source_line": 574,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -34815,7 +34815,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 467,
+          "rust_source_line": 486,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -34881,7 +34881,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 473,
+          "rust_source_line": 492,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -34948,7 +34948,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 478,
+          "rust_source_line": 497,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -35014,7 +35014,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 483,
+          "rust_source_line": 502,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -35081,7 +35081,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 488,
+          "rust_source_line": 507,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -35172,7 +35172,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 495,
+          "rust_source_line": 514,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -35245,7 +35245,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 500,
+          "rust_source_line": 519,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -35315,7 +35315,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 505,
+          "rust_source_line": 524,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -40495,44 +40495,14 @@
         "crate": "sub2ops-server",
         "evidence": {
           "assertions": [
-            "check(",
-            "\"py:tests.test_recovery_config030:AutoResetProjection030Tests.test_completed_or_relinquished_states_are_hidden_without_deleting_history\""
+            "assert_eq!(execute(\"project_state\", &args).unwrap(), Value::Null);",
+            "assert_eq!(args, original);",
+            "assert_eq!(execute(\"project_state\", &automatic).unwrap()[\"stage\"], stage);"
           ],
-          "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。",
+          "coverage_note": "手动任务通过显式 source 标识，终态或尚未扣卡的手动状态隐藏；投影不改写文件，重读仍保留完整历史。自动任务不再因缺少旧策略字段而被当作手动任务隐藏。",
           "execution_status": "mapping_only",
-          "fixtures": [
-            {
-              "ids": [],
-              "json_paths": [
-                "legacy_tests.18",
-                "cases.68",
-                "cases.69",
-                "cases.70"
-              ],
-              "path": "tests/contracts/rule-traces/fixtures.json"
-            }
-          ],
+          "fixtures": [],
           "helper_assertions": [
-            {
-              "assertions": [
-                "assert!(!cases.is_empty(),",
-                "assert_same(",
-                "assert!(actual.is_err(),",
-                "assert_eq!(args, case[\"arguments\"]);"
-              ],
-              "line": 204,
-              "name": "check"
-            },
-            {
-              "assertions": [
-                "assert_eq!(a.len(), b.len(),",
-                "assert!(a.contains_key(key),",
-                "_ => assert_eq!(actual, expected,",
-                "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
-              ],
-              "line": 174,
-              "name": "assert_same"
-            },
             {
               "assertions": [
                 "assert_eq!(std::fs::read(&path).unwrap(), before);",
@@ -40550,9 +40520,15 @@
         },
         "gap": null,
         "module": "pinned_rule_traces",
-        "replacement": null,
-        "status": "mapped",
-        "test_name": "recovery_config030_autoresetprojection030tests_test_completed_or_relinquished_states_are_hidden_without_deleting_history"
+        "replacement": {
+          "approved_requirement": "Sub2Ops 0.1.83 已批准项目 7b、7c：删除旧用卡策略懒迁移及仅为旧策略存在的分支；新自动任务一次写齐策略，手动任务独立处理，历史记录保留。",
+          "legacy_assertions": [
+            "缺少 source 和旧策略版本的任务仍按手动任务隐藏"
+          ],
+          "replacement_contract": "手动任务通过显式 source 标识，终态或尚未扣卡的手动状态隐藏；投影不改写文件，重读仍保留完整历史。自动任务不再因缺少旧策略字段而被当作手动任务隐藏。"
+        },
+        "status": "superseded",
+        "test_name": "manual_terminal_projection_preserves_history"
       },
       "service_capability": "recovery",
       "source": {
@@ -40571,42 +40547,13 @@
         "crate": "sub2ops-server",
         "evidence": {
           "assertions": [
-            "check(",
-            "\"py:tests.test_recovery_config030:AutoResetProjection030Tests.test_manual_state_without_any_consumption_attempt_is_hidden\""
+            "assert_eq!(execute(\"project_state\", &args).unwrap(), Value::Null);",
+            "assert_eq!(args, original);"
           ],
-          "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。",
+          "coverage_note": "手动任务通过显式 source 标识，终态或尚未扣卡的手动状态隐藏；投影不改写文件，重读仍保留完整历史。自动任务不再因缺少旧策略字段而被当作手动任务隐藏。",
           "execution_status": "mapping_only",
-          "fixtures": [
-            {
-              "ids": [],
-              "json_paths": [
-                "legacy_tests.19",
-                "cases.71"
-              ],
-              "path": "tests/contracts/rule-traces/fixtures.json"
-            }
-          ],
+          "fixtures": [],
           "helper_assertions": [
-            {
-              "assertions": [
-                "assert!(!cases.is_empty(),",
-                "assert_same(",
-                "assert!(actual.is_err(),",
-                "assert_eq!(args, case[\"arguments\"]);"
-              ],
-              "line": 204,
-              "name": "check"
-            },
-            {
-              "assertions": [
-                "assert_eq!(a.len(), b.len(),",
-                "assert!(a.contains_key(key),",
-                "_ => assert_eq!(actual, expected,",
-                "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
-              ],
-              "line": 174,
-              "name": "assert_same"
-            },
             {
               "assertions": [
                 "assert_eq!(std::fs::read(&path).unwrap(), before);",
@@ -40619,14 +40566,20 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 343,
+          "rust_source_line": 357,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
         "module": "pinned_rule_traces",
-        "replacement": null,
-        "status": "mapped",
-        "test_name": "recovery_config030_autoresetprojection030tests_test_manual_state_without_any_consumption_attempt_is_hidden"
+        "replacement": {
+          "approved_requirement": "Sub2Ops 0.1.83 已批准项目 7b、7c：删除旧用卡策略懒迁移及仅为旧策略存在的分支；新自动任务一次写齐策略，手动任务独立处理，历史记录保留。",
+          "legacy_assertions": [
+            "缺少 source 和旧策略版本的任务仍按手动任务隐藏"
+          ],
+          "replacement_contract": "手动任务通过显式 source 标识，终态或尚未扣卡的手动状态隐藏；投影不改写文件，重读仍保留完整历史。自动任务不再因缺少旧策略字段而被当作手动任务隐藏。"
+        },
+        "status": "superseded",
+        "test_name": "unattempted_manual_projection_preserves_history"
       },
       "service_capability": "recovery",
       "source": {
@@ -40694,7 +40647,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 349,
+          "rust_source_line": 368,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44380,7 +44333,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 373,
+          "rust_source_line": 392,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44498,7 +44451,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 378,
+          "rust_source_line": 397,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44564,7 +44517,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 383,
+          "rust_source_line": 402,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44631,7 +44584,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 388,
+          "rust_source_line": 407,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44697,7 +44650,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 393,
+          "rust_source_line": 412,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44764,7 +44717,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 398,
+          "rust_source_line": 417,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44830,7 +44783,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 403,
+          "rust_source_line": 422,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44898,7 +44851,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 408,
+          "rust_source_line": 427,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44965,7 +44918,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 413,
+          "rust_source_line": 432,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45032,7 +44985,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 418,
+          "rust_source_line": 437,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45099,7 +45052,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 423,
+          "rust_source_line": 442,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45166,7 +45119,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 429,
+          "rust_source_line": 448,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45236,7 +45189,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 434,
+          "rust_source_line": 453,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45302,7 +45255,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 439,
+          "rust_source_line": 458,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45368,7 +45321,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 445,
+          "rust_source_line": 464,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45436,7 +45389,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 451,
+          "rust_source_line": 470,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45506,7 +45459,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 457,
+          "rust_source_line": 476,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45577,7 +45530,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 462,
+          "rust_source_line": 481,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,

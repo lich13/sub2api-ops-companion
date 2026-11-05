@@ -23310,34 +23310,17 @@
     },
     {
       "legacy_test_id": "py:tests.test_recovery_config030:AutoResetProjection030Tests.test_completed_or_relinquished_states_are_hidden_without_deleting_history",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/pinned_rule_traces.rs",
-        "test_name": "recovery_config030_autoresetprojection030tests_test_completed_or_relinquished_states_are_hidden_without_deleting_history",
+        "test_name": "manual_terminal_projection_preserves_history",
         "assertions": [
-          "check(",
-          "\"py:tests.test_recovery_config030:AutoResetProjection030Tests.test_completed_or_relinquished_states_are_hidden_without_deleting_history\""
+          "assert_eq!(execute(\"project_state\", &args).unwrap(), Value::Null);",
+          "assert_eq!(args, original);",
+          "assert_eq!(execute(\"project_state\", &automatic).unwrap()[\"stage\"], stage);"
         ],
         "helper_assertions": [
-          {
-            "name": "check",
-            "assertions": [
-              "assert!(!cases.is_empty(),",
-              "assert_same(",
-              "assert!(actual.is_err(),",
-              "assert_eq!(args, case[\"arguments\"]);"
-            ]
-          },
-          {
-            "name": "assert_same",
-            "assertions": [
-              "assert_eq!(a.len(), b.len(),",
-              "assert!(a.contains_key(key),",
-              "_ => assert_eq!(actual, expected,",
-              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
-            ]
-          },
           {
             "name": "execute",
             "assertions": [
@@ -23345,51 +23328,29 @@
               "OAuthState::new(path, false).snapshot()?[\"scheduler\"][\"31\"][\"auto_reset_credit\"],"
             ]
           }
-        ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/rule-traces/fixtures.json",
-            "json_paths": [
-              "legacy_tests.18",
-              "cases.68",
-              "cases.69",
-              "cases.70"
-            ]
-          }
         ]
       },
-      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+      "coverage_note": "手动任务通过显式 source 标识，终态或尚未扣卡的手动状态隐藏；投影不改写文件，重读仍保留完整历史。自动任务不再因缺少旧策略字段而被当作手动任务隐藏。",
+      "replacement": {
+        "legacy_assertions": [
+          "缺少 source 和旧策略版本的任务仍按手动任务隐藏"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 已批准项目 7b、7c：删除旧用卡策略懒迁移及仅为旧策略存在的分支；新自动任务一次写齐策略，手动任务独立处理，历史记录保留。",
+        "replacement_contract": "手动任务通过显式 source 标识，终态或尚未扣卡的手动状态隐藏；投影不改写文件，重读仍保留完整历史。自动任务不再因缺少旧策略字段而被当作手动任务隐藏。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_recovery_config030:AutoResetProjection030Tests.test_manual_state_without_any_consumption_attempt_is_hidden",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/pinned_rule_traces.rs",
-        "test_name": "recovery_config030_autoresetprojection030tests_test_manual_state_without_any_consumption_attempt_is_hidden",
+        "test_name": "unattempted_manual_projection_preserves_history",
         "assertions": [
-          "check(",
-          "\"py:tests.test_recovery_config030:AutoResetProjection030Tests.test_manual_state_without_any_consumption_attempt_is_hidden\""
+          "assert_eq!(execute(\"project_state\", &args).unwrap(), Value::Null);",
+          "assert_eq!(args, original);"
         ],
         "helper_assertions": [
-          {
-            "name": "check",
-            "assertions": [
-              "assert!(!cases.is_empty(),",
-              "assert_same(",
-              "assert!(actual.is_err(),",
-              "assert_eq!(args, case[\"arguments\"]);"
-            ]
-          },
-          {
-            "name": "assert_same",
-            "assertions": [
-              "assert_eq!(a.len(), b.len(),",
-              "assert!(a.contains_key(key),",
-              "_ => assert_eq!(actual, expected,",
-              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
-            ]
-          },
           {
             "name": "execute",
             "assertions": [
@@ -23397,18 +23358,16 @@
               "OAuthState::new(path, false).snapshot()?[\"scheduler\"][\"31\"][\"auto_reset_credit\"],"
             ]
           }
-        ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/rule-traces/fixtures.json",
-            "json_paths": [
-              "legacy_tests.19",
-              "cases.71"
-            ]
-          }
         ]
       },
-      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+      "coverage_note": "手动任务通过显式 source 标识，终态或尚未扣卡的手动状态隐藏；投影不改写文件，重读仍保留完整历史。自动任务不再因缺少旧策略字段而被当作手动任务隐藏。",
+      "replacement": {
+        "legacy_assertions": [
+          "缺少 source 和旧策略版本的任务仍按手动任务隐藏"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.83 已批准项目 7b、7c：删除旧用卡策略懒迁移及仅为旧策略存在的分支；新自动任务一次写齐策略，手动任务独立处理，历史记录保留。",
+        "replacement_contract": "手动任务通过显式 source 标识，终态或尚未扣卡的手动状态隐藏；投影不改写文件，重读仍保留完整历史。自动任务不再因缺少旧策略字段而被当作手动任务隐藏。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_recovery_config030:AutoResetProjection030Tests.test_unknown_consumption_remains_visible_after_manual_control",

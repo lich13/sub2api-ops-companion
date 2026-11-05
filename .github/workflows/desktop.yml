@@ -147,7 +147,7 @@ jobs:
       - name: Check responsive layouts
         run: NODE_PATH="$RUNNER_TEMP/sub2ops-browser-qa/node_modules" node scripts/responsive_check.cjs
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

@@ -336,15 +336,34 @@ fn recovery_config030_autoresetprojection030tests_test_active_recovery_steps_rem
 }
 
 #[test]
-fn recovery_config030_autoresetprojection030tests_test_completed_or_relinquished_states_are_hidden_without_deleting_history(
-) {
-    check("py:tests.test_recovery_config030:AutoResetProjection030Tests.test_completed_or_relinquished_states_are_hidden_without_deleting_history");
+fn manual_terminal_projection_preserves_history() {
+    for stage in ["manual", "recovered", "closed"] {
+        let args = json!({"value":{
+            "source":"manual","stage":stage,"episode":"fixture-episode",
+            "attempt_at":"2026-10-08T04:00:00+00:00","consumed":true,
+            "reset_at":"2026-10-08T04:00:00+00:00","next_at":null,"owns_pause":false
+        },"notices":null});
+        let original = args.clone();
+        assert_eq!(execute("project_state", &args).unwrap(), Value::Null);
+        assert_eq!(args, original);
+        let mut automatic = args;
+        automatic["value"]["source"] = "auto".into();
+        assert_eq!(
+            execute("project_state", &automatic).unwrap()["stage"],
+            stage
+        );
+    }
 }
 
 #[test]
-fn recovery_config030_autoresetprojection030tests_test_manual_state_without_any_consumption_attempt_is_hidden(
-) {
-    check("py:tests.test_recovery_config030:AutoResetProjection030Tests.test_manual_state_without_any_consumption_attempt_is_hidden");
+fn unattempted_manual_projection_preserves_history() {
+    let args = json!({"value":{
+        "source":"manual","stage":"manual","episode":"fixture-episode",
+        "attempt_at":null,"consumed":null,"next_at":null,"owns_pause":false
+    },"notices":null});
+    let original = args.clone();
+    assert_eq!(execute("project_state", &args).unwrap(), Value::Null);
+    assert_eq!(args, original);
 }
 
 #[test]
