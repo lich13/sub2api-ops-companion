@@ -227,6 +227,18 @@ impl Coordinator {
             Ok(row) => row,
             Err(_) => return skipped("account_read_failed"),
         };
+        self.query_prepared(row, key, options).await
+    }
+    pub(crate) async fn query_prepared(
+        &self,
+        row: Value,
+        key: &str,
+        options: QueryOptions,
+    ) -> Value {
+        if self.actions.settings.read_only {
+            return skipped("read_only");
+        }
+        let id = integer(&row["id"]).unwrap_or(0);
         if row["platform"] != "openai" || row["type"] != "oauth" {
             return skipped("account_changed");
         }

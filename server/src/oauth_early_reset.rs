@@ -17,7 +17,6 @@ pub(crate) struct State {
 }
 struct Representative {
     id: i64,
-    credentials: String,
     baseline: Value,
     last_attempt: Option<DateTime<Utc>>,
 }
@@ -118,9 +117,7 @@ pub fn quota_ready(row: &Value, result: &Value, meta: &Value, at: DateTime<Utc>)
     let intent = &meta["recovery_intent"];
     intent["kind"] == "early_reset"
         && intent["plan_type"] == quota::account_plan(row)
-        && intent["credential_fingerprint"] == oauth_admission::credential_fingerprint(row)
         && eligible(row, meta, at)
-        && recovery_rules::change_is_safe(&intent["block_state"], row)
         && complete_evidence(row, result)
         && oauth_admission::fresh_quota(row, result, at)
         && quota::summary_from_result(row, result)
@@ -236,10 +233,9 @@ impl Monitor {
         for (plan, members) in groups {
             let existing = observers.representatives.get(&plan);
             if !existing.is_some_and(|old| {
-                members.iter().any(|row| {
-                    integer(&row["id"]) == Some(old.id)
-                        && oauth_admission::credential_fingerprint(row) == old.credentials
-                })
+                members
+                    .iter()
+                    .any(|row| integer(&row["id"]) == Some(old.id))
             }) {
                 let row = members
                     .iter()
@@ -261,7 +257,6 @@ impl Monitor {
                     plan.clone(),
                     Representative {
                         id: integer(&row["id"]).unwrap(),
-                        credentials: oauth_admission::credential_fingerprint(row),
                         baseline: Value::Null,
                         last_attempt: None,
                     },
@@ -347,17 +342,16 @@ impl Monitor {
             self.now(),
         ) || self.hooks.detection_held(id)?
             || known_plan(&fresh).as_ref() != Some(&plan)
-            || oauth_admission::credential_fingerprint(&fresh)
-                != oauth_admission::credential_fingerprint(&row)
         {
             return Ok(result);
         }
         let triggered = {
             let mut observers = self.early_reset.lock().await;
-            let Some(observer) = observers.representatives.get_mut(&plan).filter(|entry| {
-                entry.id == id
-                    && entry.credentials == oauth_admission::credential_fingerprint(&fresh)
-            }) else {
+            let Some(observer) = observers
+                .representatives
+                .get_mut(&plan)
+                .filter(|entry| entry.id == id)
+            else {
                 return Ok(result);
             };
             let changed = decrease(&fresh, &observer.baseline, &result, self.now());
@@ -396,8 +390,6 @@ impl Monitor {
                             "kind":"early_reset", "plan_type":plan, "fingerprint":fingerprint,
                             "observed_at":result["queried_at"], "due_at":result["queried_at"],
                             "early_reset_detected":true, "detected_at":datetime(self.now()),
-                            "credential_fingerprint":oauth_admission::credential_fingerprint(row),
-                            "block_state":crate::recovery_verification::state_block(row),
                             "manual_generation":generation,
                             "window_keys":quota::required_windows(&json!(plan)),
                         }),
@@ -441,7 +433,6 @@ impl Monitor {
             || self.hooks.detection_held(id)?
             || intent["manual_generation"] != generation
             || intent["plan_type"] != quota::account_plan(&row)
-            || intent["credential_fingerprint"] != oauth_admission::credential_fingerprint(&row)
         {
             return self.blocked_intent(
                 id,

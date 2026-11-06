@@ -221,139 +221,103 @@ impl CreditController {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         let mut task = task.clone();
         let reason = self.guard_reason(id, row, &task, at)?;
+        let reason = if !reason.is_empty() {
+            reason
+        } else if credit_rules::expired(&task, at) {
+            "verification_deadline"
+        } else if !self.available(row, &task, at)? {
+            "incomplete_quota"
+        } else {
+            ""
+        };
         if !reason.is_empty() {
             self.finish(id, &task, reason, at, row, true, &Value::Null)
                 .await?;
             return Ok(());
         }
-
-        let config = self.hooks.config()?;
-        let state = self.store.shared_snapshot()?;
-        if truthy(&task["verification_method"])
-            && task["verification_method"] != json!(recovery_policy::method(&config, id))
-            || integer(&task["verification_generation"]).unwrap_or(0)
-                != integer(&state["scheduler"][id.to_string()]["recovery_method_generation"])
-                    .unwrap_or(0)
-        {
+        if task["test_success"] != true || parse_datetime(&task["test_completed_at"]).is_none() {
             return Ok(());
         }
-        if credit_rules::expired(&task, at) {
-            self.finish(
-                id,
-                &task,
-                "verification_deadline",
-                at,
-                row,
-                true,
-                &Value::Null,
-            )
-            .await?;
-            return Ok(());
-        }
-        if row["schedulable"] == true && self.release_confirmed(row, &task, at)? {
+        if recovery_rules::confirmed(row) {
             return self.finish_release(row, &task);
         }
-        if !self.owned(row, &task, false)? {
-            self.save(
-                id,
-                &task,
-                json!({"stage":"blocked","error_code":"ownership_changed","owns_pause":false}),
-            )?;
-            return Ok(());
-        }
-        if !self.available(row, &task, at)? {
-            self.finish(id, &task, "incomplete_quota", at, row, true, &Value::Null)
-                .await?;
-            return Ok(());
-        }
         let mut cleared = row.clone();
-        let mut candidate = cleared.clone();
-        candidate["schedulable"] = true.into();
-        if !truthy(&task["clear_requested_at"]) || !recovery_rules::confirmed(&candidate) {
+        cleared["schedulable"] = true.into();
+        let needs_clear =
+            !truthy(&task["clear_requested_at"]) || !recovery_rules::confirmed(&cleared);
+        let key = self.store.admin_token()?;
+        let mut may_enable = !needs_clear;
+        if needs_clear {
             if !truthy(&task["clear_requested_at"]) {
                 task["clear_requested_at"] = datetime(self.now()).into();
             }
-            let _ = self.hooks.recover(id, self.store.admin_token()?).await;
-            cleared = match self.row(id).await {
-                Ok(row) => row,
-                Err(error) => {
-                    self.save(id, &task, json!({"stage":"confirming","clear_requested_at":task["clear_requested_at"],"error_code":"recovery_failed","next_at":datetime(self.now()+Duration::seconds(2))}))?;
-                    return Err(error);
+            let recovered = self.hooks.recover(id, key.clone()).await;
+            if recovered
+                .as_ref()
+                .is_ok_and(|result| result["success"] == true)
+            {
+                // Upstream can disable or delete an account while recover-state is in flight.
+                let current = self
+                    .actions
+                    .queries
+                    .db
+                    .one(
+                        "SELECT status FROM accounts WHERE id=$1 AND deleted_at IS NULL",
+                        &[id.into()],
+                    )
+                    .await;
+                let current = match current {
+                    Ok(current) => current,
+                    Err(error) => {
+                        self.save(id, &task, json!({"stage":"confirming","clear_requested_at":task["clear_requested_at"],"error_code":"recovery_failed","next_at":datetime(self.now()+Duration::seconds(2))}))?;
+                        return Err(error);
+                    }
+                };
+                if current.as_ref().is_none_or(|row| row["status"] != "active") {
+                    let reason = match current.as_ref().map(|row| string(&row["status"])) {
+                        None => "account_deleted",
+                        Some("disabled") => "account_disabled",
+                        _ => "account_error",
+                    };
+                    let mut stopped = row.clone();
+                    stopped["status"] = current
+                        .as_ref()
+                        .map(|row| row["status"].clone())
+                        .unwrap_or(Value::Null);
+                    self.finish(id, &task, reason, self.now(), &stopped, true, &Value::Null)
+                        .await?;
+                    return Ok(());
                 }
-            };
-            let reason = self.guard_reason(id, &cleared, &task, self.now())?;
-            if !reason.is_empty() {
-                self.finish(id, &task, reason, self.now(), &cleared, true, &Value::Null)
-                    .await?;
-                return Ok(());
+                may_enable = true;
             }
         }
-        let mut confirmed = cleared.clone();
-        if confirmed.is_object() {
-            confirmed["schedulable"] = true.into();
+        if may_enable {
+            let _ = actions::set_schedulable(&self.actions, id, true, &key, 3).await;
         }
-        if !self.owned(&cleared, &task, false)? || !recovery_rules::confirmed(&confirmed) {
-            self.save(id,&task,json!({"stage":"confirming","clear_requested_at":task["clear_requested_at"],"error_code":"recovery_failed","next_at":datetime(at+Duration::seconds(2))}))?;
-            return Ok(());
-        }
-        if !self.available(&cleared, &task, self.now())? {
-            self.finish(
-                id,
-                &task,
-                "incomplete_quota",
-                self.now(),
-                &cleared,
-                true,
-                &Value::Null,
-            )
-            .await?;
-            return Ok(());
-        }
-        if credit_rules::expired(&task, self.now()) {
-            self.finish(
-                id,
-                &task,
-                "verification_deadline",
-                self.now(),
-                &cleared,
-                true,
-                &Value::Null,
-            )
-            .await?;
-            return Ok(());
-        }
-        task["owned_version"] = cleared["updated_at"].clone();
-        let _ =
-            actions::set_schedulable(&self.actions, id, true, &self.store.admin_token()?, 3).await;
         let final_row = self.row(id).await;
         if let Ok(row) = &final_row {
-            if self.release_confirmed(row, &task, self.now())? {
+            let at = self.now();
+            let reason = self.guard_reason(id, row, &task, at)?;
+            if !reason.is_empty() {
+                return self
+                    .finish(id, &task, reason, at, row, true, &Value::Null)
+                    .await
+                    .map(|_| ());
+            }
+            if recovery_rules::confirmed(row)
+                && self.available(row, &task, at)?
+                && !credit_rules::expired(&task, at)
+            {
                 return self.finish_release(row, &task);
             }
         }
-        self.save(id, &task, json!({"stage":"confirming","error_code":"recovery_failed","next_at":datetime(self.now()+Duration::seconds(30))}))?;
+        self.save(
+            id,
+            &task,
+            json!({"stage":"confirming","clear_requested_at":task["clear_requested_at"],
+            "error_code":"recovery_failed","next_at":datetime(self.now()+Duration::seconds(if may_enable {30} else {2}))}),
+        )?;
         final_row.map(|_| ())
-    }
-    pub fn release_confirmed(&self, row: &Value, task: &Value, at: DateTime<Utc>) -> Result<bool> {
-        if !row.is_object() {
-            return Ok(false);
-        }
-        let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
-        let state = self.store.shared_snapshot()?;
-        let meta = &state["scheduler"][id.to_string()];
-        Ok(truthy(&task["owns_pause"])
-            && truthy(&task["clear_requested_at"])
-            && task["test_success"] == true
-            && parse_datetime(&task["test_completed_at"]).is_some()
-            && task["control_generation"] == json!(credit_ownership::generation(&state, id))
-            && task["verification_method"]
-                == json!(recovery_policy::method(&self.hooks.config()?, id))
-            && integer(&task["verification_generation"]).unwrap_or(0)
-                == integer(&meta["recovery_method_generation"]).unwrap_or(0)
-            && task["signature"] == credit_ownership::signature(row)
-            && self.eligible(row, at, false)?
-            && recovery_rules::confirmed(row)
-            && self.available(row, task, at)?)
     }
     pub fn finish_release(&self, row: &Value, task: &Value) -> Result<()> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;

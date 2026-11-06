@@ -43,7 +43,11 @@ pub trait ModelHooks: Send + Sync {
     fn guard(&self, job: Value, row: Option<Value>) -> BoxFuture<'_, Result<Value>>;
     fn next_allowed_at(&self, id: i64) -> Result<Value>;
     fn register_dispatch(&self, job: &Value) -> Result<()>;
-    fn prepare_recovery(&self, job: Value) -> BoxFuture<'_, Result<(Value, Option<Value>)>>;
+    fn prepare_recovery(
+        &self,
+        job: Value,
+        row: Value,
+    ) -> BoxFuture<'_, Result<(Value, Option<Value>)>>;
     fn verdict(&self, job: Value, report: Value) -> BoxFuture<'_, Result<Value>>;
 }
 pub(crate) struct Context {
@@ -601,6 +605,15 @@ impl ModelTests {
         Ok(())
     }
     async fn wait_and_run(&self, job: &Value, context: Option<Arc<Context>>) -> Result<()> {
+        let prepared_lm = if context.is_none() && crate::lm_verdict::is_lm(job) {
+            Some(
+                self.lm_bank
+                    .load(string(&job["resource_revision"]).into())
+                    .await?,
+            )
+        } else {
+            None
+        };
         let id = string(&job["id"]);
         let aid = integer(&job["account_id"]).ok_or_else(Error::internal)?;
         let (_lease, _job_slot, _budget, row) = loop {
@@ -669,18 +682,11 @@ impl ModelTests {
         {
             return Err(Error::new(409, "测试目标已变化，请重新选择"));
         }
+        let mut prepared_row = Some(row.clone());
         let context = if let Some(context) = context {
             context
         } else {
-            let lm = if crate::lm_verdict::is_lm(job) {
-                Some(
-                    self.lm_bank
-                        .load(string(&job["resource_revision"]).into())
-                        .await?,
-                )
-            } else {
-                None
-            };
+            let lm = prepared_lm;
             let (snapshot, compiled) = self.bank.compiled_snapshot();
             if crate::verdict_policy::relaxed(job) {
                 Self::check_policy_bank(job, &snapshot.0, lm.as_deref())?;
@@ -737,9 +743,11 @@ impl ModelTests {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .insert(id.into(), context.clone());
-        let mut prepared_row = None;
-        if truthy(&job["recovery_context"]) {
-            let (result, row) = self.hooks.prepare_recovery(job.clone()).await?;
+        if job["recovery_context"]["consume"] == true {
+            let (result, row) = self
+                .hooks
+                .prepare_recovery(job.clone(), prepared_row.take().unwrap())
+                .await?;
             prepared_row = row;
             if truthy(&result) {
                 self.update(id,json!({"status":"failed","preflight_result":result,"completed_at":crate::compat::now(),"error":result.get("error").unwrap_or(&json!("恢复条件未确认"))}))?;

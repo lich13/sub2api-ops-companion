@@ -392,22 +392,36 @@
     },
     {
       "legacy_test_id": "py:tests.test_recovery019:Recovery019MonitorFixture.test_new_block_or_manual_change_during_test_is_never_cleared",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/manual_dispatch_parity.rs",
-        "test_name": "new_block_or_manual_change_during_test_is_never_cleared",
+        "test_name": "refreshed_limit_is_cleared_but_manual_pause_during_test_is_preserved",
         "assertions": [
-          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0, \"{name}\")",
-          "assert!(after[\"rate_limited_at\"].is_string())",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1, \"{name}\")",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 1)",
+          "assert!(sub2ops_server::recovery_rules::confirmed(&after))",
+          "assert_eq!(\n                harness.runtime.monitor.state().unwrap()[\"recovery_history\"]\n                    .as_object()\n                    .unwrap()\n                    .len(),\n                1\n            )",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0)",
           "assert_eq!(after[\"schedulable\"], false)",
+          "assert_eq!(after[\"temp_unschedulable_reason\"], \"manual pause\")",
           "assert!(state[\"recovery_history\"].as_object().unwrap().is_empty())",
+          "assert_eq!(events.len(), 1, \"{name}\")",
           "assert_eq!(event[\"status\"], \"recovery_failed\", \"{name}\")",
-          "assert_eq!(event[\"error_code\"], \"recovery_state_changed\", \"{name}\")"
-        ],
-        "fixtures": []
+          "assert_eq!(event[\"stage\"], \"recovery\", \"{name}\")",
+          "assert_eq!(event[\"error_code\"], \"recovery_state_changed\", \"{name}\")",
+          "assert_eq!(event[\"test_success\"], true, \"{name}\")",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ]
       },
-      "coverage_note": "测活仍挂在回环 HTTP 时分别注入新 rate limit 和 manual pause；两个分支都保留新账号状态、不调用恢复写、不提交 recovery history，并按旧语义记录 recovery_failed/recovery_state_changed 事件。"
+      "coverage_note": "0.1.84 已批准规则替换：成功测活允许清理刷新后的限流时间戳，人工暂停仍阻止恢复。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_recovery019:Recovery019MonitorFixture.test_new_block_or_manual_change_during_test_is_never_cleared"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：成功测活允许清理刷新后的限流时间戳，人工暂停仍阻止恢复。",
+        "replacement_contract": "server/tests/manual_dispatch_parity.rs::refreshed_limit_is_cleared_but_manual_pause_during_test_is_preserved"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_recovery019:Recovery019MonitorFixture.test_new_rate_limit_after_recovered_intent_retests_from_passive_quota",

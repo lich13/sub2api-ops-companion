@@ -97,7 +97,10 @@ fn state_0182_upgrade_preserves_receipts_and_compacts_observations() {
     assert_eq!(meta["recovery_intent"]["attempt_count"], 2);
     assert_eq!(meta["recovery_intent"]["connection_attempt_count"], 2);
     assert!(meta["recovery_intent"]["successful_test"].is_null());
-    assert!(meta["recovery_intent"]["verification_receipt"].is_null());
+    assert_eq!(
+        meta["recovery_intent"]["verification_receipt"],
+        raw["scheduler"]["7"]["recovery_intent"]["verification_receipt"]
+    );
     let disk: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     assert_eq!(disk, migrated);
 }
@@ -817,40 +820,6 @@ fn seed_fingerprint_cache(root: &Path) {
     .expect("seed a valid recent bundled bank to keep startup offline");
 }
 
-async fn insert_legacy_accounts(database: &Database) {
-    for (id, name, mapping) in [
-        (
-            71001i64,
-            "fixture-account-applied",
-            json!({"model":"fixture-native"}),
-        ),
-        (
-            71002i64,
-            "fixture-account-mismatch",
-            json!({"model":"fixture-current"}),
-        ),
-    ] {
-        sqlx::query(
-            "INSERT INTO accounts (id,name,platform,type,status,schedulable,credentials,extra) \
-             VALUES ($1,$2,'anthropic','apikey','active',false,$3,$4)",
-        )
-        .bind(id)
-        .bind(name)
-        .bind(sqlx::types::Json(json!({"model_mapping":mapping})))
-        .bind(sqlx::types::Json(json!({})))
-        .execute(&database.pool)
-        .await
-        .expect("insert synthetic non-OAuth account for database readback");
-    }
-    sqlx::query(
-        "INSERT INTO scheduled_test_plans (id,account_id,cron_expression,auto_recover) \
-         VALUES (72001,71001,'* * * * *',true),(72002,71002,'@hourly',true)",
-    )
-    .execute(&database.pool)
-    .await
-    .expect("seed matching and nonmatching legacy recovery plan rows");
-}
-
 #[tokio::test]
 async fn runtime_new_directory_startup_creates_valid_state_without_missing_intents() {
     let root = contract_dir().join("runtime-new-directory");
@@ -869,179 +838,37 @@ async fn runtime_new_directory_startup_creates_valid_state_without_missing_inten
         capacity.get("profile_intents").is_none(),
         "missing legacy profile_intents stays absent rather than becoming null"
     );
-    assert_eq!(
-        runtime.monitor.state().unwrap()["settings"]["legacy_recovery_cleanup_completed"],
-        true
+    assert!(
+        runtime.monitor.state().unwrap()["settings"]["legacy_recovery_cleanup_completed"].is_null()
     );
+    assert!(capacity["gateway_since"].is_string());
     runtime.close().await;
 }
 
 #[tokio::test]
-async fn runtime_start_migrates_legacy_state_by_readback_and_keeps_old_python_reader_compatible() {
-    let contract = fixture();
+async fn runtime_start_preserves_retired_files_and_initializes_current_detection() {
     let root = contract_dir().join("runtime-migration");
-    fs::create_dir_all(&root).expect("create runner-owned migration directory");
+    fs::create_dir_all(&root).unwrap();
     seed_fingerprint_cache(&root);
-    let oauth_config_path = root.join("oauth-config.json");
-    fs::write(
-        &oauth_config_path,
-        serde_json::to_vec_pretty(&contract["runtime"]["legacy_config"]).unwrap(),
-    )
-    .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&oauth_config_path, fs::Permissions::from_mode(0o644)).unwrap();
-    }
-    fs::write(
-        root.join("account-model-profiles.json"),
-        serde_json::to_vec_pretty(&json!({
-            "version": 1,
-            "jobs": contract["runtime"]["legacy_profile_jobs"]
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-    fs::write(
-        root.join("capacity-alert-state.json"),
-        serde_json::to_vec_pretty(&contract["runtime"]["legacy_capacity_without_profile_intents"])
-            .unwrap(),
-    )
-    .unwrap();
-    fs::write(
-        root.join("guard-state.json"),
-        br#"{"synthetic_legacy_guard":true}"#,
-    )
-    .unwrap();
-
-    let database = Database::open(&database_url(), false)
-        .await
-        .expect("connect to runner-owned PostgreSQL");
-    insert_legacy_accounts(&database).await;
+    let retired = root.join("account-model-profiles.json");
+    fs::write(&retired, b"fixture-retired-file-not-read").unwrap();
+    let guard = root.join("guard-state.json");
+    fs::write(&guard, b"fixture-retired-guard").unwrap();
     let runtime = Runtime::new(settings(&root, database_url(), false))
         .await
-        .expect("construct Runtime with synthetic legacy files");
-    runtime
-        .start()
-        .await
-        .expect("writable startup runs legacy config/recovery/template migrations");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        assert_eq!(
-            fs::metadata(&oauth_config_path).unwrap().mode() & 0o777,
-            0o600,
-            "migration write tightens an existing 0644 OAuth config"
-        );
-    }
-
-    assert!(
-        !root.join("guard-state.json").exists(),
-        "legacy guard file must be retired"
-    );
-    assert_eq!(
-        runtime.monitor.state().unwrap()["settings"]["legacy_recovery_cleanup_completed"],
-        true
-    );
-    assert!(
-        runtime.monitor.state().unwrap()["settings"]["legacy_recovery_cleanup_completed_at"]
-            .as_str()
-            .is_some_and(|value| !value.is_empty())
-    );
-    let remaining_matching_plans: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM scheduled_test_plans WHERE cron_expression='* * * * *' AND auto_recover=true",
-    )
-    .fetch_one(&runtime.db.pool)
-    .await
-    .unwrap();
-    let retained_hourly_plans: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM scheduled_test_plans WHERE cron_expression='@hourly' AND auto_recover=true",
-    )
-    .fetch_one(&runtime.db.pool)
-    .await
-    .unwrap();
-    assert_eq!(remaining_matching_plans, 0);
-    assert_eq!(retained_hourly_plans, 1);
-
-    let profiles_path = root.join("account-model-profiles.json");
-    let profiles = Store::policy(&profiles_path, json!({}), false)
-        .read()
-        .expect("read back retired legacy profile jobs");
-    let expected_statuses = contract["runtime"]["expected_statuses"]
-        .as_object()
         .unwrap();
-    for item in profiles["jobs"]["fixture-job"]["items"].as_array().unwrap() {
-        let id = item["id"].as_str().unwrap();
-        assert_eq!(item["status"], expected_statuses[id], "profile item {id}");
-        if id == "writing-profile-applied" {
-            assert_eq!(item["error"], "");
-        }
-        if id == "already-applied-profile" {
-            assert_eq!(item["error"], "fixture-terminal");
-        }
-    }
-
-    let capacity_path = root.join("capacity-alert-state.json");
-    let mut capacity: Value = serde_json::from_slice(&fs::read(&capacity_path).unwrap()).unwrap();
-    assert!(capacity.get("profile_intents").is_none());
-    capacity["profile_intents"] = contract["runtime"]["capacity_profile_intents"].clone();
-    fs::write(
-        &capacity_path,
-        serde_json::to_vec_pretty(&capacity).unwrap(),
-    )
-    .unwrap();
-    runtime
-        .retire_legacy_templates()
-        .await
-        .expect("retire optional legacy capacity intents by database readback");
-    let capacity = CapacityStore::new(capacity_path, false).snapshot().unwrap();
-    for (id, item) in capacity["profile_intents"].as_object().unwrap() {
-        assert_eq!(
-            item["status"], expected_statuses[id],
-            "capacity intent {id}"
-        );
-        if id == "writing-capacity-applied" {
-            assert_eq!(item["error"], "");
-        }
-        if id == "already-applied-capacity" {
-            assert_eq!(item["error"], "fixture-terminal");
-        }
-    }
-
-    for (id, expected) in [
-        (71001i64, json!({"model":"fixture-native"})),
-        (71002i64, json!({"model":"fixture-current"})),
-    ] {
-        let row = runtime.actions.account(id, None).await.unwrap();
-        assert_eq!(row["model_mapping"], expected, "migration is readback-only");
-    }
-
-    let config: Value =
-        serde_json::from_slice(&fs::read(root.join("oauth-config.json")).unwrap()).unwrap();
-    let actual_keys = config
-        .as_object()
-        .unwrap()
-        .keys()
-        .cloned()
-        .collect::<Vec<_>>();
-    let expected_keys = contract["runtime"]["legacy_config_retained_keys"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|value| value.as_str().unwrap().to_owned())
-        .collect::<std::collections::BTreeSet<_>>();
+    runtime.start().await.unwrap();
     assert_eq!(
-        actual_keys
-            .into_iter()
-            .collect::<std::collections::BTreeSet<_>>(),
-        expected_keys,
-        "legacy OAuth cleanup retains active fields, metadata, and SEEN_IDS only"
+        fs::read(&retired).unwrap(),
+        b"fixture-retired-file-not-read"
     );
-    assert_eq!(
-        runtime.monitor.state().unwrap()["settings"]["legacy_recovery_cleanup_completed"],
-        true
+    assert_eq!(fs::read(&guard).unwrap(), b"fixture-retired-guard");
+    let capacity = runtime.detection.capacity.store.snapshot().unwrap();
+    for key in ["gateway_since", "apikey_since", "detection_since"] {
+        assert!(capacity[key].is_string());
+    }
+    assert!(
+        runtime.monitor.state().unwrap()["settings"]["legacy_recovery_cleanup_completed"].is_null()
     );
-    runtime.migrate_legacy_recovery().await.unwrap();
     runtime.close().await;
-    database.close().await;
 }

@@ -148,10 +148,6 @@ impl Runtime {
                 "templates",
                 settings.data_dir().join("account-templates.json"),
             ),
-            (
-                "legacy_profiles",
-                settings.data_dir().join("account-model-profiles.json"),
-            ),
         ] {
             crate::store::diagnose_permissions(&path, resource);
         }
@@ -318,9 +314,6 @@ impl Runtime {
                 .read()
                 .and_then(crate::account_templates::normalize),
         )?;
-        if let Some(profiles) = self.legacy_profiles() {
-            startup("legacy_profiles", profiles.read())?;
-        }
         startup(
             "model_config",
             crate::model_config::ModelConfig::new(
@@ -346,15 +339,12 @@ impl Runtime {
         startup("oauth_config", self.config.migrate_legacy().await)?;
         startup("operations", self.operations.store.recover_startup())?;
         startup("priority_orders", self.priorities.recover_startup().await)?;
-        startup("legacy_recovery", self.migrate_legacy_recovery().await)?;
         startup("model_tests", self.tests.startup())?;
         startup("lm_detector", self.tests.lm_bank.migrate_bundled().await)?;
         startup(
             "capacity",
-            self.detection.capacity.retire_legacy(chrono::Utc::now()),
+            self.detection.capacity.initialize(chrono::Utc::now()),
         )?;
-        startup("detection", self.detection.migrate_dispatches())?;
-        startup("legacy_templates", self.retire_legacy_templates().await)?;
         startup("monitor", self.monitor.startup().await)?;
         self.refresh_route().await;
         self.tests.resume()?;

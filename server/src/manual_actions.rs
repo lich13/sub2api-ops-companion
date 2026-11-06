@@ -12,7 +12,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub(crate) type UsageFlight = (String, tokio::sync::watch::Receiver<Option<Result<Value>>>);
+pub(crate) type UsageFlight = (
+    String,
+    tokio::sync::watch::Receiver<Option<Result<(Value, Value)>>>,
+);
 fn uncertain(message: &str, code: &str) -> Error {
     Error::new(502, json!({"message":message,"code":code}))
 }
@@ -145,6 +148,9 @@ impl Runtime {
                 json!({"message":"删除未确认，请刷新核对实际状态","code":if code == "ok" {"readback_mismatch"} else {&code}}),
             ));
         }
+        self.monitor
+            .credits
+            .account_deleted(id, self.monitor.now())?;
         self.key_quota.forget(id);
         let _ = self.key_quota.remove_account_settings(id);
         self.monitor.queries.forget(id);
@@ -232,6 +238,17 @@ impl Runtime {
         key: &str,
         requested: Option<Instant>,
     ) -> Result<Value> {
+        self.usage_action_with_row(id, payload, key, requested)
+            .await
+            .map(|(result, _)| result)
+    }
+    pub(crate) async fn usage_action_with_row(
+        self: &Arc<Self>,
+        id: i64,
+        payload: &Value,
+        key: &str,
+        requested: Option<Instant>,
+    ) -> Result<(Value, Value)> {
         self.writable()?;
         if id < 1 {
             return Err(Error::new(422, "账号编号无效"));
@@ -305,9 +322,12 @@ impl Runtime {
         payload: &Value,
         key: &str,
         requested: Option<Instant>,
-    ) -> Result<Value> {
+    ) -> Result<(Value, Value)> {
         let expected = string(&payload["expected_version"]);
-        let row = self.actions.account(id, Some(expected)).await?;
+        let row = self.actions.queries.private_account(id).await?;
+        if !crate::actions::version_matches(&row, expected) {
+            return Err(Error::new(409, "账号已变化，请刷新后重试"));
+        }
         let action = string(&payload["action"]);
         if action == "query_usage"
             && (row["type"] == "apikey" || !crate::account_usage::provider(&row).is_empty())
@@ -318,10 +338,11 @@ impl Runtime {
             if matches!(string(&usage["status"]), "error" | "authorization_required") {
                 return Err(Error::new(502, "上游用量读取未成功，请检查授权后重试"));
             }
-            let mut account = self.account_snapshot(id).await?;
+            let current = self.actions.account(id, None).await?;
+            let mut account = self.account_snapshot_from_row(&current).await?;
             account["usage_windows"] = usage["windows"].clone();
             account["usage"] = usage;
-            return Ok(json!({"message":"用量查询完成","account":account}));
+            return Ok((json!({"message":"用量查询完成","account":account}), current));
         }
         if action == "query_usage" && row["platform"] == "openai" && row["type"] == "oauth" {
             if let Some(at) = requested {
@@ -333,9 +354,9 @@ impl Runtime {
                         ));
                     }
                     self.invalidate_snapshot().await;
-                    return Ok(
-                        json!({"message":"用量查询完成","account":self.account_snapshot(id).await?}),
-                    );
+                    let current = self.actions.account(id, None).await?;
+                    let account = self.account_snapshot_from_row(&current).await?;
+                    return Ok((json!({"message":"用量查询完成","account":account}), current));
                 }
             }
         }
@@ -345,7 +366,6 @@ impl Runtime {
             .clone()
             .try_acquire_owned()
             .map_err(|_| crate::account_locks::busy())?;
-        let row = self.actions.account(id, Some(expected)).await?;
         let now = chrono::Utc::now();
         let usage = crate::usage::project(&row, now, &Value::Null);
         if !usage["actions"]
@@ -369,8 +389,8 @@ impl Runtime {
             "query_usage" if row["platform"] == "openai" => Ok(self
                 .monitor
                 .queries
-                .query(
-                    id,
+                .query_prepared(
+                    row.clone(),
                     key,
                     QueryOptions {
                         source: Source::Manual,
@@ -383,11 +403,10 @@ impl Runtime {
                 )
                 .await),
             "query_reset_credits" | "reset_quota" => {
-                let raw = self.monitor.row(id).await?;
                 self.monitor
                     .credits
                     .manual(
-                        &raw,
+                        &row,
                         if action == "reset_quota" {
                             "reset"
                         } else {
@@ -458,6 +477,7 @@ impl Runtime {
                 _ => "探测完成",
             }
         };
-        Ok(json!({"message":message,"account":self.account_snapshot(id).await?}))
+        let account = self.account_snapshot_from_row(&current).await?;
+        Ok((json!({"message":message,"account":account}), current))
     }
 }

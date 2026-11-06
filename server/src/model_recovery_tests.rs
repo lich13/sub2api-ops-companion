@@ -1058,6 +1058,8 @@ async fn recovery_model_one_valid_group_really_recovers_with_durable_history() {
         h.runtime.tests.get(job["id"].as_str().unwrap()).unwrap()["status"],
         "completed"
     );
+    sqlx::query("UPDATE accounts SET rate_limited_at=$1,rate_limit_reset_at=$2,overload_until=$2 WHERE id=$3")
+        .bind(h.now() - Duration::seconds(5)).bind(h.now() + Duration::hours(1)).bind(id).execute(&h.db.pool).await.unwrap();
     let result = natural_cycle(&h, id, &intent, &usage).await;
     assert_eq!(result["recovered"], true, "{result}");
     assert_eq!(result["job_id"], job["id"]);
@@ -3258,7 +3260,6 @@ async fn early_reset_completed_model_waits_for_account_lock_then_finishes_after_
     intent["kind"] = "early_reset".into();
     intent["plan_type"] = "plus".into();
     intent["credential_fingerprint"] = oauth_admission::credential_fingerprint(&row).into();
-    intent["block_state"] = crate::recovery_verification::state_block(&row);
     intent["manual_generation"] = 0.into();
     intent["observed_at"] = usage["queried_at"].clone();
     h.runtime

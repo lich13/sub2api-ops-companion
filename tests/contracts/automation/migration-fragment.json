@@ -130,30 +130,29 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/automation_runtime_contract.rs",
-        "test_name": "legacy_recovery_fields_are_retired_and_interruption_remains_readable_to_old_versions",
+        "test_name": "interrupted_recovery_ignores_retired_fields_and_preserves_existing_retry",
         "assertions": [
           "assert!(synchronous_intent[\"verification_receipt\"].is_null())",
           "assert!(synchronous_intent[\"recovery_write_dispatched\"].is_null())",
           "assert!(task.await.unwrap_err().is_cancelled())",
           "assert_eq!(saved[\"status\"], \"testing\")",
-          "assert!(saved[\"verification_receipt\"].is_null())",
-          "assert!(saved[\"verification_dispatched\"].is_null())",
-          "assert!(saved[\"recovery_write_dispatched\"].is_null())",
+          "assert_eq!(saved[\"verification_receipt\"][\"result\"][\"success\"], true)",
+          "assert_eq!(saved[\"verification_dispatched\"], true)",
+          "assert_eq!(saved[\"recovery_write_dispatched\"], true)",
           "assert_eq!(\n        restarted[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"],\n        \"retry\"\n    )",
           "assert!(restarted[\"recovery_history\"]\n        .as_object()\n        .unwrap()\n        .is_empty())",
           "assert_eq!(result[\"error_code\"], \"already_serving\")",
           "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)"
-        ],
-        "fixtures": []
+        ]
       },
-      "coverage_note": "现有加载流程清除旧专用字段，启动把 testing 转为 retry；旧版本读取新状态不丢失普通字段，账号已恢复时不推测补写历史。",
+      "coverage_note": "0.1.84 已批准规则替换：删除远古字段清理，历史字段保留但不参与派发；中断恢复沿用普通重试。",
       "replacement": {
         "legacy_assertions": [
-          "test_confirmed_receipt_resumes_after_final_commit_failure_without_retest"
+          "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_confirmed_receipt_resumes_after_final_commit_failure_without_retest"
         ],
-        "approved_requirement": "0.1.81 已批准配置修复与资源优化计划：精简恢复回执、时钟门禁和解除暂停标记，保留真实失败、人工取消及写后确认。",
-        "replacement_contract": "现有加载流程清除旧专用字段，启动把 testing 转为 retry；旧版本读取新状态不丢失普通字段，账号已恢复时不推测补写历史。"
+        "approved_requirement": "0.1.84 已批准计划：删除远古字段清理，历史字段保留但不参与派发；中断恢复沿用普通重试。",
+        "replacement_contract": "server/tests/automation_runtime_contract.rs::interrupted_recovery_ignores_retired_fields_and_preserves_existing_retry"
       }
     },
     {

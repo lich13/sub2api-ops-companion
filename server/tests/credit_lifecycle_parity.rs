@@ -2377,13 +2377,7 @@ async fn confirming_restart_reconciles_the_confirmed_history_without_repeating_m
         .unwrap();
     let finished = harness.controller.state(id).unwrap();
     assert_eq!(finished["stage"], "recovered");
-    for field in [
-        "release_requested_at",
-        "release_control_generation",
-        "release_credential_fingerprint",
-    ] {
-        assert!(finished.get(field).is_none());
-    }
+    assert_eq!(finished["release_requested_at"], datetime(now));
     assert_eq!(finished["outcome"], "restored");
     assert_eq!(finished["consumed"], true);
     assert_eq!(finished["receipt"]["business_code"], "success");
@@ -2521,6 +2515,13 @@ async fn confirming_restart_preserves_manual_changes_and_new_account_blocks() {
             .unwrap();
 
         let actual = reload_account(&harness, id).await;
+        if change == "new_limit" {
+            assert!(actual["rate_limited_at"].is_null());
+            assert_eq!(harness.controller.state(id).unwrap()["stage"], "recovered");
+            assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 1);
+            assert_eq!(harness.mock.count(Method::POST, "/test"), 1);
+            continue;
+        }
         for field in [
             "status",
             "schedulable",
@@ -3988,7 +3989,7 @@ async fn newer_depletion_after_manual_unknown_recovery_uses_a_new_episode_and_po
 async fn bark_delivery_has_an_atomic_reservation_five_attempt_limit_and_no_business_replay() {
     let harness = Harness::new(false).await;
     let now = fixed_now();
-    let first_id = NEXT_ACCOUNT_ID.fetch_add(1, Ordering::Relaxed);
+    let first_id = integer(&harness.seed_account(true, false).await["id"]).unwrap();
     harness
         .seed_notice(first_id, "fixture-bark-once", now)
         .await;
@@ -4021,7 +4022,7 @@ async fn bark_delivery_has_an_atomic_reservation_five_attempt_limit_and_no_busin
     assert_eq!(push[0].body["group"], "oauth-reset-credit");
     assert!(!push[0].body.to_string().contains(ADMIN_KEY));
 
-    let retry_id = NEXT_ACCOUNT_ID.fetch_add(1, Ordering::Relaxed);
+    let retry_id = integer(&harness.seed_account(true, false).await["id"]).unwrap();
     harness
         .seed_notice(retry_id, "fixture-bark-five", now)
         .await;
@@ -4044,7 +4045,7 @@ async fn bark_delivery_has_an_atomic_reservation_five_attempt_limit_and_no_busin
     assert_eq!(harness.mock.count(Method::GET, "/usage"), 0);
     assert_eq!(harness.mock.count(Method::POST, "/test"), 0);
 
-    let disabled_id = NEXT_ACCOUNT_ID.fetch_add(1, Ordering::Relaxed);
+    let disabled_id = integer(&harness.seed_account(true, false).await["id"]).unwrap();
     harness
         .seed_notice(disabled_id, "fixture-bark-disabled", now)
         .await;
@@ -4819,7 +4820,7 @@ async fn waiting_episode_rejects_changed_cards_or_inflight_credentials_without_s
         harness.set_now(now + Duration::seconds(2));
         run_automatic(&harness, &changed, now + Duration::seconds(2)).await;
         let terminal = harness.controller.state(id).unwrap();
-        if change == "credentials" {
+        if matches!(change, "credentials" | "identity") {
             assert_eq!(terminal["consumed"], true);
             assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 1);
             assert_eq!(harness.mock.count(Method::POST, "/test"), 1);
@@ -5226,4 +5227,100 @@ async fn manual_reset_uses_the_account_state_after_the_connection_test() {
     assert_eq!(h.mock.count(Method::POST, "/reset-quota"), 1);
     assert_eq!(h.mock.count(Method::POST, "/test"), 1);
     assert_eq!(h.mock.count(Method::POST, "/recover-state"), 0);
+}
+
+#[tokio::test]
+async fn deleted_accounts_suppress_all_pending_credit_results_without_losing_receipts() {
+    for deletion in ["application", "upstream", "retry"] {
+        let h = Harness::new(false).await;
+        let row = h.seed_account(true, false).await;
+        let id = integer(&row["id"]).unwrap();
+        let now = fixed_now();
+        let receipt = json!({"http_status":200,"business_code":"success"});
+        let task = json!({"episode":"fixture-consumed", "stage":"confirming", "policy_version":1,
+            "attempt_at":datetime(now), "consumed":true, "receipt":receipt, "owns_pause":true});
+        h.controller
+            .store
+            .transaction(|state| {
+                state["scheduler"][id.to_string()]["auto_reset_credit"] = task.clone();
+                state["recovery_history"]["fixture-history"] =
+                    json!({"account_id":id,"kind":"reset_credit","consumed":true});
+                Ok(())
+            })
+            .unwrap();
+        h.seed_notice(id, "fixture-consumed", now).await;
+        h.seed_notice(id, "fixture-future", now + Duration::minutes(10))
+            .await;
+        let history = h.controller.store.snapshot().unwrap()["recovery_history"].clone();
+        let bark = Bark::new(h.settings.clone()).unwrap();
+        if deletion == "retry" {
+            h.mock.set_bark_codes([500]);
+            h.controller.deliver_results(&bark).await.unwrap();
+            assert_eq!(h.mock.count(Method::POST, "/push"), 1);
+        }
+        sqlx::query("UPDATE accounts SET deleted_at=$1 WHERE id=$2")
+            .bind(now)
+            .bind(id)
+            .execute(&h.db.pool)
+            .await
+            .unwrap();
+        if deletion == "application" {
+            h.controller.account_deleted(id, now).unwrap();
+        }
+        let before = h.mock.count(Method::POST, "/push");
+        h.controller.deliver_results(&bark).await.unwrap();
+        h.set_now(now + Duration::minutes(20));
+        h.restart_controller().deliver_results(&bark).await.unwrap();
+        let state = h.controller.store.snapshot().unwrap();
+        assert_eq!(state["recovery_history"], history);
+        assert_eq!(
+            state["scheduler"][id.to_string()]["auto_reset_credit"]["receipt"],
+            receipt
+        );
+        assert_eq!(
+            state["scheduler"][id.to_string()]["auto_reset_credit"]["stage"],
+            "finished"
+        );
+        for notice in state["scheduler"][id.to_string()]["credit_result_notifications"]
+            .as_object()
+            .unwrap()
+            .values()
+        {
+            assert_eq!(notice["status"], "suppressed");
+            assert!(notice["next_at"].is_null());
+        }
+        assert_eq!(h.mock.count(Method::POST, "/push"), before);
+        assert_eq!(h.mock.count(Method::POST, "/reset-quota"), 0);
+    }
+}
+
+#[tokio::test]
+async fn legacy_manual_record_without_source_never_becomes_an_automatic_credit_task() {
+    let h = Harness::new(false).await;
+    let id = 423;
+    let task = json!({"episode":"fixture-old-manual", "stage":"manual", "owns_pause":false});
+    h.controller
+        .store
+        .transaction(|state| {
+            state["scheduler"][id.to_string()]["auto_reset_credit"] = task.clone();
+            Ok(())
+        })
+        .unwrap();
+    h.controller
+        .sweep(&[] as &[Value], fixed_now())
+        .await
+        .unwrap();
+    let restarted = h.restart_controller();
+    restarted.sweep(&[] as &[Value], fixed_now()).await.unwrap();
+    restarted
+        .deliver_results(&Bark::new(h.settings.clone()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(restarted.state(id).unwrap(), task);
+    assert!(
+        restarted.store.snapshot().unwrap()["scheduler"][id.to_string()]
+            ["credit_result_notifications"]
+            .is_null()
+    );
+    assert_eq!(h.mock.total(), 0);
 }

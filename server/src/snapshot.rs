@@ -172,13 +172,47 @@ impl Runtime {
         Ok((result, bytes))
     }
     pub async fn account_snapshot(&self, id: i64) -> Result<Value> {
-        Ok(self.shared_snapshot().await?["accounts"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|row| row["id"] == id)
-            .cloned()
-            .unwrap_or(Value::Null))
+        match self.actions.queries.account(id).await {
+            Ok(row) => self.account_snapshot_from_row(&row).await,
+            Err(error) if error.status.as_u16() == 404 => Ok(Value::Null),
+            Err(error) => Err(error),
+        }
+    }
+    pub(crate) async fn account_snapshot_from_row(&self, row: &Value) -> Result<Value> {
+        let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
+        let now = chrono::Utc::now();
+        let state = self.actions.queries.oauth.shared_snapshot()?;
+        let meta = &state["scheduler"][id.to_string()];
+        let mut account = queries::account_dto_without_windows(row, now);
+        account["usage"] = self.local_account_usage(row).await?;
+        account["usage_windows"] = account["usage"]["windows"].clone();
+        account["auto_reset_credit"] = crate::credit_rules::project(
+            &meta["auto_reset_credit"],
+            &meta["credit_result_notifications"],
+        );
+        account["recovery_monitor"] = crate::recovery_events::project(meta);
+        if crate::model_target::supported(row) {
+            match self.detection.capacity.store.shared_snapshot() {
+                Ok(marks) => {
+                    account["degradation_mark"] =
+                        crate::capacity_alerts::mark_view(id, &marks["marks"][id.to_string()]);
+                    account["model_detection"] = self
+                        .detection
+                        .store
+                        .read_shared()
+                        .and_then(|state| {
+                            self.config.current().and_then(|config| {
+                                crate::model_detection::Detection::project_account(
+                                    row, &state, &config,
+                                )
+                            })
+                        })
+                        .unwrap_or(json!({"status":"error","reason":"检测状态暂不可读取"}));
+                }
+                Err(_) => account["degradation_mark"] = json!({"error":"降智标记暂不可读取"}),
+            }
+        }
+        Ok(account)
     }
     pub async fn error_detail(&self, id: i64, category: Option<&str>) -> Result<Value> {
         let mut result = self.actions.queries.error_detail(id, category).await?;

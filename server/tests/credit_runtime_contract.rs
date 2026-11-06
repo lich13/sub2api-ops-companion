@@ -1237,7 +1237,7 @@ async fn manual_generation_change_keeps_consumption_receipt_and_never_unpauses()
 #[tokio::test]
 async fn bark_delivery_is_once_only_and_failure_reservations_stop_after_five() {
     let harness = Harness::new(false).await;
-    let delivered_id = NEXT_ACCOUNT_ID.fetch_add(1, Ordering::Relaxed);
+    let delivered_id = integer(&harness.seed_account(true, false).await["id"]).unwrap();
     harness
         .seed_notice(delivered_id, "fixture-bark-delivered", fixed_now())
         .await;
@@ -1253,7 +1253,7 @@ async fn bark_delivery_is_once_only_and_failure_reservations_stop_after_five() {
     harness.controller.deliver_results(&bark).await.unwrap();
     assert_eq!(harness.mock.count(Method::POST, "/push"), 1);
 
-    let failed_id = NEXT_ACCOUNT_ID.fetch_add(1, Ordering::Relaxed);
+    let failed_id = integer(&harness.seed_account(true, false).await["id"]).unwrap();
     harness
         .seed_notice(failed_id, "fixture-bark-five", fixed_now())
         .await;
@@ -1455,7 +1455,7 @@ async fn parameter_recovery_rejected_write_keeps_owned_version() {
 
 #[tokio::test]
 async fn parameter_recovery_conflicting_manual_or_account_changes_never_resume_hold() {
-    for change in ["generation", "identity", "priority", "concurrency", "limit"] {
+    for change in ["generation", "identity", "priority", "concurrency"] {
         let h = Harness::new(false).await;
         let (id, _) = seed_parameter_retry(&h).await;
         apply_parameter(&h, id, "concurrency", 4).await.unwrap();
@@ -1472,7 +1472,6 @@ async fn parameter_recovery_conflicting_manual_or_account_changes_never_resume_h
                 "identity" => "credentials=credentials || '{\"chatgpt_account_id\":\"fixture-replacement\"}'::jsonb",
                 "priority" => "priority=99",
                 "concurrency" => "concurrency=99",
-                "limit" => "rate_limited_at=$2,rate_limit_reset_at=$2 + interval '2 hours'",
                 _ => unreachable!(),
             };
             sqlx::query(&format!(
@@ -1500,7 +1499,7 @@ async fn parameter_recovery_conflicting_manual_or_account_changes_never_resume_h
         assert_eq!(task["outcome"], "unrecovered");
         assert_eq!(task["consumed"], true);
         assert!(task["receipt"].is_object());
-        assert_eq!(task["owns_pause"], change == "limit", "{change}");
+        assert_eq!(task["owns_pause"], false, "{change}");
         assert_eq!(task["owned_version"], pending["owned_version"]);
         assert_eq!(
             task["owned_version"] == row["updated_at"],

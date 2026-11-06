@@ -708,15 +708,6 @@ fn recovery_descriptors_and_block_signatures_match_pinned_python() {
         rules["signature"]["expected"].as_str().unwrap(),
     );
 
-    for case in rules["change_safety"].as_array().unwrap() {
-        assert_eq!(
-            recovery_rules::change_is_safe(&case["before"], &case["after"]),
-            case["expected"].as_bool().unwrap(),
-            "{}",
-            case["name"],
-        );
-    }
-
     let threshold = &rules["threshold"];
     let parsed = recovery_rules::threshold(&json!(threshold["value"]));
     assert_eq!(parsed, threshold["expected"]);

@@ -676,8 +676,8 @@ def check_exported_recovery(app_root: Path, export_path: Path) -> dict[str, Any]
     intent = next((item for item in intents if item.get("fingerprint")), None)
     require(intent is not None, "pinned reader did not preserve the recovery intent")
     require(intent.get("status") == "retry", "pinned reader changed the interrupted retry")
-    retired = {"verification_receipt", "verification_dispatched", "recovery_write_dispatched", "recovery_write_at"}
-    require(not retired.intersection(intent), "retired recovery fields remain in Rust output")
+    require(intent.get("verification_receipt", {}).get("result", {}).get("success") is True,
+            "the reader discarded retained historical fields")
     require(intent.get("attempt_count") == 1, "pinned reader changed completed attempt count")
     require(not state.get("recovery_history"), "interruption must not fabricate recovery history")
     return {"status": "readable", "intent_status": intent["status"], "attempt_count": intent["attempt_count"]}

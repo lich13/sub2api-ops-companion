@@ -295,13 +295,6 @@ LEFT JOIN LATERAL (
 ) s ON true
 "####;
 
-pub const LEGACY_LEGACY_RECOVERY_PLAN_CLEANUP_SQL: &str = r####"
-DELETE FROM scheduled_test_plans
-WHERE cron_expression = '* * * * *'
-  AND auto_recover = true
-RETURNING id, account_id
-"####;
-
 pub const ERRORS_DEGRADATION_WHERE: &str = concat!(
     "NOT COALESCE(",
     sql_local_throttle!(),
@@ -365,6 +358,12 @@ mod tests {
     fn deduplicated_sql_constants_are_byte_for_byte_identical() {
         let expected = [
             (
+                "DESKTOP_ACCOUNT_SQL",
+                DESKTOP_ACCOUNT_SQL,
+                23898,
+                "c651f4ca508c273df2364e8c953d2c8337ad014a499fc9dff1beb6f8931db940",
+            ),
+            (
                 "DESKTOP_SUPPORTED",
                 DESKTOP_SUPPORTED,
                 83,
@@ -423,12 +422,6 @@ mod tests {
                 STATS_STATS_SQL,
                 564,
                 "21bc8f3277bcb67443d46f7dfab54640fabb701140b7e2353ba50c111021fc55",
-            ),
-            (
-                "LEGACY_LEGACY_RECOVERY_PLAN_CLEANUP_SQL",
-                LEGACY_LEGACY_RECOVERY_PLAN_CLEANUP_SQL,
-                121,
-                "843ba51a7732b7fa5891e9fe677f9aeb518aa82cbb1fc93369ca0bcf26e281bb",
             ),
             (
                 "ERRORS_DEGRADATION_WHERE",

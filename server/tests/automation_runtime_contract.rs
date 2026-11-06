@@ -857,7 +857,7 @@ async fn interrupted_recovery_verification_uses_existing_retry_without_private_r
 }
 
 #[tokio::test]
-async fn legacy_recovery_fields_are_retired_and_interruption_remains_readable_to_old_versions() {
+async fn interrupted_recovery_ignores_retired_fields_and_preserves_existing_retry() {
     let harness = Harness::new().await;
     let (row, usage, intent) = seed_recovery(&harness, false).await;
     let id = integer(&row["id"]).unwrap();
@@ -905,9 +905,9 @@ async fn legacy_recovery_fields_are_retired_and_interruption_remains_readable_to
     let normalized = reopened.snapshot().unwrap();
     let saved = &normalized["scheduler"][id.to_string()]["recovery_intent"];
     assert_eq!(saved["status"], "testing");
-    assert!(saved["verification_receipt"].is_null());
-    assert!(saved["verification_dispatched"].is_null());
-    assert!(saved["recovery_write_dispatched"].is_null());
+    assert_eq!(saved["verification_receipt"]["result"]["success"], true);
+    assert_eq!(saved["verification_dispatched"], true);
+    assert_eq!(saved["recovery_write_dispatched"], true);
     harness.runtime.monitor.startup().await.unwrap();
     let restarted = harness.runtime.monitor.state().unwrap();
     assert_eq!(

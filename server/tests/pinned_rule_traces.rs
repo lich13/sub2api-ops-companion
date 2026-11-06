@@ -74,10 +74,7 @@ fn execute(name: &str, args: &Value) -> Result<Value> {
             time(&json!("2026-01-01T00:00:00+00:00")),
         )),
         "recovery_block_signature" => json!(oauth_state::block_signature(&args["row"])),
-        "recovery_block_change_is_safe" => json!(recovery_rules::change_is_safe(
-            &args["before"],
-            &args["after"]
-        )),
+
         "account_recovery_confirmed" => json!(recovery_rules::confirmed(&args["row"])),
         "receipt_diagnostics" => reset_credit_observation::diagnostics(
             args["status"]
@@ -515,11 +512,6 @@ fn oauth_monitor_oauthmonitorschedulingtests_test_seven_day_probe_is_retired() {
 #[test]
 fn oauth_monitor_oauthrecoverygatetests_test_automatic_recovery_is_strict_and_fail_closed() {
     check("py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_automatic_recovery_is_strict_and_fail_closed");
-}
-
-#[test]
-fn oauth_monitor_oauthrecoverygatetests_test_block_signature_detects_concurrency_change() {
-    check("py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_block_signature_detects_concurrency_change");
 }
 
 #[test]

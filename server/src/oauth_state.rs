@@ -341,25 +341,16 @@ pub fn normalize(raw: &Value) -> Value {
     if !token.is_empty() {
         settings["sub2api_admin_token"] = token.into();
     }
-    if raw["settings"]["legacy_recovery_cleanup_completed"] == true {
-        settings["legacy_recovery_cleanup_completed"] = true.into();
-        if truthy(&raw["settings"]["legacy_recovery_cleanup_completed_at"]) {
-            settings["legacy_recovery_cleanup_completed_at"] =
-                raw["settings"]["legacy_recovery_cleanup_completed_at"].clone();
-        }
-    }
     let mut results = Map::new();
-    for source in ["results", "oauth_results"] {
-        for (key, value) in raw[source].as_object().into_iter().flatten() {
-            if let Ok(id) = key.parse::<i64>() {
-                if id > 0
-                    && value.is_object()
-                    && (string(&value["template_type"]).to_lowercase() == "oauth"
-                        || value["source"] == "sub2api_admin_usage"
-                        || value["oauth_quota"].is_object())
-                {
-                    results.insert(id.to_string(), value.clone());
-                }
+    for (key, value) in raw["oauth_results"].as_object().into_iter().flatten() {
+        if let Ok(id) = key.parse::<i64>() {
+            if id > 0
+                && value.is_object()
+                && (string(&value["template_type"]).to_lowercase() == "oauth"
+                    || value["source"] == "sub2api_admin_usage"
+                    || value["oauth_quota"].is_object())
+            {
+                results.insert(id.to_string(), value.clone());
             }
         }
     }
@@ -383,44 +374,6 @@ pub fn normalize(raw: &Value) -> Value {
                 task["stage"] = "confirming".into();
             }
         }
-        for (field, retired) in [
-            (
-                "auto_reset_credit",
-                &[
-                    "release_requested_at",
-                    "release_control_generation",
-                    "release_credential_fingerprint",
-                    "policy_checked_at",
-                    "policy_credential_fingerprint",
-                    "pause_undo_requested_at",
-                    "pause_undo_confirmed_at",
-                ][..],
-            ),
-            (
-                "recovery_intent",
-                &[
-                    "verification_receipt",
-                    "verification_dispatched",
-                    "recovery_write_dispatched",
-                    "recovery_write_at",
-                ][..],
-            ),
-        ] {
-            if let Some(record) = value.get_mut(field).and_then(Value::as_object_mut) {
-                for key in retired {
-                    record.shift_remove(*key);
-                }
-            }
-        }
-        for retired in ["last_regular_at", "last_7d_probe_at"] {
-            value.as_object_mut().unwrap().shift_remove(retired);
-        }
-        if matches!(
-            string(&value["last_reason"]),
-            "regular_refresh" | "seven_day_probe"
-        ) {
-            value.as_object_mut().unwrap().shift_remove("last_reason");
-        }
         if let Some(intent) = value.get_mut("recovery_intent") {
             if intent["status"] == "blocked" && intent["last_error_code"] == "recovery_uncertain" {
                 intent["status"] = "ready".into();
@@ -428,11 +381,6 @@ pub fn normalize(raw: &Value) -> Value {
             }
             if !intent.is_object() {
                 *intent = json!({});
-            }
-            if intent["status"] == "deferred" {
-                intent["status"] = "ready".into();
-                intent["deferred_until"] = "".into();
-                intent["next_retry_at"] = "".into();
             }
         }
         scheduler.insert(id.to_string(), value);
@@ -444,35 +392,13 @@ pub fn normalize(raw: &Value) -> Value {
         .filter(|(k, v)| !k.trim().is_empty() && v.is_object())
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
-    let mut history: Map<_, _> = raw["recovery_history"]
+    let history: Map<_, _> = raw["recovery_history"]
         .as_object()
         .into_iter()
         .flatten()
         .filter(|(_, v)| v.is_object())
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
-    let mut sequence = history
-        .values()
-        .filter_map(|v| integer(&v["id"]))
-        .max()
-        .unwrap_or(0);
-    for (account, meta) in &scheduler {
-        let Ok(account_id) = account.parse::<i64>() else {
-            continue;
-        };
-        let intent = &meta["recovery_intent"];
-        if intent["status"] != "recovered" {
-            continue;
-        }
-        let key = format!(
-            "recovery:{account}:{}:success",
-            crate::compat::text(&intent["fingerprint"])
-        );
-        if !history.contains_key(&key) {
-            sequence += 1;
-            history.insert(key.clone(),json!({"id":sequence,"dedupe_key":key,"account_id":account_id,"account_name":"","model_id":"","test_completed_at":null,"recovered_at":null,"legacy":true}));
-        }
-    }
     json!({"version":5,"settings":settings,"oauth_results":results,"scheduler":scheduler,"pending_events":pending,"daily_test":raw["daily_test"].as_object().cloned().unwrap_or_default(),"recovery_history":history})
 }
 
@@ -875,7 +801,7 @@ mod shared_tests {
     fn normalized_snapshots_reuse_reads_and_observe_external_changes_and_damage() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("oauth.json");
-        let legacy = json!({"results":{"1":{"template_type":"oauth","success":true}},"scheduler":{"1":{"last_regular_at":"legacy"}}});
+        let legacy = json!({"version":5,"oauth_results":{"1":{"template_type":"oauth","success":true}},"scheduler":{"1":{}}});
         std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
         let state = OAuthState::new(path.clone(), false);
         let first = state.shared_snapshot().unwrap();
@@ -921,7 +847,10 @@ mod shared_tests {
             "fixture-retired-field"
         );
         let reloaded = OAuthState::new(path.clone(), false);
-        assert!(reloaded.snapshot().unwrap()["scheduler"]["1"]["last_regular_at"].is_null());
+        assert_eq!(
+            reloaded.snapshot().unwrap()["scheduler"]["1"]["last_regular_at"],
+            "fixture-retired-field"
+        );
         let replacement = root.path().join("replacement.json");
         std::fs::write(&replacement, b"{}").unwrap();
         std::fs::rename(replacement, &path).unwrap();

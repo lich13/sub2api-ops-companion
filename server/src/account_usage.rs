@@ -464,7 +464,7 @@ impl Runtime {
         ).await?.ok_or_else(|| Error::new(404, "账号不存在"))
     }
 
-    async fn local_account_usage(&self, row: &Value) -> Result<Value> {
+    pub(crate) async fn local_account_usage(&self, row: &Value) -> Result<Value> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         let state = self.actions.queries.oauth.shared_snapshot()?;
         let result = crate::queries::latest_completed_result(

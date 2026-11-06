@@ -31,7 +31,6 @@ pub mod fingerprint_bank;
 pub mod keepalive;
 mod keepalive_state;
 pub mod key_quota;
-pub mod legacy;
 pub mod lm_detector;
 mod lm_verdict;
 pub mod maintenance;

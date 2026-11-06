@@ -1935,7 +1935,7 @@ async fn interrupted_test_persistence_retries_after_restart_without_private_rece
 }
 
 #[tokio::test]
-async fn new_block_or_manual_change_during_test_is_never_cleared() {
+async fn refreshed_limit_is_cleared_but_manual_pause_during_test_is_preserved() {
     let now = reference_time();
     for (name, mutation) in [
         ("new-block", TestMutation::NewRateLimit),
@@ -1958,24 +1958,22 @@ async fn new_block_or_manual_change_during_test_is_never_cleared() {
         harness.runtime.monitor.drain(8).await;
         let after = harness.runtime.monitor.row(id).await.unwrap();
         assert_eq!(harness.mock.count_for(id, "POST", "/test"), 1, "{name}");
-        assert_eq!(
-            harness.mock.count_for(id, "POST", "/recover-state"),
-            0,
-            "{name}"
-        );
-        match mutation {
-            TestMutation::NewRateLimit => {
-                assert!(after["rate_limited_at"].is_string());
-                assert_eq!(
-                    parse_datetime(&after["rate_limit_reset_at"]),
-                    Some(now + Duration::hours(2))
-                );
-            }
-            TestMutation::ManualPause => {
-                assert_eq!(after["schedulable"], false);
-                assert_eq!(after["temp_unschedulable_reason"], "manual pause");
-            }
+        if matches!(mutation, TestMutation::NewRateLimit) {
+            assert_eq!(harness.mock.count_for(id, "POST", "/recover-state"), 1);
+            assert!(sub2ops_server::recovery_rules::confirmed(&after));
+            assert_eq!(
+                harness.runtime.monitor.state().unwrap()["recovery_history"]
+                    .as_object()
+                    .unwrap()
+                    .len(),
+                1
+            );
+            harness.close().await;
+            continue;
         }
+        assert_eq!(harness.mock.count_for(id, "POST", "/recover-state"), 0);
+        assert_eq!(after["schedulable"], false);
+        assert_eq!(after["temp_unschedulable_reason"], "manual pause");
         let state = harness.runtime.monitor.state().unwrap();
         assert!(state["recovery_history"].as_object().unwrap().is_empty());
         let events = state["pending_events"].as_object().unwrap();

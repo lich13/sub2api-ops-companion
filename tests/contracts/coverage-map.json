@@ -9872,34 +9872,29 @@
     },
     {
       "legacy_test_id": "py:tests.test_daily_test:DailyScheduleTests.test_legacy_deferred_intent_migrates_without_touching_pending",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempotently",
+        "test_name": "current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill",
         "assertions": [
-          "assert_eq!(migrated[\"version\"], 5)",
-          "assert_eq!(state.admin_token().unwrap(), \"fixture-admin-migration\")",
-          "assert_eq!(\n        migrated[\"oauth_results\"]\n            .as_object()\n            .unwrap()\n            .keys()\n            .cloned()\n            .collect::<Vec<_>>(),\n        vec![\"7\"]\n    )",
-          "assert_eq!(\n        migrated[\"scheduler\"][\"7\"][\"recovery_intent\"][\"status\"],\n        \"testing\"\n    )",
-          "assert_eq!(\n        migrated[\"scheduler\"][\"7\"][\"recovery_intent\"][\"next_retry_at\"],\n        Value::Null\n    )",
-          "assert!(migrated[\"scheduler\"][\"7\"].get(\"last_regular_at\").is_none())",
-          "assert!(migrated[\"scheduler\"][\"7\"].get(\"last_reason\").is_none())",
-          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"status\"],\n        \"ready\"\n    )",
-          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"deferred_until\"],\n        \"\"\n    )",
-          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"next_retry_at\"],\n        \"\"\n    )",
-          "assert!(migrated[\"scheduler\"][\"8\"].get(\"last_7d_probe_at\").is_none())",
-          "assert!(migrated[\"scheduler\"][\"8\"].get(\"last_reason\").is_none())",
-          "assert_eq!(migrated[\"pending_events\"][\"keep\"][\"status\"], \"failed\")",
-          "assert!(migrated.get(\"configs\").is_none())",
-          "assert!(migrated[\"settings\"].get(\"usage_query_enabled\").is_none())",
-          "assert!(\n        migrated[\"settings\"]\n            .get(\"auto_query_interval_seconds\")\n            .is_none()\n    )",
-          "assert_eq!(\n        serde_json::from_slice::<Value>(&first_write).unwrap(),\n        migrated\n    )",
-          "assert_eq!(fs::read(&path).unwrap(), first_write)"
-        ],
-        "fixtures": []
+          "assert_eq!(current[\"settings\"][\"sub2api_admin_token\"], \"fixture-admin\")",
+          "assert_eq!(current[\"oauth_results\"], raw[\"oauth_results\"])",
+          "assert_eq!(current[\"recovery_history\"], raw[\"recovery_history\"])",
+          "assert_eq!(\n        current[\"scheduler\"][\"7\"][\"auto_reset_credit\"][\"stage\"],\n        \"confirming\"\n    )",
+          "assert_eq!(\n        current[\"scheduler\"][\"7\"][\"auto_reset_credit\"][\"attempt_at\"],\n        raw[\"scheduler\"][\"7\"][\"auto_reset_credit\"][\"attempt_at\"]\n    )",
+          "assert_eq!(\n        current[\"scheduler\"][\"8\"][\"recovery_intent\"][\"status\"],\n        \"ready\"\n    )",
+          "assert_eq!(OAuthState::new(path, false).snapshot().unwrap(), current)"
+        ]
       },
-      "coverage_note": "固定旧断言“legacy deferred intent migrates without touching pending”映射到 legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempotently；the Rust Schedule and Monitor run with an injected clock, temporary PostgreSQL, and loopback HTTP; the daily record and request counts are checked."
+      "coverage_note": "0.1.84 已批准规则替换：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。当前测试核对完整对应行为。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_daily_test:DailyScheduleTests.test_legacy_deferred_intent_migrates_without_touching_pending"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。",
+        "replacement_contract": "server/tests/oauth_scheduler_parity.rs::current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_daily_test:DailyScheduleTests.test_missed_restart_and_interrupted_batches_do_not_catch_up",
@@ -12038,135 +12033,223 @@
     },
     {
       "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_restart_keeps_dispatch_time_even_when_result_summaries_are_pruned",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "dispatch_history_migration_survives_pruned_job_summaries_and_restart",
+        "test_name": "dispatch_history_survives_pruned_job_summaries_and_restart",
         "assertions": [
-          "assert_eq!(dispatch[\"job_id\"], \"fixture-auto-latest\");",
-          "assert_eq!(dispatch[\"started_at\"], datetime(started_at));",
-          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);"
-        ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/detection-lifecycle/fixtures.json",
-            "json_paths": [
-              "oracle.automatic_dispatch_cooldown_seconds"
-            ]
-          }
+          "assert_eq!(dispatch[\"job_id\"], \"fixture-auto-latest\")",
+          "assert_eq!(dispatch[\"started_at\"], datetime(started_at))",
+          "assert_eq!(\n        harness.runtime().detection.next_allowed_at(id).unwrap(),\n        datetime(harness.now() + Duration::seconds(cooldown - 10))\n    )",
+          "assert_eq!(\n        harness.runtime().detection.store.read().unwrap()[\"automatic_starts\"][id.to_string()],\n        dispatch\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(\n        harness\n            .mock\n            .count(\"POST\", \"/api/v1/admin/accounts/1/schedulable\"),\n        0\n    )",
+          "assert!(harness.mock.unexpected().is_empty())"
         ]
       },
-      "coverage_note": "Rust target dispatch_history_migration_survives_pruned_job_summaries_and_restart 通过真实 Runtime、临时 PostgreSQL 业务状态和 loopback 外部请求核验该场景；断言锚点限定为实际执行的调用次数、请求负载、持久状态和通知结果。"
+      "coverage_note": "0.1.84 已批准规则替换：保留当前派发历史续接，删除旧派发启动迁移。当前测试核对完整对应行为。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_detection030:AutomaticCooldownTests.test_restart_keeps_dispatch_time_even_when_result_summaries_are_pruned"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：保留当前派发历史续接，删除旧派发启动迁移。",
+        "replacement_contract": "server/tests/detection_lifecycle_parity.rs::dispatch_history_survives_pruned_job_summaries_and_restart"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_upgrade_imports_latest_automatic_start_and_ignores_manual_jobs",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "dispatch_history_migration_survives_pruned_job_summaries_and_restart",
+        "test_name": "dispatch_history_survives_pruned_job_summaries_and_restart",
         "assertions": [
-          "assert_eq!(dispatch[\"job_id\"], \"fixture-auto-latest\");",
-          "assert_eq!(dispatch[\"started_at\"], datetime(started_at));",
-          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);"
-        ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/detection-lifecycle/fixtures.json",
-            "json_paths": [
-              "oracle.automatic_dispatch_cooldown_seconds"
-            ]
-          }
+          "assert_eq!(dispatch[\"job_id\"], \"fixture-auto-latest\")",
+          "assert_eq!(dispatch[\"started_at\"], datetime(started_at))",
+          "assert_eq!(\n        harness.runtime().detection.next_allowed_at(id).unwrap(),\n        datetime(harness.now() + Duration::seconds(cooldown - 10))\n    )",
+          "assert_eq!(\n        harness.runtime().detection.store.read().unwrap()[\"automatic_starts\"][id.to_string()],\n        dispatch\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(\n        harness\n            .mock\n            .count(\"POST\", \"/api/v1/admin/accounts/1/schedulable\"),\n        0\n    )",
+          "assert!(harness.mock.unexpected().is_empty())"
         ]
       },
-      "coverage_note": "Rust target dispatch_history_migration_survives_pruned_job_summaries_and_restart 通过真实 Runtime、临时 PostgreSQL 业务状态和 loopback 外部请求核验该场景；断言锚点限定为实际执行的调用次数、请求负载、持久状态和通知结果。"
+      "coverage_note": "0.1.84 已批准规则替换：保留当前派发历史续接，删除旧派发启动迁移。当前测试核对完整对应行为。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_detection030:AutomaticCooldownTests.test_upgrade_imports_latest_automatic_start_and_ignores_manual_jobs"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：保留当前派发历史续接，删除旧派发启动迁移。",
+        "replacement_contract": "server/tests/detection_lifecycle_parity.rs::dispatch_history_survives_pruned_job_summaries_and_restart"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_detection030:DetectionClueTests.test_capacity_and_slow_ttft_only_create_detection_clues",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queue_upgrade",
+        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_initialization",
         "assertions": [
-          "assert_eq!(observed, [provider_clue.clone(), slow_clue.clone()].into());",
-          "assert_eq!(state[\"notifications\"][provider_error_id.to_string()][\"status\"], \"clue\");",
-          "assert_eq!(state[\"notifications\"][&slow_clue][\"status\"], \"clue\");",
-          "assert_eq!(state[\"pending\"], json!({}));",
-          "assert_eq!(state[\"slow_pending\"], json!({}));",
-          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);",
-          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);",
-          "state[\"detection_events\"]"
-        ],
-        "fixtures": []
+          "assert_eq!(observed, [provider_clue.clone(), slow_clue.clone()].into())",
+          "assert_eq!(\n        state[\"notifications\"][provider_error_id.to_string()][\"status\"],\n        \"clue\"\n    )",
+          "assert_eq!(state[\"notifications\"][&slow_clue][\"status\"], \"clue\")",
+          "assert_eq!(state[\"pending\"], json!({}))",
+          "assert_eq!(state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"],\n        state[\"detection_events\"]\n    )",
+          "assert!(disabled_state[\"detection_events\"]\n        .get(&disabled_clue)\n        .is_some())",
+          "assert_eq!(\n        disabled_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(disabled_state[\"pending\"], json!({}))",
+          "assert_eq!(disabled_state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(repeated[\"detection_events\"].get(&second_clue).is_some())",
+          "assert_eq!(\n        repeated_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone(),\n            second_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(repeated[\"pending\"], json!({}))",
+          "assert_eq!(repeated[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        4\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap(),\n        before\n    )"
+        ]
       },
-      "coverage_note": "临时 PostgreSQL 中的真实 Capacity poll 形成精确 provider/slow clue；Runtime delivery 保持空通知队列，Bark 与模型 loopback 均为零。",
-      "supporting_targets": []
+      "coverage_note": "0.1.84 已批准规则替换：首次容量检测初始化不修改当前证据，不再迁移退役队列。当前测试核对完整对应行为。",
+      "supporting_targets": [],
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_detection030:DetectionClueTests.test_capacity_and_slow_ttft_only_create_detection_clues"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：首次容量检测初始化不修改当前证据，不再迁移退役队列。",
+        "replacement_contract": "server/tests/detection_lifecycle_parity.rs::capacity_provider_and_slow_evidence_survive_bark_config_and_initialization"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_detection030:DetectionClueTests.test_disabled_bark_does_not_suppress_detection_clues",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queue_upgrade",
+        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_initialization",
         "assertions": [
-          "harness.runtime().detection.bark.configure(",
-          "assert_eq!(disabled_observed,",
-          "assert_eq!(disabled_state[\"pending\"], json!({}));",
-          "assert_eq!(disabled_state[\"slow_pending\"], json!({}));",
-          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);",
-          "expect(\"disabled Bark must not turn capacity clues into result notifications\")"
-        ],
-        "fixtures": []
+          "assert_eq!(observed, [provider_clue.clone(), slow_clue.clone()].into())",
+          "assert_eq!(\n        state[\"notifications\"][provider_error_id.to_string()][\"status\"],\n        \"clue\"\n    )",
+          "assert_eq!(state[\"notifications\"][&slow_clue][\"status\"], \"clue\")",
+          "assert_eq!(state[\"pending\"], json!({}))",
+          "assert_eq!(state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"],\n        state[\"detection_events\"]\n    )",
+          "assert!(disabled_state[\"detection_events\"]\n        .get(&disabled_clue)\n        .is_some())",
+          "assert_eq!(\n        disabled_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(disabled_state[\"pending\"], json!({}))",
+          "assert_eq!(disabled_state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(repeated[\"detection_events\"].get(&second_clue).is_some())",
+          "assert_eq!(\n        repeated_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone(),\n            second_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(repeated[\"pending\"], json!({}))",
+          "assert_eq!(repeated[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        4\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap(),\n        before\n    )"
+        ]
       },
-      "coverage_note": "关闭 Bark 配置时真实 Capacity poll 仍保留两类 clue，通知队列为空且没有 Bark 或模型请求。",
-      "supporting_targets": []
+      "coverage_note": "0.1.84 已批准规则替换：首次容量检测初始化不修改当前证据，不再迁移退役队列。当前测试核对完整对应行为。",
+      "supporting_targets": [],
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_detection030:DetectionClueTests.test_disabled_bark_does_not_suppress_detection_clues"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：首次容量检测初始化不修改当前证据，不再迁移退役队列。",
+        "replacement_contract": "server/tests/detection_lifecycle_parity.rs::capacity_provider_and_slow_evidence_survive_bark_config_and_initialization"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_detection030:DetectionClueTests.test_invalid_bark_config_does_not_suppress_detection_clues",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queue_upgrade",
+        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_initialization",
         "assertions": [
-          "harness.runtime().detection.bark.configure(",
-          "assert_eq!(repeated_observed,",
-          "assert_eq!(repeated[\"pending\"], json!({}));",
-          "assert_eq!(repeated[\"slow_pending\"], json!({}));",
-          "expect(\"invalid optional Bark config must retain capacity clues without emitting results\")",
-          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);"
-        ],
-        "fixtures": []
+          "assert_eq!(observed, [provider_clue.clone(), slow_clue.clone()].into())",
+          "assert_eq!(\n        state[\"notifications\"][provider_error_id.to_string()][\"status\"],\n        \"clue\"\n    )",
+          "assert_eq!(state[\"notifications\"][&slow_clue][\"status\"], \"clue\")",
+          "assert_eq!(state[\"pending\"], json!({}))",
+          "assert_eq!(state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"],\n        state[\"detection_events\"]\n    )",
+          "assert!(disabled_state[\"detection_events\"]\n        .get(&disabled_clue)\n        .is_some())",
+          "assert_eq!(\n        disabled_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(disabled_state[\"pending\"], json!({}))",
+          "assert_eq!(disabled_state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(repeated[\"detection_events\"].get(&second_clue).is_some())",
+          "assert_eq!(\n        repeated_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone(),\n            second_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(repeated[\"pending\"], json!({}))",
+          "assert_eq!(repeated[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        4\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap(),\n        before\n    )"
+        ]
       },
-      "coverage_note": "无效可选 Bark 配置不影响 Capacity clue 的收集与去重；持久 clue 保留且无 Bark 请求。",
-      "supporting_targets": []
+      "coverage_note": "0.1.84 已批准规则替换：首次容量检测初始化不修改当前证据，不再迁移退役队列。当前测试核对完整对应行为。",
+      "supporting_targets": [],
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_detection030:DetectionClueTests.test_invalid_bark_config_does_not_suppress_detection_clues"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：首次容量检测初始化不修改当前证据，不再迁移退役队列。",
+        "replacement_contract": "server/tests/detection_lifecycle_parity.rs::capacity_provider_and_slow_evidence_survive_bark_config_and_initialization"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_detection030:DetectionClueTests.test_upgrade_discards_legacy_pending_notifications_without_replaying_history",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queue_upgrade",
+        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_initialization",
         "assertions": [
-          "state[\"pending\"][\"fixture-legacy-error\"]",
-          "state[\"slow_pending\"][\"fixture-legacy-slow\"]",
-          "harness.restart_runtime().await;",
-          "assert_eq!(upgraded[\"pending\"], json!({}));",
-          "assert_eq!(upgraded[\"slow_pending\"], json!({}));",
-          "assert_eq!(upgraded[\"detection_events\"], json!({}));",
-          "assert_eq!(upgraded[\"notifications\"][\"fixture-legacy-error\"][\"status\"], \"retired\");",
-          "assert_eq!(upgraded[\"notifications\"][\"fixture-legacy-slow\"][\"status\"], \"retired\");",
-          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);",
-          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);"
-        ],
-        "fixtures": []
+          "assert_eq!(observed, [provider_clue.clone(), slow_clue.clone()].into())",
+          "assert_eq!(\n        state[\"notifications\"][provider_error_id.to_string()][\"status\"],\n        \"clue\"\n    )",
+          "assert_eq!(state[\"notifications\"][&slow_clue][\"status\"], \"clue\")",
+          "assert_eq!(state[\"pending\"], json!({}))",
+          "assert_eq!(state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"],\n        state[\"detection_events\"]\n    )",
+          "assert!(disabled_state[\"detection_events\"]\n        .get(&disabled_clue)\n        .is_some())",
+          "assert_eq!(\n        disabled_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(disabled_state[\"pending\"], json!({}))",
+          "assert_eq!(disabled_state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(repeated[\"detection_events\"].get(&second_clue).is_some())",
+          "assert_eq!(\n        repeated_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone(),\n            second_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(repeated[\"pending\"], json!({}))",
+          "assert_eq!(repeated[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        4\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap(),\n        before\n    )"
+        ]
       },
-      "coverage_note": "升级旧 pending/slow_pending 状态时，旧通知被标为 retired、队列清空，重启后也没有 Bark 或模型重放。",
-      "supporting_targets": []
+      "coverage_note": "0.1.84 已批准规则替换：首次容量检测初始化不修改当前证据，不再迁移退役队列。当前测试核对完整对应行为。",
+      "supporting_targets": [],
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_detection030:DetectionClueTests.test_upgrade_discards_legacy_pending_notifications_without_replaying_history"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：首次容量检测初始化不修改当前证据，不再迁移退役队列。",
+        "replacement_contract": "server/tests/detection_lifecycle_parity.rs::capacity_provider_and_slow_evidence_survive_bark_config_and_initialization"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_detection030:DispositionNotificationTests.test_attempt_save_failure_blocks_bark_until_durable_retry",
@@ -14930,20 +15013,44 @@
     },
     {
       "legacy_test_id": "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_capacity_and_slow_clues_never_send_bark_directly",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queue_upgrade",
+        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_initialization",
         "assertions": [
-          "assert_eq!(observed, [provider_clue.clone(), slow_clue.clone()].into());",
-          "assert_eq!(state[\"pending\"], json!({}));",
-          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);",
-          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);"
-        ],
-        "fixtures": []
+          "assert_eq!(observed, [provider_clue.clone(), slow_clue.clone()].into())",
+          "assert_eq!(\n        state[\"notifications\"][provider_error_id.to_string()][\"status\"],\n        \"clue\"\n    )",
+          "assert_eq!(state[\"notifications\"][&slow_clue][\"status\"], \"clue\")",
+          "assert_eq!(state[\"pending\"], json!({}))",
+          "assert_eq!(state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"],\n        state[\"detection_events\"]\n    )",
+          "assert!(disabled_state[\"detection_events\"]\n        .get(&disabled_clue)\n        .is_some())",
+          "assert_eq!(\n        disabled_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(disabled_state[\"pending\"], json!({}))",
+          "assert_eq!(disabled_state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(repeated[\"detection_events\"].get(&second_clue).is_some())",
+          "assert_eq!(\n        repeated_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone(),\n            second_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(repeated[\"pending\"], json!({}))",
+          "assert_eq!(repeated[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        4\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap(),\n        before\n    )"
+        ]
       },
-      "coverage_note": "Rust 以 Runtime poll 生成并持久化 clue，delivery 后通知队列仍为空且 Bark/model loopback 均为零；旧 CapacityAlerts.deliver_due 属内部 API 差异。"
+      "coverage_note": "0.1.84 已批准规则替换：首次容量检测初始化不修改当前证据，不再迁移退役队列。当前测试核对完整对应行为。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_capacity_and_slow_clues_never_send_bark_directly"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：首次容量检测初始化不修改当前证据，不再迁移退役队列。",
+        "replacement_contract": "server/tests/detection_lifecycle_parity.rs::capacity_provider_and_slow_evidence_survive_bark_config_and_initialization"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_cooldown_counts_real_http_and_releases_at_exact_300_seconds",
@@ -15017,7 +15124,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_failed_http_dispatch_still_cools_after_restart_and_result_pruning",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
@@ -15029,7 +15136,6 @@
           "state[\"accounts\"] = json!({});",
           "state[\"requests\"] = json!({});",
           "harness.restart_runtime().await;",
-          "harness.runtime().detection.migrate_dispatches().unwrap();",
           "harness.advance(cooldown - 1);",
           "assert!(cooling.is_null());",
           "harness.advance(1);",
@@ -15048,16 +15154,26 @@
         {
           "kind": "rust_test",
           "path": "server/tests/detection_lifecycle_parity.rs",
-          "test_name": "dispatch_history_migration_survives_pruned_job_summaries_and_restart",
+          "test_name": "dispatch_history_survives_pruned_job_summaries_and_restart",
           "assertions": [
-            "assert_eq!(dispatch[\"job_id\"], \"fixture-auto-latest\");",
-            "assert_eq!(\n        harness.runtime().detection.store.read().unwrap()[\"automatic_starts\"][id.to_string()],\n        dispatch\n    );",
-            "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);"
-          ],
-          "fixtures": []
+            "assert_eq!(dispatch[\"job_id\"], \"fixture-auto-latest\")",
+            "assert_eq!(dispatch[\"started_at\"], datetime(started_at))",
+            "assert_eq!(\n        harness.runtime().detection.next_allowed_at(id).unwrap(),\n        datetime(harness.now() + Duration::seconds(cooldown - 10))\n    )",
+            "assert_eq!(\n        harness.runtime().detection.store.read().unwrap()[\"automatic_starts\"][id.to_string()],\n        dispatch\n    )",
+            "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0)",
+            "assert_eq!(\n        harness\n            .mock\n            .count(\"POST\", \"/api/v1/admin/accounts/1/schedulable\"),\n        0\n    )",
+            "assert!(harness.mock.unexpected().is_empty())"
+          ]
         }
       ],
-      "coverage_note": "invalid_model_or_request 失败 dispatch 在 job/result 索引剪枝和 Runtime 重启迁移后仍保留原时间戳；299 秒不派发，300 秒边界重试。"
+      "coverage_note": "0.1.84 已批准规则替换：保留当前派发历史续接，删除旧派发启动迁移。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_failed_http_dispatch_still_cools_after_restart_and_result_pruning"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：保留当前派发历史续接，删除旧派发启动迁移。",
+        "replacement_contract": "server/tests/detection_lifecycle_parity.rs::dispatch_history_survives_pruned_job_summaries_and_restart"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_low_confidence_first_sample_stops_then_notifies_once_across_restart",
@@ -19363,30 +19479,27 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "monitor_recovery_stops_if_account_concurrency_changes_during_test",
+        "test_name": "monitor_recovery_accepts_refreshed_limits_and_unrelated_parameters_during_test",
         "assertions": [
           "assert_eq!(initial_concurrency, Some(2))",
           "assert_eq!(changed_concurrency, Some(3))",
-          "assert_eq!(intent[\"last_error_code\"], \"recovery_state_changed\")",
-          "assert_eq!(event[\"test_success\"], true)",
+          "assert_eq!(current[\"concurrency\"], 3)",
+          "assert!(sub2ops_server::recovery_rules::confirmed(&current))",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
-          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/clear-rate-limit\"), 0)",
           "assert_eq!(harness.mock.count(\"DELETE\", \"/temp-unschedulable\"), 0)",
-          "assert!(harness.mock.unexpected().is_empty())",
-          "assert_eq!(intent[\"status\"], \"retry\");",
-          "datetime(due + Duration::seconds(10))"
-        ],
-        "fixtures": []
+          "assert!(harness.mock.unexpected().is_empty())"
+        ]
       },
-      "coverage_note": "账号状态改变时停止本次清状态，沿用恢复退避重新评估，不永久 blocked。",
+      "coverage_note": "0.1.84 已批准规则替换：测活成功后不以限流时间戳及无关参数变化阻止清状态，保留人工控制检查。当前测试核对完整对应行为。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_concurrency_signature_change_stops_recovery_mutation"
         ],
-        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
-        "replacement_contract": "账号状态改变时停止本次清状态，沿用恢复退避重新评估，不永久 blocked。"
+        "approved_requirement": "0.1.84 已批准计划：测活成功后不以限流时间戳及无关参数变化阻止清状态，保留人工控制检查。",
+        "replacement_contract": "server/tests/oauth_scheduler_parity.rs::monitor_recovery_accepts_refreshed_limits_and_unrelated_parameters_during_test"
       }
     },
     {
@@ -19628,7 +19741,7 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "monitor_test_success_falls_back_and_unknown_recovery_write_is_not_replayed",
+        "test_name": "monitor_recovery_write_failures_use_ordinary_retry_without_replaying_quota_queries",
         "assertions": [
           "assert_eq!(intent[\"status\"], expected_status)",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
@@ -19636,30 +19749,30 @@
           "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/clear-rate-limit\"), 0)",
           "assert_eq!(harness.mock.count(\"DELETE\", \"/temp-unschedulable\"), 0)",
-          "assert_eq!(intent[\"last_error_code\"], \"recovery_uncertain\")",
+          "assert_eq!(intent[\"last_error_code\"], \"recovery_failed\")",
+          "assert_eq!(\n                intent[\"next_retry_at\"],\n                datetime(due + Duration::seconds(10))\n            )",
+          "assert!(intent[\"successful_test\"].is_null())",
           "assert!(intent[\"recovery_write_dispatched\"].is_null())",
-          "assert_eq!(\n                after_write[\"rate_limited_at\"],\n                blocked_before_write[\"rate_limited_at\"]\n            )",
-          "assert_eq!(\n                after_write[\"rate_limit_reset_at\"],\n                blocked_before_write[\"rate_limit_reset_at\"]\n            )",
-          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
-          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(\n                    after_write[\"rate_limited_at\"],\n                    blocked_before_write[\"rate_limited_at\"]\n                )",
+          "assert_eq!(\n                    after_write[\"rate_limit_reset_at\"],\n                    blocked_before_write[\"rate_limit_reset_at\"]\n                )",
           "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(\n                restarted_intent[\"status\"], retry_status,\n                \"{restarted_intent}\"\n            )",
+          "assert!(restarted_intent[\"successful_test\"].is_null())",
+          "assert!(harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"].is_null())",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
-          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
-          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(\n                harness.mock.count(\"POST\", \"/test\"),\n                if effect == \"read_failure\" { 1 } else { 2 }\n            )",
+          "assert_eq!(\n                harness.mock.count(\"POST\", \"/recover-state\"),\n                if effect == \"read_failure\" { 1 } else { 2 }\n            )",
           "assert_eq!(\n                harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"],\n                Value::Null\n            )",
-          "assert!(harness.mock.unexpected().is_empty())",
-          "assert_eq!(restarted_intent[\"status\"], \"recovered\",",
-          "assert!(restarted_intent[\"successful_test\"].is_null());"
-        ],
-        "fixtures": []
+          "assert!(harness.mock.unexpected().is_empty())"
+        ]
       },
-      "coverage_note": "清状态失败、未生效或读回失败仅保存最小测活证据；重启后重试清状态，真实身份变更重新测活，正常 token 续期复用成功结果。",
+      "coverage_note": "0.1.84 已批准规则替换：幂等清状态失败走普通重试并重新测活，不保留 successful_test 专用状态。当前测试核对完整对应行为。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_recover_state_runs_after_test_when_block_remains"
         ],
-        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
-        "replacement_contract": "清状态失败、未生效或读回失败仅保存最小测活证据；重启后重试清状态，真实身份变更重新测活，正常 token 续期复用成功结果。"
+        "approved_requirement": "0.1.84 已批准计划：幂等清状态失败走普通重试并重新测活，不保留 successful_test 专用状态。",
+        "replacement_contract": "server/tests/oauth_scheduler_parity.rs::monitor_recovery_write_failures_use_ordinary_retry_without_replaying_quota_queries"
       }
     },
     {
@@ -19668,7 +19781,7 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "monitor_test_success_falls_back_and_unknown_recovery_write_is_not_replayed",
+        "test_name": "monitor_recovery_write_failures_use_ordinary_retry_without_replaying_quota_queries",
         "assertions": [
           "assert_eq!(intent[\"status\"], expected_status)",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
@@ -19676,32 +19789,32 @@
           "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/clear-rate-limit\"), 0)",
           "assert_eq!(harness.mock.count(\"DELETE\", \"/temp-unschedulable\"), 0)",
-          "assert_eq!(intent[\"last_error_code\"], \"recovery_uncertain\")",
+          "assert_eq!(intent[\"last_error_code\"], \"recovery_failed\")",
+          "assert_eq!(\n                intent[\"next_retry_at\"],\n                datetime(due + Duration::seconds(10))\n            )",
+          "assert!(intent[\"successful_test\"].is_null())",
           "assert!(intent[\"recovery_write_dispatched\"].is_null())",
-          "assert_eq!(\n                after_write[\"rate_limited_at\"],\n                blocked_before_write[\"rate_limited_at\"]\n            )",
-          "assert_eq!(\n                after_write[\"rate_limit_reset_at\"],\n                blocked_before_write[\"rate_limit_reset_at\"]\n            )",
-          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
-          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(\n                    after_write[\"rate_limited_at\"],\n                    blocked_before_write[\"rate_limited_at\"]\n                )",
+          "assert_eq!(\n                    after_write[\"rate_limit_reset_at\"],\n                    blocked_before_write[\"rate_limit_reset_at\"]\n                )",
           "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(\n                restarted_intent[\"status\"], retry_status,\n                \"{restarted_intent}\"\n            )",
+          "assert!(restarted_intent[\"successful_test\"].is_null())",
+          "assert!(harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"].is_null())",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
-          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
-          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(\n                harness.mock.count(\"POST\", \"/test\"),\n                if effect == \"read_failure\" { 1 } else { 2 }\n            )",
+          "assert_eq!(\n                harness.mock.count(\"POST\", \"/recover-state\"),\n                if effect == \"read_failure\" { 1 } else { 2 }\n            )",
           "assert_eq!(\n                harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"],\n                Value::Null\n            )",
-          "assert!(harness.mock.unexpected().is_empty())",
-          "assert_eq!(restarted_intent[\"status\"], \"recovered\",",
-          "assert!(restarted_intent[\"successful_test\"].is_null());"
-        ],
-        "fixtures": []
+          "assert!(harness.mock.unexpected().is_empty())"
+        ]
       },
-      "coverage_note": "清状态失败、未生效或读回失败仅保存最小测活证据；重启后重试清状态，真实身份变更重新测活，正常 token 续期复用成功结果。",
+      "coverage_note": "0.1.84 已批准规则替换：幂等清状态失败走普通重试并重新测活，不保留 successful_test 专用状态。当前测试核对完整对应行为。",
       "superseded_by": "monitor_test_success_falls_back_and_unknown_recovery_write_is_not_replayed",
       "approved_behavior": "recover-state 状态写入响应为 500 时只读核对账号状态；无法确认时标记 blocked/recovery_uncertain，禁止按 +60s 自动重放。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_recovery_failure_keeps_intent_for_backoff_retry"
         ],
-        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
-        "replacement_contract": "清状态失败、未生效或读回失败仅保存最小测活证据；重启后重试清状态，真实身份变更重新测活，正常 token 续期复用成功结果。"
+        "approved_requirement": "0.1.84 已批准计划：幂等清状态失败走普通重试并重新测活，不保留 successful_test 专用状态。",
+        "replacement_contract": "server/tests/oauth_scheduler_parity.rs::monitor_recovery_write_failures_use_ordinary_retry_without_replaying_quota_queries"
       }
     },
     {
@@ -20179,53 +20292,32 @@
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_block_signature_detects_concurrency_change",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
-        "path": "server/tests/pinned_rule_traces.rs",
-        "test_name": "oauth_monitor_oauthrecoverygatetests_test_block_signature_detects_concurrency_change",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "monitor_recovery_accepts_refreshed_limits_and_unrelated_parameters_during_test",
         "assertions": [
-          "check(",
-          "\"py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_block_signature_detects_concurrency_change\""
-        ],
-        "helper_assertions": [
-          {
-            "name": "check",
-            "assertions": [
-              "assert!(!cases.is_empty(),",
-              "assert_same(",
-              "assert!(actual.is_err(),",
-              "assert_eq!(args, case[\"arguments\"]);"
-            ]
-          },
-          {
-            "name": "assert_same",
-            "assertions": [
-              "assert_eq!(a.len(), b.len(),",
-              "assert!(a.contains_key(key),",
-              "_ => assert_eq!(actual, expected,",
-              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
-            ]
-          }
-        ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/rule-traces/fixtures.json",
-            "json_paths": [
-              "legacy_tests.49",
-              "cases.160",
-              "cases.161",
-              "cases.162",
-              "cases.163",
-              "cases.164",
-              "cases.165",
-              "cases.166",
-              "cases.167"
-            ]
-          }
+          "assert_eq!(initial_concurrency, Some(2))",
+          "assert_eq!(changed_concurrency, Some(3))",
+          "assert_eq!(current[\"concurrency\"], 3)",
+          "assert!(sub2ops_server::recovery_rules::confirmed(&current))",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/clear-rate-limit\"), 0)",
+          "assert_eq!(harness.mock.count(\"DELETE\", \"/temp-unschedulable\"), 0)",
+          "assert!(harness.mock.unexpected().is_empty())"
         ]
       },
-      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+      "coverage_note": "0.1.84 已批准规则替换：删除共享限流字段变化门禁，成功测活以最终 confirmed 为准。当前测试核对完整对应行为。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_block_signature_detects_concurrency_change"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：删除共享限流字段变化门禁，成功测活以最终 confirmed 为准。",
+        "replacement_contract": "server/tests/oauth_scheduler_parity.rs::monitor_recovery_accepts_refreshed_limits_and_unrelated_parameters_during_test"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_recovery_backoff_schedule_caps_at_30_minutes",
@@ -20354,101 +20446,101 @@
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_legacy_guard_cleanup_failure_keeps_state_for_retry",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
-        "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "legacy_recovery_cleanup_failure_keeps_marker_unset_and_can_retry",
+        "path": "server/tests/state_lifecycle_contract.rs",
+        "test_name": "runtime_start_preserves_retired_files_and_initializes_current_detection",
         "assertions": [
-          "assert!(failed.is_err())",
-          "assert!(guard_path.is_dir())",
-          "assert_ne!(\n        harness.runtime.monitor.state().unwrap()[\"settings\"][\"legacy_recovery_cleanup_completed\"],\n        true,\n        \"failed cleanup must not commit its completion marker\"\n    )",
-          "assert!(!guard_path.exists())",
-          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"settings\"][\"legacy_recovery_cleanup_completed\"],\n        true\n    )"
-        ],
-        "fixtures": []
+          "assert_eq!(\n        fs::read(&retired).unwrap(),\n        b\"fixture-retired-file-not-read\"\n    )",
+          "assert_eq!(fs::read(&guard).unwrap(), b\"fixture-retired-guard\")",
+          "assert!(capacity[key].is_string())",
+          "assert!(\n        runtime.monitor.state().unwrap()[\"settings\"][\"legacy_recovery_cleanup_completed\"].is_null()\n    )"
+        ]
       },
-      "coverage_note": "固定旧断言“legacy guard cleanup failure keeps state for retry”映射到 legacy_recovery_cleanup_failure_keeps_marker_unset_and_can_retry；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "0.1.84 已批准规则替换：删除退役恢复计划、模板及旧派发启动迁移；保留首次正常初始化。当前测试核对完整对应行为。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_legacy_guard_cleanup_failure_keeps_state_for_retry"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：删除退役恢复计划、模板及旧派发启动迁移；保留首次正常初始化。",
+        "replacement_contract": "server/tests/state_lifecycle_contract.rs::runtime_start_preserves_retired_files_and_initializes_current_detection"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_legacy_guard_cleanup_is_idempotent",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
-        "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "legacy_recovery_cleanup_failure_keeps_marker_unset_and_can_retry",
+        "path": "server/tests/state_lifecycle_contract.rs",
+        "test_name": "runtime_start_preserves_retired_files_and_initializes_current_detection",
         "assertions": [
-          "assert!(failed.is_err())",
-          "assert!(guard_path.is_dir())",
-          "assert_ne!(\n        harness.runtime.monitor.state().unwrap()[\"settings\"][\"legacy_recovery_cleanup_completed\"],\n        true,\n        \"failed cleanup must not commit its completion marker\"\n    )",
-          "assert!(!guard_path.exists())",
-          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"settings\"][\"legacy_recovery_cleanup_completed\"],\n        true\n    )"
-        ],
-        "fixtures": []
+          "assert_eq!(\n        fs::read(&retired).unwrap(),\n        b\"fixture-retired-file-not-read\"\n    )",
+          "assert_eq!(fs::read(&guard).unwrap(), b\"fixture-retired-guard\")",
+          "assert!(capacity[key].is_string())",
+          "assert!(\n        runtime.monitor.state().unwrap()[\"settings\"][\"legacy_recovery_cleanup_completed\"].is_null()\n    )"
+        ]
       },
-      "coverage_note": "固定旧断言“legacy guard cleanup is idempotent”映射到 legacy_recovery_cleanup_failure_keeps_marker_unset_and_can_retry；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "0.1.84 已批准规则替换：删除退役恢复计划、模板及旧派发启动迁移；保留首次正常初始化。当前测试核对完整对应行为。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_legacy_guard_cleanup_is_idempotent"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：删除退役恢复计划、模板及旧派发启动迁移；保留首次正常初始化。",
+        "replacement_contract": "server/tests/state_lifecycle_contract.rs::runtime_start_preserves_retired_files_and_initializes_current_detection"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_migration_keeps_admin_key_and_oauth_snapshots_only",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempotently",
+        "test_name": "current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill",
         "assertions": [
-          "assert_eq!(migrated[\"version\"], 5)",
-          "assert_eq!(state.admin_token().unwrap(), \"fixture-admin-migration\")",
-          "assert_eq!(\n        migrated[\"oauth_results\"]\n            .as_object()\n            .unwrap()\n            .keys()\n            .cloned()\n            .collect::<Vec<_>>(),\n        vec![\"7\"]\n    )",
-          "assert_eq!(\n        migrated[\"scheduler\"][\"7\"][\"recovery_intent\"][\"status\"],\n        \"testing\"\n    )",
-          "assert_eq!(\n        migrated[\"scheduler\"][\"7\"][\"recovery_intent\"][\"next_retry_at\"],\n        Value::Null\n    )",
-          "assert!(migrated[\"scheduler\"][\"7\"].get(\"last_regular_at\").is_none())",
-          "assert!(migrated[\"scheduler\"][\"7\"].get(\"last_reason\").is_none())",
-          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"status\"],\n        \"ready\"\n    )",
-          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"deferred_until\"],\n        \"\"\n    )",
-          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"next_retry_at\"],\n        \"\"\n    )",
-          "assert!(migrated[\"scheduler\"][\"8\"].get(\"last_7d_probe_at\").is_none())",
-          "assert!(migrated[\"scheduler\"][\"8\"].get(\"last_reason\").is_none())",
-          "assert_eq!(migrated[\"pending_events\"][\"keep\"][\"status\"], \"failed\")",
-          "assert!(migrated.get(\"configs\").is_none())",
-          "assert!(migrated[\"settings\"].get(\"usage_query_enabled\").is_none())",
-          "assert!(\n        migrated[\"settings\"]\n            .get(\"auto_query_interval_seconds\")\n            .is_none()\n    )",
-          "assert_eq!(\n        serde_json::from_slice::<Value>(&first_write).unwrap(),\n        migrated\n    )",
-          "assert_eq!(fs::read(&path).unwrap(), first_write)"
-        ],
-        "fixtures": []
+          "assert_eq!(current[\"settings\"][\"sub2api_admin_token\"], \"fixture-admin\")",
+          "assert_eq!(current[\"oauth_results\"], raw[\"oauth_results\"])",
+          "assert_eq!(current[\"recovery_history\"], raw[\"recovery_history\"])",
+          "assert_eq!(\n        current[\"scheduler\"][\"7\"][\"auto_reset_credit\"][\"stage\"],\n        \"confirming\"\n    )",
+          "assert_eq!(\n        current[\"scheduler\"][\"7\"][\"auto_reset_credit\"][\"attempt_at\"],\n        raw[\"scheduler\"][\"7\"][\"auto_reset_credit\"][\"attempt_at\"]\n    )",
+          "assert_eq!(\n        current[\"scheduler\"][\"8\"][\"recovery_intent\"][\"status\"],\n        \"ready\"\n    )",
+          "assert_eq!(OAuthState::new(path, false).snapshot().unwrap(), current)"
+        ]
       },
-      "coverage_note": "固定旧断言“migration keeps admin key and oauth snapshots only”映射到 legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempotently；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked. Rust 0.1.43 安全加固另由 hardening_contract::normalize_filters_invalid_scheduler_keys_and_keeps_recovered_history 覆盖文本、溢出、0、负数键过滤和已恢复历史保留；固定 Python fixture 不变。"
+      "coverage_note": "0.1.84 已批准规则替换：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。当前测试核对完整对应行为。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_migration_keeps_admin_key_and_oauth_snapshots_only"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。",
+        "replacement_contract": "server/tests/oauth_scheduler_parity.rs::current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_retired_refresh_state_is_removed_without_losing_recovery_or_events",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempotently",
+        "test_name": "current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill",
         "assertions": [
-          "assert_eq!(migrated[\"version\"], 5)",
-          "assert_eq!(state.admin_token().unwrap(), \"fixture-admin-migration\")",
-          "assert_eq!(\n        migrated[\"oauth_results\"]\n            .as_object()\n            .unwrap()\n            .keys()\n            .cloned()\n            .collect::<Vec<_>>(),\n        vec![\"7\"]\n    )",
-          "assert_eq!(\n        migrated[\"scheduler\"][\"7\"][\"recovery_intent\"][\"status\"],\n        \"testing\"\n    )",
-          "assert_eq!(\n        migrated[\"scheduler\"][\"7\"][\"recovery_intent\"][\"next_retry_at\"],\n        Value::Null\n    )",
-          "assert!(migrated[\"scheduler\"][\"7\"].get(\"last_regular_at\").is_none())",
-          "assert!(migrated[\"scheduler\"][\"7\"].get(\"last_reason\").is_none())",
-          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"status\"],\n        \"ready\"\n    )",
-          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"deferred_until\"],\n        \"\"\n    )",
-          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"next_retry_at\"],\n        \"\"\n    )",
-          "assert!(migrated[\"scheduler\"][\"8\"].get(\"last_7d_probe_at\").is_none())",
-          "assert!(migrated[\"scheduler\"][\"8\"].get(\"last_reason\").is_none())",
-          "assert_eq!(migrated[\"pending_events\"][\"keep\"][\"status\"], \"failed\")",
-          "assert!(migrated.get(\"configs\").is_none())",
-          "assert!(migrated[\"settings\"].get(\"usage_query_enabled\").is_none())",
-          "assert!(\n        migrated[\"settings\"]\n            .get(\"auto_query_interval_seconds\")\n            .is_none()\n    )",
-          "assert_eq!(\n        serde_json::from_slice::<Value>(&first_write).unwrap(),\n        migrated\n    )",
-          "assert_eq!(fs::read(&path).unwrap(), first_write)"
-        ],
-        "fixtures": []
+          "assert_eq!(current[\"settings\"][\"sub2api_admin_token\"], \"fixture-admin\")",
+          "assert_eq!(current[\"oauth_results\"], raw[\"oauth_results\"])",
+          "assert_eq!(current[\"recovery_history\"], raw[\"recovery_history\"])",
+          "assert_eq!(\n        current[\"scheduler\"][\"7\"][\"auto_reset_credit\"][\"stage\"],\n        \"confirming\"\n    )",
+          "assert_eq!(\n        current[\"scheduler\"][\"7\"][\"auto_reset_credit\"][\"attempt_at\"],\n        raw[\"scheduler\"][\"7\"][\"auto_reset_credit\"][\"attempt_at\"]\n    )",
+          "assert_eq!(\n        current[\"scheduler\"][\"8\"][\"recovery_intent\"][\"status\"],\n        \"ready\"\n    )",
+          "assert_eq!(OAuthState::new(path, false).snapshot().unwrap(), current)"
+        ]
       },
-      "coverage_note": "固定旧断言“retired refresh state is removed without losing recovery or events”映射到 legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempotently；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "0.1.84 已批准规则替换：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。当前测试核对完整对应行为。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_retired_refresh_state_is_removed_without_losing_recovery_or_events"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。",
+        "replacement_contract": "server/tests/oauth_scheduler_parity.rs::current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_v2_testing_intent_migrates_to_retry_in_v5",
@@ -21598,7 +21690,7 @@
           "assert_eq!(h.mock.count(Method::POST, \"/reset-quota\"), 1)",
           "assert_eq!(h.mock.count(Method::POST, \"/test\"), 1)",
           "assert_eq!(h.mock.count(Method::POST, \"/schedulable\"), 1)",
-          "assert_eq!(task[\"owns_pause\"], change == \"limit\", \"{change}\");"
+          "assert_eq!(task[\"owns_pause\"], false, \"{change}\");"
         ],
         "helper_assertions": [
           {
@@ -21615,7 +21707,7 @@
           }
         ]
       },
-      "coverage_note": "依据稳定身份、暂停归属和人工控制核对；保留新阻断不清理，正常 token 续期不作为改参冲突。",
+      "coverage_note": "0.1.84 按现有暂停签名及人工控制核对改参归属；人工接管和真实配置变化停止恢复，正常 token 续期和限流时间戳更新不单独阻止恢复。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_parameter_recovery035:ParameterRecovery035Tests.test_concurrent_generation_credentials_mapping_proxy_and_limit_do_not_resume_hold"
@@ -23194,22 +23286,36 @@
     },
     {
       "legacy_test_id": "py:tests.test_recovery019:Recovery019MonitorFixture.test_new_block_or_manual_change_during_test_is_never_cleared",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/manual_dispatch_parity.rs",
-        "test_name": "new_block_or_manual_change_during_test_is_never_cleared",
+        "test_name": "refreshed_limit_is_cleared_but_manual_pause_during_test_is_preserved",
         "assertions": [
-          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0, \"{name}\")",
-          "assert!(after[\"rate_limited_at\"].is_string())",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1, \"{name}\")",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 1)",
+          "assert!(sub2ops_server::recovery_rules::confirmed(&after))",
+          "assert_eq!(\n                harness.runtime.monitor.state().unwrap()[\"recovery_history\"]\n                    .as_object()\n                    .unwrap()\n                    .len(),\n                1\n            )",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0)",
           "assert_eq!(after[\"schedulable\"], false)",
+          "assert_eq!(after[\"temp_unschedulable_reason\"], \"manual pause\")",
           "assert!(state[\"recovery_history\"].as_object().unwrap().is_empty())",
+          "assert_eq!(events.len(), 1, \"{name}\")",
           "assert_eq!(event[\"status\"], \"recovery_failed\", \"{name}\")",
-          "assert_eq!(event[\"error_code\"], \"recovery_state_changed\", \"{name}\")"
-        ],
-        "fixtures": []
+          "assert_eq!(event[\"stage\"], \"recovery\", \"{name}\")",
+          "assert_eq!(event[\"error_code\"], \"recovery_state_changed\", \"{name}\")",
+          "assert_eq!(event[\"test_success\"], true, \"{name}\")",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ]
       },
-      "coverage_note": "测活仍挂在回环 HTTP 时分别注入新 rate limit 和 manual pause；两个分支都保留新账号状态、不调用恢复写、不提交 recovery history，并按旧语义记录 recovery_failed/recovery_state_changed 事件。"
+      "coverage_note": "0.1.84 已批准规则替换：成功测活允许清理刷新后的限流时间戳，人工暂停仍阻止恢复。当前测试核对完整对应行为。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_recovery019:Recovery019MonitorFixture.test_new_block_or_manual_change_during_test_is_never_cleared"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：成功测活允许清理刷新后的限流时间戳，人工暂停仍阻止恢复。",
+        "replacement_contract": "server/tests/manual_dispatch_parity.rs::refreshed_limit_is_cleared_but_manual_pause_during_test_is_preserved"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_recovery019:Recovery019MonitorFixture.test_new_rate_limit_after_recovered_intent_retests_from_passive_quota",

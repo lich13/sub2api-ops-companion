@@ -6,7 +6,6 @@ use crate::{
     model_downgrade::{bank_contains, is_downgrade, valid_report},
     model_tests::ACTIVE,
     oauth_queries::Source,
-    oauth_state::block_signature,
     quota, recovery_policy, recovery_rules,
 };
 use chrono::Duration;
@@ -125,9 +124,6 @@ impl Detection {
             {
                 return Ok("账号状态不允许自动恢复".into());
             }
-            if block_signature(row) != context["block_signature"] {
-                return Ok("账号阻断状态已变化".into());
-            }
             if !recovery_rules::control_allows(recovery_row, &result, meta, now)
                 || !recovery_rules::quota_ready(recovery_row, &result, meta, now)
             {
@@ -150,7 +146,7 @@ impl Detection {
         let value = self.control(id)?;
         let state = self.monitor.shared_state()?;
         let meta = &state["scheduler"][id.to_string()];
-        let mut context = json!({
+        let context = json!({
             "account_id": id,
             "kind": kind,
             "fingerprint": fingerprint,
@@ -344,7 +340,6 @@ impl Detection {
             return Ok(self.recovery_wait("等待当前模型测试结束", None, None, "model_busy"));
         }
         let row = crate::model_target::account(&self.actions, id).await?;
-        context["block_signature"] = block_signature(&row).into();
         let reason = self.recovery_reason(&row, &context, consume).await?;
         if !reason.is_empty() {
             return Ok(json!({"success":false,"error":reason,"error_code":"recovery_ineligible"}));
@@ -401,14 +396,17 @@ impl Detection {
             "model_verification_pending",
         ))
     }
-    pub async fn prepare_recovery(&self, job: &Value) -> Result<(Value, Option<Value>)> {
+    pub async fn prepare_recovery(
+        &self,
+        job: &Value,
+        row: Value,
+    ) -> Result<(Value, Option<Value>)> {
         let context = &job["recovery_context"];
         if !truthy(context) || context["consume"] != true {
             return Ok((Value::Null, None));
         }
         let id = integer(&job["account_id"]).ok_or_else(Error::invalid)?;
         let controller = &self.monitor.credits;
-        let row = crate::model_target::account(&self.actions, id).await?;
         let task = controller.state(id)?;
         if truthy(&task["attempt_at"]) {
             return Ok((

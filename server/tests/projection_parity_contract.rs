@@ -967,7 +967,7 @@ async fn apikey_capacity_watermark_clues_mark_suppression_and_restart_match_pinn
         false,
     );
     let alerts = CapacityAlerts::new(db.clone(), settings.as_ref());
-    alerts.retire_legacy(Utc::now()).unwrap();
+    alerts.initialize(Utc::now()).unwrap();
     alerts
         .poll()
         .await
@@ -997,7 +997,7 @@ async fn apikey_capacity_watermark_clues_mark_suppression_and_restart_match_pinn
     )
     .await;
     tokio::time::sleep(StdDuration::from_millis(20)).await;
-    alerts.retire_legacy(Utc::now()).unwrap();
+    alerts.initialize(Utc::now()).unwrap();
     alerts
         .poll()
         .await
@@ -1099,7 +1099,7 @@ async fn apikey_capacity_watermark_clues_mark_suppression_and_restart_match_pinn
         .await
         .expect("suppress new clues while the account is marked");
     let restarted = CapacityAlerts::new(db.clone(), settings.as_ref());
-    restarted.retire_legacy(Utc::now()).unwrap();
+    restarted.initialize(Utc::now()).unwrap();
     restarted
         .poll()
         .await
@@ -1140,7 +1140,7 @@ async fn capacity_slow_ttft_poll_persists_one_clue_without_bark() {
         false,
     );
     let alerts = CapacityAlerts::new(db.clone(), settings.as_ref());
-    alerts.retire_legacy(Utc::now()).unwrap();
+    alerts.initialize(Utc::now()).unwrap();
     alerts
         .poll()
         .await
@@ -1579,6 +1579,36 @@ async fn desktop_runtime_snapshot_reuses_shared_stats_without_upstream_io() {
             .clone();
         assert_eq!(first_usage["today"]["requests"], 3);
         assert_eq!(first_usage["today"]["tokens"], 12);
+        let mut single = runtime.account_snapshot(ACCOUNT_ID).await.unwrap();
+        let full = first["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|account| account["id"] == ACCOUNT_ID)
+            .unwrap();
+        // Configured quotas are observed at each projection's own wall-clock time.
+        for branch in ["usage_windows", "usage"] {
+            let windows = if branch == "usage" {
+                &mut single[branch]["windows"]
+            } else {
+                &mut single[branch]
+            };
+            for (index, window) in windows.as_array_mut().unwrap().iter_mut().enumerate() {
+                let previous = &full["usage_windows"][index]["observed_at"];
+                assert!(
+                    compat::parse_datetime(&window["observed_at"])
+                        >= compat::parse_datetime(previous)
+                );
+                window["observed_at"] = previous.clone();
+            }
+        }
+        assert_json_numbers_equal(
+            &single,
+            full,
+            "single account preserves every overview field",
+        );
+        assert!(single.get("credentials").is_none());
+        assert!(single.get("account_identity").is_none());
 
         tokio::time::sleep(StdDuration::from_millis(1600)).await;
         sqlx::query("UPDATE projection_stats_fail_gate SET fail_stats=true")

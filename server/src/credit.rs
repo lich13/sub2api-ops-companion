@@ -340,7 +340,7 @@ impl CreditController {
         let state = self.store.shared_snapshot()?;
         let meta = &state["scheduler"][id.to_string()];
         Ok(
-            json!({"policy_version":1,"policy_identity":credit_ownership::identity_signature(row),"trigger_at":trigger.map(datetime),"consume_deadline_at":trigger.map(|t|datetime(t+Duration::seconds(300))),"verification_deadline_at":null,"policy_control_generation":credit_ownership::generation(&state,id),"policy_detection_version":self.hooks.detection_version(id)?,"policy_method":recovery_policy::method(&self.hooks.config()?,id),"policy_method_generation":integer(&meta["recovery_method_generation"]).unwrap_or(0),"verification_dispatched":false}),
+            json!({"policy_version":1,"trigger_at":trigger.map(datetime),"consume_deadline_at":trigger.map(|t|datetime(t+Duration::seconds(300))),"verification_deadline_at":null,"policy_control_generation":credit_ownership::generation(&state,id),"policy_detection_version":self.hooks.detection_version(id)?,"policy_method":recovery_policy::method(&self.hooks.config()?,id),"policy_method_generation":integer(&meta["recovery_method_generation"]).unwrap_or(0),"verification_dispatched":false}),
         )
     }
 
@@ -377,11 +377,6 @@ impl CreditController {
         {
             return Ok("manual_intervention");
         }
-        if task["policy_identity"].is_string()
-            && task["policy_identity"] != credit_ownership::identity_signature(row)
-        {
-            return Ok("ownership_changed");
-        }
         if task["policy_detection_version"] != self.hooks.detection_version(id)? {
             return Ok("manual_intervention");
         }
@@ -406,17 +401,6 @@ impl CreditController {
                 && task["signature"] == credit_ownership::signature(row))
         {
             return Ok("ownership_changed");
-        }
-        if parse_datetime(&task["attempt_at"]).is_some_and(|attempt| {
-            [
-                "rate_limited_at",
-                "temp_unschedulable_until",
-                "overload_until",
-            ]
-            .iter()
-            .any(|key| parse_datetime(&row[key]).is_some_and(|time| time > attempt))
-        }) {
-            return Ok("quota_unavailable");
         }
         Ok("")
     }
@@ -447,10 +431,14 @@ impl CreditController {
         }
         let mut finished = task.clone();
         finished.as_object_mut().ok_or_else(Error::internal)?.extend(json!({"revision":integer(&task["revision"]).unwrap_or(0)+1,"stage":"finished","outcome":credit_rules::outcome(task),"result_reason":reason,"error_code":reason,"completed_at":datetime(at),"next_at":null}).as_object().unwrap().clone());
-        if reason == "ownership_changed" {
+        if matches!(reason, "ownership_changed" | "account_deleted") {
             finished["owns_pause"] = false.into();
         }
         let mut notice = self.notice(id, &finished, at, row);
+        if reason == "account_deleted" {
+            notice["status"] = "suppressed".into();
+            notice["next_at"] = Value::Null;
+        }
         if let Some(fields) = fields.as_object() {
             notice.as_object_mut().unwrap().extend(fields.clone());
         }
@@ -469,6 +457,18 @@ impl CreditController {
                 .unwrap()
                 .entry(string(&task["episode"]).to_owned())
                 .or_insert(notice);
+            if reason == "account_deleted" {
+                for notice in meta["credit_result_notifications"]
+                    .as_object_mut()
+                    .unwrap()
+                    .values_mut()
+                {
+                    if notice["status"] == "pending" {
+                        notice["status"] = "suppressed".into();
+                        notice["next_at"] = Value::Null;
+                    }
+                }
+            }
             Ok(())
         })?;
         self.audit(
@@ -536,6 +536,26 @@ impl CreditController {
         }
         Ok(())
     }
+    pub fn account_deleted(&self, id: i64, at: DateTime<Utc>) -> Result<()> {
+        self.store.transaction(|state| {
+            let Some(meta) = state["scheduler"].get_mut(id.to_string()) else { return Ok(()); };
+            if let Some(task) = meta.get_mut("auto_reset_credit").filter(|task| task.is_object() && !credit_rules::manual(task)
+                && !matches!(string(&task["stage"]), "finished" | "recovered" | "closed")) {
+                let outcome = credit_rules::outcome(task);
+                let revision = integer(&task["revision"]).unwrap_or(0)+1;
+                task.as_object_mut().unwrap().extend(json!({"stage":"finished", "outcome":outcome,
+                    "result_reason":"account_deleted", "error_code":"account_deleted", "completed_at":datetime(at),
+                    "owns_pause":false, "next_at":null, "revision":revision}).as_object().unwrap().clone());
+            }
+            for notice in meta.get_mut("credit_result_notifications").and_then(Value::as_object_mut).into_iter().flat_map(|m| m.values_mut()) {
+                if notice["status"] == "pending" {
+                    notice["status"] = "suppressed".into();
+                    notice["next_at"] = Value::Null;
+                }
+            }
+            Ok(())
+        })
+    }
     pub async fn deliver_results(&self, notifier: &Bark) -> Result<()> {
         if self.actions.settings.read_only {
             return Ok(());
@@ -548,6 +568,34 @@ impl CreditController {
             return Ok(());
         }
         let state = self.store.shared_snapshot()?;
+        let pending: Vec<i64> = state["scheduler"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter(|(_, meta)| {
+                meta["credit_result_notifications"]
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .any(|(_, notice)| notice["status"] == "pending")
+            })
+            .filter_map(|(id, _)| id.parse().ok())
+            .collect();
+        if pending.is_empty() {
+            return Ok(());
+        }
+        let live: std::collections::BTreeSet<i64> = self
+            .actions
+            .queries
+            .db
+            .all(
+                "SELECT id FROM accounts WHERE deleted_at IS NULL AND id=ANY($1)",
+                &[crate::db::Param::Ints(pending)],
+            )
+            .await?
+            .iter()
+            .filter_map(|row| integer(&row["id"]))
+            .collect();
         for (id, meta) in state["scheduler"].as_object().into_iter().flatten() {
             for (episode, notice) in meta["credit_result_notifications"]
                 .as_object()
@@ -555,12 +603,17 @@ impl CreditController {
                 .flatten()
             {
                 let at = self.now();
-                if notice["status"] != "pending"
-                    || parse_datetime(&notice["next_at"]).is_some_and(|t| t > at)
-                {
+                if notice["status"] != "pending" {
                     continue;
                 }
                 let aid = id.parse::<i64>().map_err(|_| Error::internal())?;
+                if !live.contains(&aid) {
+                    self.account_deleted(aid, at)?;
+                    break;
+                }
+                if parse_datetime(&notice["next_at"]).is_some_and(|t| t > at) {
+                    continue;
+                }
                 let reserved = self.store.transaction(|state| {
                     let item = &mut state["scheduler"][id]["credit_result_notifications"][episode];
                     if item != notice {

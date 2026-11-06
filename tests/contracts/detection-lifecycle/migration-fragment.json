@@ -4,89 +4,171 @@
   "mappings": [
     {
       "legacy_test_id": "py:tests.test_detection030:DetectionClueTests.test_capacity_and_slow_ttft_only_create_detection_clues",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queue_upgrade",
+        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_initialization",
         "assertions": [
-          "assert_eq!(observed, [provider_clue.clone(), slow_clue.clone()].into());",
-          "assert_eq!(state[\"notifications\"][provider_error_id.to_string()][\"status\"], \"clue\");",
-          "assert_eq!(state[\"notifications\"][&slow_clue][\"status\"], \"clue\");",
-          "assert_eq!(state[\"pending\"], json!({}));",
-          "assert_eq!(state[\"slow_pending\"], json!({}));",
-          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);",
-          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);",
-          "state[\"detection_events\"]"
-        ],
-        "fixtures": []
+          "assert_eq!(observed, [provider_clue.clone(), slow_clue.clone()].into())",
+          "assert_eq!(\n        state[\"notifications\"][provider_error_id.to_string()][\"status\"],\n        \"clue\"\n    )",
+          "assert_eq!(state[\"notifications\"][&slow_clue][\"status\"], \"clue\")",
+          "assert_eq!(state[\"pending\"], json!({}))",
+          "assert_eq!(state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"],\n        state[\"detection_events\"]\n    )",
+          "assert!(disabled_state[\"detection_events\"]\n        .get(&disabled_clue)\n        .is_some())",
+          "assert_eq!(\n        disabled_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(disabled_state[\"pending\"], json!({}))",
+          "assert_eq!(disabled_state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(repeated[\"detection_events\"].get(&second_clue).is_some())",
+          "assert_eq!(\n        repeated_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone(),\n            second_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(repeated[\"pending\"], json!({}))",
+          "assert_eq!(repeated[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        4\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap(),\n        before\n    )"
+        ]
       },
-      "coverage_note": "临时 PostgreSQL 中的真实 Capacity poll 形成精确 provider/slow clue；Runtime delivery 保持空通知队列，Bark 与模型 loopback 均为零。",
-      "supporting_targets": []
+      "coverage_note": "0.1.84 已批准规则替换：首次容量检测初始化不修改当前证据，不再迁移退役队列。",
+      "supporting_targets": [],
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_detection030:DetectionClueTests.test_capacity_and_slow_ttft_only_create_detection_clues"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：首次容量检测初始化不修改当前证据，不再迁移退役队列。",
+        "replacement_contract": "server/tests/detection_lifecycle_parity.rs::capacity_provider_and_slow_evidence_survive_bark_config_and_initialization"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_detection030:DetectionClueTests.test_disabled_bark_does_not_suppress_detection_clues",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queue_upgrade",
+        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_initialization",
         "assertions": [
-          "harness.runtime().detection.bark.configure(",
-          "assert_eq!(disabled_observed,",
-          "assert_eq!(disabled_state[\"pending\"], json!({}));",
-          "assert_eq!(disabled_state[\"slow_pending\"], json!({}));",
-          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);",
-          "expect(\"disabled Bark must not turn capacity clues into result notifications\")"
-        ],
-        "fixtures": []
+          "assert_eq!(observed, [provider_clue.clone(), slow_clue.clone()].into())",
+          "assert_eq!(\n        state[\"notifications\"][provider_error_id.to_string()][\"status\"],\n        \"clue\"\n    )",
+          "assert_eq!(state[\"notifications\"][&slow_clue][\"status\"], \"clue\")",
+          "assert_eq!(state[\"pending\"], json!({}))",
+          "assert_eq!(state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"],\n        state[\"detection_events\"]\n    )",
+          "assert!(disabled_state[\"detection_events\"]\n        .get(&disabled_clue)\n        .is_some())",
+          "assert_eq!(\n        disabled_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(disabled_state[\"pending\"], json!({}))",
+          "assert_eq!(disabled_state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(repeated[\"detection_events\"].get(&second_clue).is_some())",
+          "assert_eq!(\n        repeated_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone(),\n            second_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(repeated[\"pending\"], json!({}))",
+          "assert_eq!(repeated[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        4\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap(),\n        before\n    )"
+        ]
       },
-      "coverage_note": "关闭 Bark 配置时真实 Capacity poll 仍保留两类 clue，通知队列为空且没有 Bark 或模型请求。",
-      "supporting_targets": []
+      "coverage_note": "0.1.84 已批准规则替换：首次容量检测初始化不修改当前证据，不再迁移退役队列。",
+      "supporting_targets": [],
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_detection030:DetectionClueTests.test_disabled_bark_does_not_suppress_detection_clues"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：首次容量检测初始化不修改当前证据，不再迁移退役队列。",
+        "replacement_contract": "server/tests/detection_lifecycle_parity.rs::capacity_provider_and_slow_evidence_survive_bark_config_and_initialization"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_detection030:DetectionClueTests.test_invalid_bark_config_does_not_suppress_detection_clues",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queue_upgrade",
+        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_initialization",
         "assertions": [
-          "harness.runtime().detection.bark.configure(",
-          "assert_eq!(repeated_observed,",
-          "assert_eq!(repeated[\"pending\"], json!({}));",
-          "assert_eq!(repeated[\"slow_pending\"], json!({}));",
-          "expect(\"invalid optional Bark config must retain capacity clues without emitting results\")",
-          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);"
-        ],
-        "fixtures": []
+          "assert_eq!(observed, [provider_clue.clone(), slow_clue.clone()].into())",
+          "assert_eq!(\n        state[\"notifications\"][provider_error_id.to_string()][\"status\"],\n        \"clue\"\n    )",
+          "assert_eq!(state[\"notifications\"][&slow_clue][\"status\"], \"clue\")",
+          "assert_eq!(state[\"pending\"], json!({}))",
+          "assert_eq!(state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"],\n        state[\"detection_events\"]\n    )",
+          "assert!(disabled_state[\"detection_events\"]\n        .get(&disabled_clue)\n        .is_some())",
+          "assert_eq!(\n        disabled_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(disabled_state[\"pending\"], json!({}))",
+          "assert_eq!(disabled_state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(repeated[\"detection_events\"].get(&second_clue).is_some())",
+          "assert_eq!(\n        repeated_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone(),\n            second_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(repeated[\"pending\"], json!({}))",
+          "assert_eq!(repeated[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        4\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap(),\n        before\n    )"
+        ]
       },
-      "coverage_note": "无效可选 Bark 配置不影响 Capacity clue 的收集与去重；持久 clue 保留且无 Bark 请求。",
-      "supporting_targets": []
+      "coverage_note": "0.1.84 已批准规则替换：首次容量检测初始化不修改当前证据，不再迁移退役队列。",
+      "supporting_targets": [],
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_detection030:DetectionClueTests.test_invalid_bark_config_does_not_suppress_detection_clues"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：首次容量检测初始化不修改当前证据，不再迁移退役队列。",
+        "replacement_contract": "server/tests/detection_lifecycle_parity.rs::capacity_provider_and_slow_evidence_survive_bark_config_and_initialization"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_detection030:DetectionClueTests.test_upgrade_discards_legacy_pending_notifications_without_replaying_history",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queue_upgrade",
+        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_initialization",
         "assertions": [
-          "state[\"pending\"][\"fixture-legacy-error\"]",
-          "state[\"slow_pending\"][\"fixture-legacy-slow\"]",
-          "harness.restart_runtime().await;",
-          "assert_eq!(upgraded[\"pending\"], json!({}));",
-          "assert_eq!(upgraded[\"slow_pending\"], json!({}));",
-          "assert_eq!(upgraded[\"detection_events\"], json!({}));",
-          "assert_eq!(upgraded[\"notifications\"][\"fixture-legacy-error\"][\"status\"], \"retired\");",
-          "assert_eq!(upgraded[\"notifications\"][\"fixture-legacy-slow\"][\"status\"], \"retired\");",
-          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);",
-          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);"
-        ],
-        "fixtures": []
+          "assert_eq!(observed, [provider_clue.clone(), slow_clue.clone()].into())",
+          "assert_eq!(\n        state[\"notifications\"][provider_error_id.to_string()][\"status\"],\n        \"clue\"\n    )",
+          "assert_eq!(state[\"notifications\"][&slow_clue][\"status\"], \"clue\")",
+          "assert_eq!(state[\"pending\"], json!({}))",
+          "assert_eq!(state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"],\n        state[\"detection_events\"]\n    )",
+          "assert!(disabled_state[\"detection_events\"]\n        .get(&disabled_clue)\n        .is_some())",
+          "assert_eq!(\n        disabled_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(disabled_state[\"pending\"], json!({}))",
+          "assert_eq!(disabled_state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(repeated[\"detection_events\"].get(&second_clue).is_some())",
+          "assert_eq!(\n        repeated_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone(),\n            second_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(repeated[\"pending\"], json!({}))",
+          "assert_eq!(repeated[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        4\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap(),\n        before\n    )"
+        ]
       },
-      "coverage_note": "升级旧 pending/slow_pending 状态时，旧通知被标为 retired、队列清空，重启后也没有 Bark 或模型重放。",
-      "supporting_targets": []
+      "coverage_note": "0.1.84 已批准规则替换：首次容量检测初始化不修改当前证据，不再迁移退役队列。",
+      "supporting_targets": [],
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_detection030:DetectionClueTests.test_upgrade_discards_legacy_pending_notifications_without_replaying_history"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：首次容量检测初始化不修改当前证据，不再迁移退役队列。",
+        "replacement_contract": "server/tests/detection_lifecycle_parity.rs::capacity_provider_and_slow_evidence_survive_bark_config_and_initialization"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_all_automatic_sources_and_models_share_exact_300_second_boundary",
@@ -165,26 +247,29 @@
     },
     {
       "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_restart_keeps_dispatch_time_even_when_result_summaries_are_pruned",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "dispatch_history_migration_survives_pruned_job_summaries_and_restart",
+        "test_name": "dispatch_history_survives_pruned_job_summaries_and_restart",
         "assertions": [
-          "assert_eq!(dispatch[\"job_id\"], \"fixture-auto-latest\");",
-          "assert_eq!(dispatch[\"started_at\"], datetime(started_at));",
-          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);"
-        ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/detection-lifecycle/fixtures.json",
-            "json_paths": [
-              "oracle.automatic_dispatch_cooldown_seconds"
-            ]
-          }
+          "assert_eq!(dispatch[\"job_id\"], \"fixture-auto-latest\")",
+          "assert_eq!(dispatch[\"started_at\"], datetime(started_at))",
+          "assert_eq!(\n        harness.runtime().detection.next_allowed_at(id).unwrap(),\n        datetime(harness.now() + Duration::seconds(cooldown - 10))\n    )",
+          "assert_eq!(\n        harness.runtime().detection.store.read().unwrap()[\"automatic_starts\"][id.to_string()],\n        dispatch\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(\n        harness\n            .mock\n            .count(\"POST\", \"/api/v1/admin/accounts/1/schedulable\"),\n        0\n    )",
+          "assert!(harness.mock.unexpected().is_empty())"
         ]
       },
-      "coverage_note": "Rust target dispatch_history_migration_survives_pruned_job_summaries_and_restart 通过真实 Runtime、临时 PostgreSQL 业务状态和 loopback 外部请求核验该场景；断言锚点限定为实际执行的调用次数、请求负载、持久状态和通知结果。"
+      "coverage_note": "0.1.84 已批准规则替换：保留当前派发历史续接，删除旧派发启动迁移。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_detection030:AutomaticCooldownTests.test_restart_keeps_dispatch_time_even_when_result_summaries_are_pruned"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：保留当前派发历史续接，删除旧派发启动迁移。",
+        "replacement_contract": "server/tests/detection_lifecycle_parity.rs::dispatch_history_survives_pruned_job_summaries_and_restart"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_failed_dispatched_job_still_consumes_cooldown",
@@ -320,26 +405,29 @@
     },
     {
       "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_upgrade_imports_latest_automatic_start_and_ignores_manual_jobs",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "dispatch_history_migration_survives_pruned_job_summaries_and_restart",
+        "test_name": "dispatch_history_survives_pruned_job_summaries_and_restart",
         "assertions": [
-          "assert_eq!(dispatch[\"job_id\"], \"fixture-auto-latest\");",
-          "assert_eq!(dispatch[\"started_at\"], datetime(started_at));",
-          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);"
-        ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/detection-lifecycle/fixtures.json",
-            "json_paths": [
-              "oracle.automatic_dispatch_cooldown_seconds"
-            ]
-          }
+          "assert_eq!(dispatch[\"job_id\"], \"fixture-auto-latest\")",
+          "assert_eq!(dispatch[\"started_at\"], datetime(started_at))",
+          "assert_eq!(\n        harness.runtime().detection.next_allowed_at(id).unwrap(),\n        datetime(harness.now() + Duration::seconds(cooldown - 10))\n    )",
+          "assert_eq!(\n        harness.runtime().detection.store.read().unwrap()[\"automatic_starts\"][id.to_string()],\n        dispatch\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(\n        harness\n            .mock\n            .count(\"POST\", \"/api/v1/admin/accounts/1/schedulable\"),\n        0\n    )",
+          "assert!(harness.mock.unexpected().is_empty())"
         ]
       },
-      "coverage_note": "Rust target dispatch_history_migration_survives_pruned_job_summaries_and_restart 通过真实 Runtime、临时 PostgreSQL 业务状态和 loopback 外部请求核验该场景；断言锚点限定为实际执行的调用次数、请求负载、持久状态和通知结果。"
+      "coverage_note": "0.1.84 已批准规则替换：保留当前派发历史续接，删除旧派发启动迁移。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_detection030:AutomaticCooldownTests.test_upgrade_imports_latest_automatic_start_and_ignores_manual_jobs"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：保留当前派发历史续接，删除旧派发启动迁移。",
+        "replacement_contract": "server/tests/detection_lifecycle_parity.rs::dispatch_history_survives_pruned_job_summaries_and_restart"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_failed_dispatch_persistence_never_reaches_upstream",
@@ -1769,20 +1857,44 @@
     },
     {
       "legacy_test_id": "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_capacity_and_slow_clues_never_send_bark_directly",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
-        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queue_upgrade",
+        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_initialization",
         "assertions": [
-          "assert_eq!(observed, [provider_clue.clone(), slow_clue.clone()].into());",
-          "assert_eq!(state[\"pending\"], json!({}));",
-          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);",
-          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);"
-        ],
-        "fixtures": []
+          "assert_eq!(observed, [provider_clue.clone(), slow_clue.clone()].into())",
+          "assert_eq!(\n        state[\"notifications\"][provider_error_id.to_string()][\"status\"],\n        \"clue\"\n    )",
+          "assert_eq!(state[\"notifications\"][&slow_clue][\"status\"], \"clue\")",
+          "assert_eq!(state[\"pending\"], json!({}))",
+          "assert_eq!(state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"],\n        state[\"detection_events\"]\n    )",
+          "assert!(disabled_state[\"detection_events\"]\n        .get(&disabled_clue)\n        .is_some())",
+          "assert_eq!(\n        disabled_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(disabled_state[\"pending\"], json!({}))",
+          "assert_eq!(disabled_state[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(repeated[\"detection_events\"].get(&second_clue).is_some())",
+          "assert_eq!(\n        repeated_observed,\n        [\n            provider_clue.clone(),\n            slow_clue.clone(),\n            disabled_clue.clone(),\n            second_clue.clone()\n        ]\n        .into()\n    )",
+          "assert_eq!(repeated[\"pending\"], json!({}))",
+          "assert_eq!(repeated[\"slow_pending\"], json!({}))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap()[\"detection_events\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        4\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        harness\n            .runtime()\n            .detection\n            .capacity\n            .store\n            .snapshot()\n            .unwrap(),\n        before\n    )"
+        ]
       },
-      "coverage_note": "Rust 以 Runtime poll 生成并持久化 clue，delivery 后通知队列仍为空且 Bark/model loopback 均为零；旧 CapacityAlerts.deliver_due 属内部 API 差异。"
+      "coverage_note": "0.1.84 已批准规则替换：首次容量检测初始化不修改当前证据，不再迁移退役队列。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_capacity_and_slow_clues_never_send_bark_directly"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：首次容量检测初始化不修改当前证据，不再迁移退役队列。",
+        "replacement_contract": "server/tests/detection_lifecycle_parity.rs::capacity_provider_and_slow_evidence_survive_bark_config_and_initialization"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_low_confidence_first_sample_stops_then_notifies_once_across_restart",
@@ -1950,7 +2062,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_failed_http_dispatch_still_cools_after_restart_and_result_pruning",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/detection_lifecycle_parity.rs",
@@ -1962,7 +2074,6 @@
           "state[\"accounts\"] = json!({});",
           "state[\"requests\"] = json!({});",
           "harness.restart_runtime().await;",
-          "harness.runtime().detection.migrate_dispatches().unwrap();",
           "harness.advance(cooldown - 1);",
           "assert!(cooling.is_null());",
           "harness.advance(1);",
@@ -1981,16 +2092,26 @@
         {
           "kind": "rust_test",
           "path": "server/tests/detection_lifecycle_parity.rs",
-          "test_name": "dispatch_history_migration_survives_pruned_job_summaries_and_restart",
+          "test_name": "dispatch_history_survives_pruned_job_summaries_and_restart",
           "assertions": [
-            "assert_eq!(dispatch[\"job_id\"], \"fixture-auto-latest\");",
-            "assert_eq!(\n        harness.runtime().detection.store.read().unwrap()[\"automatic_starts\"][id.to_string()],\n        dispatch\n    );",
-            "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);"
-          ],
-          "fixtures": []
+            "assert_eq!(dispatch[\"job_id\"], \"fixture-auto-latest\")",
+            "assert_eq!(dispatch[\"started_at\"], datetime(started_at))",
+            "assert_eq!(\n        harness.runtime().detection.next_allowed_at(id).unwrap(),\n        datetime(harness.now() + Duration::seconds(cooldown - 10))\n    )",
+            "assert_eq!(\n        harness.runtime().detection.store.read().unwrap()[\"automatic_starts\"][id.to_string()],\n        dispatch\n    )",
+            "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0)",
+            "assert_eq!(\n        harness\n            .mock\n            .count(\"POST\", \"/api/v1/admin/accounts/1/schedulable\"),\n        0\n    )",
+            "assert!(harness.mock.unexpected().is_empty())"
+          ]
         }
       ],
-      "coverage_note": "invalid_model_or_request 失败 dispatch 在 job/result 索引剪枝和 Runtime 重启迁移后仍保留原时间戳；299 秒不派发，300 秒边界重试。"
+      "coverage_note": "0.1.84 已批准规则替换：保留当前派发历史续接，删除旧派发启动迁移。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_failed_http_dispatch_still_cools_after_restart_and_result_pruning"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：保留当前派发历史续接，删除旧派发启动迁移。",
+        "replacement_contract": "server/tests/detection_lifecycle_parity.rs::dispatch_history_survives_pruned_job_summaries_and_restart"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_cooling_and_duplicate_clues_do_not_replay_after_restart",

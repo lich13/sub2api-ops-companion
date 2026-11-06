@@ -368,11 +368,7 @@ async fn runtime_for(
     let runtime = Runtime::new_with_clock(config, Arc::new(reference_time))
         .await
         .expect("construct Runtime against runner-owned PostgreSQL");
-    runtime
-        .detection
-        .capacity
-        .retire_legacy(Utc::now())
-        .unwrap();
+    runtime.detection.capacity.initialize(Utc::now()).unwrap();
     runtime
 }
 
@@ -1901,11 +1897,7 @@ async fn capacity_save_failures_do_not_advance_or_lose_cursor_and_evidence() {
     let runtime = Runtime::new_with_clock(config.clone(), Arc::new(reference_time))
         .await
         .unwrap();
-    runtime
-        .detection
-        .capacity
-        .retire_legacy(Utc::now())
-        .unwrap();
+    runtime.detection.capacity.initialize(Utc::now()).unwrap();
     let database = runtime.db.clone();
     let account = account_id();
     insert_account(

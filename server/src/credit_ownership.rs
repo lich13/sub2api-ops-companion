@@ -63,20 +63,6 @@ pub fn identity(row: &Value) -> Value {
         )
     })
 }
-pub fn identity_signature(row: &Value) -> String {
-    let mut value = pick(
-        row,
-        &["id", "name", "platform", "type", "parent_account_id"],
-    );
-    value["identity"] = identity(row);
-    config_revision(&value)
-}
-pub fn same_identity(before: &Value, after: &Value) -> bool {
-    ["id", "name", "platform", "type", "parent_account_id"]
-        .iter()
-        .all(|key| before[*key] == after[*key])
-        && identity(before) == identity(after)
-}
 pub fn generation(state: &Value, id: i64) -> i64 {
     integer(&state["scheduler"][id.to_string()]["manual_control"]["generation"]).unwrap_or(0)
 }
@@ -129,16 +115,10 @@ pub fn parameter_change(store: &OAuthState, row: &Value) -> Result<Option<Value>
     Ok(Some(task.clone()))
 }
 
-pub fn finish_parameter_change(
-    store: &OAuthState,
-    row: &Value,
-    task: &Value,
-    before: &Value,
-) -> Result<()> {
+pub fn finish_parameter_change(store: &OAuthState, row: &Value, task: &Value) -> Result<()> {
     let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
     let state = store.shared_snapshot()?;
-    if !same_identity(before, row)
-        || row["schedulable"] != false
+    if row["schedulable"] != false
         || task["control_generation"]
             .as_i64()
             .is_some_and(|expected| expected != generation(&state, id))

@@ -918,131 +918,35 @@ fn fixed_reference_scope_and_daily_time_contract_are_pinned() {
 }
 
 #[test]
-fn legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempotently() {
-    let temporary = tempfile::tempdir().expect("create a synthetic legacy OAuth state directory");
-    let path = temporary.path().join("oauth-state.json");
-    let legacy = json!({
-        "version":2,
-        "settings":{
-            "sub2api_admin_token":" fixture-admin-migration ",
-            "usage_query_enabled":true,
-            "auto_query_interval_seconds":60
-        },
-        "results":{
-            "7":{"template_type":"oauth","success":true,"queried_at":"2026-09-29T20:00:00+00:00"},
-            "8":{"template_type":"apikey","success":true}
-        },
-        "oauth_results":{
-            "7":{"template_type":"oauth","success":true,"queried_at":"2026-09-29T20:00:00+00:00"}
-        },
-        "scheduler":{
-            "7":{
-                "last_regular_at":"2026-09-29T19:00:00+00:00",
-                "last_reason":"regular_refresh",
-                "recovery_intent":{"status":"testing","tested_at":"2026-09-29T19:30:00+00:00","attempt_count":2,"fingerprint":"fixture-recovery"}
-            },
-            "8":{
-                "last_7d_probe_at":"2026-09-29T19:00:00+00:00",
-                "last_reason":"seven_day_probe",
-                "recovery_intent":{"status":"deferred","deferred_until":"2026-09-30T19:00:00+00:00","next_retry_at":"2026-09-30T19:00:00+00:00","fingerprint":"fixture-deferred"}
-            }
-        },
-        "pending_events":{"keep":{"account_id":7,"status":"failed"}},
-        "configs":{"legacy_only":true}
-    });
-    fs::write(&path, serde_json::to_vec(&legacy).unwrap())
-        .expect("write only the synthetic v2 OAuth state");
-
-    let state = OAuthState::new(path.clone(), false);
-    state
-        .transaction(|_| Ok(()))
-        .expect("persist the current OAuth state normalization");
-    let migrated = state.snapshot().unwrap();
-    assert_eq!(migrated["version"], 5);
-    assert_eq!(state.admin_token().unwrap(), "fixture-admin-migration");
+fn current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("oauth.json");
+    let raw = json!({"version":5,"settings":{"sub2api_admin_token":"fixture-admin"},
+        "oauth_results":{"7":{"source":"sub2api_admin_usage","success":true}},
+        "scheduler":{"7":{"auto_reset_credit":{"episode":"fixture-issued","stage":"releasing","attempt_at":"2026-10-01T00:00:00Z","consumed":true},
+            "recovery_intent":{"status":"recovered","fingerprint":"fixture-old"}},
+            "8":{"recovery_intent":{"status":"blocked","last_error_code":"recovery_uncertain"}}},
+        "recovery_history":{"fixture-history":{"id":1,"account_id":7}},"pending_events":{}});
+    fs::write(&path, serde_json::to_vec(&raw).unwrap()).unwrap();
+    let store = OAuthState::new(path.clone(), false);
+    store.transaction(|_| Ok(())).unwrap();
+    let current = store.snapshot().unwrap();
+    assert_eq!(current["settings"]["sub2api_admin_token"], "fixture-admin");
+    assert_eq!(current["oauth_results"], raw["oauth_results"]);
+    assert_eq!(current["recovery_history"], raw["recovery_history"]);
     assert_eq!(
-        migrated["oauth_results"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect::<Vec<_>>(),
-        vec!["7"]
+        current["scheduler"]["7"]["auto_reset_credit"]["stage"],
+        "confirming"
     );
     assert_eq!(
-        migrated["scheduler"]["7"]["recovery_intent"]["status"],
-        "testing"
+        current["scheduler"]["7"]["auto_reset_credit"]["attempt_at"],
+        raw["scheduler"]["7"]["auto_reset_credit"]["attempt_at"]
     );
     assert_eq!(
-        migrated["scheduler"]["7"]["recovery_intent"]["next_retry_at"],
-        Value::Null
-    );
-    assert!(migrated["scheduler"]["7"].get("last_regular_at").is_none());
-    assert!(migrated["scheduler"]["7"].get("last_reason").is_none());
-    assert_eq!(
-        migrated["scheduler"]["8"]["recovery_intent"]["status"],
+        current["scheduler"]["8"]["recovery_intent"]["status"],
         "ready"
     );
-    assert_eq!(
-        migrated["scheduler"]["8"]["recovery_intent"]["deferred_until"],
-        ""
-    );
-    assert_eq!(
-        migrated["scheduler"]["8"]["recovery_intent"]["next_retry_at"],
-        ""
-    );
-    assert!(migrated["scheduler"]["8"].get("last_7d_probe_at").is_none());
-    assert!(migrated["scheduler"]["8"].get("last_reason").is_none());
-    assert_eq!(migrated["pending_events"]["keep"]["status"], "failed");
-    assert!(migrated.get("configs").is_none());
-    assert!(migrated["settings"].get("usage_query_enabled").is_none());
-    assert!(migrated["settings"]
-        .get("auto_query_interval_seconds")
-        .is_none());
-
-    let first_write = fs::read(&path).unwrap();
-    assert_eq!(
-        serde_json::from_slice::<Value>(&first_write).unwrap(),
-        migrated
-    );
-    state
-        .transaction(|_| Ok(()))
-        .expect("a second normalization remains safe");
-    assert_eq!(fs::read(&path).unwrap(), first_write);
-}
-
-#[tokio::test]
-async fn legacy_recovery_cleanup_failure_keeps_marker_unset_and_can_retry() {
-    let harness = Harness::new().await;
-    let guard_path = harness.runtime.settings.data_dir().join("guard-state.json");
-    fs::create_dir(&guard_path).expect("only the temporary legacy guard path is obstructed");
-
-    let failed = harness.runtime.migrate_legacy_recovery().await;
-    assert!(failed.is_err());
-    assert!(guard_path.is_dir());
-    assert_ne!(
-        harness.runtime.monitor.state().unwrap()["settings"]["legacy_recovery_cleanup_completed"],
-        true,
-        "failed cleanup must not commit its completion marker"
-    );
-
-    fs::remove_dir(&guard_path).expect("remove only the synthetic cleanup obstruction");
-    harness
-        .runtime
-        .migrate_legacy_recovery()
-        .await
-        .expect("a later cleanup attempt can finish safely");
-    harness
-        .runtime
-        .migrate_legacy_recovery()
-        .await
-        .expect("completed cleanup is idempotent");
-    assert!(!guard_path.exists());
-    assert_eq!(
-        harness.runtime.monitor.state().unwrap()["settings"]["legacy_recovery_cleanup_completed"],
-        true
-    );
-    harness.close().await;
+    assert_eq!(OAuthState::new(path, false).snapshot().unwrap(), current);
 }
 
 #[tokio::test]
@@ -3398,7 +3302,7 @@ async fn account_read_failure_marks_retry_without_model_or_recovery_and_recovers
 }
 
 #[tokio::test]
-async fn monitor_test_success_falls_back_and_unknown_recovery_write_is_not_replayed() {
+async fn monitor_recovery_write_failures_use_ordinary_retry_without_replaying_quota_queries() {
     let due = parse_datetime(&fixture()["daily"]["next_at_0500_beijing"]).unwrap();
     for (recovery_status, effect) in [
         (200_u16, ""),
@@ -3458,12 +3362,12 @@ async fn monitor_test_success_falls_back_and_unknown_recovery_write_is_not_repla
         assert_eq!(harness.mock.count("POST", "/clear-rate-limit"), 0);
         assert_eq!(harness.mock.count("DELETE", "/temp-unschedulable"), 0);
         if expected_status == "retry" {
-            assert_eq!(intent["last_error_code"], "recovery_uncertain");
+            assert_eq!(intent["last_error_code"], "recovery_failed");
             assert_eq!(
                 intent["next_retry_at"],
                 datetime(due + Duration::seconds(10))
             );
-            assert_eq!(intent["successful_test"]["result"]["success"], true);
+            assert!(intent["successful_test"].is_null());
             assert!(intent["recovery_write_dispatched"].is_null());
             if effect == "read_failure" {
                 sqlx::query("ALTER TABLE fixture_unavailable_accounts RENAME TO accounts")
@@ -3496,11 +3400,16 @@ async fn monitor_test_success_falls_back_and_unknown_recovery_write_is_not_repla
             harness.set_now(due + Duration::seconds(10));
             harness.runtime.monitor.startup().await.unwrap();
             harness.runtime.monitor.tick().await.unwrap();
+            let retry_status = if effect == "read_failure" {
+                "cancelled"
+            } else {
+                "recovered"
+            };
             tokio::time::timeout(StdDuration::from_secs(8), async {
                 loop {
                     if harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
                         ["recovery_intent"]["status"]
-                        == "recovered"
+                        == retry_status
                     {
                         break;
                     }
@@ -3510,7 +3419,7 @@ async fn monitor_test_success_falls_back_and_unknown_recovery_write_is_not_repla
             .await
             .unwrap_or_else(|_| {
                 panic!(
-                    "saved successful test retry failed for {effect}: {}",
+                    "ordinary recovery retry failed for {effect}: {}",
                     harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
                         ["recovery_intent"]
                 )
@@ -3518,7 +3427,7 @@ async fn monitor_test_success_falls_back_and_unknown_recovery_write_is_not_repla
             let restarted = harness.runtime.monitor.state().unwrap();
             let restarted_intent = &restarted["scheduler"][id.to_string()]["recovery_intent"];
             assert_eq!(
-                restarted_intent["status"], "recovered",
+                restarted_intent["status"], retry_status,
                 "{restarted_intent}"
             );
             assert!(restarted_intent["successful_test"].is_null());
@@ -3526,7 +3435,7 @@ async fn monitor_test_success_falls_back_and_unknown_recovery_write_is_not_repla
             assert_eq!(harness.mock.count("GET", "/usage"), 1);
             assert_eq!(
                 harness.mock.count("POST", "/test"),
-                if effect == "identity_change" { 2 } else { 1 }
+                if effect == "read_failure" { 1 } else { 2 }
             );
             assert_eq!(
                 harness.mock.count("POST", "/recover-state"),
@@ -3544,7 +3453,7 @@ async fn monitor_test_success_falls_back_and_unknown_recovery_write_is_not_repla
 }
 
 #[tokio::test]
-async fn monitor_recovery_stops_if_account_concurrency_changes_during_test() {
+async fn monitor_recovery_accepts_refreshed_limits_and_unrelated_parameters_during_test() {
     let due = parse_datetime(&fixture()["daily"]["next_at_0500_beijing"]).unwrap();
     let harness = Harness::new().await;
     let row = harness
@@ -3593,7 +3502,7 @@ async fn monitor_recovery_stops_if_account_concurrency_changes_during_test() {
             })
         );
     }
-    sqlx::query("UPDATE accounts SET concurrency=concurrency+1,updated_at=$1 WHERE id=$2")
+    sqlx::query("UPDATE accounts SET concurrency=concurrency+1,rate_limited_at=$1,rate_limit_reset_at=$1,overload_until=$1,updated_at=$1 WHERE id=$2")
         .bind(harness.now())
         .bind(id)
         .execute(&harness.runtime.db.pool)
@@ -3610,19 +3519,9 @@ async fn monitor_recovery_stops_if_account_concurrency_changes_during_test() {
 
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
-            let state = harness.runtime.monitor.state().unwrap();
-            let intent = &state["scheduler"][id.to_string()]["recovery_intent"];
-            let event_committed = state["pending_events"].as_object().is_some_and(|events| {
-                events.values().any(|event| {
-                    event["status"] == "recovery_failed"
-                        && event["error_code"] == "recovery_state_changed"
-                        && event["test_success"] == true
-                })
-            });
-            if intent["status"] == "retry"
-                && intent["last_error_code"] == "recovery_state_changed"
-                && intent["next_retry_at"] == datetime(due + Duration::seconds(10))
-                && event_committed
+            if harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+                ["recovery_intent"]["status"]
+                == "recovered"
             {
                 break;
             }
@@ -3630,29 +3529,13 @@ async fn monitor_recovery_stops_if_account_concurrency_changes_during_test() {
         }
     })
     .await
-    .expect("a changed account concurrency signature must stop stale recovery mutation");
-
-    let intent =
-        &harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"];
-    assert_eq!(intent["status"], "retry");
-    assert_eq!(intent["last_error_code"], "recovery_state_changed");
-    assert_eq!(
-        intent["next_retry_at"],
-        datetime(due + Duration::seconds(10))
-    );
-    let state = harness.runtime.monitor.state().unwrap();
-    let event = state["pending_events"]
-        .as_object()
-        .unwrap()
-        .values()
-        .find(|event| {
-            event["error_code"] == "recovery_state_changed" && event["status"] == "recovery_failed"
-        })
-        .expect("changed recovery signature must publish its known failure event");
-    assert_eq!(event["test_success"], true);
+    .expect("successful test must clear refreshed limits");
+    let current = harness.runtime.monitor.row(id).await.unwrap();
+    assert_eq!(current["concurrency"], 3);
+    assert!(sub2ops_server::recovery_rules::confirmed(&current));
     assert_eq!(harness.mock.count("GET", "/usage"), 1);
     assert_eq!(harness.mock.count("POST", "/test"), 1);
-    assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
+    assert_eq!(harness.mock.count("POST", "/recover-state"), 1);
     assert_eq!(harness.mock.count("POST", "/clear-rate-limit"), 0);
     assert_eq!(harness.mock.count("DELETE", "/temp-unschedulable"), 0);
     assert!(harness.mock.unexpected().is_empty());
@@ -5403,7 +5286,7 @@ async fn scheduled_bark_queue_survives_delivery_failure_restart_and_disabled_pus
 }
 
 #[tokio::test]
-async fn recovery_failure_restart_preserves_retry_deadline_and_discards_legacy_receipt() {
+async fn recovery_failure_restart_preserves_retry_deadline_and_ignores_legacy_receipt() {
     let mut h = Harness::new().await;
     let due = h.now() + Duration::hours(1);
     let row = h
@@ -5429,6 +5312,9 @@ async fn recovery_failure_restart_preserves_retry_deadline_and_discards_legacy_r
     intent["last_error_code"] = "http_500".into();
     intent["retry_policy"] = json!({"interval_seconds":10,"max_retries":3});
     intent["verification_dispatched"] = true.into();
+    intent["successful_test"] =
+        json!({"result":{"success":true},"identity":"fixture-0183-proof","block":row});
+    intent["waiting_reason"] = "recovery_write".into();
     intent["verification_receipt"] = json!({"result":{"success":false,"error_code":"http_500","error":"fixture failure","completed_at":datetime(due),"recovery_method":"connection","recovery_method_generation":0},"manual_generation":0,"credential_fingerprint":sub2ops_server::oauth_admission::credential_fingerprint(&row),"block_state":row});
     h.runtime
         .monitor
@@ -5453,8 +5339,11 @@ async fn recovery_failure_restart_preserves_retry_deadline_and_discards_legacy_r
     assert_eq!(restored["status"], "retry");
     assert_eq!(restored["last_error_code"], "http_500");
     assert_eq!(restored["attempt_count"], 1);
-    assert!(restored.get("verification_receipt").is_none());
-    assert!(restored.get("verification_dispatched").is_none());
+    assert_eq!(
+        restored["verification_receipt"],
+        intent["verification_receipt"]
+    );
+    assert_eq!(restored["verification_dispatched"], true);
     assert_eq!(h.mock.count("POST", "/test"), 0);
     assert_eq!(
         h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
@@ -5967,5 +5856,43 @@ async fn early_reset_prefers_depleted_representative_and_defers_a_busy_account()
     h.set_now(h.now() + Duration::seconds(2));
     early_baseline(&h, &[a_id], 15).await;
     assert_eq!(h.mock.count("GET", &format!("/{b_id}/usage")), 2);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn early_reset_keeps_observation_and_recovers_through_token_renewal() {
+    let h = Harness::new().await;
+    let row = h
+        .seed_account("plus", "fixture-early-renewal", json!({}))
+        .await;
+    let id = integer(&row["id"]).unwrap();
+    h.runtime.monitor.startup().await.unwrap();
+    early_config(&h, 60).await;
+    early_baseline(&h, &[id], 80).await;
+    sqlx::query("UPDATE accounts SET credentials=jsonb_set(credentials,'{access_token}','\"fixture-renewed-before-observation\"'),updated_at=$1 WHERE id=$2")
+        .bind(h.now()).bind(id).execute(&h.runtime.db.pool).await.unwrap();
+    h.set_now(h.now() + Duration::seconds(60));
+    h.mock.set_usage(200, Some(default_usage(h.now())));
+    let gate = Gate::new();
+    *h.mock.test_gate.lock().unwrap() = Some(gate.clone());
+    early_wait(&h, |state| {
+        state["scheduler"][id.to_string()]["recovery_intent"]["status"] == "testing"
+    })
+    .await;
+    tokio::time::timeout(StdDuration::from_secs(5), gate.entered.notified())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET credentials=jsonb_set(credentials,'{access_token}','\"fixture-renewed-during-test\"'),updated_at=$1 WHERE id=$2")
+        .bind(h.now()).bind(id).execute(&h.runtime.db.pool).await.unwrap();
+    gate.release.notify_one();
+    let state = early_wait(&h, |state| {
+        state["scheduler"][id.to_string()]["recovery_intent"]["status"] == "recovered"
+    })
+    .await;
+    assert_eq!(h.mock.count("POST", "/test"), 1);
+    assert_eq!(state["recovery_history"].as_object().unwrap().len(), 1);
+    assert!(sub2ops_server::recovery_rules::confirmed(
+        &h.runtime.monitor.row(id).await.unwrap()
+    ));
     h.close().await;
 }

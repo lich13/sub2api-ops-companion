@@ -516,7 +516,11 @@ impl ModelHooks for PanicModelHooks {
         panic!("{PANIC_MARKER}")
     }
 
-    fn prepare_recovery(&self, _job: Value) -> BoxFuture<'_, Result<(Value, Option<Value>)>> {
+    fn prepare_recovery(
+        &self,
+        _job: Value,
+        _row: Value,
+    ) -> BoxFuture<'_, Result<(Value, Option<Value>)>> {
         Box::pin(async { Ok((Value::Null, None)) })
     }
 

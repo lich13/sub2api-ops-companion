@@ -796,8 +796,7 @@ impl Detection {
         }
         if d["marked"] != true {
             let current = self.mark(id)?;
-            let state = self.capacity.store.shared_snapshot()?["marks"][id.to_string()].clone();
-            if current["version"] != d["mark_version"] && state["detection_job_id"] != d["job_id"] {
+            if current["version"] != d["mark_version"] {
                 d["status"] = "needs_confirmation".into();
                 d["reason"] = "降智标记已变化".into();
                 self.update(id, json!({"disposition":d}))?;

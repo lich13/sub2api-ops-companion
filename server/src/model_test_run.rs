@@ -53,7 +53,7 @@ impl ModelTests {
         &self,
         job: Value,
         context: Arc<Context>,
-        prepared_row: Option<Value>,
+        mut prepared_row: Option<Value>,
     ) -> Result<()> {
         let id = string(&job["id"]);
         let aid = integer(&job["account_id"]).ok_or_else(Error::internal)?;
@@ -104,7 +104,7 @@ impl ModelTests {
                 index,
                 &client,
                 group_slots.clone(),
-                prepared_row,
+                prepared_row.take(),
             )
             .await?;
         }
@@ -124,7 +124,7 @@ impl ModelTests {
                     index,
                     &client,
                     group_slots.clone(),
-                    None,
+                    prepared_row.take(),
                 ));
             }
             while let Some(result) = children.next().await {
@@ -378,18 +378,22 @@ impl ModelTests {
             // ModelTrace keeps the caller's 1–3 sample concurrency, within its
             // two-job limit and the shared task budget. Native connection
             // probes have a separate configurable recovery-test limit.
+            let prepared = prepared_row.is_some();
             let latest = if job["automatic"] == true {
                 self.hooks
                     .guard(self.get(id).map_err(internal)?, prepared_row.take())
                     .await
                     .map_err(|_| Failure::new("account_changed", false))?
+            } else if let Some(row) = prepared_row.take() {
+                row
             } else {
                 model_target::account(&self.actions, aid)
                     .await
                     .map_err(internal)?
             };
             if model_target::signature(&latest) != model_target::signature(&context.row)
-                || context.owner["id"] != aid
+                || (!prepared || job["recovery_context"]["consume"] == true)
+                    && context.owner["id"] != aid
                     && model_target::signature(
                         &model_target::account(
                             &self.actions,
@@ -475,24 +479,10 @@ impl ModelTests {
                     if let Some(model) =
                         model.filter(|v| crate::account_templates::MODEL_ID.is_match(v))
                     {
-                        let safe = context
-                            .target
-                            .headers
-                            .iter()
-                            .filter(|(key, _)| {
-                                matches!(key.as_str(), "authorization" | "chatgpt-account-id")
-                            })
-                            .all(|(_, value)| {
-                                value.to_str().ok().is_none_or(|value| {
-                                    !model.contains(value.strip_prefix("Bearer ").unwrap_or(value))
-                                })
-                            });
-                        if safe {
-                            run.returned
-                                .lock()
-                                .unwrap_or_else(|e| e.into_inner())
-                                .insert(model);
-                        }
+                        run.returned
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .insert(model);
                     }
                     context
                         .samples

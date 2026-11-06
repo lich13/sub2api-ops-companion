@@ -7,36 +7,6 @@ use crate::{
 };
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{json, Value};
-pub fn change_is_safe(before: &Value, after: &Value) -> bool {
-    if [
-        "id",
-        "platform",
-        "type",
-        "status",
-        "schedulable",
-        "concurrency",
-    ]
-    .iter()
-    .any(|key| before[key] != after[key])
-    {
-        return false;
-    }
-    if [
-        "rate_limited_at",
-        "rate_limit_reset_at",
-        "overload_until",
-        "temp_unschedulable_until",
-        "temp_unschedulable_reason",
-    ]
-    .iter()
-    .any(|key| !after[key].is_null() && after[key] != "" && before[key] != after[key])
-    {
-        return false;
-    }
-    ["model_rate_limits", "antigravity_quota_scopes"]
-        .iter()
-        .all(|key| !truthy(&after["extra"][key]) || after["extra"][key] == before["extra"][key])
-}
 pub fn threshold(value: &Value) -> Value {
     let payload: Value = serde_json::from_str(string(value).trim()).unwrap_or(Value::Null);
     if !payload.is_object()

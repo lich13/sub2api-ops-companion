@@ -114,7 +114,6 @@ def verify_numeric_reference(postgres_url: str, reference_root: Path, fixture: d
 def verify_python_readback(reference_root: Path, output_root: Path,
                            fixture: dict[str, Any], numeric: dict[str, Any]) -> list[str]:
     sys.path.insert(0, str(reference_root))
-    from app.oauth_monitor import OAuthStateStore
     from app.policy_store import PolicyStore
 
     checks: list[str] = ["Python Decimal dscale and legacy digest"]
@@ -124,41 +123,12 @@ def verify_python_readback(reference_root: Path, output_root: Path,
             "pinned Python PolicyStore could not read Rust-written state")
     checks.append("pinned Python 6be reads Rust-written PolicyStore state")
 
-    runtime_root = output_root / "runtime-migration"
-    oauth = OAuthStateStore(str(runtime_root / "usage-query-state.json")).snapshot()
-    require(oauth["settings"].get("legacy_recovery_cleanup_completed") is True,
-            "pinned Python OAuthStateStore could not read the Rust migration marker")
-    require(bool(oauth["settings"].get("legacy_recovery_cleanup_completed_at")),
-            "Rust migration timestamp is absent from Python OAuthStateStore readback")
-
-    profiles = PolicyStore(runtime_root / "account-model-profiles.json", {}).read()
-    expected_statuses = fixture["runtime"]["expected_statuses"]
-    profile_items = profiles["jobs"]["fixture-job"]["items"]
-    for item in profile_items:
-        item_id = item["id"]
-        require(item.get("status") == expected_statuses[item_id],
-                f"pinned Python sees unexpected legacy profile status for {item_id}")
-    capacity = json.loads((runtime_root / "capacity-alert-state.json").read_text(encoding="utf-8"))
-    for item_id, item in capacity["profile_intents"].items():
-        require(item.get("status") == expected_statuses[item_id],
-                f"pinned Python sees unexpected capacity intent status for {item_id}")
-    config = json.loads((runtime_root / "oauth-config.json").read_text(encoding="utf-8"))
-    require(set(config) == set(fixture["runtime"]["legacy_config_retained_keys"]),
-            "old OAuth config cleanup retained or removed the wrong keys")
-    require(not (runtime_root / "guard-state.json").exists(), "legacy guard state was not retired")
-
     new_capacity = json.loads(
         (output_root / "runtime-new-directory" / "capacity-alert-state.json").read_text(encoding="utf-8")
     )
     require("profile_intents" not in new_capacity,
             "fresh Runtime startup inserted a missing profile_intents field")
-    checks.extend([
-        "pinned Python OAuthStateStore reads the recovery cleanup marker",
-        "pinned Python PolicyStore reads retired profile jobs",
-        "pinned Python reads retired capacity intents and filtered legacy config",
-        "fresh writable Runtime starts with absent profile_intents",
-        "legacy guard file is absent after startup",
-    ])
+    checks.append("fresh writable Runtime starts with absent profile_intents")
     return checks
 
 
@@ -192,8 +162,8 @@ def main() -> int:
             "PostgreSQL NUMERIC dscale and Python psycopg digest compatibility",
             "HTTP-owned request survives client disconnect; Tasks close(0/1) aborts and rejects new work",
             "Coordinator drain closes, cancels its owned query, prevents redispatch, and releases state locking",
-            "Runtime read-only/check-state no-write; writable migration/readback and fresh-directory startup",
-            "legacy OAuth config filtering, profile retirement, and recovery-state cleanup",
+            "Runtime read-only/check-state no-write; fresh startup and current state initialization",
+            "0.1.82 state compatibility without retired profile or recovery-plan migration",
         ],
         "not_covered": [
             "production or remote PostgreSQL, external upstream services, and non-loopback HTTP",

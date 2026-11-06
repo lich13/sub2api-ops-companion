@@ -100,16 +100,14 @@ pub fn new_intent(descriptor: &Value, status: &str, at: Option<DateTime<Utc>>) -
 }
 pub(crate) fn verification_waiting(intent: &Value) -> bool {
     intent["status"] == "retry"
-        && (intent["successful_test"].is_object()
-            || matches!(
-                string(&intent["waiting_reason"]),
-                "recovery_write"
-                    | "model_verification_pending"
-                    | "model_cooldown"
-                    | "model_busy"
-                    | "test_slots"
-                    | "account_busy"
-            ))
+        && matches!(
+            string(&intent["waiting_reason"]),
+            "model_verification_pending"
+                | "model_cooldown"
+                | "model_busy"
+                | "test_slots"
+                | "account_busy"
+        )
 }
 
 pub fn discover(
@@ -292,9 +290,7 @@ pub fn quota_update(
         quota_update_inner(item, result, state, at, recovery_enabled, reused);
     let id = integer(&item["account_id"]).unwrap_or(0);
     let previous = &state["scheduler"][id.to_string()]["recovery_intent"];
-    if integer(&previous["connection_attempt_count"]).unwrap_or(0) > 0
-        || previous["successful_test"].is_object()
-    {
+    if integer(&previous["connection_attempt_count"]).unwrap_or(0) > 0 {
         if let Some(intent) = update
             .scheduler
             .get_mut(&id)

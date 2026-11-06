@@ -671,11 +671,7 @@ impl Harness {
         )
         .await
         .expect("construct real Runtime over temporary PostgreSQL and injected clock");
-        runtime
-            .detection
-            .capacity
-            .retire_legacy(Utc::now())
-            .unwrap();
+        runtime.detection.capacity.initialize(Utc::now()).unwrap();
         runtime
             .tests
             .set_test_endpoint(&format!("{base_url}/v1/responses"))
@@ -2064,7 +2060,6 @@ async fn failed_dispatched_job_still_owns_cooldown_and_retry_keeps_original_time
         })
         .unwrap();
     harness.restart_runtime().await;
-    harness.runtime().detection.migrate_dispatches().unwrap();
     assert_eq!(
         harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()],
         first_start
@@ -2150,8 +2145,8 @@ async fn retryable_model_transport_failure_preserves_first_dispatch_timestamp() 
 }
 
 #[tokio::test]
-async fn capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queue_upgrade() {
-    let mut harness = Harness::new(sample_text("above_99", 0)).await;
+async fn capacity_provider_and_slow_evidence_survive_bark_config_and_initialization() {
+    let harness = Harness::new(sample_text("above_99", 0)).await;
     let row = harness.seed_account("apikey", true, json!({})).await;
     let id = integer(&row["id"]).unwrap();
     harness
@@ -2357,94 +2352,29 @@ async fn capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queu
     );
     assert_eq!(harness.mock.count("POST", "/push"), 0);
 
-    harness
-        .runtime()
-        .detection
-        .capacity
-        .store
-        .transaction(|state| {
-            state.as_object_mut().unwrap().remove("clue_mode_since");
-            state.as_object_mut().unwrap().remove("detection_since");
-            state["pending"]["fixture-legacy-error"] = json!({
-                "id":provider_error_id + 90,
-                "account_id":id,
-                "account_name":"fixture account",
-                "account_type":"apikey",
-                "requested_model":"gpt-6-luna",
-                "upstream_model":"gpt-6-luna",
-                "message":"synthetic legacy notice",
-                "created_at":datetime(Utc::now()),
-                "next_at":datetime(Utc::now()),
-                "attempts":2
-            });
-            state["slow_pending"]["fixture-legacy-slow"] = json!({
-                "kind":"slow_ttft",
-                "id":provider_error_id + 91,
-                "account_id":id,
-                "account_name":"fixture account",
-                "account_type":"apikey",
-                "requested_model":"gpt-6-luna",
-                "upstream_model":"gpt-6-luna",
-                "message":"synthetic legacy slow notice",
-                "created_at":datetime(Utc::now()),
-                "next_at":datetime(Utc::now()),
-                "attempts":2,
-                "sample_count":10,
-                "slow_count":8,
-                "threshold_ms":10000,
-                "latest_first_token_ms":11001
-            });
-            Ok(())
-        })
-        .unwrap();
-    harness
-        .runtime()
-        .detection
-        .capacity
-        .retire_legacy(Utc::now())
-        .unwrap();
-    harness
-        .insert_capacity_error(
-            provider_error_id + 92,
-            id,
-            Utc::now() - Duration::seconds(1),
-        )
-        .await;
-    harness.restart_runtime().await;
-    harness
-        .runtime()
-        .detection
-        .capacity
-        .poll()
-        .await
-        .expect("upgrade must retire legacy queues before polling new evidence");
-    let upgraded = harness
+    let before = harness
         .runtime()
         .detection
         .capacity
         .store
         .snapshot()
         .unwrap();
-    assert_eq!(upgraded["pending"], json!({}));
-    assert_eq!(upgraded["slow_pending"], json!({}));
-    assert_eq!(upgraded["detection_events"], json!({}));
-    assert_eq!(
-        upgraded["notifications"]["fixture-legacy-error"]["status"],
-        "retired"
-    );
-    assert_eq!(
-        upgraded["notifications"]["fixture-legacy-slow"]["status"],
-        "retired"
-    );
     harness
         .runtime()
         .detection
-        .deliver_notifications()
-        .await
-        .expect("retired legacy queues must not be replayed after restart");
-    assert_eq!(harness.mock.count("POST", "/push"), 0);
-    assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
-    assert!(harness.mock.unexpected().is_empty());
+        .capacity
+        .initialize(Utc::now())
+        .unwrap();
+    assert_eq!(
+        harness
+            .runtime()
+            .detection
+            .capacity
+            .store
+            .snapshot()
+            .unwrap(),
+        before
+    );
     harness.close().await;
 }
 
@@ -4483,7 +4413,7 @@ async fn same_recheck_job_id_with_new_completion_time_is_processed_after_retry()
 }
 
 #[tokio::test]
-async fn dispatch_history_migration_survives_pruned_job_summaries_and_restart() {
+async fn dispatch_history_survives_pruned_job_summaries_and_restart() {
     let cooldown = fixture()["oracle"]["automatic_dispatch_cooldown_seconds"]
         .as_i64()
         .unwrap();
@@ -4493,18 +4423,18 @@ async fn dispatch_history_migration_survives_pruned_job_summaries_and_restart() 
     let started_at = harness.now() - Duration::seconds(10);
     harness
         .runtime()
-        .tests
+        .detection
+        .register_dispatch(&json!({"id":"fixture-auto-latest","account_id":id,"automatic":true}))
+        .unwrap();
+    harness
+        .runtime()
+        .detection
         .store
         .transaction(|state| {
-            state["jobs"] = json!({
-                "fixture-auto-latest":{"id":"fixture-auto-latest","account_id":id,"automatic":true,"status":"failed","started_at":datetime(started_at)},
-                "fixture-manual-newer":{"id":"fixture-manual-newer","account_id":id,"automatic":false,"status":"completed","started_at":datetime(harness.now())},
-                "fixture-auto-no-start":{"id":"fixture-auto-no-start","account_id":id,"automatic":true,"status":"queued","started_at":null}
-            });
+            state["automatic_starts"][id.to_string()]["started_at"] = datetime(started_at).into();
             Ok(())
         })
         .unwrap();
-    harness.runtime().detection.migrate_dispatches().unwrap();
     let dispatch = harness.runtime().detection.store.read().unwrap()["automatic_starts"]
         [id.to_string()]
     .clone();
@@ -7148,7 +7078,6 @@ async fn smart_frequency_tiers_floor_pause_failure_and_restart_do_not_drift() {
     );
     h.runtime().detection.tick().await.unwrap();
     h.restart_runtime().await;
-    h.runtime().detection.migrate_dispatches().unwrap();
     h.runtime().detection.tick().await.unwrap();
     assert_eq!(
         h.runtime().detection.view(id).await.unwrap()["next_at"],
@@ -7266,7 +7195,7 @@ async fn smart_idle_cancels_waiting_periodic_work_and_pauses_marked_rechecks() {
 }
 
 #[tokio::test]
-async fn smart_migration_is_once_only_and_old_clients_preserve_mode_and_floor() {
+async fn smart_settings_survive_restart_and_old_clients_preserve_mode_and_floor() {
     let mut h = Harness::new(sample_text("above_99", 0)).await;
     let id = integer(&h.seed_account("apikey", true, json!({})).await["id"]).unwrap();
     let disabled = integer(&h.seed_account("apikey", true, json!({})).await["id"]).unwrap();
@@ -7275,28 +7204,6 @@ async fn smart_migration_is_once_only_and_old_clients_preserve_mode_and_floor() 
         .detection
         .update(disabled, json!({"enabled":false}))
         .unwrap();
-    h.runtime()
-        .detection
-        .store
-        .transaction(|state| {
-            for id in [id, disabled] {
-                let v = state["accounts"][id.to_string()].as_object_mut().unwrap();
-                v.shift_remove("schedule_mode");
-                v.shift_remove("min_interval_minutes");
-                v.shift_remove("schedule_anchor_at");
-            }
-            Ok(())
-        })
-        .unwrap();
-    h.runtime().detection.migrate_dispatches().unwrap();
-    let migrated = h.runtime().detection.view(id).await.unwrap();
-    assert_eq!(migrated["schedule_mode"], "smart");
-    assert_eq!(migrated["min_interval_minutes"], 5);
-    assert_eq!(migrated["interval_minutes"], 37);
-    assert_eq!(
-        h.runtime().detection.view(disabled).await.unwrap()["enabled"],
-        false
-    );
     let configured = h.smart_detection(id, 19).await;
     let old_client = h
         .runtime()
@@ -7341,7 +7248,6 @@ async fn smart_migration_is_once_only_and_old_clients_preserve_mode_and_floor() 
     assert_ne!(fixed["version"], old_client["version"]);
     assert_eq!(h.runtime().detection.save(id,&json!({"enabled":true,"interval_minutes":37,"expected_version":old_client["version"]})).await.unwrap_err().status.as_u16(),409);
     h.restart_runtime().await;
-    h.runtime().detection.migrate_dispatches().unwrap();
     assert_eq!(
         h.runtime().detection.view(id).await.unwrap()["schedule_mode"],
         "fixed"

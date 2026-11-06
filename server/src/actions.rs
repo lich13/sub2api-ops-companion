@@ -530,12 +530,7 @@ impl Actions {
                 return Err(Error::new(502, "字段写入尚未确认，正在核对实际值"));
             }
             if let Some(task) = &credit_change {
-                credit_ownership::finish_parameter_change(
-                    &self.queries.oauth,
-                    &actual,
-                    task,
-                    &live,
-                )?;
+                credit_ownership::finish_parameter_change(&self.queries.oauth, &actual, task)?;
             }
             if action == "priority" {
                 self.priorities.after_write(id, &actual)?;

@@ -356,7 +356,7 @@ fn audit_rotation_preserves_complete_logs_and_serializes_waiting_writers() {
         .all(|r| r["payload"]["token"] == "[REDACTED]"));
     let across = audit::read(&path, 401, None);
     assert_eq!(across[400]["event"], "fixture.legacy");
-    assert_eq!(across[400]["payload"]["api_key"], "[REDACTED]");
+    assert_eq!(across[400]["payload"]["api_key"], "fixture-legacy-secret");
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 3);
 }
 
@@ -401,6 +401,29 @@ fn audit_normal_rotation_renames_and_filters_the_event_field_from_the_tail() {
     assert_eq!(audit::read(&path, 500, Some("fixture.new")).len(), 400);
     fs::write(&path, b"{\"event\":\"other\",\"payload\":{\"event\":\"fixture.new\"}}\ninvalid\n{\"event\":\"fixture.\\u006eew\",\"payload\":{\"token\":\"fixture-secret\"}}\n").unwrap();
     let found = audit::read(&path, 1, Some("fixture.new"));
-    assert_eq!(found[0]["payload"]["token"], "[REDACTED]");
+    assert_eq!(found[0]["payload"]["token"], "fixture-secret");
     assert!(audit::read(&path, 0, None).is_empty());
+}
+
+#[test]
+fn audit_without_lock_reads_existing_logs_without_writing_or_changing_permissions() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("audit.jsonl");
+    let content = b"{\"event\":\"fixture.old\"}\n{\"event\":\"fixture.new\",\"payload\":{\"token\":\"fixture-token\"}}\n";
+    fs::write(&path, content).unwrap();
+    let metadata = fs::metadata(&path).unwrap();
+    let values = audit::read(&path, 10, Some("fixture."));
+    assert_eq!(values.len(), 2);
+    assert_eq!(values[0]["event"], "fixture.new");
+    assert_eq!(values[0]["payload"]["token"], "fixture-token");
+    assert_eq!(fs::read(&path).unwrap(), content);
+    assert_eq!(
+        fs::metadata(&path).unwrap().modified().unwrap(),
+        metadata.modified().unwrap()
+    );
+    assert_eq!(
+        fs::metadata(&path).unwrap().permissions(),
+        metadata.permissions()
+    );
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
 }

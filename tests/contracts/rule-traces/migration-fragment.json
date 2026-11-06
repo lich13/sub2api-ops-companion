@@ -2257,53 +2257,32 @@
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_block_signature_detects_concurrency_change",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
-        "path": "server/tests/pinned_rule_traces.rs",
-        "test_name": "oauth_monitor_oauthrecoverygatetests_test_block_signature_detects_concurrency_change",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "monitor_recovery_accepts_refreshed_limits_and_unrelated_parameters_during_test",
         "assertions": [
-          "check(",
-          "\"py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_block_signature_detects_concurrency_change\""
-        ],
-        "helper_assertions": [
-          {
-            "name": "check",
-            "assertions": [
-              "assert!(!cases.is_empty(),",
-              "assert_same(",
-              "assert!(actual.is_err(),",
-              "assert_eq!(args, case[\"arguments\"]);"
-            ]
-          },
-          {
-            "name": "assert_same",
-            "assertions": [
-              "assert_eq!(a.len(), b.len(),",
-              "assert!(a.contains_key(key),",
-              "_ => assert_eq!(actual, expected,",
-              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
-            ]
-          }
-        ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/rule-traces/fixtures.json",
-            "json_paths": [
-              "legacy_tests.49",
-              "cases.160",
-              "cases.161",
-              "cases.162",
-              "cases.163",
-              "cases.164",
-              "cases.165",
-              "cases.166",
-              "cases.167"
-            ]
-          }
+          "assert_eq!(initial_concurrency, Some(2))",
+          "assert_eq!(changed_concurrency, Some(3))",
+          "assert_eq!(current[\"concurrency\"], 3)",
+          "assert!(sub2ops_server::recovery_rules::confirmed(&current))",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/clear-rate-limit\"), 0)",
+          "assert_eq!(harness.mock.count(\"DELETE\", \"/temp-unschedulable\"), 0)",
+          "assert!(harness.mock.unexpected().is_empty())"
         ]
       },
-      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+      "coverage_note": "0.1.84 已批准规则替换：删除共享限流字段变化门禁，成功测活以最终 confirmed 为准。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_block_signature_detects_concurrency_change"
+        ],
+        "approved_requirement": "0.1.84 已批准计划：删除共享限流字段变化门禁，成功测活以最终 confirmed 为准。",
+        "replacement_contract": "server/tests/oauth_scheduler_parity.rs::monitor_recovery_accepts_refreshed_limits_and_unrelated_parameters_during_test"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_recovery_backoff_schedule_caps_at_30_minutes",

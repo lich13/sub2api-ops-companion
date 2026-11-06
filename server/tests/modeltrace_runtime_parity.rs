@@ -3208,3 +3208,50 @@ fn offline_fingerprint_bank_cache_preserves_hash_schema_rate_state_and_snapshot(
 
 #[path = "support/lm_detector_runtime.rs"]
 mod lm_detector_runtime;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn parent_changes_after_queueing_or_first_sample_stop_later_requests() {
+    for queued in [true, false] {
+        let h = RuntimeHarness::new().await;
+        let fixture = runtime_fixtures()["modeltrace_runtime"]["below_99"].clone();
+        let outputs = (0..3)
+            .map(|i| output_from_fixture(&fixture, i))
+            .collect::<Vec<_>>();
+        let release = Arc::new(Semaphore::new(0));
+        h.state.set_scenario(Scenario::with_replies(
+            gated_replies(&outputs, release.clone()),
+            None,
+        ));
+        let parent = h.seed_account("apikey", None, json!({})).await;
+        let child = h.seed_account("apikey", Some(parent), json!({})).await;
+        let budget = if queued {
+            Some(
+                h.runtime
+                    .budget
+                    .clone()
+                    .acquire_many_owned(24)
+                    .await
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+        let started = h.start_manual(child, 1).await;
+        let job_id = started["id"].as_str().unwrap().to_owned();
+        if !queued {
+            h.wait_for_requests(1).await;
+            h.wait_for_progress(&job_id, 1).await;
+        }
+        sqlx::query("UPDATE accounts SET credentials=jsonb_set(credentials,'{api_key}','\"fixture-replaced-parent\"'),updated_at=now() WHERE id=$1")
+            .bind(parent).execute(&h.runtime.db.pool).await.unwrap();
+        drop(budget);
+        release.add_permits(20);
+        let job = h.wait_for_terminal(&job_id).await;
+        assert!(matches!(
+            job["status"].as_str(),
+            Some("failed" | "needs_confirmation")
+        ));
+        assert_eq!(h.state.count(), if queued { 0 } else { 1 });
+        h.close().await;
+    }
+}

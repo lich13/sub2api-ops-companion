@@ -13,29 +13,6 @@ use chrono::Duration;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
-pub(crate) fn state_block(row: &Value) -> Value {
-    let mut block = pick(
-        row,
-        &[
-            "id",
-            "platform",
-            "type",
-            "status",
-            "schedulable",
-            "concurrency",
-            "rate_limited_at",
-            "rate_limit_reset_at",
-            "overload_until",
-            "temp_unschedulable_until",
-            "temp_unschedulable_reason",
-        ],
-    );
-    block["extra"] = pick(
-        &row["extra"],
-        &["model_rate_limits", "antigravity_quota_scopes"],
-    );
-    block
-}
 impl Monitor {
     fn selected(
         &self,
@@ -122,8 +99,8 @@ impl Monitor {
         if intent["status"] == "retry_exhausted" {
             return Ok(json!({"success":false,"skipped":true,"error_code":"retry_exhausted"}));
         }
-        if (method == "connection" && integer(&intent["connection_attempt_count"]).unwrap_or(0) > 0
-            || intent["successful_test"].is_object())
+        if method == "connection"
+            && integer(&intent["connection_attempt_count"]).unwrap_or(0) > 0
             && crate::compat::parse_datetime(&intent["next_retry_at"])
                 .is_some_and(|due| due > self.now())
         {
@@ -134,18 +111,6 @@ impl Monitor {
         let row = match self.row(id).await {
             Ok(row) => row,
             Err(error) if error.status.as_u16() >= 500 => {
-                if intent["successful_test"].is_object() {
-                    intent["attempt_count"] =
-                        (integer(&intent["attempt_count"]).unwrap_or(0) + 1).into();
-                    let proof = intent["successful_test"].clone();
-                    return self.retry_recovery_write(
-                        id,
-                        &intent,
-                        &proof,
-                        generation,
-                        method_generation,
-                    );
-                }
                 let attempts = integer(&intent["attempt_count"]).unwrap_or(0) + 1;
                 let mut retry = intent.clone();
                 retry["status"] = "retry".into();
@@ -166,23 +131,6 @@ impl Monitor {
                 generation,
                 method_generation,
             );
-        }
-        let proof = intent["successful_test"].clone();
-        let verified = proof["result"]["success"] == true
-            && proof["identity"] == credit_ownership::identity_signature(&row)
-            && recovery_rules::change_is_safe(&proof["block"], &row);
-        if verified && recovery_rules::confirmed(&row) {
-            return self.recovery_complete(
-                id,
-                &row,
-                &intent,
-                &proof["result"],
-                generation,
-                method_generation,
-            );
-        }
-        if !verified {
-            intent.as_object_mut().unwrap().remove("successful_test");
         }
         let saved = quota::latest_result(&row, usage, self.now());
         let early = intent["kind"] == "early_reset";
@@ -229,10 +177,7 @@ impl Monitor {
                 method_generation,
             );
         }
-        let result = if verified {
-            intent["attempt_count"] = (integer(&intent["attempt_count"]).unwrap_or(0) + 1).into();
-            proof["result"].clone()
-        } else {
+        let result = {
             intent["status"] = "testing".into();
             intent["block_signature"] = block_signature(&row).into();
             intent["tested_at"] = datetime(self.now()).into();
@@ -348,19 +293,15 @@ impl Monitor {
             )
         };
         let _control = self.actions.locks.control(id).await;
-        let proof = if verified {
-            proof
-        } else {
-            json!({"result":pick(&result, &["success", "completed_at", "model_id", "duration_ms", "recovery_method", "job_id"]),
-                "identity":credit_ownership::identity_signature(&row), "block":state_block(&row)})
-        };
         let after = match self.row(id).await {
             Ok(row) => row,
             Err(_) if result["success"] == true => {
-                return self.retry_recovery_write(
+                return self.known_recovery_failure(
                     id,
+                    &row,
                     &intent,
-                    &proof,
+                    &result,
+                    "recovery_failed",
                     generation,
                     method_generation,
                 );
@@ -432,8 +373,6 @@ impl Monitor {
                 &self.shared_state()?["scheduler"][id.to_string()],
                 self.now(),
             )
-            || !credit_ownership::same_identity(&row, &after)
-            || !recovery_rules::change_is_safe(&state_block(&row), &after)
         {
             return self.known_recovery_failure(
                 id,
@@ -470,10 +409,12 @@ impl Monitor {
         let current = match self.row(id).await {
             Ok(row) => row,
             Err(_) => {
-                return self.retry_recovery_write(
+                return self.known_recovery_failure(
                     id,
+                    &row,
                     &intent,
-                    &proof,
+                    &result,
+                    "recovery_failed",
                     generation,
                     method_generation,
                 )
@@ -482,10 +423,7 @@ impl Monitor {
         if !self.selected(id, generation, method_generation, method)? {
             return Ok(json!({"success":false,"skipped":true,"error_code":"manual_intervention"}));
         }
-        if self.hooks.detection_held(id)?
-            || !credit_ownership::same_identity(&row, &current)
-            || !recovery_rules::change_is_safe(&state_block(&row), &current)
-        {
+        if self.hooks.detection_held(id)? {
             return self.known_recovery_failure(
                 id,
                 &current,
@@ -506,44 +444,16 @@ impl Monitor {
                 method_generation,
             )
         } else {
-            self.retry_recovery_write(id, &intent, &proof, generation, method_generation)
+            self.known_recovery_failure(
+                id,
+                &current,
+                &intent,
+                &result,
+                "recovery_failed",
+                generation,
+                method_generation,
+            )
         }
-    }
-    fn retry_recovery_write(
-        &self,
-        id: i64,
-        intent: &Value,
-        proof: &Value,
-        generation: i64,
-        method_generation: i64,
-    ) -> Result<Value> {
-        let mut next = intent.clone();
-        let attempts = integer(&intent["attempt_count"]).unwrap_or(1);
-        let due = if proof["result"]["recovery_method"] == "connection" {
-            crate::connection_retry::Policy::saved(intent)?
-                .unwrap_or_default()
-                .next(attempts, self.now())
-        } else {
-            Some(recovery_rules::retry_at(self.now(), attempts))
-        };
-        next["successful_test"] = proof.clone();
-        next["status"] = if due.is_some() {
-            "retry"
-        } else {
-            "retry_exhausted"
-        }
-        .into();
-        next["next_retry_at"] = due.clone().unwrap_or_default().into();
-        next["waiting_reason"] = "recovery_write".into();
-        next["last_error_code"] = if due.is_some() {
-            "recovery_uncertain"
-        } else {
-            "retry_exhausted"
-        }
-        .into();
-        next["last_error"] = "清除账号状态尚未确认".into();
-        self.save_intent(id, intent, &next, generation, method_generation)?;
-        Ok(json!({"success":false,"error_code":next["last_error_code"],"next_retry_at":due}))
     }
     fn recovery_event(
         &self,
@@ -608,9 +518,8 @@ impl Monitor {
         let code = string(&test["error_code"]);
         let auth = recovery_events::auth_code(code);
         let mut next = intent.clone();
-        next.as_object_mut().unwrap().remove("successful_test");
         let connection = test["recovery_method"] == "connection";
-        let retryable = code == "recovery_state_changed"
+        let retryable = matches!(code, "recovery_state_changed" | "recovery_failed")
             || crate::connection_retry::retryable(test)
             || test["uncertain"] == true;
         let connection_next = if connection && retryable {
@@ -699,8 +608,10 @@ impl Monitor {
         result["error_code"] = code.into();
         result["error"] = if code == "detection_held" {
             "账号已由模型检测接管"
+        } else if code == "recovery_failed" {
+            "清除账号状态尚未确认"
         } else {
-            "账号阻断签名已变化，已停止自动恢复"
+            "账号状态已变化，已停止自动恢复"
         }
         .into();
         self.recovery_failed(id, row, intent, &result, generation, method_generation)?;
@@ -718,7 +629,6 @@ impl Monitor {
     ) -> Result<Value> {
         let at = self.now();
         let mut next = intent.clone();
-        next.as_object_mut().unwrap().remove("successful_test");
         next["test_completed_at"] = test["completed_at"].clone();
         next["deferred_until"] = "".into();
         next["status"] = "recovered".into();

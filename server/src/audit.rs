@@ -106,8 +106,10 @@ pub fn read(path: &Path, limit: usize, prefix: Option<&str>) -> Vec<Value> {
     if limit == 0 {
         return vec![];
     }
-    let Ok(_lock) = lock(path, false) else {
-        return vec![];
+    let _lock = match lock(path, false) {
+        Ok(file) => Some(file),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(_) => return vec![],
     };
     let mut records = Vec::new();
     for path in [path.to_path_buf(), sibling(path, ".1")] {
@@ -115,21 +117,12 @@ pub fn read(path: &Path, limit: usize, prefix: Option<&str>) -> Vec<Value> {
             continue;
         };
         let _ = tail(&mut file, |line| {
-            if let Some(prefix) = prefix {
-                #[derive(serde::Deserialize)]
-                struct Event<'a> {
-                    #[serde(borrow, default)]
-                    event: Option<std::borrow::Cow<'a, str>>,
-                }
-                let Ok(event) = serde_json::from_slice::<Event<'_>>(line) else {
-                    return true;
-                };
-                if !event.event.as_deref().unwrap_or("").starts_with(prefix) {
-                    return true;
-                }
-            }
             if let Ok(value) = serde_json::from_slice::<Value>(line) {
-                records.push(crate::security::redact_json(&value));
+                if prefix
+                    .is_none_or(|prefix| value["event"].as_str().unwrap_or("").starts_with(prefix))
+                {
+                    records.push(value);
+                }
             }
             records.len() < limit
         });

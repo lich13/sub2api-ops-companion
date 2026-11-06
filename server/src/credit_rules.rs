@@ -88,6 +88,11 @@ pub fn project(value: &Value, notices: &Value) -> Value {
 }
 pub fn manual(task: &Value) -> bool {
     task["source"] == "manual"
+        || !truthy(&task["policy_version"])
+            && matches!(string(&task["stage"]), "manual" | "recovered" | "closed")
+            && !truthy(&task["attempt_at"])
+            && !truthy(&task["evidence_at"])
+            && !truthy(&task["owns_pause"])
 }
 pub fn expired(task: &Value, at: DateTime<Utc>) -> bool {
     if truthy(&task["attempt_at"]) && !truthy(&task["consumed"]) {

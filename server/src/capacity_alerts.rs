@@ -275,16 +275,11 @@ impl CapacityAlerts {
             self.read_only,
         );
     }
-    pub fn retire_legacy(&self, at: DateTime<Utc>) -> Result<()> {
+    pub fn initialize(&self, at: DateTime<Utc>) -> Result<()> {
         let state = self.store.shared_snapshot()?;
-        if [
-            "clue_mode_since",
-            "gateway_since",
-            "apikey_since",
-            "detection_since",
-        ]
-        .iter()
-        .all(|key| truthy(&state[*key]))
+        if ["gateway_since", "apikey_since", "detection_since"]
+            .iter()
+            .all(|key| truthy(&state[*key]))
         {
             return Ok(());
         }
@@ -294,29 +289,6 @@ impl CapacityAlerts {
                     data[key] = datetime(at).into();
                 }
             }
-            if truthy(&data["clue_mode_since"]) {
-                return Ok(());
-            }
-            let stamp = datetime(at);
-            let keys = data["pending"]
-                .as_object()
-                .unwrap()
-                .keys()
-                .chain(data["slow_pending"].as_object().unwrap().keys())
-                .cloned()
-                .collect::<Vec<_>>();
-            if data.get("notifications").is_none() {
-                data["notifications"] = json!({});
-            }
-            for key in keys {
-                data["notifications"][key] =
-                    json!({"status":"retired","reason":"clue_only","at":stamp});
-            }
-            for key in ["pending", "slow_pending", "detection_events"] {
-                data[key] = json!({});
-            }
-            data["clue_mode_since"] = stamp.clone().into();
-            data["detection_since"] = stamp.into();
             Ok(())
         })
     }
