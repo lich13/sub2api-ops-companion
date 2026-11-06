@@ -439,7 +439,8 @@ fn fresh_release_before_the_old_boundary_accepts_fractional_429_deadlines() {
     row["extra"]["codex_usage_updated_at"] = compat::datetime(at - Duration::seconds(1)).into();
     row["extra"]["codex_7d_used_percent"] = 0.into();
     row["extra"]["codex_7d_reset_at"] = compat::datetime(at + Duration::days(7)).into();
-    let result = quota::latest_result(&row, &Value::Null, at);
+    let mut result = quota::latest_result(&row, &Value::Null, at);
+    result["source"] = "sub2api_admin_usage".into();
     meta["quota_query"]["last_query_at"] = result["queried_at"].clone();
     assert!(recovery_rules::quota_release(&row, &result, &meta, at));
     let root = tempfile::tempdir().unwrap();
@@ -447,6 +448,7 @@ fn fresh_release_before_the_old_boundary_accepts_fractional_429_deadlines() {
     store
         .transaction(|state| {
             state["scheduler"]["73"] = meta.clone();
+            state["oauth_results"]["73"] = result.clone();
             Ok(())
         })
         .unwrap();
@@ -1287,13 +1289,51 @@ fn early_quota_release_retires_old_waits_without_erasing_query_budget_or_live_re
 }
 
 #[test]
+fn late_passive_quota_does_not_release_an_unexpired_exhaustion() {
+    use chrono::Duration;
+    use sub2ops_server::quota;
+    let at = date(&json!("2031-04-05T10:46:43Z"));
+    let mut row = json!({"id":74,"platform":"openai","type":"oauth","status":"active","schedulable":true,
+        "rate_limited_at":"2031-04-05T10:45:22Z","rate_limit_reset_at":"2031-04-05T15:03:48Z",
+        "extra":{"codex_plan_type":"plus","codex_usage_updated_at":"2031-04-05T10:46:16Z",
+            "codex_5h_used_percent":98,"codex_7d_used_percent":66,
+            "codex_5h_reset_at":"2031-04-05T15:03:44Z","codex_7d_reset_at":"2031-04-12T10:00:00Z"}});
+    let meta = json!({"recovery_intent":{"kind":"quota_exhausted","status":"pending",
+        "fingerprint":"codex_5h@2031-04-05T15:03:48+00:00","window_keys":["codex_5h"],
+        "due_at":"2031-04-05T15:03:48Z"}});
+    for offset in [-4, 4] {
+        row["extra"]["codex_5h_reset_at"] =
+            compat::datetime(date(&meta["recovery_intent"]["due_at"]) + Duration::seconds(offset))
+                .into();
+        let result = quota::latest_result(&row, &Value::Null, at);
+        assert_eq!(result["source"], "passive");
+        assert!(!recovery_rules::quota_release(&row, &result, &meta, at));
+        assert!(!recovery_rules::quota_ready(&row, &result, &meta, at));
+        assert!(recovery_rules::candidates(
+            std::slice::from_ref(&row),
+            &json!({"74":result}),
+            &json!({"74":meta}),
+            at,
+            true,
+        )
+        .unwrap()
+        .is_empty());
+        let mut active = result;
+        active["source"] = "sub2api_admin_usage".into();
+        assert!(recovery_rules::quota_release(&row, &active, &meta, at));
+        assert!(recovery_rules::quota_ready(&row, &active, &meta, at));
+    }
+}
+
+#[test]
 fn early_new_cycle_bypasses_only_obsolete_quota_waits_before_recovery_verification() {
     use sub2ops_server::{quota, recovery_events};
     let at = date(&json!("2031-04-05T10:00:00Z"));
     let row = json!({"id":74,"platform":"openai","type":"oauth","status":"active","schedulable":true,
         "rate_limited_at":"2031-04-05T08:00:00Z","rate_limit_reset_at":"2031-04-06T10:00:00Z",
         "extra":{"codex_plan_type":"plus","codex_usage_updated_at":"2031-04-05T09:59:00Z","codex_5h_used_percent":0,"codex_7d_used_percent":0,"codex_5h_reset_at":"2031-04-05T15:00:00Z","codex_7d_reset_at":"2031-04-12T10:00:00Z"}});
-    let result = quota::latest_result(&row, &Value::Null, at);
+    let mut result = quota::latest_result(&row, &Value::Null, at);
+    result["source"] = "sub2api_admin_usage".into();
     let meta = json!({"recovery_intent":{"kind":"quota_exhausted","status":"pending","fingerprint":"codex_7d@2031-04-06T10:00:00+00:00","window_keys":["codex_7d"],"due_at":"2031-04-06T10:00:00Z","next_retry_at":"2031-04-06T10:00:00Z","waiting_reason":"waiting_reset","waiting_until":"2031-04-06T10:00:00Z"},"quota_query":{"last_query_at":"2031-04-05T09:59:00Z","automatic_attempts":[]}});
     assert!(recovery_rules::quota_release(&row, &result, &meta, at));
     assert!(recovery_rules::quota_ready(&row, &result, &meta, at));
@@ -1315,6 +1355,7 @@ fn early_new_cycle_bypasses_only_obsolete_quota_waits_before_recovery_verificati
     store
         .transaction(|state| {
             state["scheduler"]["74"] = meta.clone();
+            state["oauth_results"]["74"] = result.clone();
             Ok(())
         })
         .unwrap();

@@ -289,9 +289,9 @@ pub fn quota_release(row: &Value, result: &Value, meta: &Value, at: DateTime<Utc
     let Some(last) = old_boundaries.into_iter().max() else {
         return false;
     };
-    // Usage windows and the upstream 429 deadline have different clocks and
-    // precision. A confirmed release supersedes only this cycle's old limit.
-    (changed || observed >= last)
+    // A late response can persist older quota headers after a 429. Before the
+    // old reset boundary, only active usage can confirm an early release.
+    (observed >= last || changed && result["source"] != "passive")
         && parse_datetime(&row["rate_limited_at"])
             .is_none_or(|limited| limited < observed.min(last))
         && parse_datetime(&row["temp_unschedulable_until"])

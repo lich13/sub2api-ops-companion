@@ -1058,8 +1058,15 @@ async fn recovery_model_one_valid_group_really_recovers_with_durable_history() {
         h.runtime.tests.get(job["id"].as_str().unwrap()).unwrap()["status"],
         "completed"
     );
+    // Change the recorded limits without introducing a new, still-active block
+    // before the monitor admits this result for recovery.
     sqlx::query("UPDATE accounts SET rate_limited_at=$1,rate_limit_reset_at=$2,overload_until=$2 WHERE id=$3")
-        .bind(h.now() - Duration::seconds(5)).bind(h.now() + Duration::hours(1)).bind(id).execute(&h.db.pool).await.unwrap();
+        .bind(h.now() - Duration::seconds(5)).bind(h.now() - Duration::seconds(2)).bind(id).execute(&h.db.pool).await.unwrap();
+    let changed = h.runtime.monitor.row(id).await.unwrap();
+    assert_ne!(
+        crate::oauth_state::block_signature(&row),
+        crate::oauth_state::block_signature(&changed)
+    );
     let result = natural_cycle(&h, id, &intent, &usage).await;
     assert_eq!(result["recovered"], true, "{result}");
     assert_eq!(result["job_id"], job["id"]);

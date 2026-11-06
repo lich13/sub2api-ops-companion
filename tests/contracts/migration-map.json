@@ -7188,7 +7188,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_rules_contract.rs",
-          "rust_source_line": 952,
+          "rust_source_line": 954,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_rules_contract"
         },
         "gap": null,
@@ -42220,7 +42220,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 1818,
+          "rust_source_line": 1825,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter credit_model_consumes_only_with_slot_and_recovers_once_without_hourly_query_delay"
         },
         "gap": null,
@@ -42264,7 +42264,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 2056,
+          "rust_source_line": 2063,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter credit_model_cooldown_finishes_unissued_episode_without_account_hold"
         },
         "gap": null,
@@ -42320,7 +42320,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 1818,
+          "rust_source_line": 1825,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter credit_model_consumes_only_with_slot_and_recovers_once_without_hourly_query_delay"
         },
         "gap": null,
@@ -42361,7 +42361,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 2243,
+          "rust_source_line": 2250,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter credit_model_failed_evidence_read_never_falls_back_or_consumes"
         },
         "gap": null,
@@ -42409,7 +42409,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 2093,
+          "rust_source_line": 2100,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter credit_model_failures_obey_terminal_evidence_and_cooldown"
         },
         "gap": null,
@@ -42453,7 +42453,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 2175,
+          "rust_source_line": 2182,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter credit_model_filters_local_limiters_before_selecting_true_upstream_evidence"
         },
         "gap": null,
@@ -42498,7 +42498,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 2008,
+          "rust_source_line": 2015,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter credit_model_manual_control_keeps_consumed_receipt_and_never_restores_schedule"
         },
         "gap": null,
@@ -42542,7 +42542,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 2175,
+          "rust_source_line": 2182,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter credit_model_filters_local_limiters_before_selecting_true_upstream_evidence"
         },
         "gap": null,
@@ -42590,7 +42590,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 2093,
+          "rust_source_line": 2100,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter credit_model_failures_obey_terminal_evidence_and_cooldown"
         },
         "gap": null,
@@ -42646,7 +42646,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 2133,
+          "rust_source_line": 2140,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter credit_model_unknown_consumption_survives_full_runtime_restart_without_replay"
         },
         "gap": null,
@@ -42688,7 +42688,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 1306,
+          "rust_source_line": 1313,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter recovery_model_invalid_auth_or_empty_sample_never_authorizes_recovery"
         },
         "gap": null,
@@ -42730,7 +42730,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 1625,
+          "rust_source_line": 1632,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter recovery_model_cooldown_opens_at_exact_boundary_without_holding_account"
         },
         "gap": null,
@@ -42769,7 +42769,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 1352,
+          "rust_source_line": 1359,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter recovery_model_degradation_stops_scheduling_without_recovery_write"
         },
         "gap": null,
@@ -42811,7 +42811,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 1306,
+          "rust_source_line": 1313,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter recovery_model_invalid_auth_or_empty_sample_never_authorizes_recovery"
         },
         "gap": null,
@@ -42853,7 +42853,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 1306,
+          "rust_source_line": 1313,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter recovery_model_invalid_auth_or_empty_sample_never_authorizes_recovery"
         },
         "gap": null,
@@ -42895,7 +42895,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 1567,
+          "rust_source_line": 1574,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter recovery_model_method_or_manual_changes_reject_completed_success"
         },
         "gap": null,
@@ -42940,7 +42940,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 1664,
+          "rust_source_line": 1671,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter recovery_model_waiting_for_slot_releases_account_and_manual_generation_stops_dispatch"
         },
         "gap": null,
@@ -42982,7 +42982,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 1567,
+          "rust_source_line": 1574,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter recovery_model_method_or_manual_changes_reject_completed_success"
         },
         "gap": null,
@@ -43018,7 +43018,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 1491,
+          "rust_source_line": 1498,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter recovery_model_missing_prediction_never_authorizes_recovery"
         },
         "gap": null,
@@ -43060,7 +43060,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 1514,
+          "rust_source_line": 1521,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter recovery_model_method_or_manual_changes_before_dispatch_skip_every_request"
         },
         "gap": null,
@@ -43102,7 +43102,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 1514,
+          "rust_source_line": 1521,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter recovery_model_method_or_manual_changes_before_dispatch_skip_every_request"
         },
         "gap": null,
@@ -43144,7 +43144,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 1567,
+          "rust_source_line": 1574,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter recovery_model_method_or_manual_changes_reject_completed_success"
         },
         "gap": null,
@@ -43233,7 +43233,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/model_recovery_tests.rs",
-          "rust_source_line": 1664,
+          "rust_source_line": 1671,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter recovery_model_waiting_for_slot_releases_account_and_manual_generation_stops_dispatch"
         },
         "gap": null,

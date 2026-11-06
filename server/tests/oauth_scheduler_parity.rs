@@ -4868,6 +4868,52 @@ async fn successful_traffic_supersedes_old_rate_only_intents_including_restart()
 }
 
 #[tokio::test]
+async fn late_passive_quota_before_reset_sends_no_recovery_test_or_notice() {
+    let h = Harness::new().await;
+    let due = h.now() + Duration::hours(4);
+    let row = h
+        .seed_account("plus", "fixture-late-passive-quota", json!({}))
+        .await;
+    let id = integer(&row["id"]).unwrap();
+    prepare_expired_recovery(&h, &row, due).await;
+    h.set_now(due - Duration::minutes(30));
+    h.runtime.monitor.startup().await.unwrap();
+    h.runtime.monitor.tick().await.unwrap();
+    let initial = h.runtime.monitor.state().unwrap();
+    let original = &initial["scheduler"][id.to_string()]["recovery_intent"];
+    assert_eq!(original["kind"], "quota_exhausted");
+
+    let passive = json!({
+        "codex_usage_updated_at":datetime(h.now()),
+        "codex_5h_used_percent":98,"codex_7d_used_percent":66,
+        "codex_5h_reset_at":datetime(due - Duration::seconds(64)),
+        "codex_7d_reset_at":datetime(h.now() + Duration::days(7))
+    });
+    sqlx::query("UPDATE accounts SET extra=extra || $1,rate_limited_at=$2 WHERE id=$3")
+        .bind(SqlJson(passive))
+        .bind(h.now() - Duration::minutes(1))
+        .bind(id)
+        .execute(&h.runtime.db.pool)
+        .await
+        .unwrap();
+    h.runtime.monitor.inventory(true).await.unwrap();
+    h.runtime.monitor.tick().await.unwrap();
+    h.runtime.monitor.drain(5).await;
+    h.runtime.monitor.deliver().await.unwrap();
+    let state = h.runtime.monitor.state().unwrap();
+    let intent = &state["scheduler"][id.to_string()]["recovery_intent"];
+    assert_eq!(intent["due_at"], original["due_at"]);
+    assert_eq!(intent["status"], "pending");
+    assert_eq!(h.mock.count("GET", "/usage"), 0);
+    assert_eq!(h.mock.count("POST", "/test"), 0);
+    assert_eq!(h.mock.count("POST", "/recover-state"), 0);
+    assert_eq!(h.mock.count("POST", "/push"), 0);
+    assert!(state["recovery_history"].as_object().unwrap().is_empty());
+    assert!(state["pending_events"].as_object().unwrap().is_empty());
+    h.close().await;
+}
+
+#[tokio::test]
 async fn early_quota_reset_retires_old_waits_and_recovers_only_remaining_blocks() {
     for already_unblocked in [true, false] {
         let mut h = Harness::new().await;
