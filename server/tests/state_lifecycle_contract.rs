@@ -49,7 +49,7 @@ fn database_url() -> String {
 }
 
 #[test]
-fn state_0182_upgrade_preserves_receipts_and_compacts_observations() {
+fn state_0184_upgrade_preserves_receipts_and_compacts_observations() {
     let temporary = tempfile::tempdir().unwrap();
     let path = temporary.path().join("oauth.json");
     let fixture: Value =
@@ -64,7 +64,7 @@ fn state_0182_upgrade_preserves_receipts_and_compacts_observations() {
             "reset_credit_observation":fixture["reset_credit"]["observation"]["expected"],
             "quota_query":{"automatic_attempts":[at],"last_query_at":at},
             "manual_control":{"generation":2,"enabled":true,"at":at},
-            "recovery_intent":{"status":"blocked","last_error_code":"recovery_uncertain",
+            "recovery_intent":{"status":"ready","last_error_code":"connection_failed",
                 "fingerprint":"fixture-cycle","attempt_count":2,"connection_attempt_count":2,
                 "verification_receipt":{"result":{"success":true}}}}},
         "pending_events":{"fixture-event":{"account_id":7,"status":"recovered"}},

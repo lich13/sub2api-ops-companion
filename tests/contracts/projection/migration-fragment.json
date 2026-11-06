@@ -679,8 +679,8 @@
         "test_name": "desktop_usage_queries_coalesce_and_monitor_lease_is_per_account",
         "assertions": [
           "assert_eq!(calls_or_now(&fixture.http, &usage_path_and_query), 1);",
-          "assert!(first.await.expect(\"join the owner query\").is_ok());",
-          "assert!(second.await.expect(\"join the coalesced query\").is_ok());"
+          "assert_eq!(first, second);",
+          "assert!(first[\"account\"][\"credentials\"].is_null());"
         ],
         "fixtures": []
       },
@@ -735,7 +735,9 @@
         "assertions": [
           "assert_eq!(busy.status.as_u16(), 409);",
           "assert_eq!(\n        calls_or_now(\n            &fixture.http,\n            &format!(\"/api/v1/admin/grok/accounts/{GROK_ID}/quota\")\n        ),\n        1\n    );",
-          "assert_eq!(\n        calls_or_now(\n            &fixture.http,\n            &format!(\"/api/v1/admin/openai/accounts/{OPENAI_ID}/quota/refresh\")\n        ),\n        1\n    );"
+          "assert_eq!(\n        calls_or_now(\n            &fixture.http,\n            &format!(\"/api/v1/admin/openai/accounts/{OPENAI_ID}/quota/refresh\")\n        ),\n        1\n    );",
+          "assert_eq!(first, second);",
+          "assert!(first[\"account\"][\"credentials\"].is_null());"
         ],
         "fixtures": []
       },

@@ -3343,7 +3343,7 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/state_lifecycle_contract.rs",
-        "test_name": "state_0182_upgrade_preserves_receipts_and_compacts_observations",
+        "test_name": "state_0184_upgrade_preserves_receipts_and_compacts_observations",
         "assertions": [
           "assert_eq!(meta[\"auto_reset_credit\"], credit);",
           "assert_eq!(disk, migrated);"
@@ -3361,13 +3361,13 @@
           }
         ]
       },
-      "coverage_note": "删除旧准入懒迁移；0.1.82 已派发扣卡记录及历史保留，加载后保存精简观测。",
+      "coverage_note": "保留 0.1.84 已派发扣卡记录、未知结果、当前恢复状态与历史，继续保存精简观测；不再转换更早的 recovery_uncertain 状态。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_auto_reset038:AutoReset038AdmissionTests.test_legacy_unissued_zero_card_task_is_hidden_and_pending_notice_suppressed"
         ],
-        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
-        "replacement_contract": "删除旧准入懒迁移；0.1.82 已派发扣卡记录及历史保留，加载后保存精简观测。"
+        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
+        "replacement_contract": "保留 0.1.84 已派发扣卡记录、未知结果、当前恢复状态与历史，继续保存精简观测；不再转换更早的 recovery_uncertain 状态。"
       }
     },
     {
@@ -3376,7 +3376,7 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/state_lifecycle_contract.rs",
-        "test_name": "state_0182_upgrade_preserves_receipts_and_compacts_observations",
+        "test_name": "state_0184_upgrade_preserves_receipts_and_compacts_observations",
         "assertions": [
           "assert_eq!(meta[\"auto_reset_credit\"], credit);",
           "assert_eq!(disk, migrated);"
@@ -3394,13 +3394,13 @@
           }
         ]
       },
-      "coverage_note": "删除旧准入懒迁移；0.1.82 已派发扣卡记录及历史保留，加载后保存精简观测。",
+      "coverage_note": "保留 0.1.84 已派发扣卡记录、未知结果、当前恢复状态与历史，继续保存精简观测；不再转换更早的 recovery_uncertain 状态。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_auto_reset038:AutoReset038AdmissionTests.test_skipped_task_with_unconfirmed_pause_remains_blocked_in_projection"
         ],
-        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
-        "replacement_contract": "删除旧准入懒迁移；0.1.82 已派发扣卡记录及历史保留，加载后保存精简观测。"
+        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
+        "replacement_contract": "保留 0.1.84 已派发扣卡记录、未知结果、当前恢复状态与历史，继续保存精简观测；不再转换更早的 recovery_uncertain 状态。"
       }
     },
     {
@@ -5376,11 +5376,11 @@
         "path": "server/tests/credit_lifecycle_parity.rs",
         "test_name": "disabled_or_auth_error_account_is_never_resumed_by_a_late_result",
         "assertions": [
-          "assert_eq!(state[\"consumed\"], true, \"{boundary}\");",
-          "assert_ne!(state[\"stage\"], \"recovered\", \"{boundary}\");",
+          "assert_eq!(state[\"consumed\"], true);",
+          "assert_ne!(state[\"stage\"], \"recovered\");",
           "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1);",
           "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1);",
-          "assert_eq!( schedule_calls .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0, \"{boundary} late result re-enabled a disabled account\" );",
+          "assert_eq!( schedule_calls .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0, \"late test result re-enabled a disabled account\" );",
           "assert_eq!(disabled[\"status\"], \"disabled\");",
           "assert_eq!(disabled[\"schedulable\"], false);",
           "assert_eq!( harness .mock .calls .lock() .unwrap() .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0 );",
@@ -5915,17 +5915,17 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetLifecycleTests.test_manual_disable_during_test_or_recovery_never_restores_scheduling",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
         "test_name": "disabled_or_auth_error_account_is_never_resumed_by_a_late_result",
         "assertions": [
-          "assert_eq!(state[\"consumed\"], true, \"{boundary}\");",
-          "assert_ne!(state[\"stage\"], \"recovered\", \"{boundary}\");",
+          "assert_eq!(state[\"consumed\"], true);",
+          "assert_ne!(state[\"stage\"], \"recovered\");",
           "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1);",
           "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1);",
-          "assert_eq!( schedule_calls .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0, \"{boundary} late result re-enabled a disabled account\" );",
+          "assert_eq!( schedule_calls .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0, \"late test result re-enabled a disabled account\" );",
           "assert_eq!(disabled[\"status\"], \"disabled\");",
           "assert_eq!(disabled[\"schedulable\"], false);",
           "assert_eq!( harness .mock .calls .lock() .unwrap() .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0 );",
@@ -5972,7 +5972,14 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_manual_disable_during_test_or_recovery_never_restores_scheduling 已完整通过。Rust disabled_or_auth_error_account_is_never_resumed_by_a_late_result 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "保留测活请求期间人工停用及认证失败后的停止检查、释放入口校验和成功启用后的最终确认；删除仅在清状态与启用之间插入的人工测试门禁。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset:AutoResetLifecycleTests.test_manual_disable_during_test_or_recovery_never_restores_scheduling"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
+        "replacement_contract": "保留测活请求期间人工停用及认证失败后的停止检查、释放入口校验和成功启用后的最终确认；删除仅在清状态与启用之间插入的人工测试门禁。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetLifecycleTests.test_manual_reset_updates_shared_state_without_launching_an_automatic_test",
@@ -6121,13 +6128,13 @@
           }
         ]
       },
-      "coverage_note": "恢复统一使用 confirming；兼容旧 releasing 状态，读回已启用后完成一次历史；人工操作、参数变化或新阻断不自动恢复。",
+      "coverage_note": "保留当前 confirming 任务重启后的最终读回、单次历史及人工操作检查，不再读取或转换旧 releasing 状态。",
       "replacement": {
         "legacy_assertions": [
           "test_releasing_restart_finishes_same_history_without_repeating_mutations"
         ],
-        "approved_requirement": "Sub2Ops 0.1.82 已批准计划：释放并入 confirming，保留验证结果、暂停归属及人工接管核对。",
-        "replacement_contract": "恢复统一使用 confirming；兼容旧 releasing 状态，读回已启用后完成一次历史；人工操作、参数变化或新阻断不自动恢复。"
+        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
+        "replacement_contract": "保留当前 confirming 任务重启后的最终读回、单次历史及人工操作检查，不再读取或转换旧 releasing 状态。"
       }
     },
     {
@@ -6160,13 +6167,13 @@
           }
         ]
       },
-      "coverage_note": "恢复统一使用 confirming；兼容旧 releasing 状态，读回已启用后完成一次历史；人工操作、参数变化或新阻断不自动恢复。",
+      "coverage_note": "保留当前 confirming 任务重启后的最终读回、单次历史及人工操作检查，不再读取或转换旧 releasing 状态。",
       "replacement": {
         "legacy_assertions": [
           "test_releasing_restart_preserves_manual_changes_and_new_blocks"
         ],
-        "approved_requirement": "Sub2Ops 0.1.82 已批准计划：释放并入 confirming，保留验证结果、暂停归属及人工接管核对。",
-        "replacement_contract": "恢复统一使用 confirming；兼容旧 releasing 状态，读回已启用后完成一次历史；人工操作、参数变化或新阻断不自动恢复。"
+        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
+        "replacement_contract": "保留当前 confirming 任务重启后的最终读回、单次历史及人工操作检查，不再读取或转换旧 releasing 状态。"
       }
     },
     {
@@ -9887,13 +9894,13 @@
           "assert_eq!(OAuthState::new(path, false).snapshot().unwrap(), current)"
         ]
       },
-      "coverage_note": "0.1.84 已批准规则替换：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。当前测试核对完整对应行为。",
+      "coverage_note": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_daily_test:DailyScheduleTests.test_legacy_deferred_intent_migrates_without_touching_pending"
         ],
-        "approved_requirement": "0.1.84 已批准计划：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。",
-        "replacement_contract": "server/tests/oauth_scheduler_parity.rs::current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill"
+        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
+        "replacement_contract": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。"
       }
     },
     {
@@ -11486,8 +11493,8 @@
         "test_name": "desktop_usage_queries_coalesce_and_monitor_lease_is_per_account",
         "assertions": [
           "assert_eq!(calls_or_now(&fixture.http, &usage_path_and_query), 1);",
-          "assert!(first.await.expect(\"join the owner query\").is_ok());",
-          "assert!(second.await.expect(\"join the coalesced query\").is_ok());"
+          "assert_eq!(first, second);",
+          "assert!(first[\"account\"][\"credentials\"].is_null());"
         ],
         "fixtures": []
       },
@@ -11542,7 +11549,9 @@
         "assertions": [
           "assert_eq!(busy.status.as_u16(), 409);",
           "assert_eq!(\n        calls_or_now(\n            &fixture.http,\n            &format!(\"/api/v1/admin/grok/accounts/{GROK_ID}/quota\")\n        ),\n        1\n    );",
-          "assert_eq!(\n        calls_or_now(\n            &fixture.http,\n            &format!(\"/api/v1/admin/openai/accounts/{OPENAI_ID}/quota/refresh\")\n        ),\n        1\n    );"
+          "assert_eq!(\n        calls_or_now(\n            &fixture.http,\n            &format!(\"/api/v1/admin/openai/accounts/{OPENAI_ID}/quota/refresh\")\n        ),\n        1\n    );",
+          "assert_eq!(first, second);",
+          "assert!(first[\"account\"][\"credentials\"].is_null());"
         ],
         "fixtures": []
       },
@@ -20507,13 +20516,13 @@
           "assert_eq!(OAuthState::new(path, false).snapshot().unwrap(), current)"
         ]
       },
-      "coverage_note": "0.1.84 已批准规则替换：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。当前测试核对完整对应行为。",
+      "coverage_note": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_migration_keeps_admin_key_and_oauth_snapshots_only"
         ],
-        "approved_requirement": "0.1.84 已批准计划：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。",
-        "replacement_contract": "server/tests/oauth_scheduler_parity.rs::current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill"
+        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
+        "replacement_contract": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。"
       }
     },
     {
@@ -20533,13 +20542,13 @@
           "assert_eq!(OAuthState::new(path, false).snapshot().unwrap(), current)"
         ]
       },
-      "coverage_note": "0.1.84 已批准规则替换：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。当前测试核对完整对应行为。",
+      "coverage_note": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_retired_refresh_state_is_removed_without_losing_recovery_or_events"
         ],
-        "approved_requirement": "0.1.84 已批准计划：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。",
-        "replacement_contract": "server/tests/oauth_scheduler_parity.rs::current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill"
+        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
+        "replacement_contract": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。"
       }
     },
     {
@@ -23368,7 +23377,8 @@
               "assert!(!cases.is_empty(),",
               "assert_same(",
               "assert!(actual.is_err(),",
-              "assert_eq!(args, case[\"arguments\"]);"
+              "assert_eq!(args, case[\"arguments\"]);",
+              "assert!(actual.is_err(), \"retired releasing state is outside the 0.1.84 upgrade contract\")"
             ]
           },
           {
@@ -23405,13 +23415,13 @@
           }
         ]
       },
-      "coverage_note": "保留固定旧版输入的只读投影结果及输入不变断言；旧 releasing 状态重读后仅收束为 confirming，其余字段保持不变。",
+      "coverage_note": "保留当前有效状态的只读投影、输入不变和重读一致断言；旧 releasing 状态不属于 0.1.84 及以后升级范围，由现有状态校验拒绝。",
       "replacement": {
         "legacy_assertions": [
           "重读旧释放任务后 stage 仍为 releasing"
         ],
-        "approved_requirement": "Sub2Ops 0.1.82 已批准计划：释放并入 confirming，由现有加载流程收束旧释放状态。",
-        "replacement_contract": "保留固定旧版输入的只读投影结果及输入不变断言；旧 releasing 状态重读后仅收束为 confirming，其余字段保持不变。"
+        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
+        "replacement_contract": "保留当前有效状态的只读投影、输入不变和重读一致断言；旧 releasing 状态不属于 0.1.84 及以后升级范围，由现有状态校验拒绝。"
       }
     },
     {

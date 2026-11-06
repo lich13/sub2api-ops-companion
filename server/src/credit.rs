@@ -458,16 +458,7 @@ impl CreditController {
                 .entry(string(&task["episode"]).to_owned())
                 .or_insert(notice);
             if reason == "account_deleted" {
-                for notice in meta["credit_result_notifications"]
-                    .as_object_mut()
-                    .unwrap()
-                    .values_mut()
-                {
-                    if notice["status"] == "pending" {
-                        notice["status"] = "suppressed".into();
-                        notice["next_at"] = Value::Null;
-                    }
-                }
+                suppress_pending_notices(meta);
             }
             Ok(())
         })?;
@@ -547,12 +538,7 @@ impl CreditController {
                     "result_reason":"account_deleted", "error_code":"account_deleted", "completed_at":datetime(at),
                     "owns_pause":false, "next_at":null, "revision":revision}).as_object().unwrap().clone());
             }
-            for notice in meta.get_mut("credit_result_notifications").and_then(Value::as_object_mut).into_iter().flat_map(|m| m.values_mut()) {
-                if notice["status"] == "pending" {
-                    notice["status"] = "suppressed".into();
-                    notice["next_at"] = Value::Null;
-                }
-            }
+            suppress_pending_notices(meta);
             Ok(())
         })
     }
@@ -568,6 +554,12 @@ impl CreditController {
             return Ok(());
         }
         let state = self.store.shared_snapshot()?;
+        let due_at = self.now();
+        let ready = |notice: &Value| {
+            notice["status"] == "pending"
+                && (!config.enabled
+                    || parse_datetime(&notice["next_at"]).is_none_or(|time| time <= due_at))
+        };
         let pending: Vec<i64> = state["scheduler"]
             .as_object()
             .into_iter()
@@ -577,7 +569,7 @@ impl CreditController {
                     .as_object()
                     .into_iter()
                     .flatten()
-                    .any(|(_, notice)| notice["status"] == "pending")
+                    .any(|(_, notice)| ready(notice))
             })
             .filter_map(|(id, _)| id.parse().ok())
             .collect();
@@ -603,16 +595,13 @@ impl CreditController {
                 .flatten()
             {
                 let at = self.now();
-                if notice["status"] != "pending" {
+                if !ready(notice) {
                     continue;
                 }
                 let aid = id.parse::<i64>().map_err(|_| Error::internal())?;
                 if !live.contains(&aid) {
                     self.account_deleted(aid, at)?;
                     break;
-                }
-                if parse_datetime(&notice["next_at"]).is_some_and(|t| t > at) {
-                    continue;
                 }
                 let reserved = self.store.transaction(|state| {
                     let item = &mut state["scheduler"][id]["credit_result_notifications"][episode];
@@ -667,5 +656,19 @@ impl CreditController {
             }
         }
         Ok(())
+    }
+}
+
+fn suppress_pending_notices(meta: &mut Value) {
+    for notice in meta
+        .get_mut("credit_result_notifications")
+        .and_then(Value::as_object_mut)
+        .into_iter()
+        .flat_map(|notices| notices.values_mut())
+    {
+        if notice["status"] == "pending" {
+            notice["status"] = "suppressed".into();
+            notice["next_at"] = Value::Null;
+        }
     }
 }

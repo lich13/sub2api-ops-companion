@@ -1487,13 +1487,19 @@ async fn parameter_recovery_conflicting_manual_or_account_changes_never_resume_h
         let restored = h.restart_controller();
         let row = restored.row(id).await.unwrap();
         restored
-            .run(std::slice::from_ref(&row), h.controller.now())
-            .await
-            .unwrap();
-        restored
             .sweep(std::slice::from_ref(&row), h.controller.now())
             .await
             .unwrap();
+        if restored
+            .candidate_ready(&row, h.controller.now())
+            .await
+            .unwrap()
+        {
+            restored
+                .run_account(&row, h.controller.now())
+                .await
+                .unwrap();
+        }
         let task = restored.state(id).unwrap();
         assert_eq!(task["stage"], "finished", "change={change}; task={task}");
         assert_eq!(task["outcome"], "unrecovered");

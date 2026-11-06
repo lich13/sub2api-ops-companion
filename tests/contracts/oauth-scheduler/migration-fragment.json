@@ -1066,13 +1066,13 @@
           "assert_eq!(OAuthState::new(path, false).snapshot().unwrap(), current)"
         ]
       },
-      "coverage_note": "0.1.84 已批准规则替换：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。",
+      "coverage_note": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_daily_test:DailyScheduleTests.test_legacy_deferred_intent_migrates_without_touching_pending"
         ],
-        "approved_requirement": "0.1.84 已批准计划：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。",
-        "replacement_contract": "server/tests/oauth_scheduler_parity.rs::current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill"
+        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
+        "replacement_contract": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。"
       }
     },
     {
@@ -1305,13 +1305,13 @@
           "assert_eq!(OAuthState::new(path, false).snapshot().unwrap(), current)"
         ]
       },
-      "coverage_note": "0.1.84 已批准规则替换：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。",
+      "coverage_note": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_retired_refresh_state_is_removed_without_losing_recovery_or_events"
         ],
-        "approved_requirement": "0.1.84 已批准计划：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。",
-        "replacement_contract": "server/tests/oauth_scheduler_parity.rs::current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill"
+        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
+        "replacement_contract": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。"
       }
     },
     {
@@ -1357,13 +1357,13 @@
           "assert_eq!(OAuthState::new(path, false).snapshot().unwrap(), current)"
         ]
       },
-      "coverage_note": "0.1.84 已批准规则替换：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。",
+      "coverage_note": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_migration_keeps_admin_key_and_oauth_snapshots_only"
         ],
-        "approved_requirement": "0.1.84 已批准计划：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。",
-        "replacement_contract": "server/tests/oauth_scheduler_parity.rs::current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill"
+        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
+        "replacement_contract": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。"
       }
     },
     {

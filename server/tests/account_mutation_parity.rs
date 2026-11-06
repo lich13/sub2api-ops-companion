@@ -7018,7 +7018,12 @@ async fn retired_key_management_has_no_routes_fields_startup_dependency_or_backg
             .await;
         assert_eq!(status, 404);
     }
-    let dto = h.runtime.account_snapshot(id).await.unwrap();
+    let projection_row = h.runtime.actions.queries.account(id).await.unwrap();
+    let dto = h
+        .runtime
+        .account_snapshot_from_row(&projection_row, None)
+        .await
+        .unwrap();
     assert!(dto.get("managed").is_none());
     for (method, path, payload) in [
         (

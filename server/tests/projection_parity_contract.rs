@@ -1579,7 +1579,11 @@ async fn desktop_runtime_snapshot_reuses_shared_stats_without_upstream_io() {
             .clone();
         assert_eq!(first_usage["today"]["requests"], 3);
         assert_eq!(first_usage["today"]["tokens"], 12);
-        let mut single = runtime.account_snapshot(ACCOUNT_ID).await.unwrap();
+        let projection_row = runtime.actions.queries.account(ACCOUNT_ID).await.unwrap();
+        let mut single = runtime
+            .account_snapshot_from_row(&projection_row, None)
+            .await
+            .unwrap();
         let full = first["accounts"]
             .as_array()
             .unwrap()
@@ -1633,7 +1637,10 @@ async fn desktop_runtime_snapshot_reuses_shared_stats_without_upstream_io() {
         );
         assert_eq!(second_usage["stats_status"], "ok");
         runtime.invalidate().await;
-        let failed = runtime.account_snapshot(ACCOUNT_ID).await.unwrap();
+        let failed = runtime
+            .account_snapshot_from_row(&projection_row, None)
+            .await
+            .unwrap();
         assert_eq!(failed["usage"]["stats_status"], "error");
         assert!(failed["usage"]["today"].is_null());
         assert_eq!(
@@ -1648,7 +1655,10 @@ async fn desktop_runtime_snapshot_reuses_shared_stats_without_upstream_io() {
             .await
             .unwrap();
         runtime.invalidate().await;
-        let restored = runtime.account_snapshot(ACCOUNT_ID).await.unwrap();
+        let restored = runtime
+            .account_snapshot_from_row(&projection_row, None)
+            .await
+            .unwrap();
         assert_eq!(restored["usage"]["stats_status"], "ok");
         assert_eq!(restored["usage"]["today"]["requests"], 3);
         assert!(mock.recorded_calls().is_empty());
@@ -2019,8 +2029,11 @@ async fn desktop_usage_queries_coalesce_and_monitor_lease_is_per_account() {
     tokio::time::sleep(StdDuration::from_millis(100)).await;
     assert_eq!(calls_or_now(&fixture.http, &usage_path_and_query), 1);
     fixture.http.release.add_permits(1);
-    assert!(first.await.expect("join the owner query").is_ok());
-    assert!(second.await.expect("join the coalesced query").is_ok());
+    let first = first.await.expect("join the owner query").unwrap();
+    let second = second.await.expect("join the coalesced query").unwrap();
+    assert_eq!(first, second);
+    assert!(first["account"]["credentials"].is_null());
+    assert!(!first.to_string().contains("fixture-openai-access-token"));
     assert_eq!(calls_or_now(&fixture.http, &usage_path_and_query), 1);
 
     let row = fixture

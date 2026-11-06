@@ -48,3 +48,72 @@ fn normalize_filters_invalid_scheduler_keys_and_keeps_recovered_history() {
     );
     assert_eq!(normalized["recovery_history"].as_object().unwrap().len(), 1);
 }
+
+#[test]
+fn credit_history_limits_keep_active_pending_and_owned_receipts_in_order() {
+    for count in [199_usize, 200, 203] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("oauth.json");
+        let store = oauth_state::OAuthState::new(path.clone(), false);
+        let at = "2031-04-05T06:07:08+00:00";
+        let receipt = json!({"http_status":502,"business_code":"unrecognized"});
+        let mut episodes = json!({});
+        let mut notices = json!({});
+        for episode in ["fixture-active".to_owned(), "fixture-pending".to_owned()]
+            .into_iter()
+            .chain((0..count).map(|index| format!("fixture-{index:03}")))
+        {
+            episodes[&episode] =
+                json!({"episode":episode,"stage":"finished","completed_at":at,"receipt":receipt});
+            notices[&episode] = json!({"episode":episode,"account_id":7,"outcome":"unknown","status":"delivered","completed_at":at,"attempts":1});
+        }
+        episodes["fixture-active"]["stage"] = "confirming".into();
+        episodes["fixture-owned"] = json!({"episode":"fixture-owned","stage":"finished","owns_pause":true,"receipt":receipt});
+        notices["fixture-pending"]["status"] = "pending".into();
+        notices["fixture-pending"]["next_at"] = at.into();
+        store
+            .transaction(|state| {
+                state["scheduler"]["7"] = json!({"auto_reset_credit":episodes["fixture-active"],
+                "reset_credit_episodes":episodes,"credit_result_notifications":notices});
+                Ok(())
+            })
+            .unwrap();
+        let state = store.snapshot().unwrap();
+        let meta = &state["scheduler"]["7"];
+        for field in ["reset_credit_episodes", "credit_result_notifications"] {
+            let kept: Vec<_> = meta[field]
+                .as_object()
+                .unwrap()
+                .keys()
+                .filter(|key| {
+                    key.strip_prefix("fixture-")
+                        .unwrap()
+                        .parse::<usize>()
+                        .is_ok()
+                })
+                .cloned()
+                .collect();
+            let expected: Vec<_> = (count.saturating_sub(200)..count)
+                .map(|index| format!("fixture-{index:03}"))
+                .collect();
+            assert_eq!(kept, expected, "{field} count={count}");
+            assert!(meta[field]["fixture-active"].is_object());
+            assert!(meta[field]["fixture-pending"].is_object());
+        }
+        assert_eq!(
+            meta["reset_credit_episodes"]["fixture-owned"]["receipt"],
+            receipt
+        );
+        assert_eq!(meta["auto_reset_credit"]["receipt"], receipt);
+        assert_eq!(
+            meta["credit_result_notifications"]["fixture-pending"],
+            notices["fixture-pending"]
+        );
+        assert_eq!(
+            oauth_state::OAuthState::new(path, false)
+                .snapshot()
+                .unwrap(),
+            state
+        );
+    }
+}

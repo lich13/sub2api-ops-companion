@@ -1214,11 +1214,11 @@
         "path": "server/tests/credit_lifecycle_parity.rs",
         "test_name": "disabled_or_auth_error_account_is_never_resumed_by_a_late_result",
         "assertions": [
-          "assert_eq!(state[\"consumed\"], true, \"{boundary}\");",
-          "assert_ne!(state[\"stage\"], \"recovered\", \"{boundary}\");",
+          "assert_eq!(state[\"consumed\"], true);",
+          "assert_ne!(state[\"stage\"], \"recovered\");",
           "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1);",
           "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1);",
-          "assert_eq!( schedule_calls .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0, \"{boundary} late result re-enabled a disabled account\" );",
+          "assert_eq!( schedule_calls .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0, \"late test result re-enabled a disabled account\" );",
           "assert_eq!(disabled[\"status\"], \"disabled\");",
           "assert_eq!(disabled[\"schedulable\"], false);",
           "assert_eq!( harness .mock .calls .lock() .unwrap() .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0 );",
@@ -1269,17 +1269,17 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetLifecycleTests.test_manual_disable_during_test_or_recovery_never_restores_scheduling",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
         "test_name": "disabled_or_auth_error_account_is_never_resumed_by_a_late_result",
         "assertions": [
-          "assert_eq!(state[\"consumed\"], true, \"{boundary}\");",
-          "assert_ne!(state[\"stage\"], \"recovered\", \"{boundary}\");",
+          "assert_eq!(state[\"consumed\"], true);",
+          "assert_ne!(state[\"stage\"], \"recovered\");",
           "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1);",
           "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1);",
-          "assert_eq!( schedule_calls .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0, \"{boundary} late result re-enabled a disabled account\" );",
+          "assert_eq!( schedule_calls .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0, \"late test result re-enabled a disabled account\" );",
           "assert_eq!(disabled[\"status\"], \"disabled\");",
           "assert_eq!(disabled[\"schedulable\"], false);",
           "assert_eq!( harness .mock .calls .lock() .unwrap() .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0 );",
@@ -1326,7 +1326,14 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_manual_disable_during_test_or_recovery_never_restores_scheduling 已完整通过。Rust disabled_or_auth_error_account_is_never_resumed_by_a_late_result 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "保留测活请求期间人工停用及认证失败后的停止检查、释放入口校验和成功启用后的最终确认；删除仅在清状态与启用之间插入的人工测试门禁。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset:AutoResetLifecycleTests.test_manual_disable_during_test_or_recovery_never_restores_scheduling"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
+        "replacement_contract": "保留测活请求期间人工停用及认证失败后的停止检查、释放入口校验和成功启用后的最终确认；删除仅在清状态与启用之间插入的人工测试门禁。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetLifecycleTests.test_restart_preserves_retry_deadline_and_consumption",
@@ -1686,13 +1693,13 @@
           }
         ]
       },
-      "coverage_note": "恢复统一使用 confirming；兼容旧 releasing 状态，读回已启用后完成一次历史；人工操作、参数变化或新阻断不自动恢复。",
+      "coverage_note": "保留当前 confirming 任务重启后的最终读回、单次历史及人工操作检查，不再读取或转换旧 releasing 状态。",
       "replacement": {
         "legacy_assertions": [
           "test_releasing_restart_finishes_same_history_without_repeating_mutations"
         ],
-        "approved_requirement": "Sub2Ops 0.1.82 已批准计划：释放并入 confirming，保留验证结果、暂停归属及人工接管核对。",
-        "replacement_contract": "恢复统一使用 confirming；兼容旧 releasing 状态，读回已启用后完成一次历史；人工操作、参数变化或新阻断不自动恢复。"
+        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
+        "replacement_contract": "保留当前 confirming 任务重启后的最终读回、单次历史及人工操作检查，不再读取或转换旧 releasing 状态。"
       }
     },
     {
@@ -1725,13 +1732,13 @@
           }
         ]
       },
-      "coverage_note": "恢复统一使用 confirming；兼容旧 releasing 状态，读回已启用后完成一次历史；人工操作、参数变化或新阻断不自动恢复。",
+      "coverage_note": "保留当前 confirming 任务重启后的最终读回、单次历史及人工操作检查，不再读取或转换旧 releasing 状态。",
       "replacement": {
         "legacy_assertions": [
           "test_releasing_restart_preserves_manual_changes_and_new_blocks"
         ],
-        "approved_requirement": "Sub2Ops 0.1.82 已批准计划：释放并入 confirming，保留验证结果、暂停归属及人工接管核对。",
-        "replacement_contract": "恢复统一使用 confirming；兼容旧 releasing 状态，读回已启用后完成一次历史；人工操作、参数变化或新阻断不自动恢复。"
+        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
+        "replacement_contract": "保留当前 confirming 任务重启后的最终读回、单次历史及人工操作检查，不再读取或转换旧 releasing 状态。"
       }
     },
     {

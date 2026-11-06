@@ -171,20 +171,20 @@ impl Runtime {
         }
         Ok((result, bytes))
     }
-    pub async fn account_snapshot(&self, id: i64) -> Result<Value> {
-        match self.actions.queries.account(id).await {
-            Ok(row) => self.account_snapshot_from_row(&row).await,
-            Err(error) if error.status.as_u16() == 404 => Ok(Value::Null),
-            Err(error) => Err(error),
-        }
-    }
-    pub(crate) async fn account_snapshot_from_row(&self, row: &Value) -> Result<Value> {
+    pub async fn account_snapshot_from_row(
+        &self,
+        row: &Value,
+        usage: Option<Value>,
+    ) -> Result<Value> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         let now = chrono::Utc::now();
         let state = self.actions.queries.oauth.shared_snapshot()?;
         let meta = &state["scheduler"][id.to_string()];
         let mut account = queries::account_dto_without_windows(row, now);
-        account["usage"] = self.local_account_usage(row).await?;
+        account["usage"] = match usage {
+            Some(usage) => usage,
+            None => self.local_account_usage(row).await?,
+        };
         account["usage_windows"] = account["usage"]["windows"].clone();
         account["auto_reset_credit"] = crate::credit_rules::project(
             &meta["auto_reset_credit"],

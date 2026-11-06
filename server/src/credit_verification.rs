@@ -256,44 +256,15 @@ impl CreditController {
                 .as_ref()
                 .is_ok_and(|result| result["success"] == true)
             {
-                // Upstream can disable or delete an account while recover-state is in flight.
-                let current = self
-                    .actions
-                    .queries
-                    .db
-                    .one(
-                        "SELECT status FROM accounts WHERE id=$1 AND deleted_at IS NULL",
-                        &[id.into()],
-                    )
-                    .await;
-                let current = match current {
-                    Ok(current) => current,
-                    Err(error) => {
-                        self.save(id, &task, json!({"stage":"confirming","clear_requested_at":task["clear_requested_at"],"error_code":"recovery_failed","next_at":datetime(self.now()+Duration::seconds(2))}))?;
-                        return Err(error);
-                    }
-                };
-                if current.as_ref().is_none_or(|row| row["status"] != "active") {
-                    let reason = match current.as_ref().map(|row| string(&row["status"])) {
-                        None => "account_deleted",
-                        Some("disabled") => "account_disabled",
-                        _ => "account_error",
-                    };
-                    let mut stopped = row.clone();
-                    stopped["status"] = current
-                        .as_ref()
-                        .map(|row| row["status"].clone())
-                        .unwrap_or(Value::Null);
-                    self.finish(id, &task, reason, self.now(), &stopped, true, &Value::Null)
-                        .await?;
-                    return Ok(());
-                }
                 may_enable = true;
             }
         }
-        if may_enable {
-            let _ = actions::set_schedulable(&self.actions, id, true, &key, 3).await;
+        if !may_enable {
+            self.save(id, &task, json!({"stage":"confirming","clear_requested_at":task["clear_requested_at"],
+                "error_code":"recovery_failed","next_at":datetime(self.now()+Duration::seconds(2))}))?;
+            return Ok(());
         }
+        let _ = actions::set_schedulable(&self.actions, id, true, &key, 3).await;
         let final_row = self.row(id).await;
         if let Ok(row) = &final_row {
             let at = self.now();
@@ -315,7 +286,7 @@ impl CreditController {
             id,
             &task,
             json!({"stage":"confirming","clear_requested_at":task["clear_requested_at"],
-            "error_code":"recovery_failed","next_at":datetime(self.now()+Duration::seconds(if may_enable {30} else {2}))}),
+            "error_code":"recovery_failed","next_at":datetime(self.now()+Duration::seconds(30))}),
         )?;
         final_row.map(|_| ())
     }

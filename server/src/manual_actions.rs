@@ -12,9 +12,25 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub(crate) struct UsageResult {
+    pub row: Value,
+    message: &'static str,
+    usage: Option<Value>,
+    response: tokio::sync::OnceCell<Result<Value>>,
+}
+impl UsageResult {
+    fn new(row: Value, message: &'static str, usage: Option<Value>) -> Arc<Self> {
+        Arc::new(Self {
+            row,
+            message,
+            usage,
+            response: tokio::sync::OnceCell::new(),
+        })
+    }
+}
 pub(crate) type UsageFlight = (
     String,
-    tokio::sync::watch::Receiver<Option<Result<(Value, Value)>>>,
+    tokio::sync::watch::Receiver<Option<Result<Arc<UsageResult>>>>,
 );
 fn uncertain(message: &str, code: &str) -> Error {
     Error::new(502, json!({"message":message,"code":code}))
@@ -69,10 +85,9 @@ impl Runtime {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         self.detection.human_control(id, true)?;
         if row["platform"] == "openai" && row["type"] == "oauth" {
-            let live = self.monitor.row(id).await?;
             self.monitor
                 .store
-                .manual_control(&live, enabled, self.monitor.now(), origin)?;
+                .manual_control(row, enabled, self.monitor.now(), origin)?;
         }
         Ok(())
     }
@@ -238,17 +253,27 @@ impl Runtime {
         key: &str,
         requested: Option<Instant>,
     ) -> Result<Value> {
-        self.usage_action_with_row(id, payload, key, requested)
+        let result = self
+            .usage_action_result(id, payload, key, requested)
+            .await?;
+        result
+            .response
+            .get_or_init(|| async {
+                let account = self
+                    .account_snapshot_from_row(&result.row, result.usage.clone())
+                    .await?;
+                Ok(json!({"message":result.message,"account":account}))
+            })
             .await
-            .map(|(result, _)| result)
+            .clone()
     }
-    pub(crate) async fn usage_action_with_row(
+    pub(crate) async fn usage_action_result(
         self: &Arc<Self>,
         id: i64,
         payload: &Value,
         key: &str,
         requested: Option<Instant>,
-    ) -> Result<(Value, Value)> {
+    ) -> Result<Arc<UsageResult>> {
         self.writable()?;
         if id < 1 {
             return Err(Error::new(422, "账号编号无效"));
@@ -322,7 +347,7 @@ impl Runtime {
         payload: &Value,
         key: &str,
         requested: Option<Instant>,
-    ) -> Result<(Value, Value)> {
+    ) -> Result<Arc<UsageResult>> {
         let expected = string(&payload["expected_version"]);
         let row = self.actions.queries.private_account(id).await?;
         if !crate::actions::version_matches(&row, expected) {
@@ -339,10 +364,7 @@ impl Runtime {
                 return Err(Error::new(502, "上游用量读取未成功，请检查授权后重试"));
             }
             let current = self.actions.account(id, None).await?;
-            let mut account = self.account_snapshot_from_row(&current).await?;
-            account["usage_windows"] = usage["windows"].clone();
-            account["usage"] = usage;
-            return Ok((json!({"message":"用量查询完成","account":account}), current));
+            return Ok(UsageResult::new(current, "用量查询完成", Some(usage)));
         }
         if action == "query_usage" && row["platform"] == "openai" && row["type"] == "oauth" {
             if let Some(at) = requested {
@@ -355,8 +377,7 @@ impl Runtime {
                     }
                     self.invalidate_snapshot().await;
                     let current = self.actions.account(id, None).await?;
-                    let account = self.account_snapshot_from_row(&current).await?;
-                    return Ok((json!({"message":"用量查询完成","account":account}), current));
+                    return Ok(UsageResult::new(current, "用量查询完成", None));
                 }
             }
         }
@@ -477,7 +498,6 @@ impl Runtime {
                 _ => "探测完成",
             }
         };
-        let account = self.account_snapshot_from_row(&current).await?;
-        Ok((json!({"message":message,"account":account}), current))
+        Ok(UsageResult::new(current, message, None))
     }
 }

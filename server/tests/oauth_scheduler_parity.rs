@@ -923,9 +923,9 @@ fn current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill() {
     let path = root.path().join("oauth.json");
     let raw = json!({"version":5,"settings":{"sub2api_admin_token":"fixture-admin"},
         "oauth_results":{"7":{"source":"sub2api_admin_usage","success":true}},
-        "scheduler":{"7":{"auto_reset_credit":{"episode":"fixture-issued","stage":"releasing","attempt_at":"2026-10-01T00:00:00Z","consumed":true},
+        "scheduler":{"7":{"auto_reset_credit":{"episode":"fixture-issued","stage":"confirming","attempt_at":"2026-10-01T00:00:00Z","consumed":true},
             "recovery_intent":{"status":"recovered","fingerprint":"fixture-old"}},
-            "8":{"recovery_intent":{"status":"blocked","last_error_code":"recovery_uncertain"}}},
+            "8":{"recovery_intent":{"status":"ready","last_error_code":"connection_failed"}}},
         "recovery_history":{"fixture-history":{"id":1,"account_id":7}},"pending_events":{}});
     fs::write(&path, serde_json::to_vec(&raw).unwrap()).unwrap();
     let store = OAuthState::new(path.clone(), false);
@@ -5473,6 +5473,8 @@ async fn early_baseline(h: &Harness, ids: &[i64], used: i64) {
 #[tokio::test]
 async fn early_reset_observes_one_per_plan_and_recovers_each_account_without_query_budget() {
     let mut h = Harness::new().await;
+    // Capacity waits use wall time; keep the fixture quota windows on the same clock.
+    h.set_now(Utc::now());
     let a = h.seed_account("plus", "fixture-early-a", json!({})).await;
     let b = h.seed_account("plus", "fixture-early-b", json!({})).await;
     let pro = h.seed_account("pro", "fixture-early-pro", json!({})).await;
@@ -5696,6 +5698,8 @@ async fn early_reset_config_is_independent_and_rejects_invalid_values() {
 #[tokio::test]
 async fn early_reset_isolates_plans_and_confirms_quota_and_verification_per_account() {
     let h = Harness::new().await;
+    // Capacity waits use wall time; keep the fixture quota windows on the same clock.
+    h.set_now(Utc::now());
     let mut ids = vec![];
     for suffix in ["representative", "depleted", "failed", "intervened"] {
         let row = h

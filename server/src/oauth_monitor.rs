@@ -592,8 +592,8 @@ impl Monitor {
             item["reuse_quota"].clone()
         } else {
             self.queries
-                .query(
-                    id,
+                .query_prepared(
+                    row,
                     &key,
                     QueryOptions {
                         source,

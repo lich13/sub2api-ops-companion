@@ -794,7 +794,8 @@
               "assert!(!cases.is_empty(),",
               "assert_same(",
               "assert!(actual.is_err(),",
-              "assert_eq!(args, case[\"arguments\"]);"
+              "assert_eq!(args, case[\"arguments\"]);",
+              "assert!(actual.is_err(), \"retired releasing state is outside the 0.1.84 upgrade contract\")"
             ]
           },
           {
@@ -831,13 +832,13 @@
           }
         ]
       },
-      "coverage_note": "保留固定旧版输入的只读投影结果及输入不变断言；旧 releasing 状态重读后仅收束为 confirming，其余字段保持不变。",
+      "coverage_note": "保留当前有效状态的只读投影、输入不变和重读一致断言；旧 releasing 状态不属于 0.1.84 及以后升级范围，由现有状态校验拒绝。",
       "replacement": {
         "legacy_assertions": [
           "重读旧释放任务后 stage 仍为 releasing"
         ],
-        "approved_requirement": "Sub2Ops 0.1.82 已批准计划：释放并入 confirming，由现有加载流程收束旧释放状态。",
-        "replacement_contract": "保留固定旧版输入的只读投影结果及输入不变断言；旧 releasing 状态重读后仅收束为 confirming，其余字段保持不变。"
+        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
+        "replacement_contract": "保留当前有效状态的只读投影、输入不变和重读一致断言；旧 releasing 状态不属于 0.1.84 及以后升级范围，由现有状态校验拒绝。"
       }
     },
     {

@@ -2297,3 +2297,103 @@ async fn continuous_appointment_uses_real_runtime_quota_refresh_and_stops_indepe
     assert!(harness.mock.unexpected().is_empty());
     harness.close().await;
 }
+
+#[tokio::test]
+async fn continuous_appointment_after_authorization_update_keeps_plan_windows_and_version() {
+    let mut h = Harness::new().await;
+    for plan in ["free", "plus", "team"] {
+        let previous = h.seed_account(plan, true, false, false).await;
+        let id = integer(&previous["id"]).unwrap();
+        h.runtime
+            .monitor
+            .store
+            .transaction(|state| {
+                state["scheduler"][id.to_string()] = json!({"quota_query":{
+                "auth_fingerprint":oauth_admission::credential_fingerprint(&previous)}});
+                Ok(())
+            })
+            .unwrap();
+        sqlx::query("UPDATE accounts SET credentials=$2,priority=13,updated_at=$3 WHERE id=$1")
+            .bind(id)
+            .bind(SqlJson(json!({"plan_type":plan,"access_token":"fixture-renewed-access-token","refresh_token":"fixture-renewed-refresh-token"})))
+            .bind(h.now()).execute(&h.pool).await.unwrap();
+        let account = h.runtime.actions.account(id, None).await.unwrap();
+        let request = json!({"action":"test","payload":{"confirmed":true,"mode":"default","model_id":""},
+            "repeat":"quota_cycle","expected_version":sub2ops_server::compat::operation_versions(&account)["test"],
+            "request_id":format!("fixture-renewed-{plan}"),"client_id":"fixture-renewed-client"});
+        let job = h
+            .runtime
+            .operations
+            .submit(id, &request, ADMIN_KEY)
+            .await
+            .unwrap();
+        assert_eq!(job["status"], "queued", "{plan}: {job}");
+        let wait = if plan == "free" {
+            Duration::days(6)
+        } else {
+            Duration::hours(4)
+        };
+        assert_eq!(
+            parse_datetime(&job["scheduled_at"]).unwrap(),
+            h.now() + wait + Duration::seconds(3),
+            "{plan}"
+        );
+        assert_eq!(h.mock.count_for(id, "GET", "/usage"), 1, "{plan}");
+        assert!(
+            h.runtime.monitor.store.snapshot().unwrap()["scheduler"][id.to_string()]["quota_query"]
+                ["auth_fingerprint"]
+                .is_null()
+        );
+        assert!(!job.to_string().contains("fixture-renewed-access-token"));
+    }
+    assert!(h.mock.unexpected().is_empty());
+    h.close().await;
+}
+
+#[tokio::test]
+async fn continuous_appointment_and_client_query_share_the_execution_result() {
+    let mut h = Harness::new().await;
+    let row = h
+        .seed_account("shared-cycle-query", true, false, false)
+        .await;
+    let id = integer(&row["id"]).unwrap();
+    let account = h.runtime.actions.account(id, None).await.unwrap();
+    let gate = Gate::new();
+    h.mock.set_usage_gate(id, gate.clone());
+    let runtime = h.runtime.0.as_ref().unwrap().clone();
+    let version = account_version(&account);
+    let query = tokio::spawn(async move {
+        runtime
+            .usage_action(
+                id,
+                &json!({"action":"query_usage","expected_version":version}),
+                ADMIN_KEY,
+                None,
+            )
+            .await
+    });
+    gate.entered.notified().await;
+    let runtime = h.runtime.0.as_ref().unwrap().clone();
+    let request = json!({"action":"test","payload":{"confirmed":true,"mode":"default","model_id":""},
+        "repeat":"quota_cycle","expected_version":sub2ops_server::compat::operation_versions(&account)["test"],
+        "request_id":"fixture-shared-query","client_id":"fixture-shared-client"});
+    let appointment =
+        tokio::spawn(async move { runtime.operations.submit(id, &request, ADMIN_KEY).await });
+    tokio::time::sleep(StdDuration::from_millis(100)).await;
+    gate.release.notify_one();
+    let response = query.await.unwrap().unwrap();
+    let job = appointment.await.unwrap().unwrap();
+    assert_eq!(h.mock.count_for(id, "GET", "/usage"), 1);
+    assert_eq!(response["message"], "用量查询完成");
+    assert_eq!(response["account"]["id"], id);
+    assert!(response["account"]["credentials"].is_null());
+    assert!(!response.to_string().contains("fixture-access-token"));
+    assert_eq!(job["status"], "queued");
+    assert_eq!(
+        parse_datetime(&job["scheduled_at"]).unwrap(),
+        h.now() + Duration::hours(4) + Duration::seconds(3)
+    );
+    assert!(!job.to_string().contains("fixture-access-token"));
+    assert!(h.mock.unexpected().is_empty());
+    h.close().await;
+}

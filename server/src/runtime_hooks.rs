@@ -179,13 +179,14 @@ impl operations::Backend for Hooks {
     ) -> BoxFuture<'a, Result<operations::CycleObservation>> {
         Box::pin(async move {
             let runtime = self.runtime()?;
-            let mut row = runtime.actions.account(id, None).await?;
-            if truthy(
+            let mut row = if truthy(
                 &runtime.monitor.store.shared_snapshot()?["scheduler"][id.to_string()]
                     ["quota_query"]["auth_fingerprint"],
             ) {
-                row = runtime.monitor.row(id).await?;
-            }
+                runtime.actions.queries.private_account(id).await?
+            } else {
+                runtime.actions.account(id, None).await?
+            };
             if row["platform"] != "openai" || row["type"] != "oauth" {
                 return Err(Error::new(422, "持续预约仅支持 OpenAI OAuth 账号"));
             }
@@ -205,14 +206,8 @@ impl operations::Backend for Hooks {
                         return Ok(observation);
                     }
                 }
-                let (_, refreshed) = runtime.usage_action_with_row(id, &json!({"action":"query_usage","expected_version":crate::compat::account_version(&row)}), key, None).await?;
-                row = refreshed;
-                if truthy(
-                    &runtime.monitor.store.shared_snapshot()?["scheduler"][id.to_string()]
-                        ["quota_query"]["auth_fingerprint"],
-                ) {
-                    row = runtime.monitor.row(id).await?;
-                }
+                let refreshed = runtime.usage_action_result(id, &json!({"action":"query_usage","expected_version":crate::compat::account_version(&row)}), key, None).await?;
+                row = refreshed.row.clone();
             }
             let at = runtime.monitor.now();
             let state = runtime.monitor.store.shared_snapshot()?;

@@ -155,13 +155,9 @@ fn execute(name: &str, args: &Value) -> Result<Value> {
             let before = std::fs::read(&path).unwrap();
             let result = credit_rules::project(&args["value"], &args["notices"]);
             assert_eq!(std::fs::read(&path).unwrap(), before);
-            let mut reloaded = args["value"].clone();
-            if reloaded["stage"] == "releasing" {
-                reloaded["stage"] = "confirming".into();
-            }
             assert_eq!(
                 OAuthState::new(path, false).snapshot()?["scheduler"]["31"]["auto_reset_credit"],
-                reloaded
+                args["value"]
             );
             result
         }
@@ -223,7 +219,12 @@ fn check(legacy_id: &str) {
         }
         let args = case["arguments"].clone();
         let actual = execute(case["function"].as_str().unwrap(), &args);
-        if case["error"] == "invalid_value" {
+        if case["function"] == "project_state" && args["value"]["stage"] == "releasing" {
+            assert!(
+                actual.is_err(),
+                "retired releasing state is outside the 0.1.84 upgrade contract"
+            );
+        } else if case["error"] == "invalid_value" {
             assert!(actual.is_err(), "{legacy_id} vector {index} must reject");
         } else {
             assert_same(

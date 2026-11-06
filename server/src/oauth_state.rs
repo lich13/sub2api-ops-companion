@@ -36,7 +36,6 @@ pub fn validate_credit(value: &Value) -> Result<()> {
                 | "testing"
                 | "retry"
                 | "confirming"
-                | "releasing"
                 | "recovered"
                 | "manual"
                 | "blocked"
@@ -346,9 +345,7 @@ pub fn normalize(raw: &Value) -> Value {
         if let Ok(id) = key.parse::<i64>() {
             if id > 0
                 && value.is_object()
-                && (string(&value["template_type"]).to_lowercase() == "oauth"
-                    || value["source"] == "sub2api_admin_usage"
-                    || value["oauth_quota"].is_object())
+                && (value["source"] == "sub2api_admin_usage" || value["oauth_quota"].is_object())
             {
                 results.insert(id.to_string(), value.clone());
             }
@@ -369,16 +366,7 @@ pub fn normalize(raw: &Value) -> Value {
                 &["version", "observed_at", "available_count", "expires_at"],
             );
         }
-        if let Some(task) = value.get_mut("auto_reset_credit") {
-            if task["stage"] == "releasing" {
-                task["stage"] = "confirming".into();
-            }
-        }
         if let Some(intent) = value.get_mut("recovery_intent") {
-            if intent["status"] == "blocked" && intent["last_error_code"] == "recovery_uncertain" {
-                intent["status"] = "ready".into();
-                intent["next_retry_at"] = "".into();
-            }
             if !intent.is_object() {
                 *intent = json!({});
             }
@@ -444,21 +432,19 @@ const MAX_RECOVERY_HISTORY: usize = 10_000;
 fn prune_credit_history(state: &mut Value) {
     if let Some(scheduler) = state["scheduler"].as_object_mut() {
         for meta in scheduler.values_mut() {
+            let notices_over_limit = meta["credit_result_notifications"]
+                .as_object()
+                .is_some_and(|items| items.len() > MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY);
+            let episodes_over_limit = meta["reset_credit_episodes"]
+                .as_object()
+                .is_some_and(|items| items.len() > MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY);
+            if !notices_over_limit && !episodes_over_limit {
+                continue;
+            }
             let active_episode = meta["auto_reset_credit"]["episode"]
                 .as_str()
                 .map(str::to_owned);
-            let mut pending_notice_episodes = std::collections::HashSet::new();
-            if let Some(notices) = meta["credit_result_notifications"].as_object() {
-                for (ep, notice) in notices {
-                    if notice["status"] == "pending" {
-                        pending_notice_episodes.insert(ep.clone());
-                    }
-                }
-            }
-            if meta["credit_result_notifications"]
-                .as_object()
-                .is_some_and(|m| m.len() > MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY)
-            {
+            if notices_over_limit {
                 let mut terminals = meta["credit_result_notifications"]
                     .as_object()
                     .unwrap()
@@ -485,10 +471,14 @@ fn prune_credit_history(state: &mut Value) {
                     }
                 }
             }
-            if meta["reset_credit_episodes"]
-                .as_object()
-                .is_some_and(|m| m.len() > MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY)
-            {
+            if episodes_over_limit {
+                let pending_notice_episodes = meta["credit_result_notifications"]
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .filter(|(_, notice)| notice["status"] == "pending")
+                    .map(|(episode, _)| episode.clone())
+                    .collect::<std::collections::HashSet<_>>();
                 let mut terminals = meta["reset_credit_episodes"]
                     .as_object()
                     .unwrap()
@@ -801,7 +791,7 @@ mod shared_tests {
     fn normalized_snapshots_reuse_reads_and_observe_external_changes_and_damage() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("oauth.json");
-        let legacy = json!({"version":5,"oauth_results":{"1":{"template_type":"oauth","success":true}},"scheduler":{"1":{}}});
+        let legacy = json!({"version":5,"oauth_results":{"1":{"source":"sub2api_admin_usage","success":true}},"scheduler":{"1":{}}});
         std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
         let state = OAuthState::new(path.clone(), false);
         let first = state.shared_snapshot().unwrap();

@@ -129,13 +129,16 @@ pub fn supported(row: &Value) -> bool {
             && matches!(string(&row["platform"]), "anthropic" | "grok" | "deepseek")
 }
 pub async fn account(actions: &Actions, id: i64) -> Result<Value> {
-    static SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-        crate::sql::MODEL_ACCOUNT_SQL.replace("{filter}", "AND a.id=$1")
-    });
-    let row = actions.queries.db.one(&SQL, &[id.into()]).await?;
-    row.filter(supported)
-        .ok_or_else(|| Error::new(422, "此账号类型不支持模型检测"))
+    match actions.queries.private_account(id).await {
+        Ok(row) if supported(&row) => Ok(row),
+        Ok(_) => Err(Error::new(422, "此账号类型不支持模型检测")),
+        Err(error) if error.status.as_u16() == 404 => {
+            Err(Error::new(422, "此账号类型不支持模型检测"))
+        }
+        Err(error) => Err(error),
+    }
 }
+
 pub async fn target(actions: &Actions, row: &Value, model: &str) -> Result<(Target, Value)> {
     let target = connection(actions, row, model).await?;
     if !actions.model_allowed(row, model).await? {

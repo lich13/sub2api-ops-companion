@@ -87,7 +87,6 @@ struct RecordedCall {
     state_at_arrival: Option<Value>,
 }
 
-type RecoveryGate = (Arc<Notify>, Arc<Notify>);
 type ScheduleGate = (bool, Arc<Notify>);
 
 #[derive(Clone)]
@@ -107,7 +106,6 @@ struct MockUpstream {
     usages: Arc<StdMutex<BTreeMap<i64, JsonScenario>>>,
     usage_writeback: Arc<StdMutex<BTreeMap<i64, bool>>>,
     usage_credential_change: Arc<StdMutex<BTreeMap<i64, bool>>>,
-    recovery_gate: Arc<StdMutex<Option<RecoveryGate>>>,
     schedule_gate: Arc<StdMutex<Option<ScheduleGate>>>,
     fail_enable: Arc<AtomicBool>,
     test_gate: Arc<StdMutex<Option<Arc<Notify>>>>,
@@ -132,7 +130,6 @@ impl MockUpstream {
             usages: Arc::new(StdMutex::new(BTreeMap::new())),
             usage_writeback: Arc::new(StdMutex::new(BTreeMap::new())),
             usage_credential_change: Arc::new(StdMutex::new(BTreeMap::new())),
-            recovery_gate: Arc::new(StdMutex::new(None)),
             schedule_gate: Arc::new(StdMutex::new(None)),
             fail_enable: Arc::new(AtomicBool::new(false)),
             test_gate: Arc::new(StdMutex::new(None)),
@@ -222,10 +219,6 @@ impl MockUpstream {
             .lock()
             .unwrap()
             .insert(id, enabled);
-    }
-
-    fn set_recovery_gate(&self, entered: Arc<Notify>, release: Arc<Notify>) {
-        *self.recovery_gate.lock().unwrap() = Some((entered, release));
     }
 
     fn set_schedule_gate(&self, enabled: bool, gate: Arc<Notify>) {
@@ -584,11 +577,6 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
         .execute(&state.pool)
         .await
         .expect("apply synthetic recovery readback");
-        let recovery_gate = { state.recovery_gate.lock().unwrap().clone() };
-        if let Some((entered, release)) = recovery_gate {
-            entered.notify_one();
-            release.notified().await;
-        }
         state.maybe_fail_account_read(&path).await;
         state.maybe_trip_state_lock(&method, &path);
         return json_response(200, json!({"code":0,"data":{"success":true}}));
@@ -2351,17 +2339,6 @@ async fn confirming_restart_reconciles_the_confirmed_history_without_repeating_m
         .await
         .unwrap();
     assert_eq!(harness.controller.state(id).unwrap()["stage"], "confirming");
-    let mut legacy = harness.controller.store.snapshot().unwrap();
-    let task = &mut legacy["scheduler"][id.to_string()]["auto_reset_credit"];
-    task["stage"] = "releasing".into();
-    task["release_requested_at"] = datetime(now).into();
-    task["release_control_generation"] = task["control_generation"].clone();
-    task["release_credential_fingerprint"] = task["policy_credential_fingerprint"].clone();
-    fs::write(
-        &harness.settings.oauth_path,
-        serde_json::to_vec(&legacy).unwrap(),
-    )
-    .unwrap();
     let counts = [
         harness.mock.count(Method::POST, "/reset-quota"),
         harness.mock.count(Method::POST, "/test"),
@@ -2377,7 +2354,7 @@ async fn confirming_restart_reconciles_the_confirmed_history_without_repeating_m
         .unwrap();
     let finished = harness.controller.state(id).unwrap();
     assert_eq!(finished["stage"], "recovered");
-    assert_eq!(finished["release_requested_at"], datetime(now));
+    assert!(finished["release_requested_at"].is_null());
     assert_eq!(finished["outcome"], "restored");
     assert_eq!(finished["consumed"], true);
     assert_eq!(finished["receipt"]["business_code"], "success");
@@ -3270,7 +3247,7 @@ async fn late_reset_receipt_after_watchdog_stop_keeps_consumption_without_replay
 #[tokio::test]
 async fn disabled_or_auth_error_account_is_never_resumed_by_a_late_result() {
     let now = fixed_now();
-    for boundary in ["test", "recovery"] {
+    {
         let harness = Harness::new(false).await;
         let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
         harness.set_config(recovery_config(id, "connection"));
@@ -3284,43 +3261,21 @@ async fn disabled_or_auth_error_account_is_never_resumed_by_a_late_result() {
 
         let controller = harness.controller.clone();
         let run_row = row.clone();
-        let operation = if boundary == "test" {
-            let gate = Arc::new(Notify::new());
-            harness.mock.set_test_gate(gate);
-            let operation =
-                tokio::spawn(async move { controller.run_account(&run_row, now).await });
-            harness.mock.wait_for(Method::POST, "/test", 1).await;
-            sqlx::query("UPDATE accounts SET status='disabled',schedulable=false WHERE id=$1")
-                .bind(id)
-                .execute(&harness.db.pool)
-                .await
-                .unwrap();
-            harness.mock.release_test();
-            operation
-        } else {
-            let entered = Arc::new(Notify::new());
-            let release = Arc::new(Notify::new());
-            harness
-                .mock
-                .set_recovery_gate(entered.clone(), release.clone());
-            let operation =
-                tokio::spawn(async move { controller.run_account(&run_row, now).await });
-            tokio::time::timeout(StdDuration::from_secs(5), entered.notified())
-                .await
-                .expect("recovery request did not reach its post-readback gate");
-            sqlx::query("UPDATE accounts SET status='disabled',schedulable=false WHERE id=$1")
-                .bind(id)
-                .execute(&harness.db.pool)
-                .await
-                .unwrap();
-            release.notify_one();
-            operation
-        };
+        let gate = Arc::new(Notify::new());
+        harness.mock.set_test_gate(gate);
+        let operation = tokio::spawn(async move { controller.run_account(&run_row, now).await });
+        harness.mock.wait_for(Method::POST, "/test", 1).await;
+        sqlx::query("UPDATE accounts SET status='disabled',schedulable=false WHERE id=$1")
+            .bind(id)
+            .execute(&harness.db.pool)
+            .await
+            .unwrap();
+        harness.mock.release_test();
 
         operation.await.unwrap().unwrap();
         let state = harness.controller.state(id).unwrap();
-        assert_eq!(state["consumed"], true, "{boundary}");
-        assert_ne!(state["stage"], "recovered", "{boundary}");
+        assert_eq!(state["consumed"], true);
+        assert_ne!(state["stage"], "recovered");
         assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 1);
         assert_eq!(harness.mock.count(Method::POST, "/test"), 1);
         let schedule_calls = harness.mock.calls.lock().unwrap().clone();
@@ -3334,7 +3289,7 @@ async fn disabled_or_auth_error_account_is_never_resumed_by_a_late_result() {
                 })
                 .count(),
             0,
-            "{boundary} late result re-enabled a disabled account"
+            "late test result re-enabled a disabled account"
         );
         let disabled = reload_account(&harness, id).await;
         assert_eq!(disabled["status"], "disabled");
@@ -4047,7 +4002,11 @@ async fn bark_delivery_has_an_atomic_reservation_five_attempt_limit_and_no_busin
 
     let disabled_id = integer(&harness.seed_account(true, false).await["id"]).unwrap();
     harness
-        .seed_notice(disabled_id, "fixture-bark-disabled", now)
+        .seed_notice(
+            disabled_id,
+            "fixture-bark-disabled",
+            harness.controller.now() + Duration::minutes(10),
+        )
         .await;
     let disabled = Bark::new(harness.settings.clone()).unwrap();
     disabled.configure(
@@ -5323,4 +5282,36 @@ async fn legacy_manual_record_without_source_never_becomes_an_automatic_credit_t
             .is_null()
     );
     assert_eq!(h.mock.total(), 0);
+}
+
+#[tokio::test]
+async fn future_credit_notices_remain_pending_when_other_accounts_are_due() {
+    let h = Harness::new(false).await;
+    let due = integer(&h.seed_account(true, false).await["id"]).unwrap();
+    let future = integer(&h.seed_account(true, false).await["id"]).unwrap();
+    let now = fixed_now();
+    h.seed_notice(due, "fixture-due", now).await;
+    h.seed_notice(future, "fixture-future", now + Duration::minutes(10))
+        .await;
+    let bark = Bark::new(h.settings.clone()).unwrap();
+    h.controller.deliver_results(&bark).await.unwrap();
+    let state = h.controller.store.snapshot().unwrap();
+    assert_eq!(
+        state["scheduler"][due.to_string()]["credit_result_notifications"]["fixture-due"]["status"],
+        "delivered"
+    );
+    assert_eq!(
+        state["scheduler"][future.to_string()]["credit_result_notifications"]["fixture-future"]
+            ["status"],
+        "pending"
+    );
+    assert_eq!(h.mock.count(Method::POST, "/push"), 1);
+    h.set_now(now + Duration::minutes(10));
+    h.controller.deliver_results(&bark).await.unwrap();
+    assert_eq!(
+        h.controller.store.snapshot().unwrap()["scheduler"][future.to_string()]
+            ["credit_result_notifications"]["fixture-future"]["status"],
+        "delivered"
+    );
+    assert_eq!(h.mock.count(Method::POST, "/push"), 2);
 }

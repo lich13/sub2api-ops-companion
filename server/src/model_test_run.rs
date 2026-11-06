@@ -392,7 +392,7 @@ impl ModelTests {
                     .map_err(internal)?
             };
             if model_target::signature(&latest) != model_target::signature(&context.row)
-                || (!prepared || job["recovery_context"]["consume"] == true)
+                || !prepared
                     && context.owner["id"] != aid
                     && model_target::signature(
                         &model_target::account(

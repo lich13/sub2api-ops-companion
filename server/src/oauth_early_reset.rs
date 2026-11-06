@@ -449,7 +449,8 @@ impl Monitor {
             return Ok(json!({"deferred":true}));
         };
         let saved = &state["oauth_results"][id.to_string()];
-        let result = if quota_ready(&row, saved, meta, self.now()) {
+        let reuse_quota = quota_ready(&row, saved, meta, self.now());
+        let result = if reuse_quota {
             saved.clone()
         } else if config["oauth_early_reset_enabled"] != true {
             return self.blocked_intent(
@@ -461,8 +462,8 @@ impl Monitor {
             );
         } else {
             self.queries
-                .query(
-                    id,
+                .query_prepared(
+                    row.clone(),
                     &self.store.admin_token()?,
                     QueryOptions {
                         source: Source::EarlyReset,
@@ -478,7 +479,11 @@ impl Monitor {
         if result["skipped"] == true {
             return Ok(result);
         }
-        let current = self.row(id).await?;
+        let current = if reuse_quota {
+            row
+        } else {
+            self.row(id).await?
+        };
         let state = self.shared_state()?;
         if !quota_ready(
             &current,

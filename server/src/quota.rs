@@ -43,6 +43,7 @@ pub fn plan_type(value: &Value) -> String {
 }
 pub fn account_plan(row: &Value) -> String {
     [
+        &row["quota_plan_type"],
         &row["credentials"]["plan_type"],
         &row["credentials"]["chatgpt_plan_type"],
         &row["extra"]["plan_type"],
@@ -368,14 +369,10 @@ pub fn window(
 }
 
 pub fn usage_windows(row: &Value, at: DateTime<Utc>, result: &Value) -> Vec<Value> {
-    let mut row = row.clone();
-    if truthy(&row["quota_plan_type"]) {
-        row["credentials"] = json!({"plan_type":row["quota_plan_type"]});
-    }
     let extra = &row["extra"];
     if row["platform"] == "openai" && row["type"] == "oauth" {
-        let latest = latest_result(&row, result, at);
-        let summary = summary_from_result(&row, &latest);
+        let latest = latest_result(row, result, at);
+        let summary = summary_from_result(row, &latest);
         let windows = windows_by_key(&summary["ui_windows"]);
         let observed = if truthy(&summary["updated_at"]) {
             &summary["updated_at"]

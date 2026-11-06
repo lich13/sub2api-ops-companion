@@ -1328,11 +1328,11 @@
   ],
   "rust_coverage_policy": {
     "coverage_counts": {
-      "mapped": 718,
+      "mapped": 717,
       "not_collected": 2,
       "partial": 0,
       "passed": 0,
-      "superseded": 164,
+      "superseded": 165,
       "uncovered": 0
     },
     "mapping_input": "tests/contracts/coverage-map.json",
@@ -5065,7 +5065,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -5073,14 +5073,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3056,
+          "rust_source_line": 3033,
           "supporting_targets": [
             {
               "assertions": [
@@ -5106,7 +5106,7 @@
               ],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 3116,
+              "line": 3093,
               "module": "credit_lifecycle_parity",
               "path": "server/tests/credit_lifecycle_parity.rs",
               "test_name": "a_retry_whose_sixty_second_delay_hits_the_five_minute_deadline_is_not_dispatched",
@@ -5174,7 +5174,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -5182,14 +5182,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1827,
+          "rust_source_line": 1815,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -5249,7 +5249,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1425,
+          "rust_source_line": 1413,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -5311,7 +5311,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -5319,14 +5319,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1827,
+          "rust_source_line": 1815,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -5394,14 +5394,14 @@
                 "self.count(method.clone(), suffix) >= count",
                 "expect(\"mock request did not arrive\")"
               ],
-              "line": 332,
+              "line": 325,
               "name": "wait_for"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3987,
+          "rust_source_line": 3942,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -5475,14 +5475,14 @@
                 "self.count(method.clone(), suffix) >= count",
                 "expect(\"mock request did not arrive\")"
               ],
-              "line": 332,
+              "line": 325,
               "name": "wait_for"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3987,
+          "rust_source_line": 3942,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -5548,7 +5548,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1425,
+          "rust_source_line": 1413,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -5614,7 +5614,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1425,
+          "rust_source_line": 1413,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -5682,14 +5682,14 @@
                 "self.count(method.clone(), suffix) >= count",
                 "expect(\"mock request did not arrive\")"
               ],
-              "line": 332,
+              "line": 325,
               "name": "wait_for"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3987,
+          "rust_source_line": 3942,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -5757,7 +5757,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -5765,14 +5765,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1827,
+          "rust_source_line": 1815,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -5834,7 +5834,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -5842,14 +5842,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1827,
+          "rust_source_line": 1815,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -5911,7 +5911,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -5919,14 +5919,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2550,
+          "rust_source_line": 2527,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -6007,7 +6007,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -6015,14 +6015,14 @@
                 "self.count(method.clone(), suffix) >= count",
                 "expect(\"mock request did not arrive\")"
               ],
-              "line": 332,
+              "line": 325,
               "name": "wait_for"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3519,
+          "rust_source_line": 3474,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -6084,7 +6084,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -6092,14 +6092,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3431,
+          "rust_source_line": 3386,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -6159,7 +6159,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -6167,7 +6167,7 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             },
             {
@@ -6175,14 +6175,14 @@
                 "self.count(method.clone(), suffix) >= count",
                 "expect(\"mock request did not arrive\")"
               ],
-              "line": 332,
+              "line": 325,
               "name": "wait_for"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3213,
+          "rust_source_line": 3190,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -6245,7 +6245,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -6253,7 +6253,7 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             },
             {
@@ -6261,14 +6261,14 @@
                 "self.count(method.clone(), suffix) >= count",
                 "expect(\"mock request did not arrive\")"
               ],
-              "line": 332,
+              "line": 325,
               "name": "wait_for"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3148,
+          "rust_source_line": 3125,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -6330,7 +6330,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -6338,14 +6338,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3431,
+          "rust_source_line": 3386,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -6400,7 +6400,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -6408,7 +6408,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -6416,14 +6416,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2072,
+          "rust_source_line": 2060,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -6485,7 +6485,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -6493,14 +6493,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1827,
+          "rust_source_line": 1815,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -6563,7 +6563,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -6571,14 +6571,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4931,
+          "rust_source_line": 4890,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -6638,7 +6638,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1425,
+          "rust_source_line": 1413,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -6698,7 +6698,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1425,
+          "rust_source_line": 1413,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -6755,7 +6755,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -6763,14 +6763,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4591,
+          "rust_source_line": 4550,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -6799,7 +6799,7 @@
             "assert_eq!(meta[\"auto_reset_credit\"], credit);",
             "assert_eq!(disk, migrated);"
           ],
-          "coverage_note": "删除旧准入懒迁移；0.1.82 已派发扣卡记录及历史保留，加载后保存精简观测。",
+          "coverage_note": "保留 0.1.84 已派发扣卡记录、未知结果、当前恢复状态与历史，继续保存精简观测；不再转换更早的 recovery_uncertain 状态。",
           "execution_status": "mapping_only",
           "fixtures": [
             {
@@ -6824,14 +6824,14 @@
         "gap": null,
         "module": "state_lifecycle_contract",
         "replacement": {
-          "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+          "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
           "legacy_assertions": [
             "py:tests.test_auto_reset038:AutoReset038AdmissionTests.test_legacy_unissued_zero_card_task_is_hidden_and_pending_notice_suppressed"
           ],
-          "replacement_contract": "删除旧准入懒迁移；0.1.82 已派发扣卡记录及历史保留，加载后保存精简观测。"
+          "replacement_contract": "保留 0.1.84 已派发扣卡记录、未知结果、当前恢复状态与历史，继续保存精简观测；不再转换更早的 recovery_uncertain 状态。"
         },
         "status": "superseded",
-        "test_name": "state_0182_upgrade_preserves_receipts_and_compacts_observations"
+        "test_name": "state_0184_upgrade_preserves_receipts_and_compacts_observations"
       },
       "service_capability": "automated_quota_reset",
       "source": {
@@ -6853,7 +6853,7 @@
             "assert_eq!(meta[\"auto_reset_credit\"], credit);",
             "assert_eq!(disk, migrated);"
           ],
-          "coverage_note": "删除旧准入懒迁移；0.1.82 已派发扣卡记录及历史保留，加载后保存精简观测。",
+          "coverage_note": "保留 0.1.84 已派发扣卡记录、未知结果、当前恢复状态与历史，继续保存精简观测；不再转换更早的 recovery_uncertain 状态。",
           "execution_status": "mapping_only",
           "fixtures": [
             {
@@ -6878,14 +6878,14 @@
         "gap": null,
         "module": "state_lifecycle_contract",
         "replacement": {
-          "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
+          "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
           "legacy_assertions": [
             "py:tests.test_auto_reset038:AutoReset038AdmissionTests.test_skipped_task_with_unconfirmed_pause_remains_blocked_in_projection"
           ],
-          "replacement_contract": "删除旧准入懒迁移；0.1.82 已派发扣卡记录及历史保留，加载后保存精简观测。"
+          "replacement_contract": "保留 0.1.84 已派发扣卡记录、未知结果、当前恢复状态与历史，继续保存精简观测；不再转换更早的 recovery_uncertain 状态。"
         },
         "status": "superseded",
-        "test_name": "state_0182_upgrade_preserves_receipts_and_compacts_observations"
+        "test_name": "state_0184_upgrade_preserves_receipts_and_compacts_observations"
       },
       "service_capability": "automated_quota_reset",
       "source": {
@@ -6940,7 +6940,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -6948,14 +6948,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1827,
+          "rust_source_line": 1815,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -7017,7 +7017,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -7026,7 +7026,7 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             },
             {
@@ -7034,14 +7034,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4205,
+          "rust_source_line": 4164,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -7109,7 +7109,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -7118,7 +7118,7 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             },
             {
@@ -7126,14 +7126,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4205,
+          "rust_source_line": 4164,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -7245,7 +7245,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -7253,7 +7253,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -7261,14 +7261,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1206,
+          "rust_source_line": 1194,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -7336,7 +7336,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -7344,14 +7344,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1585,
+          "rust_source_line": 1573,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -7419,7 +7419,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -7427,14 +7427,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1585,
+          "rust_source_line": 1573,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -7504,7 +7504,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -7512,14 +7512,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1585,
+          "rust_source_line": 1573,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -7572,7 +7572,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -7580,14 +7580,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1549,
+          "rust_source_line": 1537,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -7643,7 +7643,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -7651,7 +7651,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -7659,14 +7659,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2144,
+          "rust_source_line": 2132,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -7722,7 +7722,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -7730,7 +7730,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -7738,14 +7738,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2144,
+          "rust_source_line": 2132,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -7807,7 +7807,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -7815,14 +7815,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1827,
+          "rust_source_line": 1815,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -7878,7 +7878,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -7886,7 +7886,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -7894,14 +7894,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2144,
+          "rust_source_line": 2132,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -7954,7 +7954,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -7962,14 +7962,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1344,
+          "rust_source_line": 1332,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -8021,7 +8021,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -8029,14 +8029,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1344,
+          "rust_source_line": 1332,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -8093,7 +8093,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -8101,14 +8101,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4591,
+          "rust_source_line": 4550,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -8165,7 +8165,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -8173,14 +8173,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4591,
+          "rust_source_line": 4550,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -8237,14 +8237,14 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4458,
+          "rust_source_line": 4417,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -8304,7 +8304,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -8312,14 +8312,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4695,
+          "rust_source_line": 4654,
           "supporting_targets": [
             {
               "assertions": [
@@ -8351,7 +8351,7 @@
               ],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 4841,
+              "line": 4800,
               "module": "credit_lifecycle_parity",
               "path": "server/tests/credit_lifecycle_parity.rs",
               "test_name": "automatic_usage_cooldown_and_six_per_day_budget_survive_restart",
@@ -8431,7 +8431,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -8439,14 +8439,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1585,
+          "rust_source_line": 1573,
           "supporting_targets": [
             {
               "assertions": [
@@ -8483,7 +8483,7 @@
               ],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 4072,
+              "line": 4031,
               "module": "credit_lifecycle_parity",
               "path": "server/tests/credit_lifecycle_parity.rs",
               "test_name": "terminal_credit_outcomes_and_bark_receipts_survive_restart_once",
@@ -8545,7 +8545,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -8553,7 +8553,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -8561,14 +8561,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4758,
+          "rust_source_line": 4717,
           "supporting_targets": [
             {
               "assertions": [
@@ -8580,7 +8580,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 5122,
+              "line": 5081,
               "module": "credit_lifecycle_parity",
               "path": "server/tests/credit_lifecycle_parity.rs",
               "test_name": "unchanged_cards_remain_usable_after_token_refresh_new_limit_and_reset_rounding",
@@ -8654,7 +8654,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -8663,7 +8663,7 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             },
             {
@@ -8671,14 +8671,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4205,
+          "rust_source_line": 4164,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -8746,7 +8746,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -8755,7 +8755,7 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             },
             {
@@ -8763,14 +8763,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4205,
+          "rust_source_line": 4164,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -8854,7 +8854,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -8862,7 +8862,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -8870,14 +8870,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2222,
+          "rust_source_line": 2210,
           "supporting_targets": [
             {
               "assertions": [
@@ -8914,7 +8914,7 @@
               ],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 4072,
+              "line": 4031,
               "module": "credit_lifecycle_parity",
               "path": "server/tests/credit_lifecycle_parity.rs",
               "test_name": "terminal_credit_outcomes_and_bark_receipts_survive_restart_once",
@@ -8998,7 +8998,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -9006,7 +9006,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -9014,14 +9014,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2222,
+          "rust_source_line": 2210,
           "supporting_targets": [
             {
               "assertions": [
@@ -9053,7 +9053,7 @@
               ],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 4695,
+              "line": 4654,
               "module": "credit_lifecycle_parity",
               "path": "server/tests/credit_lifecycle_parity.rs",
               "test_name": "explicit_loopback_card_observation_authorizes_one_real_reset_and_immediate_test",
@@ -9133,7 +9133,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -9141,14 +9141,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1585,
+          "rust_source_line": 1573,
           "supporting_targets": [
             {
               "assertions": [
@@ -9180,7 +9180,7 @@
               ],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 4379,
+              "line": 4338,
               "module": "credit_lifecycle_parity",
               "path": "server/tests/credit_lifecycle_parity.rs",
               "test_name": "usage_refresh_http_429_is_status_only_and_cannot_create_an_observation",
@@ -9247,14 +9247,14 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2742,
+          "rust_source_line": 2719,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -9332,7 +9332,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -9340,7 +9340,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -9348,14 +9348,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2222,
+          "rust_source_line": 2210,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -9415,14 +9415,14 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4379,
+          "rust_source_line": 4338,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -9484,7 +9484,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -9493,7 +9493,7 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             },
             {
@@ -9501,14 +9501,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4205,
+          "rust_source_line": 4164,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -9576,7 +9576,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -9584,14 +9584,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1827,
+          "rust_source_line": 1815,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -9617,11 +9617,11 @@
         "crate": "sub2ops-server",
         "evidence": {
           "assertions": [
-            "assert_eq!(state[\"consumed\"], true, \"{boundary}\");",
-            "assert_ne!(state[\"stage\"], \"recovered\", \"{boundary}\");",
+            "assert_eq!(state[\"consumed\"], true);",
+            "assert_ne!(state[\"stage\"], \"recovered\");",
             "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1);",
             "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1);",
-            "assert_eq!( schedule_calls .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0, \"{boundary} late result re-enabled a disabled account\" );",
+            "assert_eq!( schedule_calls .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0, \"late test result re-enabled a disabled account\" );",
             "assert_eq!(disabled[\"status\"], \"disabled\");",
             "assert_eq!(disabled[\"schedulable\"], false);",
             "assert_eq!( harness .mock .calls .lock() .unwrap() .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0 );",
@@ -9653,7 +9653,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -9661,7 +9661,7 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             },
             {
@@ -9669,14 +9669,14 @@
                 "self.count(method.clone(), suffix) >= count",
                 "expect(\"mock request did not arrive\")"
               ],
-              "line": 332,
+              "line": 325,
               "name": "wait_for"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3269,
+          "rust_source_line": 3246,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -9735,7 +9735,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -9743,7 +9743,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -9751,14 +9751,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4501,
+          "rust_source_line": 4460,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -9814,7 +9814,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -9822,7 +9822,7 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             },
             {
@@ -9830,14 +9830,14 @@
                 "self.count(method.clone(), suffix) >= count",
                 "expect(\"mock request did not arrive\")"
               ],
-              "line": 332,
+              "line": 325,
               "name": "wait_for"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2623,
+          "rust_source_line": 2600,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -9915,7 +9915,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -9923,7 +9923,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -9931,14 +9931,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2222,
+          "rust_source_line": 2210,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -10001,7 +10001,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -10009,14 +10009,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4931,
+          "rust_source_line": 4890,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -10080,7 +10080,7 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             },
             {
@@ -10088,7 +10088,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -10096,14 +10096,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3884,
+          "rust_source_line": 3839,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -10165,7 +10165,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -10173,14 +10173,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3056,
+          "rust_source_line": 3033,
           "supporting_targets": [
             {
               "assertions": [
@@ -10206,7 +10206,7 @@
               ],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 3116,
+              "line": 3093,
               "module": "credit_lifecycle_parity",
               "path": "server/tests/credit_lifecycle_parity.rs",
               "test_name": "a_retry_whose_sixty_second_delay_hits_the_five_minute_deadline_is_not_dispatched",
@@ -10275,7 +10275,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -10283,7 +10283,7 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             },
             {
@@ -10291,14 +10291,14 @@
                 "self.count(method.clone(), suffix) >= count",
                 "expect(\"mock request did not arrive\")"
               ],
-              "line": 332,
+              "line": 325,
               "name": "wait_for"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3148,
+          "rust_source_line": 3125,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -10347,7 +10347,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2649,
+          "rust_source_line": 2626,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -10379,11 +10379,11 @@
         "crate": "sub2ops-server",
         "evidence": {
           "assertions": [
-            "assert_eq!(state[\"consumed\"], true, \"{boundary}\");",
-            "assert_ne!(state[\"stage\"], \"recovered\", \"{boundary}\");",
+            "assert_eq!(state[\"consumed\"], true);",
+            "assert_ne!(state[\"stage\"], \"recovered\");",
             "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1);",
             "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1);",
-            "assert_eq!( schedule_calls .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0, \"{boundary} late result re-enabled a disabled account\" );",
+            "assert_eq!( schedule_calls .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0, \"late test result re-enabled a disabled account\" );",
             "assert_eq!(disabled[\"status\"], \"disabled\");",
             "assert_eq!(disabled[\"schedulable\"], false);",
             "assert_eq!( harness .mock .calls .lock() .unwrap() .iter() .filter(|call| { call.method == Method::POST && call.path.ends_with(\"/schedulable\") && call.body[\"schedulable\"] == true }) .count(), 0 );",
@@ -10393,7 +10393,7 @@
             "assert_eq!(failed[\"consumed\"], true);",
             "assert_eq!(harness.mock.count(Method::POST, \"/recover-state\"), 0);"
           ],
-          "coverage_note": "固定 SHA 旧测试 test_manual_disable_during_test_or_recovery_never_restores_scheduling 已完整通过。Rust disabled_or_auth_error_account_is_never_resumed_by_a_late_result 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。",
+          "coverage_note": "保留测活请求期间人工停用及认证失败后的停止检查、释放入口校验和成功启用后的最终确认；删除仅在清状态与启用之间插入的人工测试门禁。",
           "execution_status": "mapping_only",
           "fixtures": [
             {
@@ -10415,7 +10415,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -10423,7 +10423,7 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             },
             {
@@ -10431,20 +10431,26 @@
                 "self.count(method.clone(), suffix) >= count",
                 "expect(\"mock request did not arrive\")"
               ],
-              "line": 332,
+              "line": 325,
               "name": "wait_for"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3269,
+          "rust_source_line": 3246,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
         "module": "credit_lifecycle_parity",
-        "replacement": null,
-        "status": "mapped",
+        "replacement": {
+          "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
+          "legacy_assertions": [
+            "py:tests.test_auto_reset:AutoResetLifecycleTests.test_manual_disable_during_test_or_recovery_never_restores_scheduling"
+          ],
+          "replacement_contract": "保留测活请求期间人工停用及认证失败后的停止检查、释放入口校验和成功启用后的最终确认；删除仅在清状态与启用之间插入的人工测试门禁。"
+        },
+        "status": "superseded",
         "test_name": "disabled_or_auth_error_account_is_never_resumed_by_a_late_result"
       },
       "service_capability": "automated_quota_reset",
@@ -10496,7 +10502,7 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             },
             {
@@ -10504,7 +10510,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -10512,14 +10518,14 @@
                 "self.count(method.clone(), suffix) >= count",
                 "expect(\"mock request did not arrive\")"
               ],
-              "line": 332,
+              "line": 325,
               "name": "wait_for"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3628,
+          "rust_source_line": 3583,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -10581,14 +10587,14 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 5012,
+          "rust_source_line": 4971,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -10634,7 +10640,7 @@
             "assert_eq!(state[\"recovery_history\"].as_object().unwrap().len(), 1)",
             "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_result_notifications\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        1\n    )"
           ],
-          "coverage_note": "恢复统一使用 confirming；兼容旧 releasing 状态，读回已启用后完成一次历史；人工操作、参数变化或新阻断不自动恢复。",
+          "coverage_note": "保留当前 confirming 任务重启后的最终读回、单次历史及人工操作检查，不再读取或转换旧 releasing 状态。",
           "execution_status": "mapping_only",
           "fixtures": [
             {
@@ -10653,17 +10659,17 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2311,
+          "rust_source_line": 2299,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
         "module": "credit_lifecycle_parity",
         "replacement": {
-          "approved_requirement": "Sub2Ops 0.1.82 已批准计划：释放并入 confirming，保留验证结果、暂停归属及人工接管核对。",
+          "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
           "legacy_assertions": [
             "test_releasing_restart_finishes_same_history_without_repeating_mutations"
           ],
-          "replacement_contract": "恢复统一使用 confirming；兼容旧 releasing 状态，读回已启用后完成一次历史；人工操作、参数变化或新阻断不自动恢复。"
+          "replacement_contract": "保留当前 confirming 任务重启后的最终读回、单次历史及人工操作检查，不再读取或转换旧 releasing 状态。"
         },
         "status": "superseded",
         "test_name": "confirming_restart_reconciles_the_confirmed_history_without_repeating_mutations"
@@ -10694,7 +10700,7 @@
             "assert_eq!(\n            harness.controller.store.snapshot().unwrap()[\"scheduler\"][id.to_string()]\n                [\"manual_control\"][\"generation\"],\n            generation_before,\n            \"{change} changed manual generation\"\n        )",
             "assert!(\n            harness.controller.store.snapshot().unwrap()[\"recovery_history\"]\n                .as_object()\n                .unwrap()\n                .is_empty()\n        )"
           ],
-          "coverage_note": "恢复统一使用 confirming；兼容旧 releasing 状态，读回已启用后完成一次历史；人工操作、参数变化或新阻断不自动恢复。",
+          "coverage_note": "保留当前 confirming 任务重启后的最终读回、单次历史及人工操作检查，不再读取或转换旧 releasing 状态。",
           "execution_status": "mapping_only",
           "fixtures": [
             {
@@ -10713,17 +10719,17 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2403,
+          "rust_source_line": 2380,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
         "module": "credit_lifecycle_parity",
         "replacement": {
-          "approved_requirement": "Sub2Ops 0.1.82 已批准计划：释放并入 confirming，保留验证结果、暂停归属及人工接管核对。",
+          "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
           "legacy_assertions": [
             "test_releasing_restart_preserves_manual_changes_and_new_blocks"
           ],
-          "replacement_contract": "恢复统一使用 confirming；兼容旧 releasing 状态，读回已启用后完成一次历史；人工操作、参数变化或新阻断不自动恢复。"
+          "replacement_contract": "保留当前 confirming 任务重启后的最终读回、单次历史及人工操作检查，不再读取或转换旧 releasing 状态。"
         },
         "status": "superseded",
         "test_name": "confirming_restart_preserves_manual_changes_and_new_account_blocks"
@@ -10781,7 +10787,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -10789,14 +10795,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3056,
+          "rust_source_line": 3033,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -10865,7 +10871,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -10873,14 +10879,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4931,
+          "rust_source_line": 4890,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -10943,7 +10949,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -10951,14 +10957,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4931,
+          "rust_source_line": 4890,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -11016,7 +11022,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -11024,7 +11030,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -11032,14 +11038,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2597,
+          "rust_source_line": 2574,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -11098,7 +11104,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -11106,7 +11112,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -11114,14 +11120,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2686,
+          "rust_source_line": 2663,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -11180,7 +11186,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -11188,7 +11194,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -11196,14 +11202,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2686,
+          "rust_source_line": 2663,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -11267,7 +11273,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -11275,14 +11281,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2972,
+          "rust_source_line": 2949,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -11338,7 +11344,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -11346,14 +11352,14 @@
                 "self.count(method.clone(), suffix) >= count",
                 "expect(\"mock request did not arrive\")"
               ],
-              "line": 332,
+              "line": 325,
               "name": "wait_for"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3694,
+          "rust_source_line": 3649,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -11422,7 +11428,7 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             },
             {
@@ -11430,7 +11436,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -11438,14 +11444,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3796,
+          "rust_source_line": 3751,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -11508,7 +11514,7 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             },
             {
@@ -11516,7 +11522,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -11524,14 +11530,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3796,
+          "rust_source_line": 3751,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -11598,7 +11604,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -11606,7 +11612,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -11614,14 +11620,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1924,
+          "rust_source_line": 1912,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -11688,7 +11694,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -11696,7 +11702,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -11704,14 +11710,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1924,
+          "rust_source_line": 1912,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -11776,7 +11782,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -11784,14 +11790,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4072,
+          "rust_source_line": 4031,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -11843,7 +11849,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -11853,14 +11859,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 371,
+          "rust_source_line": 372,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -11921,14 +11927,14 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2742,
+          "rust_source_line": 2719,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -11989,14 +11995,14 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2742,
+          "rust_source_line": 2719,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -12057,14 +12063,14 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2742,
+          "rust_source_line": 2719,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -12125,14 +12131,14 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2742,
+          "rust_source_line": 2719,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -12181,7 +12187,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -12191,14 +12197,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 377,
+          "rust_source_line": 378,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -12259,14 +12265,14 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2742,
+          "rust_source_line": 2719,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -12327,14 +12333,14 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 2742,
+          "rust_source_line": 2719,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -12383,7 +12389,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -12393,14 +12399,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 383,
+          "rust_source_line": 384,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -14282,7 +14288,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -14292,14 +14298,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 313,
+          "rust_source_line": 314,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -14348,7 +14354,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -14358,14 +14364,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 318,
+          "rust_source_line": 319,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -14414,7 +14420,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -14424,14 +14430,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 323,
+          "rust_source_line": 324,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -16240,7 +16246,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -16248,14 +16254,14 @@
                 "self.count(method.clone(), suffix) >= count",
                 "expect(\"mock request did not arrive\")"
               ],
-              "line": 332,
+              "line": 325,
               "name": "wait_for"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3519,
+          "rust_source_line": 3474,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -16309,7 +16315,7 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             },
             {
@@ -16317,14 +16323,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3738,
+          "rust_source_line": 3693,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -16387,7 +16393,7 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             },
             {
@@ -16395,7 +16401,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -16403,14 +16409,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3796,
+          "rust_source_line": 3751,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -16474,7 +16480,7 @@
                 "expect(\"insert synthetic OAuth account\")",
                 "expect(\"read synthetic OAuth account\")"
               ],
-              "line": 908,
+              "line": 896,
               "name": "seed_account"
             },
             {
@@ -16482,7 +16488,7 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             },
             {
@@ -16490,14 +16496,14 @@
                 "credit_ownership::account(&harness.db, id)",
                 "expect(\"reload synthetic account from PostgreSQL\")"
               ],
-              "line": 1096,
+              "line": 1084,
               "name": "reload_account"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 3884,
+          "rust_source_line": 3839,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -16562,7 +16568,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -16570,14 +16576,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4072,
+          "rust_source_line": 4031,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -16639,7 +16645,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -16647,14 +16653,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1827,
+          "rust_source_line": 1815,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -17132,7 +17138,7 @@
             "assert_eq!(\n        current[\"scheduler\"][\"8\"][\"recovery_intent\"][\"status\"],\n        \"ready\"\n    )",
             "assert_eq!(OAuthState::new(path, false).snapshot().unwrap(), current)"
           ],
-          "coverage_note": "0.1.84 已批准规则替换：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。当前测试核对完整对应行为。",
+          "coverage_note": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。",
           "execution_status": "mapping_only",
           "fixtures": [],
           "helper_assertions": [],
@@ -17145,11 +17151,11 @@
         "gap": null,
         "module": "oauth_scheduler_parity",
         "replacement": {
-          "approved_requirement": "0.1.84 已批准计划：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。",
+          "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
           "legacy_assertions": [
             "py:tests.test_daily_test:DailyScheduleTests.test_legacy_deferred_intent_migrates_without_touching_pending"
           ],
-          "replacement_contract": "server/tests/oauth_scheduler_parity.rs::current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill"
+          "replacement_contract": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。"
         },
         "status": "superseded",
         "test_name": "current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill"
@@ -17946,7 +17952,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/catalog_runtime_parity.rs",
-          "rust_source_line": 1079,
+          "rust_source_line": 1100,
           "verification_command": ".venv/bin/python scripts/server_test.py --test catalog_runtime_parity"
         },
         "gap": null,
@@ -17995,7 +18001,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -18005,14 +18011,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 572,
+          "rust_source_line": 573,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18061,7 +18067,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -18071,14 +18077,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 579,
+          "rust_source_line": 580,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18127,7 +18133,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -18137,14 +18143,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 584,
+          "rust_source_line": 585,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18193,7 +18199,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -18203,14 +18209,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 589,
+          "rust_source_line": 590,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18326,7 +18332,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -18336,14 +18342,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 594,
+          "rust_source_line": 595,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18392,7 +18398,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -18402,14 +18408,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 599,
+          "rust_source_line": 600,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18536,7 +18542,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -18546,14 +18552,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 605,
+          "rust_source_line": 606,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18602,7 +18608,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -18612,14 +18618,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 610,
+          "rust_source_line": 611,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18668,7 +18674,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -18678,14 +18684,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 615,
+          "rust_source_line": 616,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18736,7 +18742,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -18746,14 +18752,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 620,
+          "rust_source_line": 621,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -18802,7 +18808,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -18812,14 +18818,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 626,
+          "rust_source_line": 627,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -19931,8 +19937,8 @@
         "evidence": {
           "assertions": [
             "assert_eq!(calls_or_now(&fixture.http, &usage_path_and_query), 1);",
-            "assert!(first.await.expect(\"join the owner query\").is_ok());",
-            "assert!(second.await.expect(\"join the coalesced query\").is_ok());"
+            "assert_eq!(first, second);",
+            "assert!(first[\"account\"][\"credentials\"].is_null());"
           ],
           "coverage_note": "两个并发的真实 Runtime usage_action 共用受阻 loopback 请求，验证唯一一次上游调用和两个调用方均得到成功结果。",
           "execution_status": "mapping_only",
@@ -19941,7 +19947,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 1962,
+          "rust_source_line": 1972,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -19979,7 +19985,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 1683,
+          "rust_source_line": 1693,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -20021,7 +20027,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 1797,
+          "rust_source_line": 1807,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -20049,7 +20055,9 @@
           "assertions": [
             "assert_eq!(busy.status.as_u16(), 409);",
             "assert_eq!(\n        calls_or_now(\n            &fixture.http,\n            &format!(\"/api/v1/admin/grok/accounts/{GROK_ID}/quota\")\n        ),\n        1\n    );",
-            "assert_eq!(\n        calls_or_now(\n            &fixture.http,\n            &format!(\"/api/v1/admin/openai/accounts/{OPENAI_ID}/quota/refresh\")\n        ),\n        1\n    );"
+            "assert_eq!(\n        calls_or_now(\n            &fixture.http,\n            &format!(\"/api/v1/admin/openai/accounts/{OPENAI_ID}/quota/refresh\")\n        ),\n        1\n    );",
+            "assert_eq!(first, second);",
+            "assert!(first[\"account\"][\"credentials\"].is_null());"
           ],
           "coverage_note": "持有真实 Runtime 的 OpenAI OAuth monitor lease 时拒绝同账号额度操作；不同 Grok 账号仍可探测，释放 lease 后 OpenAI 请求成功。",
           "execution_status": "mapping_only",
@@ -20058,7 +20066,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 1962,
+          "rust_source_line": 1972,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -20096,7 +20104,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 2076,
+          "rust_source_line": 2089,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -20133,7 +20141,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 1797,
+          "rust_source_line": 1807,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -20174,7 +20182,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 2076,
+          "rust_source_line": 2089,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -22547,7 +22555,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 3797,
+          "rust_source_line": 3810,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -23637,7 +23645,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -23647,14 +23655,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 521,
+          "rust_source_line": 522,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -23710,7 +23718,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -23720,14 +23728,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 526,
+          "rust_source_line": 527,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -23781,7 +23789,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -23791,14 +23799,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 531,
+          "rust_source_line": 532,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -23882,7 +23890,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -23892,14 +23900,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 537,
+          "rust_source_line": 538,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -23954,7 +23962,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -23964,14 +23972,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 543,
+          "rust_source_line": 544,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -24109,7 +24117,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -24119,14 +24127,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 548,
+          "rust_source_line": 549,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -24195,7 +24203,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -24205,14 +24213,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 554,
+          "rust_source_line": 555,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -24272,7 +24280,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -24282,14 +24290,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 560,
+          "rust_source_line": 561,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -24341,7 +24349,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -24351,14 +24359,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 566,
+          "rust_source_line": 567,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -28681,7 +28689,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 3797,
+          "rust_source_line": 3810,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -28958,7 +28966,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -28968,14 +28976,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 287,
+          "rust_source_line": 288,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -29027,7 +29035,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -29037,14 +29045,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 292,
+          "rust_source_line": 293,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -29095,7 +29103,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -29105,14 +29113,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 297,
+          "rust_source_line": 298,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -29175,7 +29183,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -29185,14 +29193,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 303,
+          "rust_source_line": 304,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -29244,7 +29252,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -29254,14 +29262,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 308,
+          "rust_source_line": 309,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -29864,7 +29872,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 3568,
+          "rust_source_line": 3581,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -29913,7 +29921,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 3106,
+          "rust_source_line": 3119,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -29959,7 +29967,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 2324,
+          "rust_source_line": 2337,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -30005,7 +30013,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 3037,
+          "rust_source_line": 3050,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -30061,7 +30069,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 3568,
+          "rust_source_line": 3581,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -30108,7 +30116,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 3106,
+          "rust_source_line": 3119,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -30159,14 +30167,14 @@
                 "assert_eq!(saved[\"state\"][\"items\"][0][\"state\"], \"unverified\");",
                 "assert_eq!(catalog[\"models\"], json!([]));"
               ],
-              "line": 2971,
+              "line": 2984,
               "name": "reasoning_unknown_native_version_keeps_a_source_descriptor_as_draft"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 2572,
+          "rust_source_line": 2585,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -30211,7 +30219,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 3106,
+          "rust_source_line": 3119,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -30267,7 +30275,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 3568,
+          "rust_source_line": 3581,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -30313,7 +30321,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 2572,
+          "rust_source_line": 2585,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -30362,7 +30370,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 2324,
+          "rust_source_line": 2337,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -30415,7 +30423,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 2743,
+          "rust_source_line": 2756,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -34912,7 +34920,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -34922,14 +34930,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 483,
+          "rust_source_line": 484,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -34978,7 +34986,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -34988,14 +34996,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 489,
+          "rust_source_line": 490,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -35045,7 +35053,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -35055,14 +35063,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 494,
+          "rust_source_line": 495,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -35111,7 +35119,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -35121,14 +35129,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 499,
+          "rust_source_line": 500,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -35178,7 +35186,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -35188,14 +35196,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 504,
+          "rust_source_line": 505,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -35269,7 +35277,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -35279,14 +35287,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 511,
+          "rust_source_line": 512,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -35389,7 +35397,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -35399,14 +35407,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 516,
+          "rust_source_line": 517,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -35669,7 +35677,7 @@
             "assert_eq!(\n        current[\"scheduler\"][\"8\"][\"recovery_intent\"][\"status\"],\n        \"ready\"\n    )",
             "assert_eq!(OAuthState::new(path, false).snapshot().unwrap(), current)"
           ],
-          "coverage_note": "0.1.84 已批准规则替换：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。当前测试核对完整对应行为。",
+          "coverage_note": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。",
           "execution_status": "mapping_only",
           "fixtures": [],
           "helper_assertions": [],
@@ -35682,11 +35690,11 @@
         "gap": null,
         "module": "oauth_scheduler_parity",
         "replacement": {
-          "approved_requirement": "0.1.84 已批准计划：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。",
+          "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
           "legacy_assertions": [
             "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_migration_keeps_admin_key_and_oauth_snapshots_only"
           ],
-          "replacement_contract": "server/tests/oauth_scheduler_parity.rs::current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill"
+          "replacement_contract": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。"
         },
         "status": "superseded",
         "test_name": "current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill"
@@ -35716,7 +35724,7 @@
             "assert_eq!(\n        current[\"scheduler\"][\"8\"][\"recovery_intent\"][\"status\"],\n        \"ready\"\n    )",
             "assert_eq!(OAuthState::new(path, false).snapshot().unwrap(), current)"
           ],
-          "coverage_note": "0.1.84 已批准规则替换：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。当前测试核对完整对应行为。",
+          "coverage_note": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。",
           "execution_status": "mapping_only",
           "fixtures": [],
           "helper_assertions": [],
@@ -35729,11 +35737,11 @@
         "gap": null,
         "module": "oauth_scheduler_parity",
         "replacement": {
-          "approved_requirement": "0.1.84 已批准计划：保留 0.1.82/0.1.83 当前任务与历史，删除远古 results 迁移及历史补造。",
+          "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
           "legacy_assertions": [
             "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_retired_refresh_state_is_removed_without_losing_recovery_or_events"
           ],
-          "replacement_contract": "server/tests/oauth_scheduler_parity.rs::current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill"
+          "replacement_contract": "保留 0.1.84 当前任务、扣卡派发记录与历史，不迁移 releasing、旧 recovery_uncertain 或仅含 template_type 的旧结果。"
         },
         "status": "superseded",
         "test_name": "current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill"
@@ -35769,7 +35777,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/src/oauth_state.rs",
-          "rust_source_line": 761,
+          "rust_source_line": 751,
           "verification_command": ".venv/bin/python scripts/server_test.py --lib --filter live_testing_survives_reads_and_writes_until_startup_reconciliation"
         },
         "gap": null,
@@ -39566,7 +39574,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -39576,14 +39584,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 241,
+          "rust_source_line": 242,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -39632,7 +39640,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -39642,14 +39650,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 246,
+          "rust_source_line": 247,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -39703,7 +39711,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -39713,14 +39721,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 251,
+          "rust_source_line": 252,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -39770,7 +39778,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -39780,14 +39788,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 256,
+          "rust_source_line": 257,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -39836,7 +39844,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -39846,14 +39854,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 261,
+          "rust_source_line": 262,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -39905,7 +39913,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -39915,14 +39923,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 266,
+          "rust_source_line": 267,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -39973,7 +39981,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -39983,14 +39991,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 271,
+          "rust_source_line": 272,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -40042,7 +40050,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -40052,14 +40060,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 276,
+          "rust_source_line": 277,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -40108,7 +40116,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -40118,14 +40126,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 282,
+          "rust_source_line": 283,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -40187,7 +40195,7 @@
                 "INSERT INTO ops_error_logs",
                 "self.set_config(recovery_config(id, \"connection\"));"
               ],
-              "line": 939,
+              "line": 927,
               "name": "seed_depletion"
             },
             {
@@ -40195,14 +40203,14 @@
                 ".run_account(row, at)",
                 "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
               ],
-              "line": 1149,
+              "line": 1137,
               "name": "run_automatic"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 1827,
+          "rust_source_line": 1815,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -40257,7 +40265,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/credit_lifecycle_parity.rs",
-          "rust_source_line": 4911,
+          "rust_source_line": 4870,
           "verification_command": ".venv/bin/python scripts/server_test.py --test credit_lifecycle_parity"
         },
         "gap": null,
@@ -40516,7 +40524,7 @@
             "check(",
             "\"py:tests.test_recovery_config030:AutoResetProjection030Tests.test_active_recovery_steps_remain_visible\""
           ],
-          "coverage_note": "保留固定旧版输入的只读投影结果及输入不变断言；旧 releasing 状态重读后仅收束为 confirming，其余字段保持不变。",
+          "coverage_note": "保留当前有效状态的只读投影、输入不变和重读一致断言；旧 releasing 状态不属于 0.1.84 及以后升级范围，由现有状态校验拒绝。",
           "execution_status": "mapping_only",
           "fixtures": [
             {
@@ -40541,9 +40549,10 @@
                 "assert!(!cases.is_empty(),",
                 "assert_same(",
                 "assert!(actual.is_err(),",
-                "assert_eq!(args, case[\"arguments\"]);"
+                "assert_eq!(args, case[\"arguments\"]);",
+                "assert!(actual.is_err(), \"retired releasing state is outside the 0.1.84 upgrade contract\")"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -40553,7 +40562,7 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             },
             {
@@ -40568,17 +40577,17 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 329,
+          "rust_source_line": 330,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
         "module": "pinned_rule_traces",
         "replacement": {
-          "approved_requirement": "Sub2Ops 0.1.82 已批准计划：释放并入 confirming，由现有加载流程收束旧释放状态。",
+          "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
           "legacy_assertions": [
             "重读旧释放任务后 stage 仍为 releasing"
           ],
-          "replacement_contract": "保留固定旧版输入的只读投影结果及输入不变断言；旧 releasing 状态重读后仅收束为 confirming，其余字段保持不变。"
+          "replacement_contract": "保留当前有效状态的只读投影、输入不变和重读一致断言；旧 releasing 状态不属于 0.1.84 及以后升级范围，由现有状态校验拒绝。"
         },
         "status": "superseded",
         "test_name": "recovery_config030_autoresetprojection030tests_test_active_recovery_steps_remain_visible"
@@ -40620,7 +40629,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 334,
+          "rust_source_line": 335,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -40671,7 +40680,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 354,
+          "rust_source_line": 355,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -40727,7 +40736,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -40737,7 +40746,7 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             },
             {
@@ -40752,7 +40761,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 365,
+          "rust_source_line": 366,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -43716,7 +43725,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 3475,
+          "rust_source_line": 3488,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -43765,7 +43774,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 3475,
+          "rust_source_line": 3488,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -43860,7 +43869,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 3475,
+          "rust_source_line": 3488,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -43909,7 +43918,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 3475,
+          "rust_source_line": 3488,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -43958,7 +43967,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 3475,
+          "rust_source_line": 3488,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -44007,7 +44016,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/projection_parity_contract.rs",
-          "rust_source_line": 3475,
+          "rust_source_line": 3488,
           "verification_command": ".venv/bin/python scripts/server_test.py --test projection_parity_contract"
         },
         "gap": null,
@@ -44421,7 +44430,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -44431,14 +44440,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 389,
+          "rust_source_line": 390,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44539,7 +44548,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -44549,14 +44558,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 394,
+          "rust_source_line": 395,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44605,7 +44614,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -44615,14 +44624,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 399,
+          "rust_source_line": 400,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44672,7 +44681,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -44682,14 +44691,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 404,
+          "rust_source_line": 405,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44738,7 +44747,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -44748,14 +44757,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 409,
+          "rust_source_line": 410,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44805,7 +44814,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -44815,14 +44824,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 414,
+          "rust_source_line": 415,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44871,7 +44880,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -44881,14 +44890,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 419,
+          "rust_source_line": 420,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -44939,7 +44948,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -44949,14 +44958,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 424,
+          "rust_source_line": 425,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45006,7 +45015,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -45016,14 +45025,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 429,
+          "rust_source_line": 430,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45073,7 +45082,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -45083,14 +45092,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 434,
+          "rust_source_line": 435,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45140,7 +45149,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -45150,14 +45159,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 439,
+          "rust_source_line": 440,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45207,7 +45216,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -45217,14 +45226,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 445,
+          "rust_source_line": 446,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45277,7 +45286,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -45287,14 +45296,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 450,
+          "rust_source_line": 451,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45343,7 +45352,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -45353,14 +45362,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 455,
+          "rust_source_line": 456,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45409,7 +45418,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -45419,14 +45428,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 461,
+          "rust_source_line": 462,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45477,7 +45486,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -45487,14 +45496,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 467,
+          "rust_source_line": 468,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45547,7 +45556,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -45557,14 +45566,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 473,
+          "rust_source_line": 474,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,
@@ -45618,7 +45627,7 @@
                 "assert!(actual.is_err(),",
                 "assert_eq!(args, case[\"arguments\"]);"
               ],
-              "line": 201,
+              "line": 197,
               "name": "check"
             },
             {
@@ -45628,14 +45637,14 @@
                 "_ => assert_eq!(actual, expected,",
                 "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
               ],
-              "line": 171,
+              "line": 167,
               "name": "assert_same"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/pinned_rule_traces.rs",
-          "rust_source_line": 478,
+          "rust_source_line": 479,
           "verification_command": ".venv/bin/python scripts/server_test.py --test pinned_rule_traces"
         },
         "gap": null,

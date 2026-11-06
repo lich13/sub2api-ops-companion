@@ -70,13 +70,6 @@ impl Detection {
         if context["kind"] == "credit" {
             let controller = &self.monitor.credits;
             let task = controller.state(id)?;
-            let loaded = if row.get("credentials").is_none() || row.get("rate_limited_at").is_none()
-            {
-                Some(controller.row(id).await?)
-            } else {
-                None
-            };
-            let row = loaded.as_ref().unwrap_or(row);
             if task["stage"] == "finished"
                 || truthy(&task["policy_version"]) && credit_rules::expired(&task, now)
             {
@@ -100,14 +93,7 @@ impl Detection {
             }
         } else {
             let intent = &meta["recovery_intent"];
-            let identity = if early && row.get("credentials").is_none() {
-                Some(self.monitor.row(id).await?)
-            } else {
-                None
-            };
-            let recovery_row = identity.as_ref().unwrap_or(row);
-            let result =
-                quota::latest_result(recovery_row, &state["oauth_results"][id.to_string()], now);
+            let result = quota::latest_result(row, &state["oauth_results"][id.to_string()], now);
             if intent["fingerprint"] != context["fingerprint"] {
                 return Ok("恢复事件已变化".into());
             }
@@ -117,15 +103,15 @@ impl Detection {
                 .flatten()
                 .map(|v| string(v).to_owned())
                 .collect::<Vec<_>>();
-            if !(recovery_rules::eligible(recovery_row, &windows, now)
+            if !(recovery_rules::eligible(row, &windows, now)
                 || early
-                    && recovery_rules::confirmed(recovery_row)
-                    && crate::oauth_early_reset::eligible(recovery_row, meta, now))
+                    && recovery_rules::confirmed(row)
+                    && crate::oauth_early_reset::eligible(row, meta, now))
             {
                 return Ok("账号状态不允许自动恢复".into());
             }
-            if !recovery_rules::control_allows(recovery_row, &result, meta, now)
-                || !recovery_rules::quota_ready(recovery_row, &result, meta, now)
+            if !recovery_rules::control_allows(row, &result, meta, now)
+                || !recovery_rules::quota_ready(row, &result, meta, now)
             {
                 return Ok("恢复所需的新鲜额度证据不足".into());
             }
