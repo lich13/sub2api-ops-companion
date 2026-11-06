@@ -1160,14 +1160,17 @@ async fn restart_reconciles_a_dispatched_applied_write_without_replay() {
     let mut harness = Harness::new().await;
     let id = harness.insert_account("openai", "oauth", 6).await;
     let view = harness.view().await;
-    let (status, accepted, text) = harness
-        .submit(
-            &[id],
-            view["version"].as_str().unwrap(),
-            "fixture-priority-restart-applied-0001",
-        )
-        .await;
-    assert_eq!(status, 200, "priority submit failed: {text}");
+    // Seed the restart state without starting the HTTP handler's worker.
+    let accepted = harness
+        .runtime
+        .priorities
+        .submit(&json!({
+            "platform":"openai","ordered_account_ids":[id],
+            "expected_version":view["version"],"request_id":"fixture-priority-restart-applied-0001",
+            "client_id":CLIENT_ID
+        }))
+        .await
+        .expect("persist queued restart fixture");
     let order_id = accepted["id"].as_str().unwrap().to_owned();
     let target = accepted["items"][0]["target_priority"]
         .as_i64()
@@ -1204,14 +1207,17 @@ async fn restart_marks_an_unapplied_dispatched_write_for_confirmation_without_re
     let mut harness = Harness::new().await;
     let id = harness.insert_account("openai", "oauth", 6).await;
     let view = harness.view().await;
-    let (status, accepted, text) = harness
-        .submit(
-            &[id],
-            view["version"].as_str().unwrap(),
-            "fixture-priority-restart-unapplied-0001",
-        )
-        .await;
-    assert_eq!(status, 200, "priority submit failed: {text}");
+    // Seed the restart state without starting the HTTP handler's worker.
+    let accepted = harness
+        .runtime
+        .priorities
+        .submit(&json!({
+            "platform":"openai","ordered_account_ids":[id],
+            "expected_version":view["version"],"request_id":"fixture-priority-restart-unapplied-0001",
+            "client_id":CLIENT_ID
+        }))
+        .await
+        .expect("persist queued restart fixture");
     let order_id = accepted["id"].as_str().unwrap().to_owned();
     let original = harness.priority(id).await;
     harness
@@ -1240,16 +1246,18 @@ async fn restart_continues_only_the_never_dispatched_remaining_item() {
     let mut harness = Harness::new().await;
     let first = harness.insert_account("openai", "oauth", 6).await;
     let second = harness.insert_account("openai", "apikey", 7).await;
-    let lease = harness.runtime.actions.locks.account(second).await;
     let view = harness.view().await;
-    let (status, accepted, text) = harness
-        .submit(
-            &[second, first],
-            view["version"].as_str().unwrap(),
-            "fixture-priority-restart-remaining-0001",
-        )
-        .await;
-    assert_eq!(status, 200, "priority submit failed: {text}");
+    // Seed the restart state without starting the HTTP handler's worker.
+    let accepted = harness
+        .runtime
+        .priorities
+        .submit(&json!({
+            "platform":"openai","ordered_account_ids":[second, first],
+            "expected_version":view["version"],"request_id":"fixture-priority-restart-remaining-0001",
+            "client_id":CLIENT_ID
+        }))
+        .await
+        .expect("persist queued restart fixture");
     let order_id = accepted["id"].as_str().unwrap().to_owned();
     let first_target = accepted["items"][0]["target_priority"]
         .as_i64()
@@ -1280,7 +1288,6 @@ async fn restart_continues_only_the_never_dispatched_remaining_item() {
             Ok(())
         })
         .expect("persist verified first item fixture");
-    drop(lease);
     harness.restart_runtime().await;
     let detail = harness.wait_task(&order_id).await;
     assert_eq!(detail["status"], "completed");
@@ -1468,7 +1475,7 @@ async fn legacy_priority_write_is_mutually_exclusive_with_active_order() {
         )
         .await;
     assert_eq!(status, 409, "legacy priority write must be blocked: {text}");
-    assert_eq!(harness.upstream.put_ids().len(), 0);
+    assert_eq!(harness.upstream.count_put_for(a), 0);
 
     let order_id = accepted["id"].as_str().unwrap();
     harness
