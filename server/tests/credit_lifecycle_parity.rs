@@ -1536,6 +1536,98 @@ async fn fixed_five_minute_admission_boundary_uses_current_time() {
 }
 
 #[tokio::test]
+async fn current_cards_authorize_a_new_episode_without_a_matching_old_observation() {
+    for case in [
+        "changed_count",
+        "previous_window",
+        "missing",
+        "after_manual_use",
+    ] {
+        let h = Harness::new(false).await;
+        let now = fixed_now();
+        let (row, _) = h.seed_depletion(&h.controller).await;
+        let id = integer(&row["id"]).unwrap();
+        let old_count = if matches!(case, "changed_count" | "after_manual_use") {
+            2
+        } else {
+            1
+        };
+        let observed = if matches!(case, "previous_window" | "after_manual_use") {
+            now - Duration::days(8)
+        } else {
+            now - Duration::hours(1)
+        };
+        let old = reset_credit_observation::create(
+            &normalized_credits(&snapshot(old_count, now + Duration::days(2), observed)).unwrap(),
+            observed,
+        )
+        .unwrap();
+        h.controller.store.transaction(|state| {
+            let meta = &mut state["scheduler"][id.to_string()];
+            if case == "missing" {
+                meta.as_object_mut().unwrap().remove("reset_credit_observation");
+            } else {
+                meta["reset_credit_observation"] = old.clone();
+            }
+            if case == "after_manual_use" {
+                meta["auto_reset_credit"] = json!({
+                    "episode":"fixture-prior-manual-use", "source":"manual", "stage":"recovered",
+                    "attempt_at":datetime(now - Duration::days(1)), "consumed":true,
+                    "consumption_outcome":"consumed", "recovered_at":datetime(now - Duration::days(1))
+                });
+            }
+            Ok(())
+        }).unwrap();
+        // The active usage endpoint returns quota windows, without card receipts.
+        let mut data = native_quota_data(now, 11.0, 100.0);
+        data.as_object_mut().unwrap().remove("fetched_at");
+        data["updated_at"] = datetime(now).into();
+        h.mock.set_usage(id, 200, json!({"code":0,"data":data}));
+        let result = h
+            .controller
+            .queries
+            .query(
+                id,
+                ADMIN_KEY,
+                QueryOptions {
+                    source: Source::Manual,
+                    reason: "fixture-quota-only-refresh".into(),
+                    at: now,
+                    timeout: 3,
+                    ..QueryOptions::default()
+                },
+            )
+            .await;
+        assert_eq!(result["success"], true, "{case}: {result}");
+        assert!(result["data"]["rate_limit_reset_credits"].is_null());
+        let row = reload_account(&h, id).await;
+        let card = &row["extra"]["codex_reset_credit_snapshot"];
+        assert_eq!(card["available_count"], 1);
+        assert!(card["fetched_at"].is_null());
+        assert!(card["updated_at"].is_null());
+        h.mock.set_reset(
+            id,
+            200,
+            reset_response(now, 10.0, 10.0, "success", json!(1)),
+        );
+        h.mock.set_sse(id, successful_sse());
+        assert!(
+            h.controller.candidate_ready(&row, now).await.unwrap(),
+            "{case}"
+        );
+        run_automatic(&h, &row, now).await;
+        let task = h.controller.state(id).unwrap();
+        assert_eq!(task["stage"], "recovered", "{case}: {task}");
+        assert_eq!(task["consumed"], true);
+        assert_ne!(task["episode"], "fixture-prior-manual-use");
+        run_automatic(&h, &reload_account(&h, id).await, now).await;
+        assert_eq!(h.mock.count(Method::POST, "/reset-quota"), 1);
+        assert_eq!(h.mock.count(Method::POST, "/test"), 1);
+        assert_eq!(h.mock.count(Method::GET, "/usage"), 1);
+    }
+}
+
+#[tokio::test]
 async fn card_observed_at_the_weekly_window_start_can_be_consumed_without_refresh() {
     let harness = Harness::new(false).await;
     let now = fixed_now();
@@ -4292,7 +4384,7 @@ async fn coordinator_observation_requires_fresh_explicit_matching_database_and_s
         })
         .unwrap();
     let card = snapshot(1, now + Duration::days(2), now);
-    let mut undated_card = card.clone();
+    let mut undated_card = snapshot(0, now + Duration::days(2), now);
     undated_card.as_object_mut().unwrap().remove("fetched_at");
     let row = set_credit_snapshot(&harness, id, undated_card).await;
     harness.mock.set_usage(
@@ -4713,7 +4805,7 @@ async fn explicit_loopback_card_observation_authorizes_one_real_reset_and_immedi
 }
 
 #[tokio::test]
-async fn waiting_episode_rejects_changed_cards_or_inflight_credentials_without_supplement() {
+async fn waiting_episode_rechecks_current_cards_without_requiring_old_observations() {
     let now = fixed_now();
     for change in [
         "snapshot",
@@ -4721,6 +4813,8 @@ async fn waiting_episode_rejects_changed_cards_or_inflight_credentials_without_s
         "identity",
         "old_observation",
         "future_observation",
+        "zero",
+        "expired",
     ] {
         let harness = Harness::new(false).await;
         let (row, _) = harness.seed_depletion(&harness.controller).await;
@@ -4740,6 +4834,12 @@ async fn waiting_episode_rejects_changed_cards_or_inflight_credentials_without_s
         match change {
             "snapshot" => {
                 set_credit_snapshot(&harness, id, snapshot(1, now + Duration::days(4), now)).await;
+            }
+            "zero" => {
+                set_credit_snapshot(&harness, id, snapshot(0, now + Duration::days(4), now)).await;
+            }
+            "expired" => {
+                set_credit_snapshot(&harness, id, snapshot(1, now, now)).await;
             }
             "credentials" | "identity" => {
                 sqlx::query(
@@ -4776,10 +4876,15 @@ async fn waiting_episode_rejects_changed_cards_or_inflight_credentials_without_s
         harness.set_now(now + Duration::seconds(2));
         run_automatic(&harness, &changed, now + Duration::seconds(2)).await;
         let terminal = harness.controller.state(id).unwrap();
-        if matches!(change, "credentials" | "identity") {
-            assert_eq!(terminal["consumed"], true);
-            assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 1);
-            assert_eq!(harness.mock.count(Method::POST, "/test"), 1);
+        if !matches!(change, "zero" | "expired") {
+            assert_eq!(terminal["consumed"], true, "{change}");
+            assert_eq!(
+                harness.mock.count(Method::POST, "/reset-quota"),
+                1,
+                "{change}"
+            );
+            assert_eq!(harness.mock.count(Method::POST, "/test"), 1, "{change}");
+            assert_eq!(harness.mock.count(Method::GET, "/usage"), 0, "{change}");
             continue;
         }
         assert_ne!(terminal["stage"], "recovered", "{change}");

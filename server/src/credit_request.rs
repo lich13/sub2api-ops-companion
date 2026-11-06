@@ -141,7 +141,7 @@ impl CreditController {
                     return Ok((failed("reset_state_changed"), None));
                 }
                 if evidence.is_none() {
-                    let reason = self.positive_credit_reason(live, &depletion, self.now())?;
+                    let reason = self.positive_credit_reason(live, self.now());
                     if !reason.is_empty() {
                         return Ok((failed(reason), None));
                     }
@@ -189,7 +189,7 @@ impl CreditController {
                     } else if credit_rules::expired(&active, requested) {
                         "consume_deadline"
                     } else {
-                        self.positive_credit_reason(&after, &depletion, requested)?
+                        self.positive_credit_reason(&after, requested)
                     };
                     if !reason.is_empty() {
                         self.save(id, &active, json!({"stage":"blocked","error_code":reason}))?;

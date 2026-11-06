@@ -421,7 +421,7 @@ impl Detection {
                 Some(row),
             ));
         }
-        let reason = controller.positive_credit_reason(&row, &evidence, self.now())?;
+        let reason = controller.positive_credit_reason(&row, self.now());
         if !reason.is_empty() {
             return Ok((json!({"success":false,"error_code":reason}), Some(row)));
         }

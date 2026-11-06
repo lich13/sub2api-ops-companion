@@ -2804,7 +2804,7 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "waiting_episode_rejects_changed_cards_or_inflight_credentials_without_supplement",
+        "test_name": "waiting_episode_rechecks_current_cards_without_requiring_old_observations",
         "assertions": [
           "assert_eq!(waiting[\"stage\"], \"waiting\", \"{change}\");",
           "assert_eq!( harness.mock.total(), 0, \"{change} dispatched before its test slot was available\" );",
@@ -2812,7 +2812,9 @@
           "assert_ne!(terminal[\"consumed\"], true, \"{change}\");",
           "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), 0, \"{change}\");",
           "assert_eq!( harness.mock.count(Method::POST, \"/reset-quota\"), 0, \"{change}\" );",
-          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 0, \"{change}\");"
+          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 0, \"{change}\");",
+          "assert_eq!(terminal[\"consumed\"], true, \"{change}\");",
+          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1, \"{change}\");"
         ],
         "helper_assertions": [
           {
@@ -2851,13 +2853,13 @@
           }
         ]
       },
-      "coverage_note": "当前卡数和到期时间不变时，历史 token 刷新、新限流及窗口秒级变化不阻止用卡；仍拒绝卡内容变化、窗口外观测和已派发任务中的凭据变化。",
+      "coverage_note": "自动用卡按当前有效、未过期卡数判断资格；历史卡观测缺失、数量变化或在额度窗口之外不阻止用卡。等待执行名额后重读当前账号，卡数归零或过期时不扣卡。",
       "replacement": {
         "legacy_assertions": [
-          "历史卡观测必须匹配当前 token、限流指纹及精确窗口结束时间"
+          "历史卡观测必须匹配当前卡内容且观测时间位于额度窗口内"
         ],
-        "approved_requirement": "修复 7d 100% 且 429 有卡却不触发的实际故障，保留执行期间的账号复核。",
-        "replacement_contract": "当前卡数和到期时间不变时，历史 token 刷新、新限流及窗口秒级变化不阻止用卡；仍拒绝卡内容变化、窗口外观测和已派发任务中的凭据变化。"
+        "approved_requirement": "Sub2Ops 0.1.86 第 16 项：修复 7d 100% 且有效 429、有卡却被旧卡观测拦截的问题；保留五分钟期限及其他业务规则。",
+        "replacement_contract": "自动用卡按当前有效、未过期卡数判断资格；历史卡观测缺失、数量变化或在额度窗口之外不阻止用卡。等待执行名额后重读当前账号，卡数归零或过期时不扣卡。"
       },
       "supporting_targets": [
         {
@@ -2870,6 +2872,20 @@
             "assert_eq!(h.mock.count(Method::GET, \"/usage\"), 0);"
           ],
           "fixtures": []
+        },
+        {
+          "kind": "rust_test",
+          "path": "server/tests/credit_lifecycle_parity.rs",
+          "test_name": "current_cards_authorize_a_new_episode_without_a_matching_old_observation",
+          "assertions": [
+            "assert!(result[\"data\"][\"rate_limit_reset_credits\"].is_null());",
+            "assert_eq!(card[\"available_count\"], 1);",
+            "assert!(card[\"fetched_at\"].is_null());",
+            "assert_eq!(task[\"stage\"], \"recovered\", \"{case}: {task}\");",
+            "assert_eq!(task[\"consumed\"], true);",
+            "assert_eq!(h.mock.count(Method::POST, \"/reset-quota\"), 1);",
+            "assert_eq!(h.mock.count(Method::GET, \"/usage\"), 1);"
+          ]
         }
       ]
     },
@@ -2994,7 +3010,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_native_observation_write_failure_cannot_authorize_card_consumption",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
@@ -3005,17 +3021,14 @@
           "assert_eq!(observation.is_object(), expected_observation, \"{name}\");",
           "assert_eq!(observation[\"available_count\"], 1);",
           "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert_eq!( observation[\"credential_fingerprint\"], oauth_admission::credential_fingerprint(&row) );",
-          "assert_eq!(observation[\"window_minutes\"], 10080);",
-          "assert_eq!(observation.as_object().unwrap().len(), 9);",
-          "assert_eq!(observation[field].as_str().unwrap().len(), 64);",
           "assert!(!observation.to_string().contains(ADMIN_KEY));",
           "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true);",
           "assert!( state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"] .as_array() .is_none_or(|attempts| attempts.is_empty()) );",
           "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\");",
           "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null());",
           "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);"
+          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);",
+          "assert_eq!(observation.as_object().unwrap().len(), 4);"
         ],
         "helper_assertions": [
           {
@@ -3055,7 +3068,30 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_native_observation_write_failure_cannot_authorize_card_consumption 已完整通过。Rust coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "观测保存失败仍返回 query_state_unavailable；当前无卡不消费。自动用卡不再依赖旧卡观测的保存状态，以当前有效卡数和原有额度、限流及消费期限检查为准。",
+      "replacement": {
+        "legacy_assertions": [
+          "卡观测写入失败后，即使当前有卡也不能自动消费"
+        ],
+        "approved_requirement": "Sub2Ops 0.1.86 第 16 项：移除旧卡观测对自动用卡的额外限制。",
+        "replacement_contract": "观测保存失败仍返回 query_state_unavailable；当前无卡不消费。自动用卡不再依赖旧卡观测的保存状态，以当前有效卡数和原有额度、限流及消费期限检查为准。"
+      },
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/credit_lifecycle_parity.rs",
+          "test_name": "current_cards_authorize_a_new_episode_without_a_matching_old_observation",
+          "assertions": [
+            "assert!(result[\"data\"][\"rate_limit_reset_credits\"].is_null());",
+            "assert_eq!(card[\"available_count\"], 1);",
+            "assert!(card[\"fetched_at\"].is_null());",
+            "assert_eq!(task[\"stage\"], \"recovered\", \"{case}: {task}\");",
+            "assert_eq!(task[\"consumed\"], true);",
+            "assert_eq!(h.mock.count(Method::POST, \"/reset-quota\"), 1);",
+            "assert_eq!(h.mock.count(Method::GET, \"/usage\"), 1);"
+          ]
+        }
+      ]
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_corrupt_observation_cannot_fall_back_to_legacy_timestamp_snapshot",

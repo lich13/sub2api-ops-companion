@@ -1839,6 +1839,22 @@ async fn credit_model_consumes_only_with_slot_and_recovers_once_without_hourly_q
             })
             .unwrap();
         let (id, _) = seed_credit(&h).await;
+        h.runtime
+            .monitor
+            .store
+            .transaction(|state| {
+                let observation =
+                    &mut state["scheduler"][id.to_string()]["reset_credit_observation"];
+                observation["observed_at"] = datetime(h.now() - Duration::days(8)).into();
+                observation["available_count"] = 2.into();
+                let expiry = observation["expires_at"][0].clone();
+                observation["expires_at"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(expiry);
+                Ok(())
+            })
+            .unwrap();
         if cooldown {
             let at = datetime(h.now() - Duration::seconds(30));
             h.runtime

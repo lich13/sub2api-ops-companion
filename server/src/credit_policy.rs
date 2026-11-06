@@ -338,7 +338,7 @@ impl CreditController {
             return Ok(());
         }
         if !admitted {
-            let reason = self.positive_credit_reason(&row, &evidence, at)?;
+            let reason = self.positive_credit_reason(&row, at);
             if !reason.is_empty() {
                 self.finish(id, &task, reason, at, &row, true, &Value::Null)
                     .await?;

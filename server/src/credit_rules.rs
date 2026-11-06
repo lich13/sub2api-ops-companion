@@ -4,10 +4,9 @@ use crate::{
     db::Database,
     error::{Error, Result},
     error_evidence, oauth_admission,
-    oauth_state::{normalized_credits, validate_observation},
+    oauth_state::normalized_credits,
     quota, reset_credit_observation, sql,
     upstream::read_limited,
-    usage,
 };
 use chrono::{DateTime, Duration as TimeDelta, Timelike, Utc};
 use serde_json::{json, Value};
@@ -351,55 +350,6 @@ pub fn available(row: &Value, saved: &Value, task: &Value, at: DateTime<Utc>) ->
                 .unwrap_or(0.0)
                 < 100.0
         })
-}
-pub fn credit_reason(
-    row: &Value,
-    evidence: &Value,
-    meta: &Value,
-    saved: &Value,
-    at: DateTime<Utc>,
-) -> Result<&'static str> {
-    let Some(reset) = parse_datetime(&evidence["reset_at"]) else {
-        return Ok("outside_window");
-    };
-    let Some(minutes) =
-        quota::number(&evidence["window_minutes"]).filter(|v| *v > 0.0 && *v <= 5256000.0)
-    else {
-        return Ok("outside_window");
-    };
-    let raw = &row["extra"]["codex_reset_credit_snapshot"];
-    let Some(content) = normalized_credits(raw) else {
-        return Ok("invalid_credit_snapshot");
-    };
-    let observation = &meta["reset_credit_observation"];
-    let observed = if !observation.is_null() {
-        validate_observation(observation)?;
-        if content["available_count"] != observation["available_count"]
-            || content["expires_at"] != observation["expires_at"]
-        {
-            return Ok("content_changed");
-        }
-        // Unchanged cards remain usable across routine OAuth refreshes and a
-        // new rate limit. Validate their age against the current quota window;
-        // its reset timestamp can also move by a second in upstream responses.
-        parse_datetime(&observation["observed_at"])
-    } else {
-        parse_datetime(&usage::reset_credits(&row["extra"], at)["observed_at"])
-    };
-    let Some(observed) = observed else {
-        return Ok("missing");
-    };
-    if observed < reset - TimeDelta::milliseconds((minutes * 60000.0) as i64)
-        || observed > at
-        || observed >= reset
-    {
-        return Ok("outside_window");
-    }
-    Ok(if parse_datetime(&saved["queried_at"]).is_some() {
-        ""
-    } else {
-        "quota_missing"
-    })
 }
 pub fn credit_observation(
     after: &Value,

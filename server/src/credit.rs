@@ -184,34 +184,16 @@ impl CreditController {
         let evidence = credit_rules::upstream_evidence(&self.actions.queries.db, row, at).await?;
         Ok(credit_rules::depletion_evidence(row, &saved, &evidence, at))
     }
-    pub fn positive_credit_reason(
-        &self,
-        row: &Value,
-        evidence: &Value,
-        at: DateTime<Utc>,
-    ) -> Result<&'static str> {
-        let Some(count) = available_credits(&row["extra"]["codex_reset_credit_snapshot"], at)
-        else {
-            return Ok("credit_unconfirmed");
-        };
-        if count <= 0 {
-            return Ok("no_credit");
+    pub fn positive_credit_reason(&self, row: &Value, at: DateTime<Utc>) -> &'static str {
+        match available_credits(&row["extra"]["codex_reset_credit_snapshot"], at) {
+            None => "credit_unconfirmed",
+            Some(0) => "no_credit",
+            Some(_) => "",
         }
-        let state = self.store.shared_snapshot()?;
-        let meta = &state["scheduler"][integer(&row["id"]).unwrap_or(0).to_string()];
-        Ok(
-            if credit_rules::credit_reason(row, evidence, meta, &self.saved_quota(row, at)?, at)?
-                .is_empty()
-            {
-                ""
-            } else {
-                "credit_unconfirmed"
-            },
-        )
     }
     pub fn admit_episode(&self, row: &Value, evidence: &Value, at: DateTime<Utc>) -> Result<Value> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
-        let reason = self.positive_credit_reason(row, evidence, at)?;
+        let reason = self.positive_credit_reason(row, at);
         let Some(observed) = parse_datetime(&evidence["evidence_at"]) else {
             return Ok(Value::Null);
         };
