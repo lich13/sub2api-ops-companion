@@ -623,11 +623,12 @@ async fn manual_query_caches_verified_card_receipt_using_the_runtime_clock() {
     let state = harness.runtime.monitor.state().unwrap();
     let metadata = &state["scheduler"][id.to_string()];
     let receipt = &metadata["reset_credit_observation"];
-    assert_eq!(receipt["observed_at"], datetime(harness.now()));
-    assert_eq!(receipt["available_count"], 1);
     assert_eq!(
-        receipt["window_reset_at"],
-        datetime(harness.now() + Duration::days(7))
+        receipt,
+        &json!({
+            "version":1,"observed_at":datetime(harness.now()),"available_count":1,
+            "expires_at":[datetime(harness.now() + Duration::days(2))]
+        })
     );
     sub2ops_server::oauth_state::validate_observation(receipt).unwrap();
     assert_eq!(metadata["quota_query"]["automatic_attempts"], attempts);
