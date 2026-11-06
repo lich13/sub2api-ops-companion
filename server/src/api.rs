@@ -429,9 +429,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
         ["account-priority-orders", id] => {
             runtime.priorities.get(id, priority_v2, !priority_summary)?
         }
-        ["account-priority-orders", id, "cancel"] => {
-            runtime.priorities.cancel(id, priority_v2).await?
-        }
+        ["account-priority-orders", id, "cancel"] => runtime.priorities.cancel(id, priority_v2)?,
         ["errors"] => {
             runtime
                 .actions
@@ -850,7 +848,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
         _ => return Err(Error::new(404, "Not Found")),
     };
     if method != Method::GET {
-        runtime.invalidate_snapshot().await;
+        runtime.invalidate_snapshot();
     }
     let mut result = result;
     if path.first() == Some(&"model-groups") {

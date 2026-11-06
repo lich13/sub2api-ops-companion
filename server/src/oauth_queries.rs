@@ -458,7 +458,7 @@ impl Coordinator {
     }
     pub async fn execute(&self, row: &Value, key: &str, seconds: u64, at: DateTime<Utc>) -> Value {
         let id = integer(&row["id"]).unwrap_or(0);
-        let failure = |code: &str, message: &str| json!({"account_id":id,"template_type":"oauth","success":false,"data":{},"error":message,"queried_at":datetime(at),"unit":"%","oauth_quota":quota::quota_windows(row,None),"source":"sub2api_admin_usage","error_code":code});
+        let failure = |code: &str, message: &str| json!({"account_id":id,"success":false,"data":{},"error":message,"queried_at":datetime(at),"unit":"%","oauth_quota":quota::quota_windows(row,None),"source":"sub2api_admin_usage","error_code":code});
         if self.actions.settings.read_only {
             return failure("read_only", "服务处于只读验收模式");
         }
@@ -524,7 +524,7 @@ impl Coordinator {
             body["data"].clone()
         };
         let summary = quota::from_usage_data(&data, row, at);
-        json!({"account_id":id,"template_type":"oauth","success":true,"data":data,"error":"","queried_at":datetime(at),"unit":"%","plan_name":summary["plan_type"],"oauth_quota":summary,"source":"sub2api_admin_usage"})
+        json!({"account_id":id,"success":true,"data":data,"error":"","queried_at":datetime(at),"unit":"%","plan_name":summary["plan_type"],"oauth_quota":summary,"source":"sub2api_admin_usage"})
     }
     fn audit(&self, id: i64, options: &QueryOptions, admitted: bool, result: &Value) {
         audit::write(

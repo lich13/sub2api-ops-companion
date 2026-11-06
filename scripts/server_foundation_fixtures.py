@@ -181,7 +181,7 @@ def build_fixtures(repo: Path, app_root: Path) -> dict[str, Any]:
         state_store.transaction(seed_pending)
         generation = state_store.manual_control(manual_row, False, AT)
         state_store.commit(
-            results={73: {"template_type": "oauth", "stale_result": True}},
+            results={73: {"source": "sub2api_admin_usage", "stale_result": True}},
             scheduler_updates={
                 73: {
                     "manual_control": {"generation": 99, "enabled": True, "at": AT.isoformat()},

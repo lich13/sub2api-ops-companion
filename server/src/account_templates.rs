@@ -254,54 +254,6 @@ impl Templates {
         }
         Ok(result)
     }
-    /// Copy explicitly selected deployment sources once. Startup and HTTP
-    /// requests never choose source accounts or initialize templates implicitly.
-    pub async fn initialize_sources(
-        &self,
-        db: &crate::db::Database,
-        full_id: Option<i64>,
-        degraded_id: Option<i64>,
-    ) -> Result<Value> {
-        let data = self.data()?;
-        if data["configured"] == true {
-            return self.view(None);
-        }
-        let (Some(full_id), Some(degraded_id)) = (full_id, degraded_id) else {
-            return self.view(None);
-        };
-        if full_id < 1 || degraded_id < 1 || full_id == degraded_id {
-            return self.view(None);
-        }
-        let Ok(rows) = db.all(
-            "SELECT id,platform,type,deleted_at, nullif(to_jsonb(accounts)->>'parent_account_id','')::bigint AS parent_account_id, credentials->'model_mapping' AS model_mapping FROM accounts WHERE id=ANY($1) AND deleted_at IS NULL",
-            &[crate::db::Param::Ints(vec![full_id, degraded_id])],
-        ).await else {
-            return self.view(None);
-        };
-        let full = rows.iter().find(|row| integer(&row["id"]) == Some(full_id));
-        let degraded = rows
-            .iter()
-            .find(|row| integer(&row["id"]) == Some(degraded_id));
-        let (Some(full), Some(degraded)) = (
-            full.filter(|row| eligible(row)),
-            degraded.filter(|row| eligible(row)),
-        ) else {
-            return self.view(None);
-        };
-        let full = split(&full["model_mapping"])?;
-        let degraded = split(&degraded["model_mapping"])?;
-        combine(&full)?;
-        combine(&degraded)?;
-        self.store.transaction(|current| {
-            if current["configured"] != true {
-                current["templates"] = json!({"full":full,"degraded":degraded,"takeover":degraded});
-                current["configured"] = true.into();
-                current["revision"] = (integer(&current["revision"]).unwrap_or(0) + 1).into();
-            }
-            Ok(())
-        })?;
-        self.view(None)
-    }
     pub fn desired(&self, payload: &Value) -> Result<Value> {
         let data = self.data()?;
         if data["configured"] != true {

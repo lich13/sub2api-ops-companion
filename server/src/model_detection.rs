@@ -482,6 +482,7 @@ impl Detection {
                 &row,
                 context,
                 truthy(&context["consume"]) && !truthy(&job["attempts"]),
+                None,
             )
             .await?
         } else {

@@ -6,7 +6,6 @@ use crate::{
     db::{Database, Param},
     error::{Error, Result},
     oauth_state::OAuthState,
-    quota,
     security::{clean, safe_error, safe_error_body},
     sql,
 };
@@ -69,15 +68,7 @@ pub fn recoverable(row: &Value, at: DateTime<Utc>) -> bool {
             })
 }
 
-pub fn account_dto(row: &Value, at: DateTime<Utc>, quota_result: &Value) -> Value {
-    account_dto_inner(row, at, Some(quota_result))
-}
-
-pub(crate) fn account_dto_without_windows(row: &Value, at: DateTime<Utc>) -> Value {
-    account_dto_inner(row, at, None)
-}
-
-fn account_dto_inner(row: &Value, at: DateTime<Utc>, quota_result: Option<&Value>) -> Value {
+pub fn account_dto_without_windows(row: &Value, at: DateTime<Utc>) -> Value {
     let mut value = pick(
         row,
         &[
@@ -129,10 +120,7 @@ fn account_dto_inner(row: &Value, at: DateTime<Utc>, quota_result: Option<&Value
         .cloned()
         .unwrap_or_default()
         .into();
-    value["usage_windows"] = match quota_result {
-        Some(result) => quota::usage_windows(row, at, result).into(),
-        None => Value::Null,
-    };
+    value["usage_windows"] = Value::Null;
     value["recovery_selectable"] = json!(
         row["platform"] == "openai"
             && row["type"] == "oauth"

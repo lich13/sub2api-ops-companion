@@ -631,6 +631,7 @@ impl Monitor {
                     method_generation,
                     method,
                     lease,
+                    None,
                 )
                 .await?
             } else {
@@ -644,10 +645,6 @@ impl Monitor {
         Ok(
             json!({"account_id":id,"success":truthy(&result["success"]),"usage":result,"test":tested,"depleted":depleted,"recovered":tested["recovered"]==true,"reused":truthy(&item["reuse_quota"]),"duration_ms":started.elapsed().as_millis()}),
         )
-    }
-    pub async fn force_refresh(&self) -> Result<Value> {
-        self.force_refresh_with_timeout(std::time::Duration::from_secs(120))
-            .await
     }
     pub async fn force_refresh_with_timeout(&self, timeout: std::time::Duration) -> Result<Value> {
         if self.actions.settings.read_only {

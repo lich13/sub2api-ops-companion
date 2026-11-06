@@ -1903,69 +1903,63 @@
     },
     {
       "legacy_test_id": "py:tests.test_account_templates027:AccountTemplateTests.test_initialization_copies_only_three_model_profiles",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
-        "test_name": "template_initialization_uses_only_selected_profiles_once_and_preserves_json_order",
+        "test_name": "template_http_crud_legacy_put_names_versions_and_deletion_match_python",
         "assertions": [
-          "assert_eq!(initial[\"configured\"], false)",
-          "assert_eq!(initialized[\"configured\"], true)",
-          "assert_eq!(\n        initialized[\"templates\"][\"full\"],\n        profile_in_pg_order(&full_db_mapping),\n        \"source whitelist order must follow the real PostgreSQL JSONB result\"\n    )",
-          "assert_eq!(\n        initialized[\"templates\"][\"degraded\"],\n        profile_in_pg_order(&degraded_db_mapping),\n        \"source mapping order must follow the real PostgreSQL JSONB result\"\n    )",
-          "assert_eq!(\n        initialized[\"templates\"][\"takeover\"],\n        initialized[\"templates\"][\"degraded\"]\n    )",
-          "assert_eq!(initialized[\"templates\"].as_object().unwrap().len(), 3)",
-          "assert!(!initialized.to_string().contains(\"fixture-account-secret\"))",
-          "assert_eq!(\n        templates\n            .initialize_sources(\n                &harness.runtime.db,\n                Some(source_full),\n                Some(source_degraded),\n            )\n            .await\n            .unwrap()[\"version\"],\n        initialized[\"version\"],\n        \"reinitializing the same explicit pair is idempotent\"\n    )",
-          "assert_eq!(\n        templates\n            .initialize_sources(&harness.runtime.db, Some(unrelated), Some(source_degraded),)\n            .await\n            .unwrap()[\"version\"],\n        initialized[\"version\"],\n        \"configured templates must not be overwritten by a later selection\"\n    )",
-          "assert_eq!(\n        fs::metadata(path).unwrap().permissions().mode() & 0o777,\n        0o600\n    )"
+          "assert_eq!(status, 200, \"the deployed legacy PUT path must remain usable\");",
+          "assert_eq!(legacy_saved[\"templates\"][\"full\"], changed_full[\"templates\"][\"full\"]);",
+          "assert_eq!(unchanged_after_invalid.1[\"version\"], renamed[\"version\"]);"
         ]
       },
-      "coverage_note": "selected full/degraded rows produce only three profiles; mapping, whitelist, takeover, version keys, permissions, and secret-free view are asserted"
+      "coverage_note": "Template profiles are prepared through the current save/edit API; existing persisted template data remains supported.",
+      "replacement": {
+        "legacy_assertions": "selected full/degraded rows produce only three profiles; mapping, whitelist, takeover, version keys, permissions, and secret-free view are asserted",
+        "approved_requirement": "Sub2Ops 0.1.86 removes the test-only initialize_sources entry point without changing saved templates or template functionality.",
+        "replacement_contract": "Current template save and edit endpoints preserve profile contents, versions, conflicts, deletion and reload behavior."
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_templates027:AccountTemplateTests.test_initialization_does_not_guess_source_accounts",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
-        "test_name": "template_initialization_uses_only_selected_profiles_once_and_preserves_json_order",
+        "test_name": "template_http_crud_legacy_put_names_versions_and_deletion_match_python",
         "assertions": [
-          "assert_eq!(initial[\"configured\"], false)",
-          "assert_eq!(initialized[\"configured\"], true)",
-          "assert_eq!(\n        initialized[\"templates\"][\"full\"],\n        profile_in_pg_order(&full_db_mapping),\n        \"source whitelist order must follow the real PostgreSQL JSONB result\"\n    )",
-          "assert_eq!(\n        initialized[\"templates\"][\"degraded\"],\n        profile_in_pg_order(&degraded_db_mapping),\n        \"source mapping order must follow the real PostgreSQL JSONB result\"\n    )",
-          "assert_eq!(\n        initialized[\"templates\"][\"takeover\"],\n        initialized[\"templates\"][\"degraded\"]\n    )",
-          "assert_eq!(initialized[\"templates\"].as_object().unwrap().len(), 3)",
-          "assert!(!initialized.to_string().contains(\"fixture-account-secret\"))",
-          "assert_eq!(\n        templates\n            .initialize_sources(\n                &harness.runtime.db,\n                Some(source_full),\n                Some(source_degraded),\n            )\n            .await\n            .unwrap()[\"version\"],\n        initialized[\"version\"],\n        \"reinitializing the same explicit pair is idempotent\"\n    )",
-          "assert_eq!(\n        templates\n            .initialize_sources(&harness.runtime.db, Some(unrelated), Some(source_degraded),)\n            .await\n            .unwrap()[\"version\"],\n        initialized[\"version\"],\n        \"configured templates must not be overwritten by a later selection\"\n    )",
-          "assert_eq!(\n        fs::metadata(path).unwrap().permissions().mode() & 0o777,\n        0o600\n    )"
+          "assert_eq!(status, 200, \"the deployed legacy PUT path must remain usable\");",
+          "assert_eq!(legacy_saved[\"templates\"][\"full\"], changed_full[\"templates\"][\"full\"]);",
+          "assert_eq!(unchanged_after_invalid.1[\"version\"], renamed[\"version\"]);"
         ]
       },
-      "coverage_note": "no explicit source IDs returns configured=false and performs no inferred initialization"
+      "coverage_note": "Template profiles are prepared through the current save/edit API; existing persisted template data remains supported.",
+      "replacement": {
+        "legacy_assertions": "no explicit source IDs returns configured=false and performs no inferred initialization",
+        "approved_requirement": "Sub2Ops 0.1.86 removes the test-only initialize_sources entry point without changing saved templates or template functionality.",
+        "replacement_contract": "Current template save and edit endpoints preserve profile contents, versions, conflicts, deletion and reload behavior."
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_templates027:AccountTemplateTests.test_initialization_is_idempotent_without_nested_lock",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
-        "test_name": "template_initialization_uses_only_selected_profiles_once_and_preserves_json_order",
+        "test_name": "template_http_crud_legacy_put_names_versions_and_deletion_match_python",
         "assertions": [
-          "assert_eq!(initial[\"configured\"], false)",
-          "assert_eq!(initialized[\"configured\"], true)",
-          "assert_eq!(\n        initialized[\"templates\"][\"full\"],\n        profile_in_pg_order(&full_db_mapping),\n        \"source whitelist order must follow the real PostgreSQL JSONB result\"\n    )",
-          "assert_eq!(\n        initialized[\"templates\"][\"degraded\"],\n        profile_in_pg_order(&degraded_db_mapping),\n        \"source mapping order must follow the real PostgreSQL JSONB result\"\n    )",
-          "assert_eq!(\n        initialized[\"templates\"][\"takeover\"],\n        initialized[\"templates\"][\"degraded\"]\n    )",
-          "assert_eq!(initialized[\"templates\"].as_object().unwrap().len(), 3)",
-          "assert!(!initialized.to_string().contains(\"fixture-account-secret\"))",
-          "assert_eq!(\n        templates\n            .initialize_sources(\n                &harness.runtime.db,\n                Some(source_full),\n                Some(source_degraded),\n            )\n            .await\n            .unwrap()[\"version\"],\n        initialized[\"version\"],\n        \"reinitializing the same explicit pair is idempotent\"\n    )",
-          "assert_eq!(\n        templates\n            .initialize_sources(&harness.runtime.db, Some(unrelated), Some(source_degraded),)\n            .await\n            .unwrap()[\"version\"],\n        initialized[\"version\"],\n        \"configured templates must not be overwritten by a later selection\"\n    )",
-          "assert_eq!(\n        fs::metadata(path).unwrap().permissions().mode() & 0o777,\n        0o600\n    )"
+          "assert_eq!(status, 200, \"the deployed legacy PUT path must remain usable\");",
+          "assert_eq!(legacy_saved[\"templates\"][\"full\"], changed_full[\"templates\"][\"full\"]);",
+          "assert_eq!(unchanged_after_invalid.1[\"version\"], renamed[\"version\"]);"
         ]
       },
-      "coverage_note": "same explicit source pair preserves the initialized version; later unrelated source choice cannot overwrite it"
+      "coverage_note": "Template profiles are prepared through the current save/edit API; existing persisted template data remains supported.",
+      "replacement": {
+        "legacy_assertions": "same explicit source pair preserves the initialized version; later unrelated source choice cannot overwrite it",
+        "approved_requirement": "Sub2Ops 0.1.86 removes the test-only initialize_sources entry point without changing saved templates or template functionality.",
+        "replacement_contract": "Current template save and edit endpoints preserve profile contents, versions, conflicts, deletion and reload behavior."
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_templates027:AccountTemplateTests.test_legacy_migration_save_error_is_propagated",
@@ -23232,7 +23226,7 @@
         "path": "server/tests/credit_lifecycle_parity.rs",
         "test_name": "recovery019_free_plan_preserves_the_full_primary_thirty_day_quota_result",
         "assertions": [
-          "assert_eq!(actual, oracle[\"expected\"]);",
+          "assert_eq!(actual, expected);",
           "assert_eq!(actual[\"success\"], true);",
           "assert_eq!(actual[\"oauth_quota\"][\"plan_type\"], \"free\");",
           "assert_eq!(windows.len(), 1);",

@@ -206,10 +206,6 @@ pub fn query_metadata(meta: &Value, saved: &Value) -> Result<Value> {
     Ok(value)
 }
 
-pub fn validate(value: &Value) -> Result<()> {
-    validate_shape(value)?;
-    validate_observations(value)
-}
 fn validate_observations(value: &Value) -> Result<()> {
     for meta in value["scheduler"]
         .as_object()

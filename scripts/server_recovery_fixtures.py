@@ -804,7 +804,7 @@ def build_fixtures(repo: Path, app_root: Path) -> dict[str, Any]:
         baseline_state = OAuthStateStore(str(Path(directory) / "oauth-state.json"))
         generation = baseline_state.manual_control(manual_row, False, AT)
         baseline_state.commit(
-            results={73: {"template_type": "oauth", "stale_result": True}},
+            results={73: {"source": "sub2api_admin_usage", "stale_result": True}},
             scheduler_updates={73: {"stale_scheduler_marker": True}},
             expected_generations={73: generation - 1},
         )

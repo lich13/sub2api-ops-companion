@@ -1029,9 +1029,7 @@ async fn snapshot_invalidation_never_waits_or_republishes_inflight_cache() {
         }
     }).await.expect("snapshot must reach the blocked database read");
     assert!(!inflight.is_finished());
-    tokio::time::timeout(Duration::from_secs(5), harness.runtime.invalidate())
-        .await
-        .expect("invalidation must not wait for the snapshot lock or database");
+    harness.runtime.invalidate();
     sqlx::query("UPDATE accounts SET name='fixture-inflight' WHERE id=12")
         .execute(&mut *blocker)
         .await
@@ -1085,7 +1083,7 @@ async fn snapshot_invalidation_never_waits_or_republishes_inflight_cache() {
             .as_u16(),
         404
     );
-    harness.runtime.invalidate().await;
+    harness.runtime.invalidate();
     assert_eq!(
         harness
             .runtime
@@ -1203,7 +1201,12 @@ async fn account_connection_directory_keeps_all_pages_parent_credentials_and_nat
                 json!({"data":[{"id":"fixture-first"},{"id":"fixture-second"}]}),
             )]);
         }
-        let models = h.runtime.catalog.account_models(child).await.unwrap();
+        let models = h
+            .runtime
+            .catalog
+            .account_models_read(child, false)
+            .await
+            .unwrap();
         assert_eq!(
             models
                 .iter()
@@ -1214,7 +1217,11 @@ async fn account_connection_directory_keeps_all_pages_parent_credentials_and_nat
         assert!(models.iter().all(|m| m.as_object().unwrap().len() == 3));
         let calls = h.mock.calls.lock().unwrap().len();
         assert_eq!(
-            h.runtime.catalog.account_models(child).await.unwrap(),
+            h.runtime
+                .catalog
+                .account_models_read(child, false)
+                .await
+                .unwrap(),
             models
         );
         assert_eq!(h.mock.calls.lock().unwrap().len(), calls);

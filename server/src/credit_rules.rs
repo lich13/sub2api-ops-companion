@@ -31,11 +31,6 @@ pub fn label(outcome: &str) -> &'static str {
         .as_str()
         .unwrap_or("最近用卡结果")
 }
-pub fn evidence_error(code: &str) -> &'static str {
-    MESSAGES["CREDIT_EVIDENCE_ERRORS"][code]
-        .as_str()
-        .unwrap_or("卡证据无效")
-}
 pub fn project(value: &Value, notices: &Value) -> Value {
     if !truthy(value) {
         return Value::Null;
@@ -178,7 +173,7 @@ pub fn quota_result(
     } else {
         Some(at)
     };
-    let mut out = json!({"account_id":row["id"],"template_type":"oauth","success":truthy(&normal) && observed.is_some_and(|v|v<=at),"source":"sub2api_admin_usage","queried_at":datetime(observed.unwrap_or(at)),"oauth_quota":quota::from_usage_data(&normal,row,observed.unwrap_or(at))});
+    let mut out = json!({"account_id":row["id"],"success":truthy(&normal) && observed.is_some_and(|v|v<=at),"source":"sub2api_admin_usage","queried_at":datetime(observed.unwrap_or(at)),"oauth_quota":quota::from_usage_data(&normal,row,observed.unwrap_or(at))});
     if requested.zip(observed).is_some_and(|(start, observed)| {
         start.with_nanosecond(0).unwrap() <= observed && observed <= at
     }) {

@@ -373,21 +373,14 @@ pub trait Backend: Send + Sync {
         &'a self,
         _id: i64,
         _key: &'a str,
-        _refresh: bool,
     ) -> BoxFuture<'a, Result<CycleObservation>> {
         Box::pin(async { Err(Error::new(422, "此服务不支持持续预约")) })
     }
     fn cycle_observations<'a>(
         &'a self,
-        accounts: &'a [i64],
+        _accounts: &'a [i64],
     ) -> BoxFuture<'a, Result<BTreeMap<i64, Result<CycleObservation>>>> {
-        Box::pin(async move {
-            let mut observations = BTreeMap::new();
-            for id in accounts {
-                observations.insert(*id, self.cycle_observation(*id, "", false).await);
-            }
-            Ok(observations)
-        })
+        Box::pin(async { Err(Error::new(422, "此服务不支持持续预约")) })
     }
     fn test_slots(&self) -> Option<crate::execution::TestSlots> {
         None
@@ -1658,7 +1651,7 @@ impl Operations {
         }
         self.actions.upstream.authenticate(&key, true).await?;
         if job["repeat"] == "quota_cycle" {
-            let Some(observation) = self.cycle_allowed(&job, true).await? else {
+            let Some(observation) = self.cycle_allowed(&job).await? else {
                 return Ok(());
             };
             row = Some(observation.row);

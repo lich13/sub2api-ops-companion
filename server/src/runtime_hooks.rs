@@ -175,22 +175,14 @@ impl operations::Backend for Hooks {
         &'a self,
         id: i64,
         key: &'a str,
-        refresh: bool,
     ) -> BoxFuture<'a, Result<operations::CycleObservation>> {
         Box::pin(async move {
             let runtime = self.runtime()?;
-            let mut row = if truthy(
-                &runtime.monitor.store.shared_snapshot()?["scheduler"][id.to_string()]
-                    ["quota_query"]["auth_fingerprint"],
-            ) {
-                runtime.actions.queries.private_account(id).await?
-            } else {
-                runtime.actions.account(id, None).await?
-            };
+            let mut row = runtime.actions.queries.private_account(id).await?;
             if row["platform"] != "openai" || row["type"] != "oauth" {
                 return Err(Error::new(422, "持续预约仅支持 OpenAI OAuth 账号"));
             }
-            if refresh {
+            {
                 let state = runtime.monitor.store.shared_snapshot()?;
                 let saved = Self::cycle_saved(&row, &state, runtime.monitor.now())?;
                 if Self::cycle_needs_evidence(&row, &saved) {
@@ -300,7 +292,7 @@ impl operations::Backend for Hooks {
                 }
                 _ => Err(Error::new(422, "未知账号操作")),
             };
-            runtime.invalidate_snapshot().await;
+            runtime.invalidate_snapshot();
             result
         })
     }

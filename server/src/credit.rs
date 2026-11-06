@@ -296,7 +296,7 @@ impl CreditController {
         }
         Ok(truthy(&self.admit_episode(row, &evidence, at)?))
     }
-    pub async fn begin_episode(
+    pub fn begin_episode(
         &self,
         row: &Value,
         old: &Value,

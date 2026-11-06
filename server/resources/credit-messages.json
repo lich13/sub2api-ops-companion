@@ -1,14 +1,4 @@
 {
-  "CREDIT_EVIDENCE_ERRORS": {
-    "content_changed": "卡快照内容已变化",
-    "credentials_changed": "凭据已变化",
-    "limit_changed": "限流事件已变化",
-    "missing": "缺少可信卡观测",
-    "new_failure": "出现更新的查询失败证据",
-    "outside_window": "卡观测不在当前额度窗口内",
-    "quota_missing": "缺少有效额度时间",
-    "window_changed": "额度窗口已变化"
-  },
   "ERRORS": {
     "already_redeemed": "上游报告已兑换，本轮消费结果待确认",
     "auth_paused": "认证异常，等待凭据更新",

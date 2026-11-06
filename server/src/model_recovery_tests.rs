@@ -959,6 +959,7 @@ async fn natural_cycle(h: &Harness, id: i64, original: &Value, usage: &Value) ->
             integer(&meta["recovery_method_generation"]).unwrap_or(0),
             "model",
             lease,
+            None,
         )
         .await
         .unwrap()
@@ -1288,6 +1289,7 @@ async fn model_rejected_before_test_execution_does_not_increment_recovery_count(
                     0,
                     "model",
                     monitor.lease(&row).unwrap(),
+                    None,
                 )
                 .await
                 .unwrap();
@@ -1553,7 +1555,7 @@ async fn recovery_model_method_or_manual_changes_before_dispatch_skip_every_requ
         let result = h
             .runtime
             .monitor
-            .verify_recovery(id, &intent, &usage, 0, 0, "model", lease)
+            .verify_recovery(id, &intent, &usage, 0, 0, "model", lease, None)
             .await
             .unwrap();
         assert_eq!(result["success"], false);
@@ -1607,7 +1609,7 @@ async fn recovery_model_method_or_manual_changes_reject_completed_success() {
         let result = h
             .runtime
             .monitor
-            .verify_recovery(id, &intent, &usage, 0, 0, "model", lease)
+            .verify_recovery(id, &intent, &usage, 0, 0, "model", lease, None)
             .await
             .unwrap();
         assert_eq!(result["success"], false);
@@ -3171,14 +3173,16 @@ async fn batched_waiting_accounts_handle_deleted_and_changed_configuration() {
         .detection
         .update(
             first_id,
-            json!({"enabled":false,"status":"disabled","generation":1}),
+            json!({"enabled":false,"status":"disabled","generation":1,"hold":true,"disposition":{"status":"completed","schedule_verified":true}}),
         )
         .unwrap();
-    h.runtime.detection.tick().await.unwrap();
-    assert_eq!(
-        h.runtime.detection.control(first_id).unwrap()["status"],
-        "disabled"
-    );
+    for _ in 0..3 {
+        h.runtime.detection.tick().await.unwrap();
+        assert_eq!(
+            h.runtime.detection.control(first_id).unwrap()["status"],
+            "disabled"
+        );
+    }
     assert_eq!(
         h.runtime.detection.control(second_id).unwrap()["status"],
         "paused"
@@ -3306,6 +3310,7 @@ async fn early_reset_completed_model_waits_for_account_lock_then_finishes_after_
             0,
             "model",
             waiting_monitor.lease(&row).unwrap(),
+            None,
         )
         .await
         .unwrap();
@@ -3517,4 +3522,119 @@ async fn keepalive_notice_failure_retries_at_most_five_times() {
     h.runtime.keepalive.deliver().await.unwrap();
     assert_eq!(h.mock.count("POST", "/push"), 5);
     h.close().await;
+}
+
+#[tokio::test]
+async fn finished_credit_without_recovery_skips_unused_depletion_for_both_attempt_states() {
+    let h = Harness::new().await;
+    let (id, _) = seed_credit(&h).await;
+    sqlx::query("ALTER TABLE ops_error_logs RENAME TO fixture_unused_error_logs")
+        .execute(&h.db.pool)
+        .await
+        .unwrap();
+    let mut outcomes = Vec::new();
+    for attempted in [false, true] {
+        h.runtime
+            .monitor
+            .store
+            .transaction(|state| {
+                state["scheduler"][id.to_string()]["auto_reset_credit"] = json!({
+                    "episode":"fixture-finished", "stage":"finished", "owns_pause":false,
+                    "attempt_at":if attempted { json!(datetime(h.now())) } else { Value::Null }
+                });
+                Ok(())
+            })
+            .unwrap();
+        outcomes.push(
+            h.runtime
+                .monitor
+                .credits
+                .bounded_step(id, h.now(), true)
+                .await,
+        );
+    }
+    sqlx::query("ALTER TABLE fixture_unused_error_logs RENAME TO ops_error_logs")
+        .execute(&h.db.pool)
+        .await
+        .unwrap();
+    for outcome in outcomes {
+        outcome.unwrap();
+    }
+    assert_eq!(
+        h.runtime.monitor.credits.state(id).unwrap()["stage"],
+        "finished"
+    );
+    assert_eq!(h.mock.count("POST", "/reset-quota"), 0);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn prepared_credit_evidence_and_available_count_are_rechecked_after_control_wait() {
+    for change in ["credits_before", "credits_during", "evidence_during"] {
+        let h = Harness::new().await;
+        let (id, _) = seed_credit(&h).await;
+        let slots = h
+            .runtime
+            .tests
+            .jobs
+            .clone()
+            .acquire_many_owned(2)
+            .await
+            .unwrap();
+        let (job, _) = queue_credit(&h, id).await;
+        if change == "credits_before" {
+            sqlx::query("UPDATE accounts SET extra=jsonb_set(extra,'{codex_reset_credit_snapshot}','{\"available_count\":0,\"credits\":[]}'::jsonb) WHERE id=$1")
+                .bind(id).execute(&h.db.pool).await.unwrap();
+            let row = h.runtime.monitor.row(id).await.unwrap();
+            let result = h
+                .runtime
+                .detection
+                .prepare_recovery(&job, row)
+                .await
+                .unwrap()
+                .0;
+            assert_eq!(result["error_code"], "no_credit");
+        } else {
+            let row = h.runtime.monitor.row(id).await.unwrap();
+            let control = h.runtime.actions.locks.control(id).await;
+            let detection = h.runtime.detection.clone();
+            let pending = tokio::spawn(async move { detection.prepare_recovery(&job, row).await });
+            tokio::time::timeout(StdDuration::from_secs(3), async {
+                while h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["quota_query"]
+                    ["last_reason"]
+                    != "reset_credit_consume"
+                {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            assert!(!pending.is_finished());
+            if change == "credits_during" {
+                sqlx::query("UPDATE accounts SET extra=jsonb_set(extra,'{codex_reset_credit_snapshot}','{\"available_count\":0,\"credits\":[]}'::jsonb) WHERE id=$1")
+                    .bind(id).execute(&h.db.pool).await.unwrap();
+            } else {
+                sqlx::query("UPDATE ops_error_logs SET status_code=401,upstream_status_code=401 WHERE account_id=$1")
+                    .bind(id)
+                    .execute(&h.db.pool)
+                    .await
+                    .unwrap();
+            }
+            drop(control);
+            let result = pending.await.unwrap().unwrap().0;
+            assert_eq!(
+                result["error_code"],
+                if change == "credits_during" {
+                    "no_credit"
+                } else {
+                    "reset_state_changed"
+                }
+            );
+        }
+        assert_eq!(h.mock.count("POST", "/reset-quota"), 0);
+        assert_eq!(h.mock.count("POST", "/schedulable"), 0);
+        assert!(h.runtime.monitor.credits.state(id).unwrap()["attempt_at"].is_null());
+        drop(slots);
+        h.close().await;
+    }
 }

@@ -112,10 +112,13 @@ impl CreditController {
         self.observe_recovery(&row, at)?;
         let evidence = if row.is_object()
             && enabled
-            && (!truthy(&task["attempt_at"])
-                || credit_rules::manual(&task)
-                || matches!(string(&task["stage"]), "finished" | "recovered" | "closed"))
-        {
+            && (if task["stage"] == "finished" {
+                truthy(&task["recovered_evidence_at"])
+            } else {
+                !truthy(&task["attempt_at"])
+                    || credit_rules::manual(&task)
+                    || matches!(string(&task["stage"]), "recovered" | "closed")
+            }) {
             self.depletion(&row, at, truthy(&task["owns_pause"]))
                 .await?
         } else {
@@ -154,7 +157,7 @@ impl CreditController {
             {
                 return Ok(());
             }
-            task = self.begin_episode(&row, &task, &evidence, at).await?;
+            task = self.begin_episode(&row, &task, &evidence, at)?;
             if !truthy(&task) {
                 return Ok(());
             }
@@ -187,7 +190,7 @@ impl CreditController {
             {
                 return Ok(());
             }
-            task = self.begin_episode(&row, &task, &evidence, at).await?;
+            task = self.begin_episode(&row, &task, &evidence, at)?;
             if !truthy(&task) {
                 return Ok(());
             }
@@ -213,7 +216,7 @@ impl CreditController {
             {
                 return Ok(());
             }
-            task = self.begin_episode(&row, &task, &evidence, at).await?;
+            task = self.begin_episode(&row, &task, &evidence, at)?;
             if !truthy(&task) {
                 return Ok(());
             }

@@ -184,20 +184,6 @@ pub fn text_model(id: &str) -> bool {
         .iter()
         .any(|s| id.to_lowercase().contains(s))
 }
-pub fn exact_models(allowlists: &[Value]) -> Vec<Value> {
-    let mut seen = BTreeSet::new();
-    allowlists
-        .iter()
-        .flat_map(|v| v["models"].as_array().into_iter().flatten())
-        .filter_map(|v| {
-            let id = v.as_str()?.trim();
-            if !text_model(id) || !seen.insert(id.to_owned()) {
-                return None;
-            }
-            Some(json!({"id":id,"display_name":id,"type":"model"}))
-        })
-        .collect()
-}
 pub fn filter_models(items: &[Value], allowlists: &[Value]) -> Vec<Value> {
     let mut seen = BTreeSet::new();
     let unrestricted = allowlists.is_empty() || allowlists.iter().any(|v| !truthy(&v["enabled"]));
@@ -719,8 +705,8 @@ impl Actions {
         if self.settings.read_only {
             return Err(Error::read_only());
         }
-        let _lease = self.locks.try_account(&self.account(id, None).await?)?;
         let row = self.account(id, None).await?;
+        let _lease = self.locks.try_account(&row)?;
         if !account_templates::eligible(&row) {
             return Err(Error::new(409, "仅可应用到独立 OpenAI OAuth 或 Key 账号"));
         }

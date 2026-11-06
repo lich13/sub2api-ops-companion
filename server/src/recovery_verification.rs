@@ -86,6 +86,7 @@ impl Monitor {
         method_generation: i64,
         method: &str,
         lease: Lease,
+        row: Option<Value>,
     ) -> Result<Value> {
         let mut lease = Some(lease);
         let state = self.shared_state()?;
@@ -108,7 +109,10 @@ impl Monitor {
                 json!({"success":false,"deferred":true,"error_code":"verification_backoff"}),
             );
         }
-        let row = match self.row(id).await {
+        let row = match match row {
+            Some(row) => Ok(row),
+            None => self.row(id).await,
+        } {
             Ok(row) => row,
             Err(error) if error.status.as_u16() >= 500 => {
                 let attempts = integer(&intent["attempt_count"]).unwrap_or(0) + 1;

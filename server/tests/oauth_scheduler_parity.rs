@@ -2208,13 +2208,23 @@ async fn concurrent_force_refresh_callers_share_one_runtime_cycle() {
     let gate = Gate::new();
     *harness.mock.usage_gate.lock().unwrap() = Some(gate.clone());
     let monitor = harness.runtime.monitor.clone();
-    let first = tokio::spawn(async move { monitor.force_refresh().await.unwrap() });
+    let first = tokio::spawn(async move {
+        monitor
+            .force_refresh_with_timeout(std::time::Duration::from_secs(120))
+            .await
+            .unwrap()
+    });
     tokio::time::timeout(StdDuration::from_secs(5), gate.entered.notified())
         .await
         .expect("first force-refresh cycle entered the loopback usage endpoint");
 
     let monitor = harness.runtime.monitor.clone();
-    let second = tokio::spawn(async move { monitor.force_refresh().await.unwrap() });
+    let second = tokio::spawn(async move {
+        monitor
+            .force_refresh_with_timeout(std::time::Duration::from_secs(120))
+            .await
+            .unwrap()
+    });
     tokio::time::sleep(StdDuration::from_millis(25)).await;
     assert_eq!(harness.mock.count("GET", "/usage"), 1);
     gate.release.notify_one();
@@ -2248,7 +2258,12 @@ async fn force_refresh_waiter_reports_explicit_timeout_without_replaying_owner_r
     let gate = Gate::new();
     *harness.mock.usage_gate.lock().unwrap() = Some(gate.clone());
     let monitor = harness.runtime.monitor.clone();
-    let owner = tokio::spawn(async move { monitor.force_refresh().await.unwrap() });
+    let owner = tokio::spawn(async move {
+        monitor
+            .force_refresh_with_timeout(std::time::Duration::from_secs(120))
+            .await
+            .unwrap()
+    });
     tokio::time::timeout(StdDuration::from_secs(5), gate.entered.notified())
         .await
         .expect("owner request remains in flight at the loopback usage endpoint");
@@ -2349,7 +2364,12 @@ async fn force_refresh_without_admin_key_returns_explicit_error_without_upstream
             Ok(())
         })
         .expect("remove only the synthetic admin credential from the temporary state");
-    let report = harness.runtime.monitor.force_refresh().await.unwrap();
+    let report = harness
+        .runtime
+        .monitor
+        .force_refresh_with_timeout(std::time::Duration::from_secs(120))
+        .await
+        .unwrap();
     assert_eq!(report["success"], false);
     assert_eq!(report["error_code"], "missing_sub2api_admin_credentials");
     assert_eq!(harness.mock.count("GET", "/usage"), 0);
@@ -2377,7 +2397,12 @@ async fn force_refresh_ignores_probe_batch_cap_and_queries_all_accounts() {
         ids.push(integer(&row["id"]).unwrap());
     }
 
-    let report = harness.runtime.monitor.force_refresh().await.unwrap();
+    let report = harness
+        .runtime
+        .monitor
+        .force_refresh_with_timeout(std::time::Duration::from_secs(120))
+        .await
+        .unwrap();
     assert_eq!(report["success"], true);
     assert_eq!(report["total_count"], 3);
     assert_eq!(report["queried_count"], 3);
@@ -2413,7 +2438,12 @@ async fn force_refresh_recovers_fresh_available_quota_once_at_0459_beijing() {
     harness.set_now(due);
     harness.mock.clear_block_on_test(id);
 
-    let first = harness.runtime.monitor.force_refresh().await.unwrap();
+    let first = harness
+        .runtime
+        .monitor
+        .force_refresh_with_timeout(std::time::Duration::from_secs(120))
+        .await
+        .unwrap();
     assert_eq!(first["recovered_count"], 1);
     assert_eq!(harness.mock.count("GET", "/usage"), 1);
     assert_eq!(harness.mock.count("POST", "/test"), 1);
@@ -2434,7 +2464,12 @@ async fn force_refresh_recovers_fresh_available_quota_once_at_0459_beijing() {
     assert_eq!(event["model_id"], "gpt-5.6-luna");
 
     harness.set_now(due + Duration::seconds(1));
-    let second = harness.runtime.monitor.force_refresh().await.unwrap();
+    let second = harness
+        .runtime
+        .monitor
+        .force_refresh_with_timeout(std::time::Duration::from_secs(120))
+        .await
+        .unwrap();
     assert_eq!(second["recovered_count"], 0);
     assert_eq!(harness.mock.count("GET", "/usage"), 2);
     assert_eq!(harness.mock.count("POST", "/test"), 1);
@@ -2805,7 +2840,11 @@ async fn daily_runtime_reuses_fresh_passive_quota_tests_once_and_queues_failure_
     harness
         .runtime
         .monitor
-        .run_daily(batch.clone(), vec![row.clone()])
+        .run_daily_with_recovery(
+            batch.clone(),
+            std::sync::Arc::new(vec![row.clone()]),
+            Default::default(),
+        )
         .await
         .unwrap();
     let saved =
@@ -2842,7 +2881,11 @@ async fn daily_runtime_reuses_fresh_passive_quota_tests_once_and_queues_failure_
     harness
         .runtime
         .monitor
-        .run_daily(failed_batch, vec![failure.clone()])
+        .run_daily_with_recovery(
+            failed_batch,
+            std::sync::Arc::new(vec![failure.clone()]),
+            Default::default(),
+        )
         .await
         .unwrap();
     let after = harness.runtime.monitor.state().unwrap();
@@ -2890,10 +2933,7 @@ async fn daily_model_402_pauses_later_automatic_queries_without_retrying_or_bark
     harness
         .runtime
         .monitor
-        .run_daily(
-            json!({"date":"2026-10-02","scheduled_at":datetime(harness.now()),"status":"running","accounts":{}}),
-            vec![row],
-        )
+        .run_daily_with_recovery(json!({"date":"2026-10-02","scheduled_at":datetime(harness.now()),"status":"running","accounts":{}}), std::sync::Arc::new(vec![row]), Default::default())
         .await
         .unwrap();
 
@@ -3565,10 +3605,7 @@ async fn daily_active_refresh_obeys_budget_and_known_reset_without_model_or_bark
     harness
         .runtime
         .monitor
-        .run_daily(
-            json!({"date":"2026-10-01","scheduled_at":datetime(harness.now()),"status":"running","accounts":{}}),
-            vec![account],
-        )
+        .run_daily_with_recovery(json!({"date":"2026-10-01","scheduled_at":datetime(harness.now()),"status":"running","accounts":{}}), std::sync::Arc::new(vec![account]), Default::default())
         .await
         .unwrap();
     let state = harness.runtime.monitor.state().unwrap();
@@ -3602,10 +3639,7 @@ async fn daily_active_refresh_obeys_budget_and_known_reset_without_model_or_bark
     harness
         .runtime
         .monitor
-        .run_daily(
-            json!({"date":"2026-10-02","scheduled_at":datetime(harness.now()),"status":"running","accounts":{}}),
-            vec![depleted],
-        )
+        .run_daily_with_recovery(json!({"date":"2026-10-02","scheduled_at":datetime(harness.now()),"status":"running","accounts":{}}), std::sync::Arc::new(vec![depleted]), Default::default())
         .await
         .unwrap();
     let state = harness.runtime.monitor.state().unwrap();
@@ -4563,7 +4597,11 @@ async fn interrupted_daily_test_with_unknown_response_is_marked_and_not_replayed
         .unwrap()
         .expect("daily batch due on time");
     let monitor = harness.runtime.monitor.clone();
-    let run = tokio::spawn(async move { monitor.run_daily(batch, vec![row]).await });
+    let run = tokio::spawn(async move {
+        monitor
+            .run_daily_with_recovery(batch, std::sync::Arc::new(vec![row]), Default::default())
+            .await
+    });
     tokio::time::timeout(StdDuration::from_secs(8), gate.entered.notified())
         .await
         .expect("model test request must reach loopback server before interruption");
@@ -4962,7 +5000,12 @@ async fn early_quota_reset_retires_old_waits_and_recovers_only_remaining_blocks(
         } else {
             h.mock.clear_block_on_test(id);
         }
-        let report = h.runtime.monitor.force_refresh().await.unwrap();
+        let report = h
+            .runtime
+            .monitor
+            .force_refresh_with_timeout(std::time::Duration::from_secs(120))
+            .await
+            .unwrap();
         let state = h.runtime.monitor.state().unwrap();
         let intent = &state["scheduler"][id.to_string()]["recovery_intent"];
         let expected_status = if already_unblocked {
@@ -5036,7 +5079,7 @@ async fn traffic_arriving_after_enqueue_cancels_rate_probe_at_dispatch() {
     let result = h
         .runtime
         .monitor
-        .verify_recovery(id, &intent, &usage, 0, 0, "connection", lease)
+        .verify_recovery(id, &intent, &usage, 0, 0, "connection", lease, None)
         .await
         .unwrap();
     assert_eq!(result["error_code"], "already_serving");
@@ -5376,7 +5419,7 @@ async fn recovery_failure_restart_preserves_retry_deadline_and_ignores_legacy_re
     let result = h
         .runtime
         .monitor
-        .verify_recovery(id, &intent, &usage, 0, 0, "connection", lease)
+        .verify_recovery(id, &intent, &usage, 0, 0, "connection", lease, None)
         .await
         .unwrap();
     assert_eq!(result["deferred"], true);
@@ -5401,7 +5444,7 @@ async fn recovery_failure_restart_preserves_retry_deadline_and_ignores_legacy_re
     let deferred = h
         .runtime
         .monitor
-        .verify_recovery(id, &intent, &usage, 0, 0, "connection", lease)
+        .verify_recovery(id, &intent, &usage, 0, 0, "connection", lease, None)
         .await
         .unwrap();
     assert_eq!(deferred["deferred"], true);
@@ -5411,7 +5454,7 @@ async fn recovery_failure_restart_preserves_retry_deadline_and_ignores_legacy_re
     let success = h
         .runtime
         .monitor
-        .verify_recovery(id, &intent, &usage, 0, 0, "connection", lease)
+        .verify_recovery(id, &intent, &usage, 0, 0, "connection", lease, None)
         .await
         .unwrap();
     assert_eq!(success["recovered"], true);

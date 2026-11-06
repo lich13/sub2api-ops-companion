@@ -136,22 +136,14 @@ impl Operations {
         })
     }
 
-    pub(super) async fn cycle_allowed(
-        &self,
-        job: &Value,
-        refresh: bool,
-    ) -> Result<Option<CycleObservation>> {
+    pub(super) async fn cycle_allowed(&self, job: &Value) -> Result<Option<CycleObservation>> {
         let jid = string(&job["id"]);
         if job["repeat_state"] != "active" {
             return Ok(None);
         }
         let observation = self
             .backend
-            .cycle_observation(
-                integer(&job["account_id"]).unwrap(),
-                &self.key(jid)?,
-                refresh,
-            )
+            .cycle_observation(integer(&job["account_id"]).unwrap(), &self.key(jid)?)
             .await;
         self.apply_cycle_observation(job, observation.as_ref())?;
         Ok(observation.ok().filter(|obs| !obs.stopped))
@@ -265,7 +257,7 @@ impl Operations {
         if self.store.read_shared()?["jobs"][jid]["repeat_state"] != "active" {
             return Ok(false);
         }
-        let Some(observation) = self.cycle_allowed(previous, true).await? else {
+        let Some(observation) = self.cycle_allowed(previous).await? else {
             return Ok(self.store.read_shared()?["jobs"][jid]["repeat_state"] != "active");
         };
         let aid = integer(&previous["account_id"]).unwrap();
@@ -317,7 +309,7 @@ impl Operations {
         }
         let observation = self
             .backend
-            .cycle_observation(integer(&job["account_id"]).unwrap(), key, true)
+            .cycle_observation(integer(&job["account_id"]).unwrap(), key)
             .await;
         let reason = match observation {
             Ok(observation) if observation.stopped => {

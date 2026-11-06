@@ -34,6 +34,7 @@ impl Detection {
         row: &Value,
         context: &Value,
         before_reset: bool,
+        evidence: Option<&Value>,
     ) -> Result<String> {
         let id = integer(&context["account_id"]).ok_or_else(Error::invalid)?;
         let now = self.now();
@@ -79,8 +80,14 @@ impl Detection {
                 return Ok("用卡任务已变化".into());
             }
             if before_reset && !truthy(&task["attempt_at"]) {
-                if config["oauth_auto_reset_credit_enabled"] != true
-                    || !truthy(&controller.depletion(row, now, false).await?)
+                if config["oauth_auto_reset_credit_enabled"] != true {
+                    return Ok("账号不再符合自动用卡条件".into());
+                }
+                let depletion = match evidence {
+                    Some(evidence) => evidence.clone(),
+                    None => controller.depletion(row, now, false).await?,
+                };
+                if !truthy(&depletion)
                     || matches!(string(&task["stage"]), "manual" | "closed" | "blocked")
                 {
                     return Ok("账号不再符合自动用卡条件".into());
@@ -326,7 +333,7 @@ impl Detection {
             return Ok(self.recovery_wait("等待当前模型测试结束", None, None, "model_busy"));
         }
         let row = crate::model_target::account(&self.actions, id).await?;
-        let reason = self.recovery_reason(&row, &context, consume).await?;
+        let reason = self.recovery_reason(&row, &context, consume, None).await?;
         if !reason.is_empty() {
             return Ok(json!({"success":false,"error":reason,"error_code":"recovery_ineligible"}));
         }
@@ -404,12 +411,19 @@ impl Detection {
                 Some(row),
             ));
         }
-        let reason = self.recovery_reason(&row, context, true).await?;
+        let evidence = controller.depletion(&row, self.now(), false).await?;
+        let reason = self
+            .recovery_reason(&row, context, true, Some(&evidence))
+            .await?;
         if !reason.is_empty() {
             return Ok((
                 json!({"success":false,"error_code":"recovery_ineligible","error":reason}),
                 Some(row),
             ));
+        }
+        let reason = controller.positive_credit_reason(&row, &evidence, self.now())?;
+        if !reason.is_empty() {
+            return Ok((json!({"success":false,"error_code":reason}), Some(row)));
         }
         let task = controller.save(id, &task, json!({"model_test_job_id":job["id"]}))?;
         let (result, latest_row) = controller
@@ -420,7 +434,7 @@ impl Detection {
                 self.now(),
                 Source::Automatic,
                 None,
-                None,
+                Some(&evidence),
             )
             .await?;
         if result["consumed"] == true

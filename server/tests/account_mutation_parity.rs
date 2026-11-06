@@ -8,7 +8,6 @@ use axum::{
 };
 use serde_json::{json, Value};
 use sqlx::{postgres::PgPoolOptions, types::Json as SqlJson, Connection, PgConnection, PgPool};
-use std::os::unix::fs::PermissionsExt;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -1300,20 +1299,19 @@ fn sse_events(text: &str) -> Vec<Value> {
         .collect()
 }
 
-fn profile_in_pg_order(mapping: &Value) -> Value {
-    let mut whitelist = Vec::new();
-    let mut mappings = Vec::new();
-    for (source, target) in mapping
-        .as_object()
-        .expect("PostgreSQL model mapping object")
-    {
-        if target.as_str() == Some(source.as_str()) {
-            whitelist.push(source.clone());
-        } else {
-            mappings.push(json!({"source":source,"target":target}));
-        }
-    }
-    json!({"whitelist":whitelist,"mappings":mappings})
+async fn save_fixture_templates(harness: &Harness, full: i64, degraded: i64) -> Value {
+    let templates = &harness.runtime.actions.templates;
+    let view = templates.view(None).unwrap();
+    let full = harness.account(full).await;
+    let degraded = harness.account(degraded).await;
+    let full = sub2ops_server::account_templates::split(&full["model_mapping"]).unwrap();
+    let degraded = sub2ops_server::account_templates::split(&degraded["model_mapping"]).unwrap();
+    templates
+        .save(&json!({
+            "expected_version":view["version"], "full":full,
+            "degraded":degraded, "takeover":degraded
+        }))
+        .unwrap()
 }
 
 #[tokio::test]
@@ -3109,110 +3107,6 @@ async fn desktop_grok_quota_refresh_accepts_only_fresh_complete_billing() {
 }
 
 #[tokio::test]
-async fn template_initialization_uses_only_selected_profiles_once_and_preserves_json_order() {
-    let mut harness = Harness::new().await;
-    let full_mapping = json!({
-        "fixture-full-model":"fixture-full-model",
-        "fixture-full-alt":"fixture-full-alt",
-        "fixture-full-third":"fixture-full-third"
-    });
-    let degraded_mapping = json!({
-        "fixture-model":"fixture-model",
-        "fixture-input-*":"fixture-model",
-        "fixture-terra-*":"fixture-model"
-    });
-    let source_full = harness
-        .insert_account("openai", "oauth", full_mapping, json!({}), None, &[])
-        .await;
-    let source_degraded = harness
-        .insert_account("openai", "apikey", degraded_mapping, json!({}), None, &[])
-        .await;
-    let unrelated = harness
-        .insert_account(
-            "grok",
-            "oauth",
-            json!({"fixture-unrelated":"fixture-unrelated"}),
-            json!({}),
-            None,
-            &[],
-        )
-        .await;
-    let templates = &harness.runtime.actions.templates;
-    let initial = templates
-        .initialize_sources(&harness.runtime.db, None, None)
-        .await
-        .expect("missing explicit sources should not initialize templates");
-    assert_eq!(initial["configured"], false);
-    let initialized = templates
-        .initialize_sources(
-            &harness.runtime.db,
-            Some(source_full),
-            Some(source_degraded),
-        )
-        .await
-        .expect("copy explicitly selected synthetic accounts");
-    assert_eq!(initialized["configured"], true);
-    let full_db_mapping: Value = sqlx::query_scalar::<_, SqlJson<Value>>(
-        "SELECT credentials->'model_mapping' FROM accounts WHERE id=$1",
-    )
-    .bind(source_full)
-    .fetch_one(&harness.runtime.db.pool)
-    .await
-    .expect("read the full source mapping in PostgreSQL JSONB order")
-    .0;
-    let degraded_db_mapping: Value = sqlx::query_scalar::<_, SqlJson<Value>>(
-        "SELECT credentials->'model_mapping' FROM accounts WHERE id=$1",
-    )
-    .bind(source_degraded)
-    .fetch_one(&harness.runtime.db.pool)
-    .await
-    .expect("read the degraded source mapping in PostgreSQL JSONB order")
-    .0;
-    assert_eq!(
-        initialized["templates"]["full"],
-        profile_in_pg_order(&full_db_mapping),
-        "source whitelist order must follow the real PostgreSQL JSONB result"
-    );
-    assert_eq!(
-        initialized["templates"]["degraded"],
-        profile_in_pg_order(&degraded_db_mapping),
-        "source mapping order must follow the real PostgreSQL JSONB result"
-    );
-    assert_eq!(
-        initialized["templates"]["takeover"],
-        initialized["templates"]["degraded"]
-    );
-    assert_eq!(initialized["templates"].as_object().unwrap().len(), 3);
-    assert!(!initialized.to_string().contains("fixture-account-secret"));
-    assert_eq!(
-        templates
-            .initialize_sources(
-                &harness.runtime.db,
-                Some(source_full),
-                Some(source_degraded),
-            )
-            .await
-            .unwrap()["version"],
-        initialized["version"],
-        "reinitializing the same explicit pair is idempotent"
-    );
-    assert_eq!(
-        templates
-            .initialize_sources(&harness.runtime.db, Some(unrelated), Some(source_degraded),)
-            .await
-            .unwrap()["version"],
-        initialized["version"],
-        "configured templates must not be overwritten by a later selection"
-    );
-    let path = templates.store.path().to_owned();
-    assert_eq!(
-        fs::metadata(path).unwrap().permissions().mode() & 0o777,
-        0o600
-    );
-    harness.finish().await;
-}
-
-#[tokio::test]
 async fn template_custom_catalog_caps_crud_and_legacy_empty_state_survive_reload() {
     let root = tempfile::tempdir().expect("template state root");
     let path = root.path().join("account-templates.json");
@@ -3519,15 +3413,7 @@ async fn native_template_batch_is_atomic_secret_free_idempotent_and_skips_busy_c
     let ineligible_id = harness
         .insert_account("grok", "oauth", json!({}), json!({}), None, &[])
         .await;
-    let templates = &harness.runtime.actions.templates;
-    let init = templates
-        .initialize_sources(
-            &harness.runtime.db,
-            Some(full_source),
-            Some(degraded_source),
-        )
-        .await
-        .unwrap();
+    let init = save_fixture_templates(&harness, full_source, degraded_source).await;
     let target = json!({
         "fixture-full-model":"fixture-full-model",
         "fixture-full-alias-*":"fixture-full-model"
@@ -3742,14 +3628,7 @@ async fn queued_template_batch_rechecks_changed_targets_but_preserves_frozen_dis
         )
         .await;
     let templates = &harness.runtime.actions.templates;
-    let initialized = templates
-        .initialize_sources(
-            &harness.runtime.db,
-            Some(full_source),
-            Some(degraded_source),
-        )
-        .await
-        .unwrap();
+    let initialized = save_fixture_templates(&harness, full_source, degraded_source).await;
     let before_row = harness.account(before_dispatch_id).await;
     let queued = template_batch(
         "full",
@@ -4657,17 +4536,7 @@ async fn proxy_batch_schema_template_and_target_preflight_are_per_item_and_atomi
     let live_id = harness
         .insert_account("openai", "oauth", json!({}), json!({}), None, &[])
         .await;
-    let initialized = harness
-        .runtime
-        .actions
-        .templates
-        .initialize_sources(
-            &harness.runtime.db,
-            Some(source_full),
-            Some(source_degraded),
-        )
-        .await
-        .unwrap();
+    let initialized = save_fixture_templates(&harness, source_full, source_degraded).await;
     let inherited_row = harness.account(inherited_id).await;
     let good_proxy_item = json!({
         "account_id":inherited_id,

@@ -30,11 +30,11 @@ pub(crate) struct Cache {
 }
 
 impl Runtime {
-    pub async fn invalidate(&self) {
+    pub fn invalidate(&self) {
         self.stats_epoch.fetch_add(1, Ordering::AcqRel);
         self.cache_epoch.fetch_add(1, Ordering::AcqRel);
     }
-    pub(crate) async fn invalidate_snapshot(&self) {
+    pub(crate) fn invalidate_snapshot(&self) {
         self.cache_epoch.fetch_add(1, Ordering::AcqRel);
     }
     pub async fn snapshot(&self) -> Result<Value> {

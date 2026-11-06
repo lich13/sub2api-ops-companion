@@ -1636,7 +1636,7 @@ async fn desktop_runtime_snapshot_reuses_shared_stats_without_upstream_io() {
             "the next snapshot retains the shared stats entry",
         );
         assert_eq!(second_usage["stats_status"], "ok");
-        runtime.invalidate().await;
+        runtime.invalidate();
         let failed = runtime
             .account_snapshot_from_row(&projection_row, None)
             .await
@@ -1654,7 +1654,7 @@ async fn desktop_runtime_snapshot_reuses_shared_stats_without_upstream_io() {
             .execute(&seed.pool)
             .await
             .unwrap();
-        runtime.invalidate().await;
+        runtime.invalidate();
         let restored = runtime
             .account_snapshot_from_row(&projection_row, None)
             .await
@@ -4048,6 +4048,25 @@ async fn native_account_usage_http_contract_is_private_isolated_and_keeps_child_
         if *id == 969_801 {
             assert_eq!(body["today"]["requests"], 0);
         }
+        if *id == 969_806 {
+            fixture.http.set_response("/api/v1/admin/accounts/969806/opencode-go-usage/refresh", 200,
+                json!({"code":0,"data":{"snapshot":{"status":"ok","fetched_at":compat::datetime(Utc::now()),"data":{"rolling":{"percent":10}}}}}));
+        }
+        let payload = usage_action_payload(&fixture.runtime, *id, "query_usage", None).await;
+        let refreshed = fixture
+            .runtime
+            .usage_action(*id, &payload, "fixture-key", None)
+            .await
+            .unwrap();
+        let usage = &refreshed["account"]["usage"];
+        assert_eq!(usage["status"], body["status"]);
+        assert_eq!(
+            usage["windows"].as_array().unwrap().len(),
+            body["windows"].as_array().unwrap().len()
+        );
+        assert_eq!(usage["today"]["requests"], body["today"]["requests"]);
+        assert!(!refreshed.to_string().contains("fixture-secret-marker"));
+        assert!(refreshed["account"].get("credentials").is_none());
     }
     assert!(fixture
         .http
@@ -4127,6 +4146,28 @@ async fn native_account_usage_http_contract_is_private_isolated_and_keeps_child_
         .await
         .unwrap();
     assert_eq!(child["windows"][1]["used_percent"], 0.0);
+    let payload = usage_action_payload(&fixture.runtime, 969_803, "query_usage", None).await;
+    let refreshed = fixture
+        .runtime
+        .usage_action(969_803, &payload, "fixture-key", None)
+        .await
+        .unwrap();
+    assert_eq!(
+        refreshed["account"]["usage"]["windows"][1]["used_percent"],
+        0.0
+    );
+    let calls = fixture.http.recorded_calls();
+    for path in [
+        "/api/v1/admin/accounts/969802/usage?source=active&force=true",
+        "/api/v1/admin/accounts/969803/usage?force=true",
+        "/api/v1/admin/accounts/969806/opencode-go-usage/refresh",
+    ] {
+        assert!(
+            calls.iter().any(|call| call.path_and_query == path),
+            "missing {path}"
+        );
+    }
+
     insert_runtime_account(
         &fixture.seed.pool,
         969_807,
@@ -4214,4 +4255,104 @@ async fn slow_samples_keep_tie_order_and_filter_before_limiting() {
         .iter()
         .any(|r| r["account_id"] == id + 2 || r["account_id"] == id + 3));
     db.close().await;
+}
+
+#[tokio::test]
+async fn key_usage_actions_keep_child_statistics_and_recheck_locks_and_parent_credentials() {
+    let _serial = POSTGRES_PROJECTION_LOCK.lock().await;
+    let fixture = start_projection_runtime_fixture("key-usage-actions", false).await;
+    let parent = 969_821;
+    let child = 969_822;
+    let path = "/fixture-key/v1/usage";
+    fixture.http.set_response(
+        path,
+        200,
+        json!({"balance":15,"private":"fixture-parent-secret"}),
+    );
+    for id in [parent, child] {
+        insert_runtime_account(&fixture.seed.pool, id, "anthropic", "apikey",
+            json!({"base_url":format!("{}/fixture-key",fixture.base_url), "api_key":if id == parent { "fixture-parent-secret" } else { "fixture-child-secret" }}), json!({}), false).await;
+    }
+    sqlx::query("UPDATE accounts SET parent_account_id=$1 WHERE id=$2")
+        .bind(parent)
+        .bind(child)
+        .execute(&fixture.seed.pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO usage_logs(id,account_id,created_at,model,input_tokens,output_tokens,total_cost,actual_cost,account_rate_multiplier) VALUES(96982101,969821,now(),'fixture',1000,1000,10,20,2),(96982201,969822,now(),'fixture',10,20,0.5,0.25,3)")
+        .execute(&fixture.seed.pool).await.unwrap();
+    for id in [parent, child] {
+        let payload = usage_action_payload(&fixture.runtime, id, "query_usage", None).await;
+        let response = fixture
+            .runtime
+            .usage_action(id, &payload, "fixture-admin", None)
+            .await
+            .unwrap();
+        let usage = &response["account"]["usage"];
+        assert_eq!(usage["key_quota"]["state"], "ok");
+        assert_eq!(usage["key_quota"]["plans"][0]["remaining"], 15.0);
+        assert_eq!(
+            usage["today"]["tokens"],
+            if id == parent { 2000 } else { 30 }
+        );
+        assert!(!response.to_string().contains("fixture-parent-secret"));
+        assert!(!response.to_string().contains("fixture-child-secret"));
+        assert!(response["account"].get("credentials").is_none());
+    }
+    assert_eq!(
+        fixture
+            .http
+            .recorded_calls()
+            .iter()
+            .filter(|c| c.path_and_query == path
+                && c.key == "fixture-parent-secret"
+                && c.method == "GET")
+            .count(),
+        2
+    );
+    // A control-lock wait must not reuse the account version read before it.
+    let payload = usage_action_payload(&fixture.runtime, child, "query_usage", None).await;
+    let control = fixture.runtime.actions.locks.control(child).await;
+    let runtime = fixture.runtime.clone();
+    let waiting = tokio::spawn(async move {
+        runtime
+            .usage_action(child, &payload, "fixture-admin", None)
+            .await
+    });
+    tokio::time::sleep(StdDuration::from_millis(20)).await;
+    sqlx::query("UPDATE accounts SET name='fixture-changed',updated_at=now() WHERE id=$1")
+        .bind(child)
+        .execute(&fixture.seed.pool)
+        .await
+        .unwrap();
+    drop(control);
+    assert_eq!(waiting.await.unwrap().unwrap_err().status.as_u16(), 409);
+    assert_eq!(
+        fixture
+            .http
+            .recorded_calls()
+            .iter()
+            .filter(|c| c.path_and_query == path)
+            .count(),
+        2
+    );
+    // A parent credential change during the upstream request invalidates its result.
+    *fixture.http.block_path.lock().unwrap() = Some(path.into());
+    let payload = usage_action_payload(&fixture.runtime, child, "query_usage", None).await;
+    let runtime = fixture.runtime.clone();
+    let pending = tokio::spawn(async move {
+        runtime
+            .usage_action(child, &payload, "fixture-admin", None)
+            .await
+    });
+    let permit = tokio::time::timeout(StdDuration::from_secs(3), fixture.http.entered.acquire())
+        .await
+        .unwrap()
+        .unwrap();
+    permit.forget();
+    sqlx::query("UPDATE accounts SET credentials=jsonb_set(credentials,'{api_key}','\"fixture-replaced-parent\"') WHERE id=$1")
+        .bind(parent).execute(&fixture.seed.pool).await.unwrap();
+    fixture.http.release.add_permits(1);
+    assert_eq!(pending.await.unwrap().unwrap_err().status.as_u16(), 409);
+    fixture.close().await;
 }

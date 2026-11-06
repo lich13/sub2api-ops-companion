@@ -491,6 +491,18 @@ impl Runtime {
 
     pub async fn account_usage(&self, id: i64, key: &str, force: bool) -> Result<Value> {
         let row = self.usage_row(id).await?;
+        self.account_usage_from_row(row, key, force)
+            .await
+            .map(|(_, usage)| usage)
+    }
+
+    pub(crate) async fn account_usage_from_row(
+        &self,
+        row: Value,
+        key: &str,
+        force: bool,
+    ) -> Result<(Value, Value)> {
+        let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         let kind = provider(&row);
         let mut usage = self.local_account_usage(&row).await?;
         if row["type"] == "apikey" {
@@ -503,7 +515,12 @@ impl Runtime {
             usage["key_quota"] = serde_json::to_value(value)?;
         }
         if kind.is_empty() {
-            return Ok(usage);
+            let current = if force && row["type"] == "apikey" {
+                self.actions.account(id, None).await?
+            } else {
+                row
+            };
+            return Ok((current, usage));
         }
         let (method, path) = match kind {
             "anthropic" => (
@@ -548,10 +565,14 @@ impl Runtime {
                     if force { "/refresh" } else { "" }
                 ),
             ),
-            _ => return Ok(usage),
+            _ => return Ok((row, usage)),
         };
         let response = self.actions.json(method, &path, key, None, 30).await;
-        let live = self.usage_row(id).await?;
+        let live = if force {
+            self.actions.account(id, None).await?
+        } else {
+            self.usage_row(id).await?
+        };
         if row["credential_version"] != live["credential_version"]
             || row["platform"] != live["platform"]
             || row["type"] != live["type"]
@@ -569,8 +590,8 @@ impl Runtime {
             ),
         }
         if force {
-            self.invalidate_snapshot().await;
+            self.invalidate_snapshot();
         }
-        Ok(usage)
+        Ok((live, usage))
     }
 }

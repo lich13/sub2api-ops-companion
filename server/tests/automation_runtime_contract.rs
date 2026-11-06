@@ -724,7 +724,11 @@ async fn daily_worker_runs_once_in_window_and_persists_missed_work_without_repla
     harness
         .runtime
         .monitor
-        .run_daily(on_time_batch, vec![row])
+        .run_daily_with_recovery(
+            on_time_batch,
+            std::sync::Arc::new(vec![row]),
+            Default::default(),
+        )
         .await
         .expect("run real daily quota query and connection test workers");
 
@@ -805,6 +809,7 @@ async fn interrupted_recovery_verification_uses_existing_retry_without_private_r
                 0,
                 "connection",
                 harness.runtime.monitor.lease(&row).unwrap(),
+                None,
             )
             .await
             .unwrap();
@@ -828,6 +833,7 @@ async fn interrupted_recovery_verification_uses_existing_retry_without_private_r
                 0,
                 "connection",
                 harness.runtime.monitor.lease(&row).unwrap(),
+                None,
             )
             .await
             .unwrap();
@@ -846,6 +852,7 @@ async fn interrupted_recovery_verification_uses_existing_retry_without_private_r
                 0,
                 "connection",
                 harness.runtime.monitor.lease(&row).unwrap(),
+                None,
             )
             .await
             .unwrap();
@@ -878,6 +885,7 @@ async fn interrupted_recovery_ignores_retired_fields_and_preserves_existing_retr
                 0,
                 "connection",
                 lease,
+                None,
             )
             .await
     });
@@ -939,6 +947,7 @@ async fn interrupted_recovery_ignores_retired_fields_and_preserves_existing_retr
             0,
             "connection",
             harness.runtime.monitor.lease(&actual).unwrap(),
+            None,
         )
         .await
         .unwrap();

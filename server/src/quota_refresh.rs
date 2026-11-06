@@ -69,7 +69,7 @@ impl Runtime {
                         Ok(result)=>result,
                         Err(error)=>json!({"status":"failed","error":crate::security::safe_error(&error.detail,200),"error_code":"quota_query_failed"}),
                     },true);
-                    runtime.invalidate_snapshot().await;
+                    runtime.invalidate_snapshot();
                 }
             })).buffer_unordered(limit*2).collect::<Vec<_>>().await;
             let mut batch = runtime

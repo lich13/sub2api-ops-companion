@@ -925,3 +925,42 @@ async fn continuous_appointment_is_accepted_through_the_real_http_router() {
     task.abort();
     h.close().await;
 }
+
+#[tokio::test]
+async fn lm_child_retry_reuses_its_results_but_rechecks_parent_credentials() {
+    let h = RuntimeHarness::new().await;
+    let _p = provider(&h, 9).await;
+    let parent = h.seed_account("apikey", None, json!({})).await;
+    let child = h.seed_account("apikey", Some(parent), json!({})).await;
+    let job = start(&h, child, 3, true, 1).await;
+    let key = job["id"].as_str().unwrap();
+    let failed = h.wait_for_terminal(key).await;
+    assert_eq!(failed["can_retry"], true);
+    h.runtime
+        .tests
+        .retry_failed(key, &uuid::Uuid::new_v4().simple().to_string())
+        .await
+        .unwrap();
+    let completed = h.wait_for_terminal(key).await;
+    assert_eq!(completed["status"], "completed");
+    for index in [0, 2] {
+        assert_eq!(completed["groups"][index], failed["groups"][index]);
+    }
+    let _p = provider(&h, 8).await;
+    let job = start(&h, child, 1, false, 1).await;
+    let key = job["id"].as_str().unwrap();
+    assert_eq!(h.wait_for_terminal(key).await["can_retry"], true);
+    sqlx::query("UPDATE accounts SET credentials=credentials || '{\"api_key\":\"fixture-parent-updated-key\"}'::jsonb WHERE id=$1")
+        .bind(parent).execute(&h.runtime.db.pool).await.unwrap();
+    assert_eq!(
+        h.runtime
+            .tests
+            .retry_failed(key, &uuid::Uuid::new_v4().simple().to_string())
+            .await
+            .unwrap_err()
+            .status
+            .as_u16(),
+        409
+    );
+    h.close().await;
+}

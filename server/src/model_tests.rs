@@ -806,11 +806,15 @@ impl ModelTests {
             .collect::<std::collections::BTreeSet<_>>();
         let aid = integer(&job["account_id"]).ok_or_else(Error::internal)?;
         let row = model_target::account(&self.actions, aid).await?;
-        let owner = model_target::account(
-            &self.actions,
-            integer(&context.owner["id"]).ok_or_else(Error::internal)?,
-        )
-        .await?;
+        let owner = if context.owner["id"] == row["id"] {
+            row.clone()
+        } else {
+            model_target::account(
+                &self.actions,
+                integer(&context.owner["id"]).ok_or_else(Error::internal)?,
+            )
+            .await?
+        };
         if pending.is_empty()
             || model_target::signature(&row) != model_target::signature(&context.row)
             || model_target::signature(&owner) != model_target::signature(&context.owner)

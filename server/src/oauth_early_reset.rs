@@ -511,6 +511,7 @@ impl Monitor {
             method_generation,
             method,
             lease,
+            Some(current),
         )
         .await
     }

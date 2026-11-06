@@ -743,7 +743,7 @@ impl PriorityOrders {
             Ok(())
         })
     }
-    pub async fn cancel(&self, id: &str, v2: bool) -> Result<Value> {
+    pub fn cancel(&self, id: &str, v2: bool) -> Result<Value> {
         if self.actions.settings.read_only {
             return Err(Error::read_only());
         }

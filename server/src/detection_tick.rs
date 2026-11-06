@@ -370,16 +370,15 @@ impl Detection {
             self.update(id, changes)?;
             value = self.control(id)?;
         }
+        if value["enabled"] != true {
+            return Ok(None);
+        }
         let mark = self.mark(id)?;
-        let recheck = value["enabled"] == true && mark["marked"] == true;
+        let recheck = mark["marked"] == true;
         if value["hold"] == true && !(recheck && degradation_rechecks::owns_pause(&value)) {
             let d = &value["disposition"];
             let reason = if d["schedule_verified"] == true {
-                if mark["marked"] == true {
-                    "已标记降智，停调度已确认"
-                } else {
-                    "调度保持关闭"
-                }
+                "调度保持关闭"
             } else {
                 d["reason"].as_str().unwrap_or("自动处置待核对")
             };
@@ -390,9 +389,6 @@ impl Detection {
                     json!({"status":"paused","next_at":null,"reason":reason}),
                 )?;
             }
-            return Ok(None);
-        }
-        if value["enabled"] != true {
             return Ok(None);
         }
         if crate::detection_schedule::smart(&value)

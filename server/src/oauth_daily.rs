@@ -13,11 +13,7 @@ use serde_json::{json, Value};
 use std::{collections::BTreeMap, time::Instant};
 
 impl Monitor {
-    pub async fn run_daily(&self, batch: Value, rows: Vec<Value>) -> Result<()> {
-        self.run_daily_with_recovery(batch, std::sync::Arc::new(rows), BTreeMap::new())
-            .await
-    }
-    pub(crate) async fn run_daily_with_recovery(
+    pub async fn run_daily_with_recovery(
         &self,
         mut batch: Value,
         rows: std::sync::Arc<Vec<Value>>,

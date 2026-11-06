@@ -3395,7 +3395,6 @@ async fn detection_version_hold_and_failed_readback_are_fail_closed() {
     harness
         .controller
         .begin_episode(&row, &initial, &evidence, fixed_now())
-        .await
         .unwrap();
     harness.set_detection_version(json!("2".repeat(64)));
     run_automatic(&harness, &row, now).await;
@@ -3412,7 +3411,6 @@ async fn detection_version_hold_and_failed_readback_are_fail_closed() {
     harness
         .controller
         .begin_episode(&second_row, &second_task, &second_evidence, fixed_now())
-        .await
         .unwrap();
     harness.fail_detection_version(true);
     let result = harness.controller.run_account(&second_row, now).await;
@@ -3431,7 +3429,6 @@ async fn detection_version_hold_and_failed_readback_are_fail_closed() {
     let mut third_task = harness
         .controller
         .begin_episode(&third_row, &old, &third_evidence, fixed_now())
-        .await
         .unwrap();
     third_task = harness
         .controller
@@ -4878,7 +4875,12 @@ fn recovery019_free_plan_preserves_the_full_primary_thirty_day_quota_result() {
     let input = &oracle["input"];
     let at = parse_datetime(&input["at"]).expect("fixed legacy observation time");
     let actual = credit_rules::quota_result(&input["data"], &input["row"], at, None);
-    assert_eq!(actual, oracle["expected"]);
+    let mut expected = oracle["expected"].clone();
+    expected
+        .as_object_mut()
+        .unwrap()
+        .shift_remove("template_type");
+    assert_eq!(actual, expected);
     assert_eq!(actual["success"], true);
     assert_eq!(actual["oauth_quota"]["plan_type"], "free");
     let windows = actual["oauth_quota"]["ui_windows"].as_array().unwrap();

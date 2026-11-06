@@ -17,7 +17,11 @@ fn time(value: &Value) -> DateTime<Utc> {
 fn execute(name: &str, args: &Value) -> Result<Value> {
     Ok(match name {
         "account_dto" => {
-            queries::account_dto(&args["row"], time(&args["now"]), &args["quota_result"])
+            let mut value = queries::account_dto_without_windows(&args["row"], time(&args["now"]));
+            value["usage_windows"] =
+                quota::usage_windows(&args["row"], time(&args["now"]), &args["quota_result"])
+                    .into();
+            value
         }
         "group_dtos" => json!(queries::group_dtos(
             args["rows"].as_array().unwrap(),

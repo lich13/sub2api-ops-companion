@@ -965,10 +965,7 @@ impl Catalog {
         Ok(data)
     }
 
-    pub async fn account_models(&self, id: i64) -> Result<Vec<Value>> {
-        self.account_models_read(id, false).await
-    }
-    pub(crate) async fn account_models_read(&self, id: i64, refresh: bool) -> Result<Vec<Value>> {
+    pub async fn account_models_read(&self, id: i64, refresh: bool) -> Result<Vec<Value>> {
         let account = self
             .db
             .one(

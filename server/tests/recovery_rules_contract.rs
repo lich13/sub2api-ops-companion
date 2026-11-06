@@ -1082,9 +1082,10 @@ fn manual_generation_discards_stale_state_updates() {
     );
 
     let mut update = Update::default();
-    update
-        .results
-        .insert(73, json!({"template_type":"oauth","stale_result":true}));
+    update.results.insert(
+        73,
+        json!({"source":"sub2api_admin_usage","stale_result":true}),
+    );
     update
         .scheduler
         .insert(73, json!({"stale_scheduler_marker":true}));
@@ -1110,6 +1111,12 @@ fn manual_generation_discards_stale_state_updates() {
             .unwrap_or(Value::Null),
         expected["expected_result"],
     );
+    let accepted = json!({"source":"sub2api_admin_usage","current_result":true});
+    let mut current = Update::default();
+    current.results.insert(73, accepted.clone());
+    current.generations = Some(BTreeMap::from([(73, generation)]));
+    state.commit(current).unwrap();
+    assert_eq!(state.snapshot().unwrap()["oauth_results"]["73"], accepted);
 }
 
 #[test]

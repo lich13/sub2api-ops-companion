@@ -1060,9 +1060,10 @@ fn manual_generation_filters_stale_history_and_results_without_losing_query_budg
     let generation = state.manual_control(&row, false, now, "manual").unwrap();
 
     let mut update = Update::default();
-    update
-        .results
-        .insert(id, json!({"template_type":"oauth","stale_result":true}));
+    update.results.insert(
+        id,
+        json!({"source":"sub2api_admin_usage","stale_result":true}),
+    );
     update
         .scheduler
         .insert(id, json!({"stale_scheduler_marker":true}));
@@ -1092,6 +1093,15 @@ fn manual_generation_filters_stale_history_and_results_without_losing_query_budg
     assert!(snapshot["oauth_results"].get(id.to_string()).is_none());
     assert!(snapshot["pending_events"].as_object().unwrap().is_empty());
     assert!(snapshot["recovery_history"].as_object().unwrap().is_empty());
+    let accepted = json!({"source":"sub2api_admin_usage","current_result":true});
+    let mut current = Update::default();
+    current.results.insert(id, accepted.clone());
+    current.generations = Some(BTreeMap::from([(id, generation)]));
+    state.commit(current).unwrap();
+    assert_eq!(
+        state.snapshot().unwrap()["oauth_results"][id.to_string()],
+        accepted
+    );
 }
 
 #[cfg(unix)]

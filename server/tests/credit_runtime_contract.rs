@@ -93,7 +93,12 @@ fn pure_quota_projection_and_reason_tables_match_fixed_python_output() {
         now,
         Some(requested_at),
     );
-    assert_eq!(actual, reference["quota_result"]["expected"]);
+    let mut expected = reference["quota_result"]["expected"].clone();
+    expected
+        .as_object_mut()
+        .unwrap()
+        .shift_remove("template_type");
+    assert_eq!(actual, expected);
 
     let project_case = &reference["project"]["input"];
     assert_eq!(
@@ -107,16 +112,6 @@ fn pure_quota_projection_and_reason_tables_match_fixed_python_output() {
             "reason {code}"
         );
     }
-    for (code, expected) in reference["evidence_errors"]["expected"]
-        .as_object()
-        .unwrap()
-    {
-        assert_eq!(
-            credit_rules::evidence_error(code),
-            expected.as_str().unwrap(),
-            "evidence error {code}"
-        );
-    }
     for (outcome, expected) in reference["labels"]["expected"].as_object().unwrap() {
         assert_eq!(
             credit_rules::label(outcome),
@@ -127,10 +122,6 @@ fn pure_quota_projection_and_reason_tables_match_fixed_python_output() {
     assert_eq!(
         credit_rules::reason("fixture_unknown_reason"),
         reference["fallbacks"]["reason"]
-    );
-    assert_eq!(
-        credit_rules::evidence_error("fixture_unknown_evidence"),
-        reference["fallbacks"]["evidence_error"]
     );
     assert_eq!(
         credit_rules::label("fixture_unknown_outcome"),
@@ -966,7 +957,6 @@ async fn automatic_pause_is_read_back_owned_before_consumption_result() {
     let task = harness
         .controller
         .begin_episode(&row, &old, &evidence, fixed_now())
-        .await
         .expect("admit synthetic credit episode");
     assert!(task["episode"].is_string());
 
@@ -1015,7 +1005,6 @@ async fn five_minute_deadlines_and_unknown_unissued_pause_undo_are_read_back_onl
     let policy = harness
         .controller
         .begin_episode(&row, &json!({}), &evidence, now)
-        .await
         .unwrap();
     assert_eq!(policy["policy_version"], 1);
     assert_eq!(
@@ -1179,7 +1168,6 @@ async fn manual_generation_change_keeps_consumption_receipt_and_never_unpauses()
     let task = harness
         .controller
         .begin_episode(&row, &old, &evidence, fixed_now())
-        .await
         .expect("admit fixture episode");
     let (consume_result, _) = harness
         .controller

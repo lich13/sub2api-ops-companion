@@ -76,12 +76,7 @@ impl Runtime {
             "upstream_rejected".into()
         }
     }
-    pub(crate) async fn revoke_manual(
-        &self,
-        row: &Value,
-        enabled: bool,
-        origin: &str,
-    ) -> Result<()> {
+    pub(crate) fn revoke_manual(&self, row: &Value, enabled: bool, origin: &str) -> Result<()> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         self.detection.human_control(id, true)?;
         if row["platform"] == "openai" && row["type"] == "oauth" {
@@ -102,7 +97,7 @@ impl Runtime {
             .account(id, Some(string(&payload["expected_version"])))
             .await?;
         let enabled = crate::validation::boolean(&payload["schedulable"])?;
-        self.revoke_manual(&row, enabled, "manual").await?;
+        self.revoke_manual(&row, enabled, "manual")?;
         let response = crate::actions::set_schedulable(&self.actions, id, enabled, key, 3).await;
         let live = self.actions.account(id, None).await;
         let verified = response["success"] == true
@@ -111,7 +106,7 @@ impl Runtime {
                     && v["platform"] == row["platform"]
                     && v["type"] == row["type"]
             });
-        self.invalidate_snapshot().await;
+        self.invalidate_snapshot();
         crate::audit::write(
             &self.settings.audit_path,
             "desktop_schedulable",
@@ -142,7 +137,7 @@ impl Runtime {
             .actions
             .account(id, Some(string(&payload["expected_version"])))
             .await?;
-        self.revoke_manual(&row, false, "delete").await?;
+        self.revoke_manual(&row, false, "delete")?;
         let code = self.manual_account_write(id, false, key).await;
         let verified = self
             .actions
@@ -150,7 +145,7 @@ impl Runtime {
             .account(id)
             .await
             .is_err_and(|error| error.status.as_u16() == 404);
-        self.invalidate_snapshot().await;
+        self.invalidate_snapshot();
         crate::audit::write(
             &self.settings.audit_path,
             "desktop_delete_account",
@@ -197,7 +192,7 @@ impl Runtime {
                 && v["type"] == row["type"]
                 && !crate::queries::recoverable(&v, chrono::Utc::now())
         });
-        self.invalidate_snapshot().await;
+        self.invalidate_snapshot();
         crate::audit::write(
             &self.settings.audit_path,
             "desktop_recover_state",
@@ -236,7 +231,7 @@ impl Runtime {
             chrono::Utc::now(),
             None,
         )?;
-        self.invalidate_snapshot().await;
+        self.invalidate_snapshot();
         crate::audit::write(
             &self.settings.audit_path,
             "desktop_degradation_mark",
@@ -358,12 +353,14 @@ impl Runtime {
             && (row["type"] == "apikey" || !crate::account_usage::provider(&row).is_empty())
         {
             let _control = self.actions.locks.control(id).await;
-            self.actions.account(id, Some(expected)).await?;
-            let usage = self.account_usage(id, key, true).await?;
+            let row = self.actions.queries.private_account(id).await?;
+            if !crate::actions::version_matches(&row, expected) {
+                return Err(Error::new(409, "账号已变化，请刷新后重试"));
+            }
+            let (current, usage) = self.account_usage_from_row(row, key, true).await?;
             if matches!(string(&usage["status"]), "error" | "authorization_required") {
                 return Err(Error::new(502, "上游用量读取未成功，请检查授权后重试"));
             }
-            let current = self.actions.account(id, None).await?;
             return Ok(UsageResult::new(current, "用量查询完成", Some(usage)));
         }
         if action == "query_usage" && row["platform"] == "openai" && row["type"] == "oauth" {
@@ -375,7 +372,7 @@ impl Runtime {
                             string(&result["error_code"]),
                         ));
                     }
-                    self.invalidate_snapshot().await;
+                    self.invalidate_snapshot();
                     let current = self.actions.account(id, None).await?;
                     return Ok(UsageResult::new(current, "用量查询完成", None));
                 }
@@ -450,7 +447,7 @@ impl Runtime {
                 .map(|data| json!({"success":true,"data":data})),
             _ => Err(Error::new(422, "此账号不支持该用量操作")),
         };
-        self.invalidate().await;
+        self.invalidate();
         let result = result?;
         if result["success"] != true {
             return Err(uncertain(

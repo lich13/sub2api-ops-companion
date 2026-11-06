@@ -418,6 +418,44 @@ struct FixtureBackend {
     retry_policy: Mutex<sub2ops_server::connection_retry::Policy>,
 }
 
+impl FixtureBackend {
+    fn cycle_read<'a>(
+        &'a self,
+        id: i64,
+        refresh: bool,
+    ) -> BoxFuture<'a, Result<sub2ops_server::operations::CycleObservation>> {
+        Box::pin(async move {
+            self.cycle_reads.lock().unwrap().push((id, refresh));
+            let gate = if refresh {
+                self.cycle_gate.lock().unwrap().take()
+            } else {
+                None
+            };
+            if let Some(gate) = gate {
+                gate.notified().await;
+            }
+            if refresh {
+                if let Some(message) = self.cycle_refresh_error.lock().unwrap().clone() {
+                    return Err(Error::new(502, message));
+                }
+            }
+            let row = self
+                .cycle_db
+                .one(
+                    &sub2ops_server::sql::MODEL_ACCOUNT_SQL.replace("{filter}", "AND a.id=$1"),
+                    &[id.into()],
+                )
+                .await?
+                .ok_or_else(|| Error::new(404, "fixture account absent"))?;
+            let at = self.now();
+            let saved = sub2ops_server::quota::latest_result(&row, &Value::Null, at);
+            let evidence =
+                sub2ops_server::credit_rules::upstream_evidence(&self.cycle_db, &row, at).await?;
+            sub2ops_server::operations::observe_cycle(&row, &saved, &evidence, at)
+        })
+    }
+}
+
 impl Backend for FixtureBackend {
     fn retry_config(&self) -> Result<sub2ops_server::connection_retry::Policy> {
         Ok(*self.retry_policy.lock().unwrap())
@@ -455,36 +493,24 @@ impl Backend for FixtureBackend {
         &'a self,
         id: i64,
         _key: &'a str,
-        refresh: bool,
     ) -> BoxFuture<'a, Result<sub2ops_server::operations::CycleObservation>> {
+        self.cycle_read(id, true)
+    }
+    fn cycle_observations<'a>(
+        &'a self,
+        accounts: &'a [i64],
+    ) -> BoxFuture<
+        'a,
+        Result<
+            std::collections::BTreeMap<i64, Result<sub2ops_server::operations::CycleObservation>>,
+        >,
+    > {
         Box::pin(async move {
-            self.cycle_reads.lock().unwrap().push((id, refresh));
-            let gate = if refresh {
-                self.cycle_gate.lock().unwrap().take()
-            } else {
-                None
-            };
-            if let Some(gate) = gate {
-                gate.notified().await;
+            let mut observations = std::collections::BTreeMap::new();
+            for id in accounts {
+                observations.insert(*id, self.cycle_read(*id, false).await);
             }
-            if refresh {
-                if let Some(message) = self.cycle_refresh_error.lock().unwrap().clone() {
-                    return Err(Error::new(502, message));
-                }
-            }
-            let row = self
-                .cycle_db
-                .one(
-                    &sub2ops_server::sql::MODEL_ACCOUNT_SQL.replace("{filter}", "AND a.id=$1"),
-                    &[id.into()],
-                )
-                .await?
-                .ok_or_else(|| Error::new(404, "fixture account absent"))?;
-            let at = self.now();
-            let saved = sub2ops_server::quota::latest_result(&row, &Value::Null, at);
-            let evidence =
-                sub2ops_server::credit_rules::upstream_evidence(&self.cycle_db, &row, at).await?;
-            sub2ops_server::operations::observe_cycle(&row, &saved, &evidence, at)
+            Ok(observations)
         })
     }
 
@@ -3538,8 +3564,11 @@ async fn batched_cycle_observations_match_live_reads_and_keep_per_account_failur
             runtime
                 .operations
                 .backend
-                .cycle_observation(*id, ADMIN_KEY, false)
-                .await,
+                .cycle_observations(&[*id])
+                .await
+                .unwrap()
+                .remove(id)
+                .unwrap(),
             &batch[id],
         ) {
             (Ok(single), Ok(all)) => {
