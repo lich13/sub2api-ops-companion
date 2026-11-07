@@ -28,11 +28,15 @@ export default function AccountSettingsDialog({ account, initialSection, online,
   const [query, setQuery] = useState(""), [catalog, setCatalog] = useState<SyncResult | null>(null), [selected, setSelected] = useState(new Set<string>());
   const [busy, setBusy] = useState(false), [syncing, setSyncing] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState(""), [notice, setNotice] = useState("");
   const generation = useRef(0), submitGuard = useRef(false), syncGuard = useRef(false);
-  const dialog = useRef<HTMLElement>(null);
-  useDialogFocus(dialog);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const dialog = useRef<HTMLElement>(null), discardDialog = useRef<HTMLElement>(null);
+  useDialogFocus(dialog, !confirmDiscard);
+  useDialogFocus(discardDialog, confirmDiscard);
   const isProxy = section === "proxy", action = isProxy ? "proxy" : "model_config";
-  useBackAction(true, close);
-  useEffect(() => { const key = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); close(); } }; document.addEventListener("keydown", key); return () => document.removeEventListener("keydown", key); }, [close]);
+  const dirty = !!settings && (isProxy ? proxyId !== settings.proxy_id : JSON.stringify(profile) !== JSON.stringify(settings.model_config));
+  const dismiss = () => { if (dirty) setConfirmDiscard(true); else close(); };
+  useBackAction(true, () => { if (confirmDiscard) setConfirmDiscard(false); else dismiss(); });
+  useEffect(() => { const key = (e: KeyboardEvent) => { if (e.key !== "Escape" || e.isComposing || e.defaultPrevented) return; e.preventDefault(); e.stopPropagation(); if (confirmDiscard) setConfirmDiscard(false); else if (!dirty) close(); }; document.addEventListener("keydown", key); return () => document.removeEventListener("keydown", key); }, [close, dirty, confirmDiscard]);
   async function read() {
     const current = ++generation.current;
     setLoading(true); setError("");
@@ -52,7 +56,6 @@ export default function AccountSettingsDialog({ account, initialSection, online,
       .catch(e => { if (!cancelled) setError(String(e).replace(/^Error: /, "")); });
     return () => { cancelled = true; };
   }, [isProxy, proxyRefresh]);
-  const dirty = !!settings && (isProxy ? proxyId !== settings.proxy_id : JSON.stringify(profile) !== JSON.stringify(settings.model_config));
   const invalid = isProxy ? "" : validateProfile(profile);
   const writable = !!settings?.capabilities[action]?.editable;
   async function save() {
@@ -96,8 +99,8 @@ export default function AccountSettingsDialog({ account, initialSection, online,
     if (profile.whitelist.length + additions.length > 300) { setError("白名单最多 300 项"); return; }
     setProfile({ ...profile, whitelist: [...profile.whitelist, ...additions] }); setSelected(new Set());
   }
-  return <div className="modal-backdrop" onClick={close}><section ref={dialog} className="account-settings-dialog" role="dialog" aria-modal="true" aria-label="账号设置" onClick={e => e.stopPropagation()}>
-    <header><div><h2>{isProxy ? "选择代理" : "模型配置"}</h2><span title={account.name}>{account.name} · #{account.id}</span></div><button className="icon-button" aria-label="关闭账号设置" onClick={close}><X size={18}/></button></header>
+  return <><div className="modal-backdrop" inert={confirmDiscard} onMouseDown={e => { if (e.target === e.currentTarget && !dirty) close(); }}><section ref={dialog} className="account-settings-dialog" role="dialog" aria-modal="true" aria-label="账号设置" onClick={e => e.stopPropagation()}>
+    <header><div><h2>{isProxy ? "选择代理" : "模型配置"}</h2><span title={account.name}>{account.name} · #{account.id}</span></div><button className="icon-button" aria-label="关闭账号设置" onClick={dismiss}><X size={18}/></button></header>
     <div className="account-settings-body">
       {!isProxy && <div className="settings-tabs" role="tablist" aria-label="模型配置区域">
         {([['whitelist', '模型白名单'], ['mappings', '模型映射']] as const).map(([id, label]) => <button type="button" key={id} role="tab" aria-selected={section === id} onClick={() => { setSection(id); setQuery(""); }}>{label}</button>)}
@@ -129,5 +132,5 @@ export default function AccountSettingsDialog({ account, initialSection, online,
       {notice && <p className="settings-notice" role="status">{notice}</p>}
     </div>
     <footer><button disabled={!dirty || busy} onClick={() => { if (settings) { setProfile(structuredClone(settings.model_config)); setProxyId(settings.proxy_id); setError(""); setNotice(""); } }}>放弃修改</button><button className="primary" disabled={!online || busy || !writable || !dirty || !!invalid || (isProxy && proxyId !== null && !proxyReady)} onClick={() => void save()}>{busy ? <LoaderCircle className="spin" size={15}/> : <Save size={15}/>}保存</button></footer>
-  </section></div>;
+  </section></div>{confirmDiscard && <div className="modal-backdrop"><section ref={discardDialog} className="discard-groups-dialog" role="alertdialog" aria-modal="true" aria-label="放弃未保存的更改？"><h2>放弃未保存的更改？</h2><div><button onClick={() => setConfirmDiscard(false)}>继续编辑</button><button className="primary" onClick={close}>放弃修改</button></div></section></div>}</>;
 }

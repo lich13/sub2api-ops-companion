@@ -59,7 +59,6 @@ pub fn validate_credit(value: &Value) -> Result<()> {
         "consume_deadline_at",
         "verification_deadline_at",
         "completed_at",
-        "supplement_attempt_at",
         "clear_requested_at",
         "recovered_evidence_at",
     ] {
@@ -133,35 +132,6 @@ pub fn available_credits(value: &Value, at: DateTime<Utc>) -> Option<i64> {
         .count();
     Some((content["available_count"].as_i64()? - expired as i64).max(0))
 }
-pub fn validate_observation(value: &Value) -> Result<()> {
-    validate_observation_shape(value)
-}
-fn validate_observation_shape(value: &Value) -> Result<()> {
-    if !value.is_object() || value["version"].as_i64() != Some(1) {
-        return Err(invalid("重置卡观测状态无效"));
-    }
-    if parse_datetime(&value["observed_at"]).is_none() {
-        return Err(invalid("重置卡观测时间无效"));
-    }
-    let expires = value["expires_at"]
-        .as_array()
-        .ok_or_else(|| invalid("重置卡到期信息无效"))?;
-    if value["available_count"]
-        .as_u64()
-        .is_none_or(|count| count > expires.len() as u64)
-        || expires.len() > 10_000
-        || expires
-            .iter()
-            .any(|v| parse_datetime(v).is_none_or(|at| *v != datetime(at)))
-        || expires
-            .windows(2)
-            .any(|pair| string(&pair[0]) > string(&pair[1]))
-    {
-        return Err(invalid("重置卡观测内容无效"));
-    }
-    Ok(())
-}
-
 pub fn query_metadata(meta: &Value, saved: &Value) -> Result<Value> {
     if meta.get("quota_query").is_some_and(|v| !v.is_object()) {
         return Err(invalid("OAuth 查询状态无效"));
@@ -206,20 +176,7 @@ pub fn query_metadata(meta: &Value, saved: &Value) -> Result<Value> {
     Ok(value)
 }
 
-fn validate_observations(value: &Value) -> Result<()> {
-    for meta in value["scheduler"]
-        .as_object()
-        .into_iter()
-        .flat_map(|v| v.values())
-    {
-        if let Some(observation) = meta.get("reset_credit_observation") {
-            validate_observation(observation)?;
-        }
-    }
-    Ok(())
-}
 fn load(value: &mut Value) -> Result<bool> {
-    validate_observations(value)?;
     // Validate these rows before legacy normalization can discard them.
     if ["pending_events", "recovery_history"].iter().any(|key| {
         value[*key]
@@ -291,11 +248,6 @@ fn validate_shape(value: &Value) -> Result<()> {
                 }
             }
         }
-        if let Some(observation) = meta.get("reset_credit_observation") {
-            if !observation.is_object() {
-                return Err(invalid("重置卡观测状态无效"));
-            }
-        }
         if let Some(admission) = meta.get("credit_admission").filter(|v| !v.is_null()) {
             if !admission.is_object()
                 || parse_datetime(&admission["trigger_at"]).is_none()
@@ -356,12 +308,10 @@ pub fn normalize(raw: &Value) -> Value {
             continue;
         }
         let mut value = value.clone();
-        if let Some(observation) = value.get_mut("reset_credit_observation") {
-            *observation = pick(
-                observation,
-                &["version", "observed_at", "available_count", "expires_at"],
-            );
-        }
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("reset_credit_observation");
         if let Some(intent) = value.get_mut("recovery_intent") {
             if !intent.is_object() {
                 *intent = json!({});

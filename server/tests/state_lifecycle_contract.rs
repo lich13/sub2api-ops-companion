@@ -49,7 +49,7 @@ fn database_url() -> String {
 }
 
 #[test]
-fn state_0184_upgrade_preserves_receipts_and_compacts_observations() {
+fn state_0184_upgrade_preserves_receipts_and_removes_unused_observations() {
     let temporary = tempfile::tempdir().unwrap();
     let path = temporary.path().join("oauth.json");
     let fixture: Value =
@@ -72,6 +72,11 @@ fn state_0184_upgrade_preserves_receipts_and_compacts_observations() {
         "daily_test":{"next_at":at},"oauth_results":{}});
     fs::write(&path, serde_json::to_vec(&raw).unwrap()).unwrap();
     let store = OAuthState::new(path.clone(), false);
+    assert!(store.snapshot().unwrap()["scheduler"]["7"]["reset_credit_observation"].is_null());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&fs::read(&path).unwrap()).unwrap(),
+        raw
+    );
     store.transaction(|_| Ok(())).unwrap();
     let migrated = OAuthState::new(path.clone(), false).snapshot().unwrap();
     for field in [
@@ -89,10 +94,7 @@ fn state_0184_upgrade_preserves_receipts_and_compacts_observations() {
         meta["manual_control"],
         raw["scheduler"]["7"]["manual_control"]
     );
-    assert_eq!(
-        meta["reset_credit_observation"].as_object().unwrap().len(),
-        4
-    );
+    assert!(meta["reset_credit_observation"].is_null());
     assert_eq!(meta["recovery_intent"]["status"], "ready");
     assert_eq!(meta["recovery_intent"]["attempt_count"], 2);
     assert_eq!(meta["recovery_intent"]["connection_attempt_count"], 2);
@@ -612,7 +614,6 @@ async fn coordinator_drain_closes_aborts_owned_query_and_releases_state_lock() {
                     ..QueryOptions::default()
                 },
                 false,
-                1,
                 |_| true,
                 move || {
                     called_first.fetch_add(1, Ordering::SeqCst);
@@ -641,7 +642,6 @@ async fn coordinator_drain_closes_aborts_owned_query_and_releases_state_lock() {
                 ..QueryOptions::default()
             },
             false,
-            1,
             |_| true,
             move || async move {
                 duplicate_count_for_op.fetch_add(1, Ordering::SeqCst);
@@ -682,7 +682,6 @@ async fn coordinator_drain_closes_aborts_owned_query_and_releases_state_lock() {
                 ..QueryOptions::default()
             },
             false,
-            1,
             |_| true,
             move || async move {
                 rejected_count_for_op.fetch_add(1, Ordering::SeqCst);

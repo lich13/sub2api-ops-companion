@@ -16,6 +16,7 @@ import { fullTime, type Account, type Preferences } from "./types";
 import { watchWindowFocus } from "./bridge";
 import {
   cacheTokenCount,
+  decimal,
   latency,
   latencyTone,
   modelRoute,
@@ -291,8 +292,7 @@ function RecordDetail({
       <dd>{value ?? "—"}</dd>
     </React.Fragment>
   );
-  const rawMoney = (value: string | null) =>
-    value === null ? "—" : `$${value}`;
+  const detailMoney = (value: string | null) => money(value, 8);
   return (
     <div
       className="drawer-backdrop"
@@ -408,15 +408,15 @@ function RecordDetail({
                   pair("5m 缓存", tokenCount(row.cache_creation_5m_tokens))}
                 {!!row.cache_creation_1h_tokens &&
                   pair("1h 缓存", tokenCount(row.cache_creation_1h_tokens))}
-                {pair("输入费用", rawMoney(row.input_cost))}
-                {pair("输出费用", rawMoney(row.output_cost))}
-                {pair("缓存读取费用", rawMoney(row.cache_read_cost))}
-                {pair("缓存写入费用", rawMoney(row.cache_creation_cost))}
-                {pair("标准费用", rawMoney(row.total_cost))}
-                {pair("用户实扣", rawMoney(row.actual_cost))}
-                {pair("账户费用", rawMoney(row.account_cost))}
-                {pair("用户倍率", row.rate_multiplier ?? "—")}
-                {pair("账户倍率", row.account_rate_multiplier ?? "1")}
+                {pair("输入费用", detailMoney(row.input_cost))}
+                {pair("输出费用", detailMoney(row.output_cost))}
+                {pair("缓存读取费用", detailMoney(row.cache_read_cost))}
+                {pair("缓存写入费用", detailMoney(row.cache_creation_cost))}
+                {pair("标准费用", detailMoney(row.total_cost))}
+                {pair("用户实扣", detailMoney(row.actual_cost))}
+                {pair("账户费用", detailMoney(row.account_cost))}
+                {pair("用户倍率", decimal(row.rate_multiplier, 2))}
+                {pair("账户倍率", decimal(row.account_rate_multiplier ?? "1", 2))}
                 {pair("计费模式", <Cell column="billing" row={row} />)}
                 {!!row.image_count && pair("图片", tokenCount(row.image_count))}
                 {!!row.image_input_tokens &&
@@ -424,9 +424,9 @@ function RecordDetail({
                 {!!row.image_output_tokens &&
                   pair("图片输出 Token", tokenCount(row.image_output_tokens))}
                 {!!Number(row.image_input_cost) &&
-                  pair("图片输入费用", rawMoney(row.image_input_cost))}
+                  pair("图片输入费用", detailMoney(row.image_input_cost))}
                 {!!Number(row.image_output_cost) &&
-                  pair("图片输出费用", rawMoney(row.image_output_cost))}
+                  pair("图片输出费用", detailMoney(row.image_output_cost))}
                 {!!row.video_count &&
                   pair(
                     "视频",

@@ -593,7 +593,16 @@ impl Actions {
         Ok(filter_models(&list[..list.len().min(1000)], &allowlists))
     }
     pub(crate) async fn candidate_source(&self, id: i64, key: &str) -> Result<(String, String)> {
-        let row = self.account(id, None).await?;
+        let row = self.queries.db.one(
+            "SELECT a.id,a.platform,a.type,a.proxy_id,a.extra,
+                nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id,
+                md5(a.credentials::text) AS credential_version,
+                md5(coalesce(a.credentials->'model_mapping','{}'::jsonb)::text) AS model_mapping_version,
+                (SELECT md5(jsonb_agg(jsonb_build_array(g.id,g.model_allowlist) ORDER BY g.id)::text)
+                 FROM account_groups ag JOIN groups g ON g.id=ag.group_id AND g.deleted_at IS NULL WHERE ag.account_id=a.id) AS model_catalog_version,
+                ARRAY(SELECT ag.group_id FROM account_groups ag JOIN groups g ON g.id=ag.group_id AND g.deleted_at IS NULL WHERE ag.account_id=a.id ORDER BY ag.group_id) AS group_ids
+             FROM accounts a WHERE a.id=$1 AND a.deleted_at IS NULL", &[id.into()],
+        ).await?.ok_or_else(|| Error::new(404,"账号不存在"))?;
         let parent = integer(&row["parent_account_id"])
             .or_else(|| integer(&row["extra"]["parent_account_id"]))
             .filter(|id| *id > 0);

@@ -457,18 +457,7 @@ impl ModelTests {
             }
             return Ok(old);
         }
-        let row = model_target::account(&self.actions, id)
-            .await
-            .map_err(|error| {
-                if error.status.as_u16() == 404 {
-                    Error::new(422, "此账号类型不支持模型检测")
-                } else {
-                    error
-                }
-            })?;
-        if !model_target::supported(&row) {
-            return Err(Error::new(422, "此账号类型不支持模型检测"));
-        }
+        let row = model_target::account(&self.actions, id).await?;
         if row["platform"] != "openai" && payload["engine"] != crate::lm_detector::ENGINE {
             return Err(Error::new(422, "此平台仅支持 LM Detector"));
         }

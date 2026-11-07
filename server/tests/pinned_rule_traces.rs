@@ -86,12 +86,6 @@ fn execute(name: &str, args: &Value) -> Result<Value> {
                 .map(|value| u16::try_from(value).unwrap()),
             &args["data"],
         ),
-        "observation_from_usage" => reset_credit_observation::from_usage(
-            &args["result"],
-            time(&args["started"]),
-            time(&args["completed"]),
-        )
-        .unwrap_or(Value::Null),
         "latest_completed_oauth_result" => {
             queries::latest_completed_result(&args["result"], &args["scheduler_row"])
         }
@@ -242,6 +236,37 @@ fn check(legacy_id: &str) {
     }
 }
 
+#[test]
+fn manual_terminal_projection_preserves_history() {
+    for stage in ["manual", "recovered", "closed"] {
+        let args = json!({"value":{
+            "source":"manual","stage":stage,"episode":"fixture-episode",
+            "attempt_at":"2026-10-08T04:00:00+00:00","consumed":true,
+            "reset_at":"2026-10-08T04:00:00+00:00","next_at":null,"owns_pause":false
+        },"notices":null});
+        let original = args.clone();
+        assert_eq!(execute("project_state", &args).unwrap(), Value::Null);
+        assert_eq!(args, original);
+        let mut automatic = args;
+        automatic["value"]["source"] = "auto".into();
+        assert_eq!(
+            execute("project_state", &automatic).unwrap()["stage"],
+            stage
+        );
+    }
+}
+
+#[test]
+fn unattempted_manual_projection_preserves_history() {
+    let args = json!({"value":{
+        "source":"manual","stage":"manual","episode":"fixture-episode",
+        "attempt_at":null,"consumed":null,"next_at":null,"owns_pause":false
+    },"notices":null});
+    let original = args.clone();
+    assert_eq!(execute("project_state", &args).unwrap(), Value::Null);
+    assert_eq!(args, original);
+}
+
 // The individual tests below correspond to pinned Python test identities.
 
 #[test]
@@ -335,37 +360,6 @@ fn codex_identity_codexidentitytests_test_manual_version_rewrites_custom_leading
 #[test]
 fn recovery_config030_autoresetprojection030tests_test_active_recovery_steps_remain_visible() {
     check("py:tests.test_recovery_config030:AutoResetProjection030Tests.test_active_recovery_steps_remain_visible");
-}
-
-#[test]
-fn manual_terminal_projection_preserves_history() {
-    for stage in ["manual", "recovered", "closed"] {
-        let args = json!({"value":{
-            "source":"manual","stage":stage,"episode":"fixture-episode",
-            "attempt_at":"2026-10-08T04:00:00+00:00","consumed":true,
-            "reset_at":"2026-10-08T04:00:00+00:00","next_at":null,"owns_pause":false
-        },"notices":null});
-        let original = args.clone();
-        assert_eq!(execute("project_state", &args).unwrap(), Value::Null);
-        assert_eq!(args, original);
-        let mut automatic = args;
-        automatic["value"]["source"] = "auto".into();
-        assert_eq!(
-            execute("project_state", &automatic).unwrap()["stage"],
-            stage
-        );
-    }
-}
-
-#[test]
-fn unattempted_manual_projection_preserves_history() {
-    let args = json!({"value":{
-        "source":"manual","stage":"manual","episode":"fixture-episode",
-        "attempt_at":null,"consumed":null,"next_at":null,"owns_pause":false
-    },"notices":null});
-    let original = args.clone();
-    assert_eq!(execute("project_state", &args).unwrap(), Value::Null);
-    assert_eq!(args, original);
 }
 
 #[test]

@@ -32,7 +32,7 @@ use sub2ops_server::{
     execution::TestSlots,
     oauth_admission, oauth_native,
     oauth_queries::{Coordinator, QueryOptions, Source},
-    oauth_state::{normalized_credits, OAuthState},
+    oauth_state::OAuthState,
     queries::Queries,
     reset_credit_observation,
     settings::Settings,
@@ -943,22 +943,11 @@ impl Harness {
             .store
             .transaction(|state| {
                 state["oauth_results"][id.to_string()] = result.clone();
+                state["scheduler"][id.to_string()] = json!({});
                 Ok(())
             })
             .expect("persist synthetic quota result");
 
-        let credits = normalized_credits(&row["extra"]["codex_reset_credit_snapshot"])
-            .expect("normalize synthetic credit snapshot");
-        let observation = reset_credit_observation::create(&credits, now - Duration::seconds(1))
-            .expect("create fixture credit observation");
-        controller
-            .store
-            .transaction(|state| {
-                state["scheduler"][id.to_string()]["reset_credit_observation"] =
-                    observation.clone();
-                Ok(())
-            })
-            .expect("persist synthetic credit observation");
         sqlx::query(
             "INSERT INTO ops_error_logs \
              (id,account_id,created_at,platform,error_owner,error_phase,status_code,upstream_status_code,error_message,upstream_error_message) \
@@ -1557,11 +1546,8 @@ async fn current_cards_authorize_a_new_episode_without_a_matching_old_observatio
         } else {
             now - Duration::hours(1)
         };
-        let old = reset_credit_observation::create(
-            &normalized_credits(&snapshot(old_count, now + Duration::days(2), observed)).unwrap(),
-            observed,
-        )
-        .unwrap();
+        let old = json!({"version":1,"observed_at":datetime(observed),"available_count":old_count,
+            "expires_at":[datetime(now + Duration::days(2))]});
         h.controller.store.transaction(|state| {
             let meta = &mut state["scheduler"][id.to_string()];
             if case == "missing" {
@@ -1640,15 +1626,6 @@ async fn card_observed_at_the_weekly_window_start_can_be_consumed_without_refres
         snapshot(1, now + Duration::days(2), window_start),
     )
     .await;
-    harness
-        .controller
-        .store
-        .transaction(|state| {
-            state["scheduler"][id.to_string()]["reset_credit_observation"]["observed_at"] =
-                json!(datetime(window_start));
-            Ok(())
-        })
-        .unwrap();
     harness.set_config(recovery_config(id, "connection"));
     harness.mock.set_reset(
         id,
@@ -1802,19 +1779,6 @@ async fn provider_error_and_account_fallback_evidence_are_distinct_and_redacted(
         .await
         .unwrap();
     let fallback_row = reload_account(&harness, fallback_id).await;
-    let credits =
-        normalized_credits(&fallback_row["extra"]["codex_reset_credit_snapshot"]).unwrap();
-    let observation =
-        reset_credit_observation::create(&credits, now - Duration::seconds(1)).unwrap();
-    harness
-        .controller
-        .store
-        .transaction(|state| {
-            state["scheduler"][fallback_id.to_string()]["reset_credit_observation"] =
-                observation.clone();
-            Ok(())
-        })
-        .unwrap();
     sqlx::query("DELETE FROM ops_error_logs WHERE account_id=$1")
         .bind(fallback_id)
         .execute(&harness.db.pool)
@@ -4252,7 +4216,7 @@ async fn terminal_credit_outcomes_and_bark_receipts_survive_restart_once() {
 }
 
 #[tokio::test]
-async fn coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts() {
+async fn coordinator_quota_results_do_not_persist_unused_card_observations() {
     let harness = Harness::new(false).await;
     let now = fixed_now();
     let good = snapshot(1, now + Duration::days(2), now);
@@ -4320,7 +4284,7 @@ async fn coordinator_observation_requires_fresh_explicit_matching_database_and_s
         cache_persisted,
         writeback,
         change_credentials,
-        expected_observation,
+        _former_observation,
     ) in cases
     {
         let row = harness.seed_account(true, false).await;
@@ -4354,20 +4318,13 @@ async fn coordinator_observation_requires_fresh_explicit_matching_database_and_s
         assert_eq!(harness.mock.count(Method::GET, "/usage"), before + 1);
         let state = harness.controller.store.snapshot().unwrap();
         let observation = &state["scheduler"][id.to_string()]["reset_credit_observation"];
-        assert_eq!(observation.is_object(), expected_observation, "{name}");
-        if expected_observation {
-            assert_eq!(observation["available_count"], 1);
-            assert_eq!(observation["observed_at"], datetime(now));
-            assert_eq!(observation.as_object().unwrap().len(), 4);
-            assert!(!observation.to_string().contains(ADMIN_KEY));
-        } else {
-            assert_eq!(state["oauth_results"][id.to_string()]["success"], true);
-            assert!(
-                state["scheduler"][id.to_string()]["quota_query"]["automatic_attempts"]
-                    .as_array()
-                    .is_none_or(|attempts| attempts.is_empty())
-            );
-        }
+        assert!(observation.is_null(), "{name}");
+        assert_eq!(state["oauth_results"][id.to_string()]["success"], true);
+        assert!(
+            state["scheduler"][id.to_string()]["quota_query"]["automatic_attempts"]
+                .as_array()
+                .is_none_or(|attempts| attempts.is_empty())
+        );
     }
 
     let (row, _) = harness.seed_depletion(&harness.controller).await;
@@ -4505,7 +4462,7 @@ async fn usage_refresh_http_429_is_status_only_and_cannot_create_an_observation(
 }
 
 #[tokio::test]
-async fn corrupt_native_observation_cannot_fall_back_to_a_legacy_fetched_timestamp() {
+async fn unused_legacy_observation_is_ignored_and_removed_on_normal_write() {
     let now = fixed_now();
     for (field, bad_value) in [
         ("available_count", json!(-1)),
@@ -4526,24 +4483,15 @@ async fn corrupt_native_observation_cannot_fall_back_to_a_legacy_fetched_timesta
         .unwrap();
         harness.set_config(recovery_config(id, "connection"));
 
-        let result = harness.controller.run_account(&row, now).await;
-        assert!(result.is_err(), "corrupt {field} was accepted");
-        assert_eq!(harness.mock.total(), 0, "corrupt {field} authorized I/O");
-        assert_eq!(harness.mock.count(Method::GET, "/usage"), 0);
-        assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 0);
-        assert_eq!(harness.mock.count(Method::POST, "/test"), 0);
-        assert_eq!(harness.mock.count(Method::POST, "/schedulable"), 0);
-        let stored =
-            serde_json::from_slice::<Value>(&fs::read(&harness.settings.oauth_path).unwrap())
-                .unwrap();
-        assert_eq!(
-            stored["scheduler"][id.to_string()]["auto_reset_credit"],
-            Value::Null
-        );
-        assert_eq!(
-            stored["scheduler"][id.to_string()]["reset_credit_observation"][field],
-            bad_value
-        );
+        let before = fs::read(&harness.settings.oauth_path).unwrap();
+        let loaded = harness.controller.store.snapshot().unwrap();
+        assert!(loaded["scheduler"][id.to_string()]["reset_credit_observation"].is_null());
+        assert_eq!(fs::read(&harness.settings.oauth_path).unwrap(), before);
+        harness.controller.run_account(&row, now).await.unwrap();
+        let stored: Value =
+            serde_json::from_slice(&fs::read(&harness.settings.oauth_path).unwrap()).unwrap();
+        assert!(stored["scheduler"][id.to_string()]["reset_credit_observation"].is_null());
+        assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 1);
     }
 }
 
@@ -4770,10 +4718,12 @@ async fn explicit_loopback_card_observation_authorizes_one_real_reset_and_immedi
         .await;
     assert_eq!(query["success"], true, "{query}");
     let observed_state = harness.controller.store.snapshot().unwrap();
-    let observation = &observed_state["scheduler"][id.to_string()]["reset_credit_observation"];
-    assert_eq!(observation["available_count"], 2);
-    assert_eq!(observation["observed_at"], datetime(now));
-    assert_eq!(observation.as_object().unwrap().len(), 4);
+    assert!(observed_state["scheduler"][id.to_string()]["reset_credit_observation"].is_null());
+    let snapshot_row = reload_account(&harness, id).await;
+    assert_eq!(
+        snapshot_row["extra"]["codex_reset_credit_snapshot"]["available_count"],
+        2
+    );
     assert_eq!(harness.mock.count(Method::GET, "/usage"), 1);
 
     let live = reload_account(&harness, id).await;
@@ -5193,19 +5143,6 @@ async fn unchanged_cards_remain_usable_after_token_refresh_new_limit_and_reset_r
         let now = fixed_now();
         let (row, _) = h.seed_depletion(&h.controller).await;
         let id = integer(&row["id"]).unwrap();
-        let observation = reset_credit_observation::create(
-            &normalized_credits(&row["extra"]["codex_reset_credit_snapshot"]).unwrap(),
-            now - Duration::hours(1),
-        )
-        .unwrap();
-        h.controller
-            .store
-            .transaction(|state| {
-                state["scheduler"][id.to_string()]["reset_credit_observation"] =
-                    observation.clone();
-                Ok(())
-            })
-            .unwrap();
         h.mock.set_reset(
             id,
             200,

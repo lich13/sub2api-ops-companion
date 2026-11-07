@@ -148,6 +148,69 @@ afterEach(async () => {
 });
 
 describe("account settings dialog", () => {
+  it("ignores IME Escape and protects dirty drafts from Escape and the backdrop", async () => {
+    await renderDialog("mappings");
+    const input = container.querySelector<HTMLInputElement>('[aria-label="转发模型 1"]')!;
+    const backdrop = container.querySelector('.modal-backdrop')!;
+    await act(async () => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true })); });
+    expect(close).not.toHaveBeenCalled();
+    await change(input, "gpt-draft");
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      backdrop.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      input.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      backdrop.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      backdrop.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(close).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(input.value).toBe("gpt-draft");
+  });
+
+  it("confirms an explicit dirty close and lets the user continue editing", async () => {
+    await renderDialog("mappings");
+    const input = container.querySelector<HTMLInputElement>('[aria-label="转发模型 1"]')!;
+    await change(input, "gpt-draft");
+    await click(container.querySelector('[aria-label="关闭账号设置"]')!);
+    expect(close).not.toHaveBeenCalled();
+    const confirmation = container.querySelector('[role="alertdialog"]')!;
+    expect(confirmation.textContent).toContain("放弃未保存的更改？");
+    await click(button("继续编辑", confirmation));
+    expect(container.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(input.value).toBe("gpt-draft");
+    await click(container.querySelector('[aria-label="关闭账号设置"]')!);
+    await click(button("放弃修改", container.querySelector('[role="alertdialog"]')!));
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a mapping through repeated same-account refresh and offline recovery", async () => {
+    await renderDialog("mappings");
+    await change(container.querySelector<HTMLInputElement>('[aria-label="转发模型 1"]')!, "gpt-draft");
+    for (const online of [true, false, false, true, true]) {
+      await act(async () => root.render(<AccountSettingsDialog account={account({ priority: 99 })} initialSection="mappings" online={online} close={close} />));
+      expect(container.querySelector<HTMLInputElement>('[aria-label="转发模型 1"]')?.value).toBe("gpt-draft");
+      expect(button("保存").disabled).toBe(!online);
+    }
+    expect(close).not.toHaveBeenCalled();
+    expect(vi.mocked(api).mock.calls.filter(([, path]) => path === "/accounts/101/settings")).toHaveLength(1);
+  });
+
+  it("retains the draft on a failed or unverified save and closes only after verification", async () => {
+    await renderDialog("mappings");
+    await change(container.querySelector<HTMLInputElement>('[aria-label="转发模型 1"]')!, "gpt-draft");
+    vi.mocked(followOperation).mockRejectedValueOnce(new Error("fixture save failed"));
+    await click(button("保存"));
+    expect(container.textContent).toContain("fixture save failed");
+    expect(close).not.toHaveBeenCalled();
+    vi.mocked(followOperation).mockResolvedValueOnce({ verified: false } as never);
+    await click(button("保存"));
+    expect(close).not.toHaveBeenCalled();
+    expect(container.querySelector<HTMLInputElement>('[aria-label="转发模型 1"]')?.value).toBe("gpt-draft");
+    await click(button("保存"));
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(submitOperation).mock.calls[2][2]).toEqual({ whitelist: ["gpt-fixture"], mappings: [{ source: "alias", target: "gpt-draft" }] });
+  });
+
   it("loads settings and proxy options through separate reads", async () => {
     await renderDialog("proxy");
     expect(api).toHaveBeenCalledWith("GET", "/accounts/101/settings");

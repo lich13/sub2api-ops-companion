@@ -14,7 +14,7 @@ use crate::{
     quota, recovery_events, recovery_policy, recovery_rules,
 };
 use chrono::{DateTime, Duration, Utc};
-use futures_util::{future::BoxFuture, stream, StreamExt};
+use futures_util::future::BoxFuture;
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -56,8 +56,6 @@ pub struct Monitor {
     pub(crate) early_reset: Arc<Mutex<crate::oauth_early_reset::State>>,
     pub(crate) workers: Arc<Mutex<BTreeMap<i64, tokio::task::JoinHandle<Result<Value>>>>>,
     daily: Arc<Mutex<Option<tokio::task::JoinHandle<Result<()>>>>>,
-    force: Arc<Mutex<Option<watch::Receiver<Option<Value>>>>>,
-    force_task: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     closed: Arc<AtomicBool>,
 }
 impl Monitor {
@@ -87,8 +85,6 @@ impl Monitor {
             early_reset: Arc::new(Mutex::new(crate::oauth_early_reset::State::default())),
             workers: Arc::new(Mutex::new(BTreeMap::new())),
             daily: Arc::new(Mutex::new(None)),
-            force: Arc::new(Mutex::new(None)),
-            force_task: Arc::new(Mutex::new(None)),
             closed: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -292,8 +288,8 @@ impl Monitor {
         }
         let config = self.config.current()?;
         let now = self.now();
-        // Record the due batch even while a manual monitor cycle owns the
-        // execution lock. It may be dispatched after the due minute ends.
+        // Record the due batch even while another tick owns the execution lock.
+        // It may be dispatched after the due minute ends.
         self.schedule.tick(&config, now)?;
         let Ok(_cycle) = self.cycle.try_lock() else {
             return Ok(());
@@ -398,7 +394,7 @@ impl Monitor {
             }
             let saved = quota::latest_result(row, &state["oauth_results"][id.to_string()], now);
             let (mut reason, mut until) =
-                oauth_admission::automatic_gate(row, &saved, meta, now, false, false, 1)?;
+                oauth_admission::automatic_gate(row, &saved, meta, now, false, false)?;
             if matches!(reason, "query_cooldown" | "query_budget" | "query_backoff")
                 && recovery_rules::quota_ready(row, &saved, meta, now)
             {
@@ -646,103 +642,6 @@ impl Monitor {
             json!({"account_id":id,"success":truthy(&result["success"]),"usage":result,"test":tested,"depleted":depleted,"recovered":tested["recovered"]==true,"reused":truthy(&item["reuse_quota"]),"duration_ms":started.elapsed().as_millis()}),
         )
     }
-    pub async fn force_refresh_with_timeout(&self, timeout: std::time::Duration) -> Result<Value> {
-        if self.actions.settings.read_only {
-            return Err(Error::read_only());
-        }
-        if self.is_closed() {
-            return Err(Error::new(503, "服务正在停止"));
-        }
-        let (mut receive, coalesced) = {
-            let mut force = self.force.lock().await;
-            if self.is_closed() {
-                return Err(Error::new(503, "服务正在停止"));
-            }
-            if let Some(receive) = force.as_ref() {
-                (receive.clone(), true)
-            } else {
-                let (send, receive) = watch::channel(None);
-                *force = Some(receive.clone());
-                let this = self.clone();
-                let task = self.actions.supervisor.spawn("quota_force", async move {
-                    let result=this.force_cycle(timeout).await.unwrap_or_else(|_|json!({"success":false,"timed_out":false,"error_code":"force_refresh_failed","error":"主动查询未完成"}));
-                    let _ = send.send(Some(result));
-                    *this.force.lock().await = None;
-                });
-                *self.force_task.lock().await = Some(task);
-                (receive, false)
-            }
-        };
-        let result = tokio::time::timeout(timeout.max(std::time::Duration::from_millis(100)), async {
-            loop {
-                if let Some(result) = receive.borrow().clone() {
-                    break result;
-                }
-                if receive.changed().await.is_err() {
-                    break json!({"success":false,"error_code":"force_refresh_failed"});
-                }
-            }
-        }).await.unwrap_or_else(|_|json!({"success":false,"timed_out":true,"error_code":"force_refresh_timeout","error":"查询仍在执行，请稍后查看结果"}));
-        let mut result = result;
-        result["coalesced"] = coalesced.into();
-        Ok(result)
-    }
-    async fn force_cycle(&self, timeout: std::time::Duration) -> Result<Value> {
-        let Ok(_guard) = tokio::time::timeout(
-            timeout.max(std::time::Duration::from_millis(100)),
-            self.cycle.lock(),
-        )
-        .await
-        else {
-            return Ok(json!({"success":false,"timed_out":true,
-                "error_code":"force_refresh_timeout","error":"OAuth 全量刷新等待监控锁超时"}));
-        };
-        if self.is_closed() {
-            return Err(Error::new(503, "服务正在停止"));
-        }
-        let start = Instant::now();
-        let at = self.now();
-        let rows = self.inventory(true).await?;
-        let total = rows.len();
-        if total > 0
-            && (self.store.admin_token()?.trim().is_empty()
-                || self.actions.upstream.active_url().is_empty())
-        {
-            return Ok(
-                json!({"success":false,"refresh_at":datetime(at),"total_count":total,
-                "queried_count":0,"skipped_count":0,"reused_count":0,"success_count":0,"failure_count":total,
-                "depleted_count":0,"recovered_count":0,"coalesced":false,
-                "error_code":"missing_sub2api_admin_credentials","error":"缺少 Sub2API 地址或 Admin API Key"}),
-            );
-        }
-        let state = self.shared_state()?;
-        let config = self.config.current()?;
-        let results = stream::iter(rows.iter().cloned().map(|row| {
-            let this = self.clone();
-            let state = &state;
-            let config = &config;
-            async move {
-                let id = integer(&row["id"]).unwrap_or(0);
-                let saved = quota::latest_result(&row, &state["oauth_results"][id.to_string()], at);
-                let item = json!({"account_id":id,"row":row,"reason":"manual","previous_summary":quota::summary_from_result(&row,&saved)});
-                this.run_item(item, Source::Manual, config["oauth_recovery_monitor_enabled"] != false)
-                    .await.unwrap_or_else(|_|json!({"success":false,"error_code":"account_read_failed"}))
-            }
-        })).buffer_unordered(integer(&config["oauth_usage_refresh_concurrency"]).unwrap_or(4).clamp(1,16) as usize)
-            .collect::<Vec<_>>().await;
-        let count = |key: &str| results.iter().filter(|v| truthy(&v[key])).count();
-        let skipped = results
-            .iter()
-            .filter(|v| truthy(&v["skipped"]) || truthy(&v["usage"]["skipped"]))
-            .count();
-        let reused = results
-            .iter()
-            .filter(|v| truthy(&v["reused"]) || truthy(&v["usage"]["coalesced"]))
-            .count();
-        let report = json!({"success":count("success")==results.len(),"refresh_at":datetime(at),"total_count":total,"queried_count":results.len().saturating_sub(skipped+reused),"skipped_count":skipped,"reused_count":reused,"success_count":count("success"),"failure_count":results.len().saturating_sub(count("success")+skipped),"depleted_count":count("depleted"),"recovered_count":count("recovered"),"coalesced":false,"duration_ms":start.elapsed().as_millis()});
-        self.audit("oauth_refresh", report.clone());
-        Ok(report)
-    }
     pub async fn deliver(&self) -> Result<()> {
         if self.actions.settings.read_only || self.is_closed() {
             return Ok(());
@@ -805,12 +704,6 @@ impl Monitor {
                             .lock()
                             .await
                             .as_ref()
-                            .is_none_or(|task| task.is_finished())
-                        && self
-                            .force_task
-                            .lock()
-                            .await
-                            .as_ref()
                             .is_none_or(|task| task.is_finished());
                     if idle {
                         break;
@@ -821,17 +714,10 @@ impl Monitor {
             .await;
             let workers = std::mem::take(&mut *self.workers.lock().await);
             let daily = self.daily.lock().await.take();
-            let force = {
-                let _guard = self.force.lock().await;
-                self.force_task.lock().await.take()
-            };
             for task in workers.values() {
                 task.abort();
             }
             if let Some(task) = &daily {
-                task.abort();
-            }
-            if let Some(task) = &force {
                 task.abort();
             }
             for (_, task) in workers {
@@ -840,10 +726,6 @@ impl Monitor {
             if let Some(task) = daily {
                 let _ = task.await;
             }
-            if let Some(task) = force {
-                let _ = task.await;
-            }
-            *self.force.lock().await = None;
         };
         tokio::join!(drain_workers, self.queries.drain(seconds));
     }

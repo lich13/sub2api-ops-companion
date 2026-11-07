@@ -157,21 +157,20 @@ export function modelRoute(record: UsageRecord) {
   add(record.upstream_response_model, "返回");
   return steps;
 }
-export function money(value: string | null | undefined, digits = 6) {
+export function decimal(value: string | null | undefined, digits: number) {
   if (value == null || value === "") return "—";
-  // Decimal strings remain intact in the DTO/detail; rounding here is presentation only.
-  const match = value.match(/^(-?)(\d+)(?:\.(\d*))?$/);
-  if (!match)
-    return Number.isFinite(Number(value))
-      ? `$${Number(value).toFixed(digits)}`
-      : "—";
+  // Round the coefficient directly, including PostgreSQL's exponent form.
+  const match = value.match(/^([+-]?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/);
+  if (!match) return "—";
+  const end = match[2].length + Number(match[4] || 0) + digits;
+  const coefficient = (match[2] + (match[3] || "")).padEnd(Math.max(0, end + 1), "0");
+  const rounded = end < 0 ? 0n : BigInt(coefficient.slice(0, end) || "0") + (coefficient[end] >= "5" ? 1n : 0n);
   const scale = 10n ** BigInt(digits);
-  const fraction = (match[3] || "").padEnd(digits + 1, "0");
-  const rounded =
-    BigInt(match[2]) * scale +
-    BigInt(fraction.slice(0, digits)) +
-    (fraction[digits] >= "5" ? 1n : 0n);
-  return `$${match[1]}${rounded / scale}.${(rounded % scale).toString().padStart(digits, "0")}`;
+  return `${match[1] === "-" && rounded !== 0n ? "-" : ""}${rounded / scale}.${(rounded % scale).toString().padStart(digits, "0")}`;
+}
+export function money(value: string | null | undefined, digits = 6) {
+  const formatted = decimal(value, digits);
+  return formatted === "—" ? formatted : `$${formatted}`;
 }
 export function tokenCount(value: number | null | undefined) {
   return value == null || !Number.isFinite(value) || value < 0

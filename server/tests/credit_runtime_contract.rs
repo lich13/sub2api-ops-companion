@@ -33,9 +33,8 @@ use sub2ops_server::{
     execution::TestSlots,
     oauth_admission, oauth_native,
     oauth_queries::{Coordinator, QueryOptions, Source},
-    oauth_state::{normalized_credits, OAuthState},
+    oauth_state::OAuthState,
     queries::Queries,
-    reset_credit_observation,
     settings::Settings,
     upstream::Upstream,
 };
@@ -683,18 +682,6 @@ impl Harness {
             })
             .expect("persist synthetic quota result");
 
-        let credits = normalized_credits(&row["extra"]["codex_reset_credit_snapshot"])
-            .expect("normalize synthetic credit snapshot");
-        let observation = reset_credit_observation::create(&credits, now - Duration::seconds(1))
-            .expect("create fixture credit observation");
-        controller
-            .store
-            .transaction(|state| {
-                state["scheduler"][id.to_string()]["reset_credit_observation"] =
-                    observation.clone();
-                Ok(())
-            })
-            .expect("persist synthetic credit observation");
         sqlx::query(
             "INSERT INTO ops_error_logs \
              (id,account_id,created_at,platform,error_owner,error_phase,status_code,upstream_status_code,error_message,upstream_error_message) \

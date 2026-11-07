@@ -34,7 +34,7 @@ impl Detection {
         row: &Value,
         context: &Value,
         before_reset: bool,
-        evidence: Option<&Value>,
+        evidence: Option<&mut Value>,
     ) -> Result<String> {
         let id = integer(&context["account_id"]).ok_or_else(Error::invalid)?;
         let now = self.now();
@@ -80,17 +80,17 @@ impl Detection {
                 return Ok("用卡任务已变化".into());
             }
             if before_reset && !truthy(&task["attempt_at"]) {
-                if config["oauth_auto_reset_credit_enabled"] != true {
-                    return Ok("账号不再符合自动用卡条件".into());
-                }
-                let depletion = match evidence {
-                    Some(evidence) => evidence.clone(),
-                    None => controller.depletion(row, now, false).await?,
-                };
-                if !truthy(&depletion)
+                if config["oauth_auto_reset_credit_enabled"] != true
                     || matches!(string(&task["stage"]), "manual" | "closed" | "blocked")
                 {
                     return Ok("账号不再符合自动用卡条件".into());
+                }
+                let depletion = controller.depletion(row, now, false).await?;
+                if !truthy(&depletion) {
+                    return Ok("账号不再符合自动用卡条件".into());
+                }
+                if let Some(evidence) = evidence {
+                    *evidence = depletion;
                 }
             } else if !controller.owned(row, &task, false)?
                 || !controller.processing_eligible(row, &task, now)?
@@ -411,9 +411,9 @@ impl Detection {
                 Some(row),
             ));
         }
-        let evidence = controller.depletion(&row, self.now(), false).await?;
+        let mut evidence = Value::Null;
         let reason = self
-            .recovery_reason(&row, context, true, Some(&evidence))
+            .recovery_reason(&row, context, true, Some(&mut evidence))
             .await?;
         if !reason.is_empty() {
             return Ok((

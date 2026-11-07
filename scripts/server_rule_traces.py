@@ -26,21 +26,21 @@ SELECTION = {
     "tests.test_quota_snapshot": {"PassiveQuotaTests": None},
     "tests.test_model_catalog": {"RuleTests": None},
     "tests.test_codex_identity": {"CodexIdentityTests": None},
-    "tests.test_recovery_config030": {"AutoResetProjection030Tests": None},
+    "tests.test_recovery_config030": {"AutoResetProjection030Tests": {"except": [
+        "test_completed_or_relinquished_states_are_hidden_without_deleting_history",
+        "test_manual_state_without_any_consumption_attempt_is_hidden",
+    ]}},
     "tests.test_auto_reset": {"ResetCreditDiagnosticTests": [
         "test_native_business_codes_are_preserved_without_extra_response_fields",
         "test_only_whitelisted_status_business_code_and_boolean_fields_are_retained",
         "test_unknown_business_code_is_replaced_and_boolean_reset_count_is_omitted",
-    ]},
-    "tests.test_auto_reset038": {"AutoReset038ObservationTests": [
-        "test_observation_from_usage_requires_fresh_explicit_matching_card_data",
     ]},
     "tests.test_usage_query": {"OAuthUsageTests": {"except": [
         "test_active_usage_uses_x_api_key_without_bearer_header",
     ]}},
     "tests.test_oauth_monitor": {
         "OAuthMonitorSchedulingTests": None,
-        "OAuthRecoveryGateTests": None,
+        "OAuthRecoveryGateTests": {"except": ["test_block_signature_detects_concurrency_change"]},
     },
     "tests.test_events030": {"EventEvidence030Tests": None},
     "tests.test_desktop_api": {"DesktopEvidenceTests": {"except": [
@@ -54,11 +54,11 @@ FUNCTIONS = {
     "usage_windows", "build_monitor_candidates", "merge", "validate_overrides", "transform",
     "admitted", "import_fields", "targets", "composite_target", "codex_identity",
     "standard_codex_user_agent", "synced_codex_user_agent", "project_state",
-    "receipt_diagnostics", "observation_from_usage",
+    "receipt_diagnostics",
     "parse_iso_datetime", "oauth_reset_at", "oauth_quota_from_usage_data",
     "oauth_windows_by_key", "oauth_recovery_transition", "_retry_at",
     "automatic_recovery_eligible", "recovery_block_signature",
-    "recovery_block_change_is_safe", "account_recovery_confirmed",
+    "account_recovery_confirmed",
     "error_evidence.match_message", "error_evidence.is_local_throttle",
     "account_dto", "group_dtos", "error_dto", "safe_error_body",
 }

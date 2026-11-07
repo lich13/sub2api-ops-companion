@@ -491,7 +491,7 @@ impl Runtime {
 
     pub async fn account_usage(&self, id: i64, key: &str, force: bool) -> Result<Value> {
         let row = self.usage_row(id).await?;
-        self.account_usage_from_row(row, key, force)
+        self.account_usage_from_row(row, key, force, false)
             .await
             .map(|(_, usage)| usage)
     }
@@ -501,26 +501,31 @@ impl Runtime {
         row: Value,
         key: &str,
         force: bool,
+        include_account: bool,
     ) -> Result<(Value, Value)> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         let kind = provider(&row);
         let mut usage = self.local_account_usage(&row).await?;
+        let mut current = None;
         if row["type"] == "apikey" {
-            let input = self.key_quota_input(id).await?;
+            let input = self.key_quota_input_from_row(&row).await?;
             let signature = input.version.clone();
             let value = self.key_quota.query(input, force).await?;
-            if self.key_quota_input(id).await?.version != signature {
+            let latest_input = if kind.is_empty() && include_account {
+                let live = self.actions.queries.private_account(id).await?;
+                let input = self.key_quota_input_from_row(&live).await?;
+                current = Some(live);
+                input
+            } else {
+                self.key_quota_input(id).await?
+            };
+            if latest_input.version != signature {
                 return Err(Error::new(409, "账号余额配置已变化，请重新读取"));
             }
             usage["key_quota"] = serde_json::to_value(value)?;
         }
         if kind.is_empty() {
-            let current = if force && row["type"] == "apikey" {
-                self.actions.account(id, None).await?
-            } else {
-                row
-            };
-            return Ok((current, usage));
+            return Ok((current.unwrap_or(row), usage));
         }
         let (method, path) = match kind {
             "anthropic" => (
@@ -568,7 +573,7 @@ impl Runtime {
             _ => return Ok((row, usage)),
         };
         let response = self.actions.json(method, &path, key, None, 30).await;
-        let live = if force {
+        let live = if include_account {
             self.actions.account(id, None).await?
         } else {
             self.usage_row(id).await?

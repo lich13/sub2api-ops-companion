@@ -8,8 +8,8 @@ use crate::{
         self, automatic_gate, credential_fingerprint, quota_complete, AUTH_ERRORS,
         AUTO_WINDOW_SECONDS, BACKOFF,
     },
-    oauth_state::{query_metadata, validate_observation},
-    quota, reset_credit_observation,
+    oauth_state::query_metadata,
+    quota,
     upstream::read_limited,
 };
 use chrono::{DateTime, Duration as TimeDelta, Utc};
@@ -200,7 +200,7 @@ impl Coordinator {
             let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
             let saved = quota::latest_result(row, &results[id.to_string()], at);
             let (blocked, deadline) =
-                automatic_gate(row, &saved, &scheduler[id.to_string()], at, true, false, 1)?;
+                automatic_gate(row, &saved, &scheduler[id.to_string()], at, true, false)?;
             let value = (blocked.to_owned(), deadline.map(datetime));
             let changed = {
                 let mut flights = self.flights.lock().unwrap_or_else(|e| e.into_inner());
@@ -315,7 +315,7 @@ impl Coordinator {
             }
             if options.source == Source::Automatic {
                 let (blocked, deadline) =
-                    automatic_gate(row, &evidence, metadata, at, true, false, 1)?;
+                    automatic_gate(row, &evidence, metadata, at, true, false)?;
                 if !blocked.is_empty() {
                     return Ok(oauth_admission::gate_result(blocked, deadline));
                 }
@@ -360,7 +360,6 @@ impl Coordinator {
             result["error_code"] = "incomplete_quota".into();
             result["error"] = "额度响应缺少必要窗口".into();
         }
-        let observation = reset_credit_observation::from_usage(&result, at, (self.clock)());
         let finish = self.actions.queries.oauth.transaction(|state| {
             let meta = &mut state["scheduler"][&identity];
             if !meta.is_object() {
@@ -388,9 +387,6 @@ impl Coordinator {
                 return Ok(());
             }
             if truthy(&result["success"]) {
-                if let Some(observation) = &observation {
-                    meta["reset_credit_observation"] = observation.clone();
-                }
                 meta["last_success_at"] = datetime(at).into();
                 meta["last_error_code"] = "".into();
                 query
@@ -539,7 +535,6 @@ impl Coordinator {
         row: Value,
         options: QueryOptions,
         bypass_interval: bool,
-        required_budget: usize,
         validate: V,
         operation: F,
     ) -> (Value, Option<Value>)
@@ -596,15 +591,8 @@ impl Coordinator {
                 if options.source == Source::Automatic {
                     let mut gate_row = row.clone();
                     gate_row["schedulable"] = true.into();
-                    let (blocked, deadline) = automatic_gate(
-                        &gate_row,
-                        &saved,
-                        meta,
-                        at,
-                        false,
-                        bypass_interval,
-                        required_budget,
-                    )?;
+                    let (blocked, deadline) =
+                        automatic_gate(&gate_row, &saved, meta, at, false, bypass_interval)?;
                     if !blocked.is_empty() {
                         return Ok(oauth_admission::gate_result(blocked, deadline));
                     }
@@ -685,13 +673,6 @@ impl Coordinator {
                                 query["failure_count"] = 0.into();
                                 query["retry_at"] = Value::Null;
                             }
-                        }
-                        if !result["reset_credit_observation"].is_null()
-                            && truthy(&result["success"])
-                        {
-                            validate_observation(&result["reset_credit_observation"])?;
-                            meta["reset_credit_observation"] =
-                                result["reset_credit_observation"].clone();
                         }
                         let code = string(&result["error_code"]);
                         if AUTH_ERRORS.contains(&code) {

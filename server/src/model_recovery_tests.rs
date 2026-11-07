@@ -4,7 +4,6 @@ use crate::{
     credit_rules,
     db::Database,
     model_target, modeltrace, oauth_admission, quota, recovery_events, recovery_rules,
-    reset_credit_observation,
     runtime::Runtime,
     settings::Settings,
 };
@@ -1755,15 +1754,11 @@ async fn seed_credit(h: &Harness) -> (i64, Value) {
     let data = native_quota(now, 100);
     let result = credit_rules::quota_result(&data, &row, now, Some(now));
     assert!(oauth_admission::quota_complete(&row, &result));
-    let normalized = crate::oauth_state::normalized_credits(&snapshot).unwrap();
-    let observation =
-        reset_credit_observation::create(&normalized, now - Duration::seconds(1)).unwrap();
     h.runtime
         .monitor
         .store
         .transaction(|state| {
             state["oauth_results"][id.to_string()] = result.clone();
-            state["scheduler"][id.to_string()]["reset_credit_observation"] = observation.clone();
             Ok(())
         })
         .unwrap();
@@ -1839,22 +1834,6 @@ async fn credit_model_consumes_only_with_slot_and_recovers_once_without_hourly_q
             })
             .unwrap();
         let (id, _) = seed_credit(&h).await;
-        h.runtime
-            .monitor
-            .store
-            .transaction(|state| {
-                let observation =
-                    &mut state["scheduler"][id.to_string()]["reset_credit_observation"];
-                observation["observed_at"] = datetime(h.now() - Duration::days(8)).into();
-                observation["available_count"] = 2.into();
-                let expiry = observation["expires_at"][0].clone();
-                observation["expires_at"]
-                    .as_array_mut()
-                    .unwrap()
-                    .push(expiry);
-                Ok(())
-            })
-            .unwrap();
         if cooldown {
             let at = datetime(h.now() - Duration::seconds(30));
             h.runtime

@@ -1,37 +1,5 @@
-use crate::{
-    compat::{datetime, integer, parse_datetime, string},
-    error::Result,
-    oauth_state::{normalized_credits, validate_observation},
-};
-use chrono::{DateTime, Duration, Utc};
+use crate::compat::{integer, string};
 use serde_json::{json, Value};
-pub fn create(content: &Value, observed: DateTime<Utc>) -> Result<Value> {
-    let mut value = content.clone();
-    value["version"] = 1.into();
-    value["observed_at"] = datetime(observed).into();
-    validate_observation(&value)?;
-    Ok(value)
-}
-pub fn from_usage(
-    result: &Value,
-    started: DateTime<Utc>,
-    completed: DateTime<Utc>,
-) -> Option<Value> {
-    let data = &result["data"];
-    if result["success"] != true || !data.is_object() || data["cache_persisted"] == false {
-        return None;
-    }
-    let content = normalized_credits(&data["rate_limit_reset_credits"])?;
-    let fetched = if data["fetched_at"].is_null() {
-        completed
-    } else {
-        parse_datetime(&data["fetched_at"])?
-    };
-    if fetched < started - Duration::seconds(1) || fetched > completed {
-        return None;
-    }
-    create(&content, fetched).ok()
-}
 pub fn diagnostics(status: Option<u16>, data: &Value) -> Value {
     let mut out = json!({"http_status":status});
     let code = &data["code"];

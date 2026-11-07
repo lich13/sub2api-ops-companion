@@ -261,7 +261,6 @@ def build_fixtures(repo: Path, app_root: Path) -> dict[str, Any]:
             "metadata": {"quota_query": {"last_query_at": stamp(AT - timedelta(seconds=3599))}},
             "wait_for_reset": False,
             "bypass_interval": False,
-            "required_budget": 1,
         },
         {
             "name": "cooldown_exact_boundary",
@@ -270,34 +269,30 @@ def build_fixtures(repo: Path, app_root: Path) -> dict[str, Any]:
             "metadata": {"quota_query": {"last_query_at": stamp(AT - timedelta(seconds=3600))}},
             "wait_for_reset": False,
             "bypass_interval": False,
-            "required_budget": 1,
         },
         {
-            "name": "automatic_budget_six_plus_two",
+            "name": "automatic_budget_six_plus_one",
+            "row": admission_row,
+            "saved": None,
+            "metadata": {"quota_query": {"automatic_attempts": attempts(23, 22, 21, 20, 19, 18)}},
+            "wait_for_reset": False,
+            "bypass_interval": True,
+        },
+        {
+            "name": "automatic_budget_five_plus_one",
             "row": admission_row,
             "saved": None,
             "metadata": {"quota_query": {"automatic_attempts": attempts(23, 22, 21, 20, 19)}},
             "wait_for_reset": False,
             "bypass_interval": True,
-            "required_budget": 2,
-        },
-        {
-            "name": "automatic_budget_exactly_six",
-            "row": admission_row,
-            "saved": None,
-            "metadata": {"quota_query": {"automatic_attempts": attempts(23, 22, 21, 20)}},
-            "wait_for_reset": False,
-            "bypass_interval": True,
-            "required_budget": 2,
         },
         {
             "name": "attempt_at_24_hour_boundary_is_expired",
             "row": admission_row,
             "saved": None,
-            "metadata": {"quota_query": {"automatic_attempts": [stamp(AT - timedelta(seconds=AUTO_WINDOW_SECONDS)), *attempts(23, 22, 21, 20)]}},
+            "metadata": {"quota_query": {"automatic_attempts": [stamp(AT - timedelta(seconds=AUTO_WINDOW_SECONDS)), *attempts(23, 22, 21, 20, 19)]}},
             "wait_for_reset": False,
             "bypass_interval": True,
-            "required_budget": 2,
         },
         {
             "name": "query_backoff",
@@ -306,7 +301,6 @@ def build_fixtures(repo: Path, app_root: Path) -> dict[str, Any]:
             "metadata": {"quota_query": {"retry_at": stamp(AT + timedelta(seconds=90))}},
             "wait_for_reset": False,
             "bypass_interval": True,
-            "required_budget": 1,
         },
         {
             "name": "natural_reset_wait",
@@ -315,7 +309,6 @@ def build_fixtures(repo: Path, app_root: Path) -> dict[str, Any]:
             "metadata": {},
             "wait_for_reset": True,
             "bypass_interval": True,
-            "required_budget": 1,
         },
         {
             "name": "same_credential_auth_error_pauses",
@@ -324,7 +317,6 @@ def build_fixtures(repo: Path, app_root: Path) -> dict[str, Any]:
             "metadata": {"quota_query": {"auth_fingerprint": credential_fingerprint(admission_row)}},
             "wait_for_reset": False,
             "bypass_interval": True,
-            "required_budget": 1,
         },
         {
             "name": "updated_credential_clears_auth_pause",
@@ -333,7 +325,6 @@ def build_fixtures(repo: Path, app_root: Path) -> dict[str, Any]:
             "metadata": {"quota_query": {"auth_fingerprint": "0" * 64}},
             "wait_for_reset": False,
             "bypass_interval": True,
-            "required_budget": 1,
         },
     ]
     gate_vectors = []
@@ -345,7 +336,7 @@ def build_fixtures(repo: Path, app_root: Path) -> dict[str, Any]:
             AT,
             wait_for_reset=case["wait_for_reset"],
             bypass_interval=case["bypass_interval"],
-            required_budget=case["required_budget"],
+            required_budget=1,
         )
         gate_vectors.append({**case, "expected_reason": reason, "expected_deadline": deadline})
 

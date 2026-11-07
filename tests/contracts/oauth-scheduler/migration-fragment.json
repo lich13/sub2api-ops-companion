@@ -1884,94 +1884,108 @@
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_immediate_recovery_runs_at_0459_beijing",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "force_refresh_recovers_fresh_available_quota_once_at_0459_beijing",
+        "test_name": "monitor_recovers_fresh_available_quota_once_at_0459_beijing",
         "assertions": [
-          "assert!(due .with_timezone(&chrono::FixedOffset::east_opt(8 * 3600).unwrap()).to_rfc3339().contains(\"T04:59:00+08:00\"));",
-          "assert_eq!(first[\"recovered_count\"], 1)",
+          "assert!(due\n        .with_timezone(&chrono::FixedOffset::east_opt(8 * 3600).unwrap())\n        .to_rfc3339()\n        .contains(\"T04:59:00+08:00\"))",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
           "assert_eq!(\n        harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"],\n        Value::Null\n    )",
           "assert_eq!(event[\"status\"], \"recovered\")",
           "assert_eq!(event[\"model_id\"], \"gpt-5.6-luna\")",
-          "assert_eq!(second[\"recovered_count\"], 0)",
-          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
-          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"],\n        \"recovered\"\n    )",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"recovery_intent\"]\n            [\"status\"],\n        \"recovered\"\n    )",
           "assert!(harness.mock.unexpected().is_empty())"
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“immediate recovery runs at 0459 beijing”映射到 force_refresh_recovers_fresh_available_quota_once_at_0459_beijing；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。 由当前执行入口的完整断言验证。",
+      "replacement": {
+        "legacy_assertions": "固定旧断言“immediate recovery runs at 0459 beijing”映射到 force_refresh_recovers_fresh_available_quota_once_at_0459_beijing；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked.",
+        "approved_requirement": "0.1.87 删除无人调用的同步 force-refresh 测试入口及专属任务状态；现有异步 /quota-refresh 和实际 monitor.tick 调度保持。",
+        "replacement_contract": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_force_refresh_ignores_batch_cap_and_queries_all_accounts",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "force_refresh_ignores_probe_batch_cap_and_queries_all_accounts",
+        "test_name": "quota_refresh_ignores_probe_batch_cap_and_queries_all_accounts",
         "assertions": [
-          "assert_eq!(report[\"success\"], true)",
-          "assert_eq!(report[\"total_count\"], 3)",
-          "assert_eq!(report[\"queried_count\"], 3)",
-          "assert_eq!(report[\"success_count\"], 3)",
-          "assert_eq!(report[\"failure_count\"], 0)",
+          "assert_eq!(report[\"total\"], 3)",
+          "assert_eq!(report[\"completed\"], 3)",
+          "assert!(report[\"items\"]\n        .as_array()\n        .unwrap()\n        .iter()\n        .all(|item| item[\"status\"] == \"success\"))",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 3)",
           "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
           "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
-          "assert_eq!(\n            state[\"oauth_results\"][id.to_string()][\"queried_at\"],\n            report[\"refresh_at\"]\n        )",
+          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true)",
+          "assert!(parse_datetime(&state[\"oauth_results\"][id.to_string()][\"queried_at\"]).is_some())",
           "assert!(harness.mock.unexpected().is_empty())"
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“force refresh ignores batch cap and queries all accounts”映射到 linked_credentials_share_account_locks_and_force_refresh_ignores_batch_cap；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。 由当前执行入口的完整断言验证。",
+      "replacement": {
+        "legacy_assertions": "固定旧断言“force refresh ignores batch cap and queries all accounts”映射到 linked_credentials_share_account_locks_and_force_refresh_ignores_batch_cap；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked.",
+        "approved_requirement": "0.1.87 删除无人调用的同步 force-refresh 测试入口及专属任务状态；现有异步 /quota-refresh 和实际 monitor.tick 调度保持。",
+        "replacement_contract": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_concurrent_force_refresh_calls_share_one_cycle",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "concurrent_force_refresh_callers_share_one_runtime_cycle",
+        "test_name": "concurrent_quota_refresh_callers_share_one_runtime_batch",
         "assertions": [
+          "assert_eq!(first[\"id\"], second[\"id\"])",
+          "assert_eq!(second[\"status\"], \"running\")",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
-          "assert_eq!(first[\"success\"], true, \"first report: {first_diagnostic}\")",
-          "assert_eq!(\n        second[\"success\"], true,\n        \"coalesced report: {second_diagnostic}\"\n    )",
-          "assert_eq!(first[\"coalesced\"], false)",
-          "assert_eq!(second[\"coalesced\"], true)",
+          "assert_eq!(report[\"items\"][0][\"status\"], \"success\")",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
-          "assert!(\n        has_no_automatic_attempts(quota_query),\n        \"manual refresh must not consume automatic budget: {quota_query}\"\n    )"
+          "assert!(has_no_automatic_attempts(\n        &state[\"scheduler\"][id.to_string()][\"quota_query\"]\n    ))"
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“concurrent force refresh calls share one cycle”映射到 concurrent_force_refresh_callers_share_one_runtime_cycle；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。 由当前执行入口的完整断言验证。",
+      "replacement": {
+        "legacy_assertions": "固定旧断言“concurrent force refresh calls share one cycle”映射到 concurrent_force_refresh_callers_share_one_runtime_cycle；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked.",
+        "approved_requirement": "0.1.87 删除无人调用的同步 force-refresh 测试入口及专属任务状态；现有异步 /quota-refresh 和实际 monitor.tick 调度保持。",
+        "replacement_contract": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_force_refresh_timeout_waiting_for_shared_lock_is_explicit",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "force_refresh_cycle_lock_timeout_does_not_dispatch_after_unlock",
+        "test_name": "concurrent_quota_refresh_callers_share_one_runtime_batch",
         "assertions": [
-          "assert_eq!(report[\"success\"], false)",
-          "assert_eq!(report[\"timed_out\"], true)",
-          "assert_eq!(report[\"error_code\"], \"force_refresh_timeout\")",
-          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
-          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
-          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
-          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
-          "assert!(harness.mock.unexpected().is_empty())"
+          "assert_eq!(first[\"id\"], second[\"id\"])",
+          "assert_eq!(second[\"status\"], \"running\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(report[\"items\"][0][\"status\"], \"success\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert!(has_no_automatic_attempts(\n        &state[\"scheduler\"][id.to_string()][\"quota_query\"]\n    ))"
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“force refresh timeout waiting for shared lock is explicit”映射到 force_refresh_cycle_lock_timeout_does_not_dispatch_after_unlock；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。 由当前执行入口的完整断言验证。",
+      "replacement": {
+        "legacy_assertions": "固定旧断言“force refresh timeout waiting for shared lock is explicit”映射到 force_refresh_cycle_lock_timeout_does_not_dispatch_after_unlock；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked.",
+        "approved_requirement": "0.1.87 删除无人调用的同步 force-refresh 测试入口及专属任务状态；现有异步 /quota-refresh 和实际 monitor.tick 调度保持。",
+        "replacement_contract": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_due_quota_still_depleted_waits_one_hour",
@@ -2048,20 +2062,26 @@
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_force_refresh_missing_admin_key_is_explicit_and_does_not_query",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
-        "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "force_refresh_without_admin_key_returns_explicit_error_without_upstream_calls",
+        "path": "server/tests/catalog_runtime_parity.rs",
+        "test_name": "desktop_routes_require_auth_except_safe_connection_status_diagnostics",
         "assertions": [
-          "assert_eq!(report[\"success\"], false)",
-          "assert_eq!(report[\"error_code\"], \"missing_sub2api_admin_credentials\")",
-          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
-          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)"
+          "assert_eq!(cases.len(), 61)",
+          "assert!(\n        rejected.is_empty(),\n        \"legal desktop management requests without x-api-key must return 401/403: {}\",\n        rejected.join(\", \")\n    )",
+          "assert_eq!(diagnostic_status, 200)",
+          "assert!(\n        safe_diagnostic,\n        \"connection-status must return only the static unauthenticated probe fields\"\n    )",
+          "assert!(\n        no_upstream_business_calls,\n        \"unauthenticated management and diagnostic requests must not call the upstream\"\n    )"
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“force refresh missing admin key is explicit and does not query”映射到 force_refresh_without_admin_key_returns_explicit_error_without_upstream_calls；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。 由当前执行入口的完整断言验证。",
+      "replacement": {
+        "legacy_assertions": "固定旧断言“force refresh missing admin key is explicit and does not query”映射到 force_refresh_without_admin_key_returns_explicit_error_without_upstream_calls；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked.",
+        "approved_requirement": "0.1.87 删除无人调用的同步 force-refresh 测试入口及专属任务状态；现有异步 /quota-refresh 和实际 monitor.tick 调度保持。",
+        "replacement_contract": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_active_usage_uses_x_api_key_without_bearer_header",

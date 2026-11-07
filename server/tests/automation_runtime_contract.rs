@@ -583,7 +583,7 @@ fn pinned_reference_fixture_and_beijing_time_contract_are_fixed() {
 }
 
 #[tokio::test]
-async fn manual_query_caches_verified_card_receipt_using_the_runtime_clock() {
+async fn manual_query_preserves_budget_without_an_unused_card_observation() {
     use sub2ops_server::oauth_queries::{QueryOptions, Source};
     let harness = Harness::new().await;
     let row = harness.seed_account("oauth", true, false).await;
@@ -622,15 +622,7 @@ async fn manual_query_caches_verified_card_receipt_using_the_runtime_clock() {
     assert_eq!(result["success"], true);
     let state = harness.runtime.monitor.state().unwrap();
     let metadata = &state["scheduler"][id.to_string()];
-    let receipt = &metadata["reset_credit_observation"];
-    assert_eq!(
-        receipt,
-        &json!({
-            "version":1,"observed_at":datetime(harness.now()),"available_count":1,
-            "expires_at":[datetime(harness.now() + Duration::days(2))]
-        })
-    );
-    sub2ops_server::oauth_state::validate_observation(receipt).unwrap();
+    assert!(metadata["reset_credit_observation"].is_null());
     assert_eq!(metadata["quota_query"]["automatic_attempts"], attempts);
     assert_eq!(harness.mock.count("GET", "/usage"), 1);
     assert_eq!(harness.mock.count("POST", "/test"), 0);

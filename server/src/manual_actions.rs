@@ -352,12 +352,18 @@ impl Runtime {
         if action == "query_usage"
             && (row["type"] == "apikey" || !crate::account_usage::provider(&row).is_empty())
         {
-            let _control = self.actions.locks.control(id).await;
-            let row = self.actions.queries.private_account(id).await?;
-            if !crate::actions::version_matches(&row, expected) {
-                return Err(Error::new(409, "账号已变化，请刷新后重试"));
-            }
-            let (current, usage) = self.account_usage_from_row(row, key, true).await?;
+            let (_control, row) = match self.actions.locks.try_control(id) {
+                Ok(control) => (control, row),
+                Err(_) => {
+                    let control = self.actions.locks.control(id).await;
+                    let row = self.actions.queries.private_account(id).await?;
+                    if !crate::actions::version_matches(&row, expected) {
+                        return Err(Error::new(409, "账号已变化，请刷新后重试"));
+                    }
+                    (control, row)
+                }
+            };
+            let (current, usage) = self.account_usage_from_row(row, key, true, true).await?;
             if matches!(string(&usage["status"]), "error" | "authorization_required") {
                 return Err(Error::new(502, "上游用量读取未成功，请检查授权后重试"));
             }
@@ -462,8 +468,6 @@ impl Runtime {
             && (truthy(&data["probe_error"]) || integer(&data["status_code"]).unwrap_or(200) >= 400)
         {
             "probe_failed"
-        } else if action == "query_reset_credits" && data["cache_persisted"] == false {
-            "snapshot_not_saved"
         } else {
             "ok"
         };

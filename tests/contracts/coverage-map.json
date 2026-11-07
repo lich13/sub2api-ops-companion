@@ -3337,10 +3337,21 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/state_lifecycle_contract.rs",
-        "test_name": "state_0184_upgrade_preserves_receipts_and_compacts_observations",
+        "test_name": "state_0184_upgrade_preserves_receipts_and_removes_unused_observations",
         "assertions": [
-          "assert_eq!(meta[\"auto_reset_credit\"], credit);",
-          "assert_eq!(disk, migrated);"
+          "assert!(store.snapshot().unwrap()[\"scheduler\"][\"7\"][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(\n        serde_json::from_slice::<Value>(&fs::read(&path).unwrap()).unwrap(),\n        raw\n    )",
+          "assert_eq!(migrated[field], raw[field], \"{field}\")",
+          "assert_eq!(meta[\"auto_reset_credit\"], credit)",
+          "assert_eq!(meta[\"quota_query\"], raw[\"scheduler\"][\"7\"][\"quota_query\"])",
+          "assert_eq!(\n        meta[\"manual_control\"],\n        raw[\"scheduler\"][\"7\"][\"manual_control\"]\n    )",
+          "assert!(meta[\"reset_credit_observation\"].is_null())",
+          "assert_eq!(meta[\"recovery_intent\"][\"status\"], \"ready\")",
+          "assert_eq!(meta[\"recovery_intent\"][\"attempt_count\"], 2)",
+          "assert_eq!(meta[\"recovery_intent\"][\"connection_attempt_count\"], 2)",
+          "assert!(meta[\"recovery_intent\"][\"successful_test\"].is_null())",
+          "assert_eq!(\n        meta[\"recovery_intent\"][\"verification_receipt\"],\n        raw[\"scheduler\"][\"7\"][\"recovery_intent\"][\"verification_receipt\"]\n    )",
+          "assert_eq!(disk, migrated)"
         ],
         "fixtures": [
           {
@@ -3355,13 +3366,13 @@
           }
         ]
       },
-      "coverage_note": "保留 0.1.84 已派发扣卡记录、未知结果、当前恢复状态与历史，继续保存精简观测；不再转换更早的 recovery_uncertain 状态。",
+      "coverage_note": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。 由当前执行入口的完整断言验证。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_auto_reset038:AutoReset038AdmissionTests.test_legacy_unissued_zero_card_task_is_hidden_and_pending_notice_suppressed"
         ],
-        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
-        "replacement_contract": "保留 0.1.84 已派发扣卡记录、未知结果、当前恢复状态与历史，继续保存精简观测；不再转换更早的 recovery_uncertain 状态。"
+        "approved_requirement": "0.1.87 删除无人消费的 reset_credit_observation 构造、写入和校验；旧字段只在正常状态写入时移除，真实扣卡回执、查询预算及数据库卡快照确认保留。",
+        "replacement_contract": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。"
       }
     },
     {
@@ -3370,10 +3381,21 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/state_lifecycle_contract.rs",
-        "test_name": "state_0184_upgrade_preserves_receipts_and_compacts_observations",
+        "test_name": "state_0184_upgrade_preserves_receipts_and_removes_unused_observations",
         "assertions": [
-          "assert_eq!(meta[\"auto_reset_credit\"], credit);",
-          "assert_eq!(disk, migrated);"
+          "assert!(store.snapshot().unwrap()[\"scheduler\"][\"7\"][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(\n        serde_json::from_slice::<Value>(&fs::read(&path).unwrap()).unwrap(),\n        raw\n    )",
+          "assert_eq!(migrated[field], raw[field], \"{field}\")",
+          "assert_eq!(meta[\"auto_reset_credit\"], credit)",
+          "assert_eq!(meta[\"quota_query\"], raw[\"scheduler\"][\"7\"][\"quota_query\"])",
+          "assert_eq!(\n        meta[\"manual_control\"],\n        raw[\"scheduler\"][\"7\"][\"manual_control\"]\n    )",
+          "assert!(meta[\"reset_credit_observation\"].is_null())",
+          "assert_eq!(meta[\"recovery_intent\"][\"status\"], \"ready\")",
+          "assert_eq!(meta[\"recovery_intent\"][\"attempt_count\"], 2)",
+          "assert_eq!(meta[\"recovery_intent\"][\"connection_attempt_count\"], 2)",
+          "assert!(meta[\"recovery_intent\"][\"successful_test\"].is_null())",
+          "assert_eq!(\n        meta[\"recovery_intent\"][\"verification_receipt\"],\n        raw[\"scheduler\"][\"7\"][\"recovery_intent\"][\"verification_receipt\"]\n    )",
+          "assert_eq!(disk, migrated)"
         ],
         "fixtures": [
           {
@@ -3388,13 +3410,13 @@
           }
         ]
       },
-      "coverage_note": "保留 0.1.84 已派发扣卡记录、未知结果、当前恢复状态与历史，继续保存精简观测；不再转换更早的 recovery_uncertain 状态。",
+      "coverage_note": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。 由当前执行入口的完整断言验证。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_auto_reset038:AutoReset038AdmissionTests.test_skipped_task_with_unconfirmed_pause_remains_blocked_in_projection"
         ],
-        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
-        "replacement_contract": "保留 0.1.84 已派发扣卡记录、未知结果、当前恢复状态与历史，继续保存精简观测；不再转换更早的 recovery_uncertain 状态。"
+        "approved_requirement": "0.1.87 删除无人消费的 reset_credit_observation 构造、写入和校验；旧字段只在正常状态写入时移除，真实扣卡回执、查询预算及数据库卡快照确认保留。",
+        "replacement_contract": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。"
       }
     },
     {
@@ -3457,46 +3479,17 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts",
+        "test_name": "coordinator_quota_results_do_not_persist_unused_card_observations",
         "assertions": [
-          "assert_eq!(result[\"success\"], true, \"{name}: {result}\");",
-          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1);",
-          "assert_eq!(observation.is_object(), expected_observation, \"{name}\");",
-          "assert_eq!(observation[\"available_count\"], 1);",
-          "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert!(!observation.to_string().contains(ADMIN_KEY));",
-          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true);",
-          "assert!( state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"] .as_array() .is_none_or(|attempts| attempts.is_empty()) );",
-          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\");",
-          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null());",
-          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);",
-          "assert_eq!(observation.as_object().unwrap().len(), 4);"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "seed_account",
-            "assertions": [
-              "INSERT INTO accounts",
-              "expect(\"insert synthetic OAuth account\")",
-              "expect(\"read synthetic OAuth account\")"
-            ]
-          },
-          {
-            "name": "run_automatic",
-            "assertions": [
-              ".run_account(row, at)",
-              "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
-            ]
-          }
+          "assert_eq!(result[\"success\"], true, \"{name}: {result}\")",
+          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1)",
+          "assert!(observation.is_null(), \"{name}\")",
+          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true)",
+          "assert!(\n            state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"]\n                .as_array()\n                .is_none_or(|attempts| attempts.is_empty())\n        )",
+          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\")",
+          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0)",
+          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0)"
         ],
         "fixtures": [
           {
@@ -3511,13 +3504,13 @@
           }
         ]
       },
-      "coverage_note": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。",
+      "coverage_note": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。 由当前执行入口的完整断言验证。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_auto_reset038:AutoReset038ObservationTests.test_coordinator_keeps_quota_success_when_card_readback_fails"
         ],
-        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
-        "replacement_contract": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。"
+        "approved_requirement": "0.1.87 删除无人消费的 reset_credit_observation 构造、写入和校验；旧字段只在正常状态写入时移除，真实扣卡回执、查询预算及数据库卡快照确认保留。",
+        "replacement_contract": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。"
       }
     },
     {
@@ -3526,46 +3519,17 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts",
+        "test_name": "coordinator_quota_results_do_not_persist_unused_card_observations",
         "assertions": [
-          "assert_eq!(result[\"success\"], true, \"{name}: {result}\");",
-          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1);",
-          "assert_eq!(observation.is_object(), expected_observation, \"{name}\");",
-          "assert_eq!(observation[\"available_count\"], 1);",
-          "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert!(!observation.to_string().contains(ADMIN_KEY));",
-          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true);",
-          "assert!( state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"] .as_array() .is_none_or(|attempts| attempts.is_empty()) );",
-          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\");",
-          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null());",
-          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);",
-          "assert_eq!(observation.as_object().unwrap().len(), 4);"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "seed_account",
-            "assertions": [
-              "INSERT INTO accounts",
-              "expect(\"insert synthetic OAuth account\")",
-              "expect(\"read synthetic OAuth account\")"
-            ]
-          },
-          {
-            "name": "run_automatic",
-            "assertions": [
-              ".run_account(row, at)",
-              "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
-            ]
-          }
+          "assert_eq!(result[\"success\"], true, \"{name}: {result}\")",
+          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1)",
+          "assert!(observation.is_null(), \"{name}\")",
+          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true)",
+          "assert!(\n            state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"]\n                .as_array()\n                .is_none_or(|attempts| attempts.is_empty())\n        )",
+          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\")",
+          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0)",
+          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0)"
         ],
         "fixtures": [
           {
@@ -3580,13 +3544,13 @@
           }
         ]
       },
-      "coverage_note": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。",
+      "coverage_note": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。 由当前执行入口的完整断言验证。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_auto_reset038:AutoReset038ObservationTests.test_coordinator_persists_only_current_explicit_card_observation"
         ],
-        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
-        "replacement_contract": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。"
+        "approved_requirement": "0.1.87 删除无人消费的 reset_credit_observation 构造、写入和校验；旧字段只在正常状态写入时移除，真实扣卡回执、查询预算及数据库卡快照确认保留。",
+        "replacement_contract": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。"
       }
     },
     {
@@ -3594,12 +3558,22 @@
       "status": "superseded",
       "target": {
         "kind": "rust_test",
-        "path": "server/tests/recovery_rules_contract.rs",
-        "test_name": "reset_credit_observation_creation_and_evidence_gates_match_pinned_python",
+        "path": "server/tests/state_lifecycle_contract.rs",
+        "test_name": "state_0184_upgrade_preserves_receipts_and_removes_unused_observations",
         "assertions": [
-          "assert_eq!(created, compact(&observation[\"expected\"]));",
-          "\"cache_not_persisted\" | \"fetched_before_start_window\"",
-          "assert_eq!(actual.is_none(), rejects"
+          "assert!(store.snapshot().unwrap()[\"scheduler\"][\"7\"][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(\n        serde_json::from_slice::<Value>(&fs::read(&path).unwrap()).unwrap(),\n        raw\n    )",
+          "assert_eq!(migrated[field], raw[field], \"{field}\")",
+          "assert_eq!(meta[\"auto_reset_credit\"], credit)",
+          "assert_eq!(meta[\"quota_query\"], raw[\"scheduler\"][\"7\"][\"quota_query\"])",
+          "assert_eq!(\n        meta[\"manual_control\"],\n        raw[\"scheduler\"][\"7\"][\"manual_control\"]\n    )",
+          "assert!(meta[\"reset_credit_observation\"].is_null())",
+          "assert_eq!(meta[\"recovery_intent\"][\"status\"], \"ready\")",
+          "assert_eq!(meta[\"recovery_intent\"][\"attempt_count\"], 2)",
+          "assert_eq!(meta[\"recovery_intent\"][\"connection_attempt_count\"], 2)",
+          "assert!(meta[\"recovery_intent\"][\"successful_test\"].is_null())",
+          "assert_eq!(\n        meta[\"recovery_intent\"][\"verification_receipt\"],\n        raw[\"scheduler\"][\"7\"][\"recovery_intent\"][\"verification_receipt\"]\n    )",
+          "assert_eq!(disk, migrated)"
         ],
         "fixtures": [
           {
@@ -3614,13 +3588,13 @@
           }
         ]
       },
-      "coverage_note": "普通查询使用已确认响应构造四字段观测；不再读取账号比对凭据、限流摘要及窗口，保留刷新时效校验。",
+      "coverage_note": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。 由当前执行入口的完整断言验证。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_auto_reset038:AutoReset038ObservationTests.test_observation_from_usage_requires_fresh_explicit_matching_card_data"
         ],
-        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
-        "replacement_contract": "普通查询使用已确认响应构造四字段观测；不再读取账号比对凭据、限流摘要及窗口，保留刷新时效校验。"
+        "approved_requirement": "0.1.87 删除无人消费的 reset_credit_observation 构造、写入和校验；旧字段只在正常状态写入时移除，真实扣卡回执、查询预算及数据库卡快照确认保留。",
+        "replacement_contract": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。"
       }
     },
     {
@@ -4308,30 +4282,16 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_corrupt_observation_cannot_fall_back_to_legacy_timestamp_snapshot",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "corrupt_native_observation_cannot_fall_back_to_a_legacy_fetched_timestamp",
+        "test_name": "unused_legacy_observation_is_ignored_and_removed_on_normal_write",
         "assertions": [
-          "assert!(result.is_err(), \"corrupt {field} was accepted\");",
-          "assert_eq!(harness.mock.total(), 0, \"corrupt {field} authorized I/O\");",
-          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);",
-          "assert_eq!( stored[\"scheduler\"][id.to_string()][\"auto_reset_credit\"], Value::Null );",
-          "assert_eq!( stored[\"scheduler\"][id.to_string()][\"reset_credit_observation\"][field], bad_value );"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          }
+          "assert!(loaded[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(fs::read(&harness.settings.oauth_path).unwrap(), before)",
+          "assert!(stored[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1)"
         ],
         "fixtures": [
           {
@@ -4346,7 +4306,12 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_corrupt_observation_cannot_fall_back_to_legacy_timestamp_snapshot 已完整通过。Rust corrupt_native_observation_cannot_fall_back_to_a_legacy_fetched_timestamp 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。 由当前执行入口的完整断言验证。",
+      "replacement": {
+        "legacy_assertions": "固定 SHA 旧测试 test_corrupt_observation_cannot_fall_back_to_legacy_timestamp_snapshot 已完整通过。Rust corrupt_native_observation_cannot_fall_back_to_a_legacy_fetched_timestamp 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。",
+        "approved_requirement": "0.1.87 删除无人消费的 reset_credit_observation 构造、写入和校验；旧字段只在正常状态写入时移除，真实扣卡回执、查询预算及数据库卡快照确认保留。",
+        "replacement_contract": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_credit_consumes_after_explicit_observation_and_queries_keep_cooldown_and_budget",
@@ -4356,34 +4321,17 @@
         "path": "server/tests/credit_lifecycle_parity.rs",
         "test_name": "explicit_loopback_card_observation_authorizes_one_real_reset_and_immediate_test",
         "assertions": [
-          "assert_eq!(query[\"success\"], true, \"{query}\");",
-          "assert_eq!(observation[\"available_count\"], 2);",
-          "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), 1);",
-          "assert_eq!(task[\"stage\"], \"recovered\");",
-          "assert_eq!(task[\"consumption_outcome\"], \"consumed\");",
-          "assert_eq!(task[\"receipt\"][\"business_code\"], \"success\");",
-          "assert_eq!(automatic_attempts, 1);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1);",
-          "assert_eq!(observation.as_object().unwrap().len(), 4);"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "reload_account",
-            "assertions": [
-              "credit_ownership::account(&harness.db, id)",
-              "expect(\"reload synthetic account from PostgreSQL\")"
-            ]
-          }
+          "assert_eq!(query[\"success\"], true, \"{query}\")",
+          "assert!(observed_state[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(\n        snapshot_row[\"extra\"][\"codex_reset_credit_snapshot\"][\"available_count\"],\n        2\n    )",
+          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), 1)",
+          "assert_eq!(task[\"stage\"], \"recovered\")",
+          "assert_eq!(task[\"consumption_outcome\"], \"consumed\")",
+          "assert_eq!(task[\"receipt\"][\"business_code\"], \"success\")",
+          "assert_eq!(automatic_attempts, 1)",
+          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1)",
+          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1)"
         ],
         "fixtures": [
           {
@@ -4398,7 +4346,7 @@
           }
         ]
       },
-      "coverage_note": "普通查询观测删除五个摘要和窗口字段，保留四字段及时效判断。",
+      "coverage_note": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。 由当前执行入口的完整断言验证。",
       "supporting_targets": [
         {
           "kind": "rust_test",
@@ -4435,8 +4383,8 @@
         "legacy_assertions": [
           "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_credit_consumes_after_explicit_observation_and_queries_keep_cooldown_and_budget"
         ],
-        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：代码精简、改参及用卡恢复修复。",
-        "replacement_contract": "普通查询观测删除五个摘要和窗口字段，保留四字段及时效判断。"
+        "approved_requirement": "0.1.87 删除无人消费的 reset_credit_observation 构造、写入和校验；旧字段只在正常状态写入时移除，真实扣卡回执、查询预算及数据库卡快照确认保留。",
+        "replacement_contract": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。"
       }
     },
     {
@@ -4633,46 +4581,17 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts",
+        "test_name": "coordinator_quota_results_do_not_persist_unused_card_observations",
         "assertions": [
-          "assert_eq!(result[\"success\"], true, \"{name}: {result}\");",
-          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1);",
-          "assert_eq!(observation.is_object(), expected_observation, \"{name}\");",
-          "assert_eq!(observation[\"available_count\"], 1);",
-          "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert!(!observation.to_string().contains(ADMIN_KEY));",
-          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true);",
-          "assert!( state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"] .as_array() .is_none_or(|attempts| attempts.is_empty()) );",
-          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\");",
-          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null());",
-          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);",
-          "assert_eq!(observation.as_object().unwrap().len(), 4);"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "seed_account",
-            "assertions": [
-              "INSERT INTO accounts",
-              "expect(\"insert synthetic OAuth account\")",
-              "expect(\"read synthetic OAuth account\")"
-            ]
-          },
-          {
-            "name": "run_automatic",
-            "assertions": [
-              ".run_account(row, at)",
-              "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
-            ]
-          }
+          "assert_eq!(result[\"success\"], true, \"{name}: {result}\")",
+          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1)",
+          "assert!(observation.is_null(), \"{name}\")",
+          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true)",
+          "assert!(\n            state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"]\n                .as_array()\n                .is_none_or(|attempts| attempts.is_empty())\n        )",
+          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\")",
+          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0)",
+          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0)"
         ],
         "fixtures": [
           {
@@ -4687,13 +4606,13 @@
           }
         ]
       },
-      "coverage_note": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。",
+      "coverage_note": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。 由当前执行入口的完整断言验证。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_native_observation_requires_matching_database_snapshot_and_cache_confirmation"
         ],
-        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
-        "replacement_contract": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。"
+        "approved_requirement": "0.1.87 删除无人消费的 reset_credit_observation 构造、写入和校验；旧字段只在正常状态写入时移除，真实扣卡回执、查询预算及数据库卡快照确认保留。",
+        "replacement_contract": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。"
       }
     },
     {
@@ -4702,46 +4621,17 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts",
+        "test_name": "coordinator_quota_results_do_not_persist_unused_card_observations",
         "assertions": [
-          "assert_eq!(result[\"success\"], true, \"{name}: {result}\");",
-          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1);",
-          "assert_eq!(observation.is_object(), expected_observation, \"{name}\");",
-          "assert_eq!(observation[\"available_count\"], 1);",
-          "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert!(!observation.to_string().contains(ADMIN_KEY));",
-          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true);",
-          "assert!( state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"] .as_array() .is_none_or(|attempts| attempts.is_empty()) );",
-          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\");",
-          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null());",
-          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);",
-          "assert_eq!(observation.as_object().unwrap().len(), 4);"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "seed_account",
-            "assertions": [
-              "INSERT INTO accounts",
-              "expect(\"insert synthetic OAuth account\")",
-              "expect(\"read synthetic OAuth account\")"
-            ]
-          },
-          {
-            "name": "run_automatic",
-            "assertions": [
-              ".run_account(row, at)",
-              "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
-            ]
-          }
+          "assert_eq!(result[\"success\"], true, \"{name}: {result}\")",
+          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1)",
+          "assert!(observation.is_null(), \"{name}\")",
+          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true)",
+          "assert!(\n            state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"]\n                .as_array()\n                .is_none_or(|attempts| attempts.is_empty())\n        )",
+          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\")",
+          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0)",
+          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0)"
         ],
         "fixtures": [
           {
@@ -4756,13 +4646,13 @@
           }
         ]
       },
-      "coverage_note": "观测保存失败仍返回 query_state_unavailable；当前无卡不消费。自动用卡不再依赖旧卡观测的保存状态，以当前有效卡数和原有额度、限流及消费期限检查为准。",
+      "coverage_note": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。 由当前执行入口的完整断言验证。",
       "replacement": {
         "legacy_assertions": [
           "卡观测写入失败后，即使当前有卡也不能自动消费"
         ],
-        "approved_requirement": "Sub2Ops 0.1.86 第 16 项：移除旧卡观测对自动用卡的额外限制。",
-        "replacement_contract": "观测保存失败仍返回 query_state_unavailable；当前无卡不消费。自动用卡不再依赖旧卡观测的保存状态，以当前有效卡数和原有额度、限流及消费期限检查为准。"
+        "approved_requirement": "0.1.87 删除无人消费的 reset_credit_observation 构造、写入和校验；旧字段只在正常状态写入时移除，真实扣卡回执、查询预算及数据库卡快照确认保留。",
+        "replacement_contract": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。"
       },
       "supporting_targets": [
         {
@@ -4977,23 +4867,23 @@
           "path": "server/tests/credit_lifecycle_parity.rs",
           "test_name": "explicit_loopback_card_observation_authorizes_one_real_reset_and_immediate_test",
           "assertions": [
-            "assert_eq!(query[\"success\"], true, \"{query}\");",
-            "assert_eq!(observation[\"available_count\"], 2);",
-            "assert_eq!(observation[\"observed_at\"], datetime(now));",
-            "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), 1);",
-            "assert_eq!(task[\"stage\"], \"recovered\");",
-            "assert_eq!(task[\"consumption_outcome\"], \"consumed\");",
-            "assert_eq!(task[\"receipt\"][\"business_code\"], \"success\");",
-            "assert_eq!(automatic_attempts, 1);",
-            "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1);",
-            "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1);",
-            "assert_eq!(observation.as_object().unwrap().len(), 4);"
+            "assert_eq!(query[\"success\"], true, \"{query}\")",
+            "assert!(observed_state[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null())",
+            "assert_eq!(\n        snapshot_row[\"extra\"][\"codex_reset_credit_snapshot\"][\"available_count\"],\n        2\n    )",
+            "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), 1)",
+            "assert_eq!(task[\"stage\"], \"recovered\")",
+            "assert_eq!(task[\"consumption_outcome\"], \"consumed\")",
+            "assert_eq!(task[\"receipt\"][\"business_code\"], \"success\")",
+            "assert_eq!(automatic_attempts, 1)",
+            "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), 1)",
+            "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1)",
+            "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1)"
           ],
           "fixtures": [
             {
               "path": "tests/contracts/credit-lifecycle/fixtures.json",
               "json_paths": [
-                "legacy_test_ids.43",
+                "legacy_test_ids.42",
                 "legacy_run.status",
                 "legacy_run.selected",
                 "legacy_run.passed",
@@ -5277,46 +5167,17 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts",
+        "test_name": "coordinator_quota_results_do_not_persist_unused_card_observations",
         "assertions": [
-          "assert_eq!(result[\"success\"], true, \"{name}: {result}\");",
-          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1);",
-          "assert_eq!(observation.is_object(), expected_observation, \"{name}\");",
-          "assert_eq!(observation[\"available_count\"], 1);",
-          "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert!(!observation.to_string().contains(ADMIN_KEY));",
-          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true);",
-          "assert!( state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"] .as_array() .is_none_or(|attempts| attempts.is_empty()) );",
-          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\");",
-          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null());",
-          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);",
-          "assert_eq!(observation.as_object().unwrap().len(), 4);"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "seed_account",
-            "assertions": [
-              "INSERT INTO accounts",
-              "expect(\"insert synthetic OAuth account\")",
-              "expect(\"read synthetic OAuth account\")"
-            ]
-          },
-          {
-            "name": "run_automatic",
-            "assertions": [
-              ".run_account(row, at)",
-              "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
-            ]
-          }
+          "assert_eq!(result[\"success\"], true, \"{name}: {result}\")",
+          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1)",
+          "assert!(observation.is_null(), \"{name}\")",
+          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true)",
+          "assert!(\n            state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"]\n                .as_array()\n                .is_none_or(|attempts| attempts.is_empty())\n        )",
+          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\")",
+          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0)",
+          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0)"
         ],
         "fixtures": [
           {
@@ -5331,13 +5192,13 @@
           }
         ]
       },
-      "coverage_note": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。",
+      "coverage_note": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。 由当前执行入口的完整断言验证。",
       "replacement": {
         "legacy_assertions": [
           "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_refresh_timestamp_outside_read_interval_is_not_trusted"
         ],
-        "approved_requirement": "Sub2Ops 0.1.83 用户已批准计划：通知分级、代码精简与恢复修复。",
-        "replacement_contract": "普通查询由响应直接生成四字段观测，不再比对账号 token 和窗口摘要；过期和未来时间拒绝。"
+        "approved_requirement": "0.1.87 删除无人消费的 reset_credit_observation 构造、写入和校验；旧字段只在正常状态写入时移除，真实扣卡回执、查询预算及数据库卡快照确认保留。",
+        "replacement_contract": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。"
       }
     },
     {
@@ -7004,11 +6865,11 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.21",
-              "cases.74",
-              "cases.75",
-              "cases.76",
-              "cases.77"
+              "legacy_tests.19",
+              "cases.70",
+              "cases.71",
+              "cases.72",
+              "cases.73"
             ]
           }
         ]
@@ -7234,8 +7095,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.22",
-              "cases.78"
+              "legacy_tests.20",
+              "cases.74"
             ]
           }
         ]
@@ -7369,8 +7230,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.23",
-              "cases.79"
+              "legacy_tests.21",
+              "cases.75"
             ]
           }
         ]
@@ -10440,8 +10301,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.60",
-              "cases.359"
+              "legacy_tests.56",
+              "cases.343"
             ]
           }
         ]
@@ -10483,8 +10344,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.61",
-              "cases.360"
+              "legacy_tests.57",
+              "cases.344"
             ]
           }
         ]
@@ -10526,8 +10387,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.62",
-              "cases.361"
+              "legacy_tests.58",
+              "cases.345"
             ]
           }
         ]
@@ -10569,8 +10430,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.63",
-              "cases.362"
+              "legacy_tests.59",
+              "cases.346"
             ]
           }
         ]
@@ -10657,8 +10518,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.64",
-              "cases.363"
+              "legacy_tests.60",
+              "cases.347"
             ]
           }
         ]
@@ -10700,8 +10561,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.65",
-              "cases.364"
+              "legacy_tests.61",
+              "cases.348"
             ]
           }
         ]
@@ -10777,8 +10638,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.66",
-              "cases.365"
+              "legacy_tests.62",
+              "cases.349"
             ]
           }
         ]
@@ -10820,8 +10681,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.67",
-              "cases.366"
+              "legacy_tests.63",
+              "cases.350"
             ]
           }
         ]
@@ -10863,8 +10724,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.68",
-              "cases.367"
+              "legacy_tests.64",
+              "cases.351"
             ]
           }
         ]
@@ -10906,10 +10767,10 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.69",
-              "cases.368",
-              "cases.369",
-              "cases.370"
+              "legacy_tests.65",
+              "cases.352",
+              "cases.353",
+              "cases.354"
             ]
           }
         ]
@@ -10951,8 +10812,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.70",
-              "cases.371"
+              "legacy_tests.66",
+              "cases.355"
             ]
           }
         ]
@@ -11266,7 +11127,7 @@
           "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
           "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
-          "assert_eq!(report[\"total_count\"].as_u64(), Some(expected_inventory_count as u64))",
+          "assert_eq!(report[\"completed\"].as_u64(), Some(expected_inventory_count as u64))",
           "assert_eq!(harness.mock.count_for(id, \"GET\", \"/usage\"), 1)",
           "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 0)",
           "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0)"
@@ -13470,9 +13331,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.51",
-              "cases.173",
-              "cases.174"
+              "legacy_tests.47",
+              "cases.157",
+              "cases.158"
             ]
           }
         ]
@@ -13514,15 +13375,15 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.52",
-              "cases.175",
-              "cases.176",
-              "cases.177",
-              "cases.178",
-              "cases.179",
-              "cases.180",
-              "cases.181",
-              "cases.182"
+              "legacy_tests.48",
+              "cases.159",
+              "cases.160",
+              "cases.161",
+              "cases.162",
+              "cases.163",
+              "cases.164",
+              "cases.165",
+              "cases.166"
             ]
           }
         ]
@@ -13564,13 +13425,13 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.53",
-              "cases.183",
-              "cases.184",
-              "cases.185",
-              "cases.186",
-              "cases.187",
-              "cases.188"
+              "legacy_tests.49",
+              "cases.167",
+              "cases.168",
+              "cases.169",
+              "cases.170",
+              "cases.171",
+              "cases.172"
             ]
           }
         ]
@@ -13612,7 +13473,23 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.54",
+              "legacy_tests.50",
+              "cases.173",
+              "cases.174",
+              "cases.175",
+              "cases.176",
+              "cases.177",
+              "cases.178",
+              "cases.179",
+              "cases.180",
+              "cases.181",
+              "cases.182",
+              "cases.183",
+              "cases.184",
+              "cases.185",
+              "cases.186",
+              "cases.187",
+              "cases.188",
               "cases.189",
               "cases.190",
               "cases.191",
@@ -13632,23 +13509,7 @@
               "cases.205",
               "cases.206",
               "cases.207",
-              "cases.208",
-              "cases.209",
-              "cases.210",
-              "cases.211",
-              "cases.212",
-              "cases.213",
-              "cases.214",
-              "cases.215",
-              "cases.216",
-              "cases.217",
-              "cases.218",
-              "cases.219",
-              "cases.220",
-              "cases.221",
-              "cases.222",
-              "cases.223",
-              "cases.224"
+              "cases.208"
             ]
           }
         ]
@@ -13690,14 +13551,14 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.55",
-              "cases.225",
-              "cases.226",
-              "cases.227",
-              "cases.228",
-              "cases.229",
-              "cases.230",
-              "cases.231"
+              "legacy_tests.51",
+              "cases.209",
+              "cases.210",
+              "cases.211",
+              "cases.212",
+              "cases.213",
+              "cases.214",
+              "cases.215"
             ]
           }
         ]
@@ -13739,7 +13600,23 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.56",
+              "legacy_tests.52",
+              "cases.216",
+              "cases.217",
+              "cases.218",
+              "cases.219",
+              "cases.220",
+              "cases.221",
+              "cases.222",
+              "cases.223",
+              "cases.224",
+              "cases.225",
+              "cases.226",
+              "cases.227",
+              "cases.228",
+              "cases.229",
+              "cases.230",
+              "cases.231",
               "cases.232",
               "cases.233",
               "cases.234",
@@ -13813,23 +13690,7 @@
               "cases.302",
               "cases.303",
               "cases.304",
-              "cases.305",
-              "cases.306",
-              "cases.307",
-              "cases.308",
-              "cases.309",
-              "cases.310",
-              "cases.311",
-              "cases.312",
-              "cases.313",
-              "cases.314",
-              "cases.315",
-              "cases.316",
-              "cases.317",
-              "cases.318",
-              "cases.319",
-              "cases.320",
-              "cases.321"
+              "cases.305"
             ]
           }
         ]
@@ -13871,28 +13732,28 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.57",
+              "legacy_tests.53",
+              "cases.306",
+              "cases.307",
+              "cases.308",
+              "cases.309",
+              "cases.310",
+              "cases.311",
+              "cases.312",
+              "cases.313",
+              "cases.314",
+              "cases.315",
+              "cases.316",
+              "cases.317",
+              "cases.318",
+              "cases.319",
+              "cases.320",
+              "cases.321",
               "cases.322",
               "cases.323",
               "cases.324",
               "cases.325",
-              "cases.326",
-              "cases.327",
-              "cases.328",
-              "cases.329",
-              "cases.330",
-              "cases.331",
-              "cases.332",
-              "cases.333",
-              "cases.334",
-              "cases.335",
-              "cases.336",
-              "cases.337",
-              "cases.338",
-              "cases.339",
-              "cases.340",
-              "cases.341",
-              "cases.342"
+              "cases.326"
             ]
           }
         ]
@@ -13934,19 +13795,19 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.58",
-              "cases.343",
-              "cases.344",
-              "cases.345",
-              "cases.346",
-              "cases.347",
-              "cases.348",
-              "cases.349",
-              "cases.350",
-              "cases.351",
-              "cases.352",
-              "cases.353",
-              "cases.354"
+              "legacy_tests.54",
+              "cases.327",
+              "cases.328",
+              "cases.329",
+              "cases.330",
+              "cases.331",
+              "cases.332",
+              "cases.333",
+              "cases.334",
+              "cases.335",
+              "cases.336",
+              "cases.337",
+              "cases.338"
             ]
           }
         ]
@@ -13988,11 +13849,11 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.59",
-              "cases.355",
-              "cases.356",
-              "cases.357",
-              "cases.358"
+              "legacy_tests.55",
+              "cases.339",
+              "cases.340",
+              "cases.341",
+              "cases.342"
             ]
           }
         ]
@@ -19539,23 +19400,27 @@
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_concurrent_force_refresh_calls_share_one_cycle",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "concurrent_force_refresh_callers_share_one_runtime_cycle",
+        "test_name": "concurrent_quota_refresh_callers_share_one_runtime_batch",
         "assertions": [
+          "assert_eq!(first[\"id\"], second[\"id\"])",
+          "assert_eq!(second[\"status\"], \"running\")",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
-          "assert_eq!(first[\"success\"], true, \"first report: {first_diagnostic}\")",
-          "assert_eq!(\n        second[\"success\"], true,\n        \"coalesced report: {second_diagnostic}\"\n    )",
-          "assert_eq!(first[\"coalesced\"], false)",
-          "assert_eq!(second[\"coalesced\"], true)",
+          "assert_eq!(report[\"items\"][0][\"status\"], \"success\")",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
-          "assert!(\n        has_no_automatic_attempts(quota_query),\n        \"manual refresh must not consume automatic budget: {quota_query}\"\n    )"
+          "assert!(has_no_automatic_attempts(\n        &state[\"scheduler\"][id.to_string()][\"quota_query\"]\n    ))"
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“concurrent force refresh calls share one cycle”映射到 concurrent_force_refresh_callers_share_one_runtime_cycle；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。 由当前执行入口的完整断言验证。",
+      "replacement": {
+        "legacy_assertions": "固定旧断言“concurrent force refresh calls share one cycle”映射到 concurrent_force_refresh_callers_share_one_runtime_cycle；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked.",
+        "approved_requirement": "0.1.87 删除无人调用的同步 force-refresh 测试入口及专属任务状态；现有异步 /quota-refresh 和实际 monitor.tick 调度保持。",
+        "replacement_contract": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_depleted_seven_day_never_runs_account_test",
@@ -19597,64 +19462,77 @@
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_force_refresh_ignores_batch_cap_and_queries_all_accounts",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "force_refresh_ignores_probe_batch_cap_and_queries_all_accounts",
+        "test_name": "quota_refresh_ignores_probe_batch_cap_and_queries_all_accounts",
         "assertions": [
-          "assert_eq!(report[\"success\"], true)",
-          "assert_eq!(report[\"total_count\"], 3)",
-          "assert_eq!(report[\"queried_count\"], 3)",
-          "assert_eq!(report[\"success_count\"], 3)",
-          "assert_eq!(report[\"failure_count\"], 0)",
+          "assert_eq!(report[\"total\"], 3)",
+          "assert_eq!(report[\"completed\"], 3)",
+          "assert!(report[\"items\"]\n        .as_array()\n        .unwrap()\n        .iter()\n        .all(|item| item[\"status\"] == \"success\"))",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 3)",
           "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
           "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
-          "assert_eq!(\n            state[\"oauth_results\"][id.to_string()][\"queried_at\"],\n            report[\"refresh_at\"]\n        )",
+          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true)",
+          "assert!(parse_datetime(&state[\"oauth_results\"][id.to_string()][\"queried_at\"]).is_some())",
           "assert!(harness.mock.unexpected().is_empty())"
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“force refresh ignores batch cap and queries all accounts”映射到 linked_credentials_share_account_locks_and_force_refresh_ignores_batch_cap；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。 由当前执行入口的完整断言验证。",
+      "replacement": {
+        "legacy_assertions": "固定旧断言“force refresh ignores batch cap and queries all accounts”映射到 linked_credentials_share_account_locks_and_force_refresh_ignores_batch_cap；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked.",
+        "approved_requirement": "0.1.87 删除无人调用的同步 force-refresh 测试入口及专属任务状态；现有异步 /quota-refresh 和实际 monitor.tick 调度保持。",
+        "replacement_contract": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_force_refresh_missing_admin_key_is_explicit_and_does_not_query",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
-        "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "force_refresh_without_admin_key_returns_explicit_error_without_upstream_calls",
+        "path": "server/tests/catalog_runtime_parity.rs",
+        "test_name": "desktop_routes_require_auth_except_safe_connection_status_diagnostics",
         "assertions": [
-          "assert_eq!(report[\"success\"], false)",
-          "assert_eq!(report[\"error_code\"], \"missing_sub2api_admin_credentials\")",
-          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
-          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)"
+          "assert_eq!(cases.len(), 61)",
+          "assert!(\n        rejected.is_empty(),\n        \"legal desktop management requests without x-api-key must return 401/403: {}\",\n        rejected.join(\", \")\n    )",
+          "assert_eq!(diagnostic_status, 200)",
+          "assert!(\n        safe_diagnostic,\n        \"connection-status must return only the static unauthenticated probe fields\"\n    )",
+          "assert!(\n        no_upstream_business_calls,\n        \"unauthenticated management and diagnostic requests must not call the upstream\"\n    )"
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“force refresh missing admin key is explicit and does not query”映射到 force_refresh_without_admin_key_returns_explicit_error_without_upstream_calls；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。 由当前执行入口的完整断言验证。",
+      "replacement": {
+        "legacy_assertions": "固定旧断言“force refresh missing admin key is explicit and does not query”映射到 force_refresh_without_admin_key_returns_explicit_error_without_upstream_calls；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked.",
+        "approved_requirement": "0.1.87 删除无人调用的同步 force-refresh 测试入口及专属任务状态；现有异步 /quota-refresh 和实际 monitor.tick 调度保持。",
+        "replacement_contract": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_force_refresh_timeout_waiting_for_shared_lock_is_explicit",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "force_refresh_cycle_lock_timeout_does_not_dispatch_after_unlock",
+        "test_name": "concurrent_quota_refresh_callers_share_one_runtime_batch",
         "assertions": [
-          "assert_eq!(report[\"success\"], false)",
-          "assert_eq!(report[\"timed_out\"], true)",
-          "assert_eq!(report[\"error_code\"], \"force_refresh_timeout\")",
-          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
-          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
-          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
-          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
-          "assert!(harness.mock.unexpected().is_empty())"
+          "assert_eq!(first[\"id\"], second[\"id\"])",
+          "assert_eq!(second[\"status\"], \"running\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(report[\"items\"][0][\"status\"], \"success\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert!(has_no_automatic_attempts(\n        &state[\"scheduler\"][id.to_string()][\"quota_query\"]\n    ))"
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“force refresh timeout waiting for shared lock is explicit”映射到 force_refresh_cycle_lock_timeout_does_not_dispatch_after_unlock；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。 由当前执行入口的完整断言验证。",
+      "replacement": {
+        "legacy_assertions": "固定旧断言“force refresh timeout waiting for shared lock is explicit”映射到 force_refresh_cycle_lock_timeout_does_not_dispatch_after_unlock；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked.",
+        "approved_requirement": "0.1.87 删除无人调用的同步 force-refresh 测试入口及专属任务状态；现有异步 /quota-refresh 和实际 monitor.tick 调度保持。",
+        "replacement_contract": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_fresh_available_quota_recovers_existing_rate_limit_without_cache_once",
@@ -19726,30 +19604,33 @@
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_immediate_recovery_runs_at_0459_beijing",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "force_refresh_recovers_fresh_available_quota_once_at_0459_beijing",
+        "test_name": "monitor_recovers_fresh_available_quota_once_at_0459_beijing",
         "assertions": [
-          "assert!(due .with_timezone(&chrono::FixedOffset::east_opt(8 * 3600).unwrap()).to_rfc3339().contains(\"T04:59:00+08:00\"));",
-          "assert_eq!(first[\"recovered_count\"], 1)",
+          "assert!(due\n        .with_timezone(&chrono::FixedOffset::east_opt(8 * 3600).unwrap())\n        .to_rfc3339()\n        .contains(\"T04:59:00+08:00\"))",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
           "assert_eq!(\n        harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"],\n        Value::Null\n    )",
           "assert_eq!(event[\"status\"], \"recovered\")",
           "assert_eq!(event[\"model_id\"], \"gpt-5.6-luna\")",
-          "assert_eq!(second[\"recovered_count\"], 0)",
-          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
-          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"],\n        \"recovered\"\n    )",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"recovery_intent\"]\n            [\"status\"],\n        \"recovered\"\n    )",
           "assert!(harness.mock.unexpected().is_empty())"
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“immediate recovery runs at 0459 beijing”映射到 force_refresh_recovers_fresh_available_quota_once_at_0459_beijing；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。 由当前执行入口的完整断言验证。",
+      "replacement": {
+        "legacy_assertions": "固定旧断言“immediate recovery runs at 0459 beijing”映射到 force_refresh_recovers_fresh_available_quota_once_at_0459_beijing；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked.",
+        "approved_requirement": "0.1.87 删除无人调用的同步 force-refresh 测试入口及专属任务状态；现有异步 /quota-refresh 和实际 monitor.tick 调度保持。",
+        "replacement_contract": "实际批量刷新异步返回进度并复用正在运行的批次；管理接口仍先鉴权，恢复由现有调度执行且不重复测试。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_no_automatic_probe_before_seven_day_reset",
@@ -20073,10 +19954,10 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.43",
-              "cases.125",
-              "cases.126",
-              "cases.127"
+              "legacy_tests.40",
+              "cases.117",
+              "cases.118",
+              "cases.119"
             ]
           }
         ]
@@ -20118,8 +19999,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.44",
-              "cases.128"
+              "legacy_tests.41",
+              "cases.120"
             ]
           }
         ]
@@ -20161,9 +20042,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.45",
-              "cases.129",
-              "cases.130"
+              "legacy_tests.42",
+              "cases.121",
+              "cases.122"
             ]
           }
         ]
@@ -20205,8 +20086,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.46",
-              "cases.131"
+              "legacy_tests.43",
+              "cases.123"
             ]
           }
         ]
@@ -20248,9 +20129,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.47",
-              "cases.132",
-              "cases.133"
+              "legacy_tests.44",
+              "cases.124",
+              "cases.125"
             ]
           }
         ]
@@ -20292,7 +20173,15 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.48",
+              "legacy_tests.45",
+              "cases.126",
+              "cases.127",
+              "cases.128",
+              "cases.129",
+              "cases.130",
+              "cases.131",
+              "cases.132",
+              "cases.133",
               "cases.134",
               "cases.135",
               "cases.136",
@@ -20310,15 +20199,7 @@
               "cases.148",
               "cases.149",
               "cases.150",
-              "cases.151",
-              "cases.152",
-              "cases.153",
-              "cases.154",
-              "cases.155",
-              "cases.156",
-              "cases.157",
-              "cases.158",
-              "cases.159"
+              "cases.151"
             ]
           }
         ]
@@ -20389,12 +20270,12 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.50",
-              "cases.168",
-              "cases.169",
-              "cases.170",
-              "cases.171",
-              "cases.172"
+              "legacy_tests.46",
+              "cases.152",
+              "cases.153",
+              "cases.154",
+              "cases.155",
+              "cases.156"
             ]
           }
         ]
@@ -23403,8 +23284,7 @@
               "assert!(!cases.is_empty(),",
               "assert_same(",
               "assert!(actual.is_err(),",
-              "assert_eq!(args, case[\"arguments\"]);",
-              "assert!(actual.is_err(), \"retired releasing state is outside the 0.1.84 upgrade contract\")"
+              "assert_eq!(args, case[\"arguments\"]);"
             ]
           },
           {
@@ -23553,9 +23433,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.20",
-              "cases.72",
-              "cases.73"
+              "legacy_tests.18",
+              "cases.68",
+              "cases.69"
             ]
           }
         ]
@@ -25476,8 +25356,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.25",
-              "cases.84"
+              "legacy_tests.22",
+              "cases.76"
             ]
           }
         ]
@@ -25550,8 +25430,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.26",
-              "cases.85"
+              "legacy_tests.23",
+              "cases.77"
             ]
           }
         ]
@@ -25593,8 +25473,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.27",
-              "cases.86"
+              "legacy_tests.24",
+              "cases.78"
             ]
           }
         ]
@@ -25636,9 +25516,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.28",
-              "cases.87",
-              "cases.88"
+              "legacy_tests.25",
+              "cases.79",
+              "cases.80"
             ]
           }
         ]
@@ -25680,8 +25560,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.29",
-              "cases.89"
+              "legacy_tests.26",
+              "cases.81"
             ]
           }
         ]
@@ -25723,9 +25603,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.30",
-              "cases.90",
-              "cases.91"
+              "legacy_tests.27",
+              "cases.82",
+              "cases.83"
             ]
           }
         ]
@@ -25767,8 +25647,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.31",
-              "cases.92"
+              "legacy_tests.28",
+              "cases.84"
             ]
           }
         ]
@@ -25810,10 +25690,10 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.32",
-              "cases.93",
-              "cases.94",
-              "cases.95"
+              "legacy_tests.29",
+              "cases.85",
+              "cases.86",
+              "cases.87"
             ]
           }
         ]
@@ -25855,9 +25735,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.33",
-              "cases.96",
-              "cases.97"
+              "legacy_tests.30",
+              "cases.88",
+              "cases.89"
             ]
           }
         ]
@@ -25899,9 +25779,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.34",
-              "cases.98",
-              "cases.99"
+              "legacy_tests.31",
+              "cases.90",
+              "cases.91"
             ]
           }
         ]
@@ -25943,9 +25823,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.35",
-              "cases.100",
-              "cases.101"
+              "legacy_tests.32",
+              "cases.92",
+              "cases.93"
             ]
           }
         ]
@@ -25987,9 +25867,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.36",
-              "cases.102",
-              "cases.103"
+              "legacy_tests.33",
+              "cases.94",
+              "cases.95"
             ]
           }
         ]
@@ -26031,12 +25911,12 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.37",
-              "cases.104",
-              "cases.105",
-              "cases.106",
-              "cases.107",
-              "cases.108"
+              "legacy_tests.34",
+              "cases.96",
+              "cases.97",
+              "cases.98",
+              "cases.99",
+              "cases.100"
             ]
           }
         ]
@@ -26078,8 +25958,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.38",
-              "cases.109"
+              "legacy_tests.35",
+              "cases.101"
             ]
           }
         ]
@@ -26121,8 +26001,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.39",
-              "cases.110"
+              "legacy_tests.36",
+              "cases.102"
             ]
           }
         ]
@@ -26164,10 +26044,10 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.40",
-              "cases.111",
-              "cases.112",
-              "cases.113"
+              "legacy_tests.37",
+              "cases.103",
+              "cases.104",
+              "cases.105"
             ]
           }
         ]
@@ -26209,12 +26089,12 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.41",
-              "cases.114",
-              "cases.115",
-              "cases.116",
-              "cases.117",
-              "cases.118"
+              "legacy_tests.38",
+              "cases.106",
+              "cases.107",
+              "cases.108",
+              "cases.109",
+              "cases.110"
             ]
           }
         ]
@@ -26256,13 +26136,13 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.42",
-              "cases.119",
-              "cases.120",
-              "cases.121",
-              "cases.122",
-              "cases.123",
-              "cases.124"
+              "legacy_tests.39",
+              "cases.111",
+              "cases.112",
+              "cases.113",
+              "cases.114",
+              "cases.115",
+              "cases.116"
             ]
           }
         ]

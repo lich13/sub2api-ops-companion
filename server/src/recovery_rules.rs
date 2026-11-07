@@ -447,7 +447,7 @@ pub fn candidates(
         if !control_allows(row, &result, meta, at) {
             continue;
         }
-        let (blocked, _) = oauth_admission::automatic_gate(row, &result, meta, at, true, false, 1)?;
+        let (blocked, _) = oauth_admission::automatic_gate(row, &result, meta, at, true, false)?;
         if matches!(blocked, "account_ineligible" | "auth_paused") {
             continue;
         }

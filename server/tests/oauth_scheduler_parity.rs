@@ -738,34 +738,20 @@ fn has_no_automatic_attempts(quota_query: &Value) -> bool {
     }
 }
 
-fn force_refresh_diagnostic(report: &Value, state: &Value, id: i64) -> Value {
-    let key = id.to_string();
-    json!({
-        "report": {
-            "success": report["success"],
-            "timed_out": report["timed_out"],
-            "error_code": report["error_code"],
-            "total_count": report["total_count"],
-            "queried_count": report["queried_count"],
-            "skipped_count": report["skipped_count"],
-            "reused_count": report["reused_count"],
-            "success_count": report["success_count"],
-            "failure_count": report["failure_count"],
-            "coalesced": report["coalesced"]
-        },
-        "quota_query": {
-            "last_query_at": state["scheduler"][&key]["quota_query"]["last_query_at"],
-            "automatic_attempts": state["scheduler"][&key]["quota_query"]["automatic_attempts"],
-            "failure_count": state["scheduler"][&key]["quota_query"]["failure_count"],
-            "retry_at": state["scheduler"][&key]["quota_query"]["retry_at"],
-            "last_error_code": state["scheduler"][&key]["last_error_code"]
-        },
-        "saved_usage": {
-            "success": state["oauth_results"][&key]["success"],
-            "error_code": state["oauth_results"][&key]["error_code"],
-            "queried_at": state["oauth_results"][&key]["queried_at"]
+async fn wait_recovery_status(h: &Harness, id: i64, expected: &str) {
+    tokio::time::timeout(StdDuration::from_secs(8), async {
+        loop {
+            if h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
+                ["status"]
+                == expected
+            {
+                break;
+            }
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
         }
     })
+    .await
+    .expect("scheduled recovery reaches its terminal status");
 }
 
 fn cached_result(row: &Value, at: DateTime<Utc>, data: Value) -> Value {
@@ -2199,186 +2185,36 @@ async fn monitor_and_direct_query_share_one_inflight_usage_request() {
 }
 
 #[tokio::test]
-async fn concurrent_force_refresh_callers_share_one_runtime_cycle() {
+async fn concurrent_quota_refresh_callers_share_one_runtime_batch() {
     let harness = Harness::new().await;
     let row = harness
-        .seed_account("plus", "fixture-force-coalesce", json!({}))
+        .seed_account("plus", "fixture-batch-coalesce", json!({}))
         .await;
     let id = integer(&row["id"]).unwrap();
     let gate = Gate::new();
     *harness.mock.usage_gate.lock().unwrap() = Some(gate.clone());
-    let monitor = harness.runtime.monitor.clone();
-    let first = tokio::spawn(async move {
-        monitor
-            .force_refresh_with_timeout(std::time::Duration::from_secs(120))
-            .await
-            .unwrap()
-    });
+    let runtime = harness.runtime.0.as_ref().unwrap();
+    let first = runtime.start_quota_refresh(ADMIN_KEY).await.unwrap();
     tokio::time::timeout(StdDuration::from_secs(5), gate.entered.notified())
         .await
-        .expect("first force-refresh cycle entered the loopback usage endpoint");
-
-    let monitor = harness.runtime.monitor.clone();
-    let second = tokio::spawn(async move {
-        monitor
-            .force_refresh_with_timeout(std::time::Duration::from_secs(120))
-            .await
-            .unwrap()
-    });
-    tokio::time::sleep(StdDuration::from_millis(25)).await;
+        .unwrap();
+    let second = runtime.start_quota_refresh(ADMIN_KEY).await.unwrap();
+    assert_eq!(first["id"], second["id"]);
+    assert_eq!(second["status"], "running");
     assert_eq!(harness.mock.count("GET", "/usage"), 1);
     gate.release.notify_one();
-    let first = first.await.unwrap();
-    let second = second.await.unwrap();
+    let report = wait_for_quota_batch_completion(&harness).await;
+    assert_eq!(report["items"][0]["status"], "success");
+    assert_eq!(harness.mock.count("GET", "/usage"), 1);
     let state = harness.runtime.monitor.state().unwrap();
-    let first_diagnostic = force_refresh_diagnostic(&first, &state, id);
-    let second_diagnostic = force_refresh_diagnostic(&second, &state, id);
-    assert_eq!(first["success"], true, "first report: {first_diagnostic}");
-    assert_eq!(
-        second["success"], true,
-        "coalesced report: {second_diagnostic}"
-    );
-    assert_eq!(first["coalesced"], false);
-    assert_eq!(second["coalesced"], true);
-    assert_eq!(harness.mock.count("GET", "/usage"), 1);
-    let quota_query = &state["scheduler"][id.to_string()]["quota_query"];
-    assert!(
-        has_no_automatic_attempts(quota_query),
-        "manual refresh must not consume automatic budget: {quota_query}"
-    );
+    assert!(has_no_automatic_attempts(
+        &state["scheduler"][id.to_string()]["quota_query"]
+    ));
     harness.close().await;
 }
 
 #[tokio::test]
-async fn force_refresh_waiter_reports_explicit_timeout_without_replaying_owner_request() {
-    let harness = Harness::new().await;
-    harness
-        .seed_account("plus", "fixture-force-timeout", json!({}))
-        .await;
-    let gate = Gate::new();
-    *harness.mock.usage_gate.lock().unwrap() = Some(gate.clone());
-    let monitor = harness.runtime.monitor.clone();
-    let owner = tokio::spawn(async move {
-        monitor
-            .force_refresh_with_timeout(std::time::Duration::from_secs(120))
-            .await
-            .unwrap()
-    });
-    tokio::time::timeout(StdDuration::from_secs(5), gate.entered.notified())
-        .await
-        .expect("owner request remains in flight at the loopback usage endpoint");
-
-    let timed_out = harness
-        .runtime
-        .monitor
-        .force_refresh_with_timeout(StdDuration::from_millis(50))
-        .await
-        .unwrap();
-    assert_eq!(timed_out["success"], false);
-    assert_eq!(timed_out["timed_out"], true);
-    assert_eq!(harness.mock.count("GET", "/usage"), 1);
-    gate.release.notify_one();
-    assert_eq!(owner.await.unwrap()["success"], true);
-    assert_eq!(harness.mock.count("GET", "/usage"), 1);
-    harness.close().await;
-}
-
-#[tokio::test]
-async fn force_refresh_cycle_lock_timeout_does_not_dispatch_after_unlock() {
-    let harness = Harness::new().await;
-    let row = harness
-        .seed_account("plus", "fixture-force-cycle-lock-timeout", json!({}))
-        .await;
-    let id = integer(&row["id"]).unwrap();
-    harness
-        .runtime
-        .config
-        .oauth
-        .transaction(|config| {
-            config["oauth_recovery_monitor_enabled"] = false.into();
-            config["oauth_recovery_connection_account_ids"] = json!([id]);
-            config["oauth_recovery_model_account_ids"] = json!([]);
-            Ok(())
-        })
-        .unwrap();
-
-    let mut blocker = harness.runtime.db.pool.begin().await.unwrap();
-    sqlx::query("LOCK TABLE accounts IN ACCESS EXCLUSIVE MODE")
-        .execute(&mut *blocker)
-        .await
-        .unwrap();
-    let monitor = harness.runtime.monitor.clone();
-    let tick = tokio::spawn(async move { monitor.tick().await });
-    tokio::time::timeout(StdDuration::from_secs(8), async {
-        loop {
-            let waiting: i64 = sqlx::query_scalar(
-                "SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND wait_event_type='Lock' AND query ILIKE '%FROM accounts%'",
-            )
-            .fetch_one(&harness.runtime.db.pool)
-            .await
-            .unwrap();
-            if waiting > 0 {
-                break;
-            }
-            tokio::time::sleep(StdDuration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("monitor tick must hold the real cycle lock while waiting on inventory");
-
-    let report = harness
-        .runtime
-        .monitor
-        .force_refresh_with_timeout(StdDuration::from_millis(100))
-        .await
-        .unwrap();
-    assert_eq!(report["success"], false);
-    assert_eq!(report["timed_out"], true);
-    assert_eq!(report["error_code"], "force_refresh_timeout");
-    assert_eq!(harness.mock.count("GET", "/usage"), 0);
-    blocker.commit().await.unwrap();
-    tick.await.unwrap().unwrap();
-    tokio::time::sleep(StdDuration::from_millis(150)).await;
-    assert_eq!(harness.mock.count("GET", "/usage"), 0);
-    assert_eq!(harness.mock.count("POST", "/test"), 0);
-    assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
-    assert!(harness.mock.unexpected().is_empty());
-    harness.close().await;
-}
-
-#[tokio::test]
-async fn force_refresh_without_admin_key_returns_explicit_error_without_upstream_calls() {
-    let harness = Harness::new().await;
-    harness
-        .seed_account("plus", "fixture-missing-admin", json!({}))
-        .await;
-    harness
-        .runtime
-        .monitor
-        .store
-        .transaction(|state| {
-            state["settings"]
-                .as_object_mut()
-                .unwrap()
-                .remove("sub2api_admin_token");
-            Ok(())
-        })
-        .expect("remove only the synthetic admin credential from the temporary state");
-    let report = harness
-        .runtime
-        .monitor
-        .force_refresh_with_timeout(std::time::Duration::from_secs(120))
-        .await
-        .unwrap();
-    assert_eq!(report["success"], false);
-    assert_eq!(report["error_code"], "missing_sub2api_admin_credentials");
-    assert_eq!(harness.mock.count("GET", "/usage"), 0);
-    assert_eq!(harness.mock.count("POST", "/test"), 0);
-    harness.close().await;
-}
-
-#[tokio::test]
-async fn force_refresh_ignores_probe_batch_cap_and_queries_all_accounts() {
+async fn quota_refresh_ignores_probe_batch_cap_and_queries_all_accounts() {
     let harness = Harness::new().await;
     harness
         .runtime
@@ -2397,33 +2233,36 @@ async fn force_refresh_ignores_probe_batch_cap_and_queries_all_accounts() {
         ids.push(integer(&row["id"]).unwrap());
     }
 
-    let report = harness
+    harness
         .runtime
-        .monitor
-        .force_refresh_with_timeout(std::time::Duration::from_secs(120))
+        .0
+        .as_ref()
+        .unwrap()
+        .start_quota_refresh(ADMIN_KEY)
         .await
         .unwrap();
-    assert_eq!(report["success"], true);
-    assert_eq!(report["total_count"], 3);
-    assert_eq!(report["queried_count"], 3);
-    assert_eq!(report["success_count"], 3);
-    assert_eq!(report["failure_count"], 0);
+    let report = wait_for_quota_batch_completion(&harness).await;
+    assert_eq!(report["total"], 3);
+    assert_eq!(report["completed"], 3);
+    assert!(report["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|item| item["status"] == "success"));
     assert_eq!(harness.mock.count("GET", "/usage"), 3);
     assert_eq!(harness.mock.count("POST", "/test"), 0);
     assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
     let state = harness.runtime.monitor.state().unwrap();
     for id in ids {
-        assert_eq!(
-            state["oauth_results"][id.to_string()]["queried_at"],
-            report["refresh_at"]
-        );
+        assert_eq!(state["oauth_results"][id.to_string()]["success"], true);
+        assert!(parse_datetime(&state["oauth_results"][id.to_string()]["queried_at"]).is_some());
     }
     assert!(harness.mock.unexpected().is_empty());
     harness.close().await;
 }
 
 #[tokio::test]
-async fn force_refresh_recovers_fresh_available_quota_once_at_0459_beijing() {
+async fn monitor_recovers_fresh_available_quota_once_at_0459_beijing() {
     let due = Utc.with_ymd_and_hms(2026, 9, 29, 20, 59, 0).unwrap();
     assert!(due
         .with_timezone(&chrono::FixedOffset::east_opt(8 * 3600).unwrap())
@@ -2438,13 +2277,9 @@ async fn force_refresh_recovers_fresh_available_quota_once_at_0459_beijing() {
     harness.set_now(due);
     harness.mock.clear_block_on_test(id);
 
-    let first = harness
-        .runtime
-        .monitor
-        .force_refresh_with_timeout(std::time::Duration::from_secs(120))
-        .await
-        .unwrap();
-    assert_eq!(first["recovered_count"], 1);
+    harness.runtime.monitor.startup().await.unwrap();
+    harness.runtime.monitor.tick().await.unwrap();
+    wait_recovery_status(&harness, id, "recovered").await;
     assert_eq!(harness.mock.count("GET", "/usage"), 1);
     assert_eq!(harness.mock.count("POST", "/test"), 1);
     assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
@@ -2464,14 +2299,8 @@ async fn force_refresh_recovers_fresh_available_quota_once_at_0459_beijing() {
     assert_eq!(event["model_id"], "gpt-5.6-luna");
 
     harness.set_now(due + Duration::seconds(1));
-    let second = harness
-        .runtime
-        .monitor
-        .force_refresh_with_timeout(std::time::Duration::from_secs(120))
-        .await
-        .unwrap();
-    assert_eq!(second["recovered_count"], 0);
-    assert_eq!(harness.mock.count("GET", "/usage"), 2);
+    harness.runtime.monitor.tick().await.unwrap();
+    assert_eq!(harness.mock.count("GET", "/usage"), 1);
     assert_eq!(harness.mock.count("POST", "/test"), 1);
     assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
     assert_eq!(
@@ -5003,9 +4832,21 @@ async fn early_quota_reset_retires_old_waits_and_recovers_only_remaining_blocks(
         let report = h
             .runtime
             .monitor
-            .force_refresh_with_timeout(std::time::Duration::from_secs(120))
-            .await
-            .unwrap();
+            .queries
+            .query(id, ADMIN_KEY, query_options(Source::Manual, h.now()))
+            .await;
+        assert_eq!(report["success"], true);
+        h.runtime.monitor.tick().await.unwrap();
+        wait_recovery_status(
+            &h,
+            id,
+            if already_unblocked {
+                "cancelled"
+            } else {
+                "recovered"
+            },
+        )
+        .await;
         let state = h.runtime.monitor.state().unwrap();
         let intent = &state["scheduler"][id.to_string()]["recovery_intent"];
         let expected_status = if already_unblocked {

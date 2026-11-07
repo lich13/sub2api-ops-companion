@@ -778,7 +778,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_recovery_config030:AutoResetProjection030Tests.test_active_recovery_steps_remain_visible",
-      "status": "superseded",
+      "status": "mapped",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/pinned_rule_traces.rs",
@@ -794,8 +794,7 @@
               "assert!(!cases.is_empty(),",
               "assert_same(",
               "assert!(actual.is_err(),",
-              "assert_eq!(args, case[\"arguments\"]);",
-              "assert!(actual.is_err(), \"retired releasing state is outside the 0.1.84 upgrade contract\")"
+              "assert_eq!(args, case[\"arguments\"]);"
             ]
           },
           {
@@ -828,115 +827,6 @@
               "cases.65",
               "cases.66",
               "cases.67"
-            ]
-          }
-        ]
-      },
-      "coverage_note": "保留当前有效状态的只读投影、输入不变和重读一致断言；旧 releasing 状态不属于 0.1.84 及以后升级范围，由现有状态校验拒绝。",
-      "replacement": {
-        "legacy_assertions": [
-          "重读旧释放任务后 stage 仍为 releasing"
-        ],
-        "approved_requirement": "Sub2Ops 0.1.85 已批准计划：删除无效中间补查，升级兼容范围收缩为 0.1.84 及以后，保持当前任务与扣卡记录。",
-        "replacement_contract": "保留当前有效状态的只读投影、输入不变和重读一致断言；旧 releasing 状态不属于 0.1.84 及以后升级范围，由现有状态校验拒绝。"
-      }
-    },
-    {
-      "legacy_test_id": "py:tests.test_recovery_config030:AutoResetProjection030Tests.test_completed_or_relinquished_states_are_hidden_without_deleting_history",
-      "status": "mapped",
-      "target": {
-        "kind": "rust_test",
-        "path": "server/tests/pinned_rule_traces.rs",
-        "test_name": "recovery_config030_autoresetprojection030tests_test_completed_or_relinquished_states_are_hidden_without_deleting_history",
-        "assertions": [
-          "check(",
-          "\"py:tests.test_recovery_config030:AutoResetProjection030Tests.test_completed_or_relinquished_states_are_hidden_without_deleting_history\""
-        ],
-        "helper_assertions": [
-          {
-            "name": "check",
-            "assertions": [
-              "assert!(!cases.is_empty(),",
-              "assert_same(",
-              "assert!(actual.is_err(),",
-              "assert_eq!(args, case[\"arguments\"]);"
-            ]
-          },
-          {
-            "name": "assert_same",
-            "assertions": [
-              "assert_eq!(a.len(), b.len(),",
-              "assert!(a.contains_key(key),",
-              "_ => assert_eq!(actual, expected,",
-              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
-            ]
-          },
-          {
-            "name": "execute",
-            "assertions": [
-              "assert_eq!(std::fs::read(&path).unwrap(), before);",
-              "OAuthState::new(path, false).snapshot()?[\"scheduler\"][\"31\"][\"auto_reset_credit\"],"
-            ]
-          }
-        ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/rule-traces/fixtures.json",
-            "json_paths": [
-              "legacy_tests.18",
-              "cases.68",
-              "cases.69",
-              "cases.70"
-            ]
-          }
-        ]
-      },
-      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
-    },
-    {
-      "legacy_test_id": "py:tests.test_recovery_config030:AutoResetProjection030Tests.test_manual_state_without_any_consumption_attempt_is_hidden",
-      "status": "mapped",
-      "target": {
-        "kind": "rust_test",
-        "path": "server/tests/pinned_rule_traces.rs",
-        "test_name": "recovery_config030_autoresetprojection030tests_test_manual_state_without_any_consumption_attempt_is_hidden",
-        "assertions": [
-          "check(",
-          "\"py:tests.test_recovery_config030:AutoResetProjection030Tests.test_manual_state_without_any_consumption_attempt_is_hidden\""
-        ],
-        "helper_assertions": [
-          {
-            "name": "check",
-            "assertions": [
-              "assert!(!cases.is_empty(),",
-              "assert_same(",
-              "assert!(actual.is_err(),",
-              "assert_eq!(args, case[\"arguments\"]);"
-            ]
-          },
-          {
-            "name": "assert_same",
-            "assertions": [
-              "assert_eq!(a.len(), b.len(),",
-              "assert!(a.contains_key(key),",
-              "_ => assert_eq!(actual, expected,",
-              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
-            ]
-          },
-          {
-            "name": "execute",
-            "assertions": [
-              "assert_eq!(std::fs::read(&path).unwrap(), before);",
-              "OAuthState::new(path, false).snapshot()?[\"scheduler\"][\"31\"][\"auto_reset_credit\"],"
-            ]
-          }
-        ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/rule-traces/fixtures.json",
-            "json_paths": [
-              "legacy_tests.19",
-              "cases.71"
             ]
           }
         ]
@@ -985,9 +875,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.20",
-              "cases.72",
-              "cases.73"
+              "legacy_tests.18",
+              "cases.68",
+              "cases.69"
             ]
           }
         ]
@@ -1029,11 +919,11 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.21",
-              "cases.74",
-              "cases.75",
-              "cases.76",
-              "cases.77"
+              "legacy_tests.19",
+              "cases.70",
+              "cases.71",
+              "cases.72",
+              "cases.73"
             ]
           }
         ]
@@ -1075,8 +965,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.22",
-              "cases.78"
+              "legacy_tests.20",
+              "cases.74"
             ]
           }
         ]
@@ -1118,54 +1008,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.23",
-              "cases.79"
-            ]
-          }
-        ]
-      },
-      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
-    },
-    {
-      "legacy_test_id": "py:tests.test_auto_reset038:AutoReset038ObservationTests.test_observation_from_usage_requires_fresh_explicit_matching_card_data",
-      "status": "mapped",
-      "target": {
-        "kind": "rust_test",
-        "path": "server/tests/pinned_rule_traces.rs",
-        "test_name": "auto_reset038_autoreset038observationtests_test_observation_from_usage_requires_fresh_explicit_matching_card_data",
-        "assertions": [
-          "check(",
-          "\"py:tests.test_auto_reset038:AutoReset038ObservationTests.test_observation_from_usage_requires_fresh_explicit_matching_card_data\""
-        ],
-        "helper_assertions": [
-          {
-            "name": "check",
-            "assertions": [
-              "assert!(!cases.is_empty(),",
-              "assert_same(",
-              "assert!(actual.is_err(),",
-              "assert_eq!(args, case[\"arguments\"]);"
-            ]
-          },
-          {
-            "name": "assert_same",
-            "assertions": [
-              "assert_eq!(a.len(), b.len(),",
-              "assert!(a.contains_key(key),",
-              "_ => assert_eq!(actual, expected,",
-              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
-            ]
-          }
-        ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/rule-traces/fixtures.json",
-            "json_paths": [
-              "legacy_tests.24",
-              "cases.80",
-              "cases.81",
-              "cases.82",
-              "cases.83"
+              "legacy_tests.21",
+              "cases.75"
             ]
           }
         ]
@@ -1207,8 +1051,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.25",
-              "cases.84"
+              "legacy_tests.22",
+              "cases.76"
             ]
           }
         ]
@@ -1250,8 +1094,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.26",
-              "cases.85"
+              "legacy_tests.23",
+              "cases.77"
             ]
           }
         ]
@@ -1293,8 +1137,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.27",
-              "cases.86"
+              "legacy_tests.24",
+              "cases.78"
             ]
           }
         ]
@@ -1336,9 +1180,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.28",
-              "cases.87",
-              "cases.88"
+              "legacy_tests.25",
+              "cases.79",
+              "cases.80"
             ]
           }
         ]
@@ -1380,8 +1224,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.29",
-              "cases.89"
+              "legacy_tests.26",
+              "cases.81"
             ]
           }
         ]
@@ -1423,9 +1267,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.30",
-              "cases.90",
-              "cases.91"
+              "legacy_tests.27",
+              "cases.82",
+              "cases.83"
             ]
           }
         ]
@@ -1467,8 +1311,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.31",
-              "cases.92"
+              "legacy_tests.28",
+              "cases.84"
             ]
           }
         ]
@@ -1510,10 +1354,10 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.32",
-              "cases.93",
-              "cases.94",
-              "cases.95"
+              "legacy_tests.29",
+              "cases.85",
+              "cases.86",
+              "cases.87"
             ]
           }
         ]
@@ -1555,9 +1399,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.33",
-              "cases.96",
-              "cases.97"
+              "legacy_tests.30",
+              "cases.88",
+              "cases.89"
             ]
           }
         ]
@@ -1599,9 +1443,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.34",
-              "cases.98",
-              "cases.99"
+              "legacy_tests.31",
+              "cases.90",
+              "cases.91"
             ]
           }
         ]
@@ -1643,9 +1487,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.35",
-              "cases.100",
-              "cases.101"
+              "legacy_tests.32",
+              "cases.92",
+              "cases.93"
             ]
           }
         ]
@@ -1687,9 +1531,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.36",
-              "cases.102",
-              "cases.103"
+              "legacy_tests.33",
+              "cases.94",
+              "cases.95"
             ]
           }
         ]
@@ -1731,12 +1575,12 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.37",
-              "cases.104",
-              "cases.105",
-              "cases.106",
-              "cases.107",
-              "cases.108"
+              "legacy_tests.34",
+              "cases.96",
+              "cases.97",
+              "cases.98",
+              "cases.99",
+              "cases.100"
             ]
           }
         ]
@@ -1778,8 +1622,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.38",
-              "cases.109"
+              "legacy_tests.35",
+              "cases.101"
             ]
           }
         ]
@@ -1821,8 +1665,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.39",
-              "cases.110"
+              "legacy_tests.36",
+              "cases.102"
             ]
           }
         ]
@@ -1864,10 +1708,10 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.40",
-              "cases.111",
-              "cases.112",
-              "cases.113"
+              "legacy_tests.37",
+              "cases.103",
+              "cases.104",
+              "cases.105"
             ]
           }
         ]
@@ -1909,12 +1753,12 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.41",
-              "cases.114",
-              "cases.115",
-              "cases.116",
-              "cases.117",
-              "cases.118"
+              "legacy_tests.38",
+              "cases.106",
+              "cases.107",
+              "cases.108",
+              "cases.109",
+              "cases.110"
             ]
           }
         ]
@@ -1956,13 +1800,13 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.42",
-              "cases.119",
-              "cases.120",
-              "cases.121",
-              "cases.122",
-              "cases.123",
-              "cases.124"
+              "legacy_tests.39",
+              "cases.111",
+              "cases.112",
+              "cases.113",
+              "cases.114",
+              "cases.115",
+              "cases.116"
             ]
           }
         ]
@@ -2004,10 +1848,10 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.43",
-              "cases.125",
-              "cases.126",
-              "cases.127"
+              "legacy_tests.40",
+              "cases.117",
+              "cases.118",
+              "cases.119"
             ]
           }
         ]
@@ -2049,8 +1893,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.44",
-              "cases.128"
+              "legacy_tests.41",
+              "cases.120"
             ]
           }
         ]
@@ -2092,9 +1936,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.45",
-              "cases.129",
-              "cases.130"
+              "legacy_tests.42",
+              "cases.121",
+              "cases.122"
             ]
           }
         ]
@@ -2136,8 +1980,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.46",
-              "cases.131"
+              "legacy_tests.43",
+              "cases.123"
             ]
           }
         ]
@@ -2179,9 +2023,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.47",
-              "cases.132",
-              "cases.133"
+              "legacy_tests.44",
+              "cases.124",
+              "cases.125"
             ]
           }
         ]
@@ -2223,7 +2067,15 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.48",
+              "legacy_tests.45",
+              "cases.126",
+              "cases.127",
+              "cases.128",
+              "cases.129",
+              "cases.130",
+              "cases.131",
+              "cases.132",
+              "cases.133",
               "cases.134",
               "cases.135",
               "cases.136",
@@ -2241,49 +2093,12 @@
               "cases.148",
               "cases.149",
               "cases.150",
-              "cases.151",
-              "cases.152",
-              "cases.153",
-              "cases.154",
-              "cases.155",
-              "cases.156",
-              "cases.157",
-              "cases.158",
-              "cases.159"
+              "cases.151"
             ]
           }
         ]
       },
       "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
-    },
-    {
-      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_block_signature_detects_concurrency_change",
-      "status": "superseded",
-      "target": {
-        "kind": "rust_test",
-        "path": "server/tests/oauth_scheduler_parity.rs",
-        "test_name": "monitor_recovery_accepts_refreshed_limits_and_unrelated_parameters_during_test",
-        "assertions": [
-          "assert_eq!(initial_concurrency, Some(2))",
-          "assert_eq!(changed_concurrency, Some(3))",
-          "assert_eq!(current[\"concurrency\"], 3)",
-          "assert!(sub2ops_server::recovery_rules::confirmed(&current))",
-          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
-          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
-          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
-          "assert_eq!(harness.mock.count(\"POST\", \"/clear-rate-limit\"), 0)",
-          "assert_eq!(harness.mock.count(\"DELETE\", \"/temp-unschedulable\"), 0)",
-          "assert!(harness.mock.unexpected().is_empty())"
-        ]
-      },
-      "coverage_note": "0.1.84 已批准规则替换：删除共享限流字段变化门禁，成功测活以最终 confirmed 为准。",
-      "replacement": {
-        "legacy_assertions": [
-          "py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_block_signature_detects_concurrency_change"
-        ],
-        "approved_requirement": "0.1.84 已批准计划：删除共享限流字段变化门禁，成功测活以最终 confirmed 为准。",
-        "replacement_contract": "server/tests/oauth_scheduler_parity.rs::monitor_recovery_accepts_refreshed_limits_and_unrelated_parameters_during_test"
-      }
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_recovery_backoff_schedule_caps_at_30_minutes",
@@ -2320,12 +2135,12 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.50",
-              "cases.168",
-              "cases.169",
-              "cases.170",
-              "cases.171",
-              "cases.172"
+              "legacy_tests.46",
+              "cases.152",
+              "cases.153",
+              "cases.154",
+              "cases.155",
+              "cases.156"
             ]
           }
         ]
@@ -2367,9 +2182,9 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.51",
-              "cases.173",
-              "cases.174"
+              "legacy_tests.47",
+              "cases.157",
+              "cases.158"
             ]
           }
         ]
@@ -2411,15 +2226,15 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.52",
-              "cases.175",
-              "cases.176",
-              "cases.177",
-              "cases.178",
-              "cases.179",
-              "cases.180",
-              "cases.181",
-              "cases.182"
+              "legacy_tests.48",
+              "cases.159",
+              "cases.160",
+              "cases.161",
+              "cases.162",
+              "cases.163",
+              "cases.164",
+              "cases.165",
+              "cases.166"
             ]
           }
         ]
@@ -2461,13 +2276,13 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.53",
-              "cases.183",
-              "cases.184",
-              "cases.185",
-              "cases.186",
-              "cases.187",
-              "cases.188"
+              "legacy_tests.49",
+              "cases.167",
+              "cases.168",
+              "cases.169",
+              "cases.170",
+              "cases.171",
+              "cases.172"
             ]
           }
         ]
@@ -2509,7 +2324,23 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.54",
+              "legacy_tests.50",
+              "cases.173",
+              "cases.174",
+              "cases.175",
+              "cases.176",
+              "cases.177",
+              "cases.178",
+              "cases.179",
+              "cases.180",
+              "cases.181",
+              "cases.182",
+              "cases.183",
+              "cases.184",
+              "cases.185",
+              "cases.186",
+              "cases.187",
+              "cases.188",
               "cases.189",
               "cases.190",
               "cases.191",
@@ -2529,23 +2360,7 @@
               "cases.205",
               "cases.206",
               "cases.207",
-              "cases.208",
-              "cases.209",
-              "cases.210",
-              "cases.211",
-              "cases.212",
-              "cases.213",
-              "cases.214",
-              "cases.215",
-              "cases.216",
-              "cases.217",
-              "cases.218",
-              "cases.219",
-              "cases.220",
-              "cases.221",
-              "cases.222",
-              "cases.223",
-              "cases.224"
+              "cases.208"
             ]
           }
         ]
@@ -2587,14 +2402,14 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.55",
-              "cases.225",
-              "cases.226",
-              "cases.227",
-              "cases.228",
-              "cases.229",
-              "cases.230",
-              "cases.231"
+              "legacy_tests.51",
+              "cases.209",
+              "cases.210",
+              "cases.211",
+              "cases.212",
+              "cases.213",
+              "cases.214",
+              "cases.215"
             ]
           }
         ]
@@ -2636,7 +2451,23 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.56",
+              "legacy_tests.52",
+              "cases.216",
+              "cases.217",
+              "cases.218",
+              "cases.219",
+              "cases.220",
+              "cases.221",
+              "cases.222",
+              "cases.223",
+              "cases.224",
+              "cases.225",
+              "cases.226",
+              "cases.227",
+              "cases.228",
+              "cases.229",
+              "cases.230",
+              "cases.231",
               "cases.232",
               "cases.233",
               "cases.234",
@@ -2710,23 +2541,7 @@
               "cases.302",
               "cases.303",
               "cases.304",
-              "cases.305",
-              "cases.306",
-              "cases.307",
-              "cases.308",
-              "cases.309",
-              "cases.310",
-              "cases.311",
-              "cases.312",
-              "cases.313",
-              "cases.314",
-              "cases.315",
-              "cases.316",
-              "cases.317",
-              "cases.318",
-              "cases.319",
-              "cases.320",
-              "cases.321"
+              "cases.305"
             ]
           }
         ]
@@ -2768,28 +2583,28 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.57",
+              "legacy_tests.53",
+              "cases.306",
+              "cases.307",
+              "cases.308",
+              "cases.309",
+              "cases.310",
+              "cases.311",
+              "cases.312",
+              "cases.313",
+              "cases.314",
+              "cases.315",
+              "cases.316",
+              "cases.317",
+              "cases.318",
+              "cases.319",
+              "cases.320",
+              "cases.321",
               "cases.322",
               "cases.323",
               "cases.324",
               "cases.325",
-              "cases.326",
-              "cases.327",
-              "cases.328",
-              "cases.329",
-              "cases.330",
-              "cases.331",
-              "cases.332",
-              "cases.333",
-              "cases.334",
-              "cases.335",
-              "cases.336",
-              "cases.337",
-              "cases.338",
-              "cases.339",
-              "cases.340",
-              "cases.341",
-              "cases.342"
+              "cases.326"
             ]
           }
         ]
@@ -2831,19 +2646,19 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.58",
-              "cases.343",
-              "cases.344",
-              "cases.345",
-              "cases.346",
-              "cases.347",
-              "cases.348",
-              "cases.349",
-              "cases.350",
-              "cases.351",
-              "cases.352",
-              "cases.353",
-              "cases.354"
+              "legacy_tests.54",
+              "cases.327",
+              "cases.328",
+              "cases.329",
+              "cases.330",
+              "cases.331",
+              "cases.332",
+              "cases.333",
+              "cases.334",
+              "cases.335",
+              "cases.336",
+              "cases.337",
+              "cases.338"
             ]
           }
         ]
@@ -2885,11 +2700,11 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.59",
-              "cases.355",
-              "cases.356",
-              "cases.357",
-              "cases.358"
+              "legacy_tests.55",
+              "cases.339",
+              "cases.340",
+              "cases.341",
+              "cases.342"
             ]
           }
         ]
@@ -2931,8 +2746,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.60",
-              "cases.359"
+              "legacy_tests.56",
+              "cases.343"
             ]
           }
         ]
@@ -2974,8 +2789,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.61",
-              "cases.360"
+              "legacy_tests.57",
+              "cases.344"
             ]
           }
         ]
@@ -3017,8 +2832,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.62",
-              "cases.361"
+              "legacy_tests.58",
+              "cases.345"
             ]
           }
         ]
@@ -3060,8 +2875,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.63",
-              "cases.362"
+              "legacy_tests.59",
+              "cases.346"
             ]
           }
         ]
@@ -3103,8 +2918,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.64",
-              "cases.363"
+              "legacy_tests.60",
+              "cases.347"
             ]
           }
         ]
@@ -3146,8 +2961,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.65",
-              "cases.364"
+              "legacy_tests.61",
+              "cases.348"
             ]
           }
         ]
@@ -3189,8 +3004,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.66",
-              "cases.365"
+              "legacy_tests.62",
+              "cases.349"
             ]
           }
         ]
@@ -3232,8 +3047,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.67",
-              "cases.366"
+              "legacy_tests.63",
+              "cases.350"
             ]
           }
         ]
@@ -3275,8 +3090,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.68",
-              "cases.367"
+              "legacy_tests.64",
+              "cases.351"
             ]
           }
         ]
@@ -3318,10 +3133,10 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.69",
-              "cases.368",
-              "cases.369",
-              "cases.370"
+              "legacy_tests.65",
+              "cases.352",
+              "cases.353",
+              "cases.354"
             ]
           }
         ]
@@ -3363,8 +3178,8 @@
           {
             "path": "tests/contracts/rule-traces/fixtures.json",
             "json_paths": [
-              "legacy_tests.70",
-              "cases.371"
+              "legacy_tests.66",
+              "cases.355"
             ]
           }
         ]

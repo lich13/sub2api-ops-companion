@@ -137,7 +137,7 @@ pub fn discover(
         if !recovery_rules::control_allows(row, &saved, meta, at) {
             continue;
         }
-        let (blocked, _) = oauth_admission::automatic_gate(row, &saved, meta, at, true, false, 1)?;
+        let (blocked, _) = oauth_admission::automatic_gate(row, &saved, meta, at, true, false)?;
         if matches!(blocked, "account_ineligible" | "auth_paused") {
             continue;
         }

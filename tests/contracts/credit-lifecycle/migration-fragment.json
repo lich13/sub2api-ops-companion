@@ -2515,40 +2515,23 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_credit_consumes_after_explicit_observation_and_queries_keep_cooldown_and_budget",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
         "test_name": "explicit_loopback_card_observation_authorizes_one_real_reset_and_immediate_test",
         "assertions": [
-          "assert_eq!(query[\"success\"], true, \"{query}\");",
-          "assert_eq!(observation[\"available_count\"], 2);",
-          "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert_eq!( observation[\"window_reset_at\"], datetime(now + Duration::days(5)) );",
-          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), 1);",
-          "assert_eq!(task[\"stage\"], \"recovered\");",
-          "assert_eq!(task[\"consumption_outcome\"], \"consumed\");",
-          "assert_eq!(task[\"receipt\"][\"business_code\"], \"success\");",
-          "assert_eq!(automatic_attempts, 1);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1);"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "reload_account",
-            "assertions": [
-              "credit_ownership::account(&harness.db, id)",
-              "expect(\"reload synthetic account from PostgreSQL\")"
-            ]
-          }
+          "assert_eq!(query[\"success\"], true, \"{query}\")",
+          "assert!(observed_state[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(\n        snapshot_row[\"extra\"][\"codex_reset_credit_snapshot\"][\"available_count\"],\n        2\n    )",
+          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), 1)",
+          "assert_eq!(task[\"stage\"], \"recovered\")",
+          "assert_eq!(task[\"consumption_outcome\"], \"consumed\")",
+          "assert_eq!(task[\"receipt\"][\"business_code\"], \"success\")",
+          "assert_eq!(automatic_attempts, 1)",
+          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1)",
+          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 1)"
         ],
         "fixtures": [
           {
@@ -2563,7 +2546,7 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_credit_consumes_after_explicit_observation_and_queries_keep_cooldown_and_budget 已完整通过。Rust explicit_loopback_card_observation_authorizes_one_real_reset_and_immediate_test 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。",
+      "coverage_note": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。 由当前执行入口的完整断言验证。",
       "supporting_targets": [
         {
           "kind": "rust_test",
@@ -2595,7 +2578,14 @@
             }
           ]
         }
-      ]
+      ],
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_credit_consumes_after_explicit_observation_and_queries_keep_cooldown_and_budget"
+        ],
+        "approved_requirement": "0.1.87 删除无人消费的 reset_credit_observation 构造、写入和校验；旧字段只在正常状态写入时移除，真实扣卡回执、查询预算及数据库卡快照确认保留。",
+        "replacement_contract": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_native_snapshot_is_observed_once_then_reused_after_restart_without_hourly_wait",
@@ -2945,53 +2935,21 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_native_observation_requires_matching_database_snapshot_and_cache_confirmation",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts",
+        "test_name": "coordinator_quota_results_do_not_persist_unused_card_observations",
         "assertions": [
-          "assert_eq!(result[\"success\"], true, \"{name}: {result}\");",
-          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1);",
-          "assert_eq!(observation.is_object(), expected_observation, \"{name}\");",
-          "assert_eq!(observation[\"available_count\"], 1);",
-          "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert_eq!( observation[\"credential_fingerprint\"], oauth_admission::credential_fingerprint(&row) );",
-          "assert_eq!(observation[\"window_minutes\"], 10080);",
-          "assert_eq!(observation.as_object().unwrap().len(), 9);",
-          "assert_eq!(observation[field].as_str().unwrap().len(), 64);",
-          "assert!(!observation.to_string().contains(ADMIN_KEY));",
-          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true);",
-          "assert!( state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"] .as_array() .is_none_or(|attempts| attempts.is_empty()) );",
-          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\");",
-          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null());",
-          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "seed_account",
-            "assertions": [
-              "INSERT INTO accounts",
-              "expect(\"insert synthetic OAuth account\")",
-              "expect(\"read synthetic OAuth account\")"
-            ]
-          },
-          {
-            "name": "run_automatic",
-            "assertions": [
-              ".run_account(row, at)",
-              "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
-            ]
-          }
+          "assert_eq!(result[\"success\"], true, \"{name}: {result}\")",
+          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1)",
+          "assert!(observation.is_null(), \"{name}\")",
+          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true)",
+          "assert!(\n            state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"]\n                .as_array()\n                .is_none_or(|attempts| attempts.is_empty())\n        )",
+          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\")",
+          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0)",
+          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0)"
         ],
         "fixtures": [
           {
@@ -3006,7 +2964,14 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_native_observation_requires_matching_database_snapshot_and_cache_confirmation 已完整通过。Rust coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。 由当前执行入口的完整断言验证。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_native_observation_requires_matching_database_snapshot_and_cache_confirmation"
+        ],
+        "approved_requirement": "0.1.87 删除无人消费的 reset_credit_observation 构造、写入和校验；旧字段只在正常状态写入时移除，真实扣卡回执、查询预算及数据库卡快照确认保留。",
+        "replacement_contract": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_native_observation_write_failure_cannot_authorize_card_consumption",
@@ -3014,46 +2979,17 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts",
+        "test_name": "coordinator_quota_results_do_not_persist_unused_card_observations",
         "assertions": [
-          "assert_eq!(result[\"success\"], true, \"{name}: {result}\");",
-          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1);",
-          "assert_eq!(observation.is_object(), expected_observation, \"{name}\");",
-          "assert_eq!(observation[\"available_count\"], 1);",
-          "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert!(!observation.to_string().contains(ADMIN_KEY));",
-          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true);",
-          "assert!( state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"] .as_array() .is_none_or(|attempts| attempts.is_empty()) );",
-          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\");",
-          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null());",
-          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);",
-          "assert_eq!(observation.as_object().unwrap().len(), 4);"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "seed_account",
-            "assertions": [
-              "INSERT INTO accounts",
-              "expect(\"insert synthetic OAuth account\")",
-              "expect(\"read synthetic OAuth account\")"
-            ]
-          },
-          {
-            "name": "run_automatic",
-            "assertions": [
-              ".run_account(row, at)",
-              "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
-            ]
-          }
+          "assert_eq!(result[\"success\"], true, \"{name}: {result}\")",
+          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1)",
+          "assert!(observation.is_null(), \"{name}\")",
+          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true)",
+          "assert!(\n            state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"]\n                .as_array()\n                .is_none_or(|attempts| attempts.is_empty())\n        )",
+          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\")",
+          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0)",
+          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0)"
         ],
         "fixtures": [
           {
@@ -3068,13 +3004,13 @@
           }
         ]
       },
-      "coverage_note": "观测保存失败仍返回 query_state_unavailable；当前无卡不消费。自动用卡不再依赖旧卡观测的保存状态，以当前有效卡数和原有额度、限流及消费期限检查为准。",
+      "coverage_note": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。 由当前执行入口的完整断言验证。",
       "replacement": {
         "legacy_assertions": [
           "卡观测写入失败后，即使当前有卡也不能自动消费"
         ],
-        "approved_requirement": "Sub2Ops 0.1.86 第 16 项：移除旧卡观测对自动用卡的额外限制。",
-        "replacement_contract": "观测保存失败仍返回 query_state_unavailable；当前无卡不消费。自动用卡不再依赖旧卡观测的保存状态，以当前有效卡数和原有额度、限流及消费期限检查为准。"
+        "approved_requirement": "0.1.87 删除无人消费的 reset_credit_observation 构造、写入和校验；旧字段只在正常状态写入时移除，真实扣卡回执、查询预算及数据库卡快照确认保留。",
+        "replacement_contract": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。"
       },
       "supporting_targets": [
         {
@@ -3095,30 +3031,16 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_corrupt_observation_cannot_fall_back_to_legacy_timestamp_snapshot",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "corrupt_native_observation_cannot_fall_back_to_a_legacy_fetched_timestamp",
+        "test_name": "unused_legacy_observation_is_ignored_and_removed_on_normal_write",
         "assertions": [
-          "assert!(result.is_err(), \"corrupt {field} was accepted\");",
-          "assert_eq!(harness.mock.total(), 0, \"corrupt {field} authorized I/O\");",
-          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/test\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);",
-          "assert_eq!( stored[\"scheduler\"][id.to_string()][\"auto_reset_credit\"], Value::Null );",
-          "assert_eq!( stored[\"scheduler\"][id.to_string()][\"reset_credit_observation\"][field], bad_value );"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          }
+          "assert!(loaded[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(fs::read(&harness.settings.oauth_path).unwrap(), before)",
+          "assert!(stored[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 1)"
         ],
         "fixtures": [
           {
@@ -3133,57 +3055,30 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_corrupt_observation_cannot_fall_back_to_legacy_timestamp_snapshot 已完整通过。Rust corrupt_native_observation_cannot_fall_back_to_a_legacy_fetched_timestamp 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。 由当前执行入口的完整断言验证。",
+      "replacement": {
+        "legacy_assertions": "固定 SHA 旧测试 test_corrupt_observation_cannot_fall_back_to_legacy_timestamp_snapshot 已完整通过。Rust corrupt_native_observation_cannot_fall_back_to_a_legacy_fetched_timestamp 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。",
+        "approved_requirement": "0.1.87 删除无人消费的 reset_credit_observation 构造、写入和校验；旧字段只在正常状态写入时移除，真实扣卡回执、查询预算及数据库卡快照确认保留。",
+        "replacement_contract": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_refresh_timestamp_outside_read_interval_is_not_trusted",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts",
+        "test_name": "coordinator_quota_results_do_not_persist_unused_card_observations",
         "assertions": [
-          "assert_eq!(result[\"success\"], true, \"{name}: {result}\");",
-          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1);",
-          "assert_eq!(observation.is_object(), expected_observation, \"{name}\");",
-          "assert_eq!(observation[\"available_count\"], 1);",
-          "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert_eq!( observation[\"credential_fingerprint\"], oauth_admission::credential_fingerprint(&row) );",
-          "assert_eq!(observation[\"window_minutes\"], 10080);",
-          "assert_eq!(observation.as_object().unwrap().len(), 9);",
-          "assert_eq!(observation[field].as_str().unwrap().len(), 64);",
-          "assert!(!observation.to_string().contains(ADMIN_KEY));",
-          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true);",
-          "assert!( state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"] .as_array() .is_none_or(|attempts| attempts.is_empty()) );",
-          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\");",
-          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null());",
-          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "seed_account",
-            "assertions": [
-              "INSERT INTO accounts",
-              "expect(\"insert synthetic OAuth account\")",
-              "expect(\"read synthetic OAuth account\")"
-            ]
-          },
-          {
-            "name": "run_automatic",
-            "assertions": [
-              ".run_account(row, at)",
-              "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
-            ]
-          }
+          "assert_eq!(result[\"success\"], true, \"{name}: {result}\")",
+          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1)",
+          "assert!(observation.is_null(), \"{name}\")",
+          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true)",
+          "assert!(\n            state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"]\n                .as_array()\n                .is_none_or(|attempts| attempts.is_empty())\n        )",
+          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\")",
+          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0)",
+          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0)"
         ],
         "fixtures": [
           {
@@ -3198,7 +3093,14 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_refresh_timestamp_outside_read_interval_is_not_trusted 已完整通过。Rust coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。 由当前执行入口的完整断言验证。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_refresh_timestamp_outside_read_interval_is_not_trusted"
+        ],
+        "approved_requirement": "0.1.87 删除无人消费的 reset_credit_observation 构造、写入和校验；旧字段只在正常状态写入时移除，真实扣卡回执、查询预算及数据库卡快照确认保留。",
+        "replacement_contract": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset:AutoResetHttpBudgetTests.test_confirmed_consumption_with_cache_warning_still_tests_immediately",
@@ -5195,53 +5097,21 @@
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset038:AutoReset038ObservationTests.test_coordinator_persists_only_current_explicit_card_observation",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts",
+        "test_name": "coordinator_quota_results_do_not_persist_unused_card_observations",
         "assertions": [
-          "assert_eq!(result[\"success\"], true, \"{name}: {result}\");",
-          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1);",
-          "assert_eq!(observation.is_object(), expected_observation, \"{name}\");",
-          "assert_eq!(observation[\"available_count\"], 1);",
-          "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert_eq!( observation[\"credential_fingerprint\"], oauth_admission::credential_fingerprint(&row) );",
-          "assert_eq!(observation[\"window_minutes\"], 10080);",
-          "assert_eq!(observation.as_object().unwrap().len(), 9);",
-          "assert_eq!(observation[field].as_str().unwrap().len(), 64);",
-          "assert!(!observation.to_string().contains(ADMIN_KEY));",
-          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true);",
-          "assert!( state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"] .as_array() .is_none_or(|attempts| attempts.is_empty()) );",
-          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\");",
-          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null());",
-          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "seed_account",
-            "assertions": [
-              "INSERT INTO accounts",
-              "expect(\"insert synthetic OAuth account\")",
-              "expect(\"read synthetic OAuth account\")"
-            ]
-          },
-          {
-            "name": "run_automatic",
-            "assertions": [
-              ".run_account(row, at)",
-              "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
-            ]
-          }
+          "assert_eq!(result[\"success\"], true, \"{name}: {result}\")",
+          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1)",
+          "assert!(observation.is_null(), \"{name}\")",
+          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true)",
+          "assert!(\n            state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"]\n                .as_array()\n                .is_none_or(|attempts| attempts.is_empty())\n        )",
+          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\")",
+          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0)",
+          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0)"
         ],
         "fixtures": [
           {
@@ -5256,57 +5126,32 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_coordinator_persists_only_current_explicit_card_observation 已完整通过。Rust coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。 由当前执行入口的完整断言验证。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset038:AutoReset038ObservationTests.test_coordinator_persists_only_current_explicit_card_observation"
+        ],
+        "approved_requirement": "0.1.87 删除无人消费的 reset_credit_observation 构造、写入和校验；旧字段只在正常状态写入时移除，真实扣卡回执、查询预算及数据库卡快照确认保留。",
+        "replacement_contract": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_auto_reset038:AutoReset038ObservationTests.test_coordinator_keeps_quota_success_when_card_readback_fails",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/credit_lifecycle_parity.rs",
-        "test_name": "coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts",
+        "test_name": "coordinator_quota_results_do_not_persist_unused_card_observations",
         "assertions": [
-          "assert_eq!(result[\"success\"], true, \"{name}: {result}\");",
-          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1);",
-          "assert_eq!(observation.is_object(), expected_observation, \"{name}\");",
-          "assert_eq!(observation[\"available_count\"], 1);",
-          "assert_eq!(observation[\"observed_at\"], datetime(now));",
-          "assert_eq!( observation[\"credential_fingerprint\"], oauth_admission::credential_fingerprint(&row) );",
-          "assert_eq!(observation[\"window_minutes\"], 10080);",
-          "assert_eq!(observation.as_object().unwrap().len(), 9);",
-          "assert_eq!(observation[field].as_str().unwrap().len(), 64);",
-          "assert!(!observation.to_string().contains(ADMIN_KEY));",
-          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true);",
-          "assert!( state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"] .as_array() .is_none_or(|attempts| attempts.is_empty()) );",
-          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\");",
-          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null());",
-          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0);",
-          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0);"
-        ],
-        "helper_assertions": [
-          {
-            "name": "seed_depletion",
-            "assertions": [
-              "assert!(evidence.is_object(), \"fixture must satisfy depletion preconditions\");",
-              "INSERT INTO ops_error_logs",
-              "self.set_config(recovery_config(id, \"connection\"));"
-            ]
-          },
-          {
-            "name": "seed_account",
-            "assertions": [
-              "INSERT INTO accounts",
-              "expect(\"insert synthetic OAuth account\")",
-              "expect(\"read synthetic OAuth account\")"
-            ]
-          },
-          {
-            "name": "run_automatic",
-            "assertions": [
-              ".run_account(row, at)",
-              "expect(\"run the real credit controller on synthetic PostgreSQL evidence\")"
-            ]
-          }
+          "assert_eq!(result[\"success\"], true, \"{name}: {result}\")",
+          "assert_eq!(harness.mock.count(Method::GET, \"/usage\"), before + 1)",
+          "assert!(observation.is_null(), \"{name}\")",
+          "assert_eq!(state[\"oauth_results\"][id.to_string()][\"success\"], true)",
+          "assert!(\n            state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"]\n                .as_array()\n                .is_none_or(|attempts| attempts.is_empty())\n        )",
+          "assert_eq!(failed[\"error_code\"], \"query_state_unavailable\")",
+          "assert!(after_failed_write[\"scheduler\"][id.to_string()][\"reset_credit_observation\"].is_null())",
+          "assert_eq!(harness.mock.count(Method::POST, \"/reset-quota\"), 0)",
+          "assert_eq!(harness.mock.count(Method::POST, \"/schedulable\"), 0)"
         ],
         "fixtures": [
           {
@@ -5321,7 +5166,14 @@
           }
         ]
       },
-      "coverage_note": "固定 SHA 旧测试 test_coordinator_keeps_quota_success_when_card_readback_fails 已完整通过。Rust coordinator_observation_requires_fresh_explicit_matching_database_and_state_receipts 的 target.assertions 列出集成测试内全部运行时断言，包括 PostgreSQL、磁盘状态、loopback 请求计数与重启检查；旧 ID 和来源哈希见 fixture。"
+      "coverage_note": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。 由当前执行入口的完整断言验证。",
+      "replacement": {
+        "legacy_assertions": [
+          "py:tests.test_auto_reset038:AutoReset038ObservationTests.test_coordinator_keeps_quota_success_when_card_readback_fails"
+        ],
+        "approved_requirement": "0.1.87 删除无人消费的 reset_credit_observation 构造、写入和校验；旧字段只在正常状态写入时移除，真实扣卡回执、查询预算及数据库卡快照确认保留。",
+        "replacement_contract": "旧观察字段不再阻断业务且读操作不重写文件；正常写入移除该字段并保留扣卡回执、历史和预算。查卡后使用数据库快照，用卡后立即测试且不重复扣卡。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_credit_manual037:ManualCredit037BoundaryTests.test_legacy_uncertain_without_evidence_and_manual_source_are_quarantined",

@@ -1125,7 +1125,7 @@ describe("record view", () => {
     expect(
       container.querySelector(".record-detail .record-type-badge.is-compact"),
     ).not.toBeNull();
-    expect(detailValue("用户实扣")).toBe("$9007199254740993.1234567890");
+    expect(detailValue("用户实扣")).toBe("$9007199254740993.12345679");
     const fallback = vi.fn();
     await act(async () => handleBack(fallback));
     expect(container.querySelector('[role="dialog"]')).toBeNull();
@@ -2021,16 +2021,16 @@ describe("record view", () => {
     expect(detailValue("返回")).toBe("returned-model");
     expect(detailValue("请求强度")).toBe("max");
     expect(detailValue("实际强度")).toBe("high");
-    expect(detailValue("用户实扣")).toBe("$9007199254740993.1234567890");
-    expect(detailValue("账户费用")).toBe("$0");
-    expect(detailValue("输入费用")).toBe("$0");
+    expect(detailValue("用户实扣")).toBe("$9007199254740993.12345679");
+    expect(detailValue("账户费用")).toBe("$0.00000000");
+    expect(detailValue("输入费用")).toBe("$0.00000000");
     expect(detailValue("输出费用")).toBe("—");
     expect(detailValue("输出")).toBe("0");
     expect(detailValue("缓存读取")).toBe("—");
     expect(detailValue("首字延迟")).toBe("0.00s");
     expect(detailValue("总耗时")).toBe("—");
-    expect(detailValue("用户倍率")).toBe("0");
-    expect(detailValue("账户倍率")).toBe("0");
+    expect(detailValue("用户倍率")).toBe("0.00");
+    expect(detailValue("账户倍率")).toBe("0.00");
     expect(row.actual_cost).toBe("9007199254740993.1234567890");
   });
 

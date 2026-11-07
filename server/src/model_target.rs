@@ -144,9 +144,6 @@ pub async fn target(actions: &Actions, row: &Value, model: &str) -> Result<(Targ
     if !actions.model_allowed(row, model).await? {
         return Err(Error::new(422, "所选模型不在当前账号上游模型目录中"));
     }
-    if !crate::actions::text_model(model) {
-        return Err(Error::new(422, "请选择该账号支持的文本模型"));
-    }
     Ok(target)
 }
 

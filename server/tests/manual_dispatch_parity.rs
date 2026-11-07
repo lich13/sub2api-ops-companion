@@ -849,7 +849,7 @@ async fn manual_control_preempts_an_inflight_monitor_request_and_busy_runtime_lo
     drop(first_lease);
     locked.close().await;
 
-    // Then hold the real monitor cycle/account lease at an active HTTP request.
+    // Then hold the real batch account lease at an active HTTP request.
     // A manual close must still complete and invalidate that worker's result.
     let mut harness = Harness::new().await;
     let row = harness
@@ -861,19 +861,17 @@ async fn manual_control_preempts_an_inflight_monitor_request_and_busy_runtime_lo
     )
     .fetch_one(&harness.pool)
     .await
-    .expect("count the same eligible OAuth inventory before force refresh");
+    .expect("count the same eligible OAuth inventory before batch refresh");
     let gate = Gate::new();
     harness.mock.set_usage_gate(id, gate.clone());
 
-    // force_refresh holds the Runtime's monitor-cycle lock and the worker keeps
-    // the real account lease while its loopback usage request is blocked.
-    let monitor = harness.runtime.0.as_ref().unwrap().clone();
-    let force = tokio::spawn(async move {
-        monitor
-            .monitor
-            .force_refresh_with_timeout(StdDuration::from_secs(20))
-            .await
-    });
+    // The public batch keeps the account lease while its request is blocked.
+    let runtime = harness.runtime.0.as_ref().unwrap().clone();
+    let batch = runtime.start_quota_refresh(ADMIN_KEY).await.unwrap();
+    assert_eq!(
+        batch["total"].as_u64(),
+        Some(expected_inventory_count as u64)
+    );
     tokio::time::timeout(StdDuration::from_secs(8), gate.entered.notified())
         .await
         .expect("manual-priority fixture must reach its loopback usage request");
@@ -905,13 +903,19 @@ async fn manual_control_preempts_an_inflight_monitor_request_and_busy_runtime_lo
     drop(config_guard);
     drop(test_slot);
     gate.release.notify_one();
-    let report = tokio::time::timeout(StdDuration::from_secs(8), force)
-        .await
-        .expect("monitor force cycle must settle after the loopback release")
-        .expect("force cycle task must join")
-        .expect("force cycle should return a report");
+    let report = tokio::time::timeout(StdDuration::from_secs(8), async {
+        loop {
+            let progress = runtime.quota_progress();
+            if progress["status"] == "completed" {
+                break progress;
+            }
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("quota batch must settle after the loopback release");
     assert_eq!(
-        report["total_count"].as_u64(),
+        report["completed"].as_u64(),
         Some(expected_inventory_count as u64)
     );
     assert_eq!(harness.mock.count_for(id, "GET", "/usage"), 1);

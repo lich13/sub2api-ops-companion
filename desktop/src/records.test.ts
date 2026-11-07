@@ -6,6 +6,7 @@ import {
   latencyTone,
   modelRoute,
   money,
+  decimal,
   normalizeRecordColumns,
   tokenCount,
   formatUsageOutputRate,
@@ -16,6 +17,29 @@ import {
 
 const route = (fields: Partial<UsageRecord>) =>
   modelRoute(fields as UsageRecord);
+
+describe("precise detail numbers", () => {
+  it.each([
+    ["0.123456789", "$0.12345679"],
+    ["1E-8", "$0.00000001"],
+    ["5e-9", "$0.00000001"],
+    ["4e-9", "$0.00000000"],
+    ["0E-10", "$0.00000000"],
+    ["-1.234567895", "$-1.23456790"],
+    ["9.007199254740993123456789E15", "$9007199254740993.12345679"],
+    ["1e21", "$1000000000000000000000.00000000"],
+    [null, "—"],
+    [undefined, "—"],
+    ["", "—"],
+  ] as const)("formats %s without losing its decimal precision", (value, expected) => {
+    expect(money(value, 8)).toBe(expected);
+  });
+  it("keeps missing, zero and rounded multipliers distinct", () => {
+    expect(decimal(null, 2)).toBe("—");
+    expect(decimal("0e0", 2)).toBe("0.00");
+    expect(decimal("1.235E0", 2)).toBe("1.24");
+  });
+});
 
 describe("record model route", () => {
   it("preserves distinct requested, mapped, forwarded, and returned models", () => {

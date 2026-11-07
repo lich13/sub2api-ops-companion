@@ -391,7 +391,8 @@ impl ModelTests {
                     .await
                     .map_err(internal)?
             };
-            if model_target::signature(&latest) != model_target::signature(&context.row)
+            if (!prepared || job["recovery_context"]["consume"] == true)
+                && model_target::signature(&latest) != model_target::signature(&context.row)
                 || !prepared
                     && context.owner["id"] != aid
                     && model_target::signature(

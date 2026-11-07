@@ -3,9 +3,7 @@ use crate::{
     compat::{config_revision, datetime, parse_datetime, sha256, string, text, truthy},
     db::Database,
     error::{Error, Result},
-    error_evidence, oauth_admission,
-    oauth_state::normalized_credits,
-    quota, reset_credit_observation, sql,
+    error_evidence, oauth_admission, quota, reset_credit_observation, sql,
     upstream::read_limited,
 };
 use chrono::{DateTime, Duration as TimeDelta, Timelike, Utc};
@@ -350,24 +348,6 @@ pub fn available(row: &Value, saved: &Value, task: &Value, at: DateTime<Utc>) ->
                 .unwrap_or(0.0)
                 < 100.0
         })
-}
-pub fn credit_observation(
-    after: &Value,
-    result: &Value,
-    started: DateTime<Utc>,
-    completed: DateTime<Utc>,
-) -> Option<Value> {
-    if result["data"]["cache_persisted"] != true || !after.is_object() {
-        return None;
-    }
-    let observation = reset_credit_observation::from_usage(result, started, completed)?;
-    let content = normalized_credits(&after["extra"]["codex_reset_credit_snapshot"])?;
-    if content["available_count"] != observation["available_count"]
-        || content["expires_at"] != observation["expires_at"]
-    {
-        return None;
-    }
-    Some(observation)
 }
 pub async fn execute(actions: &Actions, action: &str, id: i64, key: &str, seconds: u64) -> Value {
     if actions.settings.read_only {

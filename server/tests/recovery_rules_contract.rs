@@ -42,7 +42,7 @@ fn quota_reset_shortens_only_the_pre_reset_query_interval() {
     use chrono::Duration;
     let (row, result, mut meta, at) = reset_fixture();
     let gate = |meta: &Value, now| {
-        oauth_admission::automatic_gate(&row, &result, meta, now, true, false, 1).unwrap()
+        oauth_admission::automatic_gate(&row, &result, meta, now, true, false).unwrap()
     };
     assert_eq!(
         gate(&meta, at - Duration::seconds(1)),
@@ -647,7 +647,6 @@ fn oauth_admission_matches_pinned_fingerprint_and_time_budget_boundaries() {
             date(&fixture["at"]),
             case["wait_for_reset"].as_bool().unwrap(),
             case["bypass_interval"].as_bool().unwrap(),
-            case["required_budget"].as_u64().unwrap() as usize,
         )
         .unwrap_or_else(|error| panic!("{}: {error}", case["name"]));
         assert_eq!(
@@ -953,50 +952,6 @@ fn reset_credit_expiry_and_fingerprints_match_pinned_python() {
 }
 
 #[test]
-fn reset_credit_observation_creation_and_evidence_gates_match_pinned_python() {
-    let fixture = fixtures();
-    let reset = &fixture["reset_credit"];
-    let observation = &reset["observation"];
-    let compact = |value: &Value| {
-        compat::pick(
-            value,
-            &["version", "observed_at", "available_count", "expires_at"],
-        )
-    };
-    let created = reset_credit_observation::create(
-        &observation["content"],
-        date(&observation["observed_at"]),
-    )
-    .unwrap();
-    assert_eq!(created, compact(&observation["expected"]));
-    let accepted = &reset["observation_from_usage"];
-    let expected = compact(&accepted["expected"]);
-    assert_eq!(
-        reset_credit_observation::from_usage(
-            &accepted["result"],
-            date(&accepted["started"]),
-            date(&accepted["completed"])
-        ),
-        Some(expected)
-    );
-    for case in reset["observation_rejections"].as_array().unwrap() {
-        let actual = reset_credit_observation::from_usage(
-            &case["result"],
-            date(&case["started"]),
-            date(&case["completed"]),
-        );
-        let rejects = matches!(
-            case["name"].as_str().unwrap(),
-            "cache_not_persisted" | "fetched_before_start_window"
-        );
-        assert_eq!(actual.is_none(), rejects, "{}", case["name"]);
-        if let Some(actual) = actual {
-            assert_eq!(actual.as_object().unwrap().len(), 4);
-        }
-    }
-}
-
-#[test]
 fn reset_credit_receipt_diagnostics_never_infer_uncertain_consumption() {
     let fixture = fixtures();
     let reset = &fixture["reset_credit"];
@@ -1146,7 +1101,7 @@ fn ordinary_temporary_restrictions_expire_only_at_a_valid_deadline() {
     expired["credentials"] = json!({"access_token":"fixture-token"});
     let auth = json!({"quota_query":{"auth_fingerprint":oauth_admission::credential_fingerprint(&expired)}});
     assert_eq!(
-        oauth_admission::automatic_gate(&expired, &Value::Null, &auth, now, true, false, 1)
+        oauth_admission::automatic_gate(&expired, &Value::Null, &auth, now, true, false)
             .unwrap()
             .0,
         "auth_paused"

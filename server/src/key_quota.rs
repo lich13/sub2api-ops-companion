@@ -1,7 +1,7 @@
 //! Read-only API Key billing protocols ported from lich13-switch.
 //! Credentials stay on the server; display evidence never changes scheduling.
 use crate::{
-    compat::{config_revision, string as text_value},
+    compat::{config_revision, integer, string as text_value},
     error::{Error, Result},
     store::{valid_object, Store},
     validation,
@@ -1214,6 +1214,25 @@ mod tests {
 }
 
 impl crate::runtime::Runtime {
+    pub(crate) async fn key_quota_input_from_row(&self, row: &Value) -> Result<Query> {
+        let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
+        let parent = integer(&row["parent_account_id"])
+            .or_else(|| integer(&row["extra"]["parent_account_id"]));
+        if parent.is_some() || !row["credentials"].is_object() {
+            return self.key_quota_input(id).await;
+        }
+        if row["type"] != "apikey" {
+            return Err(Error::new(422, "该账号不是 API Key 账号"));
+        }
+        self.key_quota.input(
+            id,
+            &row["credentials"],
+            &json!({
+                "id": row["id"], "platform": row["platform"], "type": row["type"],
+                "parent_account_id": null, "effective_parent_id": null,
+            }),
+        )
+    }
     pub(crate) async fn key_quota_input(&self, id: i64) -> Result<Query> {
         let row = self.db.one("SELECT a.id,a.platform,a.type,coalesce(nullif(to_jsonb(a)->>'parent_account_id','')::bigint,nullif(a.extra->>'parent_account_id','')::bigint) AS parent_account_id,p.id AS effective_parent_id,coalesce(p.credentials,a.credentials) AS credentials FROM accounts a LEFT JOIN accounts p ON p.id=coalesce(nullif(to_jsonb(a)->>'parent_account_id','')::bigint,nullif(a.extra->>'parent_account_id','')::bigint) AND p.deleted_at IS NULL WHERE a.id=$1 AND a.deleted_at IS NULL", &[id.into()]).await?.ok_or_else(|| Error::new(404,"账号不存在"))?;
         if row["type"] != "apikey" {

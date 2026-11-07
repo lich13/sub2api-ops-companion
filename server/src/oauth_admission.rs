@@ -115,7 +115,6 @@ pub fn automatic_gate(
     at: DateTime<Utc>,
     wait_reset: bool,
     bypass_interval: bool,
-    budget: usize,
 ) -> Result<(&'static str, Option<DateTime<Utc>>)> {
     if !automatic_eligible(row, at) {
         return Ok(("account_ineligible", None));
@@ -156,17 +155,9 @@ pub fn automatic_gate(
         .filter(|t| *t > at - Duration::seconds(AUTO_WINDOW_SECONDS))
         .collect::<Vec<_>>();
     attempts.sort();
-    if attempts.len() + budget > AUTO_QUERY_LIMIT {
-        if let Some(t) = attempts.get(
-            (attempts.len() + budget - AUTO_QUERY_LIMIT - 1).min(attempts.len().saturating_sub(1)),
-        ) {
-            bounds.push((*t + Duration::seconds(AUTO_WINDOW_SECONDS), "query_budget"));
-        } else {
-            return Ok((
-                "query_budget",
-                Some(at + Duration::seconds(AUTO_WINDOW_SECONDS)),
-            ));
-        }
+    if attempts.len() >= AUTO_QUERY_LIMIT {
+        let t = attempts[attempts.len() - AUTO_QUERY_LIMIT];
+        bounds.push((t + Duration::seconds(AUTO_WINDOW_SECONDS), "query_budget"));
     }
     Ok(bounds
         .into_iter()

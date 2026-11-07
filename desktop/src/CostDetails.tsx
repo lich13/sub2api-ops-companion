@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { Info } from "lucide-react";
-import { money, type UsageRecord } from "./records";
+import { decimal, money, type UsageRecord } from "./records";
 
 const number = (value: string | number | null | undefined) =>
   value == null || value === "" || !Number.isFinite(Number(value)) ? null : Number(value);
@@ -9,8 +9,8 @@ const amount = (value: string | number | null | undefined) => {
   return value == null ? "—" : money(String(value), 8);
 };
 const multiplier = (value: string | null) => {
-  const n = number(value);
-  return n == null ? "—" : `${n.toFixed(2)}x`;
+  const n = decimal(value, 2);
+  return n === "—" ? n : `${n}x`;
 };
 
 export function costDetails(row: UsageRecord): [string, string][] {

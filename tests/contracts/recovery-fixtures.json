@@ -735,7 +735,6 @@
           }
         },
         "name": "cooldown_one_second_remaining",
-        "required_budget": 1,
         "row": {
           "auto_pause_on_expired": false,
           "concurrency": 1,
@@ -773,7 +772,6 @@
           }
         },
         "name": "cooldown_exact_boundary",
-        "required_budget": 1,
         "row": {
           "auto_pause_on_expired": false,
           "concurrency": 1,
@@ -812,12 +810,12 @@
               "2031-04-04T08:07:08+00:00",
               "2031-04-04T09:07:08+00:00",
               "2031-04-04T10:07:08+00:00",
-              "2031-04-04T11:07:08+00:00"
+              "2031-04-04T11:07:08+00:00",
+              "2031-04-04T12:07:08+00:00"
             ]
           }
         },
-        "name": "automatic_budget_six_plus_two",
-        "required_budget": 2,
+        "name": "automatic_budget_six_plus_one",
         "row": {
           "auto_pause_on_expired": false,
           "concurrency": 1,
@@ -855,12 +853,12 @@
               "2031-04-04T07:07:08+00:00",
               "2031-04-04T08:07:08+00:00",
               "2031-04-04T09:07:08+00:00",
-              "2031-04-04T10:07:08+00:00"
+              "2031-04-04T10:07:08+00:00",
+              "2031-04-04T11:07:08+00:00"
             ]
           }
         },
-        "name": "automatic_budget_exactly_six",
-        "required_budget": 2,
+        "name": "automatic_budget_five_plus_one",
         "row": {
           "auto_pause_on_expired": false,
           "concurrency": 1,
@@ -899,12 +897,12 @@
               "2031-04-04T07:07:08+00:00",
               "2031-04-04T08:07:08+00:00",
               "2031-04-04T09:07:08+00:00",
-              "2031-04-04T10:07:08+00:00"
+              "2031-04-04T10:07:08+00:00",
+              "2031-04-04T11:07:08+00:00"
             ]
           }
         },
         "name": "attempt_at_24_hour_boundary_is_expired",
-        "required_budget": 2,
         "row": {
           "auto_pause_on_expired": false,
           "concurrency": 1,
@@ -942,7 +940,6 @@
           }
         },
         "name": "query_backoff",
-        "required_budget": 1,
         "row": {
           "auto_pause_on_expired": false,
           "concurrency": 1,
@@ -976,7 +973,6 @@
         "expected_reason": "waiting_reset",
         "metadata": {},
         "name": "natural_reset_wait",
-        "required_budget": 1,
         "row": {
           "auto_pause_on_expired": false,
           "concurrency": 1,
@@ -1014,7 +1010,6 @@
           }
         },
         "name": "same_credential_auth_error_pauses",
-        "required_budget": 1,
         "row": {
           "auto_pause_on_expired": false,
           "concurrency": 1,
@@ -1052,7 +1047,6 @@
           }
         },
         "name": "updated_credential_clears_auth_pause",
-        "required_budget": 1,
         "row": {
           "auto_pause_on_expired": false,
           "concurrency": 1,
