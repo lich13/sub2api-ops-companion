@@ -541,13 +541,14 @@ export async function run(
   }
   if (["show_main", "resize_quick", "show_quick", "hide_quick"].includes(name))
     return;
-  if (name === "open_authorization_url") return;
+  if ((name === "open_authorization_url" || name === "open_sub2api_release")) return;
   if (name === "check_updates") return `预览模式 · 当前版本 ${appVersion}`;
   if (name === "cancel_test") {
     testCancelled = true;
     return;
   }
   if (name === "api_request") {
+    if (String(args.path).startsWith("/sub2api-system/")) return (await import("./sub2apiConfigPreview")).systemPreview(String(args.path));
     if (String(args.path).startsWith("/sub2api-config")) return (await import("./sub2apiConfigPreview")).configPreview(String(args.path), (args.body || {}) as Record<string,unknown>);
     if (args.path === "/config/key-quota") {
       if (args.method === "PUT") previewQuotaSeconds = Number((args.body as {seconds:number}).seconds);
@@ -566,7 +567,7 @@ export async function run(
     }
     if (/^\/accounts\/\d+\/apply-oauth-credentials$/.test(String(args.path))) return { account_id: Number(String(args.path).split("/")[2]), verified: true, status: "active" };
     if (String(args.path).startsWith("/account-creation")) return (await import("./accountCreationPreview")).creationPreview(String(args.path),(args.body||{}) as Record<string,unknown>,state.snapshot?.accounts??[],emit);
-    if (args.path === "/capabilities") return { api_version: 1, features: { account_creation: true, key_quota_token_reveal: true, detection_logs: true, global_detection_model: true, account_priority_ordering: true, account_priority_per_platform: true } };
+    if (args.path === "/capabilities") return { api_version: 1, features: { sub2api_update: true, account_creation: true, key_quota_token_reveal: true, detection_logs: true, global_detection_model: true, account_priority_ordering: true, account_priority_per_platform: true } };
     if (String(args.path).split("?")[0] === "/account-priorities" || String(args.path).startsWith("/account-priority-orders")) return (await import("./priorityPreview")).priorityPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? [], emit);
     if (String(args.path).startsWith("/detection-logs")) return (await import("./detectionLogPreview")).detectionLogPreview(String(args.path));
     if (args.method === "POST" && typeof args.path === "string" && /^\/proxies\/[1-9]\d*\/(test|quality-check)$/.test(args.path)) {

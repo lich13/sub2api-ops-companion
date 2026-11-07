@@ -72,3 +72,10 @@ it("does not replay an uncertain write or show sensitive upstream errors", async
   expect(container.textContent).toContain("未重放请求"); expect(container.textContent).not.toContain("fixture-access-secret");
   expect(button("完成授权").disabled).toBe(true); expect(container.querySelector("textarea")).toBeNull();
 });
+
+it("reports the native saved status and refreshes an account that is still in error", async () => {
+  vi.mocked(api).mockImplementation((m,p) => p.endsWith("/apply-oauth-credentials") ? Promise.resolve({ verified: true, status: "error" }) as never : baseline(m,p));
+  await render(); await click("生成授权链接"); await input("fixture-code"); await click("完成授权");
+  expect(report).toHaveBeenCalledWith("Fixture：授权已保存，账号状态 error");
+  expect(command).toHaveBeenCalledWith("refresh"); expect(close).toHaveBeenCalledOnce();
+});

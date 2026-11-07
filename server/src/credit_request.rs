@@ -109,12 +109,16 @@ impl CreditController {
             if credit_rules::expired(task, self.now()) || task["stage"] == "finished" {
                 return Ok((failed("consume_deadline"), None));
             }
-        }
-        if source == Source::Automatic {
             if !live["extra"]["auto_reset_credit_enabled"].is_null()
                 && live["extra"]["auto_reset_credit_enabled"] != false
             {
                 return Ok((failed("conflict"), None));
+            }
+            if evidence.is_none() {
+                let reason = self.positive_credit_reason(live, self.now());
+                if !reason.is_empty() {
+                    return Ok((failed(reason), None));
+                }
             }
             let depletion = match evidence {
                 Some(value) => value.clone(),
@@ -126,67 +130,54 @@ impl CreditController {
             {
                 return Ok((failed("reset_state_changed"), None));
             }
-            if evidence.is_none() {
-                let reason = self.positive_credit_reason(live, self.now());
-                if !reason.is_empty() {
-                    return Ok((failed(reason), None));
-                }
-            }
-            {
-                active=self.save(id,task,json!({"stage":"pausing","signature":credit_ownership::signature(live),"next_at":null,"control_generation":credit_ownership::generation(self.store.shared_snapshot()?.as_ref(),id)}))?;
-                let paused = actions::set_schedulable(&self.actions, id, false, key, 3).await;
-                let after = self.row(id).await?;
-                let latest = self.state(id)?;
-                if latest["stage"] == "finished" && latest["episode"] == active["episode"] {
-                    if after.is_object()
-                        && after["schedulable"] == false
-                        && credit_ownership::signature(&after) == active["signature"]
-                        && json!(credit_ownership::generation(
-                            self.store.shared_snapshot()?.as_ref(),
-                            id
-                        )) == active["control_generation"]
-                    {
-                        self.save(
-                            id,
-                            &latest,
-                            json!({"owns_pause":true,"owned_version":after["updated_at"]}),
-                        )?;
-                    }
-                    return Ok((failed("consume_deadline"), None));
-                }
-                if !truthy(&paused["success"])
-                    || !after.is_object()
-                    || after["schedulable"] != false
-                    || credit_ownership::signature(&after) != active["signature"]
+            active=self.save(id,task,json!({"stage":"pausing","signature":credit_ownership::signature(live),"next_at":null,"control_generation":credit_ownership::generation(self.store.shared_snapshot()?.as_ref(),id)}))?;
+            let paused = actions::set_schedulable(&self.actions, id, false, key, 3).await;
+            let after = self.row(id).await?;
+            let latest = self.state(id)?;
+            if latest["stage"] == "finished" && latest["episode"] == active["episode"] {
+                if after.is_object()
+                    && after["schedulable"] == false
+                    && credit_ownership::signature(&after) == active["signature"]
+                    && json!(credit_ownership::generation(
+                        self.store.shared_snapshot()?.as_ref(),
+                        id
+                    )) == active["control_generation"]
                 {
-                    self.save(
-                        id,
-                        &active,
-                        json!({"stage":"blocked","error_code":"pause_uncertain"}),
-                    )?;
-                    return Ok((failed("pause_uncertain"), None));
+                    self.save(id, &latest, json!({"owns_pause":true}))?;
                 }
-                active["owns_pause"] = true.into();
-                active["owned_version"] = after["updated_at"].clone();
-                let requested = self.now();
-                let reason = self.guard_reason(id, &after, &active, requested)?;
-                let reason = if !reason.is_empty() {
-                    reason
-                } else if credit_rules::expired(&active, requested) {
-                    "consume_deadline"
-                } else {
-                    self.positive_credit_reason(&after, requested)
-                };
-                if !reason.is_empty() {
-                    self.save(id, &active, json!({"stage":"blocked","error_code":reason}))?;
-                    return Ok((failed(reason), None));
-                }
-                active = self.save(
+                return Ok((failed("consume_deadline"), None));
+            }
+            if !truthy(&paused["success"])
+                || !after.is_object()
+                || after["schedulable"] != false
+                || credit_ownership::signature(&after) != active["signature"]
+            {
+                self.save(
                     id,
                     &active,
-                    json!({"stage":"resetting","attempt_at":datetime(requested)}),
+                    json!({"stage":"blocked","error_code":"pause_uncertain"}),
                 )?;
+                return Ok((failed("pause_uncertain"), None));
             }
+            active["owns_pause"] = true.into();
+            let requested = self.now();
+            let reason = self.guard_reason(id, &after, &active, requested)?;
+            let reason = if !reason.is_empty() {
+                reason
+            } else if credit_rules::expired(&active, requested) {
+                "consume_deadline"
+            } else {
+                self.positive_credit_reason(&after, requested)
+            };
+            if !reason.is_empty() {
+                self.save(id, &active, json!({"stage":"blocked","error_code":reason}))?;
+                return Ok((failed(reason), None));
+            }
+            active = self.save(
+                id,
+                &active,
+                json!({"stage":"resetting","attempt_at":datetime(requested)}),
+            )?;
         } else if action == "reset" {
             active = self.save(
                 id,
@@ -259,13 +250,8 @@ impl CreditController {
             } else {
                 "uncertain"
             };
-            let mut receipt = json!({"stage":stage,"consumed":consumed,"reset_completed_at":if consumed {json!(datetime(completed))} else {Value::Null},"consumption_outcome":outcome,"error_code":receipt_code,"receipt":diagnostics,"verification_deadline_at":if consumed && source==Source::Automatic {json!(datetime(completed+Duration::seconds(300)))} else {Value::Null}});
-            if let Ok(row) = &after {
-                if truthy(&active["owns_pause"]) && self.owned(row, &active, false)? {
-                    receipt["owned_version"] = row["updated_at"].clone();
-                }
-            }
-            active = self.save(id, &active, receipt)?;
+            let receipt = json!({"stage":stage,"consumed":consumed,"reset_completed_at":if consumed {json!(datetime(completed))} else {Value::Null},"consumption_outcome":outcome,"error_code":receipt_code,"receipt":diagnostics,"verification_deadline_at":if consumed && source==Source::Automatic {json!(datetime(completed+Duration::seconds(300)))} else {Value::Null}});
+            self.save(id, &active, receipt)?;
         }
         if result["data"].is_object() {
             result["quota_result"] =
@@ -292,12 +278,6 @@ impl CreditController {
                 result["success"] = false.into();
                 result["error_code"] = "credit_snapshot_unconfirmed".into();
             }
-        }
-        if action != "reset"
-            && truthy(&active["owns_pause"])
-            && self.owned(&after, &active, false)?
-        {
-            self.save(id, &active, json!({"owned_version":after["updated_at"]}))?;
         }
         Ok((result, Some(after)))
     }

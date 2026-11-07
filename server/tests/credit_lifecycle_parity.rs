@@ -2311,7 +2311,8 @@ async fn automatic_pause_is_read_back_owned_before_receipt_and_recovery_is_once_
         ["auto_reset_credit"];
     assert_eq!(before_reset["stage"], "resetting");
     assert_eq!(before_reset["owns_pause"], true);
-    assert!(before_reset["owned_version"].is_string());
+    assert!(before_reset.get("owned_version").is_none());
+    assert!(before_reset["signature"].is_string());
     assert!(before_reset["attempt_at"].is_string());
     let test_call = calls
         .iter()

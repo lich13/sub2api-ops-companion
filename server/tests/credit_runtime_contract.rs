@@ -969,13 +969,10 @@ async fn automatic_pause_is_read_back_owned_before_consumption_result() {
     assert_eq!(current["owns_pause"], true);
     assert_eq!(current["consumption_outcome"], "not_consumed");
     assert_eq!(read_back["schedulable"], false);
-    assert_eq!(
-        current["owned_version"], read_back["updated_at"],
-        "pause ownership is anchored to the server readback version"
-    );
+    assert!(current.get("owned_version").is_none());
     assert!(harness
         .controller
-        .owned(&read_back, &current, true)
+        .owned(&read_back, &current)
         .expect("check pause ownership"));
     assert_eq!(harness.mock.count(Method::POST, "/schedulable"), 1);
     assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 1);
@@ -1370,7 +1367,7 @@ async fn parameter_recovery_scalar_edits_keep_pause_until_one_retry_verifies() {
         let row = h.controller.row(id).await.unwrap();
         assert_eq!(held["owns_pause"], true);
         assert_eq!(held["parameter_edit"], Value::Null);
-        assert_eq!(held["owned_version"], row["updated_at"]);
+        assert!(h.controller.owned(&row, &held).unwrap());
         assert_eq!(h.mock.count(Method::PUT, &format!("accounts/{id}")), 1);
         let later = fixed_now() + Duration::seconds(61);
         h.set_now(later);
@@ -1406,7 +1403,7 @@ async fn parameter_recovery_receipt_failure_reports_applied_write() {
 }
 
 #[tokio::test]
-async fn parameter_recovery_rejected_write_keeps_owned_version() {
+async fn parameter_recovery_rejected_write_keeps_ownership() {
     for status in [400, 502] {
         let h = Harness::new(false).await;
         let (id, original) = seed_parameter_retry(&h).await;
@@ -1421,7 +1418,7 @@ async fn parameter_recovery_rejected_write_keeps_owned_version() {
         let task = restored.state(id).unwrap();
         assert_eq!(task["owns_pause"], true);
         assert_eq!(task["parameter_edit"], Value::Null);
-        assert_eq!(task["owned_version"], original["owned_version"]);
+        assert_eq!(task["signature"], original["signature"]);
         assert_eq!(h.mock.count(Method::PUT, &format!("accounts/{id}")), 1);
         assert_eq!(h.mock.count(Method::POST, "/reset-quota"), 1);
         assert_eq!(h.mock.count(Method::POST, "/test"), 1);
@@ -1481,11 +1478,8 @@ async fn parameter_recovery_conflicting_manual_or_account_changes_never_resume_h
         assert_eq!(task["consumed"], true);
         assert!(task["receipt"].is_object());
         assert_eq!(task["owns_pause"], false, "{change}");
-        assert_eq!(task["owned_version"], pending["owned_version"]);
-        assert_eq!(
-            task["owned_version"] == row["updated_at"],
-            change == "generation"
-        );
+        assert_eq!(task["signature"], pending["signature"]);
+        assert!(!restored.owned(&row, &task).unwrap());
         assert_eq!(restored.row(id).await.unwrap()["schedulable"], false);
         assert_eq!(
             restored.store.snapshot().unwrap()["recovery_history"],

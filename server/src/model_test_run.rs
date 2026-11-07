@@ -124,7 +124,7 @@ impl ModelTests {
                     index,
                     &client,
                     group_slots.clone(),
-                    prepared_row.take(),
+                    prepared_row.clone(),
                 ));
             }
             while let Some(result) = children.next().await {

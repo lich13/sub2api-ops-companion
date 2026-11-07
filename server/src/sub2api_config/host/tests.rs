@@ -157,7 +157,7 @@ async fn version_or_commit_mismatch_warns_and_preserves_read_validate_apply() {
             Box::pin(async move {
                 let mut observed = self.0.observe().await?;
                 if self.1 {
-                    observed.version = "0.2.20".into();
+                    observed.version = "0.2.21".into();
                 } else {
                     observed.commit = "f".repeat(40);
                 }

@@ -1391,9 +1391,7 @@ async fn credit_pause_ownership_is_reconciled_after_priority_write() {
     let row = sub2ops_server::credit_ownership::account(&harness.runtime.db, id)
         .await
         .unwrap();
-    assert!(sub2ops_server::credit_ownership::owned(
-        &row, task, &state, true
-    ));
+    assert!(sub2ops_server::credit_ownership::owned(&row, task, &state));
     assert_eq!(task["revision"], 2);
     harness.finish().await;
 }

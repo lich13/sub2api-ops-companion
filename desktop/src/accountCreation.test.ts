@@ -83,3 +83,37 @@ describe("Sub2API creation payloads",()=>{
     expect(fields.filter(f=>fieldVisible(f,newDraft("gemini","service_account"))).map(f=>f.path)).not.toContain("credentials.project_id");
   });
 });
+
+it("aligns Vertex API keys, custom Gemini caching and image sizes with native payloads", () => {
+  const vertex = newDraft("gemini", "service_account"); vertex.name = "Fixture";
+  Object.assign(vertex.credentials, { auth_mode: "apikey", api_key: "fixture-key", project_id: "fixture-project" });
+  Object.assign(vertex.extra, { quota_limit: 10, quota_daily_limit: 2, quota_weekly_limit: 5 });
+  expect(validateDraft(vertex)).toBe("");
+  expect(buildPayload(vertex)).toMatchObject({ credentials: { auth_mode: "apikey", api_key: "fixture-key", project_id: "fixture-project", location: "global", tier_id: "vertex" }, extra: { quota_limit: 10, quota_daily_limit: 2, quota_weekly_limit: 5 } });
+  expect(buildPayload(vertex).credentials.service_account_json).toBeUndefined();
+  const gemini = newDraft("gemini", "apikey");
+  expect(fields.filter(f => fieldVisible(f, gemini)).map(f => f.path)).not.toContain("credentials.tier_id");
+  gemini.credentials.explicit_cache_upstream = true; gemini.credentials.explicit_cache_upstream_max_ttl_seconds = 120;
+  expect(buildPayload(gemini).credentials.explicit_cache_upstream).toBeUndefined();
+  gemini.credentials.base_url = "https://example.invalid";
+  expect(buildPayload(gemini).credentials).toMatchObject({ explicit_cache_upstream: true, explicit_cache_upstream_max_ttl_seconds: 120 });
+  gemini.credentials.explicit_cache_upstream = false;
+  expect(buildPayload(gemini).credentials.explicit_cache_upstream_max_ttl_seconds).toBeUndefined();
+  const openai = newDraft("openai", "apikey");
+  expect(buildPayload(openai).extra.openai_image_size_tiers).toBeUndefined();
+  openai.extra.openai_image_size_tiers = ["1K", "4K"];
+  expect(buildPayload(openai).extra.openai_image_size_tiers).toEqual(["1K", "4K"]);
+});
+it("preserves edited protocol defaults, accepts multi-protocol rules and retains legacy pause scope", () => {
+  const previous = newDraft("opencode_go", "apikey");
+  previous.credentials.base_url = "https://example.invalid/custom";
+  previous.credentials.api_base_urls = { ...previous.credentials.api_base_urls as object, anthropic: "https://example.invalid/messages" };
+  previous.credentials.protocol_rules = [{ pattern: "fixture-*", protocol: "anthropic", protocols: ["anthropic", "chat_completions"] }];
+  const changed = withProtocolDefaults(setField(previous, "credentials.account_mode", "go"), previous);
+  expect(changed.credentials.base_url).toBe(previous.credentials.base_url);
+  expect((changed.credentials.api_base_urls as Record<string,string>).anthropic).toBe("https://example.invalid/messages");
+  expect(buildPayload(changed).credentials.protocol_rules).toEqual(previous.credentials.protocol_rules);
+  const legacy = newDraft("openai", "apikey"); legacy.credentials.temp_unschedulable_enabled = true;
+  legacy.credentials.temp_unschedulable_rules = [{ error_code: 429, keywords: ["fixture"], duration_minutes: 1 }];
+  expect(buildPayload(legacy).credentials.temp_unschedulable_rules).toEqual(legacy.credentials.temp_unschedulable_rules);
+});

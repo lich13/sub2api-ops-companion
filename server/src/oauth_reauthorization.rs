@@ -70,71 +70,45 @@ fn eligible(row: &Value, id: i64) -> Result<()> {
     Ok(())
 }
 
-fn applied(row: &Value, body: &Value) -> bool {
-    ["credentials", "extra"].iter().all(|section| {
-        body[*section]
-            .as_object()
-            .into_iter()
-            .flatten()
-            .all(|(key, value)| {
-                let current = &row[*section][key];
-                current == value
-                    || value.is_number() && current.as_str() == Some(value.to_string().as_str())
-            })
-    })
-}
-
 impl Runtime {
     pub async fn apply_oauth_credentials(&self, id: i64, key: &str, body: &Value) -> Result<Value> {
         self.writable()?;
         validate(body)?;
         let _control = self.actions.locks.try_control(id)?;
-        let local = self.actions.account(id, None).await?;
+        let local = self.db.one("SELECT id,platform,type,extra,nullif(to_jsonb(accounts)->>'parent_account_id','')::bigint AS parent_account_id FROM accounts WHERE id=$1 AND deleted_at IS NULL", &[id.into()]).await?.ok_or_else(|| Error::new(404, "账号不存在"))?;
         eligible(&local, id)?;
         let _lease = self.actions.locks.try_account(&local)?;
-        let path = format!("accounts/{id}");
-        let current = self
-            .actions
-            .json(reqwest::Method::GET, &path, key, None, 30)
-            .await?;
-        eligible(&current, id)?;
-        if !applied(&current, body) {
-            // Native merging preserves mappings, groups and proxy settings, including
-            // edits made in Sub2API while this authorization dialog was open.
-            let mut native = body.clone();
-            native["type"] = "oauth".into();
-            self.actions
-                .json(
-                    reqwest::Method::POST,
-                    &format!("{path}/apply-oauth-credentials"),
-                    key,
-                    Some(&native),
-                    120,
-                )
-                .await
-                .map_err(|error| {
-                    let rejected = [400, 401, 403, 404, 409, 422].iter().any(|status| {
-                        error
-                            .detail
-                            .as_str()
-                            .is_some_and(|text| text == format!("Sub2API 请求失败 [http_{status}]"))
-                    });
-                    Error::new(
-                        502,
-                        if rejected {
-                            "授权保存被拒绝，请重新生成链接后授权"
-                        } else {
-                            "授权保存结果未确认，请刷新账号核对；未重放请求"
-                        },
-                    )
-                })?;
-        }
+        // Native merging preserves unrelated edits and returns the saved account
+        // with redacted credentials. That response confirms the save itself.
+        let mut native = body.clone();
+        native["type"] = "oauth".into();
         let confirmed = self
             .actions
-            .json(reqwest::Method::GET, &path, key, None, 30)
+            .json(
+                reqwest::Method::POST,
+                &format!("accounts/{id}/apply-oauth-credentials"),
+                key,
+                Some(&native),
+                120,
+            )
             .await
-            .map_err(|_| Error::new(502, "授权回读未完成，请刷新账号核对；未重放请求"))?;
-        if eligible(&confirmed, id).is_err() || !applied(&confirmed, body) {
+            .map_err(|error| {
+                let rejected = [400, 401, 403, 404, 409, 422].iter().any(|status| {
+                    error
+                        .detail
+                        .as_str()
+                        .is_some_and(|text| text == format!("Sub2API 请求失败 [http_{status}]"))
+                });
+                Error::new(
+                    502,
+                    if rejected {
+                        "授权保存被拒绝，请重新生成链接后授权"
+                    } else {
+                        "授权保存结果未确认，请刷新账号核对；未重放请求"
+                    },
+                )
+            })?;
+        if eligible(&confirmed, id).is_err() || !confirmed["status"].is_string() {
             return Err(Error::new(
                 409,
                 "授权结果已变化或未确认，请刷新账号核对；未重放请求",

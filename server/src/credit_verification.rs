@@ -1,10 +1,10 @@
 use crate::{
     actions,
-    compat::{datetime, integer, parse_datetime, sha256, string, truthy},
+    compat::{datetime, integer, parse_datetime, string, truthy},
     credit::CreditController,
     credit_ownership, credit_rules,
     error::{Error, Result},
-    oauth_admission::{credential_fingerprint, AUTH_ERRORS},
+    oauth_admission::AUTH_ERRORS,
     recovery_policy, recovery_rules,
 };
 use chrono::{DateTime, Duration, Utc};
@@ -39,7 +39,7 @@ impl CreditController {
             return Ok(());
         }
 
-        if !self.owned(row, task, false)? || !self.processing_eligible(row, task, at)? {
+        if !self.owned(row, task)? || !self.eligible(row, at, true)? {
             self.save(
                 id,
                 task,
@@ -126,9 +126,7 @@ impl CreditController {
         if auth_error && candidate["status"] == "error" {
             candidate["status"] = "active".into();
         }
-        if !self.owned(&live, &task, false)?
-            || !self.processing_eligible(&candidate, &task, completed)?
-        {
+        if !self.owned(&live, &task)? || !self.eligible(&candidate, completed, true)? {
             self.save(
                 id,
                 &task,
@@ -150,7 +148,7 @@ impl CreditController {
             .await?;
             return Ok(());
         }
-        task=self.save(id,&task,json!({"stage":if truthy(&test["success"]) {json!("confirming")} else {task["stage"].clone()},"owned_version":live["updated_at"],"test_completed_at":datetime(completed),"test_success":truthy(&test["success"]),"verification_dispatched":false,"model_id":model,"verification_method":method,"verification_generation":selection}))?;
+        task=self.save(id,&task,json!({"stage":if truthy(&test["success"]) {json!("confirming")} else {task["stage"].clone()},"test_completed_at":datetime(completed),"test_success":truthy(&test["success"]),"verification_dispatched":false,"model_id":model,"verification_method":method}))?;
         if credit_rules::expired(&task, completed) {
             self.finish(
                 id,
@@ -196,7 +194,7 @@ impl CreditController {
                 .await?;
                 return Ok(());
             }
-            self.save(id,&task,json!({"stage":"retry","error_code":if AUTH_ERRORS.contains(&code) {"auth_paused"} else {"test_failed"},"auth_fingerprint":if AUTH_ERRORS.contains(&code) {json!(credential_fingerprint(&live))} else {Value::Null},"auth_recheck":false,"auth_error":if AUTH_ERRORS.contains(&code) {json!(sha256(string(&live["error_message"])))} else {Value::Null},"next_at":if AUTH_ERRORS.contains(&code) {Value::Null} else {json!(datetime(retry))}}))?;
+            self.save(id,&task,json!({"stage":"retry","error_code":if AUTH_ERRORS.contains(&code) {"auth_paused"} else {"test_failed"},"next_at":if AUTH_ERRORS.contains(&code) {Value::Null} else {json!(datetime(retry))}}))?;
             return Ok(());
         }
         self.release(&live, &task, completed).await
@@ -367,7 +365,7 @@ impl CreditController {
         }
         let mut actual = self.row(id).await?;
         if actual["schedulable"] != true {
-            if !self.owned(&actual, task, false)? || !self.eligible(&actual, at, true)? {
+            if !self.owned(&actual, task)? || !self.eligible(&actual, at, true)? {
                 return Ok(actual);
             }
             let _ =

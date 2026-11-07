@@ -605,6 +605,8 @@ impl ModelTests {
         };
         let id = string(&job["id"]);
         let aid = integer(&job["account_id"]).ok_or_else(Error::internal)?;
+        let mut lock_row = model_target::account(&self.actions, aid).await?;
+        let mut manual_rows = BTreeMap::new();
         let (_lease, _job_slot, _budget, row) = loop {
             if self.actions.supervisor.is_stopping() {
                 return Ok(());
@@ -642,18 +644,32 @@ impl ModelTests {
                     .filter_map(|row| integer(&row["account_id"]))
                     .collect::<Vec<_>>();
                 for id in ids {
-                    if let Ok(row) = model_target::account(&self.actions, id).await {
-                        if self.actions.locks.try_account(&row).is_ok() {
-                            manual_waiting = true;
-                            break;
+                    if let std::collections::btree_map::Entry::Vacant(entry) = manual_rows.entry(id)
+                    {
+                        if let Ok(row) = model_target::account(&self.actions, id).await {
+                            entry.insert(row);
                         }
+                    }
+                    if manual_rows
+                        .get(&id)
+                        .is_some_and(|row| self.actions.locks.try_account(row).is_ok())
+                    {
+                        manual_waiting = true;
+                        break;
                     }
                 }
             }
             if !manual_waiting {
-                let row = model_target::account(&self.actions, aid).await?;
-                if let Ok(lease) = self.actions.locks.try_account(&row) {
-                    break (lease, slot, budget, row);
+                if let Ok(lease) = self.actions.locks.try_account(&lock_row) {
+                    let row = model_target::account(&self.actions, aid).await?;
+                    let parent = |row: &Value| {
+                        integer(&row["parent_account_id"])
+                            .or_else(|| integer(&row["extra"]["parent_account_id"]))
+                    };
+                    if parent(&row) == parent(&lock_row) {
+                        break (lease, slot, budget, row);
+                    }
+                    lock_row = row;
                 }
             }
             drop((slot, budget));
@@ -664,8 +680,29 @@ impl ModelTests {
         } else {
             row
         };
-        let (target, owner) =
-            model_target::target(&self.actions, &row, string(&job["requested_model"])).await?;
+        let (target, owner) = if let Some(context) = &context {
+            let owner = model_target::owner(&self.actions, &row).await?;
+            if model_target::signature(&row) != job["target_signature"]
+                || model_target::signature(&owner) != job["owner_signature"]
+            {
+                return Err(Error::new(409, "测试目标已变化，请重新选择"));
+            }
+            if !self
+                .actions
+                .model_allowed_prepared(
+                    &row,
+                    string(&job["requested_model"]),
+                    &context.target,
+                    &owner,
+                )
+                .await?
+            {
+                return Err(Error::new(422, "所选模型不在当前账号上游模型目录中"));
+            }
+            (context.target.clone(), owner)
+        } else {
+            model_target::target(&self.actions, &row, string(&job["requested_model"])).await?
+        };
         if model_target::signature(&row) != job["target_signature"]
             || model_target::signature(&owner) != job["owner_signature"]
         {

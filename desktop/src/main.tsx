@@ -1487,7 +1487,7 @@ function SettingsPage({
             {(featureTab === "models" || visitedTabs.models) && <ModelConfig key={connectionKey} online={state.online}/>}
           </section>
           <div role="tabpanel" id="feature-panel-sub2api" aria-labelledby="feature-tab-sub2api" hidden={featureTab !== "sub2api"}>
-            {(featureTab === "sub2api" || visitedTabs.sub2api) && <Suspense fallback={null}><LazySub2ApiConfig key={connectionKey} active={featureTab === "sub2api"} online={state.online}/></Suspense>}
+            {(featureTab === "sub2api" || visitedTabs.sub2api) && <Suspense fallback={null}><LazySub2ApiConfig key={connectionKey} active={featureTab === "sub2api" && state.foreground !== false} online={state.online}/></Suspense>}
           </div>
           <div role="tabpanel" id="feature-panel-ip" aria-labelledby="feature-tab-ip" hidden={featureTab !== "ip"}>
             {(featureTab === "ip" || visitedTabs.ip) && <Suspense fallback={null}><LazyProxyManagement key={connectionKey} connectionKey={connectionKey} active={featureTab === "ip"} online={state.online} mobile={mobile}/></Suspense>}

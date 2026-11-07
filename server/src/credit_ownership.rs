@@ -66,7 +66,7 @@ pub fn identity(row: &Value) -> Value {
 pub fn generation(state: &Value, id: i64) -> i64 {
     integer(&state["scheduler"][id.to_string()]["manual_control"]["generation"]).unwrap_or(0)
 }
-pub fn owned(row: &Value, task: &Value, state: &Value, same_version: bool) -> bool {
+pub fn owned(row: &Value, task: &Value, state: &Value) -> bool {
     truthy(task)
         && task["owns_pause"] == true
         && row["schedulable"] == false
@@ -74,7 +74,6 @@ pub fn owned(row: &Value, task: &Value, state: &Value, same_version: bool) -> bo
         && (task["control_generation"].is_null()
             || integer(&task["control_generation"])
                 == Some(generation(state, integer(&row["id"]).unwrap_or(0))))
-        && (!same_version || row["updated_at"] == task["owned_version"])
 }
 pub fn save(store: &OAuthState, id: i64, task: &Value, changes: Value) -> Result<Value> {
     let mut updated = task.clone();
@@ -83,6 +82,7 @@ pub fn save(store: &OAuthState, id: i64, task: &Value, changes: Value) -> Result
         .ok_or_else(Error::internal)?
         .extend(changes.as_object().cloned().ok_or_else(Error::internal)?);
     updated["revision"] = (integer(&task["revision"]).unwrap_or(0) + 1).into();
+    crate::oauth_state::retire_credit_fields(&mut updated);
     validate_credit(&updated)?;
     store.transaction(|state| {
         let meta = &mut state["scheduler"][id.to_string()];
@@ -109,7 +109,7 @@ pub fn parameter_change(store: &OAuthState, row: &Value) -> Result<Option<Value>
     if task["owns_pause"] != true {
         return Ok(None);
     }
-    if !owned(row, task, &state, false) {
+    if !owned(row, task, &state) {
         return Err(Error::new(409, "用卡暂停归属待核对，未修改参数"));
     }
     Ok(Some(task.clone()))
@@ -125,12 +125,7 @@ pub fn finish_parameter_change(store: &OAuthState, row: &Value, task: &Value) ->
     {
         return Err(Error::new(409, "改参后的用卡暂停归属已变化，请重新核对"));
     }
-    save(
-        store,
-        id,
-        task,
-        json!({"signature":signature(row),"owned_version":row["updated_at"]}),
-    )?;
+    save(store, id, task, json!({"signature":signature(row)}))?;
     Ok(())
 }
 pub fn cancel(store: &OAuthState, id: i64) -> Result<()> {

@@ -208,6 +208,18 @@ fn save_preferences(path: &Path, value: &Preferences) -> Result<(), String> {
 }
 
 fn allowed_request(method: &str, path: &str) -> bool {
+    if path.starts_with("/sub2api-system") {
+        return matches!(
+            (method, path),
+            (
+                "GET",
+                "/sub2api-system/version"
+                    | "/sub2api-system/check-updates"
+                    | "/sub2api-system/check-updates?force=true"
+                    | "/sub2api-system/check-updates?force=false"
+            ) | ("POST", "/sub2api-system/update" | "/sub2api-system/restart")
+        );
+    }
     if path.starts_with("/sub2api-config") {
         return matches!(
             (method, path),
@@ -856,7 +868,7 @@ async fn api_request(
         let diagnostic = method == "GET"
             && matches!(
                 path.as_str(),
-                "/connection-status" | "/sub2api-config/operation"
+                "/connection-status" | "/sub2api-config/operation" | "/sub2api-system/version"
             );
         if (!view.online && !diagnostic) || !state.foreground.load(Ordering::SeqCst) {
             return Err("当前离线，请恢复连接后操作".into());
@@ -1171,6 +1183,24 @@ fn queue_main(app: tauri::AppHandle, visible: bool) -> Result<(), String> {
 async fn open_authorization_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
     if !account_creation::authorization_url(&url) {
         return Err("授权链接必须是 HTTPS 地址".into());
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|_| "无法打开系统浏览器".into())
+}
+
+#[tauri::command]
+async fn open_sub2api_release(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let parsed = url::Url::parse(&url).map_err(|_| "发布链接无效")?;
+    if parsed.scheme() != "https"
+        || parsed.host_str() != Some("github.com")
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.port().is_some()
+        || !(parsed.path() == "/Wei-Shaw/sub2api/releases"
+            || parsed.path().starts_with("/Wei-Shaw/sub2api/releases/"))
+    {
+        return Err("发布链接无效".into());
     }
     app.opener()
         .open_url(url, None::<&str>)
@@ -1814,7 +1844,8 @@ pub fn run() {
         hide_quick,
         resize_quick,
         check_updates,
-        open_authorization_url
+        open_authorization_url,
+        open_sub2api_release
     ]);
     #[cfg(mobile)]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -1828,7 +1859,8 @@ pub fn run() {
         preferences,
         background,
         check_updates,
-        open_authorization_url
+        open_authorization_url,
+        open_sub2api_release
     ]);
     #[cfg(target_os = "macos")]
     #[derive(Clone, Copy, PartialEq, Eq)]

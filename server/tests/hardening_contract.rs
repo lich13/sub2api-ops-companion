@@ -80,7 +80,8 @@ fn credit_history_limits_keep_active_pending_and_owned_receipts_in_order() {
             .unwrap();
         let state = store.snapshot().unwrap();
         let meta = &state["scheduler"]["7"];
-        for field in ["reset_credit_episodes", "credit_result_notifications"] {
+        {
+            let field = "credit_result_notifications";
             let kept: Vec<_> = meta[field]
                 .as_object()
                 .unwrap()
@@ -100,10 +101,7 @@ fn credit_history_limits_keep_active_pending_and_owned_receipts_in_order() {
             assert!(meta[field]["fixture-active"].is_object());
             assert!(meta[field]["fixture-pending"].is_object());
         }
-        assert_eq!(
-            meta["reset_credit_episodes"]["fixture-owned"]["receipt"],
-            receipt
-        );
+        assert!(meta.get("reset_credit_episodes").is_none());
         assert_eq!(meta["auto_reset_credit"]["receipt"], receipt);
         assert_eq!(
             meta["credit_result_notifications"]["fixture-pending"],

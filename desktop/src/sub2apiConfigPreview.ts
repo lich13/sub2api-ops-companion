@@ -76,3 +76,11 @@ export function configPreview(
     };
   throw new Error("不支持的配置请求");
 }
+
+export function systemPreview(path: string) {
+  if (path === "/sub2api-system/version") return { version: catalog.version };
+  if (path.startsWith("/sub2api-system/check-updates")) return { current_version: catalog.version, latest_version: catalog.version, has_update: false, cached: false, build_type: "release", release_info: { name: `v${catalog.version}`, body: "", published_at: "", html_url: `https://github.com/Wei-Shaw/sub2api/releases/tag/v${catalog.version}` } };
+  if (path.endsWith("/update")) return { message: "Already up to date", already_up_to_date: true, current_version: catalog.version, latest_version: catalog.version };
+  if (path.endsWith("/restart")) return { message: "Service restart initiated" };
+  throw new Error("不支持的版本请求");
+}

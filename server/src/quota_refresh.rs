@@ -32,11 +32,7 @@ impl Runtime {
         {
             return Ok(self.quota_progress());
         }
-        let rows = self
-            .actions
-            .queries
-            .accounts()
-            .await?
+        let rows = self.db.all("SELECT id,name,platform,type,extra,nullif(to_jsonb(accounts)->>'parent_account_id','')::bigint AS parent_account_id FROM accounts WHERE deleted_at IS NULL AND type='oauth' ORDER BY id", &[]).await?
             .into_iter()
             .filter(|row| {
                 row["type"] == "oauth"
@@ -76,11 +72,6 @@ impl Runtime {
                 .quota_batch
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
-            for item in batch["items"].as_array_mut().into_iter().flatten() {
-                if matches!(string(&item["status"]), "pending" | "queued" | "running") {
-                    item.as_object_mut().unwrap().extend(json!({"status":"failed","error":"本轮未取得结果，未重复请求","error_code":"batch_incomplete"}).as_object().unwrap().clone());
-                }
-            }
             batch["status"] = "completed".into();
             batch["completed"] = batch["total"].clone();
             batch["completed_at"] = crate::compat::now().into();
@@ -113,7 +104,7 @@ impl Runtime {
         let id = integer(&original["id"]).ok_or_else(Error::invalid)?;
         if !crate::account_usage::provider(original).is_empty() {
             let _control = self.actions.locks.control(id).await;
-            let live = self.actions.account(id, None).await?;
+            let live = self.usage_row(id, false).await?;
             if live["platform"] != original["platform"] || live["type"] != original["type"] {
                 return Err(Error::new(409, "账号类型已变化"));
             }
@@ -127,27 +118,37 @@ impl Runtime {
                 json!({"status":if partial {"partial"}else {"success"},"queried_at":datetime(Utc::now()),"error":usage["message"],"usage":usage}),
             );
         }
-        let _lease = loop {
+        let mut identity = original.clone();
+        let (row, _lease, _budget) = loop {
             if self.closing.load(Ordering::Acquire) || self.actions.supervisor.is_stopping() {
                 return Err(Error::new(503, "服务正在停止"));
             }
-            let row = self.actions.account(id, None).await?;
-            match self.monitor.lease(&row) {
-                Ok(lease) => break lease,
+            let lease = match self.monitor.lease(&identity) {
+                Ok(lease) => lease,
                 Err(error) if error.status.as_u16() == 409 => {
                     self.quota_item(id, json!({"status":"queued"}), false);
                     tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
                 }
                 Err(error) => return Err(error),
+            };
+            let budget = self
+                .budget
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|_| Error::internal())?;
+            let row = self.monitor.row(id).await?;
+            let parent = |row: &Value| {
+                integer(&row["parent_account_id"])
+                    .or_else(|| integer(&row["extra"]["parent_account_id"]))
+            };
+            if parent(&row) != parent(&identity) {
+                identity = row;
+                continue;
             }
+            break (row, lease, budget);
         };
-        let _budget = self
-            .budget
-            .clone()
-            .acquire_owned()
-            .await
-            .map_err(|_| Error::internal())?;
-        let row = self.actions.account(id, None).await?;
         if row["platform"] != original["platform"] || row["type"] != "oauth" {
             return Err(Error::new(409, "账号类型已变化"));
         }
@@ -157,8 +158,8 @@ impl Runtime {
             let result = self
                 .monitor
                 .queries
-                .query(
-                    id,
+                .query_prepared(
+                    row.clone(),
                     key,
                     QueryOptions {
                         source: Source::Manual,
@@ -191,10 +192,6 @@ impl Runtime {
                 )
                 .await?
         };
-        let live = self.actions.account(id, None).await?;
-        if live["platform"] != row["platform"] || live["type"] != "oauth" {
-            return Err(Error::new(409, "账号已删除或类型变化，结果未采用"));
-        }
         if !data.is_object() {
             return Err(Error::new(502, "额度响应格式无效"));
         }

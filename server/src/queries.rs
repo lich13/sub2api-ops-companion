@@ -38,7 +38,7 @@ pub fn settings_capabilities(row: &Value) -> Value {
             | "zhipu"
             | "deepseek"
             | "opencode"
-            | "opencodego"
+            | "opencode_go"
     );
     if row["platform"] != "antigravity" && !matches!(string(&row["type"]), "oauth" | "apikey")
         || row["platform"] == "gemini"

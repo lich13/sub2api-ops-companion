@@ -1029,7 +1029,7 @@ async fn oauth_parent_directory_uses_inherited_credentials_proxy_and_codex_ident
 }
 
 #[tokio::test]
-async fn account_model_candidates_reject_malformed_directories_and_late_changed_sources() {
+async fn account_model_candidates_reject_malformed_directories_and_refresh_changed_sources() {
     let harness = RuntimeHarness::new().await;
     let id = harness.seed_account("apikey", None, json!({})).await;
     harness
@@ -1101,7 +1101,11 @@ async fn account_model_candidates_reject_malformed_directories_and_late_changed_
         .await
         .unwrap();
     gate.add_permits(1);
-    assert_eq!(waiting.await.unwrap().unwrap_err().status.as_u16(), 503);
+    assert_eq!(
+        waiting.await.unwrap().unwrap()[0]["id"],
+        "gpt-6-luna",
+        "an in-flight read uses its prepared source; the next read uses the changed source"
+    );
     *harness.state.directory_gate.lock().unwrap() = None;
     let models: Vec<_> = (0..10_000)
         .map(|index| json!({"slug":format!("fixture-text-{index}")}))

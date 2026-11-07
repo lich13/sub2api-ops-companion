@@ -647,7 +647,7 @@ impl Catalog {
                 | "zhipu"
                 | "deepseek"
                 | "minimax"
-                | "opencodego"
+                | "opencode_go"
         ) {
             return Err(Error::new(422, "该平台没有只读目录协议"));
         }

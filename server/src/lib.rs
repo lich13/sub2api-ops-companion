@@ -80,6 +80,7 @@ mod snapshot;
 pub mod sql;
 pub mod store;
 pub mod sub2api_config;
+pub mod sub2api_system;
 pub mod supervision;
 pub mod tasks;
 mod tokenizer;

@@ -679,6 +679,25 @@ fn detection_platforms_valid(value: &Value) -> bool {
 }
 
 fn shape_valid(path: &str, data: &Value) -> bool {
+    match path.split('?').next().unwrap_or(path) {
+        "/sub2api-system/version" => return data["version"].is_string(),
+        "/sub2api-system/check-updates" => {
+            return data["current_version"].is_string()
+                && data["latest_version"].is_string()
+                && data["has_update"].is_boolean()
+                && data["build_type"].is_string()
+                && data["cached"].is_boolean()
+        }
+        "/sub2api-system/update" => {
+            return data["message"].is_string()
+                && (data["need_restart"] == true
+                    || data["already_up_to_date"] == true
+                        && data["current_version"].is_string()
+                        && data["latest_version"].is_string())
+        }
+        "/sub2api-system/restart" => return data["message"].is_string(),
+        _ => {}
+    }
     if path == "/sub2api-config" {
         return data["available"].is_boolean()
             && data["editable"].is_boolean()
@@ -1122,6 +1141,9 @@ pub(crate) async fn http_detailed(
         .request(parsed_method, format!("{base}/api/desktop/v1{path}"))
         .header("x-api-key", key)
         .header("Accept", "application/json");
+    if path == "/sub2api-system/update" {
+        req = req.timeout(Duration::from_secs(930));
+    }
     if path.starts_with("/sub2api-config") {
         req = req.timeout(Duration::from_secs(65));
     }
@@ -2026,6 +2048,63 @@ mod tests {
                 "accepted malformed detection log response: {response}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn system_update_outlives_the_default_http_timeout_without_replay() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            let count = socket.read(&mut request).unwrap();
+            assert!(String::from_utf8_lossy(&request[..count])
+                .starts_with("POST /api/desktop/v1/sub2api-system/update "));
+            std::thread::sleep(Duration::from_millis(120));
+            let body = r#"{"message":"Updated","need_restart":true}"#;
+            write!(socket, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            listener.set_nonblocking(true).unwrap();
+            assert!(listener.accept().is_err());
+        });
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_millis(30))
+            .build()
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let result = http(
+            &client,
+            &base,
+            "fixture-key",
+            "POST",
+            "/sub2api-system/update",
+            None,
+            &dir.path().join("network.log"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result["need_restart"], true);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn native_update_accepts_latest_without_restart_and_requires_known_outcome() {
+        assert!(shape_valid(
+            "/sub2api-system/update",
+            &serde_json::json!({"message":"Already up to date","already_up_to_date":true,"current_version":"0.2.20","latest_version":"0.2.20"})
+        ));
+        assert!(shape_valid(
+            "/sub2api-system/update",
+            &serde_json::json!({"message":"Updated","need_restart":true})
+        ));
+        assert!(!shape_valid(
+            "/sub2api-system/update",
+            &serde_json::json!({"message":"Unknown"})
+        ));
+        assert!(shape_valid(
+            "/sub2api-system/version",
+            &serde_json::json!({"version":"0.2.20"})
+        ));
     }
 
     #[test]

@@ -25,7 +25,6 @@ function authorizationInput(input: string) {
 const saveErrors = [
   "授权保存被拒绝，请重新生成链接后授权",
   "授权保存结果未确认，请刷新账号核对；未重放请求",
-  "授权回读未完成，请刷新账号核对；未重放请求",
   "授权结果已变化或未确认，请刷新账号核对；未重放请求",
   "仅 OpenAI OAuth 账号支持重新授权，请刷新账号核对",
 ];
@@ -82,10 +81,10 @@ export default function ReauthorizeAccountDialog({ account, online, close, repor
       const identity = tokenIdentity("openai", token);
       if (!identity.credentials.access_token) throw new Error("missing_token");
       applying = true;
-      const result = await api<{ verified: boolean }>("POST", `/accounts/${account.id}/apply-oauth-credentials`, identity);
+      const result = await api<{ verified: boolean; status: string }>("POST", `/accounts/${account.id}/apply-oauth-credentials`, identity);
       if (!alive.current) return;
       if (!result.verified) throw new Error("unconfirmed");
-      report(`${account.name}：重新授权完成`);
+      report(result.status === "active" ? `${account.name}：重新授权完成` : `${account.name}：授权已保存，账号状态 ${result.status}`);
       void command("refresh").catch(() => {});
       close();
     } catch (failure) {

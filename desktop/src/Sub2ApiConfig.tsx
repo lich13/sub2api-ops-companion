@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Eye, EyeOff, RefreshCw, Search, X } from "lucide-react";
 import { parseDocument, stringify } from "yaml";
 import { api } from "./bridge";
+import Sub2ApiVersion from "./Sub2ApiVersion";
 import { ProxyDialog } from "./ProxyDialogs";
 import "./sub2api-config.css";
 
@@ -798,7 +799,6 @@ export default function Sub2ApiConfig({
             <h2>Sub2API 配置</h2>
             {document?.available && (
               <div className="config-runtime">
-                <b>运行 {document.version}</b>
                 <code>{document.commit.slice(0, 8)}</code>
                 <span className={document.healthy ? "good-text" : "bad-text"}>
                   {document.healthy ? "服务健康" : "服务未就绪"}
@@ -817,6 +817,7 @@ export default function Sub2ApiConfig({
             <span>刷新</span>
           </button>
         </header>
+        <Sub2ApiVersion active={active} online={online} />
         {document?.available ? (
           <>
             <div className="config-filters">

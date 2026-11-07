@@ -201,6 +201,8 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         ["proxies", _, "test" | "quality-check"] => Some(&["POST"]),
         ["sub2api-config"] | ["sub2api-config", "operation"] => Some(&["GET"]),
         ["sub2api-config", "validate" | "apply"] => Some(&["POST"]),
+        ["sub2api-system", "version" | "check-updates"] => Some(&["GET"]),
+        ["sub2api-system", "update" | "restart"] => Some(&["POST"]),
         ["account-templates"] => Some(&["GET", "PUT", "POST"]),
         ["account-templates", "apply" | "custom"] => Some(&["POST"]),
         ["account-templates", _] | ["account-templates", "custom", _] => Some(&["PUT", "DELETE"]),
@@ -341,6 +343,9 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
     }
     let mut status = StatusCode::OK;
     let result: Value = match path.as_slice() {
+        ["sub2api-system", action] => {
+            crate::sub2api_system::request(&runtime.actions, &key, action, &query).await?
+        }
         ["sub2api-config", ..] => {
             if !query.is_empty() {
                 return Err(Error::invalid());
@@ -374,7 +379,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
         }
         ["capabilities"] => {
             json!({"api_version":1,"service":"Sub2API Ops Companion","platforms":["macos","android"],"version":crate::VERSION,
-            "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"sub2api_config":runtime.sub2api_config.available(),"account_creation":true,"key_quota_token_reveal":true,"proxy_management":true,"detection_logs":true,"global_detection_model":true,"account_priority_ordering":true,"account_priority_per_platform":true}})
+            "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"sub2api_update":true,"sub2api_config":runtime.sub2api_config.available(),"account_creation":true,"key_quota_token_reveal":true,"proxy_management":true,"detection_logs":true,"global_detection_model":true,"account_priority_ordering":true,"account_priority_per_platform":true}})
         }
         ["snapshot"] => {
             let bytes = runtime.snapshot_bytes().await?;
@@ -628,7 +633,6 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
                     )
                 } else {
                     let (identity, _) = runtime.actions.candidate_source(account_id, &key).await?;
-                    let expected = identity.clone();
                     let actions = runtime.actions.clone();
                     let catalog = runtime.catalog.clone();
                     let key = key.clone();
@@ -656,12 +660,6 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
                                 }
                                 Err(error) => return Err(error),
                             };
-                            if actions.candidate_source(account_id, &key).await?.0 != expected {
-                                return Err(Error::new(
-                                    409,
-                                    "账号或上游连接已变化，请重新读取模型目录",
-                                ));
-                            }
                             Ok(models)
                         }
                         .await;

@@ -10,9 +10,9 @@ fn payload(path: &str, value: serde_json::Value) -> serde_json::Value {
 #[test]
 fn catalogue_matches_reviewed_version_and_fields_have_explanations() {
     let fields = CATALOG["fields"].as_array().unwrap();
-    assert_eq!(fields.len(), 546);
+    assert_eq!(fields.len(), 554);
     assert_eq!(fields.iter().filter(|f| f["internal"] == true).count(), 16);
-    assert_eq!(CATALOG["groups"].as_array().unwrap().len(), 41);
+    assert_eq!(CATALOG["groups"].as_array().unwrap().len(), 42);
     assert!(fields
         .iter()
         .all(|f| !f["description"].as_str().unwrap().is_empty()

@@ -451,17 +451,39 @@ pub fn apply_native(row: &Value, usage: &mut Value, data: &Value, at: DateTime<U
 }
 
 impl Runtime {
-    async fn usage_row(&self, id: i64) -> Result<Value> {
-        self.db.one(
-            "SELECT a.id,a.platform,a.type,a.extra,md5(a.credentials::text) AS credential_version,
+    pub(crate) async fn usage_row(&self, id: i64, include_account: bool) -> Result<Value> {
+        const PARENT: &str = " LEFT JOIN accounts p ON p.id=coalesce(nullif(to_jsonb(a)->>'parent_account_id','')::bigint,nullif(a.extra->>'parent_account_id','')::bigint) AND p.deleted_at IS NULL ";
+        static ACCOUNT_SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+            crate::sql::MODEL_ACCOUNT_SQL
+                .replacen(
+                    "SELECT ",
+                    "SELECT p.id AS effective_parent_id,p.credentials AS parent_credentials, ",
+                    1,
+                )
+                .replacen("FROM accounts a", &format!("FROM accounts a{PARENT}"), 1)
+                .replace("{filter}", "AND a.id=$1")
+        });
+        static USAGE_SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+            format!(
+            "SELECT a.id,a.platform,a.type,a.extra,a.credentials,p.id AS effective_parent_id,p.credentials AS parent_credentials,md5(a.credentials::text) AS credential_version,
              nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id,
              coalesce(nullif(a.credentials->>'plan_type',''),nullif(a.credentials->>'chatgpt_plan_type',''),a.extra->>'plan_type') AS quota_plan_type,
              a.credentials->>'subscription_tier' AS quota_grok_tier,a.credentials->>'entitlement_status' AS quota_grok_entitlement,
              a.credentials->>'account_mode' AS usage_account_mode,a.credentials->>'base_url' AS usage_base_url,
              to_jsonb(a)->>'session_window_end' AS usage_session_window_end,to_jsonb(a)->>'session_window_status' AS usage_session_window_status
-             FROM accounts a WHERE a.id=$1 AND a.deleted_at IS NULL",
-            &[id.into()],
-        ).await?.ok_or_else(|| Error::new(404, "账号不存在"))
+             FROM accounts a{PARENT}WHERE a.id=$1 AND a.deleted_at IS NULL")
+        });
+        self.db
+            .one(
+                if include_account {
+                    &ACCOUNT_SQL
+                } else {
+                    &USAGE_SQL
+                },
+                &[id.into()],
+            )
+            .await?
+            .ok_or_else(|| Error::new(404, "账号不存在"))
     }
 
     pub(crate) async fn local_account_usage(&self, row: &Value) -> Result<Value> {
@@ -490,7 +512,7 @@ impl Runtime {
     }
 
     pub async fn account_usage(&self, id: i64, key: &str, force: bool) -> Result<Value> {
-        let row = self.usage_row(id).await?;
+        let row = self.usage_row(id, false).await?;
         self.account_usage_from_row(row, key, force, false)
             .await
             .map(|(_, usage)| usage)
@@ -505,94 +527,98 @@ impl Runtime {
     ) -> Result<(Value, Value)> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         let kind = provider(&row);
-        let mut usage = self.local_account_usage(&row).await?;
-        let mut current = None;
-        if row["type"] == "apikey" {
+        let quota = if row["type"] == "apikey" {
             let input = self.key_quota_input_from_row(&row).await?;
             let signature = input.version.clone();
-            let value = self.key_quota.query(input, force).await?;
-            let latest_input = if kind.is_empty() && include_account {
-                let live = self.actions.queries.private_account(id).await?;
-                let input = self.key_quota_input_from_row(&live).await?;
-                current = Some(live);
-                input
-            } else {
-                self.key_quota_input(id).await?
-            };
-            if latest_input.version != signature {
-                return Err(Error::new(409, "账号余额配置已变化，请重新读取"));
-            }
-            usage["key_quota"] = serde_json::to_value(value)?;
-        }
-        if kind.is_empty() {
-            return Ok((current.unwrap_or(row), usage));
-        }
-        let (method, path) = match kind {
-            "anthropic" => (
-                reqwest::Method::GET,
-                format!(
-                    "accounts/{id}/usage?source={}",
-                    if force && row["type"] == "oauth" {
-                        "active&force=true"
-                    } else {
-                        "passive"
-                    }
-                ),
-            ),
-            "gemini" | "antigravity" => (
-                reqwest::Method::GET,
-                format!(
-                    "accounts/{id}/usage{}",
-                    if force { "?force=true" } else { "" }
-                ),
-            ),
-            "cn_quota" => (
-                reqwest::Method::GET,
-                format!("cn-providers/accounts/{id}/quota"),
-            ),
-            "cn_balance" => (
-                reqwest::Method::GET,
-                format!("cn-providers/accounts/{id}/balance"),
-            ),
-            "ollama" | "opencode" => (
-                if force {
-                    reqwest::Method::POST
-                } else {
-                    reqwest::Method::GET
-                },
-                format!(
-                    "accounts/{id}/{}-usage{}",
-                    if kind == "ollama" {
-                        "ollama-cloud"
-                    } else {
-                        "opencode-go"
-                    },
-                    if force { "/refresh" } else { "" }
-                ),
-            ),
-            _ => return Ok((row, usage)),
-        };
-        let response = self.actions.json(method, &path, key, None, 30).await;
-        let live = if include_account {
-            self.actions.account(id, None).await?
+            let (view, refreshed) = self.key_quota.query_with_refresh(input, force).await?;
+            Some((signature, view, refreshed))
         } else {
-            self.usage_row(id).await?
+            None
         };
-        if row["credential_version"] != live["credential_version"]
-            || row["platform"] != live["platform"]
-            || row["type"] != live["type"]
-            || row["parent_account_id"] != live["parent_account_id"]
+        let response = if kind.is_empty() {
+            None
+        } else {
+            let (method, path) = match kind {
+                "anthropic" => (
+                    reqwest::Method::GET,
+                    format!(
+                        "accounts/{id}/usage?source={}",
+                        if force && row["type"] == "oauth" {
+                            "active&force=true"
+                        } else {
+                            "passive"
+                        }
+                    ),
+                ),
+                "gemini" | "antigravity" => (
+                    reqwest::Method::GET,
+                    format!(
+                        "accounts/{id}/usage{}",
+                        if force { "?force=true" } else { "" }
+                    ),
+                ),
+                "cn_quota" => (
+                    reqwest::Method::GET,
+                    format!("cn-providers/accounts/{id}/quota"),
+                ),
+                "cn_balance" => (
+                    reqwest::Method::GET,
+                    format!("cn-providers/accounts/{id}/balance"),
+                ),
+                "ollama" | "opencode" => (
+                    if force {
+                        reqwest::Method::POST
+                    } else {
+                        reqwest::Method::GET
+                    },
+                    format!(
+                        "accounts/{id}/{}-usage{}",
+                        if kind == "ollama" {
+                            "ollama-cloud"
+                        } else {
+                            "opencode-go"
+                        },
+                        if force { "/refresh" } else { "" }
+                    ),
+                ),
+                _ => unreachable!("native usage provider"),
+            };
+            Some(self.actions.json(method, &path, key, None, 30).await)
+        };
+        let refreshed =
+            response.is_some() || quota.as_ref().is_some_and(|(_, _, refreshed)| *refreshed);
+        let live = if refreshed {
+            self.usage_row(id, include_account).await?
+        } else {
+            row.clone()
+        };
+        if response.is_some()
+            && (row["credential_version"] != live["credential_version"]
+                || row["platform"] != live["platform"]
+                || row["type"] != live["type"]
+                || row["parent_account_id"] != live["parent_account_id"])
         {
             return Err(Error::new(409, "账号已变化，请重新读取用量"));
         }
-        match response {
-            Ok(data) => apply_native(&row, &mut usage, &data, Utc::now())?,
-            Err(error) => failure(
-                &mut usage,
-                matches!(error.status.as_u16(), 401 | 403)
-                    || string(&error.detail).contains("[http_401]")
-                    || string(&error.detail).contains("[http_403]"),
-            ),
+        if let Some((signature, _, _)) = &quota {
+            if refreshed && self.key_quota_input_from_row(&live).await?.version != *signature {
+                return Err(Error::new(409, "账号余额配置已变化，请重新读取"));
+            }
+        }
+        let mut usage = self.local_account_usage(&live).await?;
+        if let Some((_, view, _)) = quota {
+            usage["key_quota"] = serde_json::to_value(view)?;
+        }
+        if let Some(response) = response {
+            match response {
+                Ok(data) => apply_native(&live, &mut usage, &data, Utc::now())?,
+                Err(error) => failure(
+                    &mut usage,
+                    matches!(error.status.as_u16(), 401 | 403)
+                        || string(&error.detail).contains("[http_401]")
+                        || string(&error.detail).contains("[http_403]"),
+                ),
+            }
         }
         if force {
             self.invalidate_snapshot();

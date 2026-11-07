@@ -1,15 +1,20 @@
 # 添加账号
 
-账号页工具栏的“添加账号”先填写基本信息、分组、代理及账号参数，再填写凭据或完成授权。桌面使用表单弹窗，Android 使用全屏表单。字段和原生接口基于 Sub2API 0.2.11（`96f4c115c9749078f90cbf210a01d39baf3f53b6`）的 [CreateAccountModal](https://github.com/Wei-Shaw/sub2api/blob/96f4c115c9749078f90cbf210a01d39baf3f53b6/frontend/src/components/account/CreateAccountModal.vue)。
+账号页工具栏的“添加账号”先填写基本信息、分组、代理及账号参数，再填写凭据或完成授权。桌面使用表单弹窗，Android 使用全屏表单。字段和原生接口基于 Sub2API 0.2.20（`dab829a4e9b7d1cc307189aea8b0319eb29e29d0`）的 [CreateAccountModal](https://github.com/Wei-Shaw/sub2api/blob/dab829a4e9b7d1cc307189aea8b0319eb29e29d0/frontend/src/components/account/CreateAccountModal.vue)。
 
 | 平台 | 创建类型 | 授权或导入入口 |
 | --- | --- | --- |
 | Claude | OAuth、Setup Token、API Key、Bedrock、Vertex Service Account | 授权码、Cookie / Session Key；Bedrock 支持 Signature V4 和 API Key |
 | OpenAI | OAuth、API Key | 授权码、Refresh Token、Mobile Refresh Token、Codex Session、Agent Identity、Codex PAT |
-| Gemini | OAuth、API Key、Vertex Service Account | Code Assist、Google One、已配置的 AI Studio OAuth |
+| Gemini | OAuth、API Key、Vertex | Code Assist、Google One、已配置的 AI Studio OAuth；Vertex 支持 Service Account JSON 或 API Key |
 | Antigravity | OAuth、Upstream | 授权码、Refresh Token；Upstream 按原生规则创建为 API Key 类型 |
 | Grok | OAuth、API Key | 授权码、Refresh Token、SSO Cookie |
-| Kimi、智谱、DeepSeek、MiniMax、OpenCode | API Key | 平台账号模式、协议与对应 API 地址 |
+| Kimi、智谱、DeepSeek、MiniMax、OpenCode、Command Code、Cline | API Key | 平台账号模式、协议与对应 API 地址 |
+| TypeSafe / Jev | API Key | Jev 上游地址与模型 |
+
+新增临时停用规则默认只作用于模型，旧规则没有范围时仍按账号处理。模型协议规则支持首选协议及多个受支持协议；平台或账号模式切换只更新未改动的默认地址与规则。Gemini API Key 不显示 OAuth 等级，自定义地址的显式缓存默认关闭；OpenAI 图片规格默认全选，仅部分选择写入限制。Vertex 支持总额、每日和每周额度。
+
+表单有修改时忽略遮罩与 Escape，主动关闭确认是否放弃；输入法组合期间的 Escape 不关闭窗口。
 
 Refresh Token、Cookie、Grok SSO 支持逐行批量输入，Codex Session 和 Agent Identity 支持原生批量格式和多文件导入。后两者沿用 Sub2API 的 `update_existing` 行为，匹配的已有账号会更新。授权链接由系统浏览器打开，授权后将授权码或完整回调地址粘贴回表单。
 
@@ -34,3 +39,5 @@ Refresh Token、Cookie、Grok SSO 支持逐行批量输入，Codex Session 和 A
 | `GET /accounts/:id/key-quota-settings/access-token` | 用户点击“显示并复制”时读取已保存的账户访问令牌 |
 
 余额设置中的令牌默认遮蔽。“显示并复制”优先使用当前编辑值，未编辑时才读取服务端保存值；复制失败时保留显示以便手动复制。查看、复制和隐藏均不保存设置，关闭表单清理临时明文。留空保存保留原令牌，输入新值保存后替换。普通设置接口与账号快照仍只返回是否已配置。
+
+OpenAI OAuth 重新授权使用原生保存接口返回的脱敏账号与状态确认结果，随后刷新账号；不读取或比较明文 Token，不自动重放保存请求。

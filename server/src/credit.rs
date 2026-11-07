@@ -127,27 +127,11 @@ impl CreditController {
         }
         Ok(oauth_admission::automatic_eligible(&candidate, at))
     }
-    pub fn processing_eligible(
-        &self,
-        row: &Value,
-        task: &Value,
-        at: DateTime<Utc>,
-    ) -> Result<bool> {
-        let mut candidate = row.clone();
-        if row["status"] == "error"
-            && truthy(&task["auth_recheck"])
-            && task["auth_error"] == crate::compat::sha256(string(&row["error_message"]))
-        {
-            candidate["status"] = "active".into();
-        }
-        self.eligible(&candidate, at, true)
-    }
-    pub fn owned(&self, row: &Value, task: &Value, same_version: bool) -> Result<bool> {
+    pub fn owned(&self, row: &Value, task: &Value) -> Result<bool> {
         Ok(credit_ownership::owned(
             row,
             task,
             self.store.shared_snapshot()?.as_ref(),
-            same_version,
         ))
     }
     pub fn available(&self, row: &Value, task: &Value, at: DateTime<Utc>) -> Result<bool> {
@@ -291,7 +275,7 @@ impl CreditController {
             return Ok(json!({}));
         }
         let mut task = evidence;
-        task.as_object_mut().unwrap().extend(json!({"episode":uuid::Uuid::new_v4().simple().to_string(),"stage":"waiting","account_name":string(&row["name"]),"credit_admitted_at":datetime(at),"credit_admitted_count":available_credits(&row["extra"]["codex_reset_credit_snapshot"],at)}).as_object().unwrap().clone());
+        task.as_object_mut().unwrap().extend(json!({"episode":uuid::Uuid::new_v4().simple().to_string(),"stage":"waiting","account_name":string(&row["name"])}).as_object().unwrap().clone());
         let policy = self.policy_fields(row, &task)?;
         task.as_object_mut()
             .unwrap()
@@ -304,12 +288,6 @@ impl CreditController {
             let current = &meta["auto_reset_credit"];
             if current["episode"] != old["episode"] || current["revision"] != old["revision"] {
                 return Err(Error::new(409, "自动用卡任务已变化"));
-            }
-            if truthy(&old["attempt_at"]) {
-                if !meta["reset_credit_episodes"].is_object() {
-                    meta["reset_credit_episodes"] = json!({});
-                }
-                meta["reset_credit_episodes"][string(&old["episode"])] = old.clone();
             }
             meta["auto_reset_credit"] = task.clone();
             Ok(())
@@ -375,7 +353,7 @@ impl CreditController {
             return Ok("account_ineligible");
         }
         if truthy(&task["owns_pause"])
-            && !self.owned(row, task, false)?
+            && !self.owned(row, task)?
             && !(task["stage"] == "confirming"
                 && task["test_success"] == true
                 && truthy(&task["clear_requested_at"])

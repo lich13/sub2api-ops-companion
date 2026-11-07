@@ -19,8 +19,9 @@ export type CreationOptions = {
 export type Created = { account: { id: number; name: string; platform: string; type: string }; warnings: string[] };
 export const fields = catalog.fields as Field[];
 export const platforms = catalog.platforms;
-export const typeNames: Record<string, string> = { oauth: "OAuth", "setup-token": "Setup Token", apikey: "API Key", bedrock: "Bedrock", service_account: "Vertex Service Account" };
+export const typeNames: Record<string, string> = { oauth: "OAuth", "setup-token": "Setup Token", apikey: "API Key", bedrock: "Bedrock", service_account: "Vertex" };
 export const labels: Record<string, string> = {
+  service_account: "Service Account JSON", model: "模型", account: "账号",
   sigv4: "AWS Signature V4", apikey: "API Key", payg: "按量付费", coding: "Coding Plan", zen: "Zen", go: "Go",
   adaptive: "自动选择协议", chat_completions: "Chat Completions", anthropic: "Anthropic", responses: "Responses",
   code_assist: "GCP Code Assist", google_one: "Google One", ai_studio: "AI Studio",
@@ -44,6 +45,8 @@ export function applicable(f: Field, draft: Pick<CreationDraft, "platform" | "ty
 }
 export function fieldVisible(f: Field, draft: CreationDraft) {
   if (!applicable(f, draft)) return false;
+  if (f.path.startsWith("credentials.explicit_cache_upstream") && officialGemini(draft.credentials.base_url)) return false;
+  if (f.path === "credentials.account_mode" && multiProtocol(draft.platform) && providerProfile(draft.platform)?.modes.length === 1) return false;
   if (f.path === "credentials.model_mapping" && draft.platform === "openai" && draft.extra.openai_passthrough === true) return false;
   if (f.path === "credentials.base_url" && multiProtocol(draft.platform) && draft.credentials.api_protocol === "adaptive") return false;
   if (f.path === "extra.openai_responses_mode" && Array.isArray(draft.credentials.openai_capabilities) && !draft.credentials.openai_capabilities.includes("chat_completions")) return false;
@@ -57,23 +60,39 @@ export function groupLongContextBilling(draft: CreationDraft, groups: CreationOp
   return draft.group_ids.length > 0 && draft.group_ids.every(id => groups.some(g => g.id === id && g.long_context_pricing_enabled === true));
 }
 export const isOAuth = (draft: CreationDraft) => ["oauth", "setup-token"].includes(draft.type);
-export const multiProtocol = (p: string) => ["kimi", "zhipu", "deepseek", "minimax", "opencode_go"].includes(p);
-export function protocols(platform: string) { return platform === "zhipu" ? ["chat_completions", "anthropic"] : ["chat_completions", "anthropic", "responses"]; }
+type ProviderProfile = { routing: string; default_mode: string; modes: { mode: string; base_urls: Record<string,string>; protocol_rules?: RecordValue[] }[] };
+const providerProfile = (platform: string) => (catalog.provider_profiles as Record<string,ProviderProfile>)[platform];
+const providerMode = (platform: string, mode?: string) => {
+  const profile = providerProfile(platform);
+  return profile?.modes.find(value => value.mode === mode) ?? profile?.modes.find(value => value.mode === profile.default_mode);
+};
+export const multiProtocol = (platform: string) => !!providerProfile(platform);
+export function protocols(platform: string, mode?: string) { return Object.keys(providerMode(platform, mode)?.base_urls ?? {}); }
+export function officialGemini(value: unknown) {
+  if (!String(value ?? "").trim()) return true;
+  try { const url = new URL(String(value)); return url.protocol === "https:" && url.hostname === "generativelanguage.googleapis.com" && !url.port && !url.pathname.replace(/\/+$/, "") && !url.search; } catch { return false; }
+}
+export const vertexApiKey = (draft: CreationDraft) => draft.platform === "gemini" && draft.type === "service_account" && draft.credentials.auth_mode === "apikey";
 export function tierOptions(draft: CreationDraft) {
   const type = draft.type === "apikey" ? "ai_studio" : draft.credentials.oauth_type;
   return type === "google_one" ? ["google_one_free", "google_ai_pro", "google_ai_ultra"] : type === "code_assist" ? ["gcp_standard", "gcp_enterprise"] : ["aistudio_free", "aistudio_paid"];
 }
 export function defaultUrl(platform: string, mode: string, protocol: string) {
-  if (platform === "opencode_go") return `https://opencode.ai/zen${mode === "go" ? "/go" : ""}${protocol === "anthropic" ? "" : "/v1"}`;
-  const options = catalog.url_presets[platform as keyof typeof catalog.url_presets] ?? [];
-  return options.find(p => p.mode === mode && p.protocol === protocol)?.url ?? options.find(p => p.protocol === protocol)?.url ?? platforms.find(p => p.id === platform)?.base_url ?? "";
+  const urls = providerMode(platform, mode)?.base_urls;
+  return urls?.[protocol] ?? urls?.chat_completions ?? platforms.find(p => p.id === platform)?.base_url ?? "";
 }
-export function withProtocolDefaults(draft: CreationDraft): CreationDraft {
-  if (!multiProtocol(draft.platform)) return draft;
+export function withProtocolDefaults(draft: CreationDraft, previous?: CreationDraft): CreationDraft {
+  const profile = providerProfile(draft.platform);
+  if (!profile) return draft;
   const mode = String(draft.credentials.account_mode), protocol = String(draft.credentials.api_protocol);
-  const urls = Object.fromEntries(protocols(draft.platform).map(p => [p, defaultUrl(draft.platform, mode, p)]));
-  return { ...draft, credentials: { ...draft.credentials, base_url: defaultUrl(draft.platform, mode, protocol), api_base_urls: urls,
-    ...(draft.platform === "opencode_go" ? { protocol_rules: structuredClone(catalog.protocol_rules[mode === "go" ? "go" : "zen"]) } : {}) } };
+  const previousDefaults = previous ? withProtocolDefaults({ ...previous, credentials: { account_mode: previous.credentials.account_mode, api_protocol: previous.credentials.api_protocol } }) : undefined;
+  const unchanged = (key: string) => !previous || JSON.stringify(previous.credentials[key]) === JSON.stringify(previousDefaults?.credentials[key]);
+  const credentials = { ...draft.credentials };
+  if (unchanged("base_url")) credentials.base_url = defaultUrl(draft.platform, mode, protocol);
+  const urls = providerMode(draft.platform, mode)?.base_urls ?? {};
+  credentials.api_base_urls = Object.fromEntries(Object.entries(urls).map(([key,value]) => [key, !previous || (previous.credentials.api_base_urls as RecordValue)?.[key] === (previousDefaults?.credentials.api_base_urls as RecordValue)?.[key] ? value : (draft.credentials.api_base_urls as RecordValue)?.[key] ?? value]));
+  if (profile.routing === "by_model" && unchanged("protocol_rules")) credentials.protocol_rules = structuredClone(providerMode(draft.platform, mode)?.protocol_rules ?? []);
+  return { ...draft, credentials };
 }
 export function newDraft(platform = "anthropic", type?: string): CreationDraft {
   const p = platforms.find(p => p.id === platform) ?? platforms[0];
@@ -81,7 +100,7 @@ export function newDraft(platform = "anthropic", type?: string): CreationDraft {
   let value: CreationDraft = { name: "", notes: "", platform: p.id, type: kind, credentials: {}, extra: {}, proxy_id: null, concurrency: p.id === "grok" ? 1 : 10, load_factor: null, priority: 1, rate_multiplier: 1, group_ids: [], expires_at: null };
   for (const f of fields.filter(f => applicable(f, value))) if (f.default !== undefined) value = setField(value, f.path, structuredClone(f.default));
   if (kind === "apikey") value.credentials.base_url = p.base_url;
-  if (p.id === "gemini") value.credentials.tier_id = tierOptions(value)[0];
+  if (p.id === "gemini" && kind === "oauth") value.credentials.tier_id = tierOptions(value)[0];
   if (fields.some(f => f.path === "credentials.model_mapping" && applicable(f,value)) && !["grok", "antigravity"].includes(p.id)) value.credentials.model_mapping = Object.fromEntries(modelPresets(p.id).map(m => [m,m]));
   return withProtocolDefaults(value);
 }
@@ -100,6 +119,7 @@ export function reuseDraft(current: CreationDraft, source: CreationDraft): Creat
     const value = getField(source, f.path);
     result = setField(result, f.path, value === undefined ? undefined : structuredClone(value));
   }
+  if (current.platform === "openai" && (!Array.isArray(result.extra.openai_image_size_tiers) || !(result.extra.openai_image_size_tiers as unknown[]).length)) result.extra.openai_image_size_tiers = ["1K", "2K", "4K"];
   return result;
 }
 function listNumbers(value: unknown) {
@@ -119,18 +139,42 @@ export function buildPayload(draft: CreationDraft, identity: RecordValue = {}, i
     let v = getField(draft,f.path);
     if (v === undefined || v === "" && f.kind !== "select") continue;
     if (f.kind === "numbers") v = listNumbers(v);
+    if (f.kind === "protocol-rules" && Array.isArray(v)) v = v.map((rule: RecordValue) => {
+      const preferred = String(rule.protocol || (rule.protocols as string[] | undefined)?.[0] || "");
+      const accepted = [...new Set([preferred, ...(Array.isArray(rule.protocols) ? rule.protocols as string[] : [])])];
+      return { pattern: String(rule.pattern ?? "").trim().toLowerCase(), protocol: preferred, ...(accepted.length > 1 ? { protocols: accepted } : {}) };
+    });
     if (f.kind === "stringbool" && typeof v === "boolean") v = String(v);
     value = setField(value,f.path,structuredClone(v));
   }
   const secretKeys = ["api_key", "aws_access_key_id", "aws_secret_access_key", "aws_session_token", "service_account_json"];
   for (const key of secretKeys) if (draft.credentials[key]) value.credentials[key] = String(draft.credentials[key]).trim();
   if (draft.type === "service_account") {
-    const service = JSON.parse(String(value.credentials.service_account_json || "{}")) as RecordValue;
-    if (!service.private_key || !service.client_email || !service.project_id) throw new Error("Service Account 文件缺少私钥、邮箱或项目 ID");
-    Object.assign(value.credentials, { client_email: service.client_email, project_id: service.project_id, tier_id: "vertex" });
+    value.credentials.tier_id = "vertex";
+    if (vertexApiKey(draft)) {
+      delete value.credentials.service_account_json;
+      value.credentials.location = String(draft.credentials.location || "global").trim();
+    } else {
+      const service = JSON.parse(String(value.credentials.service_account_json || "{}")) as RecordValue;
+      if (!service.private_key || !service.client_email || !service.project_id) throw new Error("Service Account 文件缺少私钥、邮箱或项目 ID");
+      Object.assign(value.credentials, { client_email: service.client_email, project_id: service.project_id });
+      delete value.credentials.auth_mode; delete value.credentials.api_key;
+    }
+  }
+  if (draft.platform === "gemini" && draft.type === "apikey") {
+    if (officialGemini(draft.credentials.base_url)) value.credentials.tier_id = "aistudio_free";
+    if (value.credentials.explicit_cache_upstream !== true) { delete value.credentials.explicit_cache_upstream; delete value.credentials.explicit_cache_upstream_max_ttl_seconds; }
+    else if (typeof value.credentials.explicit_cache_upstream_max_ttl_seconds === "number") value.credentials.explicit_cache_upstream_max_ttl_seconds = Math.floor(value.credentials.explicit_cache_upstream_max_ttl_seconds);
+  }
+  if (draft.platform === "openai") {
+    const selected = Array.isArray(draft.extra.openai_image_size_tiers) ? draft.extra.openai_image_size_tiers : [];
+    const tiers = ["1K","2K","4K"].filter(tier => selected.includes(tier));
+    if (!tiers.length || tiers.length === 3) delete value.extra.openai_image_size_tiers;
+    else value.extra.openai_image_size_tiers = tiers;
   }
   if (draft.type === "bedrock" && value.credentials.auth_mode === "sigv4") delete value.credentials.api_key;
   if (draft.type === "bedrock" && value.credentials.auth_mode === "apikey") for (const key of ["aws_access_key_id", "aws_secret_access_key", "aws_session_token"]) delete value.credentials[key];
+  if (multiProtocol(draft.platform)) value.credentials.account_mode = draft.credentials.account_mode;
   if (multiProtocol(draft.platform) && value.credentials.api_protocol === "adaptive") value.credentials.base_url = (value.credentials.api_base_urls as RecordValue)?.chat_completions;
   Object.assign(value.credentials, identity);
   if (draft.platform === "openai") {
@@ -161,15 +205,16 @@ export function validateDraft(draft: CreationDraft, requireCredentials = true, r
       if(a.length>64)return "请求头最多 64 项";
     }
     if (f.kind === "pause-rules") {
-      if (!Array.isArray(v) || !v.length || v.some((r: RecordValue) => !Number.isInteger(r.error_code) || Number(r.error_code)<100 || Number(r.error_code)>599 || !Number.isInteger(r.duration_minutes) || Number(r.duration_minutes)<=0 || !Array.isArray(r.keywords) || !r.keywords.length || r.keywords.some(x=>!String(x).trim()))) return "临时不可调度规则需包含状态码、关键词和正整数分钟";
+      if (!Array.isArray(v) || !v.length || v.some((r: RecordValue) => !Number.isInteger(r.error_code) || Number(r.error_code)<100 || Number(r.error_code)>599 || !Number.isInteger(r.duration_minutes) || Number(r.duration_minutes)<=0 || !Array.isArray(r.keywords) || !r.keywords.length || r.keywords.some(x=>!String(x).trim()) || r.scope !== undefined && !["model","account"].includes(String(r.scope)))) return "临时不可调度规则需包含状态码、关键词和正整数分钟";
     }
     if (f.kind === "protocols") {
-      for (const protocol of protocols(draft.platform)) { try { const url=new URL(String((v as RecordValue)[protocol]??""));if(!["http:","https:"].includes(url.protocol) || url.username || url.password)return "协议地址需为 HTTP 或 HTTPS 地址"; }catch{return "请填写各协议的有效 API 地址";} }
+      for (const protocol of protocols(draft.platform, String(draft.credentials.account_mode))) { try { const url=new URL(String((v as RecordValue)[protocol]??""));if(!["http:","https:"].includes(url.protocol) || url.username || url.password)return "协议地址需为 HTTP 或 HTTPS 地址"; }catch{return "请填写各协议的有效 API 地址";} }
     }
-    if (f.kind === "protocol-rules" && (!Array.isArray(v) || v.some((r: RecordValue)=>!String(r.pattern??"").trim() || !protocols(draft.platform).includes(String(r.protocol))))) return "请填写模型匹配与有效协议";
+    if (f.kind === "protocol-rules" && (!Array.isArray(v) || v.some((r: RecordValue)=>!String(r.pattern??"").trim() || !protocols(draft.platform, String(draft.credentials.account_mode)).includes(String(r.protocol || (r.protocols as string[] | undefined)?.[0])) || Array.isArray(r.protocols) && r.protocols.some(p => !protocols(draft.platform, String(draft.credentials.account_mode)).includes(String(p)))))) return "请填写模型匹配与有效协议";
   }
   if (requireCredentials && !isOAuth(draft)) {
-    if (draft.type === "service_account") { try { buildPayload(draft); if (!draft.credentials.location) return "请输入 Vertex 区域"; } catch { return "请选择有效的 Service Account JSON 文件"; } }
+    if (vertexApiKey(draft)) { if (!String(draft.credentials.api_key ?? "").trim()) return "请输入 API Key"; if (draft.credentials.project_id && !String(draft.credentials.location ?? "").trim()) return "请输入 Vertex 区域"; }
+    else if (draft.type === "service_account") { try { buildPayload(draft); if (!draft.credentials.location) return "请输入 Vertex 区域"; } catch { return "请选择有效的 Service Account JSON 文件"; } }
     else if (draft.type === "bedrock" && draft.credentials.auth_mode === "sigv4") { if (!draft.credentials.aws_access_key_id || !draft.credentials.aws_secret_access_key) return "请填写 AWS Access Key ID 和 Secret Access Key"; }
     else if (!String(draft.credentials.api_key ?? "").trim()) return "请输入 API Key";
     if (draft.platform === "antigravity" && !draft.credentials.base_url) return "请输入上游 API 地址";

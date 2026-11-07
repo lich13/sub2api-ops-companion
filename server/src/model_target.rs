@@ -141,19 +141,16 @@ pub async fn account(actions: &Actions, id: i64) -> Result<Value> {
 
 pub async fn target(actions: &Actions, row: &Value, model: &str) -> Result<(Target, Value)> {
     let target = connection(actions, row, model).await?;
-    if !actions.model_allowed(row, model).await? {
+    if !actions
+        .model_allowed_prepared(row, model, &target.0, &target.1)
+        .await?
+    {
         return Err(Error::new(422, "所选模型不在当前账号上游模型目录中"));
     }
     Ok(target)
 }
 
-/// Resolve the same credentials, protocol and proxy for discovery and inference.
-/// Discovery does not validate its own candidate list recursively.
-pub(crate) async fn connection(
-    actions: &Actions,
-    row: &Value,
-    model: &str,
-) -> Result<(Target, Value)> {
+pub(crate) async fn owner(actions: &Actions, row: &Value) -> Result<Value> {
     let owner = if let Some(parent) = integer(&row["parent_account_id"])
         .or_else(|| integer(&row["extra"]["parent_account_id"]))
         .filter(|id| *id > 0)
@@ -168,6 +165,17 @@ pub(crate) async fn connection(
     if owner["type"] != row["type"] || owner["platform"] != row["platform"] {
         return Err(Error::new(422, "母账号凭据类型不一致"));
     }
+    Ok(owner)
+}
+
+/// Resolve the same credentials, protocol and proxy for discovery and inference.
+/// Discovery does not validate its own candidate list recursively.
+pub(crate) async fn connection(
+    actions: &Actions,
+    row: &Value,
+    model: &str,
+) -> Result<(Target, Value)> {
+    let owner = owner(actions, row).await?;
     let platform = string(&owner["platform"]);
     let oauth = owner["type"] == "oauth";
     let credentials = &owner["credentials"];

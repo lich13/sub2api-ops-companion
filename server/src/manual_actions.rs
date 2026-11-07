@@ -19,7 +19,11 @@ pub(crate) struct UsageResult {
     response: tokio::sync::OnceCell<Result<Value>>,
 }
 impl UsageResult {
-    fn new(row: Value, message: &'static str, usage: Option<Value>) -> Arc<Self> {
+    fn new(mut row: Value, message: &'static str, usage: Option<Value>) -> Arc<Self> {
+        if let Some(fields) = row.as_object_mut() {
+            fields.remove("credentials");
+            fields.remove("parent_credentials");
+        }
         Arc::new(Self {
             row,
             message,
@@ -344,11 +348,15 @@ impl Runtime {
         requested: Option<Instant>,
     ) -> Result<Arc<UsageResult>> {
         let expected = string(&payload["expected_version"]);
-        let row = self.actions.queries.private_account(id).await?;
+        let action = string(&payload["action"]);
+        let row = if action == "query_usage" {
+            self.usage_row(id, true).await?
+        } else {
+            self.actions.queries.private_account(id).await?
+        };
         if !crate::actions::version_matches(&row, expected) {
             return Err(Error::new(409, "账号已变化，请刷新后重试"));
         }
-        let action = string(&payload["action"]);
         if action == "query_usage"
             && (row["type"] == "apikey" || !crate::account_usage::provider(&row).is_empty())
         {
@@ -356,7 +364,7 @@ impl Runtime {
                 Ok(control) => (control, row),
                 Err(_) => {
                     let control = self.actions.locks.control(id).await;
-                    let row = self.actions.queries.private_account(id).await?;
+                    let row = self.usage_row(id, true).await?;
                     if !crate::actions::version_matches(&row, expected) {
                         return Err(Error::new(409, "账号已变化，请刷新后重试"));
                     }

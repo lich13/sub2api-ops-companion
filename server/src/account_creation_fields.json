@@ -1,5 +1,5 @@
 {
-  "upstream": "Sub2API 0.2.11 / 96f4c115",
+  "upstream": "Sub2API 0.2.20 / dab829a4e9b7d1cc307189aea8b0319eb29e29d0",
   "platforms": [
     {
       "id": "anthropic",
@@ -89,6 +89,30 @@
         "apikey"
       ],
       "base_url": "https://opencode.ai/zen/v1"
+    },
+    {
+      "id": "typesafe",
+      "label": "TypeSafe / Jev",
+      "types": [
+        "apikey"
+      ],
+      "base_url": "https://api.typesafe.ai"
+    },
+    {
+      "id": "command_code",
+      "label": "Command Code",
+      "types": [
+        "apikey"
+      ],
+      "base_url": "https://api.commandcode.ai/provider/v1"
+    },
+    {
+      "id": "cline",
+      "label": "Cline",
+      "types": [
+        "apikey"
+      ],
+      "base_url": "https://api.cline.bot/api/v1"
     }
   ],
   "fields": [
@@ -219,8 +243,7 @@
         "gemini"
       ],
       "types": [
-        "oauth",
-        "apikey"
+        "oauth"
       ]
     },
     {
@@ -270,7 +293,9 @@
         "zhipu",
         "deepseek",
         "minimax",
-        "opencode_go"
+        "opencode_go",
+        "command_code",
+        "cline"
       ],
       "types": [
         "apikey"
@@ -293,7 +318,9 @@
         "zhipu",
         "deepseek",
         "minimax",
-        "opencode_go"
+        "opencode_go",
+        "command_code",
+        "cline"
       ],
       "types": [
         "apikey"
@@ -308,11 +335,15 @@
       "kind": "protocol-rules",
       "group": "连接",
       "platforms": [
-        "opencode_go"
+        "opencode_go",
+        "command_code"
       ],
       "types": [
         "apikey"
-      ]
+      ],
+      "when": {
+        "credentials.api_protocol": "adaptive"
+      }
     },
     {
       "path": "credentials.zhipu_organization",
@@ -500,7 +531,9 @@
         "zhipu",
         "deepseek",
         "minimax",
-        "opencode_go"
+        "opencode_go",
+        "command_code",
+        "cline"
       ],
       "types": [
         "apikey"
@@ -512,7 +545,9 @@
       "kind": "boolean",
       "group": "请求与重试",
       "platforms": [
-        "grok"
+        "grok",
+        "command_code",
+        "cline"
       ],
       "types": [
         "oauth"
@@ -531,7 +566,9 @@
         "zhipu",
         "deepseek",
         "minimax",
-        "opencode_go"
+        "opencode_go",
+        "command_code",
+        "cline"
       ],
       "types": [
         "apikey"
@@ -546,7 +583,9 @@
       "kind": "headers",
       "group": "请求与重试",
       "platforms": [
-        "grok"
+        "grok",
+        "command_code",
+        "cline"
       ],
       "types": [
         "oauth"
@@ -600,7 +639,8 @@
       "group": "额度",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ],
       "min": 0
     },
@@ -611,7 +651,8 @@
       "group": "额度",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ],
       "min": 0
     },
@@ -622,7 +663,8 @@
       "group": "额度",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ],
       "min": 0
     },
@@ -633,7 +675,8 @@
       "group": "额度",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ],
       "choices": [
         "rolling",
@@ -647,7 +690,8 @@
       "group": "额度",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ],
       "default": 0,
       "when": {
@@ -663,7 +707,8 @@
       "group": "额度",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ],
       "choices": [
         "rolling",
@@ -677,7 +722,8 @@
       "group": "额度",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ],
       "default": 0,
       "when": {
@@ -693,7 +739,8 @@
       "group": "额度",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ],
       "default": 1,
       "when": {
@@ -709,7 +756,8 @@
       "group": "额度",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ],
       "default": "UTC"
     },
@@ -720,7 +768,8 @@
       "group": "额度通知",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ]
     },
     {
@@ -730,7 +779,8 @@
       "group": "额度通知",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ],
       "when": {
         "extra.quota_notify_total_enabled": true
@@ -744,7 +794,8 @@
       "group": "额度通知",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ],
       "default": "fixed",
       "choices": [
@@ -762,7 +813,8 @@
       "group": "额度通知",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ]
     },
     {
@@ -772,7 +824,8 @@
       "group": "额度通知",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ],
       "when": {
         "extra.quota_notify_daily_enabled": true
@@ -786,7 +839,8 @@
       "group": "额度通知",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ],
       "default": "fixed",
       "choices": [
@@ -804,7 +858,8 @@
       "group": "额度通知",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ]
     },
     {
@@ -814,7 +869,8 @@
       "group": "额度通知",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ],
       "when": {
         "extra.quota_notify_weekly_enabled": true
@@ -828,7 +884,8 @@
       "group": "额度通知",
       "types": [
         "apikey",
-        "bedrock"
+        "bedrock",
+        "service_account"
       ],
       "default": "fixed",
       "choices": [
@@ -1312,6 +1369,107 @@
         "oauth",
         "apikey"
       ]
+    },
+    {
+      "path": "credentials.account_mode",
+      "label": "账号模式",
+      "kind": "select",
+      "group": "连接",
+      "platforms": [
+        "command_code",
+        "cline"
+      ],
+      "types": [
+        "apikey"
+      ],
+      "default": "payg",
+      "choices": [
+        "payg"
+      ]
+    },
+    {
+      "path": "credentials.auth_mode",
+      "label": "Vertex 认证方式",
+      "kind": "select",
+      "group": "连接",
+      "platforms": [
+        "gemini"
+      ],
+      "types": [
+        "service_account"
+      ],
+      "default": "service_account",
+      "choices": [
+        "service_account",
+        "apikey"
+      ]
+    },
+    {
+      "path": "credentials.project_id",
+      "label": "GCP 项目 ID（可选）",
+      "kind": "text",
+      "group": "连接",
+      "platforms": [
+        "gemini"
+      ],
+      "types": [
+        "service_account"
+      ],
+      "when": {
+        "credentials.auth_mode": "apikey"
+      }
+    },
+    {
+      "path": "credentials.explicit_cache_upstream",
+      "label": "上游显式缓存",
+      "kind": "boolean",
+      "group": "连接",
+      "platforms": [
+        "gemini"
+      ],
+      "types": [
+        "apikey"
+      ],
+      "default": false
+    },
+    {
+      "path": "credentials.explicit_cache_upstream_max_ttl_seconds",
+      "label": "缓存最长有效期（秒）",
+      "kind": "number",
+      "group": "连接",
+      "platforms": [
+        "gemini"
+      ],
+      "types": [
+        "apikey"
+      ],
+      "min": 1,
+      "when": {
+        "credentials.explicit_cache_upstream": true
+      }
+    },
+    {
+      "path": "extra.openai_image_size_tiers",
+      "label": "图片规格",
+      "kind": "strings",
+      "group": "模型",
+      "platforms": [
+        "openai"
+      ],
+      "types": [
+        "oauth",
+        "apikey"
+      ],
+      "default": [
+        "1K",
+        "2K",
+        "4K"
+      ],
+      "choices": [
+        "1K",
+        "2K",
+        "4K"
+      ]
     }
   ],
   "models": {
@@ -1332,6 +1490,7 @@
       "claude-opus-5-5",
       "claude-opus-5",
       "claude-sonnet-5-5",
+      "claude-haiku-5-5",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
       "claude-fable-5-1",
@@ -1350,6 +1509,7 @@
       "gpt-6",
       "gpt-6-astra",
       "gpt-6.1-sol",
+      "gpt-6.1-terra",
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.5",
@@ -1364,21 +1524,38 @@
       "gpt-image-1.5",
       "gpt-image-2",
       "gpt-image-2.5-flare",
-      "gpt-image-2.5-sunburst"
+      "gpt-image-2.5-sunburst",
+      "gpt-image-2.6-flare",
+      "gpt-image-2.6-sunburst"
     ],
     "gemini": [
       "gemini-3.1-flash-image",
-      "gemini-2.5-flash-image",
-      "gemini-2.0-flash",
-      "gemini-2.5-flash",
-      "gemini-2.5-pro",
-      "gemini-3.5-flash",
+      "gemini-3.1-flash-image-preview",
+      "gemini-3.1-flash-lite-image",
+      "gemini-3-pro-image",
+      "gemini-3-pro-image-preview",
+      "gemini-3-flash",
       "gemini-3-flash-preview",
-      "gemini-3-pro-preview"
+      "gemini-3.1-pro-preview",
+      "gemini-3.1-pro-preview-customtools",
+      "gemini-3.1-flash-lite",
+      "gemini-3.1-flash-lite-preview",
+      "gemini-3.5-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-3.6-flash",
+      "gemini-3.7-flash",
+      "gemini-3.8-flash",
+      "gemini-4-argon"
     ],
     "antigravity": [
       "claude-fable-5-1",
       "claude-fable-5",
+      "claude-opus-5-5-high",
+      "claude-opus-5-5-medium",
+      "claude-opus-5-5-low",
+      "claude-sonnet-5-5-high",
+      "claude-sonnet-5-5-medium",
+      "claude-sonnet-5-5-low",
       "claude-opus-4-6",
       "claude-opus-4-6-thinking",
       "claude-opus-4-7",
@@ -1399,7 +1576,26 @@
       "gemini-3.1-pro",
       "gemini-3.1-pro-high",
       "gemini-3.1-pro-low",
+      "gemini-pro-agent",
       "gemini-3-pro-image",
+      "gemini-3.6-flash",
+      "gemini-3.6-flash-low",
+      "gemini-3.6-flash-medium",
+      "gemini-3.6-flash-high",
+      "gemini-3.6-flash-tiered",
+      "gemini-3.7-flash",
+      "gemini-3.7-flash-low",
+      "gemini-3.7-flash-medium",
+      "gemini-3.7-flash-high",
+      "gemini-3.7-flash-tiered",
+      "gemini-3.8-flash",
+      "gemini-3.8-flash-low",
+      "gemini-3.8-flash-medium",
+      "gemini-3.8-flash-high",
+      "gemini-3.8-flash-tiered",
+      "gemini-4-argon-low",
+      "gemini-4-argon-medium",
+      "gemini-4-argon-high",
       "gpt-oss-120b-medium",
       "tab_flash_lite_preview"
     ],
@@ -1533,7 +1729,12 @@
       "hy4-preview",
       "hy3",
       "omen-alpha"
-    ]
+    ],
+    "typesafe": [
+      "jev-latest"
+    ],
+    "command_code": [],
+    "cline": []
   },
   "blocked_headers": [
     "host",
@@ -1757,51 +1958,33 @@
         "label": "eu-west-1",
         "url": "https://eu-west-1.api.x.ai/v1"
       }
-    ]
-  },
-  "protocol_rules": {
-    "go": [
+    ],
+    "command_code": [
       {
-        "pattern": "grok-*",
-        "protocol": "responses"
+        "label": "payg · anthropic",
+        "mode": "payg",
+        "protocol": "anthropic",
+        "url": "https://api.commandcode.ai/provider"
       },
       {
-        "pattern": "gpt-*",
-        "protocol": "responses"
+        "label": "payg · chat_completions",
+        "mode": "payg",
+        "protocol": "chat_completions",
+        "url": "https://api.commandcode.ai/provider/v1"
       },
       {
-        "pattern": "muse-spark-*",
-        "protocol": "responses"
-      },
-      {
-        "pattern": "minimax-*",
-        "protocol": "anthropic"
-      },
-      {
-        "pattern": "qwen*",
-        "protocol": "anthropic"
+        "label": "payg · responses",
+        "mode": "payg",
+        "protocol": "responses",
+        "url": "https://api.commandcode.ai/provider/v1"
       }
     ],
-    "zen": [
+    "cline": [
       {
-        "pattern": "grok-*",
-        "protocol": "responses"
-      },
-      {
-        "pattern": "gpt-*",
-        "protocol": "responses"
-      },
-      {
-        "pattern": "muse-spark-*",
-        "protocol": "responses"
-      },
-      {
-        "pattern": "claude-*",
-        "protocol": "anthropic"
-      },
-      {
-        "pattern": "qwen*",
-        "protocol": "anthropic"
+        "label": "payg · chat_completions",
+        "mode": "payg",
+        "protocol": "chat_completions",
+        "url": "https://api.cline.bot/api/v1"
       }
     ]
   },
@@ -1883,6 +2066,11 @@
         "to": "claude-haiku-4-5-20251001"
       },
       {
+        "label": "Haiku 5.5",
+        "from": "claude-haiku-5-5",
+        "to": "claude-haiku-5-5"
+      },
+      {
         "label": "Opus->Sonnet",
         "from": "claude-opus-4-6",
         "to": "claude-sonnet-4-5-20250929"
@@ -1933,6 +2121,11 @@
         "label": "GPT-5.6",
         "from": "gpt-5.6",
         "to": "gpt-5.6"
+      },
+      {
+        "label": "GPT-6.1 Terra",
+        "from": "gpt-6.1-terra",
+        "to": "gpt-6.1-terra"
       },
       {
         "label": "GPT-6.1 Sol",
@@ -2106,6 +2299,76 @@
     ],
     "antigravity": [
       {
+        "label": "4 Argon→High",
+        "from": "gemini-4-argon",
+        "to": "gemini-4-argon-high"
+      },
+      {
+        "label": "4 Argon High",
+        "from": "gemini-4-argon-high",
+        "to": "gemini-4-argon-high"
+      },
+      {
+        "label": "4 Argon Medium",
+        "from": "gemini-4-argon-medium",
+        "to": "gemini-4-argon-medium"
+      },
+      {
+        "label": "4 Argon Low",
+        "from": "gemini-4-argon-low",
+        "to": "gemini-4-argon-low"
+      },
+      {
+        "label": "3.8 Flash",
+        "from": "gemini-3.8-flash",
+        "to": "gemini-3.8-flash"
+      },
+      {
+        "label": "3.8 Flash High",
+        "from": "gemini-3.8-flash-high",
+        "to": "gemini-3.8-flash-high"
+      },
+      {
+        "label": "Opus 5.5→High",
+        "from": "claude-opus-5-5",
+        "to": "claude-opus-5-5-high"
+      },
+      {
+        "label": "Opus 5.5 High",
+        "from": "claude-opus-5-5-high",
+        "to": "claude-opus-5-5-high"
+      },
+      {
+        "label": "Opus 5.5 Medium",
+        "from": "claude-opus-5-5-medium",
+        "to": "claude-opus-5-5-medium"
+      },
+      {
+        "label": "Sonnet 5.5→High",
+        "from": "claude-sonnet-5-5",
+        "to": "claude-sonnet-5-5-high"
+      },
+      {
+        "label": "Sonnet 5.5 High",
+        "from": "claude-sonnet-5-5-high",
+        "to": "claude-sonnet-5-5-high"
+      },
+      {
+        "label": "Sonnet 5.5 Medium",
+        "from": "claude-sonnet-5-5-medium",
+        "to": "claude-sonnet-5-5-medium"
+      },
+      {
+        "label": "Claude→Sonnet 5.5",
+        "from": "claude-*",
+        "to": "claude-sonnet-5-5-high"
+      },
+      {
+        "label": "Opus→Opus 5.5",
+        "from": "claude-opus-*",
+        "to": "claude-opus-5-5-high"
+      },
+      {
         "label": "Claude→Sonnet",
         "from": "claude-*",
         "to": "claude-sonnet-4-5"
@@ -2156,6 +2419,11 @@
         "to": "claude-opus-4-6-thinking"
       },
       {
+        "label": "3.1-Pro→4-Argon-High",
+        "from": "gemini-3.1-pro*",
+        "to": "gemini-4-argon-high"
+      },
+      {
         "label": "3-Pro-Preview→Pro-Agent",
         "from": "gemini-3-pro-preview",
         "to": "gemini-pro-agent"
@@ -2194,6 +2462,11 @@
         "label": "3.1-Pro-Preview→Pro-Agent",
         "from": "gemini-3.1-pro-preview",
         "to": "gemini-pro-agent"
+      },
+      {
+        "label": "Gemini 3→3.8 Flash",
+        "from": "gemini-3*",
+        "to": "gemini-3.8-flash-high"
       },
       {
         "label": "Gemini 3→Flash",
@@ -2322,6 +2595,207 @@
         "from": "claude-haiku-4-5",
         "to": "us.anthropic.claude-haiku-4-5-20251001-v1:0"
       }
-    ]
+    ],
+    "typesafe": [
+      {
+        "label": "Jev Latest",
+        "from": "jev-latest",
+        "to": "jev-latest"
+      }
+    ],
+    "command_code": [],
+    "cline": []
+  },
+  "provider_profiles": {
+    "kimi": {
+      "default_mode": "payg",
+      "routing": "by_inbound",
+      "modes": [
+        {
+          "mode": "payg",
+          "base_urls": {
+            "anthropic": "https://api.moonshot.cn/anthropic",
+            "chat_completions": "https://api.moonshot.cn/v1",
+            "responses": "https://api.moonshot.cn/v1"
+          }
+        },
+        {
+          "mode": "coding",
+          "base_urls": {
+            "anthropic": "https://api.kimi.com/coding",
+            "chat_completions": "https://api.kimi.com/coding/v1",
+            "responses": "https://api.kimi.com/coding/v1"
+          }
+        }
+      ]
+    },
+    "zhipu": {
+      "default_mode": "payg",
+      "routing": "by_inbound",
+      "modes": [
+        {
+          "mode": "payg",
+          "base_urls": {
+            "anthropic": "https://open.bigmodel.cn/api/anthropic",
+            "chat_completions": "https://open.bigmodel.cn/api/paas/v4"
+          }
+        },
+        {
+          "mode": "coding",
+          "base_urls": {
+            "anthropic": "https://open.bigmodel.cn/api/anthropic",
+            "chat_completions": "https://open.bigmodel.cn/api/coding/paas/v4"
+          }
+        }
+      ]
+    },
+    "deepseek": {
+      "default_mode": "payg",
+      "routing": "by_inbound",
+      "responses_path": "/responses",
+      "modes": [
+        {
+          "mode": "payg",
+          "base_urls": {
+            "anthropic": "https://api.deepseek.com/anthropic",
+            "chat_completions": "https://api.deepseek.com",
+            "responses": "https://api.deepseek.com"
+          }
+        }
+      ]
+    },
+    "minimax": {
+      "default_mode": "payg",
+      "routing": "by_inbound",
+      "modes": [
+        {
+          "mode": "payg",
+          "base_urls": {
+            "anthropic": "https://api.minimaxi.com/anthropic",
+            "chat_completions": "https://api.minimaxi.com/v1",
+            "responses": "https://api.minimaxi.com/v1"
+          }
+        },
+        {
+          "mode": "coding",
+          "base_urls": {
+            "anthropic": "https://api.minimaxi.com/anthropic",
+            "chat_completions": "https://api.minimaxi.com/v1",
+            "responses": "https://api.minimaxi.com/v1"
+          }
+        }
+      ]
+    },
+    "opencode_go": {
+      "default_mode": "go",
+      "routing": "by_model",
+      "modes": [
+        {
+          "mode": "go",
+          "base_urls": {
+            "anthropic": "https://opencode.ai/zen/go",
+            "chat_completions": "https://opencode.ai/zen/go/v1",
+            "responses": "https://opencode.ai/zen/go/v1"
+          },
+          "protocol_rules": [
+            {
+              "pattern": "grok-*",
+              "protocol": "responses"
+            },
+            {
+              "pattern": "gpt-*",
+              "protocol": "responses"
+            },
+            {
+              "pattern": "muse-spark-*",
+              "protocol": "responses"
+            },
+            {
+              "pattern": "minimax-*",
+              "protocol": "anthropic"
+            },
+            {
+              "pattern": "qwen*",
+              "protocol": "anthropic"
+            }
+          ]
+        },
+        {
+          "mode": "zen",
+          "base_urls": {
+            "anthropic": "https://opencode.ai/zen",
+            "chat_completions": "https://opencode.ai/zen/v1",
+            "responses": "https://opencode.ai/zen/v1"
+          },
+          "protocol_rules": [
+            {
+              "pattern": "grok-*",
+              "protocol": "responses"
+            },
+            {
+              "pattern": "gpt-*",
+              "protocol": "responses"
+            },
+            {
+              "pattern": "muse-spark-*",
+              "protocol": "responses"
+            },
+            {
+              "pattern": "claude-*",
+              "protocol": "anthropic"
+            },
+            {
+              "pattern": "qwen3.8-max",
+              "protocol": "chat_completions"
+            },
+            {
+              "pattern": "qwen*",
+              "protocol": "anthropic"
+            }
+          ]
+        }
+      ]
+    },
+    "command_code": {
+      "default_mode": "payg",
+      "routing": "by_model",
+      "model_catalog": true,
+      "modes": [
+        {
+          "mode": "payg",
+          "base_urls": {
+            "anthropic": "https://api.commandcode.ai/provider",
+            "chat_completions": "https://api.commandcode.ai/provider/v1",
+            "responses": "https://api.commandcode.ai/provider/v1"
+          },
+          "protocol_rules": [
+            {
+              "pattern": "claude-*",
+              "protocol": "anthropic"
+            },
+            {
+              "pattern": "gpt-*",
+              "protocol": "responses",
+              "protocols": [
+                "responses",
+                "chat_completions"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "cline": {
+      "default_mode": "payg",
+      "routing": "by_inbound",
+      "modes": [
+        {
+          "mode": "payg",
+          "base_urls": {
+            "chat_completions": "https://api.cline.bot/api/v1"
+          }
+        }
+      ]
+    }
   }
 }

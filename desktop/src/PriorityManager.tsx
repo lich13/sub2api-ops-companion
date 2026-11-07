@@ -33,7 +33,7 @@ export default function PriorityManager(props: Props) {
   const completed = useRef(new Set<string>());
   latest.current = props; draftsRef.current = drafts; viewRef.current = view; dragRef.current = drag;
   const liveSource = active ? props.accounts : undefined;
-  const fallbackSource = active && (view === null || supported === false) ? props.accounts : undefined;
+  const fallbackSource = active && supported === false ? props.accounts : undefined;
   const liveAccounts = useMemo(() => new Map(liveSource?.map(account => [account.id, account])), [liveSource]);
   const fallback = useMemo(() => fallbackSource?.map(fallbackAccount) ?? [], [fallbackSource]);
   const platforms = useMemo(() => {
@@ -297,7 +297,7 @@ export default function PriorityManager(props: Props) {
     {!online && <p role="status" className="muted">当前离线，已保留草稿；连接恢复后请核对实际优先级。</p>}
     {error && <p role="alert" className="bad-text">{error}</p>}
     {loading && <p role="status">正在读取优先级</p>}
-    {!loading && !platforms.length && <p className="priority-empty">暂无账号</p>}
+    {!loading && supported !== null && !error && !platforms.length && <p className="priority-empty">暂无账号</p>}
     {!columns && platforms.length > 1 && <div className="priority-tabs" role="tablist" aria-label="优先级平台">{platforms.map(group => <button key={group.platform} id={`priority-tab-${group.platform}`} role="tab" aria-selected={selectedPlatform === group.platform} aria-controls={`priority-platform-${group.platform}`} onClick={() => { stopDrag(); setSelected(group.platform); }}>{priorityPlatformName(group.platform)}<span>{group.items.length}</span>{drafts[group.platform] && <i aria-label="有未应用草稿"/>}</button>)}</div>}
     <div className={`priority-platforms${columns ? " is-columns" : ""}`} style={columns ? { gridTemplateColumns: platforms.map(group => `minmax(0, ${Math.max(320, (group.parallelism ?? 1) * 220 + 72)}fr)`).join(" ") } : undefined}>
       {platforms.map(group => {

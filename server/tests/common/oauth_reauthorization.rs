@@ -89,9 +89,13 @@ async fn reauthorization_preserves_configuration_rejects_overlap_and_never_repla
     );
     assert_eq!(
         h.upstream.matching(Method::POST, &native).len(),
-        1,
-        "an identical credential submission is confirmed without replay"
+        2,
+        "each explicit submission is sent once and confirmed by the native redacted account"
     );
+    assert!(h
+        .upstream
+        .matching(Method::GET, &format!("/api/v1/admin/accounts/{id}"))
+        .is_empty());
     h.upstream.update_status.store(502, Ordering::Release);
     let mut changed = body.clone();
     changed["credentials"]["access_token"] = "fixture-unknown-access".into();
@@ -100,13 +104,13 @@ async fn reauthorization_preserves_configuration_rejects_overlap_and_never_repla
     assert!(text.contains("授权保存结果未确认"));
     assert!(!text.contains("fixture-unknown-access"));
     assert!(!text.contains("fixture-sensitive-upstream"));
-    assert_eq!(h.upstream.matching(Method::POST, &native).len(), 2);
+    assert_eq!(h.upstream.matching(Method::POST, &native).len(), 3);
     h.upstream.update_status.store(200, Ordering::Release);
     h.upstream.apply_updates.store(false, Ordering::Release);
     assert_eq!(
         h.request(Method::POST, &path, Some(body.clone())).await.0,
-        409,
-        "readback must confirm actual credentials"
+        200,
+        "the native save response confirms success without reading plaintext tokens"
     );
     for rejected in [400, 401, 403, 404, 409, 422] {
         h.upstream.update_status.store(rejected, Ordering::Release);

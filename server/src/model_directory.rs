@@ -4,7 +4,6 @@ use crate::{
     actions::{text_model, Actions},
     error::{Error, Result},
     model_candidates::Failure,
-    model_target,
     model_test_stream::Target,
     security::clean,
     upstream::read_limited,
@@ -72,14 +71,14 @@ pub fn models(body: &Value) -> Result<Vec<Value>> {
     Ok(values)
 }
 
-pub(crate) async fn fetch(actions: &Actions, id: i64) -> std::result::Result<Vec<Value>, Failure> {
-    let row = model_target::account(actions, id)
-        .await
-        .map_err(Failure::permanent)?;
-    let (target, _) = model_target::connection(actions, &row, "")
-        .await
-        .map_err(Failure::permanent)?;
-    let url = endpoint(&target).map_err(Failure::permanent)?;
+pub(crate) async fn fetch(
+    actions: &Actions,
+    id: i64,
+    target: &Target,
+) -> std::result::Result<Vec<Value>, Failure> {
+    #[cfg(not(any(test, feature = "test-fixtures")))]
+    let _ = (actions, id);
+    let url = endpoint(target).map_err(Failure::permanent)?;
     #[cfg(any(test, feature = "test-fixtures"))]
     let url = {
         let replacement = actions
@@ -95,7 +94,7 @@ pub(crate) async fn fetch(actions: &Actions, id: i64) -> std::result::Result<Vec
     let client = target
         .client()
         .map_err(|_| Failure::permanent(Error::new(409, "账号代理配置不可用")))?;
-    let mut headers = target.headers;
+    let mut headers = target.headers.clone();
     headers.insert(
         "accept",
         reqwest::header::HeaderValue::from_static("application/json"),

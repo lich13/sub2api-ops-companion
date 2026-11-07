@@ -177,7 +177,7 @@ describe("platform priority manager", () => {
     await render({ accounts: items.map(account) });
     expect(container.textContent).toContain("正在读取优先级");
     expect(container.querySelector('[role="alert"]')).toBeNull();
-    expect(button("应用变更").disabled).toBe(true);
+    expect(button("应用变更")).toBeUndefined();
     await act(async () => { resolve(view({ platforms: [platform("openai", items)] })); });
     expect(container.textContent?.includes("重编号会修改不可编辑账号")).toBe(!editable);
     expect(button("应用变更").disabled).toBe(!editable);
@@ -191,7 +191,7 @@ describe("platform priority manager", () => {
     await render({ accounts: [account(priorityItem(101, "Alpha", 10))] });
     expect(container.querySelector('[role="alert"]')?.textContent).toBe("fixture list unavailable");
     expect(container.textContent).not.toContain("重编号会修改不可编辑账号");
-    expect(button("应用变更").disabled).toBe(true);
+    expect(button("应用变更")).toBeUndefined();
   });
 
   it.each(["capabilities", "list"])("continues task polling after a failed %s refresh", async failure => {
@@ -614,4 +614,14 @@ it("keeps empty slots at every priority and applies a move into a slot without r
   await act(async () => list().querySelector<HTMLButtonElement>('[aria-label="拖动 Beta"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })));
   await act(async () => button("应用变更").click());
   expect(api).toHaveBeenCalledWith("POST", "/account-priority-orders?schema=2", expect.objectContaining({ ordered_account_ids: [101, 102], target_priorities: [1, 1], parallelism: 3 }));
+});
+
+it("does not show an upgrade error while capability detection is pending", async () => {
+  let resolve!: (value: unknown) => void;
+  vi.mocked(api).mockImplementation(() => new Promise(done => { resolve = done; }) as never);
+  await render();
+  expect(container.textContent).not.toContain("升级");
+  expect(container.textContent).toContain("正在读取优先级");
+  await act(async () => resolve({ features: { account_priority_ordering: false } }));
+  expect(container.textContent).toContain("升级");
 });

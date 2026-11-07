@@ -5,7 +5,7 @@ import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
 import type { Account } from "./types";
 import AccountCreationFields from "./AccountCreationFields";
-import { authConfig, authMethods, authProvider, availableGroups, buildPayload, customErrorRisks, expiryInput, fields, fieldVisible, groupLongContextBilling, importParameters, isOAuth, newDraft, parseExpiry, platforms, reuseDraft, setField, tierOptions, tokenIdentity, typeNames, validateDraft, withProtocolDefaults, type Created, type CreationDraft, type CreationOptions, type RecordValue } from "./accountCreation";
+import { authConfig, authMethods, authProvider, availableGroups, buildPayload, customErrorRisks, expiryInput, fields, fieldVisible, groupLongContextBilling, importParameters, isOAuth, newDraft, parseExpiry, platforms, reuseDraft, setField, tierOptions, tokenIdentity, typeNames, validateDraft, vertexApiKey, withProtocolDefaults, type Created, type CreationDraft, type CreationOptions, type RecordValue } from "./accountCreation";
 import "./account-settings.css";
 import "./account-creation.css";
 
@@ -41,11 +41,6 @@ type Authorization = { auth_url: string; session_id: string; state?: string };
 const message = (error: unknown) => String(error).replace(/^Error: /, "");
 export const uncertainCreation = (error: unknown) => !/\[4\d\d\]/.test(message(error));
 
-export function AccountCreationButton({ accounts,online,connectionKey,report }: { accounts: Account[]; online: boolean; connectionKey: string; report: (message: string) => void }) {
-  const [opened,setOpened] = useState<string|null>(null);
-  return <><button disabled={!online} onClick={() => setOpened(connectionKey)}><Plus size={15}/>添加账号</button>{opened === connectionKey && <AccountCreationDialog key={connectionKey} accounts={accounts} online={online} close={() => setOpened(null)} report={report}/>}</>;
-}
-
 export default function AccountCreationDialog({ accounts,online,close,report }: { accounts: Account[]; online: boolean; close: () => void; report: (message: string) => void }) {
   const [draft,setDraft] = useState(newDraft), [step,setStep] = useState(1), [options,setOptions] = useState<CreationOptions|null>(null);
   const [query,setQuery] = useState(""), [source,setSource] = useState(""), [reusing,setReusing] = useState(false), [reuseNotice,setReuseNotice] = useState("");
@@ -60,8 +55,16 @@ export default function AccountCreationDialog({ accounts,online,close,report }: 
   const scope = useRef(0), mounted = useRef(true), guard = useRef(false), sourceRequest = useRef(0), defaultsTouched = useRef(false);
   const ledger = useRef(new Map<string,Outcome>()), dialog = useRef<HTMLElement>(null), draftRef = useRef(draft), sourceRef = useRef(source);
   draftRef.current = draft; sourceRef.current = source;
-  const dismiss = () => { if (!guard.current) close(); };
-  useDialogFocus(dialog); useBackAction(true,dismiss);
+  const initialDraft = useRef(draft), discardDialog = useRef<HTMLElement>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(initialDraft.current) || !!input || !!authorization;
+  const dismiss = () => { if (!guard.current) { if (dirty) setConfirmDiscard(true); else close(); } };
+  useDialogFocus(dialog, !confirmDiscard); useDialogFocus(discardDialog, confirmDiscard);
+  useBackAction(true, () => { if (confirmDiscard) setConfirmDiscard(false); else dismiss(); });
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.key !== "Escape" || e.isComposing || e.defaultPrevented) return; e.preventDefault(); e.stopPropagation(); if (confirmDiscard) setConfirmDiscard(false); else if (!dirty && !guard.current) close(); };
+    document.addEventListener("keydown", key); return () => document.removeEventListener("keydown", key);
+  }, [close, dirty, confirmDiscard]);
   const candidates = accounts.filter(a => a.platform === draft.platform && a.type === draft.type);
   const visibleCandidates = candidates.filter(a => `${a.name} ${a.id}`.toLowerCase().includes(query.trim().toLowerCase()));
   useEffect(() => { mounted.current=true; return () => { mounted.current=false; ++scope.current; ++sourceRequest.current; ledger.current.clear(); }; },[]);
@@ -107,7 +110,8 @@ export default function AccountCreationDialog({ accounts,online,close,report }: 
     if (path === "credentials.model_mapping") defaultsTouched.current=true;
     setDraft(old => {
       let next=setField(old,path,value);
-      if (path === "credentials.account_mode" || path === "credentials.api_protocol") next=withProtocolDefaults(next);
+      if (path === "credentials.account_mode" || path === "credentials.api_protocol") next=withProtocolDefaults(next, old);
+      if (path === "credentials.auth_mode" && old.type === "service_account") for (const key of ["api_key", "service_account_json", "project_id", "client_email"]) delete next.credentials[key];
       if (path === "credentials.oauth_type") next=setField(next,"credentials.tier_id",tierOptions(next)[0]);
       return next;
     });
@@ -233,7 +237,7 @@ export default function AccountCreationDialog({ accounts,online,close,report }: 
   }
   const credential = (key: string,label: string,optional=false) => <label key={key}>{label}{optional?"（可选）":""}<input autoComplete="off" spellCheck={false} type="password" value={String(draft.credentials[key]??"")} onChange={e=>change(`credentials.${key}`,e.target.value)}/></label>;
   const methods=authMethods(draft), blockedDirect=ledger.current.get("direct:direct")?.status === "unknown";
-  return <div className="modal-backdrop" onClick={dismiss}><section className="account-settings-dialog account-creation-dialog" ref={dialog} role="dialog" aria-modal="true" aria-label="添加账号" onClick={e=>e.stopPropagation()} onKeyDown={e=>{if(e.key==="Escape"){e.preventDefault();e.stopPropagation();dismiss();}}}>
+  return <><div className="modal-backdrop" inert={confirmDiscard} onMouseDown={e => { if (e.target === e.currentTarget && !dirty && !guard.current) close(); }}><section className="account-settings-dialog account-creation-dialog" ref={dialog} role="dialog" aria-modal="true" aria-label="添加账号" onClick={e=>e.stopPropagation()}>
     <header><div><h2>添加账号</h2><span>{step===1?"1 · 基本信息与配置":"2 · 凭据与授权"}</span></div><button type="button" className="icon-button" aria-label="关闭添加账号" disabled={busy} onClick={dismiss}><X size={18}/></button></header>
     <form id="account-creation-form" className="account-settings-body" onSubmit={e=>{e.preventDefault();void submit();}} autoComplete="off">
       {optionError && <p className="settings-notice bad-text" role="alert">{optionError} <button type="button" disabled={busy} onClick={()=>void loadOptions()}>重新读取选项</button></p>}
@@ -250,7 +254,7 @@ export default function AccountCreationDialog({ accounts,online,close,report }: 
         {step===2 && <>
           <p className="creation-summary">{draft.name} · {platforms.find(p=>p.id===draft.platform)?.label} · {typeNames[draft.type]}</p>
           {!isOAuth(draft) ? <div className="creation-grid">
-            {draft.type==="service_account" ? <label className="creation-wide">Service Account JSON<input aria-label="Service Account 文件" type="file" accept=".json,application/json" onChange={async e=>{const file=e.target.files?.[0];e.target.value="";if(!file)return;const current=scope.current;if(file.size>1_000_000){setError("凭据文件过大");return;}try{const text=await file.text();if(mounted.current && current===scope.current)change("credentials.service_account_json",text);}catch{setError("凭据文件读取失败");}}}/><textarea aria-label="Service Account JSON" spellCheck={false} value={String(draft.credentials.service_account_json??"")} onChange={e=>change("credentials.service_account_json",e.target.value)}/></label> : draft.type==="bedrock" && draft.credentials.auth_mode==="sigv4" ? <>{credential("aws_access_key_id","AWS Access Key ID")}{credential("aws_secret_access_key","AWS Secret Access Key")}{credential("aws_session_token","AWS Session Token",true)}</> : credential("api_key","API Key")}
+            {draft.type==="service_account" && !vertexApiKey(draft) ? <label className="creation-wide">Service Account JSON<input aria-label="Service Account 文件" type="file" accept=".json,application/json" onChange={async e=>{const file=e.target.files?.[0];e.target.value="";if(!file)return;const current=scope.current;if(file.size>1_000_000){setError("凭据文件过大");return;}try{const text=await file.text();if(mounted.current && current===scope.current)change("credentials.service_account_json",text);}catch{setError("凭据文件读取失败");}}}/><textarea aria-label="Service Account JSON" spellCheck={false} value={String(draft.credentials.service_account_json??"")} onChange={e=>change("credentials.service_account_json",e.target.value)}/></label> : draft.type==="bedrock" && draft.credentials.auth_mode==="sigv4" ? <>{credential("aws_access_key_id","AWS Access Key ID")}{credential("aws_secret_access_key","AWS Secret Access Key")}{credential("aws_session_token","AWS Session Token",true)}</> : credential("api_key","API Key")}
             {draft.type==="apikey" && <div className="creation-wide"><button type="button" onClick={()=>void preview()}>读取上游模型</button>{previewModels.length>0 && <section className="creation-choices" aria-label="上游模型候选">{previewModels.map(model=><label key={model}><input type="checkbox" checked={previewSelected.includes(model)} onChange={e=>setPreviewSelected(old=>e.target.checked?[...old,model]:old.filter(v=>v!==model))}/>{model}</label>)}<button type="button" onClick={()=>{change("credentials.model_mapping",{...(draft.credentials.model_mapping as RecordValue??{}),...Object.fromEntries(previewSelected.map(m=>[m,m]))});setPreviewModels([]);}}>添加所选模型</button></section>}</div>}
           </div> : <>
             <label>添加方式<select value={method} onChange={e=>{setMethod(e.target.value);setInput("");clearAuth();setError("");setResults([]);}}>{methods.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
@@ -268,5 +272,5 @@ export default function AccountCreationDialog({ accounts,online,close,report }: 
       {blockedDirect && <p className="settings-notice">请刷新核对账号是否已经创建，再关闭此窗口。</p>}
     </form>
     <footer><button type="button" disabled={busy} onClick={step===2?()=>{setStep(1);setError("");}:dismiss}>{step===2?"上一步":"取消"}</button>{results.length>0 && <button type="button" disabled={busy} onClick={()=>void command("refresh").catch(()=>setError("刷新失败，请稍后重试"))}>刷新账号列表</button>}<button className="primary" type="submit" form="account-creation-form" disabled={busy || !online || !options || reusing || blockedDirect || mixed && !confirmed}>{busy?<LoaderCircle className="spin" size={15}/>:<Plus size={15}/>} {step===1?"下一步":results.length?"提交未成功项":"创建账号"}</button></footer>
-  </section></div>;
+  </section></div>{confirmDiscard && <div className="modal-backdrop"><section ref={discardDialog} className="discard-groups-dialog" role="alertdialog" aria-modal="true" aria-label="放弃未保存的更改？"><h2>放弃未保存的更改？</h2><div><button onClick={() => setConfirmDiscard(false)}>继续编辑</button><button className="primary" onClick={close}>放弃修改</button></div></section></div>}</>;
 }

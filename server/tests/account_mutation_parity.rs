@@ -34,6 +34,8 @@ const ADMIN_KEY: &str = "fixture-account-mutation-admin-040";
 mod account_creation;
 #[path = "common/oauth_reauthorization.rs"]
 mod oauth_reauthorization;
+#[path = "common/sub2api_system.rs"]
+mod sub2api_system;
 const CLIENT_ID: &str = "fixture-account-mutation-client-0001";
 const PROXY_ID: i64 = 1_520_000_001;
 static NEXT_ACCOUNT_ID: AtomicI64 = AtomicI64::new(820_000_000);
@@ -93,6 +95,7 @@ struct MockUpstream {
     update_status: Arc<AtomicI64>,
     diagnostic_results: Arc<Mutex<BTreeMap<String, Value>>>,
     grok_billing: Arc<Mutex<BTreeMap<i64, Value>>>,
+    system_results: Arc<Mutex<BTreeMap<String, Value>>>,
     sse_chunks: Arc<Vec<String>>,
     manual_mode: Arc<Mutex<ManualMode>>,
     connection_streams: Arc<Mutex<BTreeMap<i64, bool>>>,
@@ -113,6 +116,7 @@ impl MockUpstream {
             update_status: Arc::new(AtomicI64::new(200)),
             diagnostic_results: Arc::new(Mutex::new(BTreeMap::new())),
             grok_billing: Arc::new(Mutex::new(BTreeMap::new())),
+            system_results: Arc::new(Mutex::new(BTreeMap::new())),
             sse_chunks: Arc::new(
                 fixtures()["python_oracle"]["desktop_actions"]["sse_chunks"]
                     .as_array()
@@ -333,6 +337,9 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
         gate.entered.notify_one();
         gate.release.notified().await;
     }
+    if let Some(result) = sub2api_system::mock(&state, &path) {
+        return result;
+    }
     if let Some(result) = account_creation::mock(&method, &path, &body) {
         return result;
     }
@@ -471,7 +478,7 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
         let status = state.update_status.load(Ordering::Acquire) as u16;
         return response(
             StatusCode::from_u16(status).unwrap(),
-            json!({"code":if status == 200 {0} else {1},"data":{"id":id,"credentials":body["credentials"]},"message":"fixture-sensitive-upstream"}),
+            json!({"code":if status == 200 {0} else {1},"data":{"id":id,"platform":"openai","type":"oauth","status":"active","credentials":{"access_token":"***","refresh_token":"***"}},"message":"fixture-sensitive-upstream"}),
         );
     }
     if let Some(id) = id_from_path(&path, "/usage") {

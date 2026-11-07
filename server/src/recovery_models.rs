@@ -85,15 +85,23 @@ impl Detection {
                 {
                     return Ok("账号不再符合自动用卡条件".into());
                 }
-                let depletion = controller.depletion(row, now, false).await?;
-                if !truthy(&depletion) {
+                let credit_reason = controller.positive_credit_reason(row, now);
+                if !credit_reason.is_empty() {
+                    return Ok(credit_reason.into());
+                }
+                if !controller.eligible(row, now, false)? {
                     return Ok("账号不再符合自动用卡条件".into());
                 }
+                // Only locked preparation needs the expensive evidence; queued jobs
+                // must obtain it again when they actually execute.
                 if let Some(evidence) = evidence {
-                    *evidence = depletion;
+                    *evidence = controller.depletion(row, now, false).await?;
+                    if !truthy(evidence) {
+                        return Ok("账号不再符合自动用卡条件".into());
+                    }
                 }
-            } else if !controller.owned(row, &task, false)?
-                || !controller.processing_eligible(row, &task, now)?
+            } else if !controller.owned(row, &task)?
+                || !controller.eligible(row, now, true)?
                 || !controller.available(row, &task, now)?
             {
                 return Ok("用卡后的额度或暂停归属未确认".into());
@@ -155,41 +163,52 @@ impl Detection {
         // recovery attempt, including requests persisted by older releases.
         let jobs = self.tests.shared_data()?;
         let registered = jobs["requests"].as_object().ok_or_else(Error::internal)?;
-        let registered_jobs = registered
-            .values()
-            .filter_map(Value::as_str)
-            .collect::<std::collections::BTreeSet<_>>();
-        let previous = jobs["jobs"]
-            .as_object()
-            .ok_or_else(Error::internal)?
-            .values()
-            .filter(|job| {
-                job["automatic"] == true
-                    && job["account_id"] == id
-                    && job["detection_generation"] == value["generation"]
-                    && [
-                        "account_id",
-                        "kind",
-                        "fingerprint",
-                        "control_generation",
-                        "method_generation",
-                        "attempt",
-                    ]
-                    .iter()
-                    .all(|key| job["recovery_context"][*key] == identity[*key])
-                    && registered_jobs.contains(string(&job["id"]))
-            })
-            .max_by_key(|job| (parse_datetime(&job["queued_at"]), string(&job["id"])));
-        let request = previous
-            .and_then(|job| {
-                registered
-                    .iter()
-                    .find(|(_, key)| *key == &job["id"])
-                    .map(|(key, _)| key.clone())
-            })
-            .unwrap_or_else(|| {
-                digest(&json!(["recovery", identity, value["generation"]]))[..32].to_owned()
-            });
+        let request_key =
+            digest(&json!(["recovery", identity, value["generation"]]))[..32].to_owned();
+        let table = jobs["jobs"].as_object().ok_or_else(Error::internal)?;
+        let same = |job: &&Value| {
+            job["automatic"] == true
+                && job["account_id"] == id
+                && job["detection_generation"] == value["generation"]
+                && [
+                    "account_id",
+                    "kind",
+                    "fingerprint",
+                    "control_generation",
+                    "method_generation",
+                    "attempt",
+                ]
+                .iter()
+                .all(|key| job["recovery_context"][*key] == identity[*key])
+        };
+        let direct = registered
+            .get(&request_key)
+            .and_then(Value::as_str)
+            .and_then(|id| table.get(id))
+            .filter(same);
+        let previous = direct.or_else(|| {
+            let registered_jobs = registered
+                .values()
+                .filter_map(Value::as_str)
+                .collect::<std::collections::BTreeSet<_>>();
+            table
+                .values()
+                .filter(same)
+                .filter(|job| registered_jobs.contains(string(&job["id"])))
+                .max_by_key(|job| (parse_datetime(&job["queued_at"]), string(&job["id"])))
+        });
+        let request = if direct.is_some() {
+            request_key
+        } else {
+            previous
+                .and_then(|job| {
+                    registered
+                        .iter()
+                        .find(|(_, id)| *id == &job["id"])
+                        .map(|(key, _)| key.clone())
+                })
+                .unwrap_or(request_key)
+        };
         if let Some(previous) = previous.and_then(|job| job["id"].as_str()) {
             let job = self.tests.get(previous)?;
             if ACTIVE.contains(&string(&job["status"])) {
@@ -411,6 +430,10 @@ impl Detection {
                 Some(row),
             ));
         }
+        let reason = controller.positive_credit_reason(&row, self.now());
+        if !reason.is_empty() {
+            return Ok((json!({"success":false,"error_code":reason}), Some(row)));
+        }
         let mut evidence = Value::Null;
         let reason = self
             .recovery_reason(&row, context, true, Some(&mut evidence))
@@ -420,10 +443,6 @@ impl Detection {
                 json!({"success":false,"error_code":"recovery_ineligible","error":reason}),
                 Some(row),
             ));
-        }
-        let reason = controller.positive_credit_reason(&row, self.now());
-        if !reason.is_empty() {
-            return Ok((json!({"success":false,"error_code":reason}), Some(row)));
         }
         let task = controller.save(id, &task, json!({"model_test_job_id":job["id"]}))?;
         let (result, latest_row) = controller

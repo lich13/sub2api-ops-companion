@@ -58,8 +58,11 @@ export default function AccountTemplates({ accounts, online, initialAccount, ini
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [batch, setBatch] = useState<Batch | null>(null), [batchError, setBatchError] = useState("");
   const configGeneration = useRef(0), accountGeneration = useRef(0), savedRef = useRef<Config | null>(null);
   const pendingRequest = useRef<{ signature: string; request_id: string } | null>(null), dialogRef = useRef<HTMLElement>(null);
-  useDialogFocus(dialogRef);
-  useBackAction(true, () => deleteId ? setDeleteId(null) : close());
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const discardDialog = useRef<HTMLElement>(null);
+  useDialogFocus(dialogRef, !confirmDiscard); useDialogFocus(discardDialog, confirmDiscard);
+  const dismiss = () => { if (dirtyAny) setConfirmDiscard(true); else close(); };
+  useBackAction(true, () => { if (confirmDiscard) setConfirmDiscard(false); else if (deleteId) setDeleteId(null); else dismiss(); });
 
   function accept(value: Config, changed?: string) {
     const previous = savedRef.current;
@@ -99,6 +102,10 @@ export default function AccountTemplates({ accounts, online, initialAccount, ini
   function update(id: string, change: Partial<Draft>) { setDrafts(current => ({ ...current, [id]: { ...current[id], ...change } })); }
   const dirty = (id: string) => !!saved && !same(drafts[id], { name: saved.template_meta[id]?.name, ...saved.templates[id] });
   const dirtyAny = !!creating || Object.keys(drafts).some(dirty);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.key !== "Escape" || e.isComposing || e.defaultPrevented) return; e.preventDefault(); e.stopPropagation(); if (confirmDiscard) setConfirmDiscard(false); else if (deleteId) setDeleteId(null); else if (!dirtyAny) close(); };
+    document.addEventListener("keydown", key); return () => document.removeEventListener("keydown", key);
+  }, [close, dirtyAny, confirmDiscard, deleteId]);
   const selectedProfile = saved?.templates[selected];
   const ready = targetIds.length > 0 && targetIds.every(id => !!accountConfigs[id]) && targetIds.some(id => accountConfigs[id].eligible && !accountConfigs[id].passthrough);
 
@@ -118,7 +125,6 @@ export default function AccountTemplates({ accounts, online, initialAccount, ini
       accept(result, id);
       if (method === "POST") { setSelected(result.template_order.find(key => !saved.templates[key]) ?? ""); setCreating(null); }
       if (method === "DELETE") setDeleteId(null);
-      close();
     } catch (e) { if (current === configGeneration.current) { setError(e instanceof Error ? e.message : "模板保存失败"); report(e); } }
     finally { if (current === configGeneration.current) setBusy(false); }
   }
@@ -167,8 +173,8 @@ export default function AccountTemplates({ accounts, online, initialAccount, ini
   const disabled = busy || !online;
   const failure = error || Object.values(accountErrors)[0];
 
-  return <div className="modal-backdrop" onClick={close}><section ref={dialogRef} className="account-templates-dialog" role="dialog" aria-modal="true" aria-label="账号模板" tabIndex={-1} onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === "Escape" && !e.nativeEvent.isComposing) { e.preventDefault(); e.stopPropagation(); if (deleteId) setDeleteId(null); else close(); } }}>
-    <header><h2>账号模板</h2><button className="icon-button" aria-label="关闭账号模板" onClick={close}><X size={19}/></button></header>
+  return <><div className="modal-backdrop" inert={confirmDiscard} onMouseDown={e => { if (e.target === e.currentTarget && !dirtyAny) close(); }}><section ref={dialogRef} className="account-templates-dialog" role="dialog" aria-modal="true" aria-label="账号模板" tabIndex={-1} onClick={e => e.stopPropagation()}>
+    <header><h2>账号模板</h2><button className="icon-button" aria-label="关闭账号模板" onClick={dismiss}><X size={19}/></button></header>
     {!saved ? <div className="dialog-loading">{busy && <LoaderCircle className="spin"/>}</div> : <>
       <div className="account-template-grid">{saved.template_order.map(id => {
         const value = drafts[id]; if (!value) return null;
@@ -202,5 +208,5 @@ export default function AccountTemplates({ accounts, online, initialAccount, ini
       </section>
     </>}
     {failure && <div><p className="bad-text" role="alert">{failure}</p><button disabled={disabled} onClick={() => { void read(); void readAccounts(); }}>重新读取</button></div>}
-  </section></div>;
+  </section></div>{confirmDiscard && <div className="modal-backdrop"><section ref={discardDialog} className="discard-groups-dialog" role="alertdialog" aria-modal="true" aria-label="放弃未保存的更改？"><h2>放弃未保存的更改？</h2><div><button onClick={() => setConfirmDiscard(false)}>继续编辑</button><button className="primary" onClick={close}>放弃修改</button></div></section></div>}</>;
 }

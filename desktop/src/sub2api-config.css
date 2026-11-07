@@ -741,3 +741,6 @@
     display: block;
   }
 }
+
+.config-version { flex-shrink: 0; padding: 0 20px 12px; border-bottom: 1px solid var(--line); }
+.config-version p { margin: 6px 0 0; font-size: 12px; }

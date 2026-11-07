@@ -22,6 +22,9 @@ fn creation_supported_combinations_and_defaults_are_valid() {
         ("deepseek", vec!["apikey"]),
         ("minimax", vec!["apikey"]),
         ("opencode_go", vec!["apikey"]),
+        ("typesafe", vec!["apikey"]),
+        ("command_code", vec!["apikey"]),
+        ("cline", vec!["apikey"]),
     ];
     assert_eq!(
         SCHEMA["platforms"].as_array().unwrap().len(),

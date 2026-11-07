@@ -375,16 +375,35 @@ pub fn block_signature(row: &Value) -> String {
 const MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY: usize = 200;
 const MAX_RECOVERY_HISTORY: usize = 10_000;
 
+pub(crate) fn retire_credit_fields(task: &mut Value) {
+    if let Some(task) = task.as_object_mut() {
+        for key in [
+            "owned_version",
+            "verification_generation",
+            "credit_admitted_at",
+            "credit_admitted_count",
+            "auth_recheck",
+            "auth_error",
+            "auth_fingerprint",
+        ] {
+            task.remove(key);
+        }
+    }
+}
+
 fn prune_credit_history(state: &mut Value) {
     if let Some(scheduler) = state["scheduler"].as_object_mut() {
         for meta in scheduler.values_mut() {
+            if let Some(fields) = meta.as_object_mut() {
+                fields.remove("reset_credit_episodes");
+            }
+            if let Some(task) = meta.get_mut("auto_reset_credit") {
+                retire_credit_fields(task);
+            }
             let notices_over_limit = meta["credit_result_notifications"]
                 .as_object()
                 .is_some_and(|items| items.len() > MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY);
-            let episodes_over_limit = meta["reset_credit_episodes"]
-                .as_object()
-                .is_some_and(|items| items.len() > MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY);
-            if !notices_over_limit && !episodes_over_limit {
+            if !notices_over_limit {
                 continue;
             }
             let active_episode = meta["auto_reset_credit"]["episode"]
@@ -412,50 +431,6 @@ fn prune_credit_history(state: &mut Value) {
                     terminals.sort();
                     let drop_count = terminals.len() - MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY;
                     let map = meta["credit_result_notifications"].as_object_mut().unwrap();
-                    for (_, _, ep) in terminals.into_iter().take(drop_count) {
-                        map.shift_remove(&ep);
-                    }
-                }
-            }
-            if episodes_over_limit {
-                let pending_notice_episodes = meta["credit_result_notifications"]
-                    .as_object()
-                    .into_iter()
-                    .flatten()
-                    .filter(|(_, notice)| notice["status"] == "pending")
-                    .map(|(episode, _)| episode.clone())
-                    .collect::<std::collections::HashSet<_>>();
-                let mut terminals = meta["reset_credit_episodes"]
-                    .as_object()
-                    .unwrap()
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, (ep, item))| {
-                        let stage = string(&item["stage"]);
-                        let is_terminal = matches!(
-                            stage,
-                            "recovered" | "manual" | "blocked" | "closed" | "finished"
-                        ) && !(stage == "finished"
-                            && truthy(&item["owns_pause"]));
-                        is_terminal
-                            && active_episode.as_deref() != Some(ep.as_str())
-                            && !pending_notice_episodes.contains(*ep)
-                    })
-                    .map(|(idx, (ep, item))| {
-                        let stamp = item["completed_at"]
-                            .as_str()
-                            .or_else(|| item["manual_at"].as_str())
-                            .or_else(|| item["recovered_at"].as_str())
-                            .or_else(|| item["attempt_at"].as_str())
-                            .unwrap_or("")
-                            .to_owned();
-                        (stamp, idx, ep.clone())
-                    })
-                    .collect::<Vec<_>>();
-                if terminals.len() > MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY {
-                    terminals.sort();
-                    let drop_count = terminals.len() - MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY;
-                    let map = meta["reset_credit_episodes"].as_object_mut().unwrap();
                     for (_, _, ep) in terminals.into_iter().take(drop_count) {
                         map.shift_remove(&ep);
                     }

@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot,type Root } from "react-dom/client";
 import { afterEach,beforeEach,expect,it,vi } from "vitest";
-import AccountCreationDialog,{AccountCreationButton} from "./AccountCreationDialog";
+import AccountCreationDialog from "./AccountCreationDialog";
 import { api,command } from "./bridge";
 import { newDraft } from "./accountCreation";
 import type { Account } from "./types";
@@ -89,10 +89,9 @@ it("holds partial native imports and does not repeat successful entries",async()
   vi.mocked(api).mockImplementation(async(m,p,b)=>p.endsWith("/import/codex-session")?{created:1,updated:0,skipped:0,failed:1,errors:[{index:2,message:"fixture failure"}],warnings:[]} as never:baseline(m,p,b));
   await render([]);await change(field("平台"),"openai");await change(field("账号名称"),"Import");await click("下一步");await change(field("添加方式"),"agent-identity");await change(container.querySelector<HTMLTextAreaElement>('[aria-label="授权凭据"]')!,"fixture-content");await click("创建账号");expect(container.textContent).toContain("失败项 2");await click("提交未成功项");expect(vi.mocked(api).mock.calls.filter(([,p])=>p.endsWith("/import/codex-session"))).toHaveLength(1);expect(close).not.toHaveBeenCalled();
 });
-it("requires mixed-channel confirmation and closes the draft when its connection changes",async()=>{
+it("requires mixed-channel confirmation",async()=>{
   vi.mocked(api).mockImplementation(async(m,p,b)=>p.endsWith("/check-mixed-channel")?{has_risk:true} as never:baseline(m,p,b));
-  await act(async()=>root.render(<AccountCreationButton accounts={[]} online connectionKey="one" report={report}/>));await click("添加账号");await change(field("账号名称"),"New");await click("下一步");expect(container.textContent).toContain("我确认混合渠道风险");expect(button("下一步").disabled).toBe(true);
-  await act(async()=>root.render(<AccountCreationButton accounts={[]} online connectionKey="two" report={report}/>));expect(container.querySelector('[role="dialog"]')).toBeNull();
+  await render([]);await change(field("账号名称"),"New");await click("下一步");expect(container.textContent).toContain("我确认混合渠道风险");expect(button("下一步").disabled).toBe(true);
 });
 it("requires the native 429 and 529 confirmation after reusing custom error codes",async()=>{
   vi.mocked(api).mockImplementation(async(m,p,b)=>p.includes("/source/")?{...newDraft("openai","apikey"),credentials:{custom_error_codes_enabled:true,custom_error_codes:[429,529]}} as never:baseline(m,p,b));
@@ -112,4 +111,31 @@ it.each(["codex-pat","grok-sso","mobile-refresh"])("uses the native %s route and
   else if(method==="codex-pat")expect(api).toHaveBeenCalledWith("POST","/account-creation/import/codex-pat",expect.objectContaining({access_token:"fixture-input",credential_extras:expect.any(Object)}));
   else expect(api).toHaveBeenCalledWith("POST","/account-creation/auth/openai/refresh",{refresh_token:"fixture-input",client_id:"app_LlGpXReQgckcGGUo2JrYvtJK"});
   expect(close).toHaveBeenCalled();
+});
+
+it("protects a creation draft from IME Escape, backdrop and accidental Escape", async () => {
+  await render([]);
+  await change(field("账号名称"), "Fixture draft");
+  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true })));
+  await act(async () => container.querySelector(".modal-backdrop")!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(close).not.toHaveBeenCalled();
+  await click("取消");
+  expect(container.querySelector('[role="alertdialog"]')).toBeTruthy();
+  await click("继续编辑");
+  expect((field("账号名称") as HTMLInputElement).value).toBe("Fixture draft");
+  await click("取消"); await click("放弃修改");
+  expect(close).toHaveBeenCalledOnce();
+});
+
+it("creates Gemini Vertex with an API key and model-scoped temporary rules", async () => {
+  await render([]); await change(field("平台"), "gemini"); await change(field("账号类型"), "service_account");
+  await change(field("账号名称"), "Vertex fixture"); await change(field("Vertex 认证方式"), "apikey");
+  await act(async () => field("临时不可调度规则").click()); await click("添加规则");
+  expect(container.querySelector<HTMLSelectElement>('[aria-label="停用范围 1"]')!.value).toBe("model");
+  await change(container.querySelector<HTMLInputElement>('[aria-label="关键词 1"]')!, "fixture");
+  await click("下一步"); expect(field("API Key")).toBeTruthy();
+  await change(field("API Key"), "fixture-vertex-key"); await click("创建账号");
+  const payload = vi.mocked(api).mock.calls.find(([m,p]) => m === "POST" && p === "/account-creation")?.[2];
+  expect(payload).toMatchObject({ platform: "gemini", type: "service_account", credentials: { auth_mode: "apikey", api_key: "fixture-vertex-key", tier_id: "vertex", temp_unschedulable_rules: [{ scope: "model", keywords: ["fixture"] }] } });
 });

@@ -336,7 +336,7 @@ describe("unified account templates", () => {
     ).toEqual(["Beta", "Alpha"]);
   });
 
-  it("saves only the chosen template and closes after success", async () => {
+  it("saves only the chosen template and preserves other drafts", async () => {
     const server = installApi();
     await renderTemplates();
 
@@ -354,7 +354,8 @@ describe("unified account templates", () => {
       whitelist: ["alpha-model"],
       mappings: [],
     });
-    expect(close).toHaveBeenCalledOnce();
+    expect(close).not.toHaveBeenCalled();
+    expect(inputByLabel("模板名称 beta").value).toBe("Beta draft");
     expect(server.current.template_meta.beta.name).toBe("Beta");
     expect(inputByLabel("模板名称 alpha").value).toBe("Alpha renamed");
     expect(server.current.version).toBe("config-v2");
@@ -775,4 +776,17 @@ it("preserves template edits after a failed save", async () => {
   await act(async () => buttonByLabel("保存Fixture draft模板").click());
   await flush(); expect(close).not.toHaveBeenCalled();
   expect(inputByLabel("模板名称 alpha").value).toBe("Fixture draft");
+});
+
+it("protects unsaved template drafts from IME Escape and backdrop dismissal", async () => {
+  installApi(); await renderTemplates();
+  await setInput(inputByLabel("模板名称 alpha"), "Alpha draft");
+  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true })));
+  await act(async () => container.querySelector(".modal-backdrop")!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(close).not.toHaveBeenCalled();
+  await act(async () => buttonByLabel("关闭账号模板").click());
+  expect(container.querySelector('[role="alertdialog"]')).toBeTruthy();
+  await act(async () => buttonByText("继续编辑").click());
+  expect(inputByLabel("模板名称 alpha").value).toBe("Alpha draft");
 });

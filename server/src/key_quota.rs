@@ -317,6 +317,15 @@ impl Service {
             view.success_at.is_some() && (view.state == "error" || view.state == "unsupported");
     }
     pub async fn query(&self, input: Query, force: bool) -> Result<QuotaView> {
+        self.query_with_refresh(input, force)
+            .await
+            .map(|(view, _)| view)
+    }
+    pub(crate) async fn query_with_refresh(
+        &self,
+        input: Query,
+        force: bool,
+    ) -> Result<(QuotaView, bool)> {
         if self.tasks.is_closed() {
             return Err(Error::new(503, "服务正在停止"));
         }
@@ -340,7 +349,7 @@ impl Service {
                 || (!force
                     && (interval == 0 || e.view.next_refresh_at.is_some_and(|at| at > now())))
             {
-                return Ok(e.view.clone());
+                return Ok((e.view.clone(), false));
             } else {
                 let previous = e.view.clone();
                 let (tx, rx) = watch::channel(None);
@@ -433,7 +442,7 @@ impl Service {
         };
         loop {
             if let Some(view) = rx.borrow().clone() {
-                return Ok(view);
+                return Ok((view, true));
             }
             rx.changed()
                 .await
@@ -1218,43 +1227,36 @@ impl crate::runtime::Runtime {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         let parent = integer(&row["parent_account_id"])
             .or_else(|| integer(&row["extra"]["parent_account_id"]));
-        if parent.is_some() || !row["credentials"].is_object() {
+        if !row["credentials"].is_object()
+            || parent.is_some() && row.get("effective_parent_id").is_none()
+        {
             return self.key_quota_input(id).await;
         }
-        if row["type"] != "apikey" {
-            return Err(Error::new(422, "该账号不是 API Key 账号"));
-        }
-        self.key_quota.input(
-            id,
-            &row["credentials"],
-            &json!({
-                "id": row["id"], "platform": row["platform"], "type": row["type"],
-                "parent_account_id": null, "effective_parent_id": null,
-            }),
-        )
+        self.key_quota_row_input(row)
     }
-    pub(crate) async fn key_quota_input(&self, id: i64) -> Result<Query> {
-        let row = self.db.one("SELECT a.id,a.platform,a.type,coalesce(nullif(to_jsonb(a)->>'parent_account_id','')::bigint,nullif(a.extra->>'parent_account_id','')::bigint) AS parent_account_id,p.id AS effective_parent_id,coalesce(p.credentials,a.credentials) AS credentials FROM accounts a LEFT JOIN accounts p ON p.id=coalesce(nullif(to_jsonb(a)->>'parent_account_id','')::bigint,nullif(a.extra->>'parent_account_id','')::bigint) AND p.deleted_at IS NULL WHERE a.id=$1 AND a.deleted_at IS NULL", &[id.into()]).await?.ok_or_else(|| Error::new(404,"账号不存在"))?;
+    fn key_quota_row_input(&self, row: &Value) -> Result<Query> {
+        let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         if row["type"] != "apikey" {
             return Err(Error::new(422, "该账号不是 API Key 账号"));
         }
-        if !row["parent_account_id"].is_null() && row["effective_parent_id"].is_null() {
+        let parent = integer(&row["parent_account_id"])
+            .or_else(|| integer(&row["extra"]["parent_account_id"]));
+        if parent.is_some() && row["effective_parent_id"].is_null() {
             return Err(Error::new(409, "父账号不可用，请检查账号配置"));
         }
         self.key_quota.input(
             id,
-            &row["credentials"],
-            &crate::compat::pick(
-                &row,
-                &[
-                    "id",
-                    "platform",
-                    "type",
-                    "parent_account_id",
-                    "effective_parent_id",
-                ],
-            ),
+            if parent.is_some() {
+                &row["parent_credentials"]
+            } else {
+                &row["credentials"]
+            },
+            &json!({"id":row["id"],"platform":row["platform"],"type":row["type"],
+                "parent_account_id":parent,"effective_parent_id":row["effective_parent_id"]}),
         )
+    }
+    pub(crate) async fn key_quota_input(&self, id: i64) -> Result<Query> {
+        self.key_quota_row_input(&self.usage_row(id, false).await?)
     }
     pub async fn key_quota_settings(&self, id: i64, value: Option<&Value>) -> Result<Value> {
         self.key_quota_input(id).await?;

@@ -6,7 +6,7 @@ use crate::{
     credit_ownership,
     db::Param,
     error::{Error, Result},
-    model_candidates::{Candidates, Failure},
+    model_candidates::Candidates,
     model_rules::Allowlist,
     queries::{settings_capabilities, Queries},
     security::{clean, safe_error},
@@ -238,6 +238,7 @@ impl Actions {
     ) -> Result<Self> {
         let client = reqwest::Client::builder()
             .no_proxy()
+            .retry(reqwest::retry::never())
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(Duration::from_secs(5))
             .build()?;
@@ -676,27 +677,54 @@ impl Actions {
         if key.is_empty() {
             return Err(Error::new(503, "管理员授权不可用，无法核对模型目录"));
         }
-        let (identity, _) = self.candidate_source(id, key).await?;
-        let actions = self.clone();
-        let expected = identity.clone();
-        let key = key.to_owned();
-        let fetch = async move {
-            let values = crate::model_directory::fetch(&actions, id).await?;
-            let (current, _) = actions
-                .candidate_source(id, &key)
-                .await
-                .map_err(Failure::permanent)?;
-            if current != expected {
-                return Err(Failure::permanent(Error::new(
-                    503,
-                    "账号或上游连接已变化，请重新读取模型目录",
-                )));
-            }
-            Ok(values)
-        };
-        self.candidates.get(identity, refresh, fetch).await
+        let row = self.queries.private_account(id).await?;
+        if !crate::model_target::supported(&row) {
+            return Err(Error::new(422, "此账号类型不支持模型检测"));
+        }
+        let (target, owner) = crate::model_target::connection(self, &row, "").await?;
+        self.prepared_model_candidates(&row, &target, &owner, key, refresh)
+            .await
     }
-    pub async fn model_allowed(&self, row: &Value, model: &str) -> Result<bool> {
+    async fn prepared_model_candidates(
+        &self,
+        row: &Value,
+        target: &crate::model_test_stream::Target,
+        owner: &Value,
+        key: &str,
+        refresh: bool,
+    ) -> Result<Vec<Value>> {
+        let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
+        let headers = target
+            .headers
+            .iter()
+            .map(|(name, value)| (name.as_str(), crate::compat::sha256(value.as_bytes())))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let identity = crate::compat::digest(&json!([
+            self.upstream.active_url(),
+            crate::compat::sha256(key),
+            crate::model_target::signature(row),
+            crate::model_target::signature(owner),
+            row["group_ids"],
+            row["model_catalog_version"],
+            target.url,
+            target.proxy,
+            headers,
+        ]));
+        let actions = self.clone();
+        let target = target.clone();
+        self.candidates
+            .get(identity, refresh, async move {
+                crate::model_directory::fetch(&actions, id, &target).await
+            })
+            .await
+    }
+    pub(crate) async fn model_allowed_prepared(
+        &self,
+        row: &Value,
+        model: &str,
+        target: &crate::model_test_stream::Target,
+        owner: &Value,
+    ) -> Result<bool> {
         if !text_model(model) {
             return Ok(false);
         }
@@ -705,10 +733,27 @@ impl Actions {
             return Err(Error::new(503, "管理员授权不可用，无法核对模型目录"));
         }
         Ok(self
-            .model_test_candidates(integer(&row["id"]).ok_or_else(Error::invalid)?, &key, false)
+            .prepared_model_candidates(row, target, owner, &key, false)
             .await?
             .iter()
             .any(|v| v["id"] == model))
+    }
+    pub async fn model_allowed(&self, row: &Value, model: &str) -> Result<bool> {
+        if !text_model(model) {
+            return Ok(false);
+        }
+        let prepared;
+        let row = if row["credentials"].is_object() {
+            row
+        } else {
+            prepared =
+                crate::model_target::account(self, integer(&row["id"]).ok_or_else(Error::invalid)?)
+                    .await?;
+            &prepared
+        };
+        let (target, owner) = crate::model_target::connection(self, row, model).await?;
+        self.model_allowed_prepared(row, model, &target, &owner)
+            .await
     }
     pub async fn apply_template(&self, id: i64, payload: &Value, key: &str) -> Result<Value> {
         if self.settings.read_only {
