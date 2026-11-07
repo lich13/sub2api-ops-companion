@@ -437,6 +437,16 @@ async function settingsDraftChecks(h, surface, account) {
   await h.state(await dialog.getByRole("button", { name: "保存", exact: true }).isEnabled(), "model-mapping-draft-not-dirty", dialog);
   await h.layout();
   await page.keyboard.press("Escape");
+  await h.visible(dialog, "dirty-model-settings-stay-open");
+  await h.state(await target.inputValue() === "draft-target", "escape-discarded-model-draft", target);
+  await h.click(dialog.getByRole("button", { name: "关闭账号设置", exact: true }), "model-settings-close");
+  let discard = page.getByRole("alertdialog", { name: "放弃未保存的更改？", exact: true });
+  await h.within(discard, "model-settings-discard-confirmation", { touch: false, scroll: false });
+  await h.click(discard.getByRole("button", { name: "继续编辑", exact: true }), "model-settings-continue");
+  await h.visible(dialog, "model-settings-draft-restored");
+  await h.state(await target.inputValue() === "draft-target", "continue-discarded-model-draft", target);
+  await h.click(dialog.getByRole("button", { name: "关闭账号设置", exact: true }), "model-settings-close");
+  await h.click(discard.getByRole("button", { name: "放弃修改", exact: true }), "model-settings-discard");
   await dialog.waitFor({ state: "hidden" });
   await h.state(isDeepStrictEqual(await accountSettingsData(page, account.id), original), "model-settings-draft-wrote-preview");
 
@@ -455,6 +465,11 @@ async function settingsDraftChecks(h, surface, account) {
   await h.state(await dialog.getByRole("button", { name: "保存", exact: true }).isEnabled(), "proxy-draft-not-dirty", dialog);
   await h.layout();
   await page.keyboard.press("Escape");
+  await h.visible(dialog, "dirty-proxy-settings-stay-open");
+  await h.state(await proxyRadio.isChecked(), "escape-discarded-proxy-draft", proxyLabel);
+  await h.click(dialog.getByRole("button", { name: "关闭账号设置", exact: true }), "proxy-settings-close");
+  discard = page.getByRole("alertdialog", { name: "放弃未保存的更改？", exact: true });
+  await h.click(discard.getByRole("button", { name: "放弃修改", exact: true }), "proxy-settings-discard");
   await dialog.waitFor({ state: "hidden" });
   await h.state(isDeepStrictEqual(await accountSettingsData(page, account.id), original), "proxy-settings-draft-wrote-preview");
 }
@@ -1914,6 +1929,7 @@ async function runScenario(scenario) {
 
 async function main() {
   const { chromium } = require("playwright");
+  const selectedScenario = process.argv.find((arg) => arg.startsWith("--scenario="))?.slice("--scenario=".length);
   await startServer();
   browser = await chromium.launch({ headless: true, ...(process.argv.includes("--chrome") ? { channel: "chrome" } : {}) });
   const viewports = [
@@ -1927,12 +1943,14 @@ async function main() {
       for (const theme of ["light", "dark"]) {
         for (const largeFont of [false, true]) {
           const name = `${mobile ? "mobile" : "desktop"}-${viewport.width}x${viewport.height}-${theme}-font${largeFont ? "125" : "default"}`;
+          if (selectedScenario && name !== selectedScenario) continue;
           await runScenario({ name, viewport, theme, largeFont, mobile });
           total++;
         }
       }
     }
   }
+  requireCondition(total > 0, "scenario-not-found");
   console.log(JSON.stringify({ result: failures.length ? "FAIL" : "PASS", scenarios: total, passed: total - failures.length, failed: failures.length }));
   if (failures.length) process.exitCode = 1;
 }

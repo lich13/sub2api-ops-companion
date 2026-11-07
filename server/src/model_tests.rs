@@ -841,7 +841,6 @@ impl ModelTests {
         if self.actions.settings.read_only {
             return Err(Error::read_only());
         }
-        let current = self.get(id)?;
         let handle = self
             .tasks
             .lock()
@@ -851,7 +850,10 @@ impl ModelTests {
             handle.abort();
             let _ = handle.await;
             self.finish_cancel(id)?;
-        } else if matches!(string(&current["status"]), "queued" | "needs_confirmation") {
+        } else if matches!(
+            string(&self.get(id)?["status"]),
+            "queued" | "needs_confirmation"
+        ) {
             self.finish_cancel(id)?;
         }
         self.get(id)
