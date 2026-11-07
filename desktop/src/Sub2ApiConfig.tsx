@@ -817,7 +817,13 @@ export default function Sub2ApiConfig({
             <span>刷新</span>
           </button>
         </header>
-        <Sub2ApiVersion active={active} online={online} />
+        <Sub2ApiVersion
+          active={active}
+          online={online}
+          knownVersion={error ? "" : document?.version}
+          loadingVersion={busy || (!document && !error)}
+          onRuntimeChanged={() => void load(false, true)}
+        />
         {document?.available ? (
           <>
             <div className="config-filters">

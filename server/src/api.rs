@@ -623,16 +623,16 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             }
             let account_id = path_id(id)?;
             if purpose == Some("model_test") {
-                let row = runtime.actions.account(account_id, None).await?;
+                let row = runtime.actions.queries.private_account(account_id).await?;
                 if crate::model_target::supported(&row) {
                     json!(
                         runtime
                             .actions
-                            .model_test_candidates(account_id, &key, refresh)
+                            .model_test_candidates(&row, &key, refresh)
                             .await?
                     )
                 } else {
-                    let (identity, _) = runtime.actions.candidate_source(account_id, &key).await?;
+                    let identity = runtime.actions.candidate_source(&row, &key).await?;
                     let actions = runtime.actions.clone();
                     let catalog = runtime.catalog.clone();
                     let key = key.clone();

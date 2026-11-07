@@ -3259,3 +3259,37 @@ async fn parent_changes_after_queueing_or_first_sample_stop_later_requests() {
         h.close().await;
     }
 }
+
+#[tokio::test]
+async fn queued_model_test_rejects_reparenting_before_dispatch_and_releases_locks() {
+    let h = RuntimeHarness::new().await;
+    let parent = h.seed_account("apikey", None, json!({})).await;
+    let next_parent = h.seed_account("apikey", None, json!({})).await;
+    let child = h.seed_account("apikey", Some(parent), json!({})).await;
+    let budget = h
+        .runtime
+        .tests
+        .budget
+        .clone()
+        .acquire_many_owned(24)
+        .await
+        .unwrap();
+    let job = h.start_manual(child, 1).await;
+    sqlx::query("UPDATE accounts SET parent_account_id=$1 WHERE id=$2")
+        .bind(next_parent)
+        .bind(child)
+        .execute(&h.runtime.db.pool)
+        .await
+        .unwrap();
+    drop(budget);
+    let done = h.wait_for_terminal(job["id"].as_str().unwrap()).await;
+    assert_eq!(done["status"], "needs_confirmation");
+    assert_eq!(h.state.count(), 0);
+    assert!(h
+        .runtime
+        .actions
+        .locks
+        .try_ids([parent, next_parent, child])
+        .is_ok());
+    h.close().await;
+}

@@ -1318,3 +1318,200 @@ async fn model_operation_summaries_preserve_fields_status_and_full_details() {
     }
     h.close().await;
 }
+
+#[tokio::test]
+async fn anthropic_detection_candidates_read_every_page_and_do_not_cache_partial_results() {
+    let h = Harness::new().await;
+    sqlx::query("INSERT INTO accounts(id,name,platform,type,credentials) VALUES(91,'fixture-pages','anthropic','apikey',$1)")
+        .bind(sqlx::types::Json(json!({"api_key":"fixture-pages-key","base_url":h.runtime.settings.base_url})))
+        .execute(&h.runtime.db.pool).await.unwrap();
+    *h.mock.pages.lock().unwrap() = BTreeMap::from([
+        (
+            "/v1/models".into(),
+            json!({"data":[{"id":"fixture-first","display_name":"First"}],"has_more":true,"last_id":"fixture-first"}),
+        ),
+        (
+            "/v1/models?after_id=fixture-first".into(),
+            json!({"data":[{"id":"fixture-second"},{"id":"fixture-first"}],"has_more":false}),
+        ),
+    ]);
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let app = sub2ops_server::api::router(h.runtime.clone());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let path = format!("{base}/api/desktop/v1/accounts/91/models?purpose=model_test");
+    let response = client
+        .get(&path)
+        .header("x-api-key", ADMIN)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let models = response.json::<Value>().await.unwrap();
+    assert_eq!(
+        models,
+        json!([
+            {"id":"fixture-first","display_name":"First","type":"model"},
+            {"id":"fixture-second","display_name":"fixture-second","type":"model"}
+        ])
+    );
+    let directory_calls = || {
+        h.mock
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|call| call["path"].as_str().unwrap().starts_with("/v1/models"))
+            .count()
+    };
+    assert_eq!(directory_calls(), 2);
+    assert_eq!(
+        client
+            .get(&path)
+            .header("x-api-key", ADMIN)
+            .send()
+            .await
+            .unwrap()
+            .json::<Value>()
+            .await
+            .unwrap(),
+        models
+    );
+    assert_eq!(directory_calls(), 2);
+    h.mock.pages.lock().unwrap().insert(
+        "/v1/models?after_id=fixture-first".into(),
+        json!({"error":"fixture-second-page-error"}),
+    );
+    assert_eq!(
+        client
+            .get(format!("{path}&refresh=true"))
+            .header("x-api-key", ADMIN)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        502
+    );
+    assert_eq!(
+        client
+            .get(&path)
+            .header("x-api-key", ADMIN)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        502
+    );
+    let saved: Value = serde_json::from_slice(
+        &fs::read(
+            h.runtime
+                .settings
+                .data_dir()
+                .join("account-model-cache.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(saved["entries"].as_object().unwrap().is_empty());
+    h.mock.pages.lock().unwrap().insert(
+        "/v1/models?after_id=fixture-first".into(),
+        json!({"data":[{"id":"fixture-second"}],"has_more":false}),
+    );
+    assert_eq!(
+        client
+            .get(format!("{path}&refresh=true"))
+            .header("x-api-key", ADMIN)
+            .send()
+            .await
+            .unwrap()
+            .json::<Value>()
+            .await
+            .unwrap(),
+        models
+    );
+    server.abort();
+    let _ = server.await;
+    h.close().await;
+}
+
+#[tokio::test]
+async fn account_directory_prefers_child_proxy_and_inherits_parent_when_unset() {
+    let h = Harness::new().await;
+    let child_proxy = Upstream::default();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let child_port = i32::from(listener.local_addr().unwrap().port());
+    let app = Router::new()
+        .fallback(upstream)
+        .with_state(child_proxy.clone());
+    let proxy_server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let parent_port = i32::from(
+        reqwest::Url::parse(&h.runtime.settings.base_url)
+            .unwrap()
+            .port()
+            .unwrap(),
+    );
+    sqlx::query("INSERT INTO proxies(id,protocol,host,port) VALUES(71,'http','127.0.0.1',$1),(72,'http','127.0.0.1',$2)")
+        .bind(parent_port).bind(child_port).execute(&h.runtime.db.pool).await.unwrap();
+    sqlx::query("INSERT INTO accounts(id,name,platform,type,credentials,parent_account_id,proxy_id) VALUES(81,'fixture-parent','grok','oauth',$1,null,71),(82,'fixture-child','grok','oauth','{}',81,null)")
+        .bind(sqlx::types::Json(json!({"access_token":"fixture-parent-key","base_url":h.runtime.settings.base_url})))
+        .execute(&h.runtime.db.pool).await.unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let app = sub2ops_server::api::router(h.runtime.clone());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let path = format!("{base}/api/desktop/v1/accounts/82/models?purpose=model_test");
+    for (step, expected_child_calls) in [0, 1, 1, 2].into_iter().enumerate() {
+        if step == 1 {
+            sqlx::query("UPDATE accounts SET proxy_id=72 WHERE id=82")
+                .execute(&h.runtime.db.pool)
+                .await
+                .unwrap();
+        } else if step == 3 {
+            sqlx::query("UPDATE proxies SET username='fixture-user',password='fixture-password' WHERE id=72").execute(&h.runtime.db.pool).await.unwrap();
+        }
+        let response = client
+            .get(&path)
+            .header("x-api-key", ADMIN)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        assert_eq!(
+            response.json::<Value>().await.unwrap()[0]["id"],
+            "fixture-native-model"
+        );
+        assert_eq!(
+            h.mock
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|call| call["path"].as_str().unwrap().ends_with("/v1/models"))
+                .count(),
+            1
+        );
+        assert_eq!(
+            child_proxy.calls.lock().unwrap().len(),
+            expected_child_calls
+        );
+    }
+    assert!(child_proxy
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|call| call["authorization"] == "Bearer fixture-parent-key"));
+    server.abort();
+    let _ = server.await;
+    proxy_server.abort();
+    let _ = proxy_server.await;
+    h.close().await;
+}

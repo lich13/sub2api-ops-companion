@@ -85,9 +85,13 @@ impl Detection {
                 {
                     return Ok("账号不再符合自动用卡条件".into());
                 }
-                let credit_reason = controller.positive_credit_reason(row, now);
-                if !credit_reason.is_empty() {
-                    return Ok(credit_reason.into());
+                // Locked preparation checks credit first to retain its specific
+                // error code. Other callers still need this eligibility check.
+                if evidence.is_none() {
+                    let credit_reason = controller.positive_credit_reason(row, now);
+                    if !credit_reason.is_empty() {
+                        return Ok(credit_reason.into());
+                    }
                 }
                 if !controller.eligible(row, now, false)? {
                     return Ok("账号不再符合自动用卡条件".into());
@@ -166,7 +170,7 @@ impl Detection {
         let request_key =
             digest(&json!(["recovery", identity, value["generation"]]))[..32].to_owned();
         let table = jobs["jobs"].as_object().ok_or_else(Error::internal)?;
-        let same = |job: &&Value| {
+        let same = |job: &Value| {
             job["automatic"] == true
                 && job["account_id"] == id
                 && job["detection_generation"] == value["generation"]
@@ -182,34 +186,27 @@ impl Detection {
                 .all(|key| job["recovery_context"][*key] == identity[*key])
         };
         let direct = registered
-            .get(&request_key)
-            .and_then(Value::as_str)
-            .and_then(|id| table.get(id))
-            .filter(same);
+            .get_key_value(&request_key)
+            .and_then(|(key, id)| {
+                table
+                    .get(id.as_str()?)
+                    .filter(|job| same(job))
+                    .map(|job| (key, job))
+            });
         let previous = direct.or_else(|| {
-            let registered_jobs = registered
-                .values()
-                .filter_map(Value::as_str)
-                .collect::<std::collections::BTreeSet<_>>();
-            table
-                .values()
-                .filter(same)
-                .filter(|job| registered_jobs.contains(string(&job["id"])))
-                .max_by_key(|job| (parse_datetime(&job["queued_at"]), string(&job["id"])))
-        });
-        let request = if direct.is_some() {
-            request_key
-        } else {
-            previous
-                .and_then(|job| {
-                    registered
-                        .iter()
-                        .find(|(_, id)| *id == &job["id"])
-                        .map(|(key, _)| key.clone())
+            registered
+                .iter()
+                .rev()
+                .filter_map(|(key, id)| {
+                    table
+                        .get(id.as_str()?)
+                        .filter(|job| same(job))
+                        .map(|job| (key, job))
                 })
-                .unwrap_or(request_key)
-        };
-        if let Some(previous) = previous.and_then(|job| job["id"].as_str()) {
+                .max_by_key(|(_, job)| (parse_datetime(&job["queued_at"]), string(&job["id"])))
+        });
+        let request = previous.map(|(key, _)| key.clone()).unwrap_or(request_key);
+        if let Some(previous) = previous.and_then(|(_, job)| job["id"].as_str()) {
             let job = self.tests.get(previous)?;
             if ACTIVE.contains(&string(&job["status"])) {
                 return Ok(self.recovery_wait(

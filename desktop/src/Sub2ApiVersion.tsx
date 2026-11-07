@@ -12,27 +12,37 @@ export type Sub2ApiUpdateResult = {
 };
 const normalize = (version: string) => version.replace(/^v/, "");
 
-export default function Sub2ApiVersion({ active, online }: { active: boolean; online: boolean }) {
+export default function Sub2ApiVersion({ active, online, knownVersion = "", loadingVersion = false, onRuntimeChanged }: {
+  active: boolean; online: boolean; knownVersion?: string; loadingVersion?: boolean; onRuntimeChanged?: () => void;
+}) {
   const [version, setVersion] = useState(""), [info, setInfo] = useState<Sub2ApiUpdate | null>(null);
   const [supported, setSupported] = useState<boolean | null>(null), [busy, setBusy] = useState(false);
   const [needRestart, setNeedRestart] = useState(false), [waiting, setWaiting] = useState(false);
   const [error, setError] = useState(""), [message, setMessage] = useState("");
-  const alive = useRef(true), guard = useRef(false), target = useRef("");
+  const alive = useRef(true), guard = useRef(false), target = useRef(""), nativeLoaded = useRef(false);
+  const refreshRuntime = useRef(onRuntimeChanged);
+  refreshRuntime.current = onRuntimeChanged;
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => {
-    if (!active || !online) return;
+    if (!online) { setSupported(null); nativeLoaded.current = false; return; }
+    if (!active || supported !== null) return;
     let cancelled = false;
-    void api<{ features?: { sub2api_update?: boolean } }>("GET", "/capabilities").then(async caps => {
+    void api<{ features?: { sub2api_update?: boolean } }>("GET", "/capabilities").then(caps => {
       if (cancelled) return;
-      const enabled = caps.features?.sub2api_update === true;
-      setSupported(enabled);
-      if (enabled) {
-        const current = await api<{ version: string }>("GET", "/sub2api-system/version");
-        if (!cancelled) setVersion(current.version);
-      }
+      setSupported(caps.features?.sub2api_update === true);
     }).catch(e => { if (!cancelled) setError(String(e)); });
     return () => { cancelled = true; };
-  }, [active, online]);
+  }, [active, online, supported]);
+  useEffect(() => {
+    if (loadingVersion) return;
+    if (knownVersion) { setVersion(knownVersion); nativeLoaded.current = false; return; }
+    if (!active || !online || supported !== true || nativeLoaded.current) return;
+    let cancelled = false;
+    void api<{ version: string }>("GET", "/sub2api-system/version")
+      .then(current => { if (!cancelled) { nativeLoaded.current = true; setVersion(current.version); } })
+      .catch(e => { if (!cancelled) setError(String(e)); });
+    return () => { cancelled = true; };
+  }, [active, online, supported, knownVersion, loadingVersion]);
   useEffect(() => {
     if (!waiting) return;
     if (!active) { setWaiting(false); return; }
@@ -45,6 +55,8 @@ export default function Sub2ApiVersion({ active, online }: { active: boolean; on
         if (target.current && normalize(current.version) === normalize(target.current)) {
           setWaiting(false); setNeedRestart(false); setError(""); setMessage("更新已生效");
           setInfo(previous => previous ? { ...previous, current_version: current.version, has_update: false } : previous);
+          target.current = "";
+          refreshRuntime.current?.();
           return;
         }
       } catch { /* A restarting native service may briefly be unreachable. */ }
@@ -63,13 +75,17 @@ export default function Sub2ApiVersion({ active, online }: { active: boolean; on
         const result = await api<Sub2ApiUpdate>("GET", "/sub2api-system/check-updates?force=true");
         if (!alive.current) return;
         setInfo(result); setVersion(result.current_version);
-        if (target.current && normalize(result.current_version) === normalize(target.current)) setNeedRestart(false);
+        if (target.current && normalize(result.current_version) === normalize(target.current)) {
+          target.current = ""; setNeedRestart(false); setWaiting(false);
+        }
+        if (version && normalize(result.current_version) !== normalize(version)) refreshRuntime.current?.();
       } else {
         const result = await api<Sub2ApiUpdateResult>("POST", `/sub2api-system/${action}`);
         if (!alive.current) return;
         if (action === "restart") { setWaiting(true); setMessage("正在等待重启生效"); }
         else if (result.need_restart) { target.current = info?.latest_version || ""; setNeedRestart(true); setMessage("更新已下载，重启后生效"); }
         else if (result.already_up_to_date) {
+          if (version && normalize(result.current_version!) !== normalize(version)) refreshRuntime.current?.();
           setVersion(result.current_version!); setNeedRestart(false); setMessage("已经是最新版本");
           setInfo(previous => previous ? { ...previous, current_version: result.current_version!, latest_version: result.latest_version!, has_update: false } : previous);
         }

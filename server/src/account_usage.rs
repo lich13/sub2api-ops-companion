@@ -528,7 +528,7 @@ impl Runtime {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         let kind = provider(&row);
         let quota = if row["type"] == "apikey" {
-            let input = self.key_quota_input_from_row(&row).await?;
+            let input = self.key_quota_input_from_row(&row)?;
             let signature = input.version.clone();
             let (view, refreshed) = self.key_quota.query_with_refresh(input, force).await?;
             Some((signature, view, refreshed))
@@ -587,7 +587,7 @@ impl Runtime {
         };
         let refreshed =
             response.is_some() || quota.as_ref().is_some_and(|(_, _, refreshed)| *refreshed);
-        let live = if refreshed {
+        let live = if response.is_some() {
             self.usage_row(id, include_account).await?
         } else {
             row.clone()
@@ -601,8 +601,17 @@ impl Runtime {
             return Err(Error::new(409, "账号已变化，请重新读取用量"));
         }
         if let Some((signature, _, _)) = &quota {
-            if refreshed && self.key_quota_input_from_row(&live).await?.version != *signature {
-                return Err(Error::new(409, "账号余额配置已变化，请重新读取"));
+            if refreshed {
+                let checked;
+                let quota_row = if response.is_some() {
+                    &live
+                } else {
+                    checked = self.usage_row(id, false).await?;
+                    &checked
+                };
+                if self.key_quota_input_from_row(quota_row)?.version != *signature {
+                    return Err(Error::new(409, "账号余额配置已变化，请重新读取"));
+                }
             }
         }
         let mut usage = self.local_account_usage(&live).await?;

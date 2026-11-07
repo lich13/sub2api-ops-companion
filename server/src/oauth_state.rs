@@ -308,10 +308,12 @@ pub fn normalize(raw: &Value) -> Value {
             continue;
         }
         let mut value = value.clone();
-        value
-            .as_object_mut()
-            .unwrap()
-            .remove("reset_credit_observation");
+        let fields = value.as_object_mut().unwrap();
+        fields.remove("reset_credit_observation");
+        fields.remove("reset_credit_episodes");
+        if let Some(task) = fields.get_mut("auto_reset_credit") {
+            retire_credit_fields(task);
+        }
         if let Some(intent) = value.get_mut("recovery_intent") {
             if !intent.is_object() {
                 *intent = json!({});
@@ -394,12 +396,6 @@ pub(crate) fn retire_credit_fields(task: &mut Value) {
 fn prune_credit_history(state: &mut Value) {
     if let Some(scheduler) = state["scheduler"].as_object_mut() {
         for meta in scheduler.values_mut() {
-            if let Some(fields) = meta.as_object_mut() {
-                fields.remove("reset_credit_episodes");
-            }
-            if let Some(task) = meta.get_mut("auto_reset_credit") {
-                retire_credit_fields(task);
-            }
             let notices_over_limit = meta["credit_result_notifications"]
                 .as_object()
                 .is_some_and(|items| items.len() > MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY);
@@ -409,31 +405,28 @@ fn prune_credit_history(state: &mut Value) {
             let active_episode = meta["auto_reset_credit"]["episode"]
                 .as_str()
                 .map(str::to_owned);
-            if notices_over_limit {
-                let mut terminals = meta["credit_result_notifications"]
-                    .as_object()
-                    .unwrap()
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, (ep, notice))| {
-                        notice["status"] != "pending"
-                            && active_episode.as_deref() != Some(ep.as_str())
-                    })
-                    .map(|(idx, (ep, notice))| {
-                        (
-                            notice["completed_at"].as_str().unwrap_or("").to_owned(),
-                            idx,
-                            ep.clone(),
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                if terminals.len() > MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY {
-                    terminals.sort();
-                    let drop_count = terminals.len() - MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY;
-                    let map = meta["credit_result_notifications"].as_object_mut().unwrap();
-                    for (_, _, ep) in terminals.into_iter().take(drop_count) {
-                        map.shift_remove(&ep);
-                    }
+            let mut terminals = meta["credit_result_notifications"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .enumerate()
+                .filter(|(_, (ep, notice))| {
+                    notice["status"] != "pending" && active_episode.as_deref() != Some(ep.as_str())
+                })
+                .map(|(idx, (ep, notice))| {
+                    (
+                        notice["completed_at"].as_str().unwrap_or("").to_owned(),
+                        idx,
+                        ep.clone(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            if terminals.len() > MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY {
+                terminals.sort();
+                let drop_count = terminals.len() - MAX_TERMINAL_ACCOUNT_CREDIT_HISTORY;
+                let map = meta["credit_result_notifications"].as_object_mut().unwrap();
+                for (_, _, ep) in terminals.into_iter().take(drop_count) {
+                    map.shift_remove(&ep);
                 }
             }
         }

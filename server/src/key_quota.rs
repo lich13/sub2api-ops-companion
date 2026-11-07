@@ -1223,18 +1223,7 @@ mod tests {
 }
 
 impl crate::runtime::Runtime {
-    pub(crate) async fn key_quota_input_from_row(&self, row: &Value) -> Result<Query> {
-        let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
-        let parent = integer(&row["parent_account_id"])
-            .or_else(|| integer(&row["extra"]["parent_account_id"]));
-        if !row["credentials"].is_object()
-            || parent.is_some() && row.get("effective_parent_id").is_none()
-        {
-            return self.key_quota_input(id).await;
-        }
-        self.key_quota_row_input(row)
-    }
-    fn key_quota_row_input(&self, row: &Value) -> Result<Query> {
+    pub(crate) fn key_quota_input_from_row(&self, row: &Value) -> Result<Query> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         if row["type"] != "apikey" {
             return Err(Error::new(422, "该账号不是 API Key 账号"));
@@ -1256,7 +1245,7 @@ impl crate::runtime::Runtime {
         )
     }
     pub(crate) async fn key_quota_input(&self, id: i64) -> Result<Query> {
-        self.key_quota_row_input(&self.usage_row(id, false).await?)
+        self.key_quota_input_from_row(&self.usage_row(id, false).await?)
     }
     pub async fn key_quota_settings(&self, id: i64, value: Option<&Value>) -> Result<Value> {
         self.key_quota_input(id).await?;

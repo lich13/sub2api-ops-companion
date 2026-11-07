@@ -545,9 +545,7 @@
       "kind": "boolean",
       "group": "请求与重试",
       "platforms": [
-        "grok",
-        "command_code",
-        "cline"
+        "grok"
       ],
       "types": [
         "oauth"
@@ -583,9 +581,7 @@
       "kind": "headers",
       "group": "请求与重试",
       "platforms": [
-        "grok",
-        "command_code",
-        "cline"
+        "grok"
       ],
       "types": [
         "oauth"

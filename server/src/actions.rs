@@ -575,7 +575,8 @@ impl Actions {
     }
     pub async fn models(&self, id: i64, key: &str, model_test: bool) -> Result<Vec<Value>> {
         if model_test {
-            return self.model_test_candidates(id, key, false).await;
+            let row = self.queries.private_account(id).await?;
+            return self.model_test_candidates(&row, key, false).await;
         }
         let row = self.account(id, None).await?;
         let allowlists = self.allowlists(&row, false).await?;
@@ -593,17 +594,7 @@ impl Actions {
             .ok_or_else(|| Error::new(502, "模型列表格式无效"))?;
         Ok(filter_models(&list[..list.len().min(1000)], &allowlists))
     }
-    pub(crate) async fn candidate_source(&self, id: i64, key: &str) -> Result<(String, String)> {
-        let row = self.queries.db.one(
-            "SELECT a.id,a.platform,a.type,a.proxy_id,a.extra,
-                nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id,
-                md5(a.credentials::text) AS credential_version,
-                md5(coalesce(a.credentials->'model_mapping','{}'::jsonb)::text) AS model_mapping_version,
-                (SELECT md5(jsonb_agg(jsonb_build_array(g.id,g.model_allowlist) ORDER BY g.id)::text)
-                 FROM account_groups ag JOIN groups g ON g.id=ag.group_id AND g.deleted_at IS NULL WHERE ag.account_id=a.id) AS model_catalog_version,
-                ARRAY(SELECT ag.group_id FROM account_groups ag JOIN groups g ON g.id=ag.group_id AND g.deleted_at IS NULL WHERE ag.account_id=a.id ORDER BY ag.group_id) AS group_ids
-             FROM accounts a WHERE a.id=$1 AND a.deleted_at IS NULL", &[id.into()],
-        ).await?.ok_or_else(|| Error::new(404,"账号不存在"))?;
+    pub(crate) async fn candidate_source(&self, row: &Value, key: &str) -> Result<String> {
         let parent = integer(&row["parent_account_id"])
             .or_else(|| integer(&row["extra"]["parent_account_id"]))
             .filter(|id| *id > 0);
@@ -635,11 +626,6 @@ impl Actions {
         } else {
             None
         };
-        let client_identity = if row["type"] == "oauth" {
-            self.queries.db.all("SELECT key,value FROM settings WHERE key IN ('openai_codex_user_agent','openai_codex_client_version','openai_codex_client_version_synced') ORDER BY key", &[]).await?
-        } else {
-            vec![]
-        };
         let base = self.upstream.active_url();
         if base.is_empty() {
             return Err(Error::new(502, "未配置 Sub2API 服务地址"));
@@ -648,7 +634,7 @@ impl Actions {
             base,
             crate::compat::sha256(key),
             crate::compat::pick(
-                &row,
+                row,
                 &[
                     "id",
                     "platform",
@@ -663,26 +649,24 @@ impl Actions {
             ),
             crate::compat::pick(&row["extra"], &protocol_fields),
             parent_version,
-            proxy_version,
-            client_identity
+            proxy_version
         ]));
-        Ok((identity, base))
+        Ok(identity)
     }
     pub(crate) async fn model_test_candidates(
         &self,
-        id: i64,
+        row: &Value,
         key: &str,
         refresh: bool,
     ) -> Result<Vec<Value>> {
         if key.is_empty() {
             return Err(Error::new(503, "管理员授权不可用，无法核对模型目录"));
         }
-        let row = self.queries.private_account(id).await?;
-        if !crate::model_target::supported(&row) {
+        if !crate::model_target::supported(row) {
             return Err(Error::new(422, "此账号类型不支持模型检测"));
         }
-        let (target, owner) = crate::model_target::connection(self, &row, "").await?;
-        self.prepared_model_candidates(&row, &target, &owner, key, refresh)
+        let (target, owner) = crate::model_target::connection(self, row, "").await?;
+        self.prepared_model_candidates(row, &target, &owner, key, refresh)
             .await
     }
     async fn prepared_model_candidates(

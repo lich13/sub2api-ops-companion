@@ -75,7 +75,7 @@ afterEach(async () => {
 });
 it("shows only supported editable fields and removes unknown and environment sections", async () => {
   await act(async () => root.render(<Sub2ApiConfig active online />));
-  expect(container.textContent).toContain("运行 0.2.19");
+  expect(container.textContent).toContain(`运行 ${fixture.version}`);
   expect(input("server.port")).toBeNull();
   expect(container.textContent).not.toContain("SERVER_PORT");
   expect(container.textContent).not.toContain("未识别或失效字段");
@@ -475,4 +475,39 @@ it("shows unavailable and empty states with a way back to the fields", async () 
   expect(container.textContent).toContain("没有匹配的配置字段");
   await act(async () => button("清除搜索与筛选").click());
   expect(input("server.host")).not.toBeNull();
+});
+
+it.each([false, true])("refreshes the parent runtime after a version change while protecting existing drafts (%s)", async (hasDraft) => {
+  await act(async () => root.render(<Sub2ApiConfig active online />));
+  expect(api).not.toHaveBeenCalledWith("GET", "/sub2api-system/version");
+  await fill(input("搜索配置字段"), "load_batch_cache_ttl_ms");
+  if (hasDraft) await fill(input("gateway.scheduling.load_batch_cache_ttl_ms"), "300");
+  fixture = { ...fixture, version: "0.2.21", commit: "fixture-new-commit", runtime_revision: "c".repeat(64) };
+  const original = vi.mocked(api).getMockImplementation()!;
+  vi.mocked(api).mockImplementation(async (...args) => args[1].includes("/check-updates")
+    ? { current_version: "0.2.21", latest_version: "0.2.21", has_update: false, cached: false, build_type: "release" } as never
+    : original(...args));
+  await act(async () => button("检查更新").click());
+  expect(vi.mocked(api).mock.calls.filter(([, path]) => path === "/sub2api-config")).toHaveLength(2);
+  expect(container.textContent).toContain("运行 0.2.21");
+  if (hasDraft) {
+    expect(input("gateway.scheduling.load_batch_cache_ttl_ms").value).toBe("300");
+    expect(container.textContent).toContain("文件或运行进程已变更");
+    expect(button("应用并重启").disabled).toBe(true);
+  } else {
+    await fill(input("gateway.scheduling.load_batch_cache_ttl_ms"), "300");
+    await act(async () => button("应用并重启").click());
+    expect(vi.mocked(api).mock.calls.find(([, path]) => path.endsWith("/validate"))?.[2]).toMatchObject({ runtime_revision: "c".repeat(64) });
+  }
+});
+
+it("keeps the native version panel available when the configuration host fails", async () => {
+  const original = vi.mocked(api).getMockImplementation()!;
+  vi.mocked(api).mockImplementation(async (...args) => {
+    if (args[1] === "/sub2api-config") throw new Error("fixture host unavailable");
+    return original(...args);
+  });
+  await act(async () => root.render(<Sub2ApiConfig active online />));
+  expect(container.textContent).toContain("运行 0.2.19");
+  expect(button("检查更新").disabled).toBe(false);
 });

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Sub2ApiVersion from "./Sub2ApiVersion";
@@ -10,8 +10,9 @@ let root: Root, container: HTMLDivElement;
 let running: string, hasUpdate: boolean, buildType: string, update: Record<string,unknown>;
 const button = (name: string) => [...container.querySelectorAll<HTMLButtonElement>("button")].find(b => b.textContent === name)!;
 const clicks = (path: string) => vi.mocked(api).mock.calls.filter(([m,p]) => m === "POST" && p === path);
+const refreshed = vi.fn();
 async function click(name: string) { await act(async () => button(name).click()); }
-async function render(active = true) { await act(async () => root.render(<Sub2ApiVersion active={active} online />)); }
+async function render(active = true, props: Partial<ComponentProps<typeof Sub2ApiVersion>> = {}) { await act(async () => root.render(<Sub2ApiVersion active={active} online onRuntimeChanged={refreshed} {...props} />)); }
 beforeEach(() => {
   vi.clearAllMocks(); vi.useFakeTimers();
   running = "0.2.20"; hasUpdate = true; buildType = "release"; update = { message: "Update completed", need_restart: true };
@@ -48,6 +49,7 @@ it("restarts once and checks only the current page until the updated version run
   expect(container.textContent).toContain("更新已生效"); expect(button("重启生效")).toBeUndefined();
   expect(clicks("/sub2api-system/restart")).toHaveLength(1);
   expect(vi.getTimerCount()).toBe(0);
+  expect(refreshed).toHaveBeenCalledTimes(1);
 });
 it("stops restart checks on leaving the page and never repeats disconnected writes", async () => {
   await render(); await click("检查更新"); await click("更新 Sub2API");
@@ -73,4 +75,36 @@ it("keeps a manual check available after restart verification times out", async 
   expect(container.textContent).toContain("尚未确认运行版本，请手动刷新");
   expect(button("检查更新").disabled).toBe(false); expect(vi.getTimerCount()).toBe(0);
   expect(clicks("/sub2api-system/restart")).toHaveLength(1);
+  running = "0.2.21"; await click("检查更新");
+  expect(refreshed).toHaveBeenCalledTimes(1);
+  expect(button("重启生效")).toBeUndefined();
+});
+
+it("reuses the parent version and capabilities across page activation", async () => {
+  await render(true, { loadingVersion: true });
+  expect(api).not.toHaveBeenCalledWith("GET", "/sub2api-system/version");
+  await render(true, { knownVersion: "0.2.20" });
+  await render(false, { knownVersion: "0.2.20" });
+  await render(true, { knownVersion: "0.2.20" });
+  expect(container.textContent).toContain("运行 0.2.20");
+  expect(vi.mocked(api).mock.calls.filter(([, path]) => path === "/capabilities")).toHaveLength(1);
+  expect(api).not.toHaveBeenCalledWith("GET", "/sub2api-system/version");
+});
+
+it("reads the native version when the parent host cannot provide it", async () => {
+  await render(true, { loadingVersion: true });
+  await render(true, { loadingVersion: false });
+  expect(container.textContent).toContain("运行 0.2.20");
+  expect(vi.mocked(api).mock.calls.filter(([, path]) => path === "/sub2api-system/version")).toHaveLength(1);
+  await render(false); await render();
+  expect(vi.mocked(api).mock.calls.filter(([, path]) => path === "/sub2api-system/version")).toHaveLength(1);
+});
+
+it("falls back to the native version if a previously available configuration host fails", async () => {
+  await render(true, { knownVersion: "0.2.20" });
+  running = "0.2.21";
+  await render(true, { loadingVersion: true });
+  await render();
+  expect(container.textContent).toContain("运行 0.2.21");
+  expect(vi.mocked(api).mock.calls.filter(([, path]) => path === "/sub2api-system/version")).toHaveLength(1);
 });

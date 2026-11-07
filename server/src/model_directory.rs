@@ -101,36 +101,78 @@ pub(crate) async fn fetch(
     );
     headers.remove("content-type");
     headers.remove("openai-beta");
-    let response = client
-        .get(url)
-        .headers(headers)
-        .timeout(Duration::from_secs(8))
-        .send()
-        .await
-        .map_err(|error| {
-            Failure::temporary(if error.is_timeout() {
-                Error::new(504, "上游模型目录读取超时，请稍后重试")
-            } else {
-                Error::new(502, "无法读取上游模型目录")
-            })
-        })?;
-    let status = response.status().as_u16();
-    if !(200..300).contains(&status) {
-        let error = Error::new(502, format!("上游模型目录请求失败 [http_{status}]"));
-        return Err(if status == 429 || status >= 500 {
-            Failure::temporary(error)
-        } else {
-            Failure::permanent(error)
-        });
-    }
-    let bytes = read_limited(response, 8_000_000).await.map_err(|error| {
-        if error.detail == "上游响应超过限制" {
-            Failure::permanent(error)
-        } else {
-            Failure::temporary(error)
+    tokio::time::timeout(Duration::from_secs(8), async {
+        let mut page_url = url.clone();
+        let mut cursors = BTreeSet::new();
+        let mut seen = BTreeSet::new();
+        let mut values = Vec::new();
+        let mut entries = 0;
+        loop {
+            let response = client
+                .get(page_url)
+                .headers(headers.clone())
+                .send()
+                .await
+                .map_err(|error| {
+                    Failure::temporary(if error.is_timeout() {
+                        Error::new(504, "上游模型目录读取超时，请稍后重试")
+                    } else {
+                        Error::new(502, "无法读取上游模型目录")
+                    })
+                })?;
+            let status = response.status().as_u16();
+            if !(200..300).contains(&status) {
+                let error = Error::new(502, format!("上游模型目录请求失败 [http_{status}]"));
+                return Err(if status == 429 || status >= 500 {
+                    Failure::temporary(error)
+                } else {
+                    Failure::permanent(error)
+                });
+            }
+            let bytes = read_limited(response, 8_000_000).await.map_err(|error| {
+                if error.detail == "上游响应超过限制" {
+                    Failure::permanent(error)
+                } else {
+                    Failure::temporary(error)
+                }
+            })?;
+            let body: Value = serde_json::from_slice(&bytes)
+                .map_err(|_| Failure::permanent(Error::new(502, "上游模型列表格式无效")))?;
+            let page = models(&body).map_err(Failure::permanent)?;
+            entries += body.as_array().map_or_else(
+                || {
+                    ["data", "models"]
+                        .iter()
+                        .filter_map(|key| body[*key].as_array())
+                        .map(Vec::len)
+                        .sum()
+                },
+                Vec::len,
+            );
+            if entries > 10_000 {
+                return Err(Failure::permanent(Error::new(
+                    502,
+                    "上游模型列表格式无效或超过限制",
+                )));
+            }
+            values.extend(
+                page.into_iter()
+                    .filter(|model| seen.insert(model["id"].as_str().unwrap().to_owned())),
+            );
+            if target.platform != "anthropic" || body["has_more"] != true {
+                return Ok(values);
+            }
+            let cursor = body["last_id"]
+                .as_str()
+                .filter(|id| !id.is_empty())
+                .ok_or_else(|| Failure::permanent(Error::new(502, "上游模型分页标识缺失")))?;
+            if !cursors.insert(cursor.to_owned()) || cursors.len() > 100 {
+                return Err(Failure::permanent(Error::new(502, "上游模型分页无效")));
+            }
+            page_url = url.clone();
+            page_url.query_pairs_mut().append_pair("after_id", cursor);
         }
-    })?;
-    let body = serde_json::from_slice(&bytes)
-        .map_err(|_| Failure::permanent(Error::new(502, "上游模型列表格式无效")))?;
-    models(&body).map_err(Failure::permanent)
+    })
+    .await
+    .map_err(|_| Failure::temporary(Error::new(504, "上游模型目录读取超时，请稍后重试")))?
 }

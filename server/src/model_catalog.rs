@@ -969,7 +969,7 @@ impl Catalog {
         let account = self
             .db
             .one(
-                "SELECT a.id,a.platform,a.type,coalesce(p.credentials,a.credentials) AS credentials,a.extra,coalesce(p.proxy_id,a.proxy_id) AS proxy_id FROM accounts a LEFT JOIN accounts p ON p.id=coalesce(nullif(to_jsonb(a)->>'parent_account_id','')::bigint,nullif(a.extra->>'parent_account_id','')::bigint) AND p.deleted_at IS NULL WHERE a.id=$1 AND a.deleted_at IS NULL",
+                "SELECT a.id,a.platform,a.type,coalesce(p.credentials,a.credentials) AS credentials,a.extra,coalesce(a.proxy_id,p.proxy_id) AS proxy_id FROM accounts a LEFT JOIN accounts p ON p.id=coalesce(nullif(to_jsonb(a)->>'parent_account_id','')::bigint,nullif(a.extra->>'parent_account_id','')::bigint) AND p.deleted_at IS NULL WHERE a.id=$1 AND a.deleted_at IS NULL",
                 &[id.into()],
             )
             .await?

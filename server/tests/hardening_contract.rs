@@ -71,13 +71,33 @@ fn credit_history_limits_keep_active_pending_and_owned_receipts_in_order() {
         episodes["fixture-owned"] = json!({"episode":"fixture-owned","stage":"finished","owns_pause":true,"receipt":receipt});
         notices["fixture-pending"]["status"] = "pending".into();
         notices["fixture-pending"]["next_at"] = at.into();
-        store
-            .transaction(|state| {
-                state["scheduler"]["7"] = json!({"auto_reset_credit":episodes["fixture-active"],
-                "reset_credit_episodes":episodes,"credit_result_notifications":notices});
-                Ok(())
-            })
-            .unwrap();
+        let mut raw = store.snapshot().unwrap();
+        raw["scheduler"]["7"] = json!({"auto_reset_credit":episodes["fixture-active"],
+            "reset_credit_episodes":episodes,"credit_result_notifications":notices,
+            "reset_credit_observation":{"fixture":"retired"}});
+        raw["scheduler"]["7"]["auto_reset_credit"]["auth_fingerprint"] = "fixture-retired".into();
+        raw["scheduler"]["7"]["auto_reset_credit"]["owned_version"] = "fixture-retired".into();
+        let bytes = serde_json::to_vec(&raw).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let loaded = store.snapshot().unwrap();
+        assert!(loaded["scheduler"]["7"]
+            .get("reset_credit_episodes")
+            .is_none());
+        assert!(loaded["scheduler"]["7"]
+            .get("reset_credit_observation")
+            .is_none());
+        assert!(loaded["scheduler"]["7"]["auto_reset_credit"]
+            .get("auth_fingerprint")
+            .is_none());
+        assert!(loaded["scheduler"]["7"]["auto_reset_credit"]
+            .get("owned_version")
+            .is_none());
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            bytes,
+            "loading does not rewrite state"
+        );
+        store.transaction(|_| Ok(())).unwrap();
         let state = store.snapshot().unwrap();
         let meta = &state["scheduler"]["7"];
         {

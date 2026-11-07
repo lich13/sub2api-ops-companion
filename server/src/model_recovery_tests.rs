@@ -3633,3 +3633,65 @@ async fn prepared_credit_evidence_and_available_count_are_rechecked_after_contro
         h.close().await;
     }
 }
+
+#[tokio::test]
+async fn credit_reuses_legacy_request_and_ignores_unregistered_newer_job() {
+    let h = Harness::new().await;
+    let (id, _) = seed_credit(&h).await;
+    let slots = h
+        .runtime
+        .tests
+        .jobs
+        .clone()
+        .acquire_many_owned(2)
+        .await
+        .unwrap();
+    let (job, context) = queue_credit(&h, id).await;
+    let job_id = job["id"].as_str().unwrap();
+    h.runtime
+        .tests
+        .transaction(|data| {
+            data["requests"] = json!({"fixture-legacy-recovery-request":job_id});
+            let mut unregistered = job.clone();
+            unregistered["id"] = "ffffffffffffffffffffffffffffffff".into();
+            unregistered["queued_at"] = datetime(h.now() + Duration::days(1)).into();
+            data["jobs"]["ffffffffffffffffffffffffffffffff"] = unregistered;
+            Ok(())
+        })
+        .unwrap();
+    h.runtime
+        .config
+        .oauth
+        .transaction(|raw| {
+            raw["model_detection_model_id"] = "gpt-6-astra".into();
+            Ok(())
+        })
+        .unwrap();
+    let recovery = &job["recovery_context"];
+    let reused = h
+        .runtime
+        .detection
+        .recovery_job(
+            id,
+            "credit",
+            recovery["fingerprint"].as_str().unwrap(),
+            recovery["attempt"].as_i64().unwrap(),
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(reused["job_id"], job_id);
+    assert_eq!(
+        h.runtime.tests.data().unwrap()["requests"],
+        json!({"fixture-legacy-recovery-request":job_id})
+    );
+    drop(slots);
+    h.runtime
+        .tests
+        .wait_and_run(&job, Some(context))
+        .await
+        .unwrap();
+    assert_eq!(h.mock.count("POST", "/reset-quota"), 1);
+    assert_eq!(h.mock.count("POST", "/v1/responses"), 1);
+    h.close().await;
+}

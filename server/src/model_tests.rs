@@ -507,20 +507,26 @@ impl ModelTests {
         }
         crate::detection_logs::preserve_summary(&mut job);
         self.transaction(|data| {
+            let mut contexts = self.contexts.lock().unwrap_or_else(|e| e.into_inner());
             for old in data["jobs"]
                 .as_object_mut()
                 .unwrap()
                 .values_mut()
-                .filter(|old| old["account_id"] == id && !ACTIVE.contains(&string(&old["status"])))
+                .filter(|old| {
+                    old["account_id"] == id
+                        && !ACTIVE.contains(&string(&old["status"]))
+                        && (!old["report"].is_null()
+                            || old["groups"]
+                                .as_array()
+                                .is_some_and(|groups| !groups.is_empty())
+                            || old["can_retry"] == true)
+                })
             {
                 crate::detection_logs::preserve_summary(old);
                 old["report"] = Value::Null;
                 old["groups"] = json!([]);
                 old["can_retry"] = false.into();
-                self.contexts
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .remove(string(&old["id"]));
+                contexts.remove(string(&old["id"]));
             }
             data["jobs"][&job_id] = job.clone();
             data["accounts"][id.to_string()] = job.clone();
@@ -605,7 +611,8 @@ impl ModelTests {
         };
         let id = string(&job["id"]);
         let aid = integer(&job["account_id"]).ok_or_else(Error::internal)?;
-        let mut lock_row = model_target::account(&self.actions, aid).await?;
+        let lock_row = model_target::account(&self.actions, aid).await?;
+        let mut waited = false;
         let mut manual_rows = BTreeMap::new();
         let (_lease, _job_slot, _budget, row) = loop {
             if self.actions.supervisor.is_stopping() {
@@ -621,16 +628,19 @@ impl ModelTests {
                     if current["waiting_until"] != until {
                         self.update(id, json!({"waiting_until":until}))?;
                     }
+                    waited = true;
                     tokio::time::sleep(Duration::from_secs(1)).await;
                     continue;
                 }
             }
             let Ok(slot) = self.jobs.clone().try_acquire_owned() else {
+                waited = true;
                 tokio::time::sleep(Duration::from_millis(250)).await;
                 continue;
             };
             let Ok(budget) = self.budget.clone().try_acquire_owned() else {
                 drop(slot);
+                waited = true;
                 tokio::time::sleep(Duration::from_millis(250)).await;
                 continue;
             };
@@ -646,7 +656,11 @@ impl ModelTests {
                 for id in ids {
                     if let std::collections::btree_map::Entry::Vacant(entry) = manual_rows.entry(id)
                     {
-                        if let Ok(row) = model_target::account(&self.actions, id).await {
+                        waited = true;
+                        if let Ok(Some(row)) = self.actions.queries.db.one(
+                            "SELECT id,coalesce(nullif(to_jsonb(accounts)->>'parent_account_id','')::bigint,nullif(extra->>'parent_account_id','')::bigint) AS parent_account_id FROM accounts WHERE id=$1 AND deleted_at IS NULL",
+                            &[id.into()],
+                        ).await {
                             entry.insert(row);
                         }
                     }
@@ -661,6 +675,9 @@ impl ModelTests {
             }
             if !manual_waiting {
                 if let Ok(lease) = self.actions.locks.try_account(&lock_row) {
+                    if !waited {
+                        break (lease, slot, budget, lock_row);
+                    }
                     let row = model_target::account(&self.actions, aid).await?;
                     let parent = |row: &Value| {
                         integer(&row["parent_account_id"])
@@ -669,10 +686,11 @@ impl ModelTests {
                     if parent(&row) == parent(&lock_row) {
                         break (lease, slot, budget, row);
                     }
-                    lock_row = row;
+                    return Err(Error::new(409, "测试目标已变化，请重新选择"));
                 }
             }
             drop((slot, budget));
+            waited = true;
             tokio::time::sleep(Duration::from_millis(250)).await;
         };
         let row = if job["automatic"] == true {
@@ -682,31 +700,21 @@ impl ModelTests {
         };
         let (target, owner) = if let Some(context) = &context {
             let owner = model_target::owner(&self.actions, &row).await?;
-            if model_target::signature(&row) != job["target_signature"]
-                || model_target::signature(&owner) != job["owner_signature"]
-            {
-                return Err(Error::new(409, "测试目标已变化，请重新选择"));
-            }
-            if !self
-                .actions
-                .model_allowed_prepared(
-                    &row,
-                    string(&job["requested_model"]),
-                    &context.target,
-                    &owner,
-                )
-                .await?
-            {
-                return Err(Error::new(422, "所选模型不在当前账号上游模型目录中"));
-            }
             (context.target.clone(), owner)
         } else {
-            model_target::target(&self.actions, &row, string(&job["requested_model"])).await?
+            model_target::connection(&self.actions, &row, string(&job["requested_model"])).await?
         };
         if model_target::signature(&row) != job["target_signature"]
             || model_target::signature(&owner) != job["owner_signature"]
         {
             return Err(Error::new(409, "测试目标已变化，请重新选择"));
+        }
+        if !self
+            .actions
+            .model_allowed_prepared(&row, string(&job["requested_model"]), &target, &owner)
+            .await?
+        {
+            return Err(Error::new(422, "所选模型不在当前账号上游模型目录中"));
         }
         let mut prepared_row = Some(row.clone());
         let context = if let Some(context) = context {
