@@ -1051,8 +1051,7 @@ async function templateChecks(h) {
   await nameInput.fill(longName);
   const saveRenamed = full.getByRole("button", { name: `保存${longName}模板`, exact: true });
   await h.click(saveRenamed, "template-save-icon");
-  await dialog.waitFor({ state: "hidden" });
-  await h.click(surface.getByRole("button", { name: "账号模板", exact: true }), "template-reopen-after-save");
+  await page.waitForFunction((input) => !input.disabled, await nameInput.elementHandle());
   await h.visible(nameInput, "saved-template-name");
   await h.state(await saveRenamed.isDisabled(), "template-save-did-not-settle", saveRenamed);
   await h.state((await nameInput.inputValue()) === longName, "template-long-name-lost", nameInput);
@@ -1079,14 +1078,17 @@ async function templateChecks(h) {
   const customName = "响应式空模板批量预览";
   await creating.getByRole("textbox", { name: "新模板名称" }).fill(customName);
   await h.click(creating.getByRole("button", { name: "保存新模板", exact: true }), "new-template-save-icon");
-  await dialog.waitFor({ state: "hidden" });
-  await h.click(surface.getByRole("button", { name: "账号模板", exact: true }), "template-reopen-after-create");
+  await creating.waitFor({ state: "hidden" });
   const created = dialog.locator(".account-template-grid > .account-template-card").last();
   await h.visible(created, "created-template-card");
   await h.state((await created.locator(".account-template-name").inputValue()) === customName, "new-template-not-saved", created);
   await h.state((await created.locator(".account-template-fields > .muted").textContent()) === "不限制模型", "saved-empty-template-label", created);
+  await h.state(await full.locator(".account-template-row").count() === 0
+    && !(await saveRenamed.isDisabled()), "saving-template-lost-another-draft", full);
   await h.layout();
   await h.click(dialog.getByRole("button", { name: "关闭账号模板", exact: true }), "template-close");
+  const discard = page.getByRole("alertdialog", { name: "放弃未保存的更改？", exact: true });
+  await h.click(discard.getByRole("button", { name: "放弃修改", exact: true }), "template-discard-unsaved-draft");
   await dialog.waitFor({ state: "hidden" });
 
   const account101 = surface.locator(".mobile-account").filter({ has: page.getByRole("checkbox", { name: "选择 Codex · 主力", exact: true }) });
@@ -1203,8 +1205,7 @@ async function templateChecks(h) {
   await h.within(deleteCard.locator('.account-template-tools button[title="删除模板"]'), "template-delete-icon", { hit: true });
   await h.click(deleteCard.locator('.account-template-tools button[title="删除模板"]'), "template-delete-icon");
   await h.click(deleteCard.getByRole("button", { name: "确认删除", exact: true }), "template-delete-confirm");
-  await deleteDialog.waitFor({ state: "hidden" });
-  await h.click(surface.getByRole("button", { name: "账号模板", exact: true }), "template-reopen-after-delete");
+  await deleteCard.waitFor({ state: "hidden" });
   await h.visible(deleteDialog.locator(".account-template-grid > .account-template-card").first(), "remaining-template-card");
   await h.state(await deleteDialog.locator(".account-template-grid > .account-template-card").count() === 3, "deleted-template-remained-or-was-refilled", deleteDialog.locator(".account-template-grid"));
   await h.layout();
@@ -1894,6 +1895,7 @@ async function runScenario(scenario) {
       await h.click(page.getByRole("button", { name: "优先级管理", exact: true }), "mobile-priority-entry");
       const priority = page.getByRole("region", { name: "全局优先级管理", exact: true });
       await h.visible(priority, "mobile-priority-surface");
+      await h.visible(priority.locator('.priority-column:visible .priority-moves button').first(), "mobile-priority-controls-ready");
       await h.state(await priority.locator('.priority-platforms.is-columns').count() === 0, "mobile-priority-must-use-tabs", priority);
       await h.allWithin(priority.locator('.priority-column:visible .priority-moves button'), "mobile-priority-controls");
       await h.click(priority.getByRole('button', { name: '返回账号', exact: true }), "mobile-priority-return");
