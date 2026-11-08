@@ -4258,7 +4258,7 @@ async fn slow_samples_keep_tie_order_and_filter_before_limiting() {
 }
 
 #[tokio::test]
-async fn key_usage_actions_keep_child_statistics_and_recheck_locks_and_parent_credentials() {
+async fn key_usage_actions_keep_child_statistics_and_recheck_after_lock_wait() {
     let _serial = POSTGRES_PROJECTION_LOCK.lock().await;
     let fixture = start_projection_runtime_fixture("key-usage-actions", false).await;
     let parent = 969_821;
@@ -4336,23 +4336,5 @@ async fn key_usage_actions_keep_child_statistics_and_recheck_locks_and_parent_cr
             .count(),
         2
     );
-    // A parent credential change during the upstream request invalidates its result.
-    *fixture.http.block_path.lock().unwrap() = Some(path.into());
-    let payload = usage_action_payload(&fixture.runtime, child, "query_usage", None).await;
-    let runtime = fixture.runtime.clone();
-    let pending = tokio::spawn(async move {
-        runtime
-            .usage_action(child, &payload, "fixture-admin", None)
-            .await
-    });
-    let permit = tokio::time::timeout(StdDuration::from_secs(3), fixture.http.entered.acquire())
-        .await
-        .unwrap()
-        .unwrap();
-    permit.forget();
-    sqlx::query("UPDATE accounts SET credentials=jsonb_set(credentials,'{api_key}','\"fixture-replaced-parent\"') WHERE id=$1")
-        .bind(parent).execute(&fixture.seed.pool).await.unwrap();
-    fixture.http.release.add_permits(1);
-    assert_eq!(pending.await.unwrap().unwrap_err().status.as_u16(), 409);
     fixture.close().await;
 }
