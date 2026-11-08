@@ -4,7 +4,7 @@ Axum／Tokio 提供 HTTP 服务，Reqwest／Rustls 连接 Sub2API 和通知服�
 
 ## 构建与运行
 
-工具链与桌面一致，使用 Rust 1.99.0 和提交的 Cargo.lock。
+工具链与桌面一致，使用 Rust stable 和提交的 Cargo.lock。
 
 ```bash
 cargo build --release --locked --manifest-path server/Cargo.toml

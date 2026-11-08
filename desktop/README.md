@@ -69,7 +69,9 @@ Codex 模型测试固定账号、有效凭据、当前账号上游目录中的�
 
 ## 构建
 
-需要 Node 24.21.0、pnpm 12.11.2、Rust 1.99.0、Xcode Command Line Tools。
+Tauri Android 库仍需要 SDK 36，并使用 `kotlin-android`，AGP 9 暂时设置 `android.builtInKotlin=false` 和 `android.newDsl=false`；升级 AGP 10 前需等依赖支持内置 Kotlin 后移除这两项。JVM 字节码目标与构建时使用的 JDK 版本独立。
+
+需要当前稳定版 Node、pnpm、Rust 以及 Xcode Command Line Tools；应用依赖沿用提交的锁文件。
 
 ```sh
 pnpm install --frozen-lockfile
@@ -82,7 +84,7 @@ pnpm bundle
 
 产物位于 `src-tauri/target/aarch64-apple-darwin/release/bundle/`。`pnpm dev` 提供明确标记为“预览”的开发数据，只在开发构建中存在；生产客户端只使用 Rust HTTP 通道。
 
-Android 固定工具链：JDK 21、SDK 36、Build Tools 36.0.0、NDK 28.2.13676358、Gradle 8.14.6、Rust 1.99.0 的 `aarch64-linux-android` 标准库。设好 `JAVA_HOME`、`ANDROID_HOME`、`NDK_HOME` 后：
+Android 工具链：JDK 27、SDK 37.2、Build Tools 37.0.0、NDK 30.0.16248370、Gradle 9.9.0、AGP 9.5.1、Kotlin 2.4.21，以及 Rust stable 的 `aarch64-linux-android` 标准库。后续通过官方工具成组更新 Android 版本记录。设好 `JAVA_HOME`、`ANDROID_HOME`、`NDK_HOME` 后：
 
 ```sh
 node ../scripts/android_signing.mjs

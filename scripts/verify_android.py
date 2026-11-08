@@ -16,9 +16,9 @@ def run(*args):
 
 def verify(apk):
     sdk = Path(os.environ["ANDROID_HOME"])
-    build = sdk / "build-tools/36.0.0"
+    build = sdk / "build-tools/37.0.0"
     host = "darwin-x86_64" if sys.platform == "darwin" else "linux-x86_64"
-    elf = sdk / f"ndk/28.2.13676358/toolchains/llvm/prebuilt/{host}/bin/llvm-readelf"
+    elf = sdk / f"ndk/30.0.16248370/toolchains/llvm/prebuilt/{host}/bin/llvm-readelf"
     run(build / "apksigner", "verify", "--verbose", apk)
     run(build / "zipalign", "-c", "-P", "16", "4", apk)
     manifest = run(build / "aapt2", "dump", "badging", apk)

@@ -62,7 +62,7 @@ services:
     command:
       - sh
       - -c
-      - python -m pip install --disable-pip-version-check --no-cache-dir --target /tmp/qa-deps 'psycopg[binary]==3.2.9' && exec python model_catalog_integration.py serve
+      - python -m pip install --disable-pip-version-check --no-cache-dir --target /tmp/qa-deps 'psycopg[binary]==3.3.8' && exec python model_catalog_integration.py serve
     volumes: ["./model_catalog_integration.py:/qa/model_catalog_integration.py:ro"]
     environment:
       PYTHONPATH: /tmp/qa-deps

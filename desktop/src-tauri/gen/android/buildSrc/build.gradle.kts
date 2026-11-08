@@ -12,11 +12,23 @@ gradlePlugin {
 }
 
 repositories {
-    google()
     mavenCentral()
+    google()
 }
 
 dependencies {
     compileOnly(gradleApi())
-    implementation("com.android.tools.build:gradle:8.11.2")
+    implementation("com.android.tools.build:gradle:9.5.1")
+}
+
+// Compile the Gradle plugin for its minimum JVM without installing another JDK.
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
 }

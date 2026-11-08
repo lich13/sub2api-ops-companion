@@ -34,11 +34,11 @@ Dependabot 每周一 09:00（Asia/Taipei）检查两份 Cargo 锁文件、前端
 
 Cargo 使用 `lockfile-only`，包含直接和间接依赖，并显式限制普通更新候选，避免解析器尝试跨越 `0.x` 兼容线；各生态的 `0.x` 包默认只提出补丁更新，已确认的稳定依赖族允许兼容小版本。新增包默认仅开放补丁，确认兼容策略后再扩充普通小版本更新名单。React 与 React DOM 保持相同版本，类型包一起检查；Tauri JS 包一起更新并与 Rust 侧及 Mac／Android 构建联动验证；普通自动更新仅开放已验证系列的补丁，新的小版本由维护者把 JS 包、Rust 核心、构建辅助和插件成组更新。安全修复需要跨兼容线时单独验证，不通过忽略漏洞、放宽检查或自动合并处理。
 
-pnpm 保留 `packageManager` 中的精确版本，由 Corepack 和 CI 的 pnpm 安装步骤选择该版本。`pmOnFail: ignore` 关闭 pnpm 自身的版本切换，使锁文件保持单文档，供 GitHub 依赖图识别；本机在 `desktop` 目录运行 Corepack；从父目录使用 `pnpm --dir` 不会让 Corepack 读取子目录的版本声明。直接调用其他 pnpm 二进制前先核对版本。依赖变更后使用指定版本重新生成锁文件并验证 `(cd desktop && corepack pnpm install --frozen-lockfile)`，不手工删除锁文件中的文档。
+pnpm 使用本机当前稳定版，CI 安装 latest；`pmOnFail: ignore` 禁止按项目声明切换包管理器。依赖沿用提交的锁文件，变更依赖时在 `desktop` 目录更新并提交锁文件，不手工删除其中的文档。
 
-每月集中核对 Rust、Node、pnpm、cargo-audit、CI 浏览器工具、Gradle／AGP／Kotlin／JDK／SDK／NDK 和 QA 镜像；有安全公告时提前处理。保留 Action SHA 和镜像摘要，Rust 构建镜像只自动更新当前标签摘要，编译器版本与 `rust-toolchain.toml`、CI、manifest 最低版本及说明一起更新。Gradle 工具链和 QA Compose 镜像由维护者成组更新；Python 驱动中的重复 psycopg 版本同步维护。Gradle 间接依赖安全检查不能只依赖 GitHub 自动告警，需按月核对解析结果和上游公告。
+每月集中核对 Rust、Node、pnpm、cargo-audit、CI 浏览器工具、Gradle／AGP／Kotlin／JDK／SDK／NDK 和 QA 镜像；有安全公告时提前处理。保留 Action SHA 和运行镜像摘要；Rust 构建镜像与 `rust-toolchain.toml` 跟随稳定渠道，manifest 保留必要的最低语言版本。Gradle 工具链和 QA Compose 镜像由维护者成组更新；Python 驱动中的重复 psycopg 版本同步维护。Gradle 间接依赖安全检查不能只依赖 GitHub 自动告警，需按月核对解析结果和上游公告。
 
-维护时在现有约束内更新 Cargo 锁文件；前端精确固定的版本需显式选择兼容版本，并检查间接依赖。运行现有 Rust 审计、`(cd desktop && corepack pnpm audit)`，以及对 `requirements.txt` 完整解析结果的 Python 漏洞检查，再跑受影响测试与版本一致性检查。`webpki-roots` 的转导例外绑定准确版本、注册表校验和及依赖边；升级时重新核实并同步审计测试，不扩大例外。
+维护时在现有约束内更新 Cargo 锁文件；前端精确固定的版本需显式选择兼容版本，并检查间接依赖。运行现有 Rust 审计、`(cd desktop && pnpm audit)`，以及对 `requirements.txt` 完整解析结果的 Python 漏洞检查，再跑受影响测试与版本一致性检查。`webpki-roots` 的转导例外绑定准确版本、注册表校验和及依赖边；升级时重新核实并同步审计测试，不扩大例外。
 
 当前延期：jsdom 30、lucide-react 1.x、应用直接使用的 reqwest 0.13，以及其他没有安全或实际功能需要的跨兼容线升级。每月复核延期项和维护状态；生产服务仍为 Rust，Python 依赖仅用于隔离测试及固定历史参考代码。
 

@@ -29,20 +29,21 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: '3.12'
+          python-version: '3.x'
+          check-latest: true
       - run: python scripts/check_release_versions.py
       - run: python scripts/server_reference.py
       - run: pip install -r requirements.txt
       - name: Prepare Rust and disposable PostgreSQL
         run: |
-          rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
-          rustup override set 1.99.0
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt
+          rustup override set stable
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends postgresql-16 postgresql-client-16
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: server -> target
-          key: audit-0.22.2
+          key: audit-latest
       - run: cargo fetch --locked --manifest-path server/Cargo.toml
       - name: Fixed Python regression and complete Rust regression
         run: |
@@ -78,23 +79,22 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: '3.12'
+          python-version: '3.x'
+          check-latest: true
       - run: pip install -r requirements.txt
       - name: Prepare Rust and disposable PostgreSQL
         run: |
-          rustup toolchain install 1.99.0 --profile minimal
-          rustup override set 1.99.0
+          rustup toolchain install stable --profile minimal
+          rustup override set stable
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends postgresql-16 postgresql-client-16
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: server -> target
-          key: audit-0.22.2
+          key: audit-latest
       - name: Audit both locked Rust dependency graphs
         run: |
-          if [ "$(cargo audit --version 2>/dev/null || true)" != 'cargo-audit 0.22.2' ]; then
-            cargo install cargo-audit --version 0.22.2 --locked --force
-          fi
+          cargo install cargo-audit --locked
           python -m unittest discover -s scripts -p test_dependency_audit.py
           python scripts/server_dependency_audit.py
       - run: cargo build --locked --manifest-path server/Cargo.toml --example supervision_fixture --features test-fixtures
@@ -128,10 +128,11 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
-          version: 12.11.2
+          version: latest
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '24.21.0'
+          node-version: node
+          check-latest: true
           cache: pnpm
           cache-dependency-path: desktop/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
@@ -153,14 +154,15 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
-          version: 12.11.2
+          version: latest
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '24.21.0'
+          node-version: node
+          check-latest: true
           cache: pnpm
           cache-dependency-path: desktop/pnpm-lock.yaml
-      - run: rustup toolchain install 1.99.0 --profile minimal --component clippy --target aarch64-apple-darwin
-      - run: rustup override set 1.99.0
+      - run: rustup toolchain install stable --profile minimal --component clippy --target aarch64-apple-darwin
+      - run: rustup override set stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: desktop/src-tauri -> target
@@ -193,27 +195,28 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
-          version: 12.11.2
+          version: latest
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '24.21.0'
+          node-version: node
+          check-latest: true
           cache: pnpm
           cache-dependency-path: desktop/pnpm-lock.yaml
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '27'
       - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
         with:
           cmdline-tools-version: '15859902'
           log-accepted-android-sdk-licenses: false
-          packages: 'platform-tools platforms;android-36 build-tools;36.0.0 ndk;28.2.13676358'
-      - run: rustup toolchain install 1.99.0 --profile minimal --target aarch64-linux-android
-      - run: rustup override set 1.99.0
+          packages: 'platform-tools platforms;android-37.2 platforms;android-36 build-tools;37.0.0 ndk;30.0.16248370'
+      - run: rustup toolchain install stable --profile minimal --target aarch64-linux-android
+      - run: rustup override set stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: desktop/src-tauri -> target
-          key: android-aarch64-ndk-28.2.13676358
+          key: android-aarch64-ndk-30.0.16248370
       - run: pnpm install --frozen-lockfile
         working-directory: desktop
       - name: Configure release signing
@@ -230,7 +233,7 @@ jobs:
       - name: Build ARM64 APK
         working-directory: desktop
         run: |
-          export NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
+          export NDK_HOME="$ANDROID_HOME/ndk/30.0.16248370"
           pnpm tauri android build --apk --target aarch64 ${{ github.event_name == 'pull_request' && '--debug' || '' }}
       - name: Verify and package
         run: |

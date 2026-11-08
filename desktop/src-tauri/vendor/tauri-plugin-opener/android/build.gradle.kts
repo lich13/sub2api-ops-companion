@@ -7,7 +7,9 @@ plugins {
 
 android {
     namespace = "app.tauri.opener"
-    compileSdk = 36
+    compileSdk {
+        version = release(37) { minorApiLevel = 2 }
+    }
 
     defaultConfig {
         minSdk = 24
