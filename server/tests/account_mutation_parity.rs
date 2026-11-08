@@ -95,6 +95,7 @@ struct MockUpstream {
     update_status: Arc<AtomicI64>,
     diagnostic_results: Arc<Mutex<BTreeMap<String, Value>>>,
     grok_billing: Arc<Mutex<BTreeMap<i64, Value>>>,
+    renew_usage_credentials: Arc<AtomicBool>,
     system_results: Arc<Mutex<BTreeMap<String, Value>>>,
     sse_chunks: Arc<Vec<String>>,
     manual_mode: Arc<Mutex<ManualMode>>,
@@ -116,6 +117,7 @@ impl MockUpstream {
             update_status: Arc::new(AtomicI64::new(200)),
             diagnostic_results: Arc::new(Mutex::new(BTreeMap::new())),
             grok_billing: Arc::new(Mutex::new(BTreeMap::new())),
+            renew_usage_credentials: Arc::new(AtomicBool::new(false)),
             system_results: Arc::new(Mutex::new(BTreeMap::new())),
             sse_chunks: Arc::new(
                 fixtures()["python_oracle"]["desktop_actions"]["sse_chunks"]
@@ -483,6 +485,18 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
     }
     if let Some(id) = id_from_path(&path, "/usage") {
         if method == Method::GET {
+            if state.renew_usage_credentials.load(Ordering::Acquire) {
+                sqlx::query("UPDATE accounts SET credentials=credentials || $2 WHERE id=$1")
+                    .bind(id)
+                    .bind(SqlJson(json!({"access_token":"fixture-renewed-access"})))
+                    .execute(&state.pool)
+                    .await
+                    .unwrap();
+                return response(
+                    StatusCode::OK,
+                    json!({"code":0,"data":{"five_hour":{"utilization":25}}}),
+                );
+            }
             let billing = state
                 .grok_billing
                 .lock()
@@ -7237,44 +7251,6 @@ async fn key_quota_http_auth_settings_and_parent_credential_isolation() {
 }
 
 #[tokio::test]
-async fn key_quota_inflight_parent_change_discards_the_old_result() {
-    let mut harness = Harness::new().await;
-    let parent = harness
-        .insert_account("openai", "apikey", json!({}), json!({}), None, &[])
-        .await;
-    let child = harness
-        .insert_account("openai", "apikey", json!({}), json!({}), Some(parent), &[])
-        .await;
-    let base = format!(
-        "{}/fixture-billing/parent/v1",
-        harness
-            .runtime
-            .actions
-            .settings
-            .base_url
-            .trim_end_matches('/')
-    );
-    sqlx::query("UPDATE accounts SET credentials=jsonb_build_object('base_url',$1::text,'api_key','fixture-parent') WHERE id=$2").bind(&base).bind(parent).execute(&harness.runtime.db.pool).await.unwrap();
-    let gate = harness.upstream.gate("/fixture-billing/parent/v1/usage");
-    let runtime = harness.runtime.clone();
-    let task = tokio::spawn(async move { runtime.account_usage(child, ADMIN_KEY, true).await });
-    tokio::time::timeout(Duration::from_secs(5), gate.entered.notified())
-        .await
-        .unwrap();
-    sqlx::query("UPDATE accounts SET credentials=jsonb_set(credentials,'{api_key}','\"fixture-parent-new\"') WHERE id=$1").bind(parent).execute(&harness.runtime.db.pool).await.unwrap();
-    harness.upstream.ungate("/fixture-billing/parent/v1/usage");
-    gate.release.notify_one();
-    assert_eq!(task.await.unwrap().unwrap_err().status.as_u16(), 409);
-    let value = harness
-        .runtime
-        .account_usage(child, ADMIN_KEY, true)
-        .await
-        .unwrap();
-    assert_eq!(value["key_quota"]["plans"][0]["remaining"], 9.0);
-    harness.finish().await;
-}
-
-#[tokio::test]
 async fn sub2api_config_routes_require_admin_and_validate_before_host_access() {
     let mut harness = Harness::new().await;
     let denied = harness
@@ -7433,4 +7409,24 @@ async fn model_directory_http_refresh_reuses_accounts_and_invalidates_changed_so
         );
     }
     harness.finish().await;
+}
+
+#[tokio::test]
+async fn native_usage_accepts_successful_oauth_token_renewal() {
+    let mut h = Harness::new().await;
+    let id = h
+        .insert_account("anthropic", "oauth", json!({}), json!({}), None, &[])
+        .await;
+    h.upstream
+        .renew_usage_credentials
+        .store(true, Ordering::Release);
+    let usage = h.runtime.account_usage(id, ADMIN_KEY, true).await.unwrap();
+    assert_eq!(usage["windows"][0]["used_percent"], 25.0);
+    let credentials: Value = sqlx::query_scalar("SELECT credentials FROM accounts WHERE id=$1")
+        .bind(id)
+        .fetch_one(&h.runtime.db.pool)
+        .await
+        .unwrap();
+    assert_eq!(credentials["access_token"], "fixture-renewed-access");
+    h.finish().await;
 }

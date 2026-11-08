@@ -932,6 +932,7 @@ async fn prepare_loopback_worker(h: &Harness, job: &Value) -> Arc<super::Context
     .unwrap();
     target.url = format!("{}/v1/responses", h.base_url);
     Arc::new(super::Context {
+        progress: StdMutex::new(Default::default()),
         lm: None,
         samples: StdMutex::new(Default::default()),
         challenges: modeltrace::challenges(),
@@ -986,7 +987,7 @@ async fn run_natural_model(h: &Harness, id: i64, intent: &Value, usage: &Value) 
     drop(budget);
     h.runtime
         .tests
-        .wait_and_run(&queued, Some(context))
+        .wait_and_run(&queued, Some(context), None)
         .await
         .unwrap();
     let completed = h.runtime.tests.get(job["id"].as_str().unwrap()).unwrap();
@@ -1701,7 +1702,11 @@ async fn recovery_model_waiting_for_slot_releases_account_and_manual_generation_
             close_schedule(&h, id).await;
         }
         drop(slots);
-        let result = h.runtime.tests.wait_and_run(&queued, Some(context)).await;
+        let result = h
+            .runtime
+            .tests
+            .wait_and_run(&queued, Some(context), None)
+            .await;
         if manual {
             assert_eq!(result.unwrap_err().status.as_u16(), 409);
             assert_eq!(h.mock.count("POST", "/v1/responses"), 0);
@@ -1814,7 +1819,7 @@ async fn run_credit_model(h: &Harness, id: i64) -> Value {
     drop(slot);
     h.runtime
         .tests
-        .wait_and_run(&job, Some(context))
+        .wait_and_run(&job, Some(context), None)
         .await
         .unwrap();
     h.runtime.tests.get(job["id"].as_str().unwrap()).unwrap()
@@ -1860,7 +1865,7 @@ async fn credit_model_consumes_only_with_slot_and_recovers_once_without_hourly_q
         assert!(h.runtime.monitor.credits.state(id).unwrap()["attempt_at"].is_null());
         drop(slot);
         let tests = h.runtime.tests.clone();
-        let task = tokio::spawn(async move { tests.wait_and_run(&job, Some(context)).await });
+        let task = tokio::spawn(async move { tests.wait_and_run(&job, Some(context), None).await });
         tokio::time::timeout(StdDuration::from_secs(8), gate.entered.notified())
             .await
             .unwrap();
@@ -1998,7 +2003,7 @@ async fn credit_reuses_pending_recovery_request_after_global_model_change() {
     drop(slot);
     h.runtime
         .tests
-        .wait_and_run(&queued, Some(context))
+        .wait_and_run(&queued, Some(context), None)
         .await
         .unwrap();
     let completed = h.runtime.tests.get(&job_id).unwrap();
@@ -2027,7 +2032,7 @@ async fn credit_model_manual_control_keeps_consumed_receipt_and_never_restores_s
     let (job, context) = queue_credit(&h, id).await;
     drop(slots);
     let tests = h.runtime.tests.clone();
-    let task = tokio::spawn(async move { tests.wait_and_run(&job, Some(context)).await });
+    let task = tokio::spawn(async move { tests.wait_and_run(&job, Some(context), None).await });
     tokio::time::timeout(StdDuration::from_secs(8), gate.entered.notified())
         .await
         .unwrap();
@@ -3632,66 +3637,4 @@ async fn prepared_credit_evidence_and_available_count_are_rechecked_after_contro
         drop(slots);
         h.close().await;
     }
-}
-
-#[tokio::test]
-async fn credit_reuses_legacy_request_and_ignores_unregistered_newer_job() {
-    let h = Harness::new().await;
-    let (id, _) = seed_credit(&h).await;
-    let slots = h
-        .runtime
-        .tests
-        .jobs
-        .clone()
-        .acquire_many_owned(2)
-        .await
-        .unwrap();
-    let (job, context) = queue_credit(&h, id).await;
-    let job_id = job["id"].as_str().unwrap();
-    h.runtime
-        .tests
-        .transaction(|data| {
-            data["requests"] = json!({"fixture-legacy-recovery-request":job_id});
-            let mut unregistered = job.clone();
-            unregistered["id"] = "ffffffffffffffffffffffffffffffff".into();
-            unregistered["queued_at"] = datetime(h.now() + Duration::days(1)).into();
-            data["jobs"]["ffffffffffffffffffffffffffffffff"] = unregistered;
-            Ok(())
-        })
-        .unwrap();
-    h.runtime
-        .config
-        .oauth
-        .transaction(|raw| {
-            raw["model_detection_model_id"] = "gpt-6-astra".into();
-            Ok(())
-        })
-        .unwrap();
-    let recovery = &job["recovery_context"];
-    let reused = h
-        .runtime
-        .detection
-        .recovery_job(
-            id,
-            "credit",
-            recovery["fingerprint"].as_str().unwrap(),
-            recovery["attempt"].as_i64().unwrap(),
-            true,
-        )
-        .await
-        .unwrap();
-    assert_eq!(reused["job_id"], job_id);
-    assert_eq!(
-        h.runtime.tests.data().unwrap()["requests"],
-        json!({"fixture-legacy-recovery-request":job_id})
-    );
-    drop(slots);
-    h.runtime
-        .tests
-        .wait_and_run(&job, Some(context))
-        .await
-        .unwrap();
-    assert_eq!(h.mock.count("POST", "/reset-quota"), 1);
-    assert_eq!(h.mock.count("POST", "/v1/responses"), 1);
-    h.close().await;
 }

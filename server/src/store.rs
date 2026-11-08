@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{Read, Write},
+    io::{BufWriter, Read, Write},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -243,19 +243,31 @@ impl Store {
     }
 
     pub fn transaction<T>(&self, action: impl FnOnce(&mut Value) -> Result<T>) -> Result<T> {
+        self.transaction_validated(action, self.0.validate)
+    }
+
+    pub(crate) fn transaction_validated<T>(
+        &self,
+        action: impl FnOnce(&mut Value) -> Result<T>,
+        validate: impl FnOnce(&Value) -> Result<()>,
+    ) -> Result<T> {
         // Waiting for the cross-process lock and syncing a file are blocking
         // operations. Let Tokio replace this worker so cancellation, timers and
         // other account requests can continue while a write drains.
         if tokio::runtime::Handle::try_current().is_ok_and(|handle| {
             handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread
         }) {
-            tokio::task::block_in_place(|| self.transaction_blocking(action))
+            tokio::task::block_in_place(|| self.transaction_blocking(action, validate))
         } else {
-            self.transaction_blocking(action)
+            self.transaction_blocking(action, validate)
         }
     }
 
-    fn transaction_blocking<T>(&self, action: impl FnOnce(&mut Value) -> Result<T>) -> Result<T> {
+    fn transaction_blocking<T>(
+        &self,
+        action: impl FnOnce(&mut Value) -> Result<T>,
+        validate: impl FnOnce(&Value) -> Result<()>,
+    ) -> Result<T> {
         if self.0.read_only {
             return Err(Error::read_only());
         }
@@ -274,8 +286,13 @@ impl Store {
         let (_, previous, migrated) = self.read_snapshot()?;
         let mut value = (*previous).clone();
         let result = action(&mut value)?;
-        (self.0.validate)(&value)?;
-        if migrated || value != *previous || !self.0.existed.load(Ordering::Acquire) {
+        let first_write = !self.0.existed.load(Ordering::Acquire);
+        if migrated || first_write || value != *previous {
+            if migrated || first_write {
+                (self.0.validate)(&value)?;
+            } else {
+                validate(&value)?;
+            }
             write_json(&self.0.path, &value)?;
             let cached = fs::metadata(&self.0.path).ok().map(|metadata| {
                 (
@@ -296,14 +313,16 @@ impl Store {
 pub fn write_json(path: &Path, value: &Value) -> Result<()> {
     let parent = path.parent().ok_or_else(Error::internal)?;
     fs::create_dir_all(parent)?;
-    let mut bytes = serde_json::to_vec(value)?;
-    bytes.push(b'\n');
     let mut temporary = tempfile::Builder::new()
         .prefix(".sub2ops-state-")
         .tempfile_in(parent)?;
     private_permissions(temporary.as_file())?;
-    temporary.write_all(&bytes)?;
-    temporary.flush()?;
+    {
+        let mut writer = BufWriter::new(temporary.as_file_mut());
+        serde_json::to_writer(&mut writer, value)?;
+        writer.write_all(b"\n")?;
+        writer.flush()?;
+    }
     temporary.as_file().sync_all()?;
     temporary.persist(path).map_err(|_| Error::internal())?;
     File::open(parent)?.sync_all()?;
@@ -365,6 +384,9 @@ mod tests {
         let first = store.read_shared().unwrap();
         assert_eq!(first["value"], 1);
         let validations = VALIDATIONS.load(Ordering::SeqCst);
+        let bytes = fs::read(&path).unwrap();
+        store.transaction(|_| Ok(())).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), bytes);
         assert!(Arc::ptr_eq(&first, &store.read_shared().unwrap()));
         assert_eq!(store.read().unwrap()["value"], 1);
         assert_eq!(VALIDATIONS.load(Ordering::SeqCst), validations);
@@ -424,6 +446,37 @@ mod tests {
         assert_eq!(retained["value"], 1);
         assert_eq!(current["value"], 2);
         assert_eq!(store.read_shared().unwrap()["value"], 2);
+    }
+    #[test]
+    fn selected_validation_preserves_snapshots_and_atomic_file_format() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let store = Store::policy(&path, json!({"value":1}), false);
+        store.transaction(|_| Ok(())).unwrap();
+        let before = store.read_shared().unwrap();
+        let change = |data: &mut Value| {
+            data["value"] = json!(2);
+            Ok(())
+        };
+        assert!(store
+            .transaction_validated(change, |_| Err(Error::invalid()))
+            .is_err());
+        assert!(Arc::ptr_eq(&before, &store.read_shared().unwrap()));
+        store
+            .transaction_validated(change, |data| {
+                assert_eq!(data["value"], 2);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(before["value"], 1);
+        let after = store.read_shared().unwrap();
+        let mut expected = serde_json::to_vec(&*after).unwrap();
+        expected.push(b'\n');
+        assert_eq!(fs::read(&path).unwrap(), expected);
+        assert_eq!(
+            Store::policy(&path, json!({}), false).read().unwrap(),
+            *after
+        );
     }
     #[test]
     fn unchanged_admin_token_does_not_enter_a_transaction() {

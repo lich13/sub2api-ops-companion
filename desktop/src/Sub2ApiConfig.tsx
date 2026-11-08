@@ -820,8 +820,7 @@ export default function Sub2ApiConfig({
         <Sub2ApiVersion
           active={active}
           online={online}
-          knownVersion={error ? "" : document?.version}
-          loadingVersion={busy || (!document && !error)}
+          knownVersion={document?.version}
           onRuntimeChanged={() => void load(false, true)}
         />
         {document?.available ? (

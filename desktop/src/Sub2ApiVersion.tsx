@@ -12,19 +12,19 @@ export type Sub2ApiUpdateResult = {
 };
 const normalize = (version: string) => version.replace(/^v/, "");
 
-export default function Sub2ApiVersion({ active, online, knownVersion = "", loadingVersion = false, onRuntimeChanged }: {
-  active: boolean; online: boolean; knownVersion?: string; loadingVersion?: boolean; onRuntimeChanged?: () => void;
+export default function Sub2ApiVersion({ active, online, knownVersion = "", onRuntimeChanged }: {
+  active: boolean; online: boolean; knownVersion?: string; onRuntimeChanged?: () => void;
 }) {
   const [version, setVersion] = useState(""), [info, setInfo] = useState<Sub2ApiUpdate | null>(null);
   const [supported, setSupported] = useState<boolean | null>(null), [busy, setBusy] = useState(false);
   const [needRestart, setNeedRestart] = useState(false), [waiting, setWaiting] = useState(false);
   const [error, setError] = useState(""), [message, setMessage] = useState("");
-  const alive = useRef(true), guard = useRef(false), target = useRef(""), nativeLoaded = useRef(false);
+  const alive = useRef(true), guard = useRef(false), target = useRef("");
   const refreshRuntime = useRef(onRuntimeChanged);
   refreshRuntime.current = onRuntimeChanged;
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => {
-    if (!online) { setSupported(null); nativeLoaded.current = false; return; }
+    if (!online) { setSupported(null); return; }
     if (!active || supported !== null) return;
     let cancelled = false;
     void api<{ features?: { sub2api_update?: boolean } }>("GET", "/capabilities").then(caps => {
@@ -34,15 +34,8 @@ export default function Sub2ApiVersion({ active, online, knownVersion = "", load
     return () => { cancelled = true; };
   }, [active, online, supported]);
   useEffect(() => {
-    if (loadingVersion) return;
-    if (knownVersion) { setVersion(knownVersion); nativeLoaded.current = false; return; }
-    if (!active || !online || supported !== true || nativeLoaded.current) return;
-    let cancelled = false;
-    void api<{ version: string }>("GET", "/sub2api-system/version")
-      .then(current => { if (!cancelled) { nativeLoaded.current = true; setVersion(current.version); } })
-      .catch(e => { if (!cancelled) setError(String(e)); });
-    return () => { cancelled = true; };
-  }, [active, online, supported, knownVersion, loadingVersion]);
+    if (knownVersion) setVersion(knownVersion);
+  }, [knownVersion]);
   useEffect(() => {
     if (!waiting) return;
     if (!active) { setWaiting(false); return; }

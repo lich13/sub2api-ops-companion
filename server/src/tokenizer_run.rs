@@ -49,7 +49,11 @@ impl ModelTests {
                     let owner = integer(&context.owner["id"]).unwrap_or(account);
                     let valid = async {
                         let row = model_target::account(&self.actions, account).await?;
-                        let credentials = model_target::account(&self.actions, owner).await?;
+                        let credentials = if owner == account {
+                            row.clone()
+                        } else {
+                            model_target::account(&self.actions, owner).await?
+                        };
                         Ok::<_, Error>(
                             model_target::signature(&row) == model_target::signature(&context.row)
                                 && model_target::signature(&credentials)

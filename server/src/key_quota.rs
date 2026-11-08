@@ -317,15 +317,6 @@ impl Service {
             view.success_at.is_some() && (view.state == "error" || view.state == "unsupported");
     }
     pub async fn query(&self, input: Query, force: bool) -> Result<QuotaView> {
-        self.query_with_refresh(input, force)
-            .await
-            .map(|(view, _)| view)
-    }
-    pub(crate) async fn query_with_refresh(
-        &self,
-        input: Query,
-        force: bool,
-    ) -> Result<(QuotaView, bool)> {
         if self.tasks.is_closed() {
             return Err(Error::new(503, "服务正在停止"));
         }
@@ -349,7 +340,7 @@ impl Service {
                 || (!force
                     && (interval == 0 || e.view.next_refresh_at.is_some_and(|at| at > now())))
             {
-                return Ok((e.view.clone(), false));
+                return Ok(e.view.clone());
             } else {
                 let previous = e.view.clone();
                 let (tx, rx) = watch::channel(None);
@@ -442,7 +433,7 @@ impl Service {
         };
         loop {
             if let Some(view) = rx.borrow().clone() {
-                return Ok((view, true));
+                return Ok(view);
             }
             rx.changed()
                 .await

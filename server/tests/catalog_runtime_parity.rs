@@ -1302,7 +1302,7 @@ async fn model_operation_summaries_preserve_fields_status_and_full_details() {
         .iter()
         .map(|job| {
             sub2ops_server::operations::Operations::model_view(
-                &sub2ops_server::model_tests::ModelTests::public(job),
+                &sub2ops_server::model_tests::ModelTests::public(job.clone()),
             )
         })
         .collect();

@@ -311,7 +311,6 @@ impl Detection {
             return Err(Error::new(422, "仅 API Key 账号可单独指定检测模型"));
         }
         let current = self.control(id)?;
-        let previous_model = self.effective_model(&current, &row)?;
         let mut candidate = current.clone();
         for field in [
             "schedule_mode",
@@ -363,11 +362,6 @@ impl Detection {
             Ok(true)
         };
         let _config = self.monitor.config.lock.lock().await;
-        if self.effective_model(&candidate, &row)? != model
-            || self.effective_model(&current, &row)? != previous_model
-        {
-            return Err(Error::new(409, "自动检测模型已变化，请重新读取"));
-        }
         if !allowed? {
             return Err(Error::new(422, "所选模型不在当前账号上游模型目录中"));
         }
@@ -689,10 +683,6 @@ impl Detection {
             }),
         )?;
 
-        let _config = self.monitor.config.lock.lock().await;
-        if self.effective_model(&self.control(id)?, &row)? != model {
-            return Err(Error::new(409, "自动检测模型已变化，等待重新核对"));
-        }
         let job = self
             .tests
             .start(

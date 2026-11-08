@@ -29,25 +29,24 @@ struct Run {
     started: Instant,
 }
 impl ModelTests {
-    fn progress(&self, id: &str, run: &Run) -> Result<()> {
-        let groups = run.groups.lock().unwrap_or_else(|e| e.into_inner());
-        self.update(
-            id,
-            json!({
-                "groups": *groups,
-                "attempts": run.attempts.load(Ordering::Acquire),
-                "duration_ms": run.started.elapsed().as_millis(),
-            }),
-        )?;
-
-        Ok(())
-    }
     fn group(&self, id: &str, run: &Run, index: usize, changes: Value) -> Result<()> {
-        run.groups.lock().unwrap_or_else(|e| e.into_inner())[index]
+        let display_only = changes.get("status").is_none()
+            || matches!(string(&changes["status"]), "receiving" | "analyzing");
+        let mut groups = run.groups.lock().unwrap_or_else(|e| e.into_inner());
+        groups[index]
             .as_object_mut()
             .ok_or_else(Error::internal)?
             .extend(changes.as_object().cloned().ok_or_else(Error::internal)?);
-        self.progress(id, run)
+        let changes = json!({
+            "groups": *groups,
+            "attempts": run.attempts.load(Ordering::Acquire),
+            "duration_ms": run.started.elapsed().as_millis(),
+        });
+        if display_only {
+            self.display_progress(id, changes)
+        } else {
+            self.update(id, changes).map(|_| ())
+        }
     }
     pub(crate) async fn run(
         &self,

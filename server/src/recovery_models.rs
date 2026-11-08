@@ -163,50 +163,9 @@ impl Detection {
 
         let mut identity = context.clone();
         identity.as_object_mut().unwrap().shift_remove("consume");
-        // A config change must not create another job for an already registered
-        // recovery attempt, including requests persisted by older releases.
         let jobs = self.tests.shared_data()?;
-        let registered = jobs["requests"].as_object().ok_or_else(Error::internal)?;
-        let request_key =
-            digest(&json!(["recovery", identity, value["generation"]]))[..32].to_owned();
-        let table = jobs["jobs"].as_object().ok_or_else(Error::internal)?;
-        let same = |job: &Value| {
-            job["automatic"] == true
-                && job["account_id"] == id
-                && job["detection_generation"] == value["generation"]
-                && [
-                    "account_id",
-                    "kind",
-                    "fingerprint",
-                    "control_generation",
-                    "method_generation",
-                    "attempt",
-                ]
-                .iter()
-                .all(|key| job["recovery_context"][*key] == identity[*key])
-        };
-        let direct = registered
-            .get_key_value(&request_key)
-            .and_then(|(key, id)| {
-                table
-                    .get(id.as_str()?)
-                    .filter(|job| same(job))
-                    .map(|job| (key, job))
-            });
-        let previous = direct.or_else(|| {
-            registered
-                .iter()
-                .rev()
-                .filter_map(|(key, id)| {
-                    table
-                        .get(id.as_str()?)
-                        .filter(|job| same(job))
-                        .map(|job| (key, job))
-                })
-                .max_by_key(|(_, job)| (parse_datetime(&job["queued_at"]), string(&job["id"])))
-        });
-        let request = previous.map(|(key, _)| key.clone()).unwrap_or(request_key);
-        if let Some(previous) = previous.and_then(|(_, job)| job["id"].as_str()) {
+        let request = digest(&json!(["recovery", identity, value["generation"]]))[..32].to_owned();
+        if let Some(previous) = jobs["requests"][&request].as_str() {
             let job = self.tests.get(previous)?;
             if ACTIVE.contains(&string(&job["status"])) {
                 return Ok(self.recovery_wait(
@@ -370,10 +329,6 @@ impl Detection {
             );
         }
         let mark = self.mark(id)?;
-        let _config = self.monitor.config.lock.lock().await;
-        if self.model_id()? != model {
-            return Err(Error::new(409, "自动检测模型已变化，等待重新核对"));
-        }
         let job = self
             .tests
             .start(

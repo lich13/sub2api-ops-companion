@@ -2881,13 +2881,21 @@ async fn first_text_progress_diagnostics_are_frozen_before_later_stream_events()
         .unwrap()
         .iter()
         .find(|group| group["diagnostics"]["ttft_ms"].is_number())
-        .expect("first event persisted with TTFT")
+        .expect("first event is visible with TTFT")
         .clone();
     assert_eq!(first_snapshot["diagnostics"]["events"], 1);
     assert_eq!(
         first_snapshot["diagnostics"]["last_event_type"],
         "response.output_text.delta"
     );
+
+    assert_eq!(
+        harness.runtime.tests.latest(account_id).unwrap()["groups"],
+        progress["groups"]
+    );
+    let disk = harness.runtime.tests.store.read().unwrap();
+    assert_eq!(disk["jobs"][&job_id]["groups"][0]["status"], "running");
+    assert!(disk["jobs"][&job_id]["groups"][0]["diagnostics"]["ttft_ms"].is_null());
 
     release.add_permits(1);
     let finished = harness.wait_for_terminal(&job_id).await;
@@ -2949,6 +2957,18 @@ async fn cancellation_drains_streams_releases_shared_credential_lock_and_prevent
 
     let cancelled = harness.runtime.tests.cancel(&first_id).await.unwrap();
     assert_eq!(cancelled["status"], "cancelled");
+    assert!(
+        cancelled["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|group| group["status"] == "cancelled"
+                && group["diagnostics"]["ttft_ms"].is_number())
+    );
+    assert_eq!(
+        harness.runtime.tests.store.read().unwrap()["jobs"][&first_id]["groups"],
+        cancelled["groups"]
+    );
     release.add_permits(20);
     harness.wait_for_requests(6).await;
     harness.wait_for_progress(&second_id, 3).await;
@@ -3260,36 +3280,39 @@ async fn parent_changes_after_queueing_or_first_sample_stop_later_requests() {
     }
 }
 
-#[tokio::test]
-async fn queued_model_test_rejects_reparenting_before_dispatch_and_releases_locks() {
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shutdown_persists_visible_progress_and_restart_keeps_it_interrupted() {
     let h = RuntimeHarness::new().await;
-    let parent = h.seed_account("apikey", None, json!({})).await;
-    let next_parent = h.seed_account("apikey", None, json!({})).await;
-    let child = h.seed_account("apikey", Some(parent), json!({})).await;
-    let budget = h
-        .runtime
-        .tests
-        .budget
-        .clone()
-        .acquire_many_owned(24)
-        .await
-        .unwrap();
-    let job = h.start_manual(child, 1).await;
-    sqlx::query("UPDATE accounts SET parent_account_id=$1 WHERE id=$2")
-        .bind(next_parent)
-        .bind(child)
-        .execute(&h.runtime.db.pool)
-        .await
-        .unwrap();
-    drop(budget);
-    let done = h.wait_for_terminal(job["id"].as_str().unwrap()).await;
-    assert_eq!(done["status"], "needs_confirmation");
-    assert_eq!(h.state.count(), 0);
-    assert!(h
-        .runtime
-        .actions
-        .locks
-        .try_ids([parent, next_parent, child])
-        .is_ok());
+    h.state.set_scenario(Scenario::with_replies(
+        vec![
+            vec![ResponsePlan::gated_sse(
+                partial_delta("1,2,3"),
+                completed_event("1,2,3"),
+                Arc::new(Semaphore::new(0)),
+            )],
+            vec![responses_sse("4,5,6")],
+            vec![responses_sse("7,8,9")],
+        ],
+        None,
+    ));
+    let account = h.seed_account("apikey", None, json!({})).await;
+    let job = h.start_manual(account, 1).await;
+    let id = job["id"].as_str().unwrap();
+    h.wait_for_progress(id, 1).await;
+    let progress = h.runtime.tests.get(id).unwrap();
+    h.runtime.tests.close().await;
+    let restarted = sub2ops_server::model_tests::ModelTests::new(
+        h.runtime.actions.clone(),
+        h.runtime.tests.bank.clone(),
+        h.runtime.tests.hooks.clone(),
+        h.runtime.tests.budget.clone(),
+    );
+    restarted.startup().unwrap();
+    restarted.resume().unwrap();
+    let result = restarted.get(id).unwrap();
+    assert_eq!(result["status"], "interrupted");
+    assert_eq!(result["groups"], progress["groups"]);
+    assert_eq!(h.state.count(), 1);
+    restarted.close().await;
     h.close().await;
 }

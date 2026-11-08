@@ -51,6 +51,7 @@ pub trait ModelHooks: Send + Sync {
     fn verdict(&self, job: Value, report: Value) -> BoxFuture<'_, Result<Value>>;
 }
 pub(crate) struct Context {
+    pub progress: Mutex<serde_json::Map<String, Value>>,
     pub samples: Mutex<BTreeMap<usize, String>>,
     pub challenges: Vec<(usize, String)>,
     pub snapshot: Arc<(Value, Value)>,
@@ -91,34 +92,35 @@ pub struct ModelTests {
     #[cfg(any(test, feature = "test-fixtures"))]
     test_endpoint: Arc<Mutex<Option<String>>>,
 }
+fn valid_account(value: &Value) -> bool {
+    value.is_object()
+        && !string(&value["id"]).is_empty()
+        && value["account_id"].as_i64().is_some()
+        && crate::verdict_policy::validate(value).is_ok()
+}
+fn valid_job(value: &Value) -> bool {
+    value.is_object()
+        && !string(&value["id"]).is_empty()
+        && crate::verdict_policy::validate(value).is_ok()
+        && crate::detection_logs::valid_summary(&value["result_summary"])
+}
 fn validate(value: &Value) -> Result<()> {
-    let error = || Error::new(503, "模型测试状态损坏");
     if !value.is_object()
         || value["version"] != 1
-        || value["accounts"].as_object().is_none_or(|rows| {
-            rows.values().any(|v| {
-                !v.is_object()
-                    || string(&v["id"]).is_empty()
-                    || v["account_id"].as_i64().is_none()
-                    || crate::verdict_policy::validate(v).is_err()
-            })
-        })
+        || value["accounts"]
+            .as_object()
+            .is_none_or(|rows| rows.values().any(|v| !valid_account(v)))
         || value.get("requests").is_some_and(|v| !v.is_object())
         || value.get("jobs").is_some_and(|v| {
-            v.as_object().is_none_or(|rows| {
-                rows.values().any(|v| {
-                    !v.is_object()
-                        || string(&v["id"]).is_empty()
-                        || crate::verdict_policy::validate(v).is_err()
-                        || !crate::detection_logs::valid_summary(&v["result_summary"])
-                })
-            })
+            v.as_object()
+                .is_none_or(|rows| rows.values().any(|v| !valid_job(v)))
         })
     {
-        return Err(error());
+        return Err(Error::new(503, "模型测试状态损坏"));
     }
     Ok(())
 }
+
 const MAX_TERMINAL_MODEL_JOBS: usize = 10_000;
 
 fn prune_terminal_jobs(value: &mut Value) {
@@ -284,8 +286,7 @@ impl ModelTests {
             Ok(out)
         })
     }
-    pub fn public(job: &Value) -> Value {
-        let mut job = job.clone();
+    pub fn public(mut job: Value) -> Value {
         if let Some(object) = job.as_object_mut() {
             object.shift_remove("target_signature");
             object.shift_remove("owner_signature");
@@ -301,6 +302,42 @@ impl ModelTests {
         }
         job
     }
+    fn view(&self, job: &Value) -> Value {
+        let mut job = job.clone();
+        if ACTIVE.contains(&string(&job["status"])) {
+            let context = self
+                .contexts
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(string(&job["id"]))
+                .cloned();
+            if let Some(context) = context {
+                job.as_object_mut().unwrap().extend(
+                    context
+                        .progress
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .clone(),
+                );
+            }
+        }
+        Self::public(job)
+    }
+    pub(crate) fn display_progress(&self, id: &str, changes: Value) -> Result<()> {
+        let context = self
+            .contexts
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(id)
+            .cloned()
+            .ok_or_else(Error::internal)?;
+        context
+            .progress
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .extend(changes.as_object().cloned().ok_or_else(Error::internal)?);
+        Ok(())
+    }
     pub fn get(&self, id: &str) -> Result<Value> {
         if id.len() != 32
             || !id
@@ -312,33 +349,75 @@ impl ModelTests {
         let state = self.shared_data()?;
         state["jobs"]
             .get(id)
-            .map(Self::public)
+            .map(|job| self.view(job))
             .ok_or_else(|| Error::new(404, "测试结果不存在"))
     }
     pub fn latest(&self, id: i64) -> Result<Value> {
         Ok(self.shared_data()?["accounts"]
             .get(id.to_string())
-            .map(Self::public)
+            .map(|job| self.view(job))
             .unwrap_or(Value::Null))
     }
     pub fn update(&self, id: &str, changes: Value) -> Result<Value> {
-        self.transaction(|data| {
-            let job = data["jobs"]
-                .get_mut(id)
-                .ok_or_else(|| Error::new(409, "任务已被替换"))?;
-            job.as_object_mut()
-                .ok_or_else(Error::internal)?
-                .extend(changes.as_object().cloned().ok_or_else(Error::invalid)?);
-            crate::detection_logs::preserve_summary(job);
-            let job = job.clone();
-            let aid = integer(&job["account_id"])
-                .ok_or_else(Error::internal)?
-                .to_string();
-            if data["accounts"][&aid]["id"] == id {
-                data["accounts"][aid] = job.clone();
-            }
-            Ok(job)
-        })
+        let context = self
+            .contexts
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(id)
+            .cloned();
+        let mut progress = context
+            .as_ref()
+            .map(|c| c.progress.lock().unwrap_or_else(|e| e.into_inner()));
+        let result = self.store.transaction_validated(
+            |data| {
+                normalize(data);
+                let job = data["jobs"]
+                    .get_mut(id)
+                    .ok_or_else(|| Error::new(409, "任务已被替换"))?;
+                let status = job["status"].clone();
+                let retry = job["can_retry"].clone();
+                if ACTIVE.contains(&string(&status)) {
+                    if let Some(progress) = &progress {
+                        job.as_object_mut().unwrap().extend((**progress).clone());
+                    }
+                }
+                job.as_object_mut()
+                    .ok_or_else(Error::internal)?
+                    .extend(changes.as_object().cloned().ok_or_else(Error::invalid)?);
+                crate::detection_logs::preserve_summary(job);
+                let prune = status != job["status"] && !ACTIVE.contains(&string(&job["status"]))
+                    || retry != job["can_retry"];
+                let job = job.clone();
+                let aid = integer(&job["account_id"])
+                    .ok_or_else(Error::internal)?
+                    .to_string();
+                if data["accounts"][&aid]["id"] == id {
+                    data["accounts"][aid] = job.clone();
+                }
+                if prune {
+                    prune_terminal_jobs(data);
+                }
+                Ok(job)
+            },
+            |data| {
+                let Some(job) = data["jobs"].get(id) else {
+                    return Ok(());
+                };
+                let aid = integer(&job["account_id"])
+                    .ok_or_else(Error::internal)?
+                    .to_string();
+                if !valid_job(job)
+                    || data["accounts"][&aid]["id"] == id && !valid_account(&data["accounts"][aid])
+                {
+                    return Err(Error::new(503, "模型测试状态损坏"));
+                }
+                Ok(())
+            },
+        )?;
+        if let Some(progress) = &mut progress {
+            progress.clear();
+        }
+        Ok(result)
     }
     pub fn startup(&self) -> Result<()> {
         let data = self.shared_data()?;
@@ -392,7 +471,7 @@ impl ModelTests {
             .values()
             .filter(|job| job["status"] == "queued")
         {
-            self.launch(job.clone(), None)?;
+            self.launch(job.clone(), None, None)?;
         }
         Ok(())
     }
@@ -426,23 +505,8 @@ impl ModelTests {
         let data = self.shared_data()?;
         if let Some(previous) = data["requests"].get(request) {
             let old = self.get(string(previous))?;
-            let same_recovery = automatic.is_some_and(|auto| {
-                old["automatic"] == true
-                    && old["recovery_context"].is_object()
-                    && old["detection_generation"] == auto["detection_generation"]
-                    && [
-                        "account_id",
-                        "kind",
-                        "fingerprint",
-                        "control_generation",
-                        "method_generation",
-                        "attempt",
-                    ]
-                    .iter()
-                    .all(|key| old["recovery_context"][*key] == auto["recovery_context"][*key])
-            });
             if old["account_id"] != id
-                || old["requested_model"] != model && !same_recovery
+                || old["requested_model"] != model
                 || old.get("concurrency").unwrap_or(&json!(1)) != &payload["concurrency"]
                 || old.get("engine").unwrap_or(&json!("modeltrace")) != &payload["engine"]
                 || old.get("tokenizer_probe").unwrap_or(&json!(false))
@@ -534,11 +598,16 @@ impl ModelTests {
             Ok(())
         })?;
         if !conflict {
-            self.launch(job.clone(), None)?;
+            self.launch(job.clone(), None, Some((row, target, owner)))?;
         }
-        Ok(Self::public(&job))
+        Ok(Self::public(job))
     }
-    pub(crate) fn launch(&self, job: Value, context: Option<Arc<Context>>) -> Result<()> {
+    pub(crate) fn launch(
+        &self,
+        job: Value,
+        context: Option<Arc<Context>>,
+        prepared: Option<(Value, Target, Value)>,
+    ) -> Result<()> {
         let id = string(&job["id"]).to_owned();
         let mut tasks = self.tasks.lock().unwrap_or_else(|e| e.into_inner());
         if self.closing.load(Ordering::Acquire)
@@ -553,10 +622,10 @@ impl ModelTests {
         let cleanup = self.clone();
         let cleanup_id = id.clone();
         let registration = crate::supervision::on_drop(move || {
-            if !cleanup
-                .get(&cleanup_id)
-                .is_ok_and(|job| job["can_retry"] == true && job["uncertain"] != true)
-            {
+            if !cleanup.get(&cleanup_id).is_ok_and(|job| {
+                ACTIVE.contains(&string(&job["status"]))
+                    || job["can_retry"] == true && job["uncertain"] != true
+            }) {
                 cleanup
                     .contexts
                     .lock()
@@ -572,7 +641,7 @@ impl ModelTests {
         let handle = self.actions.supervisor.spawn("model_test", async move {
             let _registration = registration;
             let _ = receive.await;
-            let result = this.actions.supervisor.guard("model_test", this.wait_and_run(&job, context)).await;
+            let result = this.actions.supervisor.guard("model_test", this.wait_and_run(&job, context, prepared)).await;
             if result.is_none() {
                 if this.get(&task_id).is_ok_and(|job| ACTIVE.contains(&string(&job["status"])) && job["status"] != "queued") {
                     if let Ok(job) = this.get(&task_id) { let _=this.update(&task_id,interruption(&job,"测试已中断，结果未确认",crate::compat::datetime((this.clock)()).into())); }
@@ -599,7 +668,12 @@ impl ModelTests {
         let _ = send.send(());
         Ok(())
     }
-    async fn wait_and_run(&self, job: &Value, context: Option<Arc<Context>>) -> Result<()> {
+    async fn wait_and_run(
+        &self,
+        job: &Value,
+        context: Option<Arc<Context>>,
+        mut prepared: Option<(Value, Target, Value)>,
+    ) -> Result<()> {
         let prepared_lm = if context.is_none() && crate::lm_verdict::is_lm(job) {
             Some(
                 self.lm_bank
@@ -611,7 +685,11 @@ impl ModelTests {
         };
         let id = string(&job["id"]);
         let aid = integer(&job["account_id"]).ok_or_else(Error::internal)?;
-        let lock_row = model_target::account(&self.actions, aid).await?;
+        let lock_row = if let Some((row, _, _)) = &prepared {
+            row.clone()
+        } else {
+            model_target::account(&self.actions, aid).await?
+        };
         let mut waited = false;
         let mut manual_rows = BTreeMap::new();
         let (_lease, _job_slot, _budget, row) = loop {
@@ -656,7 +734,6 @@ impl ModelTests {
                 for id in ids {
                     if let std::collections::btree_map::Entry::Vacant(entry) = manual_rows.entry(id)
                     {
-                        waited = true;
                         if let Ok(Some(row)) = self.actions.queries.db.one(
                             "SELECT id,coalesce(nullif(to_jsonb(accounts)->>'parent_account_id','')::bigint,nullif(extra->>'parent_account_id','')::bigint) AS parent_account_id FROM accounts WHERE id=$1 AND deleted_at IS NULL",
                             &[id.into()],
@@ -679,14 +756,7 @@ impl ModelTests {
                         break (lease, slot, budget, lock_row);
                     }
                     let row = model_target::account(&self.actions, aid).await?;
-                    let parent = |row: &Value| {
-                        integer(&row["parent_account_id"])
-                            .or_else(|| integer(&row["extra"]["parent_account_id"]))
-                    };
-                    if parent(&row) == parent(&lock_row) {
-                        break (lease, slot, budget, row);
-                    }
-                    return Err(Error::new(409, "测试目标已变化，请重新选择"));
+                    break (lease, slot, budget, row);
                 }
             }
             drop((slot, budget));
@@ -698,7 +768,13 @@ impl ModelTests {
         } else {
             row
         };
-        let (target, owner) = if let Some(context) = &context {
+        if waited {
+            prepared = None;
+        }
+        let reused = prepared.is_some();
+        let (target, owner) = if let Some((_, target, owner)) = prepared {
+            (target, owner)
+        } else if let Some(context) = &context {
             let owner = model_target::owner(&self.actions, &row).await?;
             (context.target.clone(), owner)
         } else {
@@ -709,10 +785,11 @@ impl ModelTests {
         {
             return Err(Error::new(409, "测试目标已变化，请重新选择"));
         }
-        if !self
-            .actions
-            .model_allowed_prepared(&row, string(&job["requested_model"]), &target, &owner)
-            .await?
+        if !reused
+            && !self
+                .actions
+                .model_allowed_prepared(&row, string(&job["requested_model"]), &target, &owner)
+                .await?
         {
             return Err(Error::new(422, "所选模型不在当前账号上游模型目录中"));
         }
@@ -758,6 +835,7 @@ impl ModelTests {
                 target
             };
             Arc::new(Context {
+                progress: Mutex::new(Default::default()),
                 samples: Mutex::new(BTreeMap::new()),
                 challenges: if lm.is_some() {
                     lmfpd::generate_challenges(integer(&job["planned_groups"]).unwrap_or(1) as usize)
@@ -879,8 +957,8 @@ impl ModelTests {
             data["requests"][request] = id.into();
             Ok(stored)
         })?;
-        self.launch(stored.clone(), Some(context))?;
-        Ok(Self::public(&stored))
+        self.launch(stored.clone(), Some(context), None)?;
+        Ok(Self::public(stored))
     }
     pub async fn cancel(&self, id: &str) -> Result<Value> {
         if self.actions.settings.read_only {
@@ -904,10 +982,6 @@ impl ModelTests {
         self.get(id)
     }
     fn finish_cancel(&self, id: &str) -> Result<()> {
-        self.contexts
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(id);
         // The worker has drained before this read, so its final progress write
         // cannot restore an active group after the cancellation is persisted.
         let current = self.get(id)?;
@@ -918,6 +992,10 @@ impl ModelTests {
             }
             tokenizer["status"] = "cancelled".into();
             self.update(id,json!({"status":"completed","phase":"finished","tokenizer":tokenizer,"completed_at":crate::compat::now(),"can_retry":false}))?;
+            self.contexts
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(id);
             return Ok(());
         }
         let mut groups = current["groups"].clone();
@@ -931,6 +1009,10 @@ impl ModelTests {
             }
         }
         self.update(id,json!({"status":"cancelled","groups":groups,"error":"测试已停止","completed_at":crate::compat::now(),"can_retry":false}))?;
+        self.contexts
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(id);
         Ok(())
     }
     pub async fn close(&self) {

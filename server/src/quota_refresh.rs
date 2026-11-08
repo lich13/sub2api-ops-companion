@@ -118,12 +118,11 @@ impl Runtime {
                 json!({"status":if partial {"partial"}else {"success"},"queried_at":datetime(Utc::now()),"error":usage["message"],"usage":usage}),
             );
         }
-        let mut identity = original.clone();
         let (row, _lease, _budget) = loop {
             if self.closing.load(Ordering::Acquire) || self.actions.supervisor.is_stopping() {
                 return Err(Error::new(503, "服务正在停止"));
             }
-            let lease = match self.monitor.lease(&identity) {
+            let lease = match self.monitor.lease(original) {
                 Ok(lease) => lease,
                 Err(error) if error.status.as_u16() == 409 => {
                     self.quota_item(id, json!({"status":"queued"}), false);
@@ -139,14 +138,6 @@ impl Runtime {
                 .await
                 .map_err(|_| Error::internal())?;
             let row = self.monitor.row(id).await?;
-            let parent = |row: &Value| {
-                integer(&row["parent_account_id"])
-                    .or_else(|| integer(&row["extra"]["parent_account_id"]))
-            };
-            if parent(&row) != parent(&identity) {
-                identity = row;
-                continue;
-            }
             break (row, lease, budget);
         };
         if row["platform"] != original["platform"] || row["type"] != "oauth" {

@@ -465,7 +465,7 @@ impl Runtime {
         });
         static USAGE_SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
             format!(
-            "SELECT a.id,a.platform,a.type,a.extra,a.credentials,p.id AS effective_parent_id,p.credentials AS parent_credentials,md5(a.credentials::text) AS credential_version,
+            "SELECT a.id,a.platform,a.type,a.extra,a.credentials,p.id AS effective_parent_id,p.credentials AS parent_credentials,
              nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id,
              coalesce(nullif(a.credentials->>'plan_type',''),nullif(a.credentials->>'chatgpt_plan_type',''),a.extra->>'plan_type') AS quota_plan_type,
              a.credentials->>'subscription_tier' AS quota_grok_tier,a.credentials->>'entitlement_status' AS quota_grok_entitlement,
@@ -529,9 +529,7 @@ impl Runtime {
         let kind = provider(&row);
         let quota = if row["type"] == "apikey" {
             let input = self.key_quota_input_from_row(&row)?;
-            let signature = input.version.clone();
-            let (view, refreshed) = self.key_quota.query_with_refresh(input, force).await?;
-            Some((signature, view, refreshed))
+            Some(self.key_quota.query(input, force).await?)
         } else {
             None
         };
@@ -585,37 +583,20 @@ impl Runtime {
             };
             Some(self.actions.json(method, &path, key, None, 30).await)
         };
-        let refreshed =
-            response.is_some() || quota.as_ref().is_some_and(|(_, _, refreshed)| *refreshed);
         let live = if response.is_some() {
             self.usage_row(id, include_account).await?
         } else {
             row.clone()
         };
         if response.is_some()
-            && (row["credential_version"] != live["credential_version"]
-                || row["platform"] != live["platform"]
+            && (row["platform"] != live["platform"]
                 || row["type"] != live["type"]
                 || row["parent_account_id"] != live["parent_account_id"])
         {
             return Err(Error::new(409, "账号已变化，请重新读取用量"));
         }
-        if let Some((signature, _, _)) = &quota {
-            if refreshed {
-                let checked;
-                let quota_row = if response.is_some() {
-                    &live
-                } else {
-                    checked = self.usage_row(id, false).await?;
-                    &checked
-                };
-                if self.key_quota_input_from_row(quota_row)?.version != *signature {
-                    return Err(Error::new(409, "账号余额配置已变化，请重新读取"));
-                }
-            }
-        }
         let mut usage = self.local_account_usage(&live).await?;
-        if let Some((_, view, _)) = quota {
+        if let Some(view) = quota {
             usage["key_quota"] = serde_json::to_value(view)?;
         }
         if let Some(response) = response {

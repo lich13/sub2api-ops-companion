@@ -31,7 +31,7 @@ pub fn endpoint(target: &Target) -> Result<reqwest::Url> {
     Ok(url)
 }
 
-pub fn models(body: &Value) -> Result<Vec<Value>> {
+pub fn models(body: &Value) -> Result<(Vec<Value>, usize)> {
     if body.get("error").is_some_and(|v| !v.is_null()) || body.get("code").is_some_and(|v| v != 0) {
         return Err(Error::new(502, "上游未确认模型目录读取成功"));
     }
@@ -47,7 +47,8 @@ pub fn models(body: &Value) -> Result<Vec<Value>> {
             })
             .collect::<Result<_>>()?
     };
-    if arrays.is_empty() || arrays.iter().map(|v| v.len()).sum::<usize>() > 10_000 {
+    let entries = arrays.iter().map(|v| v.len()).sum();
+    if arrays.is_empty() || entries > 10_000 {
         return Err(Error::new(502, "上游模型列表格式无效或超过限制"));
     }
     let mut seen = BTreeSet::new();
@@ -68,7 +69,7 @@ pub fn models(body: &Value) -> Result<Vec<Value>> {
             json!({"id":id,"display_name":if label.is_empty() {id} else {&label},"type":"model"}),
         );
     }
-    Ok(values)
+    Ok((values, entries))
 }
 
 pub(crate) async fn fetch(
@@ -138,17 +139,8 @@ pub(crate) async fn fetch(
             })?;
             let body: Value = serde_json::from_slice(&bytes)
                 .map_err(|_| Failure::permanent(Error::new(502, "上游模型列表格式无效")))?;
-            let page = models(&body).map_err(Failure::permanent)?;
-            entries += body.as_array().map_or_else(
-                || {
-                    ["data", "models"]
-                        .iter()
-                        .filter_map(|key| body[*key].as_array())
-                        .map(Vec::len)
-                        .sum()
-                },
-                Vec::len,
-            );
+            let (page, count) = models(&body).map_err(Failure::permanent)?;
+            entries += count;
             if entries > 10_000 {
                 return Err(Failure::permanent(Error::new(
                     502,

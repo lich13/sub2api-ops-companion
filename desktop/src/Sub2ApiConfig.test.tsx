@@ -56,6 +56,7 @@ beforeEach(() => {
   vi.mocked(api).mockImplementation(async (_method, path) => {
     if (path === "/capabilities") return { features: { sub2api_update: true } } as never;
     if (path === "/sub2api-system/version") return { version: "0.2.19" } as never;
+    if (path === "/sub2api-system/check-updates?force=true") return { current_version: "0.2.19", latest_version: "0.2.19", has_update: false, build_type: "release" } as never;
     if (path === "/sub2api-config") return fixture as never;
     if (path.endsWith("/validate")) return { valid: true, errors: [] } as never;
     if (path.endsWith("/apply"))
@@ -508,6 +509,9 @@ it("keeps the native version panel available when the configuration host fails",
     return original(...args);
   });
   await act(async () => root.render(<Sub2ApiConfig active online />));
-  expect(container.textContent).toContain("运行 0.2.19");
+  expect(container.textContent).toContain("运行 —");
+  expect(api).not.toHaveBeenCalledWith("GET", "/sub2api-system/version");
   expect(button("检查更新").disabled).toBe(false);
+  await act(async () => button("检查更新").click());
+  expect(container.textContent).toContain("运行 0.2.19");
 });

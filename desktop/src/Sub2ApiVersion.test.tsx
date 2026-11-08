@@ -12,7 +12,7 @@ const button = (name: string) => [...container.querySelectorAll<HTMLButtonElemen
 const clicks = (path: string) => vi.mocked(api).mock.calls.filter(([m,p]) => m === "POST" && p === path);
 const refreshed = vi.fn();
 async function click(name: string) { await act(async () => button(name).click()); }
-async function render(active = true, props: Partial<ComponentProps<typeof Sub2ApiVersion>> = {}) { await act(async () => root.render(<Sub2ApiVersion active={active} online onRuntimeChanged={refreshed} {...props} />)); }
+async function render(active = true, props: Partial<ComponentProps<typeof Sub2ApiVersion>> = {}) { await act(async () => root.render(<Sub2ApiVersion active={active} online knownVersion="0.2.20" onRuntimeChanged={refreshed} {...props} />)); }
 beforeEach(() => {
   vi.clearAllMocks(); vi.useFakeTimers();
   running = "0.2.20"; hasUpdate = true; buildType = "release"; update = { message: "Update completed", need_restart: true };
@@ -81,30 +81,10 @@ it("keeps a manual check available after restart verification times out", async 
 });
 
 it("reuses the parent version and capabilities across page activation", async () => {
-  await render(true, { loadingVersion: true });
-  expect(api).not.toHaveBeenCalledWith("GET", "/sub2api-system/version");
   await render(true, { knownVersion: "0.2.20" });
   await render(false, { knownVersion: "0.2.20" });
   await render(true, { knownVersion: "0.2.20" });
   expect(container.textContent).toContain("运行 0.2.20");
   expect(vi.mocked(api).mock.calls.filter(([, path]) => path === "/capabilities")).toHaveLength(1);
   expect(api).not.toHaveBeenCalledWith("GET", "/sub2api-system/version");
-});
-
-it("reads the native version when the parent host cannot provide it", async () => {
-  await render(true, { loadingVersion: true });
-  await render(true, { loadingVersion: false });
-  expect(container.textContent).toContain("运行 0.2.20");
-  expect(vi.mocked(api).mock.calls.filter(([, path]) => path === "/sub2api-system/version")).toHaveLength(1);
-  await render(false); await render();
-  expect(vi.mocked(api).mock.calls.filter(([, path]) => path === "/sub2api-system/version")).toHaveLength(1);
-});
-
-it("falls back to the native version if a previously available configuration host fails", async () => {
-  await render(true, { knownVersion: "0.2.20" });
-  running = "0.2.21";
-  await render(true, { loadingVersion: true });
-  await render();
-  expect(container.textContent).toContain("运行 0.2.21");
-  expect(vi.mocked(api).mock.calls.filter(([, path]) => path === "/sub2api-system/version")).toHaveLength(1);
 });
