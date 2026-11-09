@@ -38,10 +38,18 @@ mod record_activity;
 #[cfg(target_os = "macos")]
 mod tray_macos;
 
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(default)]
+struct SavedConnection {
+    name: String,
+    base_url: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 struct Preferences {
     base_url: String,
+    connections: Vec<SavedConnection>,
     favorites: Vec<i64>,
     launch_at_login: bool,
     pinned: bool,
@@ -50,7 +58,7 @@ struct Preferences {
     model_test_preferences: std::collections::BTreeMap<String, ModelTestPreference>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct ModelTestPreference {
     engine: String,
     sample_count: u8,
@@ -99,6 +107,7 @@ struct Runtime {
     client: reqwest::Client,
     view: Mutex<ViewState>,
     key: Mutex<Option<String>>,
+    connecting_url: Mutex<Option<String>>,
     network: Mutex<()>,
     snapshot_gate: Mutex<()>,
     generation: AtomicU64,
@@ -182,6 +191,79 @@ fn normalize_base(raw: &str) -> Result<String, String> {
     let path = url.path().trim_end_matches('/').to_string();
     url.set_path(&path);
     Ok(url.as_str().trim_end_matches('/').to_string())
+}
+
+fn default_connection_name(base_url: &str) -> String {
+    url::Url::parse(base_url)
+        .ok()
+        .and_then(|u| match (u.host_str(), u.port()) {
+            (Some(host), Some(port)) => Some(format!("{host}:{port}")),
+            (Some(host), None) => Some(host.to_string()),
+            _ => None,
+        })
+        .unwrap_or_else(|| base_url.to_string())
+}
+
+fn normalize_connection_name(name: Option<&str>, base_url: &str) -> String {
+    let trimmed = name
+        .map(str::trim)
+        .unwrap_or("")
+        .chars()
+        .take(64)
+        .collect::<String>();
+    if trimmed.is_empty() {
+        default_connection_name(base_url)
+    } else {
+        trimmed
+    }
+}
+
+fn upsert_connection(prefs: &mut Preferences, base_url: &str, name: Option<&str>) {
+    if let Some(existing) = prefs
+        .connections
+        .iter_mut()
+        .find(|c| c.base_url == base_url)
+    {
+        if let Some(n) = name.map(str::trim).filter(|s| !s.is_empty()) {
+            existing.name = normalize_connection_name(Some(n), base_url);
+        } else if existing.name.trim().is_empty() {
+            existing.name = default_connection_name(base_url);
+        }
+        return;
+    }
+    if prefs.connections.len() >= 50 {
+        return;
+    }
+    prefs.connections.push(SavedConnection {
+        name: normalize_connection_name(name, base_url),
+        base_url: base_url.to_string(),
+    });
+}
+
+fn normalize_preferences(mut prefs: Preferences) -> Preferences {
+    let mut deduped: Vec<SavedConnection> = Vec::new();
+    for item in prefs.connections.drain(..) {
+        if let Ok(normalized) = normalize_base(&item.base_url) {
+            if let Some(existing) = deduped.iter_mut().find(|c| c.base_url == normalized) {
+                if !item.name.trim().is_empty() {
+                    existing.name = normalize_connection_name(Some(&item.name), &normalized);
+                }
+            } else if deduped.len() < 50 {
+                deduped.push(SavedConnection {
+                    name: normalize_connection_name(Some(&item.name), &normalized),
+                    base_url: normalized,
+                });
+            }
+        }
+    }
+    prefs.connections = deduped;
+    if !prefs.base_url.trim().is_empty() {
+        if let Ok(normalized) = normalize_base(&prefs.base_url) {
+            prefs.base_url = normalized.clone();
+            upsert_connection(&mut prefs, &normalized, None);
+        }
+    }
+    prefs
 }
 
 fn save_preferences(path: &Path, value: &Preferences) -> Result<(), String> {
@@ -776,19 +858,32 @@ async fn connect(
     state: State<'_, Arc<Runtime>>,
     base_url: String,
     api_key: String,
+    name: Option<String>,
 ) -> Result<(), String> {
     let base = normalize_base(&base_url)?;
-    if api_key.trim().is_empty() || api_key.len() > 4096 {
+    let trimmed = api_key.trim();
+    if trimmed.len() > 4096 {
         return Err("请输入已有的管理员 API Key".into());
     }
-    {
+    *state.connecting_url.lock().await = Some(base.clone());
+    let connect_result: Result<(), String> = async {
+        let (resolved_key, should_write) = if trimmed.is_empty() {
+            let saved = credentials::read(app.clone(), base.clone())
+                .await?
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+                .ok_or_else(|| "未找到已保存的管理员 API Key，请重新输入".to_string())?;
+            (saved, false)
+        } else {
+            (trimmed.to_string(), true)
+        };
         let _gate = state.network.lock().await;
         let data = active_read(
             &state,
             http(
                 &state.client,
                 &base,
-                api_key.trim(),
+                &resolved_key,
                 "GET",
                 "/capabilities",
                 None,
@@ -799,10 +894,13 @@ async fn connect(
         if data.get("api_version").and_then(Value::as_u64) != Some(1) {
             return Err("云端接口版本不兼容".into());
         }
-        credentials::write(app.clone(), base.clone(), api_key.trim().to_string()).await?;
+        if should_write {
+            credentials::write(app.clone(), base.clone(), resolved_key.clone()).await?;
+        }
         let mut view = state.view.lock().await;
         let mut prefs = view.preferences.clone();
-        prefs.base_url = base;
+        prefs.base_url = base.clone();
+        upsert_connection(&mut prefs, &base, name.as_deref());
         save_preferences(&state.path, &prefs)?;
         view.preferences = prefs;
         view.connection_revision = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
@@ -811,10 +909,109 @@ async fn connect(
         view.snapshot = None;
         view.error.clear();
         view.upstream_connection = data.get("upstream_connection").cloned();
-        *state.key.lock().await = Some(api_key.trim().to_string());
+        *state.key.lock().await = Some(resolved_key);
         publish(&app, &view);
+        Ok(())
     }
+    .await;
+    *state.connecting_url.lock().await = None;
+    connect_result?;
     refresh_inner(&app, &state).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn save_connection_profile(
+    app: tauri::AppHandle,
+    state: State<'_, Arc<Runtime>>,
+    base_url: String,
+    name: String,
+) -> Result<(), String> {
+    let target = normalize_base(&base_url)?;
+    let mut view = state.view.lock().await;
+    if !view
+        .preferences
+        .connections
+        .iter()
+        .any(|item| item.base_url == target)
+        && view.preferences.base_url != target
+    {
+        return Err("未找到要更新的实例配置".into());
+    }
+    let mut prefs = view.preferences.clone();
+    upsert_connection(&mut prefs, &target, Some(&name));
+    save_preferences(&state.path, &prefs)?;
+    view.preferences = prefs;
+    publish(&app, &view);
+    Ok(())
+}
+
+async fn remove_connection_with<F, Fut>(
+    state: &Runtime,
+    base_url: &str,
+    delete_credential: F,
+) -> Result<Preferences, String>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+{
+    let target = normalize_base(base_url)?;
+    let _gate = state.network.lock().await;
+    {
+        let connecting = state.connecting_url.lock().await;
+        let view = state.view.lock().await;
+        if !view
+            .preferences
+            .connections
+            .iter()
+            .any(|item| item.base_url == target)
+        {
+            return Err("未找到要删除的实例配置".into());
+        }
+        if (view.connected && view.preferences.base_url == target)
+            || connecting.as_deref() == Some(target.as_str())
+        {
+            return Err("当前实例正在连接或使用中，请先切换到其他实例或断开连接后再删除".into());
+        }
+    }
+    delete_credential(target.clone()).await?;
+    let mut view = state.view.lock().await;
+    let connecting = state.connecting_url.lock().await;
+    if (view.connected && view.preferences.base_url == target)
+        || connecting.as_deref() == Some(target.as_str())
+    {
+        return Err("当前实例正在连接或使用中，请先切换到其他实例或断开连接后再删除".into());
+    }
+    if !view
+        .preferences
+        .connections
+        .iter()
+        .any(|item| item.base_url == target)
+    {
+        return Err("未找到要删除的实例配置".into());
+    }
+    let mut prefs = view.preferences.clone();
+    prefs.connections.retain(|item| item.base_url != target);
+    if prefs.base_url == target {
+        prefs.base_url.clear();
+    }
+    save_preferences(&state.path, &prefs)?;
+    view.preferences = prefs.clone();
+    Ok(prefs)
+}
+
+#[tauri::command]
+async fn remove_connection(
+    app: tauri::AppHandle,
+    state: State<'_, Arc<Runtime>>,
+    base_url: String,
+) -> Result<(), String> {
+    remove_connection_with(&state, &base_url, |target| {
+        credentials::delete(app.clone(), target)
+    })
+    .await?;
+    let view = state.view.lock().await;
+    publish(&app, &view);
     Ok(())
 }
 
@@ -1706,63 +1903,152 @@ pub fn run() {
     let builder = builder
         .setup(|app| {
             let path = app.path().app_config_dir()?.join("preferences.json");
-            let prefs: Preferences = std::fs::read(&path).ok().and_then(|data| serde_json::from_slice(&data).ok()).unwrap_or_default();
+            let prefs = normalize_preferences(
+                std::fs::read(&path)
+                    .ok()
+                    .and_then(|data| serde_json::from_slice(&data).ok())
+                    .unwrap_or_default(),
+            );
             #[cfg(target_os = "macos")]
             let initial_active = record_activity::application_active();
             #[cfg(not(target_os = "macos"))]
             let initial_active = true;
-            let state = Arc::new(Runtime { client: reqwest::Client::builder().timeout(Duration::from_secs(10)).redirect(reqwest::redirect::Policy::none()).retry(reqwest::retry::never()).build()?,
-                #[cfg(desktop)] pinned: AtomicBool::new(prefs.pinned),
-                #[cfg(desktop)] quitting: AtomicBool::new(false),
-                #[cfg(desktop)] panel: StdMutex::new(PanelLifecycle::default()),
-                foreground: AtomicBool::new(true), read_epoch: watch::channel(0).0,
-                #[cfg(target_os = "macos")] record_activity: record_activity::RecordActivity::new(initial_active),
-                view: Mutex::new(ViewState { platform: if cfg!(mobile) { "android" } else { "macos" }, foreground: initial_active, initializing: true, preferences: prefs, ..Default::default() }),
-                key: Mutex::new(None), network: Mutex::new(()), snapshot_gate: Mutex::new(()),
-                generation: AtomicU64::new(0), tests: Mutex::new(HashMap::new()), wake: Notify::new(), path });
+            let state = Arc::new(Runtime {
+                client: reqwest::Client::builder()
+                    .timeout(Duration::from_secs(10))
+                    .redirect(reqwest::redirect::Policy::none())
+                    .retry(reqwest::retry::never())
+                    .build()?,
+                #[cfg(desktop)]
+                pinned: AtomicBool::new(prefs.pinned),
+                #[cfg(desktop)]
+                quitting: AtomicBool::new(false),
+                #[cfg(desktop)]
+                panel: StdMutex::new(PanelLifecycle::default()),
+                foreground: AtomicBool::new(true),
+                read_epoch: watch::channel(0).0,
+                #[cfg(target_os = "macos")]
+                record_activity: record_activity::RecordActivity::new(initial_active),
+                view: Mutex::new(ViewState {
+                    platform: if cfg!(mobile) { "android" } else { "macos" },
+                    foreground: initial_active,
+                    initializing: true,
+                    preferences: prefs,
+                    ..Default::default()
+                }),
+                key: Mutex::new(None),
+                connecting_url: Mutex::new(None),
+                network: Mutex::new(()),
+                snapshot_gate: Mutex::new(()),
+                generation: AtomicU64::new(0),
+                tests: Mutex::new(HashMap::new()),
+                wake: Notify::new(),
+                path,
+            });
             app.manage(state.clone());
             #[cfg(desktop)]
             {
-            fit_main_window(app.handle())?;
-            create_quick(app.handle())?;
-            // Re-register an existing LaunchAgent with the new arguments without
-            // changing the user's preference or enabling a disabled login item.
-            if app.autolaunch().is_enabled()? { app.autolaunch().enable()?; }
-            main_visibility(app.handle(), !silent_launch(&std::env::args().collect::<Vec<_>>()))?;
-            let menu = Menu::with_items(app, &[
-                &MenuItem::with_id(app, "open", "打开 Sub2Ops", true, None::<&str>)?,
-                &MenuItem::with_id(app, "updates", "检查更新", true, None::<&str>)?,
-                &MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?,
-            ])?;
-            // Original monochrome pulse mark, drawn in memory for the macOS template icon.
-            let mut pixels = vec![0u8; 22*22*4];
-            for x in 2..20usize { let y = match x { 6..=8 => 11-(x-5)*2, 9..=12 => 5+(x-8)*3, 13..=15 => 17-(x-12)*2, _ => 11 }; for d in 0..2 { let i=((y+d).min(21)*22+x)*4; pixels[i+3]=255; } }
-            let tray = TrayIconBuilder::with_id("ops").icon(tauri::image::Image::new_owned(pixels,22,22)).icon_as_template(true).tooltip("Sub2Ops").menu(&menu).show_menu_on_left_click(false)
-                .on_tray_icon_event(|tray,event| {
-                    if let TrayIconEvent::Click {button,button_state,rect,..}=event {
-                        panel_trace(tray.app_handle(), "tray_click", &format!("{button:?} {button_state:?}"));
-                        if button == MouseButton::Left && button_state == MouseButtonState::Up {
-                            if let Err(error) = queue_quick(tray.app_handle().clone(), Some(rect)) {
-                                panel_trace(tray.app_handle(), "dispatch_failed", &error);
-                            }
-                        }
-                        #[cfg(target_os = "macos")]
-                        if button == MouseButton::Right && button_state == MouseButtonState::Down {
-                            if let Err(error) = tray_macos::show_menu(tray) {
-                                panel_trace(tray.app_handle(), "menu_failed", &error.to_string());
-                            }
-                        }
+                fit_main_window(app.handle())?;
+                create_quick(app.handle())?;
+                // Re-register an existing LaunchAgent with the new arguments without
+                // changing the user's preference or enabling a disabled login item.
+                if app.autolaunch().is_enabled()? {
+                    app.autolaunch().enable()?;
+                }
+                main_visibility(
+                    app.handle(),
+                    !silent_launch(&std::env::args().collect::<Vec<_>>()),
+                )?;
+                let menu = Menu::with_items(
+                    app,
+                    &[
+                        &MenuItem::with_id(app, "open", "打开 Sub2Ops", true, None::<&str>)?,
+                        &MenuItem::with_id(app, "updates", "检查更新", true, None::<&str>)?,
+                        &MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?,
+                    ],
+                )?;
+                // Original monochrome pulse mark, drawn in memory for the macOS template icon.
+                let mut pixels = vec![0u8; 22 * 22 * 4];
+                for x in 2..20usize {
+                    let y = match x {
+                        6..=8 => 11 - (x - 5) * 2,
+                        9..=12 => 5 + (x - 8) * 3,
+                        13..=15 => 17 - (x - 12) * 2,
+                        _ => 11,
+                    };
+                    for d in 0..2 {
+                        let i = ((y + d).min(21) * 22 + x) * 4;
+                        pixels[i + 3] = 255;
                     }
-                })
-                .on_menu_event(|app,event| match event.id().as_ref() {
-                    "open" => {let _=show_main(app.clone());},
-                    "updates" => { let handle=app.clone(); tauri::async_runtime::spawn(async move { let result=check_updates(handle.clone(),handle.state()).await; let _=handle.emit("update-result",result.unwrap_or_else(|e|e)); let _=show_main(handle); }); },
-                    "quit" => { app.state::<Arc<Runtime>>().quitting.store(true,Ordering::Relaxed); app.exit(0); }, _=>()
-                }).build(app)?;
-            #[cfg(target_os = "macos")]
-            { tray_macos::install(&tray)?; panel_trace(app.handle(), "tray_ready", "transient_menu_macos27"); }
+                }
+                let tray = TrayIconBuilder::with_id("ops")
+                    .icon(tauri::image::Image::new_owned(pixels, 22, 22))
+                    .icon_as_template(true)
+                    .tooltip("Sub2Ops")
+                    .menu(&menu)
+                    .show_menu_on_left_click(false)
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button,
+                            button_state,
+                            rect,
+                            ..
+                        } = event
+                        {
+                            panel_trace(
+                                tray.app_handle(),
+                                "tray_click",
+                                &format!("{button:?} {button_state:?}"),
+                            );
+                            if button == MouseButton::Left && button_state == MouseButtonState::Up {
+                                if let Err(error) =
+                                    queue_quick(tray.app_handle().clone(), Some(rect))
+                                {
+                                    panel_trace(tray.app_handle(), "dispatch_failed", &error);
+                                }
+                            }
+                            #[cfg(target_os = "macos")]
+                            if button == MouseButton::Right
+                                && button_state == MouseButtonState::Down
+                            {
+                                if let Err(error) = tray_macos::show_menu(tray) {
+                                    panel_trace(
+                                        tray.app_handle(),
+                                        "menu_failed",
+                                        &error.to_string(),
+                                    );
+                                }
+                            }
+                        }
+                    })
+                    .on_menu_event(|app, event| match event.id().as_ref() {
+                        "open" => {
+                            let _ = show_main(app.clone());
+                        }
+                        "updates" => {
+                            let handle = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let result = check_updates(handle.clone(), handle.state()).await;
+                                let _ = handle.emit("update-result", result.unwrap_or_else(|e| e));
+                                let _ = show_main(handle);
+                            });
+                        }
+                        "quit" => {
+                            app.state::<Arc<Runtime>>()
+                                .quitting
+                                .store(true, Ordering::Relaxed);
+                            app.exit(0);
+                        }
+                        _ => (),
+                    })
+                    .build(app)?;
+                #[cfg(target_os = "macos")]
+                {
+                    tray_macos::install(&tray)?;
+                    panel_trace(app.handle(), "tray_ready", "transient_menu_macos27");
+                }
             }
-            let handle=app.handle().clone();
+            let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let base = state.view.lock().await.preferences.base_url.clone();
                 let stored = credentials::read(handle.clone(), base).await;
@@ -1771,7 +2057,10 @@ pub fn run() {
                     let mut view = state.view.lock().await;
                     if state.generation.load(Ordering::SeqCst) == 0 {
                         match stored {
-                            Ok(key) => { view.connected = key.is_some(); *state.key.lock().await = key; }
+                            Ok(key) => {
+                                view.connected = key.is_some();
+                                *state.key.lock().await = key;
+                            }
                             Err(error) => view.error = error,
                         }
                     }
@@ -1793,28 +2082,45 @@ pub fn run() {
                         _ = tokio::time::sleep(interval) => {}
                         _ = state.wake.notified() => {}
                     }
-                }});
+                }
+            });
             Ok(())
         })
-        .on_window_event(|window,event| {
-            let state=window.state::<Arc<Runtime>>();
+        .on_window_event(|window, event| {
+            let state = window.state::<Arc<Runtime>>();
             match event {
                 #[cfg(desktop)]
-                WindowEvent::CloseRequested {api,..} if !state.quitting.load(Ordering::Relaxed) => {
+                WindowEvent::CloseRequested { api, .. }
+                    if !state.quitting.load(Ordering::Relaxed) =>
+                {
                     api.prevent_close();
                     if window.label() == "main" {
-                        if let Err(error) = queue_main(window.app_handle().clone(), false) { panel_trace(window.app_handle(), "main_failed", &error); }
-                    } else if let Err(error) = window.hide() { panel_trace(window.app_handle(), "hide_failed", &error.to_string()); }
-                },
+                        if let Err(error) = queue_main(window.app_handle().clone(), false) {
+                            panel_trace(window.app_handle(), "main_failed", &error);
+                        }
+                    } else if let Err(error) = window.hide() {
+                        panel_trace(window.app_handle(), "hide_failed", &error.to_string());
+                    }
+                }
                 #[cfg(desktop)]
-                WindowEvent::Focused(false) if window.label()=="quick" => defer_panel_blur(window.app_handle()),
+                WindowEvent::Focused(false) if window.label() == "quick" => {
+                    defer_panel_blur(window.app_handle())
+                }
                 #[cfg(desktop)]
-                WindowEvent::Focused(true) => { if window.label()=="quick" {state.panel.lock().unwrap().focus();panel_trace(window.app_handle(), "focused", "event");} state.wake.notify_one(); },
+                WindowEvent::Focused(true) => {
+                    if window.label() == "quick" {
+                        state.panel.lock().unwrap().focus();
+                        panel_trace(window.app_handle(), "focused", "event");
+                    }
+                    state.wake.notify_one();
+                }
                 #[cfg(mobile)]
                 WindowEvent::Suspended | WindowEvent::Resumed => {
                     let active = matches!(event, WindowEvent::Resumed);
                     state.foreground.store(active, Ordering::SeqCst);
-                    if !active { state.read_epoch.send_modify(|epoch| *epoch += 1); }
+                    if !active {
+                        state.read_epoch.send_modify(|epoch| *epoch += 1);
+                    }
                     let handle = window.app_handle().clone();
                     let state = state.inner().clone();
                     tauri::async_runtime::spawn(async move {
@@ -1826,13 +2132,15 @@ pub fn run() {
                         state.wake.notify_one();
                     });
                 }
-                _=>()
+                _ => (),
             }
         });
     #[cfg(desktop)]
     let builder = builder.invoke_handler(tauri::generate_handler![
         get_state,
         connect,
+        save_connection_profile,
+        remove_connection,
         disconnect,
         refresh,
         api_request,
@@ -1851,6 +2159,8 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         get_state,
         connect,
+        save_connection_profile,
+        remove_connection,
         disconnect,
         refresh,
         api_request,
@@ -1953,6 +2263,7 @@ mod tests {
             client: reqwest::Client::new(),
             view: Mutex::new(ViewState::default()),
             key: Mutex::new(None),
+            connecting_url: Mutex::new(None),
             network: Mutex::new(()),
             snapshot_gate: Mutex::new(()),
             generation: AtomicU64::new(0),
@@ -2280,10 +2591,7 @@ mod tests {
             view.snapshot.as_ref().unwrap(),
             cloned.snapshot.as_ref().unwrap()
         ));
-        assert_eq!(
-            serde_json::to_value(&cloned).unwrap()["snapshot"],
-            first
-        );
+        assert_eq!(serde_json::to_value(&cloned).unwrap()["snapshot"], first);
         let connection = serde_json::json!({"state":"auth_rejected"});
         apply_refresh(
             &mut view,
@@ -2744,5 +3052,135 @@ mod tests {
             assert_eq!(restored.record_columns, Some(columns));
         }
         assert!(normalize_record_columns(vec!["invalid".into()]).is_empty());
+    }
+
+    #[test]
+    fn connection_profiles_migrate_legacy_base_url_and_deduplicate_without_credentials() {
+        let legacy: Preferences =
+            serde_json::from_str(r#"{"base_url":"https://alpha.example.invalid/sub2ops/"}"#)
+                .unwrap();
+        let migrated = normalize_preferences(legacy);
+        assert_eq!(migrated.base_url, "https://alpha.example.invalid/sub2ops");
+        assert_eq!(
+            migrated.connections,
+            vec![SavedConnection {
+                name: "alpha.example.invalid".into(),
+                base_url: "https://alpha.example.invalid/sub2ops".into(),
+            }]
+        );
+
+        let mut prefs = migrated;
+        upsert_connection(
+            &mut prefs,
+            "https://alpha.example.invalid/sub2ops",
+            Some("主力节点"),
+        );
+        upsert_connection(
+            &mut prefs,
+            "https://beta.example.invalid",
+            Some("  备用节点  "),
+        );
+        assert_eq!(
+            prefs.connections,
+            vec![
+                SavedConnection {
+                    name: "主力节点".into(),
+                    base_url: "https://alpha.example.invalid/sub2ops".into(),
+                },
+                SavedConnection {
+                    name: "备用节点".into(),
+                    base_url: "https://beta.example.invalid".into(),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_connection_validates_target_rejects_active_or_connecting_and_stops_on_credential_error(
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = runtime();
+        state.path = dir.path().join("preferences.json");
+        let initial_prefs = Preferences {
+            base_url: "https://alpha.example.invalid".into(),
+            connections: vec![
+                SavedConnection {
+                    name: "Alpha".into(),
+                    base_url: "https://alpha.example.invalid".into(),
+                },
+                SavedConnection {
+                    name: "Beta".into(),
+                    base_url: "https://beta.example.invalid".into(),
+                },
+            ],
+            ..Default::default()
+        };
+        save_preferences(&state.path, &initial_prefs).unwrap();
+        {
+            let mut view = state.view.lock().await;
+            view.connected = true;
+            view.preferences = initial_prefs.clone();
+        }
+
+        // 1. Out-of-bounds / unknown target is rejected before credential deletion.
+        let unknown =
+            remove_connection_with(&state, "https://unknown.example.invalid", |_| async {
+                panic!("credential deletion must not run for unknown target")
+            })
+            .await;
+        assert!(unknown.unwrap_err().contains("未找到"));
+
+        // 2. Active connected target is rejected.
+        let active = remove_connection_with(&state, "https://alpha.example.invalid/", |_| async {
+            panic!("credential deletion must not run for active target")
+        })
+        .await;
+        assert!(active.unwrap_err().contains("正在连接或使用中"));
+
+        // 3. In-flight connecting target is rejected.
+        *state.connecting_url.lock().await = Some("https://beta.example.invalid".into());
+        let connecting =
+            remove_connection_with(&state, "https://beta.example.invalid", |_| async {
+                panic!("credential deletion must not run for connecting target")
+            })
+            .await;
+        assert!(connecting.unwrap_err().contains("正在连接或使用中"));
+        *state.connecting_url.lock().await = None;
+
+        // 4. Partial failure (credential deletion fails) stops and leaves preferences intact.
+        let partial = remove_connection_with(&state, "https://beta.example.invalid", |_| async {
+            Err("无法删除钥匙串中的 Key".into())
+        })
+        .await;
+        assert_eq!(partial.unwrap_err(), "无法删除钥匙串中的 Key");
+        assert_eq!(state.view.lock().await.preferences.connections.len(), 2);
+        let on_disk: Preferences =
+            serde_json::from_slice(&std::fs::read(&state.path).unwrap()).unwrap();
+        assert_eq!(on_disk.connections.len(), 2);
+
+        // 5. Inactive target succeeds after credential deletion and persists remaining connections.
+        let deleted = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let deleted_clone = deleted.clone();
+        let remaining =
+            remove_connection_with(&state, "https://beta.example.invalid/", move |target| {
+                deleted_clone.lock().unwrap().push(target);
+                async { Ok(()) }
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            *deleted.lock().unwrap(),
+            vec!["https://beta.example.invalid"]
+        );
+        assert_eq!(
+            remaining.connections,
+            vec![SavedConnection {
+                name: "Alpha".into(),
+                base_url: "https://alpha.example.invalid".into(),
+            }]
+        );
+        let on_disk: Preferences =
+            serde_json::from_slice(&std::fs::read(&state.path).unwrap()).unwrap();
+        assert_eq!(on_disk.connections, remaining.connections);
     }
 }

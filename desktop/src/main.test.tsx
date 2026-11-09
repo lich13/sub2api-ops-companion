@@ -604,3 +604,91 @@ it("returns to initial account filters, selection, disclosures and scroll while 
   expect(container.querySelector<HTMLSelectElement>('[aria-label="账号排序"]')?.value).toBe("priority:desc");
   expect(content.scrollTop).toBe(0); expect(content.scrollLeft).toBe(0);
 });
+
+it("switches saved Sub2API instances, opens prefilled modal when credentials are missing, and guards active instance deletion", async () => {
+  const initial = state();
+  initial.preferences.connections = [
+    { name: "主力节点", base_url: "https://fixture.invalid" },
+    { name: "备用节点", base_url: "https://standby.example.invalid" },
+    { name: "缺少凭据节点", base_url: "https://missing-key.example.invalid" },
+  ];
+  vi.mocked(command).mockImplementation(async (name, args) => {
+    if (name === "get_state") return initial as never;
+    if (name === "connect") {
+      const payload = args as { baseUrl: string; apiKey: string; name?: string };
+      if (payload.baseUrl === "https://missing-key.example.invalid" && !payload.apiKey) {
+        throw new Error("未找到该实例已保存的 API Key，请重新输入");
+      }
+      initial.preferences.base_url = payload.baseUrl;
+      return { ...initial, preferences: { ...initial.preferences } } as never;
+    }
+    if (name === "remove_connection") {
+      const payload = args as { baseUrl: string };
+      initial.preferences.connections = initial.preferences.connections?.filter(
+        (item) => item.base_url !== payload.baseUrl,
+      );
+      return { ...initial, preferences: { ...initial.preferences } } as never;
+    }
+    return undefined as never;
+  });
+  vi.mocked(api).mockImplementation(async (_method, path) => {
+    if (path === "/connection-status") {
+      return { state: "ok", endpoint: "verify", http_status: 200, message: "连接正常", retryable: false, checked_at: "2026-10-07T00:00:00Z" } as never;
+    }
+    if (path === "/config") return { bark: { revision: "fixture", enabled: false, device_key_set: false } } as never;
+    if (path === "/account-operations") return { items: [] } as never;
+    if (path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
+    if (path.startsWith("/errors?category=")) return { items: [], next_cursor: null } as never;
+    return {} as never;
+  });
+
+  await act(async () => root.render(<App />));
+
+  const switcher = container.querySelector<HTMLButtonElement>(".instance-switcher-trigger")!;
+  expect(switcher.textContent).toContain("主力节点");
+  await act(async () => switcher.click());
+
+  const standbyOption = [...container.querySelectorAll<HTMLButtonElement>(".instance-switcher-item")].find(
+    (btn) => btn.textContent?.includes("备用节点"),
+  )!;
+  await act(async () => standbyOption.click());
+  expect(command).toHaveBeenCalledWith("connect", {
+    baseUrl: "https://standby.example.invalid",
+    apiKey: "",
+    name: "备用节点",
+  });
+  expect(container.querySelector(".instance-switcher-trigger")?.textContent).toContain("备用节点");
+
+  await act(async () => container.querySelector<HTMLButtonElement>(".instance-switcher-trigger")!.click());
+  const missingKeyOption = [...container.querySelectorAll<HTMLButtonElement>(".instance-switcher-item")].find(
+    (btn) => btn.textContent?.includes("缺少凭据节点"),
+  )!;
+  await act(async () => missingKeyOption.click());
+
+  const modal = container.querySelector(".connection-modal");
+  expect(modal).not.toBeNull();
+  const modalInputs = [...modal!.querySelectorAll<HTMLInputElement>("input")];
+  expect(modalInputs.some((input) => input.value === "https://missing-key.example.invalid")).toBe(true);
+  const closeModal = modal!.querySelector<HTMLButtonElement>('button[aria-label="关闭连接窗口"]')!;
+  await act(async () => closeModal.click());
+
+  await act(async () => nav("设置").click());
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  const rows = [...container.querySelectorAll<HTMLElement>(".saved-instance-row")];
+  expect(rows.length).toBe(3);
+  const activeRow = rows.find((row) => row.textContent?.includes("备用节点"))!;
+  const activeDeleteBtn = [...activeRow.querySelectorAll<HTMLButtonElement>("button")].find(
+    (btn) => btn.textContent?.includes("删除实例"),
+  )!;
+  expect(activeDeleteBtn.disabled).toBe(true);
+
+  const inactiveRow = rows.find((row) => row.textContent?.includes("主力节点"))!;
+  const inactiveDeleteBtn = [...inactiveRow.querySelectorAll<HTMLButtonElement>("button")].find(
+    (btn) => btn.textContent?.includes("删除实例"),
+  )!;
+  expect(inactiveDeleteBtn.disabled).toBe(false);
+  await act(async () => inactiveDeleteBtn.click());
+  expect(command).toHaveBeenCalledWith("remove_connection", { baseUrl: "https://fixture.invalid" });
+  expect(container.querySelectorAll(".saved-instance-row").length).toBe(2);
+});
+

@@ -528,9 +528,43 @@ export async function run(
     return;
   }
   if (name === "connect") {
+    const baseUrl = String(args.baseUrl ?? "").trim().replace(/\/+$/, "");
+    const existing = state.preferences.connections ?? [];
+    const customName = typeof args.name === "string" ? args.name.trim() : "";
+    const nextConnections = existing.some((item) => item.base_url === baseUrl)
+      ? existing.map((item) =>
+          item.base_url === baseUrl && customName ? { ...item, name: customName } : item,
+        )
+      : [...existing, { name: customName || baseUrl, base_url: baseUrl }];
     state.connected = true;
     state.online = true;
-    state.preferences.base_url = String(args.baseUrl);
+    state.connection_revision = (state.connection_revision ?? 0) + 1;
+    state.preferences = { ...state.preferences, base_url: baseUrl, connections: nextConnections };
+    emit();
+    return;
+  }
+  if (name === "save_connection_profile") {
+    const baseUrl = String(args.baseUrl ?? "").trim().replace(/\/+$/, "");
+    const customName = String(args.name ?? "").trim() || baseUrl;
+    const existing = state.preferences.connections ?? [];
+    state.preferences = {
+      ...state.preferences,
+      connections: existing.some((item) => item.base_url === baseUrl)
+        ? existing.map((item) => (item.base_url === baseUrl ? { ...item, name: customName } : item))
+        : [...existing, { name: customName, base_url: baseUrl }],
+    };
+    emit();
+    return;
+  }
+  if (name === "remove_connection") {
+    const baseUrl = String(args.baseUrl ?? "").trim().replace(/\/+$/, "");
+    if (state.connected && state.preferences.base_url === baseUrl) {
+      throw new Error("当前实例正在连接或使用中，请先切换到其他实例或断开连接后再删除");
+    }
+    state.preferences = {
+      ...state.preferences,
+      connections: (state.preferences.connections ?? []).filter((item) => item.base_url !== baseUrl),
+    };
     emit();
     return;
   }

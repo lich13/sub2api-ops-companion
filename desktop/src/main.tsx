@@ -32,6 +32,8 @@ import { isAccountSort, readAccountSort, saveAccountSort } from "./accountSort";
 import {
   filterAccounts,
   currentGroups,
+  defaultConnectionName,
+  savedConnections,
   sortPriority,
   sortRecentCall,
   fullTime,
@@ -42,6 +44,7 @@ import {
   type Group,
   type OpsError,
   type Preferences,
+  type SavedConnection,
   type ViewState,
 } from "./types";
 import "./style.css";
@@ -205,10 +208,21 @@ export default function App() {
     [groupChanges, setGroupChanges] = useState({ count: 0, busy: false }),
     [priorityChanges, setPriorityChanges] = useState(0),
     [leaveGroups, setLeaveGroups] = useState<((proceed: boolean) => void) | null>(null),
+    [switchingUrl, setSwitchingUrl] = useState<string | null>(null),
+    [connectionModal, setConnectionModal] = useState<{ baseUrl: string; name: string } | null>(null),
+    [switcherOpen, setSwitcherOpen] = useState(false),
     discardRef = useRef<HTMLElement>(null),
     schedulePending = useRef(false),
     detailGeneration = useRef(0),
     detailAbort = useRef<AbortController | null>(null);
+  const connections = useMemo(() => savedConnections(state.preferences), [state.preferences]);
+  const activeUrl = state.preferences.base_url.trim().replace(/\/+$/, "");
+  const activeConnection = useMemo(
+    () =>
+      connections.find((item) => item.base_url === activeUrl) ??
+      (activeUrl ? { name: defaultConnectionName(activeUrl), base_url: activeUrl } : null),
+    [connections, activeUrl],
+  );
   const sortBy = accountSort.startsWith("recent:") ? "recent" : "priority";
   const ascending = accountSort.endsWith(":asc");
   function updateAccountSort(value: string) {
@@ -227,6 +241,26 @@ export default function App() {
     if (groupChanges.busy) { setToast("分组正在保存，请等待结果"); return false; }
     if (!groupChanges.count && !priorityChanges) return true;
     return new Promise<boolean>((resolve) => setLeaveGroups(() => resolve));
+  }
+  async function switchConnection(item: SavedConnection) {
+    const targetUrl = item.base_url.trim().replace(/\/+$/, "");
+    if (!targetUrl || switchingUrl) return;
+    setSwitcherOpen(false);
+    if (state.connected && targetUrl === activeUrl) return;
+    if (!await beforeConnectionChange()) return;
+    setSwitchingUrl(targetUrl);
+    try {
+      const next = await command<ViewState>("connect", { baseUrl: targetUrl, apiKey: "", name: item.name });
+      if (next?.preferences) setState(next);
+      setToast(`已切换到 ${item.name}`);
+    } catch (error) {
+      report(error);
+      if (/Key|401|403|未找到|拒绝/.test(String(error))) {
+        setConnectionModal({ baseUrl: targetUrl, name: item.name });
+      }
+    } finally {
+      setSwitchingUrl(null);
+    }
   }
   const mobile = state.platform === "android" || (preview && new URLSearchParams(location.search).has("mobile"));
   useDialogFocus(discardRef, !!leaveGroups);
@@ -282,6 +316,7 @@ export default function App() {
   }, [filterKey, connectionKey]);
   useEffect(() => {
     closeDetail();
+    setSwitcherOpen(false);
   }, [page, connectionKey, eventTab]);
   useEffect(() => {
     setRemovedIds(new Set());
@@ -296,6 +331,8 @@ export default function App() {
     setTemplateAccounts(undefined);
     setSettingsAccount(null); setReauthorizeAccount(null);
     setProxyAccounts(null);
+    setConnectionModal(null);
+    setSwitcherOpen(false);
     schedulePending.current = false; setBusy(null);
     setGroupsOpen(false);
     setFiltersOpen(false);
@@ -356,7 +393,9 @@ export default function App() {
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.isComposing || event.defaultPrevented) return;
-      if (testAccount) setTestAccount(null);
+      if (switcherOpen) setSwitcherOpen(false);
+      else if (connectionModal) setConnectionModal(null);
+      else if (testAccount) setTestAccount(null);
       else if (detail || detailBusy) {
         closeDetail();
       } else if (quick) {
@@ -379,6 +418,8 @@ export default function App() {
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
   }, [
+    switcherOpen,
+    connectionModal,
     detail,
     detailBusy,
     testAccount,
@@ -648,10 +689,102 @@ export default function App() {
   }
   function status() {
     return (
-      <span className={`connection-status ${state.online ? "online" : ""}`}>
-        <i />
-        {state.online ? "已连接" : state.connected ? "连接中断" : "未连接"}
-      </span>
+      <div className="connection-status-group">
+        <span className={`connection-status ${state.online ? "online" : ""}`}>
+          <i />
+          {state.online ? "已连接" : state.connected ? "连接中断" : "未连接"}
+        </span>
+        {(connections.length > 0 || state.connected) && (
+          <div className="instance-switcher">
+            <button
+              type="button"
+              className="instance-switcher-trigger"
+              aria-label="切换 Sub2API 实例"
+              aria-expanded={switcherOpen}
+              onClick={() => setSwitcherOpen((open) => !open)}
+            >
+              {switchingUrl ? (
+                <LoaderCircle size={13} className="spin" />
+              ) : (
+                <Plug size={13} />
+              )}
+              <span>{activeConnection?.name ?? "选择实例"}</span>
+            </button>
+            {switcherOpen && (
+              <>
+                <div
+                  className="instance-switcher-backdrop"
+                  onClick={() => setSwitcherOpen(false)}
+                />
+                <div
+                  className="instance-switcher-menu"
+                  role="menu"
+                  aria-label="Sub2API 实例列表"
+                >
+                  <div className="instance-switcher-header">
+                    <span>Sub2API 实例 ({connections.length})</span>
+                    {!quick && (
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={() => {
+                          setSwitcherOpen(false);
+                          setPage("settings");
+                        }}
+                      >
+                        管理实例
+                      </button>
+                    )}
+                  </div>
+                  <div className="instance-switcher-list">
+                    {connections.map((item) => {
+                      const isCurrent =
+                        state.connected && item.base_url === activeUrl;
+                      const isSwitching = switchingUrl === item.base_url;
+                      return (
+                        <button
+                          key={item.base_url}
+                          type="button"
+                          role="menuitem"
+                          className={`instance-switcher-item${isCurrent ? " active" : ""}`}
+                          disabled={switchingUrl !== null}
+                          onClick={() => void switchConnection(item)}
+                        >
+                          <span
+                            className={`status-dot ${isCurrent ? (state.online ? "good" : "warn") : "muted"}`}
+                          />
+                          <div className="instance-switcher-meta">
+                            <strong>{item.name}</strong>
+                            <small>{item.base_url}</small>
+                          </div>
+                          {isSwitching ? (
+                            <LoaderCircle size={14} className="spin" />
+                          ) : isCurrent ? (
+                            <span className="instance-current-badge">当前</span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="instance-switcher-footer">
+                    <button
+                      type="button"
+                      className="instance-add-button"
+                      onClick={() => {
+                        setSwitcherOpen(false);
+                        setConnectionModal({ baseUrl: "", name: "" });
+                      }}
+                    >
+                      <Plus size={14} />
+                      新增实例
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
     );
   }
   const visibleGroups = useMemo(
@@ -671,6 +804,25 @@ export default function App() {
             </span>
             <strong>Sub2Ops</strong>
           </div>
+          {(connections.length > 0 || state.connected) && (
+            <div className="sidebar-instance">
+              <button
+                type="button"
+                className="sidebar-instance-button"
+                title={activeConnection?.base_url || "切换或新增 Sub2API 实例"}
+                onClick={() => setSwitcherOpen((open) => !open)}
+              >
+                <span
+                  className={`status-dot ${state.online ? "good" : state.connected ? "warn" : "muted"}`}
+                />
+                <div className="sidebar-instance-text">
+                  <strong>{activeConnection?.name ?? "未连接实例"}</strong>
+                  <small>{activeConnection?.base_url ?? "点击选择或新增"}</small>
+                </div>
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
           <nav>
             {pages.map((p) => (
               <button
@@ -776,7 +928,12 @@ export default function App() {
                 正在加载客户端
               </div>
             ) : !state.connected ? (
-              <Connection state={state} onError={report} />
+              <Connection
+                state={state}
+                onError={report}
+                onSwitchSaved={(item) => void switchConnection(item)}
+                switchingUrl={switchingUrl}
+              />
             ) : !snap ? (
               <div className="empty">
                 <Plug size={28} />
@@ -785,7 +942,7 @@ export default function App() {
                 <button onClick={() => setPage("settings")}>连接设置</button>
                 {page === "settings" && <>
                   <ConnectionStatusCard connectionKey={connectionKey}/>
-                  <Connection state={state} onError={report} beforeChange={beforeConnectionChange}/>
+                  <Connection state={state} onError={report} beforeChange={beforeConnectionChange} onSwitchSaved={(item) => void switchConnection(item)} switchingUrl={switchingUrl}/>
                 </>}
               </div>
             ) : quick ? (
@@ -1120,15 +1277,19 @@ export default function App() {
                       state={state}
                       runtimeVersion={runtimeVersion}
                       prefs={prefs}
+                      onState={setState}
                       onChange={(key, value) =>
                         setConfig({ ...config, [key]: value })
                       }
                       onMessage={setToast}
                       onError={report}
                       beforeConnectionChange={beforeConnectionChange}
+                      onSwitchConnection={(item) => void switchConnection(item)}
+                      onOpenConnectionModal={setConnectionModal}
+                      switchingUrl={switchingUrl}
                     />
                   ) : page === "settings" ? (
-                    <section className="settings-card"><Connection state={state} onError={report} beforeChange={beforeConnectionChange}/></section>
+                    <section className="settings-card"><Connection state={state} onState={setState} onError={report} beforeChange={beforeConnectionChange} onSwitchSaved={(item) => void switchConnection(item)} switchingUrl={switchingUrl}/></section>
                   ) : <Empty text="正在读取设置" />)}
                 </div>
               </>
@@ -1148,6 +1309,34 @@ export default function App() {
       </main>
       {mobile && <nav className="bottom-nav" aria-label="主导航">{pages.filter((p) => p.id !== "groups" && p.id !== "priorities").map((p) => { const selected = page === p.id || ["groups", "priorities"].includes(page) && p.id === "accounts"; return <button key={p.id} className={selected ? "active" : ""} aria-current={selected ? "page" : undefined} onClick={() => setPage(p.id)}><p.icon size={21}/><span>{p.label}</span></button>; })}</nav>}
       {leaveGroups && <div className="modal-backdrop"><section ref={discardRef} className="discard-groups-dialog" role="dialog" aria-modal="true" aria-label={priorityChanges ? "未应用的优先级修改" : "未应用的分组修改"} tabIndex={-1} onKeyDown={(e) => { if (e.key === "Escape" && !e.nativeEvent.isComposing) { e.preventDefault(); e.stopPropagation(); leaveGroups(false); setLeaveGroups(null); } }}><h2>放弃{groupChanges.count ? "分组" : ""}{groupChanges.count && priorityChanges ? "和" : ""}{priorityChanges ? "优先级" : ""}草稿并更换连接？</h2><div><button onClick={() => { leaveGroups(false); setLeaveGroups(null); }}>保留草稿</button><button className="primary" onClick={() => { leaveGroups(true); setLeaveGroups(null); }}>放弃并继续</button></div></section></div>}
+      {connectionModal && (
+        <div className="modal-backdrop" onClick={() => setConnectionModal(null)}>
+          <div
+            className="connection-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="连接 Sub2API 实例"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Connection
+              state={state}
+              onState={setState}
+              initialUrl={connectionModal.baseUrl}
+              initialName={connectionModal.name}
+              showNameField
+              onError={report}
+              beforeChange={beforeConnectionChange}
+              onConnected={() => setConnectionModal(null)}
+              onCancel={() => setConnectionModal(null)}
+              onSwitchSaved={(item) => {
+                setConnectionModal(null);
+                void switchConnection(item);
+              }}
+              switchingUrl={switchingUrl}
+            />
+          </div>
+        </div>
+      )}
       {mobile && groupsOpen && <div className="mobile-groups-surface" role="dialog" aria-modal="true" aria-label="分组动态"><header><h2>分组动态</h2><button className="icon-button" aria-label="关闭分组动态" onClick={() => setGroupsOpen(false)}><X size={20}/></button></header><div className="quick-groups">{visibleGroups.map((g) => groupRow(g, true))}{!groups.length && <Empty text="没有分组记录"/>}</div></div>}
       {deleteAccounts && (
         <DeleteAccountsDialog
@@ -1319,35 +1508,140 @@ function Empty({ text }: { text: string }) {
 }
 function Connection({
   state,
+  onState,
   onError,
   beforeChange = async () => true,
+  initialUrl,
+  initialName,
+  showNameField = false,
+  onConnected,
+  onCancel,
+  onSwitchSaved,
+  switchingUrl = null,
 }: {
   state: ViewState;
+  onState?: (s: ViewState) => void;
   onError: (e: unknown) => void;
   beforeChange?: () => Promise<boolean>;
+  initialUrl?: string;
+  initialName?: string;
+  showNameField?: boolean;
+  onConnected?: () => void;
+  onCancel?: () => void;
+  onSwitchSaved?: (item: SavedConnection) => void;
+  switchingUrl?: string | null;
 }) {
-  const [url, setUrl] = useState(
-      state.preferences.base_url || "",
-    ),
+  const saved = useMemo(() => savedConnections(state.preferences), [state.preferences]);
+  const defaultUrl = initialUrl !== undefined ? initialUrl : state.preferences.base_url || "";
+  const defaultName =
+    initialName !== undefined
+      ? initialName
+      : saved.find((item) => item.base_url === defaultUrl)?.name || "";
+  const [url, setUrl] = useState(defaultUrl),
+    [name, setName] = useState(defaultName),
+    [nameOpen, setNameOpen] = useState(showNameField || Boolean(initialName)),
     [key, setKey] = useState(""),
     [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (initialUrl !== undefined) setUrl(initialUrl);
+    if (initialName !== undefined) {
+      setName(initialName);
+      if (initialName) setNameOpen(true);
+    }
+  }, [initialUrl, initialName]);
+  const isEditingSaved = Boolean(showNameField && initialUrl);
   return (
     <form
       className="connection-form"
       onSubmit={async (e) => {
         e.preventDefault();
+        const trimmedName = name.trim();
+        if (isEditingSaved && !key.trim()) {
+          setBusy(true);
+          void command<ViewState>("save_connection_profile", {
+            baseUrl: url,
+            name: trimmedName,
+          })
+            .then((next) => {
+              if (next?.preferences) onState?.(next);
+              onConnected?.();
+            })
+            .catch(onError)
+            .finally(() => setBusy(false));
+          return;
+        }
         if (!await beforeChange()) return;
         setBusy(true);
-        void command("connect", { baseUrl: url, apiKey: key })
-          .then(() => setKey(""))
+        const payload: Record<string, unknown> = { baseUrl: url, apiKey: key };
+        if (trimmedName) payload.name = trimmedName;
+        void command<ViewState>("connect", payload)
+          .then((next) => {
+            if (next?.preferences) onState?.(next);
+            setKey("");
+            onConnected?.();
+          })
           .catch(onError)
           .finally(() => setBusy(false));
       }}
     >
-      <span className="connection-icon">
-        <Plug size={26} />
-      </span>
-      <h2>{state.connected ? "更换连接" : "连接你的运维服务"}</h2>
+      <div className="connection-form-top">
+        <span className="connection-icon">
+          <Plug size={26} />
+        </span>
+        {onCancel && (
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="关闭连接窗口"
+            onClick={onCancel}
+          >
+            <X size={16} />
+          </button>
+        )}
+      </div>
+      <h2>
+        {initialUrl === "" && showNameField
+          ? "新增 Sub2API 实例"
+          : state.connected
+            ? "更换或添加连接"
+            : "连接你的运维服务"}
+      </h2>
+      {!state.connected && saved.length > 0 && onSwitchSaved && (
+        <div className="saved-connections-quick" aria-label="已保存实例快捷连接">
+          <span className="saved-connections-label">已保存实例</span>
+          <div className="saved-connections-chips">
+            {saved.map((item) => (
+              <div key={item.base_url} className="saved-connection-chip">
+                <button
+                  type="button"
+                  className="saved-connection-connect"
+                  disabled={busy || switchingUrl !== null}
+                  onClick={() => onSwitchSaved(item)}
+                >
+                  {switchingUrl === item.base_url ? (
+                    <LoaderCircle size={13} className="spin" />
+                  ) : (
+                    <Plug size={13} />
+                  )}
+                  <strong>{item.name}</strong>
+                  <small>{item.base_url}</small>
+                </button>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => {
+                    setUrl(item.base_url);
+                    setName(item.name);
+                    setNameOpen(true);
+                  }}
+                >
+                  填入
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <label>
         服务地址
         <input
@@ -1363,22 +1657,49 @@ function Connection({
         管理员 API Key
         <input
           type="password"
-          required
+          required={!isEditingSaved}
           value={key}
           onChange={(e) => setKey(e.target.value)}
-          placeholder="粘贴已有的管理员 Key"
+          placeholder={isEditingSaved ? "留空则仅保存实例名称" : "粘贴已有的管理员 Key"}
           autoComplete="off"
           spellCheck={false}
         />
       </label>
-      <button className="primary" disabled={busy}>
-        {busy ? (
-          <LoaderCircle className="spin" size={15} />
-        ) : (
-          <Plug size={15} />
+      {nameOpen ? (
+        <label>
+          实例名称（可选）
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="例如：主力生产节点"
+            autoComplete="off"
+          />
+        </label>
+      ) : (
+        <button
+          type="button"
+          className="text-button connection-name-toggle"
+          onClick={() => setNameOpen(true)}
+        >
+          设置实例备注名
+        </button>
+      )}
+      <div className="connection-form-actions">
+        {onCancel && (
+          <button type="button" onClick={onCancel} disabled={busy}>
+            取消
+          </button>
         )}
-        验证并连接
-      </button>
+        <button className="primary" disabled={busy}>
+          {busy ? (
+            <LoaderCircle className="spin" size={15} />
+          ) : (
+            <Plug size={15} />
+          )}
+          验证并连接
+        </button>
+      </div>
     </form>
   );
 }
@@ -1404,10 +1725,14 @@ function SettingsPage({
   state,
   runtimeVersion,
   prefs,
+  onState,
   onChange,
   onMessage,
   onError,
   beforeConnectionChange,
+  onSwitchConnection,
+  onOpenConnectionModal,
+  switchingUrl = null,
 }: {
   page: Page;
   mobile?: boolean;
@@ -1416,18 +1741,25 @@ function SettingsPage({
   state: ViewState;
   runtimeVersion: string | null;
   prefs: (p: Partial<Preferences>) => Promise<void>;
+  onState?: (s: ViewState) => void;
   onChange: (k: string, c: ConfigSection) => void;
   onMessage: (m: string) => void;
   onError: (e: unknown) => void;
   beforeConnectionChange: () => Promise<boolean>;
+  onSwitchConnection?: (item: SavedConnection) => void;
+  onOpenConnectionModal?: (target: { baseUrl: string; name: string }) => void;
+  switchingUrl?: string | null;
 }) {
   const [featureTab, setFeatureTab] = useState("recovery");
   const [visitedTabs, setVisitedTabs] = useState<Record<string, boolean>>({ recovery: true });
+  const [removingUrl, setRemovingUrl] = useState<string | null>(null);
   const selectFeatureTab = (next: string) => {
     setFeatureTab(next);
     setVisitedTabs((old) => (old[next] ? old : { ...old, [next]: true }));
   };
   const connectionKey = `${state.preferences.base_url}:${state.connection_revision ?? 0}`;
+  const connections = useMemo(() => savedConnections(state.preferences), [state.preferences]);
+  const activeUrl = state.preferences.base_url.trim().replace(/\/+$/, "");
   async function action(name: string) {
     try {
       const result = await api<{ message?: string }>(
@@ -1437,6 +1769,19 @@ function SettingsPage({
       onMessage(result.message || "操作完成");
     } catch (e) {
       onError(e);
+    }
+  }
+  async function removeInstance(item: SavedConnection) {
+    if (removingUrl) return;
+    setRemovingUrl(item.base_url);
+    try {
+      const next = await command<ViewState>("remove_connection", { baseUrl: item.base_url });
+      if (next?.preferences) onState?.(next);
+      onMessage(`已删除实例 ${item.name}`);
+    } catch (e) {
+      onError(e);
+    } finally {
+      setRemovingUrl(null);
     }
   }
   return (
@@ -1495,6 +1840,93 @@ function SettingsPage({
         </>
       ) : (
         <>
+          <section className="settings-card instance-management-card" aria-label="Sub2API 实例管理">
+            <div className="section-heading">
+              <h2>Sub2API 实例管理</h2>
+              {onOpenConnectionModal && (
+                <button
+                  type="button"
+                  onClick={() => onOpenConnectionModal({ baseUrl: "", name: "" })}
+                >
+                  <Plus size={14} />
+                  新增实例
+                </button>
+              )}
+            </div>
+            {connections.length > 0 ? (
+              <div className="saved-instances-list">
+                {connections.map((item) => {
+                  const isCurrent = state.connected && item.base_url === activeUrl;
+                  const isSwitching = switchingUrl === item.base_url;
+                  const isRemoving = removingUrl === item.base_url;
+                  return (
+                    <article
+                      key={item.base_url}
+                      className={`saved-instance-row${isCurrent ? " current" : ""}`}
+                    >
+                      <div className="saved-instance-info">
+                        <div className="saved-instance-title">
+                          <span
+                            className={`status-dot ${isCurrent ? (state.online ? "good" : "warn") : "muted"}`}
+                          />
+                          <strong>{item.name}</strong>
+                          <span className={`instance-badge ${isCurrent ? "active" : ""}`}>
+                            {isCurrent ? "当前连接" : "已保存"}
+                          </span>
+                        </div>
+                        <small>{item.base_url}</small>
+                      </div>
+                      <div className="saved-instance-actions">
+                        {!isCurrent && onSwitchConnection && (
+                          <button
+                            type="button"
+                            disabled={switchingUrl !== null || isRemoving}
+                            onClick={() => onSwitchConnection(item)}
+                          >
+                            {isSwitching ? (
+                              <LoaderCircle size={13} className="spin" />
+                            ) : (
+                              <Plug size={13} />
+                            )}
+                            切换连接
+                          </button>
+                        )}
+                        {onOpenConnectionModal && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onOpenConnectionModal({
+                                baseUrl: item.base_url,
+                                name: item.name,
+                              })
+                            }
+                          >
+                            更新 Key / 重命名
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="danger-text"
+                          disabled={isCurrent || switchingUrl !== null || isRemoving}
+                          title={
+                            isCurrent
+                              ? "当前实例正在连接或使用中，请先切换到其他实例或断开连接后再删除"
+                              : "删除此实例并清除对应的本机 Key"
+                          }
+                          onClick={() => void removeInstance(item)}
+                        >
+                          <Trash2 size={13} />
+                          删除实例
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="muted">尚未保存任何 Sub2API 实例。</p>
+            )}
+          </section>
           <section className="settings-card">
             <h2>客户端</h2>
             {state.platform !== "android" && <Field
@@ -1548,7 +1980,7 @@ function SettingsPage({
             )}
           </ConfigForm>
           <section className="settings-card">
-            <Connection state={state} onError={onError} beforeChange={beforeConnectionChange} />
+            <Connection state={state} onError={onError} beforeChange={beforeConnectionChange} onSwitchSaved={onSwitchConnection} switchingUrl={switchingUrl} />
             <button
               className="danger-text"
               onClick={() => void beforeConnectionChange().then((allowed) => { if (allowed) return command("disconnect"); }).catch(onError)}

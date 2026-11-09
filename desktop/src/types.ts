@@ -208,15 +208,51 @@ export type Snapshot = {
   errors: OpsError[];
   recoveries: Recovery[];
 };
+export type SavedConnection = {
+  name: string;
+  base_url: string;
+};
 export type Preferences = {
   model_test_preferences?: Record<string, import("./modelTestTypes").ModelTestPreference>;
   base_url: string;
+  connections?: SavedConnection[];
   favorites: number[];
   pinned: boolean;
   launch_at_login: boolean;
   record_columns?: string[] | null;
   model_test_concurrency?: number | null;
 };
+export function defaultConnectionName(baseUrl: string): string {
+  const trimmed = baseUrl.trim().replace(/\/+$/, "");
+  if (!trimmed) return "未命名实例";
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.host || trimmed;
+  } catch {
+    return trimmed;
+  }
+}
+export function savedConnections(preferences: Preferences): SavedConnection[] {
+  const seen = new Set<string>();
+  const list: SavedConnection[] = [];
+  for (const item of preferences.connections ?? []) {
+    const url = item.base_url.trim().replace(/\/+$/, "");
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    list.push({
+      name: item.name.trim() || defaultConnectionName(url),
+      base_url: url,
+    });
+  }
+  const active = preferences.base_url.trim().replace(/\/+$/, "");
+  if (active && !seen.has(active)) {
+    list.push({
+      name: defaultConnectionName(active),
+      base_url: active,
+    });
+  }
+  return list;
+}
 export type ViewState = {
   platform?: "macos" | "android";
   foreground?: boolean;
@@ -238,6 +274,7 @@ export const initialState: ViewState = {
   snapshot: null,
   preferences: {
     base_url: "",
+    connections: [],
     favorites: [],
     pinned: false,
     launch_at_login: false,
