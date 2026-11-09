@@ -16,7 +16,7 @@ tauri-build = { version = "~2.7.4", features = [] }
 [dependencies]
 tauri = { version = "~2.12.5", features = [] }
 tauri-plugin-opener = "2"
-tauri-plugin-dialog = "~2.8.3"
+tauri-plugin-dialog = "~2.8.4"
 tauri-plugin-fs = "~2.7.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tokio = { version = "1", features = ["sync", "time", "macros"] }
@@ -42,6 +42,12 @@ glib-macros = { path = "vendor/glib-macros" }
 gtk3-macros = { path = "vendor/gtk3-macros" }
 tauri-plugin-opener = { path = "vendor/tauri-plugin-opener" }
 tauri-plugin-single-instance = { path = "vendor/tauri-plugin-single-instance" }
+
+[profile.dev]
+strip = "debuginfo"
+
+[profile.dev.build-override]
+strip = "none"
 
 [profile.release]
 lto = "thin"

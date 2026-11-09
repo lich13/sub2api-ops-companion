@@ -65,12 +65,79 @@ FATAL_FIXTURE_AFTER = """        calls = 0
 """
 
 
-def _concurrency_method(source: str, name: str) -> ast.AsyncFunctionDef:
+def _sync_concurrency_method(
+    reference: Path, relative_path: str, class_name: str, name: str, before: str, after: str
+) -> None:
+    test_path = reference / relative_path
+    source = test_path.read_bytes().decode("utf-8")
+    method = _concurrency_method(source, class_name, name)
+    if method.end_lineno is None:
+        raise RuntimeError(f"Cannot locate the end of {name}")
+    lines = source.splitlines(keepends=True)
+    method_start, method_end = method.lineno - 1, method.end_lineno
+    method_source = "".join(lines[method_start:method_end])
+    matches = method_source.count(before)
+    if matches != 1:
+        raise RuntimeError(
+            f"Expected one historical concurrency fixture in {relative_path}; found {matches}"
+        )
+
+    patched_method = method_source.replace(before, after, 1)
+    patched_source = (
+        "".join(lines[:method_start])
+        + patched_method
+        + "".join(lines[method_end:])
+    )
+    original_assertions = _self_assertions(method)
+    patched_assertions = _self_assertions(_concurrency_method(patched_source, class_name, name))
+    if original_assertions != patched_assertions:
+        raise RuntimeError(f"{name} assertion AST changed during fixture sync")
+    test_path.write_bytes(patched_source.encode("utf-8"))
+
+
+CANCEL_TEST = "test_cancel_stops_active_streams_and_waiting_retry"
+CANCEL_FIXTURE_BEFORE = """        started = asyncio.Event(); cancelled = []
+        async def run(**kwargs):
+            started.set()
+            try: await asyncio.sleep(30)
+            except asyncio.CancelledError: cancelled.append(True); raise
+"""
+CANCEL_FIXTURE_AFTER = """        started = asyncio.Event(); cancelled = []
+        active = 0
+        async def run(**kwargs):
+            nonlocal active
+            active += 1
+            if active == 3:
+                started.set()
+            try: await asyncio.sleep(30)
+            except asyncio.CancelledError: cancelled.append(True); raise
+"""
+PARENT_SIBLING_TEST = "test_parent_siblings_and_same_account_never_overlap"
+PARENT_SIBLING_FIXTURE_BEFORE = """        self.gates = {1: threading.Event(), 4: threading.Event()}
+        first = await self.submit([1, 2, 3, 4])
+"""
+PARENT_SIBLING_FIXTURE_AFTER = """        self.gates = {1: threading.Event(), 4: threading.Event()}
+        parent_locked = asyncio.Event()
+        orig_prepare = self.service.actions.prepare_test
+        async def ordered_prepare(aid, request):
+            if aid in {2, 3}:
+                await asyncio.wait_for(parent_locked.wait(), timeout=5)
+            try:
+                return await orig_prepare(aid, request)
+            finally:
+                if aid == 1:
+                    parent_locked.set()
+        self.service.actions.prepare_test = ordered_prepare
+        first = await self.submit([1, 2, 3, 4])
+"""
+
+
+def _concurrency_method(source: str, class_name: str, name: str) -> ast.AsyncFunctionDef:
     tree = ast.parse(source)
     matches = [
         method
         for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "ModelConcurrencyTests"
+        if isinstance(node, ast.ClassDef) and node.name == class_name
         for method in node.body
         if isinstance(method, ast.AsyncFunctionDef) and method.name == name
     ]
@@ -94,40 +161,13 @@ def _self_assertions(method: ast.AsyncFunctionDef) -> tuple[str, ...]:
 
 
 def apply_concurrency_fixture_sync(reference: Path) -> None:
-    for name, before, after in (
-        (CONCURRENCY_TEST, CONCURRENCY_FIXTURE_BEFORE, CONCURRENCY_FIXTURE_AFTER),
-        (FATAL_TEST, FATAL_FIXTURE_BEFORE, FATAL_FIXTURE_AFTER),
+    for relative_path, class_name, name, before, after in (
+        ("tests/test_modeltrace022.py", "ModelConcurrencyTests", CONCURRENCY_TEST, CONCURRENCY_FIXTURE_BEFORE, CONCURRENCY_FIXTURE_AFTER),
+        ("tests/test_modeltrace022.py", "ModelConcurrencyTests", FATAL_TEST, FATAL_FIXTURE_BEFORE, FATAL_FIXTURE_AFTER),
+        ("tests/test_modeltrace022.py", "ModelConcurrencyTests", CANCEL_TEST, CANCEL_FIXTURE_BEFORE, CANCEL_FIXTURE_AFTER),
+        ("tests/test_connection_batch039.py", "ConnectionBatch039Tests", PARENT_SIBLING_TEST, PARENT_SIBLING_FIXTURE_BEFORE, PARENT_SIBLING_FIXTURE_AFTER),
     ):
-        _sync_concurrency_method(reference, name, before, after)
-
-
-def _sync_concurrency_method(reference: Path, name: str, before: str, after: str) -> None:
-    relative_path = Path("tests/test_modeltrace022.py")
-    test_path = reference / relative_path
-    source = test_path.read_bytes().decode("utf-8")
-    method = _concurrency_method(source, name)
-    if method.end_lineno is None:
-        raise RuntimeError(f"Cannot locate the end of {name}")
-    lines = source.splitlines(keepends=True)
-    method_start, method_end = method.lineno - 1, method.end_lineno
-    method_source = "".join(lines[method_start:method_end])
-    matches = method_source.count(before)
-    if matches != 1:
-        raise RuntimeError(
-            f"Expected one historical concurrency fixture in {relative_path}; found {matches}"
-        )
-
-    patched_method = method_source.replace(before, after, 1)
-    patched_source = (
-        "".join(lines[:method_start])
-        + patched_method
-        + "".join(lines[method_end:])
-    )
-    original_assertions = _self_assertions(method)
-    patched_assertions = _self_assertions(_concurrency_method(patched_source, name))
-    if original_assertions != patched_assertions:
-        raise RuntimeError(f"{name} assertion AST changed during fixture sync")
-    test_path.write_bytes(patched_source.encode("utf-8"))
+        _sync_concurrency_method(reference, relative_path, class_name, name, before, after)
 
 
 def reference_database(postgres: TemporaryPostgres) -> str:
@@ -156,8 +196,8 @@ def main(argv: list[str] | None = None) -> int:
             bundle.extractall(reference, filter="data")
         apply_concurrency_fixture_sync(reference)
         print(
-            "Reference fixture sync override: temporary tests/test_modeltrace022.py only; "
-            "first-batch and fatal-peer event barriers; assertion AST preserved; app files untouched by override."
+            "Reference fixture sync override: temporary tests/test_modeltrace022.py and tests/test_connection_batch039.py only; "
+            "first-batch, fatal-peer, cancel-entry, and parent-lock event barriers; assertion AST preserved; app files untouched by override."
         )
         env = os.environ.copy()
         for key in tuple(env):
