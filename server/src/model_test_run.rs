@@ -31,7 +31,10 @@ struct Run {
 impl ModelTests {
     fn group(&self, id: &str, run: &Run, index: usize, changes: Value) -> Result<()> {
         let display_only = changes.get("status").is_none()
-            || matches!(string(&changes["status"]), "receiving" | "analyzing");
+            || matches!(
+                string(&changes["status"]),
+                "running" | "receiving" | "analyzing"
+            );
         let mut groups = run.groups.lock().unwrap_or_else(|e| e.into_inner());
         groups[index]
             .as_object_mut()
@@ -254,12 +257,15 @@ impl ModelTests {
         self.update(id, changes)?;
 
         if probe {
-            self.update(
+            self.display_progress(
                 id,
                 json!({"tokenizer":{"status":"running","requests":0,"report":null}}),
             )?;
             if let Err(error) = self.run_tokenizer(&current, context.clone()).await {
-                self.update(id,json!({"tokenizer":{"status":"failed","error":crate::security::safe_error(&error.detail,200)}}))?;
+                self.display_progress(
+                    id,
+                    json!({"tokenizer":{"status":"failed","error":crate::security::safe_error(&error.detail,200)}}),
+                )?;
             }
             self.update(id,json!({"status":status,"phase":"finished","completed_at":crate::compat::now(),"duration_ms":run.started.elapsed().as_millis()}))?;
         }

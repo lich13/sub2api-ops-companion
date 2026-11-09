@@ -68,6 +68,7 @@ impl Runtime {
         self.key_quota.retain_accounts(&rows);
         self.monitor.queries.retain_accounts(&rows);
         let mut specs = vec![];
+        let mut sig_entries = vec![];
         let mut accounts = Vec::with_capacity(rows.len());
         let mut live_names = BTreeMap::new();
         for row in &rows {
@@ -84,16 +85,10 @@ impl Runtime {
             );
             account["recovery_monitor"] = crate::recovery_events::project(meta);
             specs.extend(usage::stats_specs(id, &account["usage"]));
+            sig_entries.extend(usage::stats_signature(id, &account["usage"], now));
             accounts.push(account);
         }
-        let signature = json!(specs
-            .iter()
-            .map(|s| json!([
-                s["account_id"],
-                s["key"],
-                string(&s["start_at"]).chars().take(16).collect::<String>()
-            ]))
-            .collect::<Vec<_>>());
+        let signature = Value::Array(sig_entries);
         if stats_epoch != cache.stats_epoch
             || cache.stats_failed
             || cache

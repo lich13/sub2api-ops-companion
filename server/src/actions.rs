@@ -804,10 +804,11 @@ impl Actions {
         if id < 1 || scope.iter().chain(&target).any(|v| *v < 1) || !target.is_subset(&scope) {
             return Err(Error::new(422, "分组范围无效"));
         }
-        let _lease = self.locks.try_account(&self.account(id, None).await?)?;
-        let row = self
-            .account(id, Some(string(&payload["expected_version"])))
-            .await?;
+        let row = self.account(id, None).await?;
+        let _lease = self.locks.try_account(&row)?;
+        if !version_matches(&row, string(&payload["expected_version"])) {
+            return Err(Error::new(409, "账号已变化，请刷新后重试"));
+        }
         let groups = self
             .queries
             .db
@@ -879,9 +880,6 @@ impl Actions {
             .account(id, Some(string(&payload["expected_version"])))
             .await?;
         let lease = self.locks.try_account(&row)?;
-        let row = self
-            .account(id, Some(string(&payload["expected_version"])))
-            .await?;
         let platform = string(&row["platform"]);
         let mode = string(&payload["mode"]);
         if platform != "openai" && platform != "grok" && mode != "default" {

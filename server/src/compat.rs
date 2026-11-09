@@ -287,6 +287,16 @@ pub fn operation_versions(row: &Value) -> Value {
     Value::Object(result)
 }
 
+pub fn priority_version(row: &Value) -> String {
+    let mut stable = pick(row, &["id", "platform", "type", "parent_account_id"]);
+    if !truthy(&stable["parent_account_id"]) {
+        stable["parent_account_id"] = row["extra"]["parent_account_id"].clone();
+    }
+    let fallback = json!(0);
+    let value = row.get("priority").unwrap_or(&fallback);
+    digest(&json!([stable, value]))
+}
+
 pub fn account_version(row: &Value) -> String {
     let mut groups = row["group_ids"].as_array().cloned().unwrap_or_default();
     sort_groups(&mut groups);

@@ -305,6 +305,51 @@ pub fn stats_specs(id: i64, usage: &Value) -> Vec<Value> {
     }
     specs
 }
+pub fn stats_signature(id: i64, usage: &Value, at: DateTime<Utc>) -> Vec<Value> {
+    let mut entries: Vec<Value> = usage["windows"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|v| truthy(&v["stats_start"]))
+        .map(|v| {
+            let duration = v["window_minutes"]
+                .as_i64()
+                .map(Duration::minutes)
+                .unwrap_or_else(|| {
+                    if matches!(string(&v["key"]), "codex_5h" | "five_hour") {
+                        Duration::hours(5)
+                    } else {
+                        Duration::days(7)
+                    }
+                });
+            let fixed = v["source"] == "billing_probe"
+                || parse_datetime(&v["reset_at"])
+                    .filter(|r| *r > at)
+                    .and_then(|r| r.checked_sub_signed(duration))
+                    .is_some_and(|s| s <= at);
+            let boundary = if fixed {
+                string(&v["stats_start"])
+                    .chars()
+                    .take(16)
+                    .collect::<String>()
+            } else {
+                "rolling".to_owned()
+            };
+            json!([id, v["key"], boundary])
+        })
+        .collect();
+    if truthy(&usage["today_start"]) {
+        entries.push(json!([
+            id,
+            "today",
+            string(&usage["today_start"])
+                .chars()
+                .take(16)
+                .collect::<String>()
+        ]));
+    }
+    entries
+}
 pub type Stats = BTreeMap<(i64, String), Value>;
 pub fn stats_rows(rows: Vec<Value>) -> Stats {
     rows.into_iter().filter_map(|row|Some(((integer(&row["account_id"])?,string(&row["key"]).into()),json!({
@@ -342,5 +387,53 @@ pub fn attach_stats(id: i64, usage: &mut Value, stats: &Stats, free_limit: i64) 
                 item["estimated_total_cost"] = json!(cost * 100.0 / percent);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stats_signature_keeps_rolling_windows_stable_across_minute_boundaries() {
+        let before = parse_datetime(&json!("2026-11-09T12:00:59Z")).unwrap();
+        let after = parse_datetime(&json!("2026-11-09T12:01:01Z")).unwrap();
+        let expired = parse_datetime(&json!("2026-11-09T13:00:01Z")).unwrap();
+        let oauth_row = json!({
+            "id": 7,
+            "platform": "openai",
+            "type": "oauth",
+            "extra": {
+                "codex_5h_used_percent": 20.0,
+                "codex_5h_reset_at": "2026-11-09T13:00:00Z",
+                "codex_7d_used_percent": 40.0
+            }
+        });
+        let grok_row = json!({
+            "id": 8,
+            "platform": "grok",
+            "type": "oauth",
+            "extra": {
+                "subscription_tier": "free"
+            }
+        });
+        let sig_before = stats_signature(7, &project(&oauth_row, before, &Value::Null), before);
+        let sig_after = stats_signature(7, &project(&oauth_row, after, &Value::Null), after);
+        assert_eq!(sig_before, sig_after);
+        assert_eq!(
+            sig_before,
+            vec![
+                json!([7, "codex_5h", "2026-11-09T08:00"]),
+                json!([7, "codex_7d", "rolling"]),
+            ]
+        );
+        let sig_expired = stats_signature(7, &project(&oauth_row, expired, &Value::Null), expired);
+        assert_ne!(sig_after, sig_expired);
+        assert_eq!(sig_expired[0], json!([7, "codex_5h", "rolling"]));
+
+        let grok_before = stats_signature(8, &project(&grok_row, before, &Value::Null), before);
+        let grok_after = stats_signature(8, &project(&grok_row, after, &Value::Null), after);
+        assert_eq!(grok_before, grok_after);
+        assert_eq!(grok_before, vec![json!([8, "grok_24h", "rolling"])]);
     }
 }

@@ -2,7 +2,7 @@
 //! never replayed, and legacy priority operations share the same admission gate.
 use crate::{
     actions::Actions,
-    compat::{digest, integer, now, operation_versions, parse_datetime, string},
+    compat::{digest, integer, now, parse_datetime, priority_version, string},
     error::{Error, Result},
     operations::{self, Operations, PENDING},
     queries::settings_capabilities,
@@ -349,7 +349,7 @@ pub struct PriorityOrders {
     running: Arc<AtomicBool>,
 }
 fn version(row: &Value) -> Value {
-    operation_versions(row)["priority"].clone()
+    priority_version(row).into()
 }
 fn identity(row: &Value) -> String {
     let mut stable = row.clone();

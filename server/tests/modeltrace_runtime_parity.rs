@@ -2894,7 +2894,7 @@ async fn first_text_progress_diagnostics_are_frozen_before_later_stream_events()
         progress["groups"]
     );
     let disk = harness.runtime.tests.store.read().unwrap();
-    assert_eq!(disk["jobs"][&job_id]["groups"][0]["status"], "running");
+    assert_eq!(disk["jobs"][&job_id]["groups"][0]["status"], "queued");
     assert!(disk["jobs"][&job_id]["groups"][0]["diagnostics"]["ttft_ms"].is_null());
 
     release.add_permits(1);

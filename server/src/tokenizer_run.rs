@@ -1,7 +1,7 @@
 use crate::{
-    compat::{integer, string},
+    compat::string,
     error::{Error, Result},
-    model_target, model_test_stream,
+    model_test_stream,
     model_tests::{Context, ModelTests},
     tokenizer::{self, Observation, Posterior},
 };
@@ -19,7 +19,6 @@ impl ModelTests {
             return Ok(());
         };
         let id = string(&job["id"]);
-        let account = integer(&job["account_id"]).ok_or_else(Error::internal)?;
         let client = context
             .target
             .client()
@@ -46,24 +45,6 @@ impl ModelTests {
                 let context = context.clone();
                 let probe = probe.clone();
                 pending.push(async move {
-                    let owner = integer(&context.owner["id"]).unwrap_or(account);
-                    let valid = async {
-                        let row = model_target::account(&self.actions, account).await?;
-                        let credentials = if owner == account {
-                            row.clone()
-                        } else {
-                            model_target::account(&self.actions, owner).await?
-                        };
-                        Ok::<_, Error>(
-                            model_target::signature(&row) == model_target::signature(&context.row)
-                                && model_target::signature(&credentials)
-                                    == model_target::signature(&context.owner),
-                        )
-                    }
-                    .await;
-                    if !matches!(valid, Ok(true)) {
-                        return (index, probe, Err("账号配置已变化".to_string()));
-                    }
                     let mut diag = json!({});
                     let value = tokio::time::timeout(
                         Duration::from_secs(90),
@@ -88,7 +69,10 @@ impl ModelTests {
                     (index, probe, value)
                 });
             }
-            self.update(id,json!({"tokenizer":{"status":"running","steps":steps,"requests":steps.len(),"report":Value::Null}}))?;
+            self.display_progress(
+                id,
+                json!({"tokenizer":{"status":"running","steps":steps,"requests":steps.len(),"report":Value::Null}}),
+            )?;
             while let Some((index, probe, result)) = pending.next().await {
                 match result {
                     Ok(tokens) => {
@@ -115,7 +99,10 @@ impl ModelTests {
                         .tokenizer
                         .report(p, string(&job["requested_model"]))
                 });
-                self.update(id,json!({"tokenizer":{"status":"running","steps":steps,"requests":steps.len(),"report":report,"error":error}}))?;
+                self.display_progress(
+                    id,
+                    json!({"tokenizer":{"status":"running","steps":steps,"requests":steps.len(),"report":report,"error":error}}),
+                )?;
             }
             if !error.is_empty() || ending {
                 break;
@@ -154,7 +141,10 @@ impl ModelTests {
                 .tokenizer
                 .report(p, string(&job["requested_model"]))
         });
-        self.update(id,json!({"tokenizer":{"status":if error.is_empty(){"completed"}else{"failed"},"steps":steps,"requests":steps.len(),"report":report,"baseline_drift":baseline_drift,"error":error,"duration_ms":started.elapsed().as_millis(),"bank_version":snapshot.version}}))?;
+        self.display_progress(
+            id,
+            json!({"tokenizer":{"status":if error.is_empty(){"completed"}else{"failed"},"steps":steps,"requests":steps.len(),"report":report,"baseline_drift":baseline_drift,"error":error,"duration_ms":started.elapsed().as_millis(),"bank_version":snapshot.version}}),
+        )?;
         Ok(())
     }
 }

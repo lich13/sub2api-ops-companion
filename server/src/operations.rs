@@ -72,55 +72,58 @@ pub fn scheduled_time(value: &Value) -> Result<chrono::DateTime<chrono::Utc>> {
     }
     Ok(at.with_timezone(&chrono::Utc))
 }
+fn validate_job(data: &Value, job: &Value) -> Result<()> {
+    let error = || Error::new(503, "操作状态无法读取");
+    crate::connection_retry::Policy::saved(job)?;
+    if job
+        .get("attempt_count")
+        .is_some_and(|v| v.as_u64().is_none())
+        || job
+            .get("next_retry_at")
+            .is_some_and(|v| !v.is_null() && crate::compat::parse_datetime(v).is_none())
+    {
+        return Err(error());
+    }
+    if !job.is_object()
+        || !job["account_id"].is_i64()
+        || !job["payload"].is_object()
+        || !job["status"].is_string()
+        || job
+            .get("scheduled_at")
+            .is_some_and(|value| job["action"] != "test" || scheduled_time(value).is_err())
+    {
+        return Err(error());
+    }
+    if job.get("repeat").is_some()
+        && (job["repeat"] != "quota_cycle"
+            || job["action"] != "test"
+            || validation::hex(&job["repeat_series_id"], 32).is_err()
+            || !matches!(
+                string(&job["repeat_state"]),
+                "active" | "continued" | "stopped" | "needs_confirmation"
+            ))
+    {
+        return Err(error());
+    }
+    if let Some(next) = job.get("next_operation_id") {
+        let successor = &data["jobs"][string(next)];
+        if validation::hex(next, 32).is_err()
+            || successor["account_id"] != job["account_id"]
+            || successor["repeat_series_id"] != job["repeat_series_id"]
+            || job["repeat_state"] != "continued"
+        {
+            return Err(error());
+        }
+    }
+    Ok(())
+}
 pub fn validate_store(data: &Value) -> Result<()> {
     let error = || Error::new(503, "操作状态无法读取");
     if data["version"] != 1 || !data["jobs"].is_object() || !data["requests"].is_object() {
         return Err(error());
     }
     for job in data["jobs"].as_object().unwrap().values() {
-        crate::connection_retry::Policy::saved(job)?;
-        if job
-            .get("attempt_count")
-            .is_some_and(|v| v.as_u64().is_none())
-            || job
-                .get("next_retry_at")
-                .is_some_and(|v| !v.is_null() && crate::compat::parse_datetime(v).is_none())
-        {
-            return Err(error());
-        }
-        if !job.is_object()
-            || !job["account_id"].is_i64()
-            || !job["payload"].is_object()
-            || !job["status"].is_string()
-            || job
-                .get("scheduled_at")
-                .is_some_and(|value| job["action"] != "test" || scheduled_time(value).is_err())
-        {
-            return Err(error());
-        }
-    }
-    for job in data["jobs"].as_object().unwrap().values() {
-        if job.get("repeat").is_some()
-            && (job["repeat"] != "quota_cycle"
-                || job["action"] != "test"
-                || validation::hex(&job["repeat_series_id"], 32).is_err()
-                || !matches!(
-                    string(&job["repeat_state"]),
-                    "active" | "continued" | "stopped" | "needs_confirmation"
-                ))
-        {
-            return Err(error());
-        }
-        if let Some(next) = job.get("next_operation_id") {
-            let successor = &data["jobs"][string(next)];
-            if validation::hex(next, 32).is_err()
-                || successor["account_id"] != job["account_id"]
-                || successor["repeat_series_id"] != job["repeat_series_id"]
-                || job["repeat_state"] != "continued"
-            {
-                return Err(error());
-            }
-        }
+        validate_job(data, job)?;
     }
     for field in ["batches", "batch_requests"] {
         if data.get(field).is_some_and(|v| !v.is_object()) {
@@ -196,15 +199,22 @@ impl OperationStore {
             Ok(out)
         })
     }
-    fn prune_terminal_jobs(data: &mut Value) {
+    fn prune_terminal_jobs(data: &mut Value) -> bool {
         const MAX_TERMINAL_JOBS: usize = 10_000;
         let Some(jobs_len) = data["jobs"].as_object().map(serde_json::Map::len) else {
-            return;
+            return false;
         };
         if jobs_len <= MAX_TERMINAL_JOBS {
-            return;
+            return false;
         }
         let jobs = data["jobs"].as_object().unwrap();
+        let non_pending_upper_bound = jobs
+            .values()
+            .filter(|job| !PENDING.contains(&string(&job["status"])) && !repeat_open(job))
+            .count();
+        if non_pending_upper_bound <= MAX_TERMINAL_JOBS {
+            return false;
+        }
         let mut open_series = BTreeSet::new();
         for job in jobs.values() {
             if repeat_open(job) {
@@ -249,7 +259,7 @@ impl OperationStore {
             }
         }
         if terminal_candidates.len() <= MAX_TERMINAL_JOBS {
-            return;
+            return false;
         }
         terminal_candidates.sort();
         let skip = terminal_candidates.len() - MAX_TERMINAL_JOBS;
@@ -270,7 +280,7 @@ impl OperationStore {
             }
         }
         if retain_ids.len() == jobs_len {
-            return;
+            return false;
         }
         data["jobs"]
             .as_object_mut()
@@ -299,6 +309,7 @@ impl OperationStore {
         if let Some(requests) = data["requests"].as_object_mut() {
             requests.retain(|_, jid| jid.as_str().is_some_and(|j| retain_ids.contains(j)));
         }
+        true
     }
     pub fn recover_startup(&self) -> Result<()> {
         let data = self.read_shared()?;
@@ -575,38 +586,70 @@ impl Operations {
             .ok_or_else(Error::internal)
     }
     pub(crate) fn update_many(&self, changes: &[(&str, Value)]) -> Result<Vec<Value>> {
-        let updated = self.store.transaction(|data| {
-            let at = now();
-            let mut updated = Vec::with_capacity(changes.len());
-            for (jid, changes) in changes {
-                let job = data["jobs"]
-                    .get_mut(*jid)
-                    .ok_or_else(|| Error::new(404, "操作不存在"))?;
-                if !(connection_test(job) && job["status"] == "cancelled") {
-                    job.as_object_mut()
-                        .unwrap()
-                        .extend(changes.as_object().cloned().ok_or_else(Error::invalid)?);
-                    job["updated_at"] = at.clone().into();
-                    if job["repeat_state"] == "stopped" && job["status"] == "queued" {
-                        job["status"] = "cancelled".into();
-                        job["reason"] = job["repeat_reason"].clone();
-                    }
-                    if job["repeat_state"] == "active"
-                        && matches!(string(&job["status"]), "failed" | "needs_confirmation")
-                    {
-                        job["repeat_state"] = "needs_confirmation".into();
-                        job["repeat_reason"] = job["reason"].clone();
-                    }
-                    if !PENDING.contains(&string(&job["status"])) {
-                        for name in ["prompt", "image_data_url", "audio_data_url"] {
-                            job["payload"].as_object_mut().unwrap().shift_remove(name);
+        let pruned = std::cell::Cell::new(false);
+        let updated = self.store.0.transaction_validated(
+            |data| {
+                OperationStore::normalize(data);
+                let at = now();
+                let mut updated = Vec::with_capacity(changes.len());
+                let mut became_terminal = false;
+                for (jid, changes) in changes {
+                    let job = data["jobs"]
+                        .get_mut(*jid)
+                        .ok_or_else(|| Error::new(404, "操作不存在"))?;
+                    let was_pending = PENDING.contains(&string(&job["status"])) || repeat_open(job);
+                    if !(connection_test(job) && job["status"] == "cancelled") {
+                        job.as_object_mut()
+                            .unwrap()
+                            .extend(changes.as_object().cloned().ok_or_else(Error::invalid)?);
+                        job["updated_at"] = at.clone().into();
+                        if job["repeat_state"] == "stopped" && job["status"] == "queued" {
+                            job["status"] = "cancelled".into();
+                            job["reason"] = job["repeat_reason"].clone();
+                        }
+                        if job["repeat_state"] == "active"
+                            && matches!(string(&job["status"]), "failed" | "needs_confirmation")
+                        {
+                            job["repeat_state"] = "needs_confirmation".into();
+                            job["repeat_reason"] = job["reason"].clone();
+                        }
+                        if !PENDING.contains(&string(&job["status"])) {
+                            for name in ["prompt", "image_data_url", "audio_data_url"] {
+                                job["payload"].as_object_mut().unwrap().shift_remove(name);
+                            }
                         }
                     }
+                    let is_pending = PENDING.contains(&string(&job["status"])) || repeat_open(job);
+                    if was_pending && !is_pending {
+                        became_terminal = true;
+                    }
+                    updated.push(job.clone());
                 }
-                updated.push(job.clone());
-            }
-            Ok(updated)
-        })?;
+                if became_terminal {
+                    pruned.set(OperationStore::prune_terminal_jobs(data));
+                }
+                Ok(updated)
+            },
+            |data| {
+                if pruned.get() || changes.iter().any(|(_, c)| c.get("batch_id").is_some()) {
+                    validate_store(data)
+                } else {
+                    if data["version"] != 1
+                        || !data["jobs"].is_object()
+                        || !data["requests"].is_object()
+                    {
+                        return Err(Error::new(503, "操作状态无法读取"));
+                    }
+                    for (jid, _) in changes {
+                        let job = data["jobs"]
+                            .get(*jid)
+                            .ok_or_else(|| Error::new(503, "操作状态无法读取"))?;
+                        validate_job(data, job)?;
+                    }
+                    Ok(())
+                }
+            },
+        )?;
         let mut keys = self.keys.lock().unwrap_or_else(|e| e.into_inner());
         for job in &updated {
             if !Self::needs_key(job) {
@@ -2018,4 +2061,64 @@ pub fn native_confirmed(row: Option<&Value>, job: &Value, unchanged: bool) -> Va
         _ => result["applied"] = true.into(),
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prune_terminal_jobs_skips_when_terminal_count_within_limit_and_evicts_oldest() {
+        let mut jobs = serde_json::Map::new();
+        for idx in 0..10_000 {
+            let jid = format!("{idx:032x}");
+            jobs.insert(
+                jid.clone(),
+                json!({
+                    "id": jid,
+                    "account_id": 1,
+                    "action": "recover",
+                    "status": "completed",
+                    "payload": {},
+                    "updated_at": format!("2026-04-12T00:{:02}:{:02}Z", (idx / 60) % 60, idx % 60),
+                }),
+            );
+        }
+        let pending_id = format!("{:032x}", 10_000usize);
+        jobs.insert(
+            pending_id.clone(),
+            json!({
+                "id": pending_id,
+                "account_id": 1,
+                "action": "recover",
+                "status": "queued",
+                "payload": {},
+                "updated_at": "2026-04-12T03:00:00Z",
+            }),
+        );
+        let mut data = json!({
+            "version": 1,
+            "jobs": jobs,
+            "requests": {},
+            "batches": {},
+            "batch_requests": {},
+        });
+        assert!(!OperationStore::prune_terminal_jobs(&mut data));
+        assert_eq!(data["jobs"].as_object().unwrap().len(), 10_001);
+
+        let extra_id = format!("{:032x}", 10_001usize);
+        data["jobs"][&extra_id] = json!({
+            "id": extra_id,
+            "account_id": 1,
+            "action": "recover",
+            "status": "completed",
+            "payload": {},
+            "updated_at": "2026-04-12T04:00:00Z",
+        });
+        assert!(OperationStore::prune_terminal_jobs(&mut data));
+        assert_eq!(data["jobs"].as_object().unwrap().len(), 10_001);
+        assert!(data["jobs"].get(format!("{:032x}", 0usize)).is_none());
+        assert!(data["jobs"].get(&pending_id).is_some());
+        assert!(data["jobs"].get(&extra_id).is_some());
+    }
 }

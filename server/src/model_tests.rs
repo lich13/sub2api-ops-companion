@@ -365,9 +365,6 @@ impl ModelTests {
             .unwrap_or_else(|e| e.into_inner())
             .get(id)
             .cloned();
-        let mut progress = context
-            .as_ref()
-            .map(|c| c.progress.lock().unwrap_or_else(|e| e.into_inner()));
         let result = self.store.transaction_validated(
             |data| {
                 normalize(data);
@@ -376,14 +373,20 @@ impl ModelTests {
                     .ok_or_else(|| Error::new(409, "任务已被替换"))?;
                 let status = job["status"].clone();
                 let retry = job["can_retry"].clone();
-                if ACTIVE.contains(&string(&status)) {
-                    if let Some(progress) = &progress {
-                        job.as_object_mut().unwrap().extend((**progress).clone());
+                let changes_obj = changes.as_object().cloned().ok_or_else(Error::invalid)?;
+                if let Some(c) = &context {
+                    let mut progress = c.progress.lock().unwrap_or_else(|e| e.into_inner());
+                    if ACTIVE.contains(&string(&status)) {
+                        job.as_object_mut()
+                            .unwrap()
+                            .extend(std::mem::take(&mut *progress));
+                    } else {
+                        progress.clear();
                     }
                 }
                 job.as_object_mut()
                     .ok_or_else(Error::internal)?
-                    .extend(changes.as_object().cloned().ok_or_else(Error::invalid)?);
+                    .extend(changes_obj);
                 crate::detection_logs::preserve_summary(job);
                 let prune = status != job["status"] && !ACTIVE.contains(&string(&job["status"]))
                     || retry != job["can_retry"];
@@ -414,9 +417,6 @@ impl ModelTests {
                 Ok(())
             },
         )?;
-        if let Some(progress) = &mut progress {
-            progress.clear();
-        }
         Ok(result)
     }
     pub fn startup(&self) -> Result<()> {
@@ -622,10 +622,17 @@ impl ModelTests {
         let cleanup = self.clone();
         let cleanup_id = id.clone();
         let registration = crate::supervision::on_drop(move || {
-            if !cleanup.get(&cleanup_id).is_ok_and(|job| {
-                ACTIVE.contains(&string(&job["status"]))
-                    || job["can_retry"] == true && job["uncertain"] != true
-            }) {
+            let has_context = cleanup
+                .contexts
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains_key(&cleanup_id);
+            if has_context
+                && !cleanup.get(&cleanup_id).is_ok_and(|job| {
+                    ACTIVE.contains(&string(&job["status"]))
+                        || job["can_retry"] == true && job["uncertain"] != true
+                })
+            {
                 cleanup
                     .contexts
                     .lock()
