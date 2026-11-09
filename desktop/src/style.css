@@ -2515,6 +2515,7 @@ td strong {
 }
 
 /* Multi-Sub2API instance switcher & management */
+.status-dot.warn { background: var(--warn); }
 .connection-status-group { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .instance-switcher { position: relative; display: inline-flex; align-items: center; min-width: 0; }
 .instance-switcher-trigger {
@@ -2550,7 +2551,16 @@ td strong {
   gap: 6px;
 }
 .instance-switcher.compact .instance-switcher-menu { width: min(260px, calc(100vw - 16px)); }
-.instance-switcher-header { padding: 4px 8px 2px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.instance-switcher-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
 .instance-switcher-list { display: grid; gap: 4px; max-height: 220px; overflow-y: auto; }
 .instance-switcher-item {
   display: flex;
@@ -2566,24 +2576,33 @@ td strong {
   cursor: pointer;
 }
 .instance-switcher-item:hover:not(:disabled) { background: var(--hover); border-color: var(--line); }
-.instance-switcher-item.active { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 32%, var(--line)); }
-.instance-switcher-meta { min-width: 0; display: grid; gap: 2px; }
+.instance-switcher-item.active { background: var(--accent-bg); border-color: color-mix(in srgb, var(--accent) 32%, var(--line)); }
+.instance-switcher-meta { min-width: 0; flex: 1; display: grid; gap: 2px; }
 .instance-switcher-meta strong { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.instance-switcher-meta small,
 .instance-switcher-meta span { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .instance-current-badge,
 .instance-badge {
   flex: 0 0 auto;
   padding: 2px 6px;
   border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
   font-size: 11px;
   font-weight: 600;
+}
+.instance-current-badge,
+.instance-badge.active {
+  border-color: transparent;
+  background: var(--accent-bg);
+  color: var(--accent);
 }
 .instance-switcher-footer { padding-top: 6px; border-top: 1px solid var(--line); }
 .instance-add-button { width: 100%; justify-content: center; font-size: 12px; min-height: 30px; }
 
-.sidebar-instance { padding: 8px 10px 4px; }
+.sidebar-instance { position: relative; padding: 8px 10px 4px; }
+.sidebar-instance .instance-switcher-menu { left: 10px; right: 10px; width: auto; }
 .sidebar-instance-button {
   display: flex;
   align-items: center;
@@ -2599,29 +2618,49 @@ td strong {
 .sidebar-instance-button:hover { border-color: var(--line-strong); background: var(--hover); }
 .sidebar-instance-text { min-width: 0; flex: 1; display: grid; gap: 1px; }
 .sidebar-instance-text strong { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-instance-text small,
 .sidebar-instance-text span { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar.collapsed .sidebar-instance-button { justify-content: center; padding: 7px 0; }
 
-.connection-modal { width: min(460px, calc(100vw - 32px)); padding: 0; border: 0; background: transparent; }
-.connection-modal .connection-form { width: 100%; margin: 0; }
+.connection-modal {
+  width: min(460px, calc(100vw - 32px));
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.connection-modal .connection-form { max-width: none; width: 100%; margin: 0; }
 .connection-form-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.connection-form-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.saved-connections-quick { display: grid; gap: 6px; margin-bottom: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-subtle); }
+.connection-form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.saved-connections-quick { display: grid; gap: 6px; margin-bottom: 4px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-subtle); }
+.saved-connections-label { font-size: 11px; font-weight: 600; color: var(--muted); }
 .saved-connections-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .saved-connection-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   max-width: 100%;
-  padding: 4px 9px;
+  padding: 3px 8px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
   font-size: 12px;
-  cursor: pointer;
 }
-.saved-connection-chip.active { border-color: var(--accent); background: var(--accent-soft); }
-.saved-connection-chip strong, .saved-connection-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saved-connection-chip.active { border-color: var(--accent); background: var(--accent-bg); }
+.saved-connection-connect {
+  border: 0;
+  background: transparent;
+  padding: 2px 4px;
+  min-height: auto;
+  gap: 5px;
+  min-width: 0;
+}
+.saved-connection-connect:hover:not(:disabled) { background: transparent; color: var(--accent); }
+.saved-connection-chip strong,
+.saved-connection-chip small,
+.saved-connection-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saved-connection-chip small,
 .saved-connection-chip span { color: var(--muted); font-size: 11px; max-width: 160px; }
 
 .saved-instances-list { display: grid; gap: 8px; margin-top: 10px; }
@@ -2636,10 +2675,16 @@ td strong {
   border-radius: 9px;
   background: var(--surface-subtle);
 }
-.saved-instance-row.active { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface-subtle)); }
+.saved-instance-row.current,
+.saved-instance-row.active {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+  background: color-mix(in srgb, var(--accent-bg) 45%, var(--surface-subtle));
+}
 .saved-instance-info { min-width: 0; display: grid; gap: 3px; }
 .saved-instance-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .saved-instance-title strong { font-size: 13px; overflow-wrap: anywhere; }
-.saved-instance-info > span { font-size: 12px; overflow-wrap: anywhere; }
+.saved-instance-info > small,
+.saved-instance-info > span { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .saved-instance-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
 

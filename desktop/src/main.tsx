@@ -209,12 +209,13 @@ export default function App() {
     [priorityChanges, setPriorityChanges] = useState(0),
     [leaveGroups, setLeaveGroups] = useState<((proceed: boolean) => void) | null>(null),
     [switchingUrl, setSwitchingUrl] = useState<string | null>(null),
-    [connectionModal, setConnectionModal] = useState<{ baseUrl: string; name: string } | null>(null),
-    [switcherOpen, setSwitcherOpen] = useState(false),
+    [connectionModal, setConnectionModal] = useState<{ baseUrl: string; name: string; requireKey?: boolean } | null>(null),
+    [switcherAnchor, setSwitcherAnchor] = useState<"topbar" | "sidebar" | null>(null),
     discardRef = useRef<HTMLElement>(null),
     schedulePending = useRef(false),
     detailGeneration = useRef(0),
     detailAbort = useRef<AbortController | null>(null);
+  const switcherOpen = switcherAnchor !== null;
   const connections = useMemo(() => savedConnections(state.preferences), [state.preferences]);
   const activeUrl = state.preferences.base_url.trim().replace(/\/+$/, "");
   const activeConnection = useMemo(
@@ -245,7 +246,7 @@ export default function App() {
   async function switchConnection(item: SavedConnection) {
     const targetUrl = item.base_url.trim().replace(/\/+$/, "");
     if (!targetUrl || switchingUrl) return;
-    setSwitcherOpen(false);
+    setSwitcherAnchor(null);
     if (state.connected && targetUrl === activeUrl) return;
     if (!await beforeConnectionChange()) return;
     setSwitchingUrl(targetUrl);
@@ -256,7 +257,7 @@ export default function App() {
     } catch (error) {
       report(error);
       if (/Key|401|403|未找到|拒绝/.test(String(error))) {
-        setConnectionModal({ baseUrl: targetUrl, name: item.name });
+        setConnectionModal({ baseUrl: targetUrl, name: item.name, requireKey: true });
       }
     } finally {
       setSwitchingUrl(null);
@@ -316,7 +317,7 @@ export default function App() {
   }, [filterKey, connectionKey]);
   useEffect(() => {
     closeDetail();
-    setSwitcherOpen(false);
+    setSwitcherAnchor(null);
   }, [page, connectionKey, eventTab]);
   useEffect(() => {
     setRemovedIds(new Set());
@@ -332,7 +333,7 @@ export default function App() {
     setSettingsAccount(null); setReauthorizeAccount(null);
     setProxyAccounts(null);
     setConnectionModal(null);
-    setSwitcherOpen(false);
+    setSwitcherAnchor(null);
     schedulePending.current = false; setBusy(null);
     setGroupsOpen(false);
     setFiltersOpen(false);
@@ -393,7 +394,7 @@ export default function App() {
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.isComposing || event.defaultPrevented) return;
-      if (switcherOpen) setSwitcherOpen(false);
+      if (switcherOpen) setSwitcherAnchor(null);
       else if (connectionModal) setConnectionModal(null);
       else if (testAccount) setTestAccount(null);
       else if (detail || detailBusy) {
@@ -687,6 +688,80 @@ export default function App() {
     </div>;
     return <button key={e.id} className="error-row" onClick={() => void openError(e.id, category)}>{contents}<ChevronRight size={15}/></button>;
   }
+  function renderSwitcherMenu() {
+    return (
+      <>
+        <div
+          className="instance-switcher-backdrop"
+          onClick={() => setSwitcherAnchor(null)}
+        />
+        <div
+          className="instance-switcher-menu"
+          role="menu"
+          aria-label="Sub2API 实例列表"
+        >
+          <div className="instance-switcher-header">
+            <span>Sub2API 实例 ({connections.length})</span>
+            {!quick && (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  setSwitcherAnchor(null);
+                  setPage("settings");
+                }}
+              >
+                管理实例
+              </button>
+            )}
+          </div>
+          <div className="instance-switcher-list">
+            {connections.map((item) => {
+              const isCurrent =
+                state.connected && item.base_url === activeUrl;
+              const isSwitching = switchingUrl === item.base_url;
+              return (
+                <button
+                  key={item.base_url}
+                  type="button"
+                  role="menuitem"
+                  className={`instance-switcher-item${isCurrent ? " active" : ""}`}
+                  disabled={switchingUrl !== null}
+                  onClick={() => void switchConnection(item)}
+                >
+                  <span
+                    className={`status-dot ${isCurrent ? (state.online ? "good" : "warning") : "muted"}`}
+                  />
+                  <div className="instance-switcher-meta">
+                    <strong>{item.name}</strong>
+                    <small>{item.base_url}</small>
+                  </div>
+                  {isSwitching ? (
+                    <LoaderCircle size={14} className="spin" />
+                  ) : isCurrent ? (
+                    <span className="instance-current-badge">当前</span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+          <div className="instance-switcher-footer">
+            <button
+              type="button"
+              className="instance-add-button"
+              onClick={() => {
+                setSwitcherAnchor(null);
+                setConnectionModal({ baseUrl: "", name: "", requireKey: true });
+              }}
+            >
+              <Plus size={14} />
+              新增实例
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  }
   function status() {
     return (
       <div className="connection-status-group">
@@ -700,8 +775,8 @@ export default function App() {
               type="button"
               className="instance-switcher-trigger"
               aria-label="切换 Sub2API 实例"
-              aria-expanded={switcherOpen}
-              onClick={() => setSwitcherOpen((open) => !open)}
+              aria-expanded={switcherAnchor === "topbar"}
+              onClick={() => setSwitcherAnchor((cur) => (cur === "topbar" ? null : "topbar"))}
             >
               {switchingUrl ? (
                 <LoaderCircle size={13} className="spin" />
@@ -710,78 +785,7 @@ export default function App() {
               )}
               <span>{activeConnection?.name ?? "选择实例"}</span>
             </button>
-            {switcherOpen && (
-              <>
-                <div
-                  className="instance-switcher-backdrop"
-                  onClick={() => setSwitcherOpen(false)}
-                />
-                <div
-                  className="instance-switcher-menu"
-                  role="menu"
-                  aria-label="Sub2API 实例列表"
-                >
-                  <div className="instance-switcher-header">
-                    <span>Sub2API 实例 ({connections.length})</span>
-                    {!quick && (
-                      <button
-                        type="button"
-                        className="text-button"
-                        onClick={() => {
-                          setSwitcherOpen(false);
-                          setPage("settings");
-                        }}
-                      >
-                        管理实例
-                      </button>
-                    )}
-                  </div>
-                  <div className="instance-switcher-list">
-                    {connections.map((item) => {
-                      const isCurrent =
-                        state.connected && item.base_url === activeUrl;
-                      const isSwitching = switchingUrl === item.base_url;
-                      return (
-                        <button
-                          key={item.base_url}
-                          type="button"
-                          role="menuitem"
-                          className={`instance-switcher-item${isCurrent ? " active" : ""}`}
-                          disabled={switchingUrl !== null}
-                          onClick={() => void switchConnection(item)}
-                        >
-                          <span
-                            className={`status-dot ${isCurrent ? (state.online ? "good" : "warn") : "muted"}`}
-                          />
-                          <div className="instance-switcher-meta">
-                            <strong>{item.name}</strong>
-                            <small>{item.base_url}</small>
-                          </div>
-                          {isSwitching ? (
-                            <LoaderCircle size={14} className="spin" />
-                          ) : isCurrent ? (
-                            <span className="instance-current-badge">当前</span>
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="instance-switcher-footer">
-                    <button
-                      type="button"
-                      className="instance-add-button"
-                      onClick={() => {
-                        setSwitcherOpen(false);
-                        setConnectionModal({ baseUrl: "", name: "" });
-                      }}
-                    >
-                      <Plus size={14} />
-                      新增实例
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
+            {switcherAnchor === "topbar" && renderSwitcherMenu()}
           </div>
         )}
       </div>
@@ -809,11 +813,12 @@ export default function App() {
               <button
                 type="button"
                 className="sidebar-instance-button"
+                aria-expanded={switcherAnchor === "sidebar"}
                 title={activeConnection?.base_url || "切换或新增 Sub2API 实例"}
-                onClick={() => setSwitcherOpen((open) => !open)}
+                onClick={() => setSwitcherAnchor((cur) => (cur === "sidebar" ? null : "sidebar"))}
               >
                 <span
-                  className={`status-dot ${state.online ? "good" : state.connected ? "warn" : "muted"}`}
+                  className={`status-dot ${state.online ? "good" : state.connected ? "warning" : "muted"}`}
                 />
                 <div className="sidebar-instance-text">
                   <strong>{activeConnection?.name ?? "未连接实例"}</strong>
@@ -821,6 +826,7 @@ export default function App() {
                 </div>
                 <ChevronRight size={14} />
               </button>
+              {switcherAnchor === "sidebar" && renderSwitcherMenu()}
             </div>
           )}
           <nav>
@@ -930,6 +936,7 @@ export default function App() {
             ) : !state.connected ? (
               <Connection
                 state={state}
+                onState={setState}
                 onError={report}
                 onSwitchSaved={(item) => void switchConnection(item)}
                 switchingUrl={switchingUrl}
@@ -942,7 +949,7 @@ export default function App() {
                 <button onClick={() => setPage("settings")}>连接设置</button>
                 {page === "settings" && <>
                   <ConnectionStatusCard connectionKey={connectionKey}/>
-                  <Connection state={state} onError={report} beforeChange={beforeConnectionChange} onSwitchSaved={(item) => void switchConnection(item)} switchingUrl={switchingUrl}/>
+                  <Connection state={state} onState={setState} onError={report} beforeChange={beforeConnectionChange} onSwitchSaved={(item) => void switchConnection(item)} switchingUrl={switchingUrl}/>
                 </>}
               </div>
             ) : quick ? (
@@ -1323,6 +1330,7 @@ export default function App() {
               onState={setState}
               initialUrl={connectionModal.baseUrl}
               initialName={connectionModal.name}
+              requireKey={Boolean(connectionModal.requireKey)}
               showNameField
               onError={report}
               beforeChange={beforeConnectionChange}
@@ -1513,6 +1521,7 @@ function Connection({
   beforeChange = async () => true,
   initialUrl,
   initialName,
+  requireKey = false,
   showNameField = false,
   onConnected,
   onCancel,
@@ -1525,6 +1534,7 @@ function Connection({
   beforeChange?: () => Promise<boolean>;
   initialUrl?: string;
   initialName?: string;
+  requireKey?: boolean;
   showNameField?: boolean;
   onConnected?: () => void;
   onCancel?: () => void;
@@ -1543,13 +1553,15 @@ function Connection({
     [key, setKey] = useState(""),
     [busy, setBusy] = useState(false);
   useEffect(() => {
-    if (initialUrl !== undefined) setUrl(initialUrl);
-    if (initialName !== undefined) {
-      setName(initialName);
-      if (initialName) setNameOpen(true);
-    }
-  }, [initialUrl, initialName]);
-  const isEditingSaved = Boolean(showNameField && initialUrl);
+    setUrl(defaultUrl);
+    setName(defaultName);
+    if (initialName) setNameOpen(true);
+  }, [defaultUrl, defaultName, initialName]);
+  const normalizedUrl = url.trim().replace(/\/+$/, "");
+  const normalizedInitial = (initialUrl ?? "").trim().replace(/\/+$/, "");
+  const isEditingSaved = Boolean(
+    showNameField && normalizedInitial && !requireKey && normalizedUrl === normalizedInitial,
+  );
   return (
     <form
       className="connection-form"
@@ -1697,7 +1709,7 @@ function Connection({
           ) : (
             <Plug size={15} />
           )}
-          验证并连接
+          {isEditingSaved && !key.trim() ? "保存实例名称" : "验证并连接"}
         </button>
       </div>
     </form>
@@ -1747,7 +1759,7 @@ function SettingsPage({
   onError: (e: unknown) => void;
   beforeConnectionChange: () => Promise<boolean>;
   onSwitchConnection?: (item: SavedConnection) => void;
-  onOpenConnectionModal?: (target: { baseUrl: string; name: string }) => void;
+  onOpenConnectionModal?: (target: { baseUrl: string; name: string; requireKey?: boolean }) => void;
   switchingUrl?: string | null;
 }) {
   const [featureTab, setFeatureTab] = useState("recovery");
@@ -1846,7 +1858,7 @@ function SettingsPage({
               {onOpenConnectionModal && (
                 <button
                   type="button"
-                  onClick={() => onOpenConnectionModal({ baseUrl: "", name: "" })}
+                  onClick={() => onOpenConnectionModal({ baseUrl: "", name: "", requireKey: true })}
                 >
                   <Plus size={14} />
                   新增实例
@@ -1867,7 +1879,7 @@ function SettingsPage({
                       <div className="saved-instance-info">
                         <div className="saved-instance-title">
                           <span
-                            className={`status-dot ${isCurrent ? (state.online ? "good" : "warn") : "muted"}`}
+                            className={`status-dot ${isCurrent ? (state.online ? "good" : "warning") : "muted"}`}
                           />
                           <strong>{item.name}</strong>
                           <span className={`instance-badge ${isCurrent ? "active" : ""}`}>
@@ -1898,6 +1910,7 @@ function SettingsPage({
                               onOpenConnectionModal({
                                 baseUrl: item.base_url,
                                 name: item.name,
+                                requireKey: false,
                               })
                             }
                           >
@@ -1980,7 +1993,7 @@ function SettingsPage({
             )}
           </ConfigForm>
           <section className="settings-card">
-            <Connection state={state} onError={onError} beforeChange={beforeConnectionChange} onSwitchSaved={onSwitchConnection} switchingUrl={switchingUrl} />
+            <Connection state={state} onState={onState} onError={onError} beforeChange={beforeConnectionChange} onSwitchSaved={onSwitchConnection} switchingUrl={switchingUrl} />
             <button
               className="danger-text"
               onClick={() => void beforeConnectionChange().then((allowed) => { if (allowed) return command("disconnect"); }).catch(onError)}

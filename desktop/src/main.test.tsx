@@ -659,7 +659,8 @@ it("switches saved Sub2API instances, opens prefilled modal when credentials are
   });
   expect(container.querySelector(".instance-switcher-trigger")?.textContent).toContain("备用节点");
 
-  await act(async () => container.querySelector<HTMLButtonElement>(".instance-switcher-trigger")!.click());
+  await act(async () => container.querySelector<HTMLButtonElement>(".sidebar-instance-button")!.click());
+  expect(container.querySelector(".sidebar-instance .instance-switcher-menu")).not.toBeNull();
   const missingKeyOption = [...container.querySelectorAll<HTMLButtonElement>(".instance-switcher-item")].find(
     (btn) => btn.textContent?.includes("缺少凭据节点"),
   )!;
@@ -669,6 +670,8 @@ it("switches saved Sub2API instances, opens prefilled modal when credentials are
   expect(modal).not.toBeNull();
   const modalInputs = [...modal!.querySelectorAll<HTMLInputElement>("input")];
   expect(modalInputs.some((input) => input.value === "https://missing-key.example.invalid")).toBe(true);
+  expect(modal!.querySelector<HTMLInputElement>('input[type="password"]')?.required).toBe(true);
+  expect(modal!.querySelector<HTMLButtonElement>("button.primary")?.textContent).toContain("验证并连接");
   const closeModal = modal!.querySelector<HTMLButtonElement>('button[aria-label="关闭连接窗口"]')!;
   await act(async () => closeModal.click());
 
@@ -677,6 +680,15 @@ it("switches saved Sub2API instances, opens prefilled modal when credentials are
   const rows = [...container.querySelectorAll<HTMLElement>(".saved-instance-row")];
   expect(rows.length).toBe(3);
   const activeRow = rows.find((row) => row.textContent?.includes("备用节点"))!;
+  const renameBtn = [...activeRow.querySelectorAll<HTMLButtonElement>("button")].find(
+    (btn) => btn.textContent?.includes("更新 Key / 重命名"),
+  )!;
+  await act(async () => renameBtn.click());
+  const editModal = container.querySelector(".connection-modal")!;
+  expect(editModal.querySelector<HTMLInputElement>('input[type="password"]')?.required).toBe(false);
+  expect(editModal.querySelector<HTMLButtonElement>("button.primary")?.textContent).toContain("保存实例名称");
+  await act(async () => editModal.querySelector<HTMLButtonElement>('button[aria-label="关闭连接窗口"]')!.click());
+
   const activeDeleteBtn = [...activeRow.querySelectorAll<HTMLButtonElement>("button")].find(
     (btn) => btn.textContent?.includes("删除实例"),
   )!;
