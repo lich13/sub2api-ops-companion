@@ -1,84 +1,126 @@
-# Sub2API Ops Companion
+# Sub2API Ops Companion (Sub2Ops)
 
-Sub2API 的 Rust 旁路运维服务，提供 OAuth 额度监控、Bark 事件推送、桌面账号管理和新模型思考档位补全。
+**简体中文** | [English](README.en.md)
 
-**Sub2Ops** 支持 macOS Apple Silicon 和 Android ARM64，提供分组动态、账号管理、错误详情及 Ops 设置；Mac 另有菜单栏快捷面板。下载与使用见 [客户端说明](desktop/README.md)，版本变化见 [发布记录](desktop/CHANGELOG.md)。仅通过 App 管理；网页、SSO 和旧表单接口已下线。
+**Sub2Ops** 是面向 Sub2API 的高性能 Rust 旁路运维服务与原生跨端客户端（macOS Apple Silicon & Android ARM64），提供**多 Sub2API 实例一键切换**、**OAuth / API Key 全周期额度监控**、**ModelTrace / LM Detector 模型验真与降智检测**、**7d 满额自动用卡**、**批量账号与代理运维**以及 **Bark 实时事件推送**。
 
-- OAuth 额度监控：等待恢复时间后确认额度，统一限制自动查询并执行恢复后测活。
-- Bark：推送 OAuth 恢复、测活失败、自动恢复失败和 401/402 认证异常。
-- OAuth 额度查询：客户端支持单账号查询和全部 OAuth 刷新；Grok 只刷新官方账单，不发送模型请求。
-- 账号保活：按账号选择是否清除符合条件的临时不可调度，所有平台默认关闭；保留人工调度、降智标记及恢复限额。
+> 客户端下载与使用说明见 [desktop/README.md](desktop/README.md)，版本演进记录见 [desktop/CHANGELOG.md](desktop/CHANGELOG.md)，升级与回退指南见 [UPGRADING.md](UPGRADING.md)。
 
-机制说明：[OAuth 监控](docs/oauth-monitoring.md)、[模型检测](docs/model-detection.md)、[账号保活](docs/keepalive.md)、[自动用卡](docs/automatic-credit.md)、[账号测试](docs/account-operations.md)、[模型目录](docs/model-catalog.md)。升级和回退见 [UPGRADING.md](UPGRADING.md)。
+---
 
-## 运行
+## 核心特性
+
+### 1. 多 Sub2API 实例管理与丝滑切换
+- **多实例档案管理**：支持保存多个 Sub2API 实例（自定义备注名与实例地址），集中管理主力、备用或多区域节点。
+- **系统级凭据隔离**：各实例的管理员 API Key 按规范化 `base_url` 独立存入系统安全凭据库（macOS Keychain / Android Keystore），绝不落盘明文配置文件。
+- **全场景一键切换**：桌面侧栏、顶栏、设置页以及 **macOS 菜单栏快捷面板**均内置实例切换器，切换时自动调取本机凭据校验并刷新实时快照，无需重复输入密钥；凭据失效时自动弹出预填连接面板。
+
+### 2. OAuth 与 API Key 智能额度监控与自动恢复
+- **精准恢复监控**：自动追踪多平台（OpenAI、Claude、Gemini、Antigravity、Grok 等）OAuth 窗口恢复时间与冷却状态，到期后自动确认额度并执行恢复测活。
+- **7d 满额 + 429 自动用卡**：当 OpenAI OAuth 账号 7d 原始用量达到 100% 且遭遇上游 429 限流时，按有效卡数自动触发用卡恢复（与原版自动用卡互斥防重）。
+- **按账号精细保活**：支持按账号独立开关临时不可调度清除策略（默认关闭），严格保留人工调度、降智标记与恢复限额。
+- **平台定制刷新**：支持单账号与全量 OAuth 并发刷新；Grok 仅刷新官方账单接口，不消耗模型请求额度。
+
+### 3. ModelTrace 与 LM Detector 模型验真与降智检测
+- **双重检测引擎**：结合分词器边界探测（LM Detector）与多维推理指纹分析（ModelTrace），识别渠道模型伪装、偷换与降智。
+- **定时与手动巡检**：支持配置全局自动检测模型与定时巡检计划，实时展示接收与分析进度，异常结果自动记录并可联动调度处置。
+
+### 4. 批量账号运维、优先级编排（`schema=2`）、宿主机配置与思考档位补全
+- **高效日常管理与优先级拖拽编排**：提供分组动态、多维账号筛选排序、按平台/分组的优先级拖拽编排（`schema=2` 乐观并发对账）、批量测活、批量重授权、账号配置模板与代理质量体检。
+- **宿主机 `config.yaml` 受保护下发与在线升级**：支持在客户端直接管理 Sub2API 宿主机配置、检查上游版本、单次安全提交在线升级并重启生效。
+- **思考档位补全**：自动为新模型补全 Reasoning Effort（思考档位）映射与模型目录配置，按分组版本安全校验。
+
+### 5. 原生跨端体验与 Bark 实时推送
+- **macOS & Android 原生客户端**：基于 Tauri v2 构建，macOS 端提供常驻菜单栏快捷面板（支持置顶、分组概览、实例速切与快捷刷新），Android 端适配原生手势与安全存储。
+- **Bark 告警通知**：实时推送 OAuth 额度恢复、每日测活失败、自动恢复失败、保活频率达限暂停及 401/402 认证异常。
+
+---
+
+## 专题文档索引
+
+| 模块 | 说明文档 |
+|---|---|
+| 客户端使用说明 | [desktop/README.md](desktop/README.md) |
+| OAuth 额度监控 | [docs/oauth-monitoring.md](docs/oauth-monitoring.md) |
+| 模型验真与检测 | [docs/model-detection.md](docs/model-detection.md) |
+| 账号保活机制 | [docs/keepalive.md](docs/keepalive.md) |
+| 自动用卡机制 | [docs/automatic-credit.md](docs/automatic-credit.md) |
+| 账号测试与操作 | [docs/account-operations.md](docs/account-operations.md) |
+| 模型目录与档位 | [docs/model-catalog.md](docs/model-catalog.md) |
+| Sub2API 宿主配置 | [docs/sub2api-config.md](docs/sub2api-config.md) |
+| 升级与回退指南 | [UPGRADING.md](UPGRADING.md) |
+
+---
+
+## 快速开始与生产部署
+
+### 启动服务
 
 ```bash
 cp .env.example .env
 docker compose up -d --build
 ```
 
-`.env.example` 只提供本地开发占位值；部署前请替换数据库连接、Sub2API 地址和 Bark 配置，并不要把 `.env` 或 `data/` 纳入公开发布。
+- `.env.example` 仅提供本地开发占位值；生产部署前请替换数据库连接、Sub2API 地址和 Bark 配置，切勿将 `.env` 或 `data/` 纳入公开仓库或发布产物。
+- 服务端源码位于 [`server/`](server/README.md)，正式生产镜像仅包含静态编译的 Rust 二进制与必要证书资源，不含 Python 运行时。
+- 生产部署优先加载对应提交的 `Companion-linux-amd64` CI 成品镜像并设置 `OPS_IMAGE`；容器仅挂载 `/data` 目录。
+- 预检与只读验收模式：
+  - `--check-state`：校验现有配置、状态文件与数据库连接后立即退出。
+  - `--read-only`：不派发后台任务、不写入业务库或状态文件的只读验收入口（需使用与正式服务一致的环境配置）。
 
-服务源码位于 [`server/`](server/README.md)，正式镜像不含 Python 运行时。生产部署优先加载对应提交的 `Companion-linux-amd64` CI 成品，并设置 `OPS_IMAGE`；镜像只挂载 `/data`。`--check-state` 检查现有配置、状态和数据库后退出，`--read-only` 提供不派发后台任务、不写业务或状态的验收入口。两种模式都必须使用与正式服务相同的环境配置。
+### 网络与反向代理
 
-Compose 默认只将端口发布到宿主机 `127.0.0.1:18081`；容器内服务默认监听 `0.0.0.0:18081`。生产环境建议通过 nginx 挂载到 Sub2API 同域的 `/sub2ops/`，并关闭该路径的 query access log。nginx 示例见 `deploy/nginx/sub2ops.location.conf`。
+- Compose 默认仅将端口发布到宿主机回环地址 `127.0.0.1:18081`（容器内监听 `0.0.0.0:18081`）。
+- 直接在宿主机运行二进制时默认监听所有网卡；若仅限本机访问，请显式指定：
+  ```bash
+  sub2ops-server serve --host 127.0.0.1 --port 18081
+  ```
+- 生产环境建议通过 Nginx 挂载到 Sub2API 同域名的 `/sub2ops/` 路径下，并关闭该路径的 query access log（配置示例见 `deploy/nginx/sub2ops.location.conf`）。
+- 桌面管理路由强制校验管理员 API Key；`connection-status` 保持 HTTP 200 返回脱敏鉴权诊断的契约（不回传地址、密钥或业务数据）；`/healthz` 与模型目录接口分别沿用健康检查和客户端鉴权语义。
+- 数据库跨主机连接请启用 TLS、配置可信 CA 并验证服务端主机名（`sslmode=verify-full`）；`sslmode=disable` 仅适用于同一受控容器内网。
 
-直接运行二进制也默认监听所有网卡；仅本机访问时使用 `sub2ops-server serve --host 127.0.0.1 --port 18081`，不要把容器端口发布限制误认为二进制的监听限制。桌面业务管理路由验证管理员 API Key；`connection-status` 沿用 HTTP 200 携带脱敏鉴权失败诊断的契约，不返回地址、密钥或业务数据。`/healthz` 与模型目录入口分别沿用健康检查和客户端鉴权语义。
+---
 
-示例数据库连接的口令必须替换，`sslmode=disable` 仅适用于同一受控 Docker 网络。跨主机连接应启用 TLS、使用可信 CA 并验证服务端主机名（`sslmode=verify-full`）。
-
-## 依赖维护
-
-Dependabot 每周一 09:00（Asia/Taipei）检查两份 Cargo 锁文件、前端、Python 测试工具、基础镜像、GitHub Actions 和 Android 应用库；普通版本观察七天后提出更新。Cargo、Python、镜像、Actions、Android 各最多一个普通 PR，前端按 React、Tauri、其他依赖最多三个。安全修复不等待普通周期，所有合并仍由维护者完成。仓库设置需开启漏洞告警、自动安全修复及合并后删分支；无告警不等于依赖图已成功识别。
-
-Cargo 使用 `lockfile-only`，包含直接和间接依赖，并显式限制普通更新候选，避免解析器尝试跨越 `0.x` 兼容线；各生态的 `0.x` 包默认只提出补丁更新，已确认的稳定依赖族允许兼容小版本。新增包默认仅开放补丁，确认兼容策略后再扩充普通小版本更新名单。React 与 React DOM 保持相同版本，类型包一起检查；Tauri JS 包一起更新并与 Rust 侧及 Mac／Android 构建联动验证；普通自动更新仅开放已验证系列的补丁，新的小版本由维护者把 JS 包、Rust 核心、构建辅助和插件成组更新。安全修复需要跨兼容线时单独验证，不通过忽略漏洞、放宽检查或自动合并处理。
-
-pnpm 使用本机当前稳定版，CI 安装 latest；`pmOnFail: ignore` 禁止按项目声明切换包管理器。依赖沿用提交的锁文件，变更依赖时在 `desktop` 目录更新并提交锁文件，不手工删除其中的文档。
-
-每月集中核对 Rust、Node、pnpm、cargo-audit、CI 浏览器工具、Gradle／AGP／Kotlin／JDK／SDK／NDK 和 QA 镜像；有安全公告时提前处理。保留 Action SHA 和运行镜像摘要；Rust 构建镜像与 `rust-toolchain.toml` 跟随稳定渠道，manifest 保留必要的最低语言版本。Gradle 工具链和 QA Compose 镜像由维护者成组更新；Python 驱动中的重复 psycopg 版本同步维护。Gradle 间接依赖安全检查不能只依赖 GitHub 自动告警，需按月核对解析结果和上游公告。
-
-维护时在现有约束内更新 Cargo 锁文件；前端精确固定的版本需显式选择兼容版本，并检查间接依赖。运行现有 Rust 审计、`(cd desktop && pnpm audit)`，以及对 `requirements.txt` 完整解析结果的 Python 漏洞检查，再跑受影响测试与版本一致性检查。`webpki-roots` 的转导例外绑定准确版本、注册表校验和及依赖边；升级时重新核实并同步审计测试，不扩大例外。
-
-当前延期：jsdom 30、lucide-react 1.x、应用直接使用的 reqwest 0.13，以及其他没有安全或实际功能需要的跨兼容线升级。每月复核延期项和维护状态；生产服务仍为 Rust，Python 依赖仅用于隔离测试及固定历史参考代码。
-
-Tauri 当前使用 2.12 核心／运行库与 2.7 构建辅助组件；其内部接口不能与旧 2.11 核心混用，更新时保持整组一致。Python 参考测试及依赖审计使用现有 Python 3.12 环境，例如 `uvx --python 3.12 pip-audit -r requirements.txt --progress-spinner off`，避免审计工具自动选择尚无依赖轮子的更新解释器。
-
-桌面锁文件中的 `glib 0.18.5` 有 `GHSA-wrw7-89jp-8q8g` 告警，但它仅属于未交付的 Linux 桌面依赖；Mac ARM64、Android ARM64 的实际依赖图和服务端均不包含它。告警保持开放，不加入审计忽略；新增 Linux 桌面支持前必须更新其 GTK／glib 依赖链。
-
-## 环境变量
+## 环境变量说明
 
 | 变量 | 说明 |
 |---|---|
-| `SUB2API_CONFIG_PATH` | 独立连接配置文件，默认 `/data/sub2api-config.json`，JSON 的 `base_url` / `verify_base_url` 优先于对应环境变量。 |
+| `SUB2API_CONFIG_PATH` | 独立连接配置文件，默认 `/data/sub2api-config.json`；JSON 中的 `base_url` / `verify_base_url` 优先于对应环境变量。 |
 | `SUB2API_BASE_URL` | Sub2API 公网根地址。 |
 | `SUB2API_VERIFY_BASE_URL` | 可选的服务端内网校验根地址。 |
-| `GROUP_MODEL_CONFIG_PATH` | 分组思考档位补全文件，默认 `/data/group-model-config.json`；按分组版本校验。 |
-| `KEEPALIVE_CONFIG_PATH` | 账号保活设置、恢复预算和待核对记录，默认 `/data/keepalive-state.json`；所有账号默认关闭。 |
+| `GROUP_MODEL_CONFIG_PATH` | 分组思考档位补全文件，默认 `/data/group-model-config.json`（按分组版本校验）。 |
+| `KEEPALIVE_CONFIG_PATH` | 账号保活设置、恢复预算与待核对记录，默认 `/data/keepalive-state.json`（默认全部关闭）。 |
 | `DATABASE_URL` | Sub2API PostgreSQL 连接串。 |
-| `BASE_PATH` | 历史兼容字段，默认 `/sub2ops`；外部前缀须由 nginx 配置并剥离，Rust 不据此挂载路由。 |
-| `USAGE_QUERY_STATE_PATH` | OAuth 快照、管理员 API Key 和调度元数据，默认 `/data/usage-query-state.json`。 |
-| `OAUTH_CONFIG_PATH` | OAuth 自动化配置，默认 `/data/oauth-config.json`；JSON 优先于环境变量，环境变量优先于默认值。 |
+| `BASE_PATH` | 历史兼容字段，默认 `/sub2ops`；外部前缀由 Nginx 配置并剥离，Rust 服务不据此挂载路由。 |
+| `USAGE_QUERY_STATE_PATH` | OAuth 快照、管理员 API Key 与调度元数据，默认 `/data/usage-query-state.json`。 |
+| `OAUTH_CONFIG_PATH` | OAuth 自动化配置文件，默认 `/data/oauth-config.json`；优先级：JSON > 环境变量 > 默认值。 |
 | `BARK_CONFIG_PATH` | Bark 配置文件，默认 `/data/bark-config.json`。 |
 | `BARK_ENABLED` | 是否启用事件 Bark 推送（含账号保活达到频率上限后的暂停通知），默认关闭。 |
-| `BARK_DEVICE_KEY` | Bark Device Key；生产环境建议通过桌面设置写入权限为 `0600` 的配置文件。 |
-| `BARK_SERVER_URL` | Bark 服务根 URL，默认 `https://api.day.app`；HTTP 只允许 loopback。桌面端保留当前运行时 URL。 |
+| `BARK_DEVICE_KEY` | Bark Device Key；建议通过客户端设置写入权限为 `0600` 的配置文件。 |
+| `BARK_SERVER_URL` | Bark 服务根 URL，默认 `https://api.day.app`；HTTP 仅允许 loopback。 |
 | `OAUTH_RECOVERY_MONITOR_ENABLED` | 是否监控到期恢复，默认开启。 |
-| `MODEL_DETECTION_MODEL_ID` | 全局自动检测模型，默认 `gpt-6-luna`；新任务生效，已有任务保留原模型。 |
-| `OAUTH_AUTO_RESET_CREDIT_ENABLED` | 7d 原始用量达到 100% 且当前上游 429 限流时自动用卡，默认关闭；与 Sub2API 原自动用卡互斥。 |
-| `OAUTH_DAILY_TEST_ENABLED` | 是否启用每日 OpenAI OAuth 测活，默认开启；仅异常通过 Bark 推送。 |
-| `OAUTH_DAILY_TEST_TIME` | 每日测活时间（北京时间 `HH:MM`），默认 `05:00`。修改时间、启用或重启后均等待下一个未来时间点，错过不补跑。 |
-| `OAUTH_USAGE_REFRESH_CONCURRENCY` | active usage 并发，默认 `4`。 |
-| `OAUTH_RECOVERY_TEST_CONCURRENCY` | account test 并发，默认 `2`。 |
-| `OAUTH_EARLY_PROBE_BATCH_SIZE` | 历史提前探测参数，默认 `8`；保留读取、保存和校验兼容，当前不提前探测，也不用于后台派发上限。 |
+| `MODEL_DETECTION_MODEL_ID` | 全局自动检测模型，默认 `gpt-6-luna`（新任务生效，已有任务保留原模型）。 |
+| `OAUTH_AUTO_RESET_CREDIT_ENABLED` | 7d 原始用量达 100% 且当前上游 429 限流时自动用卡，默认关闭（与 Sub2API 原自动用卡互斥）。 |
+| `OAUTH_DAILY_TEST_ENABLED` | 是否启用每日 OpenAI OAuth 测活，默认开启（仅异常通过 Bark 推送）。 |
+| `OAUTH_DAILY_TEST_TIME` | 每日测活时间（北京时间 `HH:MM`），默认 `05:00`；修改或重启后等待下一个未来时间点，错过不补跑。 |
+| `OAUTH_USAGE_REFRESH_CONCURRENCY` | 活跃额度查询并发数，默认 `4`。 |
+| `OAUTH_RECOVERY_TEST_CONCURRENCY` | 账号恢复测活并发数，默认 `2`。 |
+| `OAUTH_EARLY_PROBE_BATCH_SIZE` | 历史提前探测参数，默认 `8`（保留读取与校验兼容，当前不提前探测）。 |
 | `OAUTH_RECOVERY_TEST_MODEL_ID` | 恢复测活模型，默认 `gpt-5.6-luna`。 |
 
-`OAUTH_CONFIG_PATH` 中的 JSON 优先于环境变量，环境变量优先于默认值。状态和配置文件在实际写入时统一为 `0600`，不继承旧文件的宽权限；只读检查不修改权限。
+---
 
-## 安全
+## 依赖维护与质量门禁
 
-Companion 具有账号调度操作权限，不应独立暴露在公网。仅向回环地址或 Docker 内网开放服务，桌面接口经 TLS 反代并验证管理员权限。管理员 API Key 保存在 `USAGE_QUERY_STATE_PATH`，Bark Device Key 保存在 `BARK_CONFIG_PATH`；写入文件及使用的文件锁统一为 `0600`，未写入的历史文件仅给出安全诊断，密钥不写入 URL、页面、日志或审计明文。不要公开 `.env`、`data/` 或生产日志。
+- **自动更新策略**：Dependabot 每周一 09:00（Asia/Taipei）检查两份 Cargo 锁文件、前端依赖、Python 测试工具、基础镜像、GitHub Actions 与 Android 应用库；普通版本观察 7 天后提出更新，安全修复立即响应。
+- **锁文件与兼容边界**：Cargo 采用 `lockfile-only` 并限制跨越 `0.x` 兼容线的普通更新；React 与 React DOM 保持同版本；Tauri JS 包与 Rust 核心（`~2.12.5`）、构建辅助（`~2.7.4`）及插件成组对齐验证。
+- **构建与包体积门禁**：桌面与 Android 构建统一启用调试符号裁剪，CI 自动执行 Rust/Node/Python 安全审计、契约一致性测试、模型目录集成测试、Android 模拟器真机级 instrumentation 冒烟测试及归档体积上限检查。
+- **已知平台范围说明**：桌面锁文件中的 `glib 0.18.5`（`GHSA-wrw7-89jp-8q8g`）仅属于未交付的 Linux 桌面依赖，macOS ARM64、Android ARM64 与服务端实际依赖图均不包含该包；告警保持开放而不加入忽略名单。
 
-Bark 的 HTTPS 目标拒绝非公网字面 IP（含 IPv4 映射及数字写法），支持 `api.day.app` 和公网自建服务；现有 HTTP loopback 方式保留。不进行 DNS 解析校验，域名仍需由部署者配置为可信服务。
+---
 
-配置管理说明：[Sub2API 配置](docs/sub2api-config.md)。
+## 安全规范
+
+- **最小暴露面**：Companion 具备账号调度与配置写权限，切勿直接暴露于公网。请仅绑定回环地址或受控容器内网，并通过 TLS 反向代理向客户端提供服务。
+- **凭据文件权限**：服务端管理员 API Key 与 Bark Device Key 写入时强制设置文件及锁权限为 `0600`，密钥绝不进入 URL、日志、审计输出或前端回显；客户端各实例的管理员 API Key 独立保存在系统级 Keychain / Keystore 中。
+- **Bark SSRF 防护**：Bark HTTPS 目标严格拒绝非公网字面 IP（含 IPv4 映射及特殊进制写法），支持官方 `api.day.app` 与公网自建域名（保留本地测试所需的 HTTP loopback）。
