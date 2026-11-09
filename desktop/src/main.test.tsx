@@ -660,6 +660,7 @@ it("switches saved Sub2API instances, opens prefilled modal when credentials are
   expect(container.querySelector(".instance-switcher-trigger")?.textContent).toContain("备用节点");
 
   await act(async () => container.querySelector<HTMLButtonElement>(".sidebar-instance-button")!.click());
+  expect(container.querySelector('.sidebar-instance-button[aria-expanded="true"]')).not.toBeNull();
   expect(container.querySelector(".sidebar-instance .instance-switcher-menu")).not.toBeNull();
   const missingKeyOption = [...container.querySelectorAll<HTMLButtonElement>(".instance-switcher-item")].find(
     (btn) => btn.textContent?.includes("缺少凭据节点"),
@@ -677,6 +678,8 @@ it("switches saved Sub2API instances, opens prefilled modal when credentials are
 
   await act(async () => nav("设置").click());
   await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  expect(container.querySelector(".instance-management-card > .settings-heading")).not.toBeNull();
+  expect(container.querySelector(".instance-management-card > .section-heading")).toBeNull();
   const rows = [...container.querySelectorAll<HTMLElement>(".saved-instance-row")];
   expect(rows.length).toBe(3);
   const activeRow = rows.find((row) => row.textContent?.includes("备用节点"))!;

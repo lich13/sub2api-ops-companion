@@ -1853,7 +1853,7 @@ function SettingsPage({
       ) : (
         <>
           <section className="settings-card instance-management-card" aria-label="Sub2API 实例管理">
-            <div className="section-heading">
+            <div className="settings-heading">
               <h2>Sub2API 实例管理</h2>
               {onOpenConnectionModal && (
                 <button
