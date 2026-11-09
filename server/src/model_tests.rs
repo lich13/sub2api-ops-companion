@@ -377,17 +377,27 @@ impl ModelTests {
                 if let Some(c) = &context {
                     let mut progress = c.progress.lock().unwrap_or_else(|e| e.into_inner());
                     if ACTIVE.contains(&string(&status)) {
-                        job.as_object_mut()
-                            .unwrap()
-                            .extend(std::mem::take(&mut *progress));
+                        job.as_object_mut().unwrap().extend(progress.clone());
                     } else {
                         progress.clear();
                     }
+                    job.as_object_mut()
+                        .ok_or_else(Error::internal)?
+                        .extend(changes_obj);
+                    crate::detection_logs::preserve_summary(job);
+                    if ACTIVE.contains(&string(&job["status"])) {
+                        for (key, value) in &mut *progress {
+                            if let Some(updated) = job.get(key) {
+                                *value = updated.clone();
+                            }
+                        }
+                    }
+                } else {
+                    job.as_object_mut()
+                        .ok_or_else(Error::internal)?
+                        .extend(changes_obj);
+                    crate::detection_logs::preserve_summary(job);
                 }
-                job.as_object_mut()
-                    .ok_or_else(Error::internal)?
-                    .extend(changes_obj);
-                crate::detection_logs::preserve_summary(job);
                 let prune = status != job["status"] && !ACTIVE.contains(&string(&job["status"]))
                     || retry != job["can_retry"];
                 let job = job.clone();
@@ -417,6 +427,11 @@ impl ModelTests {
                 Ok(())
             },
         )?;
+        if !ACTIVE.contains(&string(&result["status"])) {
+            if let Some(c) = &context {
+                c.progress.lock().unwrap_or_else(|e| e.into_inner()).clear();
+            }
+        }
         Ok(result)
     }
     pub fn startup(&self) -> Result<()> {
