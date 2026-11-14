@@ -1107,6 +1107,7 @@ async function templateChecks(h) {
   const selectionActions = selectionBar.locator(".selection-actions");
   const testConnectionAction = selectionActions.getByRole("button", { name: "测试连接", exact: true });
   const recoverAction = selectionActions.getByRole("button", { name: "恢复状态", exact: true });
+  const resetCreditAction = selectionActions.getByRole("button", { name: "使用重置卡", exact: true });
   const proxyAction = selectionActions.getByRole("button", { name: "选择代理", exact: true });
   const applyTemplateAction = selectionActions.getByRole("button", { name: "应用模板", exact: true });
   const deleteSelectedAction = selectionActions.getByRole("button", { name: "删除所选", exact: true });
@@ -1126,32 +1127,33 @@ async function templateChecks(h) {
     const buttons = Array.from(element.querySelectorAll("button"));
     const rects = buttons.map((button) => button.getBoundingClientRect());
     const style = getComputedStyle(element);
-    const rows = [[0, 1], [2, 3]];
-    const columns = [[0, 2], [1, 3], [2, 4]];
+    const rows = [[0, 1], [2, 3], [4, 5]];
+    const columns = [[0, 2], [1, 3], [2, 4], [3, 5]];
     return {
       count: buttons.length,
       labels: buttons.map((button) => button.textContent?.trim()),
-      adjacent: buttons.length === 5 && buttons.every((button, index) => index === 0 || button.previousElementSibling === buttons[index - 1]),
-      sameRows: rects.length === 5 && rows.every(([left, right]) => Math.abs(rects[left].top - rects[right].top) < 1
+      adjacent: buttons.length === 6 && buttons.every((button, index) => index === 0 || button.previousElementSibling === buttons[index - 1]),
+      sameRows: rects.length === 6 && rows.every(([left, right]) => Math.abs(rects[left].top - rects[right].top) < 1
         && Math.abs(rects[left].bottom - rects[right].bottom) < 1),
-      sameColumns: rects.length === 5 && columns.every(([top, bottom]) => Math.abs(rects[top].left - rects[bottom].left) < 1
+      sameColumns: rects.length === 6 && columns.every(([top, bottom]) => Math.abs(rects[top].left - rects[bottom].left) < 1
         && Math.abs(rects[top].right - rects[bottom].right) < 1),
       display: style.display,
       columnGap: style.columnGap,
       rowGap: style.rowGap,
-      actualColumnGaps: rects.length === 5 ? rows.map(([left, right]) => rects[right].left - rects[left].right) : [],
-      actualRowGaps: rects.length === 5 ? columns.map(([top, bottom]) => rects[bottom].top - rects[top].bottom) : [],
+      actualColumnGaps: rects.length === 6 ? rows.map(([left, right]) => rects[right].left - rects[left].right) : [],
+      actualRowGaps: rects.length === 6 ? columns.map(([top, bottom]) => rects[bottom].top - rects[top].bottom) : [],
     };
   });
-  await h.state(actionLayout.count === 5
-    && isDeepStrictEqual(actionLayout.labels, ["测试连接", "恢复状态", "选择代理", "应用模板", "删除所选"])
+  await h.state(actionLayout.count === 6
+    && isDeepStrictEqual(actionLayout.labels, ["测试连接", "恢复状态", "使用重置卡", "选择代理", "应用模板", "删除所选"])
     && actionLayout.adjacent && actionLayout.sameRows && actionLayout.sameColumns && actionLayout.display === "grid"
     && actionLayout.columnGap === "8px" && actionLayout.rowGap === "8px"
-    && actionLayout.actualColumnGaps.length === 2 && actionLayout.actualColumnGaps.every((gap) => Math.abs(gap - 8) < 1)
-    && actionLayout.actualRowGaps.length === 3 && actionLayout.actualRowGaps.every((gap) => Math.abs(gap - 8) < 1),
+    && actionLayout.actualColumnGaps.length === 3 && actionLayout.actualColumnGaps.every((gap) => Math.abs(gap - 8) < 1)
+    && actionLayout.actualRowGaps.length === 4 && actionLayout.actualRowGaps.every((gap) => Math.abs(gap - 8) < 1),
   "batch-actions-not-adjacent-at-eight-pixels", selectionActions);
   await h.within(testConnectionAction, "batch-connection-entry", { vertical: false });
   await h.within(recoverAction, "batch-recover-entry", { vertical: false });
+  await h.within(resetCreditAction, "batch-reset-credit-entry", { vertical: false });
   await h.within(proxyAction, "batch-proxy-entry", { vertical: false });
   await h.within(applyTemplateAction, "batch-template-entry", { vertical: false });
   await h.within(deleteSelectedAction, "batch-delete-entry", { vertical: false });

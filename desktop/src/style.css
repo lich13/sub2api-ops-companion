@@ -1792,6 +1792,9 @@ td strong {
 .delete-dialog > svg {
   color: var(--bad);
 }
+.reset-credits-dialog > svg {
+  color: var(--warn);
+}
 .delete-list {
   list-style: none;
   margin: 12px 0;

@@ -123,14 +123,14 @@ export async function followOperation<T>(initial: Operation, onEvent?: (event: T
     setOperations(rows.some((r) => r.id === job.id) ? rows.map((r) => r.id === job.id ? job : r) : [job, ...rows]);
   }
 }
-export async function accountOperation<T>(account: Account, action: string, payload: Record<string, unknown>, expected?: string): Promise<T> {
+export async function accountOperation<T>(account: Account, action: string, payload: Record<string, unknown>, expected?: string, onUpdate?: (job: Operation) => void): Promise<T> {
   if (!account.operation_versions && action !== 'degradation_mark') {
     const suffix = ({ recover: 'recover-state', usage: 'usage-action', reset_quota: 'usage-action' } as Record<string, string>)[action] || action;
     return api<T>(action === 'groups' ? 'PUT' : action === 'delete' ? 'DELETE' : 'POST', `/accounts/${account.id}${action === 'delete' ? '' : `/${suffix}`}`, { ...payload, expected_version: expected || account.version });
   }
   if (!account.operation_versions && action === 'degradation_mark') return api<T>('PUT', `/accounts/${account.id}/degradation-mark`, { ...payload, expected_mark_version: expected || account.degradation_mark?.version });
   const job = await submitOperation(account, action, payload, expected);
-  const result = await followOperation<T>(job);
+  const result = await followOperation<T>(job, undefined, onUpdate);
   void command('refresh');
   return result;
 }

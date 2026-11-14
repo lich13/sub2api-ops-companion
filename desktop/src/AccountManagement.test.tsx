@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { api, command, subscribe } from "./bridge";
-import { DeleteAccountsDialog, RecoverStateButton, RecoverSelectedButton } from "./AccountManagement";
+import { DeleteAccountsDialog, RecoverStateButton, RecoverSelectedButton, ResetCreditsDialog } from "./AccountManagement";
 import { bindOperationConnection } from "./accountOperations";
 import { RecoveryHistory } from "./AccountControls";
 import App from "./main";
@@ -12,6 +12,7 @@ import type {
   Config,
   ConfigSection,
   Recovery,
+  UsageAction,
   ViewState,
 } from "./types";
 
@@ -58,6 +59,17 @@ const account = (id: number): Account => ({
   error_message: "",
   success_after_error: false,
   usage_windows: [],
+});
+const cardAccount = (id: number, available: number, actions: UsageAction[] = ["query_reset_credits", "reset_quota"]): Account => ({
+  ...account(id),
+  platform: "openai",
+  type: "oauth",
+  operation_versions: { reset_quota: `reset-${id}` },
+  usage: {
+    branch: "openai_oauth", today: null, actions,
+    windows: [{ key: "codex_7d", label: "7d", used_percent: 100, reset_at: null, observed_at: null, status: "known", source: "fixture" }],
+    reset_credits: { available, expires_at: [], observed_at: null },
+  },
 });
 async function openAutoResetSettings(
   save: (body: unknown) => Promise<ConfigSection>,
@@ -544,10 +556,12 @@ it("keeps batch actions adjacent and requires confirmation before deleting selec
   expect(actionButtons.map((element) => element.textContent?.trim())).toEqual([
     "测试连接",
     "恢复状态",
+    "使用重置卡",
     "选择代理",
     "应用模板",
     "删除所选",
   ]);
+  expect(button("使用重置卡").disabled).toBe(true);
   expect(summary.textContent).toContain("已选 1 个账号");
   expect(summary.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   expect(actions.contains(applyTemplate)).toBe(true);
@@ -623,4 +637,87 @@ it("ignores late recovery results after changing connections", async () => {
   await act(async () => resolve({ batch_id: "c".repeat(32), pending: 0, items: [{ id: "1", account_id: 1, status: "completed", result: { verified: true } }] }));
   expect(report).not.toHaveBeenCalled();
   expect(button("恢复状态").disabled).toBe(false);
+});
+
+it("offers batch reset cards only for a selection holding one and spends nothing before confirmation", async () => {
+  const state: ViewState = {
+    platform: "macos", connected: true, online: true, error: "",
+    preferences: { base_url: "https://qa.invalid", favorites: [], pinned: false, launch_at_login: false },
+    snapshot: { observed_at: "2026-09-26T00:00:00Z", accounts: [cardAccount(1, 1), account(2)], groups: [], errors: [], recoveries: [] },
+  };
+  vi.mocked(subscribe).mockImplementation(async () => () => {});
+  vi.mocked(command).mockResolvedValue(state);
+  vi.mocked(api).mockResolvedValue({ status: "idle", items: [], next_cursor: null });
+  await act(async () => root.render(<App />));
+  const select = (name: string) => act(async () => container.querySelector<HTMLInputElement>(`[aria-label="选择 ${name}"]`)!.click());
+  const posts = () => vi.mocked(api).mock.calls.filter(([method]) => method === "POST");
+
+  await select("Account 2");
+  expect(button("使用重置卡").disabled).toBe(true);
+  await select("Account 1");
+  expect(button("使用重置卡").disabled).toBe(false);
+  await act(async () => button("使用重置卡").click());
+  const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-labelledby="reset-credits-title"]')!;
+  expect(dialog.textContent).toContain("对 1 个账号使用重置卡？");
+  expect(dialog.textContent).toContain("已跳过 1 个没有可用重置卡的账号");
+  expect(posts()).toHaveLength(0);
+
+  await act(async () => button("取消").click());
+  expect(container.querySelector('[aria-labelledby="reset-credits-title"]')).toBeNull();
+  expect(posts()).toHaveLength(0);
+});
+
+it("uses reset cards one account at a time after confirmation and reports each outcome", async () => {
+  bindOperationConnection("reset-cards-fixture");
+  vi.mocked(command).mockResolvedValue(undefined as never);
+  let finishFirst!: (job: unknown) => void;
+  vi.mocked(api).mockImplementation(async (_method, path) => {
+    if (path === "/accounts/1/operations") return new Promise(done => { finishFirst = done; }) as never;
+    if (path === "/accounts/2/operations")
+      return { id: "job-2", account_id: 2, action: "reset_quota", status: "needs_confirmation", reason: "已派发请求的结果未确认，未重复执行" } as never;
+    throw new Error("账号已变化，请刷新后重试");
+  });
+  const report = vi.fn();
+  const accounts = [cardAccount(1, 1), cardAccount(2, 2), cardAccount(3, 1), cardAccount(4, 0), cardAccount(5, 1, ["query_reset_credits"])];
+  await act(async () => root.render(<ResetCreditsDialog accounts={accounts} online report={report} close={vi.fn()}/>));
+  const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-labelledby="reset-credits-title"]')!;
+  expect(dialog.textContent).toContain("对 3 个账号使用重置卡？");
+  expect(dialog.textContent).toContain("已跳过 2 个没有可用重置卡的账号");
+  expect([...dialog.querySelectorAll(".delete-list strong")].map(item => item.textContent)).toEqual(["Account 1", "Account 2", "Account 3"]);
+  expect(dialog.textContent).toContain("#2 · 7d 100% · 可用 2 张");
+  expect(api).not.toHaveBeenCalled();
+
+  await act(async () => { button("确认使用").click(); button("确认使用").click(); });
+  expect(api).toHaveBeenCalledExactlyOnceWith("POST", "/accounts/1/operations", expect.objectContaining({
+    action: "reset_quota", payload: { action: "reset_quota", confirmed: true }, expected_version: "reset-1",
+  }));
+  expect(report).not.toHaveBeenCalled();
+
+  await act(async () => finishFirst({ id: "job-1", account_id: 1, action: "reset_quota", status: "completed", result: { message: "重置已执行" } }));
+  expect(vi.mocked(api).mock.calls.map(([method, path]) => `${method} ${path}`)).toEqual([
+    "POST /accounts/1/operations", "POST /accounts/2/operations", "POST /accounts/3/operations",
+  ]);
+  expect(vi.mocked(api).mock.calls.map(([, , body]) => (body as { expected_version: string }).expected_version)).toEqual(["reset-1", "reset-2", "reset-3"]);
+  expect([...dialog.querySelectorAll(".delete-list li > span")].map(item => item.textContent)).toEqual([
+    "重置已执行", "待核对：已派发请求的结果未确认，未重复执行", "账号已变化，请刷新后重试",
+  ]);
+  expect(dialog.textContent).toContain("用卡结果");
+  expect(dialog.textContent).toContain("1 个已重置，1 个失败，1 个待核对");
+  expect(report).toHaveBeenCalledExactlyOnceWith("已使用 1 张重置卡 · 失败 1 个 · 待核对 1 个 · 跳过 2 个");
+  expect(command).toHaveBeenCalledWith("refresh");
+  expect(button("确认使用")).toBeUndefined();
+});
+
+it("stops before the next account once the reset dialog is closed", async () => {
+  bindOperationConnection("reset-cards-close-fixture");
+  vi.mocked(command).mockResolvedValue(undefined as never);
+  let finishFirst!: (job: unknown) => void;
+  vi.mocked(api).mockImplementation(() => new Promise(done => { finishFirst = done; }) as never);
+  const report = vi.fn();
+  await act(async () => root.render(<ResetCreditsDialog accounts={[cardAccount(1, 1), cardAccount(2, 1)]} online report={report} close={vi.fn()}/>));
+  await act(async () => button("确认使用").click());
+  await act(async () => root.render(<></>));
+  await act(async () => finishFirst({ id: "job-1", account_id: 1, action: "reset_quota", status: "completed", result: { message: "重置已执行" } }));
+  expect(api).toHaveBeenCalledTimes(1);
+  expect(report).toHaveBeenCalledExactlyOnceWith("已使用 1 张重置卡 · 失败 0 个 · 待核对 0 个 · 跳过 0 个 · 未执行 1 个");
 });

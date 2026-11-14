@@ -1525,6 +1525,173 @@ async fn fixed_five_minute_admission_boundary_uses_current_time() {
 }
 
 #[tokio::test]
+async fn card_granted_after_the_window_never_consumes_for_the_earlier_limit() {
+    let harness = Harness::new(false).await;
+    let now = fixed_now();
+    let (row, evidence) = harness.seed_depletion(&harness.controller).await;
+    let id = integer(&row["id"]).unwrap();
+    let trigger = parse_datetime(&evidence["evidence_at"]).unwrap();
+    let no_card =
+        set_credit_snapshot(&harness, id, snapshot(0, now + Duration::days(2), now)).await;
+    run_automatic(&harness, &no_card, now).await;
+    let admission = harness.controller.store.snapshot().unwrap()["scheduler"][id.to_string()]
+        ["credit_admission"]
+        .clone();
+    assert_eq!(admission["reason"], "no_credit");
+    assert_eq!(admission["trigger_at"], datetime(trigger));
+
+    // The card arrives after the five-minute window. Later rounds, and a
+    // repeated limit inside the same 7d window, must never spend it.
+    harness.mock.set_reset(
+        id,
+        200,
+        reset_response(now, 20.0, 20.0, "success", json!(1)),
+    );
+    harness.mock.set_sse(id, successful_sse());
+    let granted = trigger + Duration::minutes(10);
+    let mut with_card = set_credit_snapshot(
+        &harness,
+        id,
+        snapshot(1, granted + Duration::days(2), granted),
+    )
+    .await;
+    for (step, at) in [
+        granted,
+        granted + Duration::hours(6),
+        granted + Duration::days(1),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        harness.set_now(at);
+        if step == 1 {
+            let repeated = at - Duration::minutes(1);
+            sqlx::query("UPDATE accounts SET rate_limited_at=$1 WHERE id=$2")
+                .bind(repeated)
+                .bind(id)
+                .execute(&harness.db.pool)
+                .await
+                .unwrap();
+            insert_error(
+                &harness,
+                id,
+                id + 1_000_000_800,
+                repeated,
+                429,
+                "provider",
+                "upstream",
+            )
+            .await;
+            with_card = reload_account(&harness, id).await;
+            let mut exhausted = native_quota_data(repeated, 10.0, 100.0);
+            exhausted["seven_day"]["resets_at"] = json!(datetime(now + Duration::days(5)));
+            reset_stored_quota(&harness.controller, &with_card, repeated, exhausted);
+            let repeat_evidence = harness
+                .controller
+                .depletion(&with_card, at, false)
+                .await
+                .unwrap();
+            assert_eq!(repeat_evidence["evidence_at"], datetime(repeated));
+        }
+        run_automatic(&harness, &with_card, at).await;
+        let state = harness.controller.store.snapshot().unwrap();
+        let meta = &state["scheduler"][id.to_string()];
+        assert!(
+            meta["auto_reset_credit"].is_null(),
+            "step {step} created a task"
+        );
+        assert_eq!(
+            meta["credit_admission"]["reason"], "consume_deadline",
+            "step {step}"
+        );
+        assert_eq!(
+            meta["credit_admission"]["trigger_at"],
+            datetime(trigger),
+            "step {step}"
+        );
+    }
+    assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 0);
+    assert_eq!(harness.mock.count(Method::POST, "/schedulable"), 0);
+}
+
+#[tokio::test]
+async fn next_seven_day_round_triggers_without_an_observed_recovery() {
+    let harness = Harness::new(false).await;
+    let now = fixed_now();
+    let (row, evidence) = harness.seed_depletion(&harness.controller).await;
+    let id = integer(&row["id"]).unwrap();
+    let first_trigger = parse_datetime(&evidence["evidence_at"]).unwrap();
+    let no_card =
+        set_credit_snapshot(&harness, id, snapshot(0, now + Duration::days(2), now)).await;
+    let expired = first_trigger + Duration::minutes(10);
+    harness.set_now(expired);
+    run_automatic(&harness, &no_card, expired).await;
+    let admission = harness.controller.store.snapshot().unwrap()["scheduler"][id.to_string()]
+        ["credit_admission"]
+        .clone();
+    assert_eq!(admission["reason"], "consume_deadline");
+    assert!(admission["recovered_at"].is_null());
+
+    // The account recovers while nothing observes it (feature off or service
+    // down), then exhausts a new 7d window and is limited again.
+    let trigger = now + Duration::days(8);
+    let reset = trigger + Duration::days(5);
+    sqlx::query("UPDATE accounts SET rate_limited_at=$1,rate_limit_reset_at=$2,schedulable=true WHERE id=$3")
+        .bind(trigger)
+        .bind(reset)
+        .bind(id)
+        .execute(&harness.db.pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM ops_error_logs WHERE account_id=$1")
+        .bind(id)
+        .execute(&harness.db.pool)
+        .await
+        .unwrap();
+    insert_error(
+        &harness,
+        id,
+        id + 1_000_000_900,
+        trigger,
+        429,
+        "provider",
+        "upstream",
+    )
+    .await;
+    let at = trigger + Duration::seconds(1);
+    harness.set_now(at);
+    let row = reload_account(&harness, id).await;
+    let mut exhausted = native_quota_data(trigger, 10.0, 100.0);
+    exhausted["seven_day"]["resets_at"] = json!(datetime(reset));
+    reset_stored_quota(&harness.controller, &row, trigger, exhausted);
+    let row = set_credit_snapshot(
+        &harness,
+        id,
+        snapshot(1, trigger + Duration::days(2), trigger),
+    )
+    .await;
+    harness
+        .mock
+        .set_reset(id, 200, reset_response(at, 20.0, 20.0, "success", json!(1)));
+    harness.mock.set_sse(id, successful_sse());
+    run_automatic(&harness, &row, at).await;
+    let task = harness.controller.state(id).unwrap();
+    assert_eq!(task["stage"], "recovered", "{task}");
+    assert_eq!(task["trigger_at"], datetime(trigger));
+    assert_eq!(
+        harness.controller.store.snapshot().unwrap()["scheduler"][id.to_string()]
+            ["credit_admission"]["trigger_at"],
+        datetime(trigger)
+    );
+    assert_eq!(
+        harness
+            .mock
+            .count(Method::POST, &format!("/{id}/reset-quota")),
+        1
+    );
+}
+
+#[tokio::test]
 async fn current_cards_authorize_a_new_episode_without_a_matching_old_observation() {
     for case in [
         "changed_count",

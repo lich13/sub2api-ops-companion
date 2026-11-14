@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { LoaderCircle, RotateCcw, Trash2 } from "lucide-react";
+import { LoaderCircle, RotateCcw, Ticket, Trash2 } from "lucide-react";
 import { command } from "./bridge";
 import { accountOperation, followAccountBatch, operationEpoch, operationTerminal, submitAccountBatch } from "./accountOperations";
 import type { Account } from "./types";
@@ -196,6 +196,106 @@ export function DeleteAccountsDialog({
               onClick={() => void start()}
             >
               {phase === "running" ? "删除中" : "确认删除"}
+            </button>
+          )}
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+export const resetCreditEligible = (account: Account) =>
+  !!account.usage?.actions.includes("reset_quota") && (account.usage.reset_credits?.available ?? 0) > 0;
+
+type ResetCreditResult = { status: "waiting" | "running" | "done" | "failed" | "uncertain"; message?: string };
+
+export function ResetCreditsDialog({ accounts, online, report, close }: {
+  accounts: Account[]; online: boolean; report: (message: unknown) => void; close: () => void;
+}) {
+  // Targets and their versions are fixed when the dialog opens; the server refuses a card that changed since.
+  const [targets] = useState(() => accounts.filter(resetCreditEligible));
+  const skipped = accounts.length - targets.length;
+  const [results, setResults] = useState<ResetCreditResult[]>(() => targets.map(() => ({ status: "waiting" })));
+  const [phase, setPhase] = useState<"confirm" | "running" | "done">("confirm");
+  const running = useRef(false), alive = useRef(true), connected = useRef(online);
+  connected.current = online;
+  useBackAction(true, close);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.stopImmediatePropagation(); close(); }
+    };
+    window.addEventListener("keydown", escape, true);
+    return () => window.removeEventListener("keydown", escape, true);
+  }, [close]);
+  async function start() {
+    if (running.current || phase !== "confirm" || !connected.current || !targets.length) return;
+    running.current = true;
+    const epoch = operationEpoch();
+    const current = () => alive.current && operationEpoch() === epoch;
+    setPhase("running");
+    let used = 0, failed = 0, uncertain = 0, attempted = 0;
+    for (const [index, account] of targets.entries()) {
+      // Closing the dialog, going offline or switching connections stops before the next card is spent.
+      if (!current() || !connected.current) break;
+      const show = (value: ResetCreditResult) => { if (current()) setResults(old => old.map((item, i) => i === index ? value : item)); };
+      ++attempted;
+      show({ status: "running" });
+      let status = "";
+      try {
+        const result = await accountOperation<{ message?: string }>(account, "reset_quota", { action: "reset_quota", confirmed: true },
+          account.operation_versions?.reset_quota, job => { status = job.status; });
+        ++used;
+        show({ status: "done", message: result?.message || "重置已执行" });
+      } catch (error) {
+        const message = String(error).replace(/^Error: /, "");
+        // An accepted request without a definite failure may still have spent the card.
+        if (status && !["failed", "cancelled", "superseded"].includes(status)) { ++uncertain; show({ status: "uncertain", message: `待核对：${message}` }); }
+        else { ++failed; show({ status: "failed", message }); }
+      }
+    }
+    running.current = false;
+    if (operationEpoch() !== epoch) return;
+    void command("refresh");
+    const pending = targets.length - attempted;
+    report(`已使用 ${used} 张重置卡 · 失败 ${failed} 个 · 待核对 ${uncertain} 个 · 跳过 ${skipped} 个${pending ? ` · 未执行 ${pending} 个` : ""}`);
+    if (alive.current) setPhase("done");
+  }
+  const weekly = (account: Account) => account.usage?.windows.find(window => window.key === "codex_7d")?.used_percent;
+  const count = (status: ResetCreditResult["status"]) => results.filter(result => result.status === status).length;
+  return (
+    <div className="modal-backdrop">
+      <section className="modal delete-dialog reset-credits-dialog" role="dialog" aria-modal="true" aria-labelledby="reset-credits-title">
+        <Ticket size={24} />
+        <h2 id="reset-credits-title">
+          {phase === "confirm" ? `对 ${targets.length} 个账号使用重置卡？` : phase === "running" ? "正在使用重置卡" : "用卡结果"}
+        </h2>
+        {phase === "confirm" && <p>每个账号消耗一次重置次数并执行 Sub2API 的额度重置，无法撤销。{!!skipped && `已跳过 ${skipped} 个没有可用重置卡的账号。`}</p>}
+        {phase === "running" && <p>逐个执行中；关闭后不再继续后面的账号。</p>}
+        <ul className="delete-list">
+          {targets.map((account, index) => {
+            const result = results[index], percent = weekly(account);
+            return (
+              <li key={account.id}>
+                <div>
+                  <strong title={account.name}>{account.name}</strong>
+                  <span>#{account.id} · 7d {percent == null ? "未知" : `${Math.round(percent)}%`} · 可用 {account.usage?.reset_credits?.available ?? 0} 张</span>
+                </div>
+                {phase !== "confirm" && (
+                  <span className={result.status === "failed" || result.status === "uncertain" ? "bad-text" : result.status === "done" ? "good-text" : "muted"}>
+                    {result.status === "running" ? <><LoaderCircle size={12} className="spin" />重置中</> : result.message || (phase === "done" ? "未执行" : "等待中")}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        {phase === "done" && <p>{count("done")} 个已重置，{count("failed")} 个失败，{count("uncertain")} 个待核对</p>}
+        <footer>
+          <button onClick={close}>{phase === "confirm" ? "取消" : "关闭"}</button>
+          {phase !== "done" && (
+            <button className="primary" disabled={!online || phase === "running" || !targets.length} onClick={() => void start()}>
+              {phase === "running" ? "使用中" : "确认使用"}
             </button>
           )}
         </footer>

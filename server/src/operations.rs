@@ -1764,10 +1764,15 @@ impl Operations {
         } else {
             error.detail.clone()
         };
+        // Usage jobs only query, count or probe (consuming a card is the separate
+        // reset_quota action), so a failed one leaves no write to confirm.
+        let read_only = job["action"] == "usage";
         let mut changes = if error.detail["code"] == "account_busy" {
             json!({"status":"queued","reason":"等待账号空闲"})
         } else if error.status.as_u16() == 409 {
             json!({"status":"needs_confirmation","reason":message})
+        } else if read_only {
+            json!({"status":"failed","reason":message})
         } else if matches!(error.status.as_u16(), 502 | 504) {
             json!({"status":"checking","reason":message})
         } else if error.status.is_server_error() {

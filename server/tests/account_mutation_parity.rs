@@ -7430,3 +7430,36 @@ async fn native_usage_accepts_successful_oauth_token_renewal() {
     assert_eq!(credentials["access_token"], "fixture-renewed-access");
     h.finish().await;
 }
+
+#[tokio::test]
+async fn failed_usage_query_ends_failed_instead_of_waiting_for_confirmation() {
+    let mut h = Harness::new().await;
+    let id = h
+        .insert_account("openai", "oauth", json!({}), json!({}), None, &[])
+        .await;
+    let row = h.account(id).await;
+    // The fixture upstream has no reset-credit refresh route, so the count
+    // query fails without leaving any write to confirm.
+    let job = h
+        .runtime
+        .operations
+        .submit(
+            id,
+            &json!({"action":"usage","payload":{"action":"query_reset_credits"},"expected_version":operation_version(&row,"usage"),"client_id":CLIENT_ID,"request_id":"fixture-failed-count-query-0001"}),
+            ADMIN_KEY,
+        )
+        .await
+        .unwrap();
+    h.runtime.operations.tick().await.unwrap();
+    let done = h
+        .wait_job(
+            job["id"].as_str().unwrap(),
+            &["failed", "needs_confirmation"],
+        )
+        .await;
+    assert_eq!(done["status"], "failed");
+    assert!(done["reason"]
+        .as_str()
+        .is_some_and(|reason| !reason.is_empty()));
+    h.finish().await;
+}

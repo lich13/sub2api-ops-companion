@@ -6,7 +6,7 @@ use crate::{
     error::{Error, Result},
     oauth_admission::quota_complete,
     oauth_queries::{QueryOptions, Source},
-    reset_credit_observation, usage,
+    reset_credit_observation,
 };
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{json, Value};
@@ -267,13 +267,24 @@ impl CreditController {
             Err(error) => return Err(error),
         };
         if action == "query" && truthy(&result["success"]) {
-            let snapshot = &after["extra"]["codex_reset_credit_snapshot"];
-            let stamp = crate::compat::parse_datetime(
-                &usage::reset_credits(&after["extra"], completed)["observed_at"],
-            );
-            if result["data"]["cache_persisted"] == false
-                || crate::oauth_state::normalized_credits(snapshot).is_none()
-                || !stamp.is_some_and(|t| t >= at - Duration::seconds(1) && t <= completed)
+            // Sub2API stores the card snapshot without a timestamp, so this read
+            // is confirmed by its own response: the reported cards must be the
+            // ones now stored, and the response must have been fetched by it.
+            let data = &result["data"];
+            let reported =
+                crate::oauth_state::normalized_credits(&data["rate_limit_reset_credits"]);
+            let fetched = if data["fetched_at"].is_null() {
+                Some(completed)
+            } else {
+                crate::compat::parse_datetime(&data["fetched_at"])
+            };
+            if data["cache_persisted"] == false
+                || reported.is_none()
+                || reported
+                    != crate::oauth_state::normalized_credits(
+                        &after["extra"]["codex_reset_credit_snapshot"],
+                    )
+                || !fetched.is_some_and(|t| t >= at - Duration::seconds(1) && t <= completed)
             {
                 result["success"] = false.into();
                 result["error_code"] = "credit_snapshot_unconfirmed".into();

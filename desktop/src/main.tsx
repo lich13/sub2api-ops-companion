@@ -23,6 +23,7 @@ import {
   Search,
   Settings2,
   SlidersHorizontal,
+  Ticket,
   Unplug,
   Users,
   X,
@@ -65,7 +66,7 @@ import ModelTestDialog from "./ModelTestDialog";
 import DetectionPlatformSettings from "./DetectionPlatformSettings";
 import ConnectionStatusCard from "./ConnectionStatusCard";
 import AccountStatus from "./AccountStatus";
-import { DeleteAccountsDialog, RecoverSelectedButton } from "./AccountManagement";
+import { DeleteAccountsDialog, RecoverSelectedButton, ResetCreditsDialog, resetCreditEligible } from "./AccountManagement";
 import { useQuickHeight } from "./useQuickHeight";
 import ModelConfig from "./ModelConfig";
 import AccountTemplates from "./AccountTemplates";
@@ -203,6 +204,7 @@ export default function App() {
     [selected, setSelected] = useState<Set<number>>(new Set()),
     [removedIds, setRemovedIds] = useState<Set<number>>(new Set()),
     [deleteAccounts, setDeleteAccounts] = useState<Account[] | null>(null),
+    [resetAccounts, setResetAccounts] = useState<Account[] | null>(null),
     [filtersOpen, setFiltersOpen] = useState(false),
     [groupsOpen, setGroupsOpen] = useState(false),
     [groupChanges, setGroupChanges] = useState({ count: 0, busy: false }),
@@ -283,7 +285,7 @@ export default function App() {
   useEffect(() => {
     if (previousPage.current !== page && (previousPage.current === "accounts" || page === "accounts")) {
       setQuery(""); setGroup(""); setPlatform(""); setFilter(""); setType(""); setSelected(new Set());
-      setFiltersOpen(false); setGroupsOpen(false); setDeleteAccounts(null); setTestAccount(null); setModelTestAccount(null);
+      setFiltersOpen(false); setGroupsOpen(false); setDeleteAccounts(null); setResetAccounts(null); setTestAccount(null); setModelTestAccount(null);
       setModelDetectionAccount(null); setKeepaliveAccount(null); setSettingsAccount(null); setReauthorizeAccount(null); setProxyAccounts(null);
       setTemplatesOpen(false); setTemplateAccount(null); setTemplateAccounts(undefined); closeDetail();
       if (page === "accounts") {
@@ -322,6 +324,7 @@ export default function App() {
   useEffect(() => {
     setRemovedIds(new Set());
     setDeleteAccounts(null);
+    setResetAccounts(null);
     closeDetail();
     setTestAccount(null);
     setModelTestAccount(null);
@@ -403,6 +406,7 @@ export default function App() {
         if (
           leaveGroups ||
           deleteAccounts ||
+          resetAccounts ||
           modelTestAccount ||
           modelDetectionAccount ||
           keepaliveAccount ||
@@ -426,6 +430,7 @@ export default function App() {
     testAccount,
     leaveGroups,
     deleteAccounts,
+    resetAccounts,
     modelTestAccount,
     modelDetectionAccount,
     keepaliveAccount,
@@ -1064,6 +1069,7 @@ export default function App() {
                         <div className="selection-actions" role="group" aria-label="批量账号操作">
                         <button id="connection-batch-start" disabled={!state.online || selected.size === 0} aria-disabled={connectionBatch.busy} onClick={() => void connectionBatch.start(accounts.filter(a => selected.has(a.id)))}><Activity size={12}/>测试连接</button>
                         <RecoverSelectedButton key={connectionKey} accounts={accounts.filter(a => selected.has(a.id))} online={state.online} report={report}/>
+                        <button disabled={!state.online || !accounts.some(a => selected.has(a.id) && resetCreditEligible(a))} onClick={() => setResetAccounts(accounts.filter(a => selected.has(a.id)))}><Ticket size={12}/>使用重置卡</button>
                         <button disabled={!state.online || selected.size === 0} onClick={() => setProxyAccounts(accounts.filter(a => selected.has(a.id)))}><Network size={12}/>选择代理</button>
                         <button disabled={!state.online || selected.size === 0} onClick={() => { setTemplateAccount(null); setTemplateAccounts(accounts.filter(a => selected.has(a.id))); setTemplatesOpen(true); }}><LayoutTemplate size={12}/>应用模板</button>
                         <button
@@ -1346,6 +1352,7 @@ export default function App() {
         </div>
       )}
       {mobile && groupsOpen && <div className="mobile-groups-surface" role="dialog" aria-modal="true" aria-label="分组动态"><header><h2>分组动态</h2><button className="icon-button" aria-label="关闭分组动态" onClick={() => setGroupsOpen(false)}><X size={20}/></button></header><div className="quick-groups">{visibleGroups.map((g) => groupRow(g, true))}{!groups.length && <Empty text="没有分组记录"/>}</div></div>}
+      {resetAccounts && <ResetCreditsDialog accounts={resetAccounts} online={state.online} report={report} close={() => setResetAccounts(null)}/>}
       {deleteAccounts && (
         <DeleteAccountsDialog
           accounts={deleteAccounts}

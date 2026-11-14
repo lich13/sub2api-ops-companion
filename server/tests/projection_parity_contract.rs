@@ -215,10 +215,11 @@ async fn projection_http_mock(
             .nth_back(2)
             .and_then(|value| value.parse::<i64>().ok());
         let observed = Utc::now();
+        // Mirror Sub2API: the stored card snapshot has no timestamp and the
+        // response reports the collection time as Unix seconds.
         let credit_snapshot = json!({
             "available_count":1,
-            "credits":[{"expires_at":"2099-12-31T00:00:00+00:00"}],
-            "fetched_at":compat::datetime(observed)
+            "credits":[{"expires_at":"2099-12-31T00:00:00+00:00"}]
         });
         if let (Some(pool), Some(id)) = (state.pool.as_ref(), id) {
             let _ = sqlx::query(
@@ -229,10 +230,10 @@ async fn projection_http_mock(
             .execute(pool)
             .await;
         }
-        data["fetched_at"] = compat::datetime(observed).into();
+        data["fetched_at"] = observed.timestamp().into();
         data["rate_limit_reset_credits"] = credit_snapshot;
         data["cache_persisted"] = true.into();
-        data["cache_refreshed"] = true.into();
+        data["credits_cache_persisted"] = true.into();
         (200, json!({"code":0,"data":data}))
     } else if path.ends_with("/reset-quota") {
         (
@@ -2238,13 +2239,42 @@ async fn desktop_uncertain_reset_requires_confirmed_recovery_before_replay() {
     assert_eq!(after_failed_count.status.as_u16(), 502);
     assert_eq!(calls_or_now(&fixture.http, &reset_path), 1);
 
+    // A response that claims persistence but reports different cards than the
+    // stored snapshot is not a confirmed count either.
+    let observed = Utc::now();
+    fixture.http.set_response(
+        &count_path,
+        200,
+        json!({
+            "code":0,
+            "data":{
+                "five_hour":{"utilization":10,"resets_at":compat::datetime(observed + Duration::hours(5)),"window_minutes":300},
+                "seven_day":{"utilization":20,"resets_at":compat::datetime(observed + Duration::days(7)),"window_minutes":10080},
+                "fetched_at":observed.timestamp(),
+                "rate_limit_reset_credits":{"available_count":2,"credits":[{"expires_at":"2099-12-31T00:00:00+00:00"},{"expires_at":"2099-12-31T00:00:00+00:00"}]},
+                "cache_persisted":true,
+                "credits_cache_persisted":true
+            }
+        }),
+    );
+    let mismatched_count = fixture
+        .runtime
+        .usage_action(ACCOUNT_ID, &query, "fixture-capture-key", None)
+        .await
+        .expect_err("a count that differs from the stored snapshot is not accepted as success");
+    assert_eq!(mismatched_count.status.as_u16(), 502);
+    assert_eq!(
+        mismatched_count.detail["code"],
+        "credit_snapshot_unconfirmed"
+    );
+
     fixture.http.clear_response(&count_path);
     fixture
         .runtime
         .usage_action(ACCOUNT_ID, &query, "fixture-capture-key", None)
         .await
         .expect("a persisted credit count refreshes the evidence used by the reset guard");
-    assert_eq!(calls_or_now(&fixture.http, &count_path), 2);
+    assert_eq!(calls_or_now(&fixture.http, &count_path), 3);
     let state = read_oauth_state(&fixture.runtime.settings.usage_path);
     assert_ne!(
         state["scheduler"][ACCOUNT_ID.to_string()]

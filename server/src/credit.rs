@@ -181,8 +181,14 @@ impl CreditController {
         let Some(observed) = parse_datetime(&evidence["evidence_at"]) else {
             return Ok(Value::Null);
         };
+        // The evidence always lies inside the current 7d window, so an earlier
+        // trigger from before that window belongs to a finished round even when
+        // its recovery was never observed (feature off or service down).
+        let window_start = parse_datetime(&evidence["reset_at"])
+            .zip(quota::number(&evidence["window_minutes"]))
+            .map(|(reset, minutes)| reset - Duration::milliseconds((minutes * 60000.0) as i64));
         let mut changed = false;
-        let result=self.store.transaction(|state| {let meta=&mut state["scheduler"][id.to_string()];if !meta.is_object() {*meta=json!({});}let previous=&meta["credit_admission"];let recovered=parse_datetime(&previous["recovered_at"]);let is_new=!truthy(previous) || recovered.is_some_and(|t|observed>t);
+        let result=self.store.transaction(|state| {let meta=&mut state["scheduler"][id.to_string()];if !meta.is_object() {*meta=json!({});}let previous=&meta["credit_admission"];let recovered=parse_datetime(&previous["recovered_at"]);let is_new=!truthy(previous) || recovered.is_some_and(|t|observed>t) || parse_datetime(&previous["trigger_at"]).zip(window_start).is_some_and(|(old,start)|old<start);
             let trigger=if is_new {Some(observed)} else {parse_datetime(&previous["trigger_at"])};let checked=at;
             let why=if trigger.is_none_or(|t|checked>=t+Duration::seconds(300)) {"consume_deadline"} else if recovered.is_some_and(|t|observed<=t) {"block_cleared"} else {reason};
             let trigger=trigger.ok_or_else(||Error::new(503,"自动用卡触发时间无效"))?;let mut value=json!({"trigger_at":datetime(trigger),"checked_at":datetime(checked),"reason":why,"evidence_fingerprint":if is_new {&evidence["evidence_fingerprint"]} else {&previous["evidence_fingerprint"]}});if !is_new {if let Some(recovered)=recovered {value["recovered_at"]=datetime(recovered).into();}}

@@ -179,7 +179,7 @@ describe("shared account actions", () => {
     expect(container.querySelector('[role="group"][aria-label="批量账号操作"]')).toBeNull();
     await act(async () => container.querySelector<HTMLInputElement>('[aria-label="选择 Fixture 1"]')!.click());
     const bulk = container.querySelector<HTMLElement>('[role="group"][aria-label="批量账号操作"]')!;
-    expect([...bulk.querySelectorAll("button")].map((node) => !!node.querySelector("svg"))).toEqual([true, true, true, true, true]);
+    expect([...bulk.querySelectorAll("button")].map((node) => !!node.querySelector("svg"))).toEqual([true, true, true, true, true, true]);
 
     await openGroups();
     await openGroupMenu();
