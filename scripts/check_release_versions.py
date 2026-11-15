@@ -28,7 +28,6 @@ def check(root: Path = ROOT) -> list[str]:
         same(file, own[0] if len(own) == 1 else None)
     for file, pattern in (
         ("Dockerfile", r'org\.opencontainers\.image\.version="([^"]+)"'),
-        ("scripts/catalog_qa.compose.yml", r'image: sub2ops-catalog-qa:([^\s]+)'),
         ("desktop/RELEASE.md", r'^# Sub2Ops ([0-9]+\.[0-9]+\.[0-9]+)$'),
         ("desktop/CHANGELOG.md", r'^## ([0-9]+\.[0-9]+\.[0-9]+) ·'),
     ):

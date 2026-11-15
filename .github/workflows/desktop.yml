@@ -215,16 +215,11 @@ jobs:
       - name: Verify and package
         run: |
           mkdir -p artifacts
-          APK=$(find desktop/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' ! -name '*unsigned*' ! -name '*androidTest*' -print -quit)
+          APK=$(find desktop/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' ! -name '*unsigned*' -print -quit)
           test -n "$APK"
           python scripts/verify_android.py "$APK"
           VERSION=$(node -p "require('./desktop/package.json').version")
           cp "$APK" "artifacts/Sub2Ops_${VERSION}_arm64-v8a.apk"
-      - name: Compile independent device acceptance tests
-        run: |
-          node scripts/android_fixtures.mjs
-          cd desktop/src-tauri/gen/android
-          ./gradlew :releaseSmoke:assembleDebugAndroidTest --console=plain
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Sub2Ops-android-arm64

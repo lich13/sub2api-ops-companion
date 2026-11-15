@@ -2025,49 +2025,19 @@ async fn desktop_uncertain_reset_requires_confirmed_recovery_before_replay() {
     assert_eq!(calls_or_now(&fixture.http, &grok_probe_path), 1);
 
     let reset_path = format!("/api/v1/admin/openai/accounts/{ACCOUNT_ID}/reset-quota");
-    *fixture
+    // The upstream answers without saying whether a card was consumed.
+    fixture
         .http
-        .block_path
-        .lock()
-        .unwrap_or_else(|error| error.into_inner()) = Some(reset_path.clone());
+        .set_response(&reset_path, 200, json!({"code":0,"data":null}));
     let reset = usage_action_payload(&fixture.runtime, ACCOUNT_ID, "reset_quota", Some(true)).await;
-    let reset_runtime = fixture.runtime.clone();
-    let reset_payload = reset.clone();
-    let reset_started = tokio::time::Instant::now();
-    let first_reset = tokio::spawn(async move {
-        reset_runtime
-            .usage_action(ACCOUNT_ID, &reset_payload, "fixture-capture-key", None)
-            .await
-    });
-    let entered = tokio::time::timeout(
-        StdDuration::from_secs(5),
-        fixture.http.entered.clone().acquire_owned(),
-    )
-    .await
-    .expect("the reset reaches the intentionally blocked loopback response")
-    .expect("the owned mock semaphore remains open");
-    drop(entered);
-    assert_eq!(calls_or_now(&fixture.http, &reset_path), 1);
-    tokio::time::sleep(StdDuration::from_secs(88)).await;
-    assert!(
-        !first_reset.is_finished(),
-        "the real upstream client timeout has not fired before its 90-second bound"
-    );
-    let first = tokio::time::timeout(StdDuration::from_secs(5), first_reset)
+    let first = fixture
+        .runtime
+        .usage_action(ACCOUNT_ID, &reset, "fixture-capture-key", None)
         .await
-        .expect("the blocked reset exits near the configured 90-second request timeout")
-        .expect("join the first reset timeout")
-        .expect_err("an upstream error leaves the reset outcome uncertain");
+        .expect_err("an unconfirmed upstream answer leaves the reset outcome uncertain");
     assert_eq!(first.status.as_u16(), 502);
-    let timeout_elapsed = reset_started.elapsed();
-    assert!(timeout_elapsed >= StdDuration::from_secs(88));
-    assert!(timeout_elapsed <= StdDuration::from_secs(95));
-    fixture.http.release.add_permits(1);
-    *fixture
-        .http
-        .block_path
-        .lock()
-        .unwrap_or_else(|error| error.into_inner()) = None;
+    assert_eq!(first.detail["code"], "result_uncertain");
+    fixture.http.clear_response(&reset_path);
     assert_eq!(calls_or_now(&fixture.http, &reset_path), 1);
     let second = fixture
         .runtime

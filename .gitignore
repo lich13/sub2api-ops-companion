@@ -17,7 +17,6 @@ desktop/src-tauri/gen/android/app/tauri.properties
 desktop/src-tauri/gen/android/app/tauri.build.gradle.kts
 desktop/src-tauri/gen/android/tauri.settings.gradle
 desktop/src-tauri/gen/android/app/src/main/jniLibs/
-desktop/src-tauri/gen/android/app/src/androidTest/assets/
 desktop/artifacts/
 experiments/connection_probe/rust/target/
 server/target/
