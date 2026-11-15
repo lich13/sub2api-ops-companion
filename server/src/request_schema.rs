@@ -1,7 +1,6 @@
 //! HTTP shape validation, before authentication or any domain access.
 //! Business decisions stay in the authenticated handlers.
 use crate::{
-    actions::TEST_MODES,
     compat::string,
     error::{Error, Result},
     validation::{self, boolean, fields, integer, text},
@@ -17,20 +16,12 @@ pub fn has_body(path: &[&str], method: &str) -> bool {
         ["proxy-management", ..]
             | ["sub2api-config", "validate" | "apply"]
             | ["account-creation", ..]
-            | ["accounts", _]
             | [
                 "accounts",
                 _,
                 "operations"
-                    | "schedulable"
-                    | "recover-state"
-                    | "priority"
-                    | "test"
                     | "model-tests"
-                    | "usage-action"
                     | "apply-oauth-credentials"
-                    | "groups"
-                    | "degradation-mark"
                     | "model-detection"
                     | "keepalive"
                     | "key-quota-settings"
@@ -52,9 +43,6 @@ fn version(value: &Value, name: &str) -> Result<()> {
 }
 fn object(value: &Value) -> Result<()> {
     value.as_object().map(|_| ()).ok_or_else(Error::invalid)
-}
-fn optional_bool(value: &Value, name: &str) -> Result<()> {
-    value.get(name).map(boolean).transpose().map(|_| ())
 }
 fn choice(value: &Value, choices: &[&str]) -> Result<()> {
     if !choices.contains(&string(value)) {
@@ -271,104 +259,6 @@ pub fn validate(path: &[&str], method: &str, value: &mut Value) -> Result<()> {
             fields(value, &["request_id"], &["request_id"])?;
             validation::request_id(&value["request_id"])?;
         }
-        ["accounts", _, "priority"] => {
-            fields(
-                value,
-                &["expected_version", "priority"],
-                &["expected_version", "priority"],
-            )?;
-            version(value, "expected_version")?;
-            integer(&value["priority"], 0, i32::MAX as i64)?;
-        }
-        ["accounts", _, "groups"] => {
-            fields(
-                value,
-                &["expected_version", "scope_group_ids", "group_ids"],
-                &["expected_version", "scope_group_ids", "group_ids"],
-            )?;
-            version(value, "expected_version")?;
-            validation::ids(&value["scope_group_ids"], 1, 100)?;
-            validation::ids(&value["group_ids"], 0, 100)?;
-        }
-        ["accounts", _, "degradation-mark"] => {
-            fields(
-                value,
-                &["expected_mark_version", "marked"],
-                &["expected_mark_version", "marked"],
-            )?;
-            version(value, "expected_mark_version")?;
-            boolean(&value["marked"])?;
-        }
-        ["accounts", _, "schedulable"] => {
-            fields(
-                value,
-                &["expected_version", "schedulable"],
-                &["expected_version", "schedulable"],
-            )?;
-            version(value, "expected_version")?;
-            boolean(&value["schedulable"])?;
-        }
-        ["accounts", _] => {
-            fields(value, &["expected_version"], &["expected_version"])?;
-            version(value, "expected_version")?;
-        }
-        ["accounts", _, "recover-state"] => {
-            fields(value, &["expected_version"], &["expected_version"])?;
-            version(value, "expected_version")?;
-        }
-        ["accounts", _, "usage-action"] => {
-            fields(
-                value,
-                &["expected_version", "action", "confirmed"],
-                &["expected_version", "action"],
-            )?;
-            version(value, "expected_version")?;
-            choice(
-                &value["action"],
-                &[
-                    "query_usage",
-                    "query_reset_credits",
-                    "reset_quota",
-                    "probe_quota",
-                ],
-            )?;
-            optional_bool(value, "confirmed")?;
-        }
-        ["accounts", _, "test"] => {
-            fields(
-                value,
-                &[
-                    "expected_version",
-                    "confirmed",
-                    "model_id",
-                    "mode",
-                    "prompt",
-                    "image_data_url",
-                    "audio_data_url",
-                ],
-                &["expected_version"],
-            )?;
-            version(value, "expected_version")?;
-            for (key, default) in [
-                ("confirmed", json!(false)),
-                ("model_id", json!("")),
-                ("mode", json!("default")),
-                ("prompt", json!("")),
-                ("image_data_url", json!("")),
-                ("audio_data_url", json!("")),
-            ] {
-                if value.get(key).is_none() {
-                    value[key] = default;
-                }
-            }
-            boolean(&value["confirmed"])?;
-            choice(&value["mode"], TEST_MODES)?;
-            text(&value["model_id"], 0, 200)?;
-            text(&value["prompt"], 0, 16000)?;
-            for key in ["image_data_url", "audio_data_url"] {
-                text(&value[key], 0, 16_777_216)?;
-            }
-        }
         ["config", _] => {
             fields(
                 value,
@@ -377,18 +267,6 @@ pub fn validate(path: &[&str], method: &str, value: &mut Value) -> Result<()> {
             )?;
             version(value, "expected_revision")?;
             object(&value["changes"])?;
-        }
-        ["account-templates"] if method == "PUT" => {
-            fields(
-                value,
-                &["expected_version", "full", "degraded", "takeover"],
-                &["expected_version", "full", "degraded", "takeover"],
-            )?;
-            version(value, "expected_version")?;
-            for key in ["full", "degraded", "takeover"] {
-                fields(&value[key], &["whitelist", "mappings"], &[])?;
-                profile(&value[key])?;
-            }
         }
         ["account-templates", ..] if method == "DELETE" => {
             fields(value, &["expected_version"], &["expected_version"])?;

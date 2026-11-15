@@ -741,7 +741,7 @@ impl Operations {
             Err(e) => Err(e),
         }
     }
-    pub fn resolve_test_model(&self, row: &Value, payload: &mut Value) -> Result<()> {
+    fn resolve_test_model(&self, row: &Value, payload: &mut Value) -> Result<()> {
         if row["platform"] == "openai" && string(&payload["model_id"]).trim().is_empty() {
             let model = self.backend.test_config()?.0;
             if !account_templates::MODEL_ID.is_match(&model) {

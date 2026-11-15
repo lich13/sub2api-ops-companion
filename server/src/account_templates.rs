@@ -268,31 +268,6 @@ impl Templates {
         }
         combine(template)
     }
-    pub fn save(&self, payload: &Value) -> Result<Value> {
-        let values = BUILTINS
-            .into_iter()
-            .map(|(id, _)| Ok((id, profile(&payload[id])?)))
-            .collect::<Result<Vec<_>>>()?;
-        self.store.transaction(|data| {
-            if BUILTINS
-                .iter()
-                .any(|(id, _)| data["templates"].get(id).is_none())
-            {
-                return Err(Error::new(409, "模板已删除，请升级客户端后逐个编辑模板"));
-            }
-            if digest(data) != string(&payload["expected_version"]) {
-                return Err(Error::new(409, "模板已变化，请重新读取"));
-            }
-            for (id, value) in values {
-                data["templates"][id] = value;
-            }
-            sync_custom(data);
-            data["configured"] = true.into();
-            data["revision"] = (integer(&data["revision"]).unwrap_or(0) + 1).into();
-            Ok(())
-        })?;
-        self.view(None)
-    }
     pub fn edit(&self, id: Option<&str>, payload: &Value, delete: bool) -> Result<Value> {
         let data = self.data()?;
         if id.is_some_and(|id| data["templates"].get(id).is_none()) {

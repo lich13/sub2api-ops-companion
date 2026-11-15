@@ -5,7 +5,7 @@ use crate::{
     validation,
 };
 use axum::{
-    body::{to_bytes, Body, Bytes},
+    body::{to_bytes, Body},
     extract::{Query, Request, State},
     http::{header, HeaderValue, Method, StatusCode},
     middleware::{from_fn, Next},
@@ -15,7 +15,7 @@ use axum::{
 };
 use futures_util::FutureExt;
 use serde_json::{json, Value};
-use std::{collections::BTreeMap, convert::Infallible, panic::AssertUnwindSafe, sync::Arc};
+use std::{collections::BTreeMap, panic::AssertUnwindSafe, sync::Arc};
 
 // Requests can carry two existing 16 MiB media fields. Desktop response limits
 // are independent of this inbound JSON limit.
@@ -184,18 +184,11 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         ["account-operations", _, "cancel"] | ["account-operations", "batches", _, "cancel"] => {
             Some(&["POST"])
         }
-        ["accounts", _] => Some(&["DELETE"]),
         ["accounts", _, "settings" | "models" | "usage"]
         | ["accounts", _, "model-tests", "latest"] => Some(&["GET"]),
-        ["accounts", _, "operations"
-        | "schedulable"
-        | "recover-state"
-        | "priority"
-        | "test"
-        | "model-tests"
-        | "usage-action"
-        | "apply-oauth-credentials"] => Some(&["POST"]),
-        ["accounts", _, "groups" | "degradation-mark"] => Some(&["PUT"]),
+        ["accounts", _, "operations" | "model-tests" | "apply-oauth-credentials"] => {
+            Some(&["POST"])
+        }
         ["accounts", _, "model-detection" | "keepalive"] => Some(&["GET", "PUT"]),
         ["errors" | "usage-records", _] => Some(&["GET"]),
         ["proxies", _, "test" | "quality-check"] => Some(&["POST"]),
@@ -203,9 +196,9 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         ["sub2api-config", "validate" | "apply"] => Some(&["POST"]),
         ["sub2api-system", "version" | "check-updates"] => Some(&["GET"]),
         ["sub2api-system", "update" | "restart"] => Some(&["POST"]),
-        ["account-templates"] => Some(&["GET", "PUT", "POST"]),
-        ["account-templates", "apply" | "custom"] => Some(&["POST"]),
-        ["account-templates", _] | ["account-templates", "custom", _] => Some(&["PUT", "DELETE"]),
+        ["account-templates"] => Some(&["GET", "POST"]),
+        ["account-templates", "apply"] => Some(&["POST"]),
+        ["account-templates", _] => Some(&["PUT", "DELETE"]),
         ["modeltrace" | "lm-detector", "fingerprint-bank"] => Some(&["GET"]),
         ["modeltrace" | "lm-detector", "fingerprint-bank", "sync"] => Some(&["POST"]),
         ["model-tests", _] => Some(&["GET"]),
@@ -519,72 +512,6 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
                 .submit(path_id(id)?, &payload, &key)
                 .await?
         }
-        ["accounts", id, "schedulable"] => {
-            request_payload(
-                &payload,
-                &["schedulable", "expected_version"],
-                &["schedulable", "expected_version"],
-            )?;
-            version(&payload, "expected_version")?;
-            validation::boolean(&payload["schedulable"])?;
-            runtime
-                .set_schedulable(path_id(id)?, &payload, &key)
-                .await?
-        }
-        ["accounts", id] => {
-            request_payload(&payload, &["expected_version"], &["expected_version"])?;
-            version(&payload, "expected_version")?;
-            runtime.delete_account(path_id(id)?, &payload, &key).await?
-        }
-        ["accounts", id, "recover-state"] => {
-            request_payload(&payload, &["expected_version"], &["expected_version"])?;
-            version(&payload, "expected_version")?;
-            runtime
-                .recover_account(path_id(id)?, &payload, &key)
-                .await?
-        }
-        ["accounts", id, "priority"] => {
-            request_payload(
-                &payload,
-                &["expected_version", "priority"],
-                &["expected_version", "priority"],
-            )?;
-            version(&payload, "expected_version")?;
-            let values = validation::operation_payload("priority", &payload)?;
-            let id = path_id(id)?;
-            let row = runtime
-                .actions
-                .account(id, Some(string(&payload["expected_version"])))
-                .await?;
-            let versions = crate::compat::operation_versions(&row);
-            runtime
-                .actions
-                .apply_setting(id, "priority", &values, string(&versions["priority"]), &key)
-                .await?
-        }
-        ["accounts", id, "groups"] => {
-            request_payload(
-                &payload,
-                &["expected_version", "group_ids", "scope_group_ids"],
-                &["expected_version", "group_ids", "scope_group_ids"],
-            )?;
-            version(&payload, "expected_version")?;
-            validation::operation_payload("groups", &payload)?;
-            runtime
-                .actions
-                .set_groups(path_id(id)?, &payload, &key)
-                .await?
-        }
-        ["accounts", id, "degradation-mark"] => {
-            request_payload(
-                &payload,
-                &["marked", "expected_mark_version"],
-                &["marked", "expected_mark_version"],
-            )?;
-            version(&payload, "expected_mark_version")?;
-            validation::boolean(&payload["marked"])?;
-            runtime.set_degradation(path_id(id)?, &payload).await?
-        }
         ["accounts", id, "apply-oauth-credentials"] => {
             if !query.is_empty() {
                 return Err(Error::invalid());
@@ -683,15 +610,6 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             };
             runtime.actions.templates.view(row.as_ref())?
         }
-        ["account-templates"] if method == Method::PUT => {
-            request_payload(
-                &payload,
-                &["expected_version", "full", "degraded", "takeover"],
-                &["expected_version", "full", "degraded", "takeover"],
-            )?;
-            version(&payload, "expected_version")?;
-            runtime.actions.templates.save(&payload)?
-        }
         ["account-templates", "apply"] => {
             status = StatusCode::ACCEPTED;
             runtime
@@ -699,11 +617,11 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
                 .submit_batch(&payload, &key, true)
                 .await?
         }
-        ["account-templates"] | ["account-templates", "custom"] => {
+        ["account-templates"] => {
             template_request(&mut payload, false)?;
             runtime.actions.templates.edit(None, &payload, false)?
         }
-        ["account-templates", id] | ["account-templates", "custom", id] => {
+        ["account-templates", id] => {
             template_request(&mut payload, method == Method::DELETE)?;
             runtime
                 .actions
@@ -725,9 +643,6 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
         ["lm-detector", "fingerprint-bank", "sync"] => runtime.tests.lm_bank.request_sync().await?,
         ["modeltrace", "fingerprint-bank"] => runtime.tests.bank.public(),
         ["modeltrace", "fingerprint-bank", "sync"] => runtime.tests.bank.request_sync()?,
-        ["accounts", id, "test"] => {
-            return Ok(test_response(runtime, path_id(id)?, payload, key));
-        }
         ["accounts", id, "model-tests"] => {
             runtime
                 .tests
@@ -769,26 +684,6 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
                     "desktop:admin",
                     Some(string(&payload["expected_revision"])),
                 )
-                .await?
-        }
-        ["accounts", id, "usage-action"] => {
-            request_payload(
-                &payload,
-                &["action", "expected_version", "confirmed"],
-                &["action", "expected_version"],
-            )?;
-            version(&payload, "expected_version")?;
-            if let Some(v) = payload.get("confirmed") {
-                validation::boolean(v)?;
-            }
-            if !matches!(
-                string(&payload["action"]),
-                "query_usage" | "query_reset_credits" | "reset_quota" | "probe_quota"
-            ) {
-                return Err(Error::invalid());
-            }
-            runtime
-                .usage_action(path_id(id)?, &payload, &key, None)
                 .await?
         }
         ["actions", "bark-test"] => {
@@ -873,82 +768,10 @@ fn reasoning_request(payload: &mut Value, kind: &str) -> Result<()> {
     crate::request_schema::reasoning(payload, kind)
 }
 
-enum TestState {
-    Prepare(Arc<Runtime>, i64, Value, String),
-    Running(
-        crate::actions::TestRun,
-        tokio::sync::OwnedSemaphorePermit,
-        crate::execution::TestPermit,
-    ),
-    Done,
-}
-fn test_response(runtime: Arc<Runtime>, id: i64, payload: Value, key: String) -> Response {
-    let stream = futures_util::stream::unfold(
-        TestState::Prepare(runtime, id, payload, key),
-        |state| async move {
-            let state = match state {
-                TestState::Prepare(runtime, id, mut payload, key) => {
-                    let prepared = async {
-                        let permit = runtime
-                            .budget
-                            .clone()
-                            .try_acquire_owned()
-                            .map_err(|_| crate::account_locks::busy())?;
-                        let slot = runtime
-                            .slots
-                            .acquire()
-                            .ok_or_else(crate::account_locks::busy)?;
-                        let row = runtime.actions.account(id, None).await?;
-                        runtime.operations.resolve_test_model(&row, &mut payload)?;
-                        let lease = runtime.actions.prepare_test(id, &payload).await?;
-                        Ok::<_, Error>((
-                            runtime.actions.test_stream(id, payload, key, lease, false),
-                            permit,
-                            slot,
-                        ))
-                    }
-                    .await;
-                    match prepared {
-                        Ok((run, budget, slot)) => TestState::Running(run, budget, slot),
-                        Err(error) => {
-                            let event = json!({"type":"error","error":crate::security::safe_error(&error.detail,600)});
-                            return Some((
-                                Ok::<_, Infallible>(Bytes::from(format!("data: {event}\n\n"))),
-                                TestState::Done,
-                            ));
-                        }
-                    }
-                }
-                state => state,
-            };
-            match state {
-                TestState::Running(mut run, budget, slot) => run.recv().await.map(|event| {
-                    (
-                        Ok(Bytes::from(format!("data: {event}\n\n"))),
-                        TestState::Running(run, budget, slot),
-                    )
-                }),
-                _ => None,
-            }
-        },
-    );
-    let mut response = Body::from_stream(stream).into_response();
-    response.headers_mut().insert(
-        "content-type",
-        "text/event-stream; charset=utf-8".parse().unwrap(),
-    );
-    response
-        .headers_mut()
-        .insert("cache-control", "no-cache".parse().unwrap());
-    response
-        .headers_mut()
-        .insert("x-accel-buffering", "no".parse().unwrap());
-    response
-}
-
 #[cfg(test)]
 mod response_tests {
     use super::*;
+    use std::convert::Infallible;
 
     #[tokio::test]
     async fn request_limit_accepts_boundary_and_rejects_chunked_overflow() {

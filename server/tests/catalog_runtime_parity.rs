@@ -521,11 +521,6 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
             POST,
             "account-operations/batches/00000000-0000-0000-0000-000000000002/cancel"
         ),
-        case!(
-            DELETE,
-            "accounts/7",
-            json!({"expected_version":version.clone()})
-        ),
         case!(GET, "accounts/7/settings"),
         case!(GET, "accounts/7/models?purpose=model_test"),
         case!(GET, "accounts/7/model-tests/latest"),
@@ -551,26 +546,6 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
         ),
         case!(
             POST,
-            "accounts/7/schedulable",
-            json!({"expected_version":version.clone(),"schedulable":true})
-        ),
-        case!(
-            POST,
-            "accounts/7/recover-state",
-            json!({"expected_version":version.clone()})
-        ),
-        case!(
-            POST,
-            "accounts/7/priority",
-            json!({"expected_version":version.clone(),"priority":0})
-        ),
-        case!(
-            POST,
-            "accounts/7/test",
-            json!({"expected_version":version.clone()})
-        ),
-        case!(
-            POST,
             "accounts/7/model-tests",
             json!({
                 "model_id":"fixture-model",
@@ -578,21 +553,6 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
                 "request_id":request_id.clone(),
                 "concurrency":1
             })
-        ),
-        case!(
-            POST,
-            "accounts/7/usage-action",
-            json!({"expected_version":version.clone(),"action":"query_usage"})
-        ),
-        case!(
-            PUT,
-            "accounts/7/groups",
-            json!({"expected_version":version.clone(),"scope_group_ids":[7],"group_ids":[7]})
-        ),
-        case!(
-            PUT,
-            "accounts/7/degradation-mark",
-            json!({"expected_mark_version":version.clone(),"marked":true})
         ),
         case!(GET, "accounts/7/model-detection"),
         case!(
@@ -611,14 +571,6 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
         case!(POST, "proxies/7/quality-check"),
         case!(GET, "account-templates"),
         case!(
-            PUT,
-            "account-templates",
-            json!({
-                "expected_version":version.clone(),
-                "full":{},"degraded":{},"takeover":{}
-            })
-        ),
-        case!(
             POST,
             "account-templates",
             json!({"expected_version":version.clone(),"name":"fixture-template"})
@@ -635,11 +587,6 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
             })
         ),
         case!(
-            POST,
-            "account-templates/custom",
-            json!({"expected_version":version.clone(),"name":"fixture-template"})
-        ),
-        case!(
             PUT,
             format!("account-templates/{custom_id}"),
             json!({"expected_version":version.clone(),"name":"fixture-template"})
@@ -647,16 +594,6 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
         case!(
             DELETE,
             format!("account-templates/{custom_id}"),
-            json!({"expected_version":version.clone()})
-        ),
-        case!(
-            PUT,
-            format!("account-templates/custom/{custom_id}"),
-            json!({"expected_version":version.clone(),"name":"fixture-template"})
-        ),
-        case!(
-            DELETE,
-            format!("account-templates/custom/{custom_id}"),
             json!({"expected_version":version.clone()})
         ),
         case!(GET, "modeltrace/fingerprint-bank"),
@@ -714,7 +651,7 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
             json!({"model":"fixture-model","efforts":["minimal"],"default_effort":"minimal"})
         ),
     ];
-    assert_eq!(cases.len(), 61);
+    assert_eq!(cases.len(), 49);
 
     let mut rejected = Vec::new();
     for (method, route, body) in cases {
@@ -949,8 +886,8 @@ async fn desktop_parameter_and_body_shape_errors_keep_422_before_authentication(
         ),
         (
             reqwest::Method::POST,
-            "accounts/7/schedulable",
-            Some(json!({"schedulable":true})),
+            "accounts/7/operations",
+            Some(json!({"action":"schedulable","payload":{"schedulable":true}})),
         ),
     ];
     let mut statuses = Vec::new();

@@ -1075,6 +1075,29 @@ impl Harness {
         rows.into_iter().map(|row| row.0).collect()
     }
 
+    // The four calls below run what the operation queue dispatches for an
+    // account and report the status and body the desktop API would return.
+    async fn set_groups(&self, id: i64, payload: Value) -> (u16, Value) {
+        outcome(
+            self.runtime
+                .actions
+                .set_groups(id, &payload, ADMIN_KEY)
+                .await,
+        )
+    }
+
+    async fn set_schedulable(&self, id: i64, payload: Value) -> (u16, Value) {
+        outcome(self.runtime.set_schedulable(id, &payload, ADMIN_KEY).await)
+    }
+
+    async fn recover_account(&self, id: i64, payload: Value) -> (u16, Value) {
+        outcome(self.runtime.recover_account(id, &payload, ADMIN_KEY).await)
+    }
+
+    async fn delete_account(&self, id: i64, payload: Value) -> (u16, Value) {
+        outcome(self.runtime.delete_account(id, &payload, ADMIN_KEY).await)
+    }
+
     async fn wait_job(&self, id: &str, terminal: &[&str]) -> Value {
         tokio::time::timeout(Duration::from_secs(8), async {
             loop {
@@ -1303,26 +1326,37 @@ fn template_batch(
     })
 }
 
-fn sse_events(text: &str) -> Vec<Value> {
-    text.lines()
-        .filter_map(|line| line.strip_prefix("data: "))
-        .filter_map(|line| serde_json::from_str(line).ok())
-        .collect()
+fn outcome(result: sub2ops_server::error::Result<Value>) -> (u16, Value) {
+    match result {
+        Ok(value) => (200, value),
+        Err(error) => (error.status.as_u16(), error.detail),
+    }
 }
 
 async fn save_fixture_templates(harness: &Harness, full: i64, degraded: i64) -> Value {
     let templates = &harness.runtime.actions.templates;
-    let view = templates.view(None).unwrap();
     let full = harness.account(full).await;
     let degraded = harness.account(degraded).await;
     let full = sub2ops_server::account_templates::split(&full["model_mapping"]).unwrap();
     let degraded = sub2ops_server::account_templates::split(&degraded["model_mapping"]).unwrap();
-    templates
-        .save(&json!({
-            "expected_version":view["version"], "full":full,
-            "degraded":degraded, "takeover":degraded
-        }))
-        .unwrap()
+    let mut view = templates.view(None).unwrap();
+    for (id, profile) in [
+        ("full", &full),
+        ("degraded", &degraded),
+        ("takeover", &degraded),
+    ] {
+        view = templates
+            .edit(
+                Some(id),
+                &json!({
+                    "expected_version":view["version"],"name":view["template_meta"][id]["name"],
+                    "whitelist":profile["whitelist"],"mappings":profile["mappings"]
+                }),
+                false,
+            )
+            .unwrap();
+    }
+    view
 }
 
 #[tokio::test]
@@ -1396,7 +1430,7 @@ fn restore_operation_store_lock(lock: &std::path::Path, backup: &std::path::Path
 }
 
 #[tokio::test]
-async fn group_management_http_preserves_scope_rejects_stale_targets_and_requires_readback() {
+async fn group_management_preserves_scope_rejects_stale_targets_and_requires_readback() {
     let mut harness = Harness::new().await;
     let group_a = harness.insert_group("openai", false, &[]).await;
     let group_b = harness.insert_group("openai", false, &[]).await;
@@ -1413,15 +1447,13 @@ async fn group_management_http_preserves_scope_rejects_stale_targets_and_require
         )
         .await;
     let row = harness.account(account_id).await;
-    let path = format!("accounts/{account_id}/groups");
-    let (status, result, _) = harness
-        .request(
-            Method::PUT,
-            &path,
-            Some(json!({
+    let (status, result) = harness
+        .set_groups(
+            account_id,
+            json!({
                 "expected_version":account_version(&row),
                 "scope_group_ids":[group_a,group_b],"group_ids":[group_b]
-            })),
+            }),
         )
         .await;
     assert_eq!(
@@ -1447,32 +1479,33 @@ async fn group_management_http_preserves_scope_rejects_stale_targets_and_require
     let live = harness.account(account_id).await;
     let fresh = account_version(&live);
     let bad_platform = harness
-        .request(
-            Method::PUT,
-            &path,
-            Some(json!({
+        .set_groups(
+            account_id,
+            json!({
                 "expected_version":fresh,"scope_group_ids":[wrong_platform],"group_ids":[wrong_platform]
-            })),
+            }),
         )
         .await;
     assert_eq!(bad_platform.0, 409);
     let stale = harness
-        .request(
-            Method::PUT,
-            &path,
-            Some(json!({
+        .set_groups(
+            account_id,
+            json!({
                 "expected_version":"0".repeat(64),"scope_group_ids":[group_a],"group_ids":[]
-            })),
+            }),
         )
         .await;
     assert_eq!(stale.0, 409);
     let empty_scope = harness
         .request(
-            Method::PUT,
-            &path,
-            Some(json!({
-                "expected_version":fresh,"scope_group_ids":[],"group_ids":[]
-            })),
+            Method::POST,
+            &format!("accounts/{account_id}/operations"),
+            Some(single_operation(
+                "groups",
+                json!({"scope_group_ids":[],"group_ids":[]}),
+                operation_version(&live, "groups"),
+                "fixture-groups-empty-scope-0001",
+            )),
         )
         .await;
     assert_eq!(empty_scope.0, 422);
@@ -1491,13 +1524,12 @@ async fn group_management_http_preserves_scope_rejects_stale_targets_and_require
         .store(false, Ordering::Release);
     let unchanged = harness.account(account_id).await;
     let mismatch = harness
-        .request(
-            Method::PUT,
-            &path,
-            Some(json!({
+        .set_groups(
+            account_id,
+            json!({
                 "expected_version":account_version(&unchanged),
                 "scope_group_ids":[group_a,group_b],"group_ids":[group_a]
-            })),
+            }),
         )
         .await;
     assert_eq!(
@@ -1557,18 +1589,18 @@ async fn settings_http_projects_versions_and_emits_exact_manual_write_payloads()
     let changed = harness.account(account_id).await;
     assert_ne!(operation_version(&changed, "priority"), before_version);
 
-    let expected = account_version(&changed);
-    let (status, result, _) = harness
-        .request(
-            Method::POST,
-            &format!("accounts/{account_id}/priority"),
-            Some(json!({"expected_version":expected,"priority":5})),
+    let result = harness
+        .runtime
+        .actions
+        .apply_setting(
+            account_id,
+            "priority",
+            &json!({"priority":5}),
+            &operation_version(&changed, "priority"),
+            ADMIN_KEY,
         )
-        .await;
-    assert_eq!(
-        status, 200,
-        "manual priority write should be read back: {result}"
-    );
+        .await
+        .expect("manual priority write should be read back");
     assert_eq!(result["priority"], 5);
     assert_eq!(result["verified"], true);
     let priority_path = format!("/api/v1/admin/accounts/{account_id}");
@@ -1973,16 +2005,25 @@ async fn group_management_auth_schema_deletion_and_error_readback_match_pinned_c
         .await
         .expect("mark a synthetic group deleted");
     let row = harness.account(account_id).await;
-    let path = format!("accounts/{account_id}/groups");
+    let operations = format!("accounts/{account_id}/operations");
     let version = account_version(&row);
+    let queued = |payload: Value, request_id: &str| {
+        single_operation(
+            "groups",
+            payload,
+            operation_version(&row, "groups"),
+            request_id,
+        )
+    };
 
     let unauthenticated = harness
         .request_with_key(
-            Method::PUT,
-            &path,
-            Some(json!({
-                "expected_version":version,"scope_group_ids":[first,second],"group_ids":[second]
-            })),
+            Method::POST,
+            &operations,
+            Some(queued(
+                json!({"scope_group_ids":[first,second],"group_ids":[second]}),
+                "fixture-groups-wrong-key-0001",
+            )),
             "fixture-account-mutation-wrong-key",
         )
         .await;
@@ -1994,29 +2035,32 @@ async fn group_management_auth_schema_deletion_and_error_readback_match_pinned_c
 
     let extra = harness
         .request(
-            Method::PUT,
-            &path,
-            Some(json!({
-                "expected_version":version,"scope_group_ids":[first,second],"group_ids":[second],"future":true
-            })),
+            Method::POST,
+            &operations,
+            Some(queued(
+                json!({"scope_group_ids":[first,second],"group_ids":[second],"future":true}),
+                "fixture-groups-unknown-field-0001",
+            )),
         )
         .await;
     assert_eq!(extra.0, 422, "unknown group-edit fields are rejected");
     let empty_scope = harness
         .request(
-            Method::PUT,
-            &path,
-            Some(json!({"expected_version":version,"scope_group_ids":[],"group_ids":[]})),
+            Method::POST,
+            &operations,
+            Some(queued(
+                json!({"scope_group_ids":[],"group_ids":[]}),
+                "fixture-groups-empty-scope-0002",
+            )),
         )
         .await;
     assert_eq!(empty_scope.0, 422);
     let deleted_scope = harness
-        .request(
-            Method::PUT,
-            &path,
-            Some(json!({
+        .set_groups(
+            account_id,
+            json!({
                 "expected_version":version,"scope_group_ids":[deleted],"group_ids":[deleted]
-            })),
+            }),
         )
         .await;
     assert_eq!(deleted_scope.0, 409);
@@ -2027,12 +2071,11 @@ async fn group_management_auth_schema_deletion_and_error_readback_match_pinned_c
 
     harness.upstream.set_group_status(504);
     let applied_then_error = harness
-        .request(
-            Method::PUT,
-            &path,
-            Some(json!({
+        .set_groups(
+            account_id,
+            json!({
                 "expected_version":version,"scope_group_ids":[first,second],"group_ids":[second]
-            })),
+            }),
         )
         .await;
     assert_eq!(
@@ -2064,13 +2107,12 @@ async fn group_management_auth_schema_deletion_and_error_readback_match_pinned_c
         .unwrap();
     let wrong_row = harness.account(wrong_platform_account).await;
     let wrong_result = harness
-        .request(
-            Method::PUT,
-            &format!("accounts/{wrong_platform_account}/groups"),
-            Some(json!({
+        .set_groups(
+            wrong_platform_account,
+            json!({
                 "expected_version":account_version(&wrong_row),
                 "scope_group_ids":[first],"group_ids":[]
-            })),
+            }),
         )
         .await;
     assert_eq!(
@@ -2088,13 +2130,12 @@ async fn group_management_auth_schema_deletion_and_error_readback_match_pinned_c
         .await
         .unwrap();
     let deleted_result = harness
-        .request(
-            Method::PUT,
-            &format!("accounts/{deleted_account}/groups"),
-            Some(json!({
+        .set_groups(
+            deleted_account,
+            json!({
                 "expected_version":account_version(&deleted_row),
                 "scope_group_ids":[first],"group_ids":[]
-            })),
+            }),
         )
         .await;
     assert_eq!(deleted_result.0, 404);
@@ -2474,6 +2515,16 @@ async fn settings_model_config_proxy_clear_sync_and_numeric_validation_use_exact
             json!({"proxy_id":u64::MAX}),
             "fixture-proxy-id-overflow-0001",
         ),
+        (
+            "priority",
+            json!({"priority":true}),
+            "fixture-priority-boolean-0001",
+        ),
+        (
+            "priority",
+            json!({"priority":-1}),
+            "fixture-priority-negative-0001",
+        ),
     ] {
         let current = harness.account(account_id).await;
         assert_eq!(
@@ -2494,32 +2545,25 @@ async fn settings_model_config_proxy_clear_sync_and_numeric_validation_use_exact
             "{action} must reject non-integer, out-of-range, or boolean values"
         );
     }
-    let invalid_priority = harness
-        .request(
-            Method::POST,
-            &format!("accounts/{account_id}/priority"),
-            Some(json!({"expected_version":account_version(&current),"priority":true})),
-        )
-        .await;
-    assert_eq!(invalid_priority.0, 422);
-    let invalid_direct_priority = harness
-        .request(
-            Method::POST,
-            &format!("accounts/{account_id}/priority"),
-            Some(json!({"expected_version":account_version(&current),"priority":-1})),
-        )
-        .await;
-    assert_eq!(invalid_direct_priority.0, 422);
     for priority in [0_i64, i64::from(i32::MAX)] {
         let live = harness.account(account_id).await;
-        let (status, result, _) = harness
-            .request(
-                Method::POST,
-                &format!("accounts/{account_id}/priority"),
-                Some(json!({"expected_version":account_version(&live),"priority":priority})),
-            )
-            .await;
-        assert_eq!(status, 200, "direct priority accepts boundary {priority}");
+        let (status, result) = outcome(
+            harness
+                .runtime
+                .actions
+                .apply_setting(
+                    account_id,
+                    "priority",
+                    &json!({"priority":priority}),
+                    &operation_version(&live, "priority"),
+                    ADMIN_KEY,
+                )
+                .await,
+        );
+        assert_eq!(
+            status, 200,
+            "priority accepts boundary {priority}: {result}"
+        );
         assert_eq!(result["priority"], priority);
         assert_eq!(result["verified"], true);
     }
@@ -2870,18 +2914,30 @@ async fn desktop_model_options_live_allowlists_and_sse_payload_match_python_orac
         fixtures()["python_oracle"]["desktop_actions"]["filtered_model_options"]
     );
 
-    // The direct streaming route checks the full account version outside the
-    // queued-operation context; queued `test` jobs use the field-scoped version.
-    let version = account_version(&row);
-    let (status, _, stream) = harness
+    // A queued single `test` job buffers every event of the upstream stream.
+    let operations = format!("accounts/{account_id}/operations");
+    let queued = |request_id: &str, mode: &str| {
+        single_operation(
+            "test",
+            json!({"confirmed":true,"model_id":"fixture-model-a","mode":mode}),
+            operation_version(&row, "test"),
+            request_id,
+        )
+    };
+    let upstream_tests = format!("/api/v1/admin/accounts/{account_id}/test");
+    let (status, first, _) = harness
         .request(
             Method::POST,
-            &format!("accounts/{account_id}/test"),
-            Some(json!({"expected_version":version,"model_id":"fixture-model-a","mode":"default"})),
+            &operations,
+            Some(queued("fixture-test-stream-0001", "default")),
         )
         .await;
-    assert_eq!(status, 200);
-    let events = sse_events(&stream);
+    assert_eq!(status, 202);
+    harness.runtime.operations.tick().await.unwrap();
+    let first = harness
+        .wait_job(first["id"].as_str().unwrap(), &["completed"])
+        .await;
+    let events = first["events"].as_array().unwrap();
     let content = events
         .iter()
         .filter(|event| event["type"] == "content")
@@ -2899,13 +2955,10 @@ async fn desktop_model_options_live_allowlists_and_sse_payload_match_python_orac
             .iter()
             .map(String::as_str)
             .collect::<Vec<_>>(),
-        "unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}"
+        "unexpected queued test events: {events:?}"
     );
     assert_eq!(events.last().unwrap()["success"], true);
-    let tests = harness.upstream.matching(
-        Method::POST,
-        &format!("/api/v1/admin/accounts/{account_id}/test"),
-    );
+    let tests = harness.upstream.matching(Method::POST, &upstream_tests);
     assert_eq!(tests.len(), 1);
     assert_eq!(
         tests[0].body,
@@ -2916,43 +2969,39 @@ async fn desktop_model_options_live_allowlists_and_sse_payload_match_python_orac
     );
     assert!(tests[0].body.get("confirmed").is_none());
 
-    let (status, _, _) = harness
+    let (status, second, _) = harness
         .request(
             Method::POST,
-            &format!("accounts/{account_id}/test"),
-            Some(json!({"expected_version":version,"model_id":"fixture-model-a","mode":"default","confirmed":true})),
+            &operations,
+            Some(queued("fixture-test-stream-0002", "default")),
         )
         .await;
-    assert_eq!(
-        status, 200,
-        "the lease must be released after the terminal SSE event"
-    );
+    assert_eq!(status, 202);
+    harness.runtime.operations.tick().await.unwrap();
+    harness
+        .wait_job(second["id"].as_str().unwrap(), &["completed"])
+        .await;
     assert_eq!(
         harness
             .upstream
-            .matching(
-                Method::POST,
-                &format!("/api/v1/admin/accounts/{account_id}/test")
-            )
+            .matching(Method::POST, &upstream_tests)
             .len(),
-        2
+        2,
+        "the lease must be released after the terminal event"
     );
 
     let unknown_mode = harness
         .request(
             Method::POST,
-            &format!("accounts/{account_id}/test"),
-            Some(json!({"expected_version":version,"model_id":"fixture-model-a","mode":"fixture-unknown-mode"})),
+            &operations,
+            Some(queued("fixture-test-stream-0003", "fixture-unknown-mode")),
         )
         .await;
     assert_eq!(unknown_mode.0, 422);
     assert_eq!(
         harness
             .upstream
-            .matching(
-                Method::POST,
-                &format!("/api/v1/admin/accounts/{account_id}/test")
-            )
+            .matching(Method::POST, &upstream_tests)
             .len(),
         2,
         "invalid test modes are rejected before contacting Sub2API"
@@ -3189,7 +3238,7 @@ async fn template_custom_catalog_caps_crud_and_legacy_empty_state_survive_reload
 }
 
 #[tokio::test]
-async fn template_http_crud_legacy_put_names_versions_and_deletion_match_python() {
+async fn template_http_crud_names_versions_and_deletion_match_python() {
     let mut harness = Harness::new().await;
     let (status, initial, _) = harness
         .request(Method::GET, "account-templates", None)
@@ -3243,30 +3292,12 @@ async fn template_http_crud_legacy_put_names_versions_and_deletion_match_python(
             |item| item["name"].as_str().is_some_and(|name| !name.is_empty())
                 && item["builtin"] == false
         ));
-    let legacy_put = json!({
-        "expected_version":changed_full["version"],
-        "full":changed_full["templates"]["full"],
-        "degraded":changed_full["templates"]["degraded"],
-        "takeover":changed_full["templates"]["takeover"]
-    });
-    let (status, legacy_saved, _) = harness
-        .request(Method::PUT, "account-templates", Some(legacy_put))
-        .await;
-    assert_eq!(
-        status, 200,
-        "the deployed legacy PUT path must remain usable"
-    );
-    assert_eq!(
-        legacy_saved["templates"]["full"],
-        changed_full["templates"]["full"]
-    );
-
     let (status, created, _) = harness
         .request(
             Method::POST,
-            "account-templates/custom",
+            "account-templates",
             Some(json!({
-                "expected_version":legacy_saved["version"],"name":"fixture HTTP custom",
+                "expected_version":changed_full["version"],"name":"fixture HTTP custom",
                 "whitelist":["fixture-http-model"],"mappings":[]
             })),
         )
@@ -3310,7 +3341,7 @@ async fn template_http_crud_legacy_put_names_versions_and_deletion_match_python(
         let (status, _, _) = harness
             .request(
                 Method::POST,
-                "account-templates/custom",
+                "account-templates",
                 Some(json!({
                     "expected_version":renamed["version"],"name":name,
                     "whitelist":[],"mappings":[]
@@ -3963,28 +3994,8 @@ fn operation_store_migrates_legacy_single_job_without_losing_jobs_or_request_ind
 }
 
 #[test]
-fn template_legacy_save_and_migration_failures_preserve_original_bytes() {
+fn template_migration_failure_preserves_original_bytes() {
     let root = tempfile::tempdir().unwrap();
-    let deleted_path = root.path().join("deleted-template.json");
-    let templates = Templates::new(deleted_path.clone(), false);
-    let initial = templates.view(None).unwrap();
-    let deleted = templates
-        .edit(
-            Some("degraded"),
-            &json!({"expected_version":initial["version"]}),
-            true,
-        )
-        .unwrap();
-    let before_deleted_save = fs::read(&deleted_path).unwrap();
-    let rejected_save = templates.save(&json!({
-        "expected_version":deleted["version"],
-        "full":{"whitelist":["fixture-full-updated"],"mappings":[]},
-        "degraded":{"whitelist":["fixture-degraded-updated"],"mappings":[]},
-        "takeover":{"whitelist":["fixture-takeover-updated"],"mappings":[]}
-    }));
-    assert_eq!(rejected_save.unwrap_err().status.as_u16(), 409);
-    assert_eq!(fs::read(&deleted_path).unwrap(), before_deleted_save);
-
     let migration_path = root.path().join("legacy-template.json");
     let legacy = json!({
         "version":1,"revision":4,"configured":true,
@@ -5634,22 +5645,10 @@ async fn management_delete_preserves_other_keys_and_history() {
     assert_eq!(h.account(b).await["schedulable"], true);
     let expected = account_version(&h.account(a).await);
     let path = format!("/api/v1/admin/accounts/{a}");
-    let gate = h.upstream.gate(&path);
-    let request = h
-        .client
-        .delete(format!("{}/api/desktop/v1/accounts/{a}", h.base_url))
-        .header("x-api-key", ADMIN_KEY)
-        .json(&json!({"expected_version":expected}));
-    let pending = tokio::spawn(async move { request.send().await.unwrap() });
-    tokio::time::timeout(Duration::from_secs(3), gate.entered.notified())
-        .await
-        .unwrap();
-    gate.release.notify_one();
-    let response = pending.await.unwrap();
-    assert_eq!(response.status().as_u16(), 200);
     assert_eq!(
-        response.json::<Value>().await.unwrap(),
-        json!({"account_id":a,"deleted":true,"verified":true})
+        h.delete_account(a, json!({"expected_version":expected}))
+            .await,
+        (200, json!({"account_id":a,"deleted":true,"verified":true}))
     );
     assert_eq!(
         h.runtime
@@ -5679,31 +5678,31 @@ async fn management_invalid_auth_version_and_deleted_account_never_dispatch() {
     let id = h
         .insert_account("openai", "apikey", json!({}), json!({}), None, &[])
         .await;
-    let version = account_version(&h.account(id).await);
-    let payload = json!({"expected_version":version});
-    let path = format!("accounts/{id}");
+    let row = h.account(id).await;
+    let payload = json!({"expected_version":account_version(&row)});
     assert_eq!(
-        h.request_with_key(Method::DELETE, &path, Some(payload.clone()), "fixture-bad")
-            .await
-            .0,
-        401
-    );
-    assert_eq!(
-        h.request(
-            Method::DELETE,
-            &path,
-            Some(json!({"expected_version":"a".repeat(64)}))
+        h.request_with_key(
+            Method::POST,
+            &format!("accounts/{id}/operations"),
+            Some(single_operation(
+                "delete",
+                json!({}),
+                operation_version(&row, "delete"),
+                "fixture-delete-wrong-key-0001",
+            )),
+            "fixture-bad",
         )
         .await
         .0,
-        409
+        401
     );
     assert_eq!(
-        h.request(Method::DELETE, "accounts/9999999999", Some(payload.clone()))
+        h.delete_account(id, json!({"expected_version":"a".repeat(64)}))
             .await
             .0,
-        404
+        409
     );
+    assert_eq!(h.delete_account(9_999_999_999, payload).await.0, 404);
     assert!(manual_writes(&h).is_empty());
     h.finish().await;
 }
@@ -5716,22 +5715,14 @@ async fn management_delete_rejection_and_disconnect_use_readback_once() {
         .await;
     let payload = json!({"expected_version":account_version(&h.account(id).await)});
     *h.upstream.manual_mode.lock().unwrap() = ManualMode::Rejected;
-    let failed = h
-        .request(
-            Method::DELETE,
-            &format!("accounts/{id}"),
-            Some(payload.clone()),
-        )
-        .await;
+    let failed = h.delete_account(id, payload.clone()).await;
     assert_eq!(failed.0, 502);
-    assert_eq!(failed.1["detail"]["code"], "http_500");
-    assert!(!failed.2.contains("fixture-private"));
+    assert_eq!(failed.1["code"], "http_500");
+    assert!(!failed.1.to_string().contains("fixture-private"));
     assert!(h.runtime.actions.account(id, None).await.is_ok());
     assert_eq!(manual_writes(&h).len(), 1);
     *h.upstream.manual_mode.lock().unwrap() = ManualMode::DisconnectedApplied;
-    let success = h
-        .request(Method::DELETE, &format!("accounts/{id}"), Some(payload))
-        .await;
+    let success = h.delete_account(id, payload).await;
     assert_eq!(success.0, 200);
     assert_eq!(success.1["deleted"], true);
     assert_eq!(success.1["verified"], true);
@@ -5760,18 +5751,18 @@ async fn management_parallel_deletes_succeed_but_same_account_overlap_rejects_wi
         );
     }
     let mut requests = Vec::new();
-    for id in &ids {
-        let request = h
-            .client
-            .delete(format!("{}/api/desktop/v1/accounts/{id}", h.base_url))
-            .header("x-api-key", ADMIN_KEY)
-            .json(&json!({"expected_version":account_version(&h.account(*id).await)}));
+    for id in ids.iter().copied() {
+        let runtime = h.runtime.clone();
+        let payload = json!({"expected_version":account_version(&h.account(id).await)});
         requests.push(tokio::spawn(async move {
-            request.send().await.unwrap().status().as_u16()
+            runtime.delete_account(id, &payload, ADMIN_KEY).await
         }));
     }
     for request in requests {
-        assert_eq!(request.await.unwrap(), 200);
+        request
+            .await
+            .unwrap()
+            .expect("deletes of different accounts run in parallel");
     }
     assert_eq!(manual_writes(&h).len(), 3);
     for id in &ids {
@@ -5793,24 +5784,18 @@ async fn management_parallel_deletes_succeed_but_same_account_overlap_rejects_wi
     let gate = h.upstream.gate(&path);
     *h.upstream.manual_mode.lock().unwrap() = ManualMode::Rejected;
     let payload = json!({"expected_version":account_version(&h.account(id).await)});
-    let request = h
-        .client
-        .delete(format!("{}/api/desktop/v1/accounts/{id}", h.base_url))
-        .header("x-api-key", ADMIN_KEY)
-        .json(&payload);
-    let pending = tokio::spawn(async move { request.send().await.unwrap() });
+    let runtime = h.runtime.clone();
+    let first = payload.clone();
+    let pending = tokio::spawn(async move { runtime.delete_account(id, &first, ADMIN_KEY).await });
     tokio::time::timeout(Duration::from_secs(3), gate.entered.notified())
         .await
         .unwrap();
-    let rejected = tokio::time::timeout(
-        Duration::from_secs(1),
-        h.request(Method::DELETE, &format!("accounts/{id}"), Some(payload)),
-    )
-    .await
-    .unwrap();
+    let rejected = tokio::time::timeout(Duration::from_secs(1), h.delete_account(id, payload))
+        .await
+        .unwrap();
     assert_eq!(rejected.0, 409);
     gate.release.notify_one();
-    assert_eq!(pending.await.unwrap().status().as_u16(), 502);
+    assert_eq!(outcome(pending.await.unwrap()).0, 502);
     assert_eq!(h.upstream.matching(Method::DELETE, &path).len(), 1);
     h.finish().await;
 }
@@ -5825,16 +5810,10 @@ async fn management_recover_exact_request_preserves_switches_and_history() {
         .bind(id).execute(&h.runtime.db.pool).await.unwrap();
     let history = h.runtime.monitor.store.snapshot().unwrap()["recovery_history"].clone();
     let payload = json!({"expected_version":account_version(&h.account(id).await)});
-    let response = h
-        .request(
-            Method::POST,
-            &format!("accounts/{id}/recover-state"),
-            Some(payload),
-        )
-        .await;
+    let response = h.recover_account(id, payload).await;
     assert_eq!(response.0, 200);
     assert_eq!(response.1["verified"], true);
-    assert!(!response.2.contains("credentials"));
+    assert!(!response.1.to_string().contains("credentials"));
     let row = h.account(id).await;
     assert_eq!(row["status"], "active");
     assert_eq!(row["schedulable"], false);
@@ -5858,16 +5837,14 @@ async fn management_recover_exact_request_preserves_switches_and_history() {
 async fn management_recover_live_model_limit_expired_state_failures_and_disconnect_do_not_retry() {
     let mut h = Harness::new().await;
     let id=h.insert_account("openai","apikey",json!({}),json!({"model_rate_limits":{"fixture-model":{"rate_limit_reset_at":(chrono::Utc::now()+chrono::Duration::minutes(2)).to_rfc3339()}}}),None,&[]).await;
-    let path = format!("accounts/{id}/recover-state");
     assert!(sub2ops_server::queries::recoverable(
         &h.account(id).await,
         chrono::Utc::now()
     ));
     let r = h
-        .request(
-            Method::POST,
-            &path,
-            Some(json!({"expected_version":account_version(&h.account(id).await)})),
+        .recover_account(
+            id,
+            json!({"expected_version":account_version(&h.account(id).await)}),
         )
         .await;
     assert_eq!(r.0, 200);
@@ -5881,10 +5858,9 @@ async fn management_recover_live_model_limit_expired_state_failures_and_disconne
         chrono::Utc::now()
     ));
     assert_eq!(
-        h.request(
-            Method::POST,
-            &path,
-            Some(json!({"expected_version":account_version(&h.account(id).await)}))
+        h.recover_account(
+            id,
+            json!({"expected_version":account_version(&h.account(id).await)})
         )
         .await
         .0,
@@ -5898,15 +5874,10 @@ async fn management_recover_live_model_limit_expired_state_failures_and_disconne
         .unwrap();
     let payload = json!({"expected_version":account_version(&h.account(id).await)});
     *h.upstream.manual_mode.lock().unwrap() = ManualMode::Rejected;
-    assert_eq!(
-        h.request(Method::POST, &path, Some(payload.clone()))
-            .await
-            .0,
-        502
-    );
+    assert_eq!(h.recover_account(id, payload.clone()).await.0, 502);
     assert_eq!(manual_writes(&h).len(), 2);
     *h.upstream.manual_mode.lock().unwrap() = ManualMode::DisconnectedApplied;
-    let success = h.request(Method::POST, &path, Some(payload)).await;
+    let success = h.recover_account(id, payload).await;
     assert_eq!(success.0, 200);
     assert_eq!(success.1["verified"], true);
     assert_eq!(manual_writes(&h).len(), 3);
@@ -5924,26 +5895,13 @@ async fn management_schedule_uses_exact_write_and_confirms_readback() {
         .await;
     assert_eq!(h.account(other).await["schedulable"], true);
     let path = format!("/api/v1/admin/accounts/{id}/schedulable");
-    let gate = h.upstream.gate(&path);
-    let request = h
-        .client
-        .post(format!(
-            "{}/api/desktop/v1/accounts/{id}/schedulable",
-            h.base_url
-        ))
-        .header("x-api-key", ADMIN_KEY)
-        .json(
-            &json!({"expected_version":account_version(&h.account(id).await),"schedulable":false}),
-        );
-    let pending = tokio::spawn(async move { request.send().await.unwrap() });
-    tokio::time::timeout(Duration::from_secs(3), gate.entered.notified())
-        .await
-        .unwrap();
-    gate.release.notify_one();
-    h.upstream.ungate(&path);
-    let response = pending.await.unwrap();
-    assert_eq!(response.status().as_u16(), 200);
-    let body = response.json::<Value>().await.unwrap();
+    let (status, body) = h
+        .set_schedulable(
+            id,
+            json!({"expected_version":account_version(&h.account(id).await),"schedulable":false}),
+        )
+        .await;
+    assert_eq!(status, 200);
     assert_eq!(body["verified"], true);
     assert_eq!(h.account(id).await["schedulable"], false);
     let calls = manual_writes(&h);
@@ -5953,12 +5911,22 @@ async fn management_schedule_uses_exact_write_and_confirms_readback() {
     assert_eq!(calls[0].body, json!({"schedulable":false}));
 
     *h.upstream.manual_mode.lock().unwrap() = ManualMode::Unchanged;
-    let failed=h.request(Method::POST,&format!("accounts/{id}/schedulable"),Some(json!({"expected_version":account_version(&h.account(id).await),"schedulable":true}))).await;
+    let failed = h
+        .set_schedulable(
+            id,
+            json!({"expected_version":account_version(&h.account(id).await),"schedulable":true}),
+        )
+        .await;
     assert_eq!(failed.0, 502);
-    assert_eq!(failed.1["detail"]["code"], "readback_mismatch");
+    assert_eq!(failed.1["code"], "readback_mismatch");
     assert_eq!(h.account(id).await["schedulable"], false);
     *h.upstream.manual_mode.lock().unwrap() = ManualMode::Rejected;
-    let failed=h.request(Method::POST,&format!("accounts/{id}/schedulable"),Some(json!({"expected_version":account_version(&h.account(id).await),"schedulable":true}))).await;
+    let failed = h
+        .set_schedulable(
+            id,
+            json!({"expected_version":account_version(&h.account(id).await),"schedulable":true}),
+        )
+        .await;
     assert_eq!(failed.0, 502);
     assert_eq!(manual_writes(&h).len(), 3);
     h.finish().await;
@@ -5971,25 +5939,19 @@ async fn management_schedule_conflicts_stop_before_any_upstream_write() {
         .insert_account("openai", "apikey", json!({}), json!({}), None, &[])
         .await;
     let version = account_version(&h.account(id).await);
-    let path = format!("accounts/{id}/schedulable");
     let payload = json!({"expected_version":version,"schedulable":false});
     sqlx::query("UPDATE accounts SET type='oauth' WHERE id=$1")
         .bind(id)
         .execute(&h.runtime.db.pool)
         .await
         .unwrap();
-    assert_eq!(
-        h.request(Method::POST, &path, Some(payload.clone()))
-            .await
-            .0,
-        409
-    );
+    assert_eq!(h.set_schedulable(id, payload.clone()).await.0, 409);
     sqlx::query("DELETE FROM accounts WHERE id=$1")
         .bind(id)
         .execute(&h.runtime.db.pool)
         .await
         .unwrap();
-    assert_eq!(h.request(Method::POST, &path, Some(payload)).await.0, 404);
+    assert_eq!(h.set_schedulable(id, payload).await.0, 404);
     assert!(manual_writes(&h).is_empty());
     h.finish().await;
 }
@@ -6779,19 +6741,30 @@ async fn retired_key_management_has_no_routes_fields_startup_dependency_or_backg
         .await
         .unwrap();
     assert!(dto.get("managed").is_none());
-    for (method, path, payload) in [
+    let row = h.account(id).await;
+    for (action, payload) in [
         (
-            Method::POST,
-            format!("accounts/{id}/schedulable"),
-            json!({"expected_version":account_version(&h.account(id).await),"schedulable":false,"detach_managed":true}),
+            "schedulable",
+            json!({"schedulable":false,"detach_managed":true}),
         ),
-        (
-            Method::DELETE,
-            format!("accounts/{id}"),
-            json!({"expected_version":account_version(&h.account(id).await),"detach_managed":false}),
-        ),
+        ("delete", json!({"detach_managed":false})),
     ] {
-        assert_eq!(h.request(method, &path, Some(payload)).await.0, 422);
+        let request = single_operation(
+            action,
+            payload,
+            operation_version(&row, action),
+            &format!("fixture-retired-detach-{action}-0001"),
+        );
+        assert_eq!(
+            h.request(
+                Method::POST,
+                &format!("accounts/{id}/operations"),
+                Some(request)
+            )
+            .await
+            .0,
+            422
+        );
     }
     assert!(manual_writes(&h).is_empty());
     assert_eq!(h.account(id).await["schedulable"], true);
@@ -7149,12 +7122,11 @@ async fn group_management_all_platforms_and_usage_platform_filters() {
             .insert_account(platform, "apikey", json!({}), json!({}), None, &[first])
             .await;
         let row = h.account(account).await;
-        let path = format!("accounts/{account}/groups");
-        let result = h.request(Method::PUT, &path, Some(json!({"expected_version":account_version(&row),"scope_group_ids":[first,second],"group_ids":[second]}))).await;
+        let result = h.set_groups(account, json!({"expected_version":account_version(&row),"scope_group_ids":[first,second],"group_ids":[second]})).await;
         assert_eq!(result.0, 200, "{platform}: {}", result.1);
         assert_eq!(h.linked_groups(account).await, vec![second]);
         let row = h.account(account).await;
-        let rejected = h.request(Method::PUT, &path, Some(json!({"expected_version":account_version(&row),"scope_group_ids":[other],"group_ids":[other]}))).await;
+        let rejected = h.set_groups(account, json!({"expected_version":account_version(&row),"scope_group_ids":[other],"group_ids":[other]})).await;
         assert_eq!(rejected.0, 409);
         ids.push(account);
     }

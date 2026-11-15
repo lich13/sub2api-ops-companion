@@ -406,23 +406,6 @@ class Suite:
                 "revision_changed": saved_config["revision"] != old_revision,
                 "remote_mutation_calls": deltas}
 
-    def direct_priority(self) -> dict[str, object]:
-        row = self.account(4001)
-        before_calls = self.mocks.count_for("account_update:4001")
-        desired = 11
-        response = self.api("POST", "/accounts/4001/priority", {
-            "expected_version": row["version"], "priority": desired,
-        })
-        state = self.db_account(4001)
-        calls = self.mocks.count_for("account_update:4001") - before_calls
-        check(response.status == 200 and state is not None and state["priority"] == desired and calls == 1,
-              {"http_status": 200, "priority": desired, "upstream_put_delta": 1},
-              {"http_status": response.status,
-               "priority": state.get("priority") if state else None,
-               "upstream_put_delta": calls})
-        return {"http_status": response.status, "priority": state["priority"],
-                "upstream_put_delta": calls}
-
     def queued_priority(self) -> dict[str, object]:
         row = self.account(4001)
         versions = row["operation_versions"]
@@ -458,56 +441,70 @@ class Suite:
         return {"job_status": terminal.get("status"), "job_id_stable": True,
                 "priority": state["priority"], "upstream_put_delta": calls}
 
-    def direct_schedulable(self) -> dict[str, object]:
-        row = self.account(4002)
-        stale_version = row["version"]
-        before_calls = self.mocks.count_for("schedulable:4002")
-        saved = self.api("POST", "/accounts/4002/schedulable", {
-            "expected_version": stale_version, "schedulable": False,
+    def submit(self, account_id: int, action: str, payload: dict[str, object], expected: str, label: str):
+        return self.api("POST", f"/accounts/{account_id}/operations", {
+            "action": action, "request_id": f"mutation-{label}-request-040",
+            "client_id": f"mutation-{label}-client-040", "expected_version": expected,
+            "payload": payload,
         })
+
+    def queued_schedulable(self) -> dict[str, object]:
+        row = self.account(4002)
+        stale_version = row["operation_versions"]["schedulable"]
+        before_calls = self.mocks.count_for("schedulable:4002")
+        accepted = self.submit(4002, "schedulable", {"schedulable": False}, stale_version, "schedulable")
+        check(accepted.status == 202 and isinstance(accepted.body, dict) and accepted.body.get("id"),
+              {"submit_status": 202, "job_id": True},
+              {"submit_status": accepted.status,
+               "job_id": isinstance(accepted.body, dict) and bool(accepted.body.get("id"))})
+        saved = self.wait_job(accepted.body["id"], {"completed", "failed", "needs_confirmation"})
         state = self.db_account(4002)
         first_delta = self.mocks.count_for("schedulable:4002") - before_calls
-        check(saved.status == 200 and isinstance(saved.body, dict) and saved.body.get("verified") is True
+        verified = isinstance(saved.get("result"), dict) and saved["result"].get("verified") is True
+        check(saved.get("status") == "completed" and verified
               and state is not None and state["schedulable"] is False and first_delta == 1,
-              {"http_status": 200, "schedulable": False, "verified": True, "upstream_post_delta": 1},
-              {"http_status": saved.status,
+              {"status": "completed", "schedulable": False, "verified": True, "upstream_post_delta": 1},
+              {"status": saved.get("status"),
                "schedulable": state.get("schedulable") if state else None,
-               "verified": isinstance(saved.body, dict) and saved.body.get("verified") is True,
-               "upstream_post_delta": first_delta})
-        stale = self.api("POST", "/accounts/4002/schedulable", {
-            "expected_version": stale_version, "schedulable": True,
-        })
+               "verified": verified, "upstream_post_delta": first_delta})
+        stale = self.submit(4002, "schedulable", {"schedulable": True}, stale_version, "schedulable-stale")
+        stale_status = stale.body.get("status") if isinstance(stale.body, dict) else None
         state_after_stale = self.db_account(4002)
         total_delta = self.mocks.count_for("schedulable:4002") - before_calls
-        check(stale.status == 409 and total_delta == 1 and state_after_stale is not None
-              and state_after_stale["schedulable"] is False,
-              {"stale_status": 409, "schedulable": False, "upstream_post_delta": 1},
-              {"stale_status": stale.status,
+        check(stale.status == 202 and stale_status == "needs_confirmation" and total_delta == 1
+              and state_after_stale is not None and state_after_stale["schedulable"] is False,
+              {"stale_status": "needs_confirmation", "schedulable": False, "upstream_post_delta": 1},
+              {"stale_status": stale_status,
                "schedulable": state_after_stale.get("schedulable") if state_after_stale else None,
                "upstream_post_delta": total_delta})
-        return {"save_status": saved.status, "stale_status": stale.status,
+        return {"job_status": saved.get("status"), "stale_status": stale_status,
                 "schedulable": state_after_stale["schedulable"],
                 "upstream_post_delta": total_delta}
 
-    def delete_account(self) -> dict[str, object]:
+    def queued_delete(self) -> dict[str, object]:
         row = self.account(4004)
+        version = row["operation_versions"]["delete"]
         before_calls = self.mocks.count_for("account_delete:4004")
-        response = self.api("DELETE", "/accounts/4004", {"expected_version": row["version"]})
+        accepted = self.submit(4004, "delete", {}, version, "delete")
+        check(accepted.status == 202 and isinstance(accepted.body, dict) and accepted.body.get("id"),
+              {"submit_status": 202, "job_id": True},
+              {"submit_status": accepted.status,
+               "job_id": isinstance(accepted.body, dict) and bool(accepted.body.get("id"))})
+        deleted = self.wait_job(accepted.body["id"], {"completed", "failed", "needs_confirmation"})
         state = self.db_account(4004)
         first_delta = self.mocks.count_for("account_delete:4004") - before_calls
-        check(response.status == 200 and isinstance(response.body, dict)
-              and response.body.get("deleted") is True and state is None and first_delta == 1,
-              {"http_status": 200, "deleted": True, "account_absent": True, "upstream_delete_delta": 1},
-              {"http_status": response.status,
-               "deleted": isinstance(response.body, dict) and response.body.get("deleted") is True,
+        confirmed = isinstance(deleted.get("result"), dict) and deleted["result"].get("deleted") is True
+        check(deleted.get("status") == "completed" and confirmed and state is None and first_delta == 1,
+              {"status": "completed", "deleted": True, "account_absent": True, "upstream_delete_delta": 1},
+              {"status": deleted.get("status"), "deleted": confirmed,
                "account_absent": state is None, "upstream_delete_delta": first_delta})
-        stale = self.api("DELETE", "/accounts/4004", {"expected_version": row["version"]})
+        missing = self.submit(4004, "delete", {}, version, "delete-missing")
         total_delta = self.mocks.count_for("account_delete:4004") - before_calls
-        check(stale.status == 404 and self.db_account(4004) is None and total_delta == 1,
-              {"stale_status": 404, "account_absent": True, "upstream_delete_delta": 1},
-              {"stale_status": stale.status, "account_absent": self.db_account(4004) is None,
+        check(missing.status == 404 and self.db_account(4004) is None and total_delta == 1,
+              {"missing_status": 404, "account_absent": True, "upstream_delete_delta": 1},
+              {"missing_status": missing.status, "account_absent": self.db_account(4004) is None,
                "upstream_delete_delta": total_delta})
-        return {"delete_status": response.status, "stale_status": stale.status,
+        return {"job_status": deleted.get("status"), "missing_status": missing.status,
                 "account_absent": True, "upstream_delete_delta": total_delta}
 
     def wait_job(self, job_id: str, terminal: set[str], timeout: float = 10) -> dict[str, Any]:
@@ -691,10 +688,9 @@ class Suite:
 
     def run(self) -> None:
         self.case("config_save_and_stale_revision_conflict", self.config_roundtrip)
-        self.case("manual_priority_write_and_database_readback", self.direct_priority)
         self.case("queued_priority_idempotency_and_readback", self.queued_priority)
-        self.case("manual_schedulable_write_and_stale_version", self.direct_schedulable)
-        self.case("manual_delete_and_stale_version", self.delete_account)
+        self.case("queued_schedulable_write_and_stale_version", self.queued_schedulable)
+        self.case("queued_delete_and_missing_account", self.queued_delete)
         self.case("batch_omitted_default_payload_preserves_idempotency", self.batch_default_payload)
         self.case("template_account_integer_normalization_preserves_idempotency", self.template_account_integer)
         self.case("test_batch_idempotency_cancellation_and_sse_counts", self.batch_idempotent_cancel)
@@ -737,8 +733,10 @@ class Suite:
         templates = self.api("GET", "/account-templates")
         check(templates.status == 200, {"status": 200}, {"status": templates.status})
         if not templates.body["configured"]:
-            payload = {"expected_version": templates.body["version"], **templates.body["templates"]}
-            templates = self.api("PUT", "/account-templates", payload)
+            payload = {"expected_version": templates.body["version"],
+                       "name": templates.body["template_meta"]["full"]["name"],
+                       **templates.body["templates"]["full"]}
+            templates = self.api("PUT", "/account-templates/full", payload)
             check(templates.status == 200, {"status": 200}, {"status": templates.status})
         request = {"template_id": "full", "template_version": templates.body["template_versions"]["full"],
                    "request_id": "0123456789abcdef0123456789abcdef",

@@ -3749,13 +3749,17 @@ async fn key_template_action_verifies_mapping_and_preserves_the_full_account_row
         .expect("read built-in synthetic template profiles");
     let saved_templates = actions
         .templates
-        .save(&json!({
-            "expected_version": initial_templates["version"],
-            "full": {"whitelist": [], "mappings": []},
-            "degraded": input["profile"],
-            "takeover": {"whitelist": [], "mappings": []},
-        }))
-        .expect("save fixed legacy degraded profile for the fixture account");
+        .edit(
+            Some("degraded"),
+            &json!({
+                "expected_version": initial_templates["version"],
+                "name": initial_templates["template_meta"]["degraded"]["name"],
+                "whitelist": input["profile"]["whitelist"],
+                "mappings": input["profile"]["mappings"],
+            }),
+            false,
+        )
+        .expect("save fixed degraded profile for the fixture account");
     let account = actions
         .account(ACCOUNT_ID, None)
         .await

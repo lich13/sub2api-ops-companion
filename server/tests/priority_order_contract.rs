@@ -1413,7 +1413,7 @@ async fn queued_legacy_priority_operation_blocks_a_new_order() {
 }
 
 #[tokio::test]
-async fn legacy_priority_write_is_mutually_exclusive_with_active_order() {
+async fn manual_priority_write_is_mutually_exclusive_with_active_order() {
     let mut harness = Harness::new().await;
     let a = harness.insert_account("openai", "oauth", 6).await;
     let b = harness.insert_account("openai", "apikey", 7).await;
@@ -1432,18 +1432,22 @@ async fn legacy_priority_write_is_mutually_exclusive_with_active_order() {
         .actions
         .account(a, None)
         .await
-        .expect("read full account version for legacy priority API");
-    let (status, _, text) = harness
-        .request(
-            Method::POST,
-            &format!("accounts/{a}/priority"),
-            Some(json!({
-                "expected_version": sub2ops_server::compat::account_version(&current),
-                "priority": 10
-            })),
+        .expect("read the priority version before the manual write");
+    let blocked = harness
+        .runtime
+        .actions
+        .apply_setting(
+            a,
+            "priority",
+            &json!({"priority": 10}),
+            sub2ops_server::compat::operation_versions(&current)["priority"]
+                .as_str()
+                .unwrap(),
+            ADMIN_KEY,
         )
-        .await;
-    assert_eq!(status, 409, "legacy priority write must be blocked: {text}");
+        .await
+        .expect_err("an active order must block the manual priority write");
+    assert_eq!(blocked.status.as_u16(), 409, "{}", blocked.detail);
     assert_eq!(harness.upstream.count_put_for(a), 0);
 
     let order_id = accepted["id"].as_str().unwrap();
@@ -1462,21 +1466,21 @@ async fn legacy_priority_write_is_mutually_exclusive_with_active_order() {
         .actions
         .account(a, None)
         .await
-        .expect("read full account version after order cancellation");
-    let (status, _, text) = harness
-        .request(
-            Method::POST,
-            &format!("accounts/{a}/priority"),
-            Some(json!({
-                "expected_version": sub2ops_server::compat::account_version(&current),
-                "priority": 10
-            })),
+        .expect("read the priority version after order cancellation");
+    harness
+        .runtime
+        .actions
+        .apply_setting(
+            a,
+            "priority",
+            &json!({"priority": 10}),
+            sub2ops_server::compat::operation_versions(&current)["priority"]
+                .as_str()
+                .unwrap(),
+            ADMIN_KEY,
         )
-        .await;
-    assert_eq!(
-        status, 200,
-        "legacy priority write should resume after cancellation: {text}"
-    );
+        .await
+        .expect("the manual priority write resumes after cancellation");
     assert_eq!(harness.priority(a).await, 10);
     assert_eq!(harness.upstream.count_put_for(a), 1);
     harness.finish().await;
