@@ -5309,6 +5309,10 @@ async fn early_config(h: &Harness, seconds: i64) {
         .transaction(|config| {
             config["oauth_early_reset_enabled"] = true.into();
             config["oauth_early_reset_interval_seconds"] = seconds.into();
+            // These fixtures observe up to two plans at once. A probe that is
+            // refused a query slot only retries after a full interval, which
+            // never elapses on the frozen fixture clock.
+            config["oauth_usage_refresh_concurrency"] = 2.into();
             config["oauth_recovery_monitor_enabled"] = false.into();
             config["oauth_recovery_connection_account_ids"] = json!([]);
             config["oauth_recovery_model_account_ids"] = json!([]);
