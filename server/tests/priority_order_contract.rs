@@ -900,7 +900,11 @@ async fn external_priority_change_stops_remaining_order_without_dispatch() {
     let mut harness = Harness::new().await;
     let a = harness.insert_account("openai", "oauth", 6).await;
     let b = harness.insert_account("openai", "apikey", 7).await;
-    let lease = harness.runtime.actions.locks.account(b).await;
+    // Both accounts stay leased until the outside change has landed.
+    let leases = [
+        harness.runtime.actions.locks.account(a).await,
+        harness.runtime.actions.locks.account(b).await,
+    ];
     let view = harness.view().await;
     let (status, accepted, text) = harness
         .submit(
@@ -915,7 +919,7 @@ async fn external_priority_change_stops_remaining_order_without_dispatch() {
         .execute(&harness.runtime.db.pool)
         .await
         .unwrap();
-    drop(lease);
+    drop(leases);
     harness.tick().await;
     let detail = harness.wait_task(accepted["id"].as_str().unwrap()).await;
     assert_eq!(detail["status"], "needs_confirmation");
@@ -930,7 +934,11 @@ async fn platform_migration_stops_remaining_order_without_cross_platform_dispatc
     let mut harness = Harness::new().await;
     let first = harness.insert_account("openai", "oauth", 6).await;
     let second = harness.insert_account("openai", "apikey", 7).await;
-    let lease = harness.runtime.actions.locks.account(first).await;
+    // Both accounts stay leased until the migration has landed.
+    let leases = [
+        harness.runtime.actions.locks.account(first).await,
+        harness.runtime.actions.locks.account(second).await,
+    ];
     let view = harness.v2_view().await;
     let openai_version = view["platforms"]
         .as_array()
@@ -956,7 +964,7 @@ async fn platform_migration_stops_remaining_order_without_cross_platform_dispatc
         .execute(&harness.runtime.db.pool)
         .await
         .expect("migrate the remaining account to another platform");
-    drop(lease);
+    drop(leases);
     for _ in 0..100 {
         harness.tick().await;
         let (_, detail, _) = harness.v2_detail(&order_id, true).await;
@@ -981,7 +989,12 @@ async fn account_addition_and_deletion_stop_orders_before_dispatch() {
     let mut harness = Harness::new().await;
     let a = harness.insert_account("openai", "oauth", 6).await;
     let b = harness.insert_account("openai", "apikey", 7).await;
-    let lease = harness.runtime.actions.locks.account(b).await;
+    // Submitting starts the worker; every ordered account stays leased until
+    // the account set has changed, so nothing can be dispatched before it.
+    let leases = [
+        harness.runtime.actions.locks.account(a).await,
+        harness.runtime.actions.locks.account(b).await,
+    ];
     let view = harness.view().await;
     let (status, accepted, text) = harness
         .submit(
@@ -993,7 +1006,7 @@ async fn account_addition_and_deletion_stop_orders_before_dispatch() {
     assert_eq!(status, 200, "priority submit failed: {text}");
     let first_id = accepted["id"].as_str().unwrap().to_owned();
     let added = harness.insert_account("openai", "oauth", 9).await;
-    drop(lease);
+    drop(leases);
     harness.tick().await;
     let first = harness.wait_task(&first_id).await;
     assert_eq!(first["status"], "needs_confirmation");
@@ -1002,6 +1015,10 @@ async fn account_addition_and_deletion_stop_orders_before_dispatch() {
 
     let view = harness.view().await;
     let ids = ids_from_view(&view);
+    let mut leases = Vec::new();
+    for id in &ids {
+        leases.push(harness.runtime.actions.locks.account(*id).await);
+    }
     let (status, accepted, text) = harness
         .submit(
             &ids,
@@ -1012,6 +1029,7 @@ async fn account_addition_and_deletion_stop_orders_before_dispatch() {
     assert_eq!(status, 200, "priority submit failed: {text}");
     let second_id = accepted["id"].as_str().unwrap().to_owned();
     harness.delete_account(ids[0]).await;
+    drop(leases);
     harness.tick().await;
     let second = harness.wait_task(&second_id).await;
     assert_eq!(second["status"], "needs_confirmation");
@@ -1024,7 +1042,11 @@ async fn cancel_before_dispatch_keeps_accounts_unchanged_and_client_can_close() 
     let mut harness = Harness::new().await;
     let a = harness.insert_account("openai", "oauth", 6).await;
     let b = harness.insert_account("openai", "apikey", 7).await;
-    let lease = harness.runtime.actions.locks.account(b).await;
+    // Both accounts stay leased until the cancellation has been recorded.
+    let leases = [
+        harness.runtime.actions.locks.account(a).await,
+        harness.runtime.actions.locks.account(b).await,
+    ];
     let view = harness.view().await;
     let (status, accepted, text) = harness
         .submit(
@@ -1045,7 +1067,7 @@ async fn cancel_before_dispatch_keeps_accounts_unchanged_and_client_can_close() 
     assert_eq!(status, 200, "priority cancel failed: {text}");
     assert_eq!(cancelled["cancel_requested"], true);
     drop(cancelled);
-    drop(lease);
+    drop(leases);
     harness.tick().await;
     let detail = harness.wait_task(&id).await;
     assert_eq!(detail["status"], "cancelled");
