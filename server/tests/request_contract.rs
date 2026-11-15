@@ -5,10 +5,6 @@ use sub2ops_server::validation;
 fn operation_payload_types_defaults_and_unknown_fields_match_pinned_python() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../tests/contracts/request-fixtures.json")).unwrap();
-    assert_eq!(
-        fixture["reference_sha"],
-        "6be7c291ed38dcc337cb88f693639040a3463899"
-    );
     let mut mismatches = vec![];
     for case in fixture["cases"].as_array().unwrap() {
         let actual =

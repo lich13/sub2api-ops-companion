@@ -29,7 +29,6 @@ use sub2ops_server::{
 };
 use tokio::{net::TcpListener, sync::Notify, task::JoinHandle};
 
-const REFERENCE_SHA: &str = "6be7c291ed38dcc337cb88f693639040a3463899";
 const ADMIN_KEY: &str = "fixture-only";
 const DETECTION_FIXTURE: &str =
     include_str!("../../tests/contracts/detection-lifecycle/fixtures.json");
@@ -1398,7 +1397,6 @@ async fn global_detection_model_normalizes_and_changed_model_rejects_pending_can
 #[tokio::test]
 async fn detection_scheduler_consumes_duplicate_clues_and_honors_exact_persisted_cooldown() {
     let expected = fixture();
-    assert_eq!(expected["reference_sha"], REFERENCE_SHA);
     let cooldown = expected["oracle"]["automatic_dispatch_cooldown_seconds"]
         .as_i64()
         .unwrap();

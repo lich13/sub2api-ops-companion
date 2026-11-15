@@ -194,10 +194,6 @@ fn assert_raw_compat(actual: &Value, expected: &Value, action: &str, name: &str,
 
 async fn scenario(name: &str) {
     let fixture = fixture();
-    assert_eq!(
-        fixture["reference_sha"],
-        "6be7c291ed38dcc337cb88f693639040a3463899"
-    );
     let case = fixture["cases"]
         .as_array()
         .unwrap()

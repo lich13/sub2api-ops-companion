@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Build, inspect and archive the exact Rust image plus a fixed Python control."""
+"""Build, inspect and archive the exact server image."""
 from __future__ import annotations
 
 import argparse
 import gzip
 import hashlib
-import io
 import json
 from pathlib import Path, PurePosixPath
 import shutil
@@ -14,7 +13,7 @@ import tarfile
 import tempfile
 import tomllib
 
-from server_http_contract import REFERENCE_SHA, ROOT, require
+from server_http_contract import ROOT, require
 
 
 def test_fixture_path(name: str) -> bool:
@@ -50,7 +49,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--revision", required=True)
     parser.add_argument("--rust-image", default="sub2ops-companion:ci")
-    parser.add_argument("--python-image", default="sub2ops-companion:python-reference")
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
     release_version = tomllib.loads((ROOT / "server/Cargo.toml").read_text())["package"]["version"]
@@ -59,13 +57,6 @@ def main():
     args.output_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="sub2ops-image-") as directory:
         scratch = Path(directory)
-        reference = scratch / "reference"
-        reference.mkdir()
-        archive = run(["git", "archive", REFERENCE_SHA], cwd=ROOT, capture_output=True).stdout
-        with tarfile.open(fileobj=io.BytesIO(archive)) as source:
-            source.extractall(reference, filter="data")
-        run(["docker", "build", "--platform", "linux/amd64", "--label", "org.opencontainers.image.revision=" + REFERENCE_SHA,
-             "-t", args.python_image, str(reference)])
         run(["docker", "build", "--platform", "linux/amd64", "--build-arg", "BUILD_REVISION=" + args.revision,
              "-t", args.rust_image, str(ROOT)])
         info = json.loads(run(["docker", "image", "inspect", args.rust_image], capture_output=True, text=True).stdout)[0]
@@ -91,7 +82,6 @@ def main():
                 require(binary is not None, "runtime executable missing")
                 raw = binary.read()
                 require(b"/Users/" not in raw and b"/home/runner/" not in raw, "runtime executable contains an unremapped build path")
-                binary_hash = hashlib.sha256(raw).hexdigest()
         finally:
             run(["docker", "rm", container], stdout=subprocess.DEVNULL)
         bundle = args.output_dir / "companion-linux-amd64.tar.gz"
@@ -111,11 +101,8 @@ def main():
         require_no_fixture_layers(bundle)
         installer_checksum = package_host_installer(args.output_dir)
         (args.output_dir / "SHA256SUMS").write_text(digest.hexdigest() + "  " + bundle.name + "\n" + installer_checksum)
-        (args.output_dir / "manifest.json").write_text(json.dumps({"version": release_version, "revision": args.revision,
-            "image_id": info["Id"], "image_tag": args.rust_image, "image_bytes": info["Size"],
-            "image_size_method": "docker image inspect Size; storage-backend metadata, not host disk allocation",
-            "binary_sha256": binary_hash, "binary_bytes": len(raw), "python_reference_sha": REFERENCE_SHA,
-            "runtime_python": False, "workspace_sources": False}, indent=2) + "\n")
+        (args.output_dir / "manifest.json").write_text(
+            json.dumps({"version": release_version, "revision": args.revision}, indent=2) + "\n")
     return 0
 
 

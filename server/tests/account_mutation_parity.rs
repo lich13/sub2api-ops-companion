@@ -28,7 +28,6 @@ use sub2ops_server::{
 use tokio::{net::TcpListener, sync::Notify, task::JoinHandle};
 
 const FIXTURES: &str = include_str!("../../tests/contracts/account-mutation/fixtures.json");
-const REFERENCE_SHA: &str = "6be7c291ed38dcc337cb88f693639040a3463899";
 const ADMIN_KEY: &str = "fixture-account-mutation-admin-040";
 #[path = "common/account_creation.rs"]
 mod account_creation;
@@ -831,8 +830,6 @@ impl Harness {
     }
 
     async fn with_model_setting(model: Option<&str>) -> Self {
-        let fixture = fixtures();
-        assert_eq!(fixture["reference"]["sha"], REFERENCE_SHA);
         let runner_database_url =
             std::env::var("DATABASE_URL").expect("runner must provide temporary DATABASE_URL");
         let mut database_url = reqwest::Url::parse(&runner_database_url)

@@ -38,10 +38,10 @@ fn fixture() -> Value {
 }
 
 fn contract_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("STATE_LIFECYCLE_CONTRACT_DIR")
-            .expect("state contract runner must supply its owned output directory"),
-    )
+    static ROOT: std::sync::LazyLock<tempfile::TempDir> = std::sync::LazyLock::new(|| {
+        tempfile::tempdir().expect("create the owned state contract directory")
+    });
+    ROOT.path().to_owned()
 }
 
 fn database_url() -> String {
@@ -341,28 +341,6 @@ fn read_only_store_does_not_create_parent_lock_or_state() {
     assert!(store.transaction(|_| Ok(())).is_err());
     assert!(!absent_parent.exists());
     assert_eq!(fs::read_dir(temporary.path()).unwrap().count(), 0);
-}
-
-#[test]
-fn pinned_python_state_is_readable_and_rust_state_is_old_python_compatible() {
-    let root = contract_dir().join("cross-language");
-    fs::create_dir_all(&root).expect("create runner-owned cross-language directory");
-    let reference = fixture()["cross_language"].clone();
-    let python_path = root.join("python-state.json");
-    let python_state = Store::policy(&python_path, json!({}), true)
-        .read()
-        .expect("Rust reads state emitted by pinned Python 6be");
-    assert_eq!(python_state, reference["python_input"]);
-
-    let rust_path = root.join("rust-state.json");
-    let rust_store = Store::policy(&rust_path, json!({}), false);
-    rust_store
-        .transaction(|state| {
-            *state = reference["rust_output"].clone();
-            Ok(())
-        })
-        .expect("Rust writes state for the pinned Python reader");
-    assert_eq!(rust_store.read().unwrap(), reference["rust_output"]);
 }
 
 #[tokio::test]

@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
-"""Run fixture-only HTTP contracts against the Python reference or another service.
+"""Run fixture-only HTTP contracts against the server binary or another service.
 
 Examples (from the repository, using the project virtualenv):
-  .venv/bin/python scripts/server_http_contract.py
-  .venv/bin/python scripts/server_http_contract.py --command-json '["target/debug/sub2ops", "serve", "--host", "{host}", "--port", "{port}"]'
+  .venv/bin/python scripts/server_http_contract.py --command-json '["server/target/debug/sub2ops-server"]'
   .venv/bin/python scripts/server_http_contract.py --base-url http://127.0.0.1:18081
 
-Reference and command modes start an owned service with a new loopback-only
-PostgreSQL cluster, synthetic application rows, and local Sub2API, model
-catalog, SSE, and Bark mocks. Reference mode extracts app/ from
-6be7c291ed38dcc337cb88f693639040a3463899, so it remains usable after the
-working-tree Python app is removed. Base-URL mode is deliberately read-only:
-it sends no admin key and only probes health, unauthenticated route handling,
-and aliases that reject missing client_version locally.
+Command mode starts an owned service with a new loopback-only PostgreSQL
+cluster, synthetic application rows, and local Sub2API, model catalog, SSE,
+and Bark mocks. Base-URL mode is deliberately read-only: it sends no admin key
+and only probes health, unauthenticated route handling, and aliases that
+reject missing client_version locally.
 
 Only one JSON result is written to stdout. Progress goes to stderr; logs,
 database files, state files, and child processes live in a runner-owned
@@ -32,7 +29,6 @@ import signal
 import socket
 import subprocess
 import sys
-import tarfile
 import tempfile
 import threading
 import time
@@ -49,7 +45,6 @@ from urllib.request import ProxyHandler, Request, build_opener
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_DIR = ROOT / "tests" / "contracts" / "http"
 SCHEMA_PATH = CONTRACT_DIR / "schema.sql"
-from server_reference import REFERENCE_SHA
 API = "/api/desktop/v1"
 ADMIN_KEY = "fixture-admin-server-contract-040"
 WRONG_ADMIN_KEY = "fixture-invalid-server-contract-040"
@@ -102,35 +97,9 @@ def command_result(command: list[str], *, timeout: float = 20, cwd: Path | None 
     return subprocess.run(command, cwd=cwd or ROOT, capture_output=True, timeout=timeout, check=False)
 
 
-def archive_reference_app(destination: Path, sha: str) -> Path:
-    require(bool(re.fullmatch(r"[0-9a-f]{40}", sha)), "reference SHA must be a full commit hash")
-    destination.mkdir(mode=0o700, parents=True, exist_ok=True)
-    archive_path = destination.parent / "reference-app.tar"
-    with archive_path.open("wb") as archive_file:
-        result = subprocess.run(
-            ["git", "archive", "--format=tar", sha, "app"], cwd=ROOT,
-            stdout=archive_file, stderr=subprocess.PIPE, timeout=60, check=False,
-        )
-    require(result.returncode == 0, "fixed Python reference could not be read from Git")
-    try:
-        with tarfile.open(archive_path, mode="r:") as archive:
-            for member in archive:
-                member_path = Path(member.name)
-                require(not member_path.is_absolute() and ".." not in member_path.parts,
-                        "reference archive contains an unsafe path")
-                archive.extract(member, path=destination, filter="data")
-    except (tarfile.TarError, OSError, TypeError) as exc:
-        raise CheckFailure("fixed Python reference could not be extracted") from exc
-    finally:
-        archive_path.unlink(missing_ok=True)
-    app_dir = destination / "app"
-    require((app_dir / "main.py").is_file(), "fixed Python reference does not contain app.main")
-    return app_dir
-
-
-def seed_fingerprint_cache(app_dir: Path, state_dir: Path) -> None:
-    """Keep both runtimes' hourly ModelTrace sync on bundled fixture data."""
-    data_dir = app_dir / "modeltrace_data"
+def seed_fingerprint_cache(state_dir: Path) -> None:
+    """Keep the hourly ModelTrace sync on bundled fixture data."""
+    data_dir = ROOT / "server" / "resources" / "modeltrace"
     manifest = json.loads((data_dir / "manifest.json").read_text(encoding="utf-8"))
     raw = (data_dir / "unified_bank.json").read_bytes()
     expected = manifest["files"]["bank"]["sha256"]
@@ -517,12 +486,9 @@ class ContractSuite:
         self,
         client: HttpClient,
         mocks: ExternalMocks | None = None,
-        *,
-        rust_runtime: bool = False,
     ) -> None:
         self.client = client
         self.mocks = mocks
-        self.rust_runtime = rust_runtime
         self.cases: list[dict[str, object]] = []
         self.request_ids: set[str] = set()
 
@@ -600,12 +566,12 @@ class ContractSuite:
                 "capabilities response lacks api_version=1")
         require(response.body.get("service") == "Sub2API Ops Companion",
                 "capabilities service identity differs")
-        if response.body.get("implementation") == "rust":
-            require(response.body.get("platforms") == ["macos", "android"],
-                    "Rust capabilities must advertise both supported clients")
-            require(response.body.get("features", {}).get("detection_logs") is True
-                    and response.body.get("features", {}).get("global_detection_model") is True,
-                    "Rust capabilities must advertise logs and global detection configuration")
+        require(response.body.get("implementation") == "rust", "capabilities implementation differs")
+        require(response.body.get("platforms") == ["macos", "android"],
+                "capabilities must advertise both supported clients")
+        require(response.body.get("features", {}).get("detection_logs") is True
+                and response.body.get("features", {}).get("global_detection_model") is True,
+                "capabilities must advertise logs and global detection configuration")
         return {"status": response.status, "api_version": 1}
 
     def _snapshot(self) -> dict[str, object]:
@@ -622,8 +588,7 @@ class ContractSuite:
         require(not any(marker in text for marker in forbidden), "snapshot returned a fixture credential or private body")
         account = next(row for row in accounts if row.get("id") == 4001)
         require("credentials" not in account, "account DTO exposed credentials")
-        if self.rust_runtime:
-            require(all("quality" not in row for row in accounts), "retired account score remains in snapshot")
+        require(all("quality" not in row for row in accounts), "retired account score remains in snapshot")
         return {"account_count": len(accounts), "synthetic_account_present": True, "private_markers_returned": 0}
 
     def _config(self) -> dict[str, object]:
@@ -637,19 +602,15 @@ class ContractSuite:
         text = json.dumps(value, ensure_ascii=False)
         forbidden = (ADMIN_KEY, CLIENT_KEY, ACCOUNT_TOKEN, PRIVATE_PASSWORD, "fixture-bark-device-key-040")
         require(not any(marker in text for marker in forbidden), "config response exposed a secret value")
-        if self.rust_runtime:
-            require(value["oauth"].get("model_detection_model_id") == "gpt-6-luna",
-                    "global automatic detection model default differs")
-        if self.rust_runtime:
-            require("key_fallback" not in value, "retired Key fallback config is still exposed")
-            self.expect_status("PUT", API + "/config/key_fallback", (404,), headers=self.admin_headers(), body={"changes": {}})
-        return {"sections": sorted(set(value) - {"key_fallback"}), "secret_markers_returned": 0}
+        require(value["oauth"].get("model_detection_model_id") == "gpt-6-luna",
+                "global automatic detection model default differs")
+        require("key_fallback" not in value, "retired Key fallback config is still exposed")
+        self.expect_status("PUT", API + "/config/key_fallback", (404,), headers=self.admin_headers(), body={"changes": {}})
+        return {"sections": sorted(value), "secret_markers_returned": 0}
 
     def _detection_logs(self) -> dict[str, object]:
         path = API + "/detection-logs"
-        self.expect_status("GET", path, (401 if self.rust_runtime else 404,))
-        if not self.rust_runtime:
-            return {"behavior": "unavailable_in_pinned_reference", "status": 404}
+        self.expect_status("GET", path, (401,))
         calls_before = self.mocks.snapshot() if self.mocks else None
         response = self.expect_status("GET", path, (200,), headers=self.admin_headers())
         require(response.body == {"items": [], "next_cursor": None},
@@ -774,13 +735,12 @@ class ContractSuite:
 
     def _request_schema_rejections(self) -> dict[str, object]:
         fixture = json.loads((ROOT / "tests/contracts/request-fixtures.json").read_text())
-        require(fixture["reference_sha"] == REFERENCE_SHA, "request schema reference changed")
         all_cases = fixture["invalid_http_cases"]
-        # The pinned Python schema still rejects legacy model_id types. The
-        # global-model API accepts and ignores that field; lifecycle contracts
-        # verify the effective model on a real fixture account instead.
-        cases = [case for case in all_cases if not (self.rust_runtime
-                 and case.get("rust_difference", {}).get("behavior") == "legacy_model_id_accepted_and_ignored")]
+        # The frozen cases still reject legacy model_id types. The global-model
+        # API accepts and ignores that field; lifecycle contracts verify the
+        # effective model on a real fixture account instead.
+        cases = [case for case in all_cases
+                 if case.get("rust_difference", {}).get("behavior") != "legacy_model_id_accepted_and_ignored"]
         state_before = self.expect_status("GET", API + "/account-operations", (200,),
                                           headers=self.admin_headers()).body
         calls_before = self.mocks.snapshot() if self.mocks else None
@@ -798,8 +758,8 @@ class ContractSuite:
         require(not failures, "request validation mismatches: " + json.dumps(failures, sort_keys=True))
         require(state_before == state_after, "invalid requests changed the operation state")
         require(calls_before == calls_after, "schema rejection must precede authentication and domain HTTP")
-        return {"pinned_invalid_requests": len(cases), "private_input_echoed": False,
-                "approved_global_model_differences": len(all_cases) - len(cases),
+        return {"invalid_requests": len(cases), "private_input_echoed": False,
+                "accepted_legacy_model_id_cases": len(all_cases) - len(cases),
                 "state_unchanged": True, "external_calls": 0 if calls_before is not None else "unmeasured"}
 
     def _unknown_route(self) -> dict[str, object]:
@@ -818,7 +778,7 @@ class ContractSuite:
     def _numeric_paths(self) -> dict[str, object]:
         paths = [
             ("/accounts/{id}/settings", 422),
-            ("/accounts/{id}/quality", 404 if self.rust_runtime else 422),
+            ("/accounts/{id}/quality", 404),
             ("/accounts/{id}/models", 404),
             ("/accounts/{id}/model-tests/latest", 200),
             ("/errors/{id}", 404),
@@ -838,15 +798,9 @@ class ContractSuite:
         }
 
     def _account_quality_route(self) -> dict[str, object]:
-        expected = 404 if self.rust_runtime else 401
-        response = self.expect_status("GET", API + "/accounts/4001/quality", (expected,))
+        response = self.expect_status("GET", API + "/accounts/4001/quality", (404,))
         require(response_detail_shape(response.body), "account quality route response lacks a structured error")
-        return {
-            "observed_status": response.status,
-            "python_reference_status": 401,
-            "rust_status": 404,
-            "behavior": "route_removed" if self.rust_runtime else "legacy_route_requires_authentication",
-        }
+        return {"observed_status": response.status, "behavior": "route_removed"}
 
     def _retired_routes(self) -> dict[str, object]:
         paths = (
@@ -875,7 +829,7 @@ class ContractSuite:
         return {"declared_routes": len(ROUTE_PROBES), "missing_routes": 0}
 
     def _external_calls(self) -> dict[str, object]:
-        require(self.mocks is not None, "command/reference mode has no external mock recorder")
+        require(self.mocks is not None, "command mode has no external mock recorder")
         counts = self.mocks.snapshot()
         require(counts.get("sub2api_auth", 0) >= 1, "no Sub2API authentication call was recorded")
         require(counts.get("model_directory", 0) == 3, "expected exactly three model-directory alias requests")
@@ -890,7 +844,7 @@ def run_base_url(base_url: str, allow_nonloopback: bool) -> dict[str, object]:
             "base URL must not embed credentials, query parameters, or fragments")
     if not allow_nonloopback:
         require(url_is_loopback(base_url), "base URL must be loopback unless --allow-nonloopback-base-url is set")
-    suite = ContractSuite(HttpClient(base_url), None, rust_runtime=True)
+    suite = ContractSuite(HttpClient(base_url), None)
     suite.case("healthz", suite._health)
     suite.case("admin_auth_required", suite._auth_required)
     suite.case("account_quality_reference_and_rust_difference", suite._account_quality_route)
@@ -911,10 +865,9 @@ def run_base_url(base_url: str, allow_nonloopback: bool) -> dict[str, object]:
 
 class ServiceProcess:
     def __init__(self, root: Path, state_dir: Path, port: int, mocks: ExternalMocks,
-                 database_url: str, *, command: list[str] | None, reference_app: Path | None,
-                 target: str) -> None:
+                 database_url: str, *, command: list[str]) -> None:
         self.root, self.state_dir, self.port, self.mocks = root, state_dir, port, mocks
-        self.database_url, self.command, self.reference_app, self.target = database_url, command, reference_app, target
+        self.database_url, self.command = database_url, command
         self.process: subprocess.Popen | None = None
         self.log_path = root / "service.log"
         self.server_url = f"http://127.0.0.1:{port}"
@@ -970,42 +923,29 @@ class ServiceProcess:
             "BARK_ENABLED": "false",
             "BARK_DEVICE_KEY": "fixture-bark-device-key-040",
             "BARK_SERVER_URL": self.mocks.url,
-            "PYTHONUNBUFFERED": "1",
-            "PYTHONDONTWRITEBYTECODE": "1",
         })
         (state / "bark-config.json").write_text(json.dumps({
             "enabled": False, "device_key": "fixture-bark-device-key-040", "server_url": self.mocks.url,
         }), encoding="utf-8")
-        if self.reference_app is not None:
-            python_root = self.reference_app.parent
-            env["PYTHONPATH"] = str(python_root)
-        else:
-            env.pop("PYTHONPATH", None)
         return env
 
     def start(self) -> None:
         env = self._env()
-        if self.command is None:
-            require(self.reference_app is not None, "Python reference directory is missing")
-            command = [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(self.port)]
-            cwd = self.reference_app.parent
-        else:
-            substitutions = {
-                "{host}": "127.0.0.1",
-                "{port}": str(self.port),
-                "{base_url}": self.server_url,
-                "{database_url}": self.database_url,
-                "{state_dir}": str(self.state_dir),
-                "{sub2api_url}": self.mocks.url,
-            }
-            command = []
-            for token in self.command:
-                for marker, value in substitutions.items():
-                    token = token.replace(marker, value)
-                command.append(token)
-            cwd = ROOT
+        substitutions = {
+            "{host}": "127.0.0.1",
+            "{port}": str(self.port),
+            "{base_url}": self.server_url,
+            "{database_url}": self.database_url,
+            "{state_dir}": str(self.state_dir),
+            "{sub2api_url}": self.mocks.url,
+        }
+        command = []
+        for token in self.command:
+            for marker, value in substitutions.items():
+                token = token.replace(marker, value)
+            command.append(token)
         with self.log_path.open("wb") as log:
-            self.process = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+            self.process = subprocess.Popen(command, cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
                 stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         client = HttpClient(self.server_url, timeout=0.5)
 
@@ -1061,7 +1001,7 @@ def parse_command(value: str) -> list[str]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    target = parser.add_mutually_exclusive_group()
+    target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--command-json", type=parse_command,
                         help="JSON argv for a service command; tokens support {host}, {port}, {database_url}, {state_dir}, {sub2api_url}")
     target.add_argument("--base-url", help="read-only target URL; authenticated database tests require owned command mode")
@@ -1075,8 +1015,7 @@ def run_owned(args: argparse.Namespace) -> dict[str, object]:
     result: dict[str, object] = {
         "status": "failed",
         "primary_suite_status": "not_run",
-        "target": "command" if args.command_json else "python-reference",
-        "reference_sha": REFERENCE_SHA,
+        "target": "command",
         "test_source_sha256": script_hash(),
         "not_covered": NOT_COVERED,
         "external_mock_endpoints": {"sub2api": True, "model_directory": True, "sse": True, "bark": True},
@@ -1091,9 +1030,7 @@ def run_owned(args: argparse.Namespace) -> dict[str, object]:
             temporary_path = Path(temporary)
             state_dir = temporary_path / "state"
             state_dir.mkdir(mode=0o700)
-            reference_root = temporary_path / "reference"
-            reference_app = archive_reference_app(reference_root, REFERENCE_SHA)
-            seed_fingerprint_cache(reference_app, state_dir)
+            seed_fingerprint_cache(state_dir)
             postgres = TemporaryPostgres(temporary_path, args.postgres_bin_dir)
             postgres.start()
             result["database"] = {
@@ -1106,16 +1043,11 @@ def run_owned(args: argparse.Namespace) -> dict[str, object]:
             with ExternalMocks() as mocks:
                 port = free_port()
                 service = ServiceProcess(temporary_path, state_dir, port, mocks, postgres.url,
-                    command=args.command_json, reference_app=None if args.command_json else reference_app,
-                    target="command" if args.command_json else "python-reference")
+                    command=args.command_json)
                 result["service"] = {"owned_by_runner": True, "host": "127.0.0.1", "pid": None}
                 service.start()
                 result["service"]["pid"] = service.process.pid if service.process else None
-                suite = ContractSuite(
-                    HttpClient(service.server_url),
-                    mocks,
-                    rust_runtime=bool(args.command_json),
-                )
+                suite = ContractSuite(HttpClient(service.server_url), mocks)
                 suite.run_primary()
                 result["cases"] = suite.cases
                 failed = [case for case in suite.cases if case["status"] == "failed"]

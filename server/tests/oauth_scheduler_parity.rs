@@ -33,7 +33,6 @@ use sub2ops_server::{
 use tokio::{net::TcpListener, sync::Notify, task::JoinHandle};
 
 const ADMIN_KEY: &str = "fixture-admin-oauth-scheduler";
-const REFERENCE_SHA: &str = "6be7c291ed38dcc337cb88f693639040a3463899";
 static NEXT_ACCOUNT_ID: AtomicI64 = AtomicI64::new(9_600_000);
 
 #[cfg(target_os = "linux")]
@@ -864,7 +863,6 @@ async fn prepare_due_recovery_daily(harness: &Harness, row: &Value, due: DateTim
 #[test]
 fn fixed_reference_scope_and_daily_time_contract_are_pinned() {
     let reference = fixture();
-    assert_eq!(reference["reference_sha"], REFERENCE_SHA);
     assert_eq!(reference["scope"]["oauth_queries"], 39);
     assert_eq!(reference["scope"]["daily_test"], 13);
     assert_eq!(reference["scope"]["oauth_monitor_runtime_http_state"], 32);

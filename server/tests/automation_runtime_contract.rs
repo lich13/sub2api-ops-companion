@@ -10,7 +10,6 @@ use serde_json::{json, Value};
 use sqlx::{types::Json as SqlJson, PgPool};
 use std::{
     fs,
-    path::PathBuf,
     sync::{
         atomic::{AtomicI64, Ordering},
         Arc, Mutex as StdMutex,
@@ -30,7 +29,6 @@ use sub2ops_server::{
 use tokio::{net::TcpListener, sync::Notify, task::JoinHandle};
 
 const ADMIN_KEY: &str = "fixture-admin-automation-contract";
-const REFERENCE_SHA: &str = "6be7c291ed38dcc337cb88f693639040a3463899";
 const SUCCESS_TEST_SSE: &str = "data: {\"type\":\"test_start\",\"model\":\"fixture-model\"}\n\ndata: {\"type\":\"test_complete\",\"success\":true}\n\n";
 static NEXT_ACCOUNT_ID: AtomicI64 = AtomicI64::new(9_400_000);
 
@@ -562,7 +560,6 @@ async fn seed_recovery(harness: &Harness, uncertain_test: bool) -> (Value, Value
 #[test]
 fn pinned_reference_fixture_and_beijing_time_contract_are_fixed() {
     let reference = fixture();
-    assert_eq!(reference["reference"]["sha"], REFERENCE_SHA);
     assert_eq!(
         daily_test::next_time(reference_time(), "14:08").unwrap(),
         parse_datetime(&reference["daily_test"]["scheduled_at"]).unwrap()
@@ -918,15 +915,6 @@ async fn interrupted_recovery_ignores_retired_fields_and_preserves_existing_retr
         .as_object()
         .unwrap()
         .is_empty());
-    if let Some(export_dir) = std::env::var_os("AUTOMATION_STATE_EXPORT_DIR") {
-        let export_dir = PathBuf::from(export_dir);
-        fs::create_dir_all(&export_dir).unwrap();
-        fs::copy(
-            &harness.runtime.settings.usage_path,
-            export_dir.join("automation-recovery-state.json"),
-        )
-        .unwrap();
-    }
     let actual = harness.runtime.monitor.row(id).await.unwrap();
     let result = harness
         .runtime

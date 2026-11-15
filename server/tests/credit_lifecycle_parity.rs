@@ -45,7 +45,6 @@ use tokio::{
 };
 
 const ADMIN_KEY: &str = "fixture-admin-credit-contract";
-const REFERENCE_SHA: &str = "6be7c291ed38dcc337cb88f693639040a3463899";
 static NEXT_ACCOUNT_ID: AtomicI64 = AtomicI64::new(9_300_000);
 
 fn fixture() -> Value {
@@ -1142,43 +1141,6 @@ fn bark_calls(harness: &Harness) -> Vec<RecordedCall> {
         .filter(|call| call.method == Method::POST && call.path == "/push")
         .cloned()
         .collect()
-}
-
-#[test]
-fn legacy_python_oracle_and_migration_fragment_cover_the_fixed_scope() {
-    let oracle: Value = serde_json::from_str(include_str!(
-        "../../tests/contracts/credit-lifecycle/fixtures.json"
-    ))
-    .expect("fixed-SHA legacy oracle fixture must parse");
-    let migration: Value = serde_json::from_str(include_str!(
-        "../../tests/contracts/credit-lifecycle/migration-fragment.json"
-    ))
-    .expect("credit lifecycle migration fragment must parse");
-    assert_eq!(oracle["reference_sha"], REFERENCE_SHA);
-    assert_eq!(oracle["legacy_run"]["status"], "passed");
-    assert_eq!(oracle["legacy_run"]["selected"], 100);
-    assert_eq!(oracle["legacy_run"]["passed"], 100);
-    assert_eq!(oracle["legacy_run"]["failed"], 0);
-    assert_eq!(oracle["legacy_test_ids"].as_array().unwrap().len(), 100);
-    assert_eq!(migration["reference_sha"], REFERENCE_SHA);
-    assert_eq!(migration["mappings"].as_array().unwrap().len(), 100);
-    let covered = migration["mappings"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|entry| matches!(entry["status"].as_str(), Some("mapped" | "superseded")))
-        .count();
-    assert_eq!(covered, 100);
-    assert_eq!(
-        migration["mappings"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|entry| entry["legacy_test_id"].as_str().unwrap())
-            .collect::<std::collections::BTreeSet<_>>()
-            .len(),
-        100
-    );
 }
 
 #[tokio::test]

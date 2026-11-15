@@ -27,7 +27,6 @@ use tokio::{net::TcpListener, sync::Semaphore, task::JoinHandle};
 
 const FIXTURES: &str = include_str!("../../tests/contracts/modeltrace-runtime/fixtures.json");
 const MODELTRACE_FIXTURES: &str = include_str!("../../tests/contracts/modeltrace-fixtures.json");
-const REFERENCE_SHA: &str = "6be7c291ed38dcc337cb88f693639040a3463899";
 static NEXT_ACCOUNT_ID: AtomicI64 = AtomicI64::new(9_500_000);
 
 fn runtime_fixtures() -> Value {
@@ -1557,10 +1556,8 @@ fn runtime_fixture_is_pinned_and_synthetic() {
     let model = &fixture["modeltrace_runtime"];
     let legacy_fixture = modeltrace_fixtures();
     assert_eq!(fixture["schema_version"], 1);
-    assert_eq!(fixture["reference_sha"], REFERENCE_SHA);
     assert_eq!(fixture["synthetic_only"], true);
     assert_eq!(legacy_fixture["schema_version"], 1);
-    assert_eq!(legacy_fixture["reference_sha"], REFERENCE_SHA);
     assert_eq!(legacy_fixture["synthetic_only"], true);
     assert_eq!(
         model["challenge_length_contract"],

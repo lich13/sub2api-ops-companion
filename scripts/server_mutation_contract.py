@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""Compare fixture-only Companion writes and operation recovery.
+"""Check fixture-only Companion writes and operation recovery.
 
-Examples:
-  .venv/bin/python scripts/server_mutation_contract.py
-  .venv/bin/python scripts/server_mutation_contract.py --command-json '["server/target/debug/sub2ops-server", "serve", "--host", "{host}", "--port", "{port}"]'
+Example:
+  .venv/bin/python scripts/server_mutation_contract.py --command-json '["server/target/debug/sub2ops-server"]'
 
-The Python mode extracts the fixed app from 6be7c291ed38dcc337cb88f693639040a3463899.
-Command mode can run the existing Rust binary. Both modes use a runner-owned
-temporary PostgreSQL cluster, loopback-only upstream mock, and synthetic rows.
+The runner starts the given server binary against a runner-owned temporary
+PostgreSQL cluster, loopback-only upstream mock, and synthetic rows.
 The operation batch cases hold a synthetic upstream SSE response to exercise
 idempotency, cancellation, and restart after an unknown in-flight request.
 """
@@ -32,7 +30,6 @@ from typing import Any, Callable
 
 
 ROOT = Path(__file__).resolve().parents[1]
-from server_reference import REFERENCE_SHA
 ACCOUNT_IDS = (4001, 4002, 4003, 4004)
 PREFIX = "/api/desktop/v1"
 
@@ -298,7 +295,7 @@ class MutationUpstream:
 
 class Suite:
     def __init__(self, service: Any, mocks: MutationUpstream, database_url: str,
-                 command: list[str] | None, temporary: Path) -> None:
+                 command: list[str], temporary: Path) -> None:
         self.service = service
         self.client = http.HttpClient(service.server_url, timeout=2)
         self.mocks = mocks
@@ -667,8 +664,6 @@ class Suite:
             restarted = http.ServiceProcess(
                 restart_root, self.service.state_dir, http.free_port(), self.mocks,
                 self.database_url, command=self.command,
-                reference_app=self.service.reference_app,
-                target="command" if self.command else "python-reference",
             )
             self.restart_service = restarted
             restarted.start()
@@ -788,31 +783,27 @@ def seed_accounts(database_url: str) -> None:
             )
 
 
-def file_hashes(command: list[str] | None) -> dict[str, object]:
-    target: dict[str, object] = {
+def file_hashes(command: list[str]) -> dict[str, object]:
+    binary = Path(command[0]).expanduser().resolve()
+    return {
         "runner_sha256": sha256(Path(__file__).resolve()),
-        "reference_sha": REFERENCE_SHA,
+        "binary_sha256": sha256(binary) if binary.is_file() else None,
     }
-    if command:
-        binary = Path(command[0]).expanduser().resolve()
-        target["binary_sha256"] = sha256(binary) if binary.is_file() else None
-    return target
 
 
-def run_owned(command: list[str] | None, postgres_bin_dir: str | None) -> dict[str, object]:
+def run_owned(command: list[str], postgres_bin_dir: str | None) -> dict[str, object]:
     result: dict[str, object] = {
-        "status": "failed", "target": "command" if command else "python-reference",
+        "status": "failed", "target": "command",
         "source": file_hashes(command), "cases": [], "exit_code": 1,
     }
     if IMPORT_ERROR:
         result["error"] = "existing temporary PostgreSQL runner unavailable: " + IMPORT_ERROR
         return result
-    if command:
-        binary = Path(command[0]).expanduser().resolve()
-        if not binary.is_file() or not os.access(binary, os.X_OK):
-            result["error"] = "specified command binary is unavailable"
-            return result
-        command = [str(binary), *command[1:]]
+    binary = Path(command[0]).expanduser().resolve()
+    if not binary.is_file() or not os.access(binary, os.X_OK):
+        result["error"] = "specified command binary is unavailable"
+        return result
+    command = [str(binary), *command[1:]]
 
     postgres = None
     services: list[Any] = []
@@ -826,12 +817,10 @@ def run_owned(command: list[str] | None, postgres_bin_dir: str | None) -> dict[s
         temporary_path = Path(temporary_owner.name)
         state_dir = temporary_path / "state"
         state_dir.mkdir(mode=0o700)
-        reference_fixture = http.archive_reference_app(temporary_path / "reference", REFERENCE_SHA)
-        # Both runtimes must start and restart with the same fixed bank. A new
-        # Rust state directory otherwise starts a real network sync that can
-        # race the deliberate SIGKILL in the unknown-request recovery case.
-        http.seed_fingerprint_cache(reference_fixture, state_dir)
-        reference_app = reference_fixture if command is None else None
+        # The service must start and restart with the same fixed bank. A new
+        # state directory otherwise starts a real network sync that can race
+        # the deliberate SIGKILL in the unknown-request recovery case.
+        http.seed_fingerprint_cache(state_dir)
         postgres = http.TemporaryPostgres(temporary_path, postgres_bin_dir)
         postgres.start()
         seed_accounts(postgres.url)
@@ -843,8 +832,7 @@ def run_owned(command: list[str] | None, postgres_bin_dir: str | None) -> dict[s
             service_root.mkdir(mode=0o700)
             service = http.ServiceProcess(
                 service_root, state_dir, http.free_port(), mocks,
-                postgres.url, command=command, reference_app=reference_app,
-                target="command" if command else "python-reference",
+                postgres.url, command=command,
             )
             services.append(service)
             service.start()
@@ -904,20 +892,17 @@ def run_owned(command: list[str] | None, postgres_bin_dir: str | None) -> dict[s
         result["cleanup"] = cleanup
         if temporary_path is not None:
             result["temporary_directory_removed"] = not temporary_path.exists()
-    if command and "binary_sha256" in result["source"]:
-        binary = Path(command[0]).expanduser().resolve()
-        result["source"]["binary_sha256_after"] = sha256(binary) if binary.is_file() else None
-        result["source"]["binary_unchanged_during_run"] = (
-            result["source"].get("binary_sha256") == result["source"].get("binary_sha256_after")
-        )
+    result["source"]["binary_sha256_after"] = sha256(binary) if binary.is_file() else None
+    result["source"]["binary_unchanged_during_run"] = (
+        result["source"].get("binary_sha256") == result["source"].get("binary_sha256_after")
+    )
     return result
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    target = parser.add_mutually_exclusive_group()
-    target.add_argument("--command-json", type=http.parse_command if http else None,
-                        help="JSON argv for the existing target binary; supports {host} and {port}")
+    parser.add_argument("--command-json", required=True, type=http.parse_command if http else None,
+                        help="JSON argv for the server binary; supports {host} and {port}")
     parser.add_argument("--postgres-bin-dir", help="directory containing initdb and pg_ctl")
     return parser.parse_args()
 
@@ -930,8 +915,7 @@ def main() -> int:
         return int(exc.code or 0)
     except BaseException as exc:
         result = {"status": "failed", "error": type(exc).__name__, "exit_code": 1,
-                  "source": {"runner_sha256": sha256(Path(__file__).resolve()),
-                             "reference_sha": REFERENCE_SHA}}
+                  "source": {"runner_sha256": sha256(Path(__file__).resolve())}}
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     return int(result["exit_code"])
 

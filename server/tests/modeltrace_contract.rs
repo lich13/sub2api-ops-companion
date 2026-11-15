@@ -87,10 +87,6 @@ fn close(actual: f64, expected: f64, tolerance: f64, context: &str) {
 fn fixture_is_pinned_and_contains_only_synthetic_inputs() {
     let fixture = fixtures();
     assert_eq!(fixture["schema_version"], 1);
-    assert_eq!(
-        fixture["reference_sha"],
-        "6be7c291ed38dcc337cb88f693639040a3463899"
-    );
     assert_eq!(fixture["synthetic_only"], true);
 }
 

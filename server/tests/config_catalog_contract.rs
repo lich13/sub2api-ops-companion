@@ -9,7 +9,6 @@ use sub2ops_server::{
 };
 
 const FIXTURES: &str = include_str!("../../tests/contracts/config-catalog-fixtures.json");
-const REFERENCE_SHA: &str = "6be7c291ed38dcc337cb88f693639040a3463899";
 
 fn fixtures() -> Value {
     serde_json::from_str(FIXTURES).expect("pinned config/catalog fixtures must be valid JSON")
@@ -60,7 +59,6 @@ fn canonical_template_view(
 fn account_template_schema_upgrade_matches_pinned_python_and_preserves_read_only_or_corrupt_state()
 {
     let fixture = fixtures();
-    assert_eq!(fixture["reference_sha"].as_str(), Some(REFERENCE_SHA));
     let migration = &fixture["templates"]["migration"];
     let root = tempfile::tempdir().expect("temporary test root");
 
@@ -233,7 +231,6 @@ fn account_template_custom_crud_mapping_and_request_validation_match_pinned_pyth
 #[test]
 fn model_catalog_reasoning_import_model_rules_revision_and_priority_match_pinned_python() {
     let fixture = fixtures();
-    assert_eq!(fixture["reference_sha"].as_str(), Some(REFERENCE_SHA));
     let model = &fixture["model"];
 
     let revision = &model["revision"];

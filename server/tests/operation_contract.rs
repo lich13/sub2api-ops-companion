@@ -40,7 +40,6 @@ use tokio::{
 
 const ADMIN_KEY: &str = "fixture-admin-operation-contract";
 const CLIENT_ID: &str = "fixture-operation-contract-client";
-const REFERENCE_SHA: &str = "6be7c291ed38dcc337cb88f693639040a3463899";
 const CONTENT_MARKER: &str = "fixture-response-content-operation";
 const BEARER_MARKER: &str = "fixture-bearer-operation";
 const PROVIDER_MARKER: &str = "fixture-provider-operation";
@@ -547,7 +546,6 @@ struct Harness {
 impl Harness {
     async fn new() -> Self {
         let fixture = fixtures();
-        assert_eq!(fixture["reference"]["sha"], REFERENCE_SHA);
         let database_url =
             std::env::var("DATABASE_URL").expect("runner must provide temporary DATABASE_URL");
         let db = Database::open(&database_url, false)

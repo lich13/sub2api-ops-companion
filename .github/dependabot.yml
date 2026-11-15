@@ -104,8 +104,6 @@ updates:
     allow:
       - dependency-type: all
         update-types: ['version-update:semver-patch']
-      - dependency-name: starlette
-        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
       - dependency-name: 'psycopg*'
         update-types: ['version-update:semver-minor', 'version-update:semver-patch']
     groups:

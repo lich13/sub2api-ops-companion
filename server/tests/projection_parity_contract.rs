@@ -23,11 +23,7 @@ use sub2ops_server::{
     upstream::Upstream, usage,
 };
 
-const REFERENCE_SHA: &str = "6be7c291ed38dcc337cb88f693639040a3463899";
 const FIXTURES: &str = include_str!("../../tests/contracts/projection/fixtures.json");
-const MIGRATION_FRAGMENT: &str =
-    include_str!("../../tests/contracts/projection/migration-fragment.json");
-const SELF_SOURCE: &str = include_str!("projection_parity_contract.rs");
 static POSTGRES_PROJECTION_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[derive(Clone)]
@@ -623,10 +619,6 @@ fn fixtures() -> Value {
     serde_json::from_str(FIXTURES).expect("pinned projection fixture JSON")
 }
 
-fn migration_fragment() -> Value {
-    serde_json::from_str(MIGRATION_FRAGMENT).expect("projection migration fragment JSON")
-}
-
 fn json_numbers_equal(actual: &Value, expected: &Value) -> bool {
     if actual == expected {
         return true;
@@ -826,131 +818,6 @@ async fn insert_capacity_error(
     .execute(pool)
     .await
     .expect("insert synthetic provider capacity error");
-}
-
-#[test]
-fn every_selected_legacy_test_has_a_precise_projection_mapping() {
-    let fixture = fixtures();
-    let fragment = migration_fragment();
-    assert_eq!(fixture["reference_sha"], REFERENCE_SHA);
-    assert_eq!(fragment["reference_sha"], REFERENCE_SHA);
-
-    let legacy: BTreeSet<String> = fixture["legacy_test_ids"]
-        .as_array()
-        .expect("legacy IDs")
-        .iter()
-        .map(|value| value.as_str().unwrap().to_owned())
-        .collect();
-    let mappings = fragment["mappings"].as_array().expect("mappings");
-    let mapped: BTreeSet<String> = mappings
-        .iter()
-        .map(|value| value["legacy_test_id"].as_str().unwrap().to_owned())
-        .collect();
-    assert_eq!(
-        legacy.len(),
-        75,
-        "the seven pinned modules contain 75 old tests"
-    );
-    assert_eq!(mapped, legacy, "every old test appears exactly once");
-    assert_eq!(mappings.len(), 75, "duplicate mappings are forbidden");
-
-    let mut counts = BTreeMap::<String, usize>::new();
-    for id in &legacy {
-        let module = id.split(':').nth(1).expect("legacy test module").to_owned();
-        *counts.entry(module).or_default() += 1;
-    }
-    assert_eq!(
-        counts,
-        BTreeMap::from([
-            ("tests.test_account_quality".to_owned(), 28),
-            ("tests.test_quota_snapshot".to_owned(), 9),
-            ("tests.test_desktop_usage".to_owned(), 14),
-            ("tests.test_slow_ttft026".to_owned(), 7),
-            ("tests.test_codex_identity".to_owned(), 3),
-            ("tests.test_model_reasoning".to_owned(), 12),
-            ("tests.test_key_support023".to_owned(), 2),
-        ])
-    );
-
-    let mut statuses = BTreeMap::<&str, usize>::new();
-    for mapping in mappings {
-        let legacy_id = mapping["legacy_test_id"].as_str().expect("legacy test ID");
-        let status = mapping["status"].as_str().expect("mapping status");
-        assert!(
-            matches!(status, "mapped" | "partial" | "superseded"),
-            "unexpected status {status}"
-        );
-        *statuses.entry(status).or_default() += 1;
-        let target = &mapping["target"];
-        assert_eq!(target["kind"], "rust_test");
-        assert_eq!(target["path"], "server/tests/projection_parity_contract.rs");
-        let name = target["test_name"].as_str().expect("Rust test name");
-        assert!(
-            SELF_SOURCE.contains(&format!("fn {name}")),
-            "missing target Rust test {name}"
-        );
-        assert!(target["assertions"]
-            .as_array()
-            .is_some_and(|values| !values.is_empty()));
-        assert!(mapping["coverage_note"]
-            .as_str()
-            .is_some_and(|value| !value.trim().is_empty()));
-        if legacy_id.contains(":tests.test_account_quality:") {
-            assert_eq!(
-                status, "superseded",
-                "account quality assertions are removed"
-            );
-            assert_eq!(name, "account_quality_detail_route_is_removed");
-            assert!(target["assertions"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|value| {
-                    value.as_str().is_some_and(|assertion| {
-                        assertion.contains("reqwest::StatusCode::NOT_FOUND")
-                    })
-                }));
-            let replacement = mapping["replacement"]
-                .as_object()
-                .expect("replacement contract");
-            for field in [
-                "legacy_assertions",
-                "approved_requirement",
-                "replacement_contract",
-            ] {
-                assert!(
-                    replacement.get(field).is_some_and(|value| {
-                        value.as_str().is_some_and(|text| !text.trim().is_empty())
-                            || value.as_array().is_some_and(|items| !items.is_empty())
-                    }),
-                    "superseded mapping lacks {field}: {legacy_id}"
-                );
-            }
-        } else if status == "superseded" {
-            assert_eq!(legacy_id, "py:tests.test_desktop_usage:UsageActionTests.test_confirmation_version_type_deleted_and_credit_checks");
-            assert_eq!(
-                name,
-                "desktop_usage_action_preconditions_reject_without_upstream_requests"
-            );
-            for field in [
-                "legacy_assertions",
-                "approved_requirement",
-                "replacement_contract",
-            ] {
-                assert!(mapping["replacement"][field]
-                    .as_str()
-                    .is_some_and(|s| !s.is_empty()));
-            }
-        }
-        if status == "partial" {
-            assert!(mapping["uncovered_assertions"]
-                .as_array()
-                .is_some_and(|values| !values.is_empty()));
-        }
-    }
-    assert_eq!(statuses.get("mapped").copied().unwrap_or_default(), 46);
-    assert_eq!(statuses.get("superseded").copied().unwrap_or_default(), 29);
-    assert_eq!(statuses.get("partial").copied().unwrap_or_default(), 0);
 }
 
 #[tokio::test]

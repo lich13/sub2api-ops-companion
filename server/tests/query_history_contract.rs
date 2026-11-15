@@ -36,7 +36,6 @@ use tokio::{
     time::timeout,
 };
 
-const REFERENCE_SHA: &str = "6be7c291ed38dcc337cb88f693639040a3463899";
 const ADMIN_KEY: &str = "fixture-query-history-admin-key";
 
 fn contract() -> Value {
@@ -45,10 +44,10 @@ fn contract() -> Value {
 }
 
 fn contract_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("SERVER_QUERY_HISTORY_DIR")
-            .expect("query-history runner must provide an owned temporary directory"),
-    )
+    static ROOT: std::sync::LazyLock<tempfile::TempDir> = std::sync::LazyLock::new(|| {
+        tempfile::tempdir().expect("create the owned query-history directory")
+    });
+    ROOT.path().to_owned()
 }
 
 fn database_url(application_name: &str) -> String {
@@ -61,10 +60,10 @@ fn database_url(application_name: &str) -> String {
 }
 
 fn reference_pages() -> Value {
-    let path = std::env::var("SERVER_QUERY_HISTORY_REFERENCE_PAGES")
-        .expect("query-history runner must provide the pinned Python page oracle");
-    serde_json::from_slice(&fs::read(path).expect("read pinned Python page oracle"))
-        .expect("pinned Python page oracle must parse")
+    serde_json::from_str(include_str!(
+        "../../tests/contracts/query/reference-pages.json"
+    ))
+    .expect("frozen event page oracle must parse")
 }
 
 fn pg_log_path() -> PathBuf {
@@ -290,9 +289,7 @@ fn id_list(value: &Value) -> Vec<i64> {
 #[tokio::test]
 async fn event_pagination_matches_pinned_python_across_category_account_pages() {
     let fixed = contract();
-    assert_eq!(fixed["reference_sha"], REFERENCE_SHA);
     let oracle = reference_pages();
-    assert_eq!(oracle["reference_sha"], REFERENCE_SHA);
     let rows = oracle["rows"].as_array().expect("legacy event rows");
     let db = Database::open(&database_url("query-history-events"), true)
         .await
@@ -1157,7 +1154,6 @@ fn timestamp(value: &Value) -> DateTime<Utc> {
 #[tokio::test]
 async fn oauth_failures_persist_one_three_six_twelve_hour_backoff_and_skip_dispatch() {
     let fixed = contract();
-    assert_eq!(fixed["reference_sha"], REFERENCE_SHA);
     let expected_delays = fixed["oauth_query"]["backoff_hours"]
         .as_array()
         .unwrap()

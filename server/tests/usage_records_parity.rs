@@ -27,7 +27,6 @@ use sub2ops_server::{
 use tempfile::TempDir;
 use tokio::{net::TcpListener, task::JoinHandle};
 
-const REFERENCE_SHA: &str = "6be7c291ed38dcc337cb88f693639040a3463899";
 const USAGE_SCHEMA: &str = "usage_records_parity";
 const CONCURRENT_WRITE_LEGACY_ID: &str = "py:tests.test_usage_records:UsageRecordSummaryTests.test_summary_and_rows_share_read_transaction_and_watermark_during_concurrent_write";
 const NATIVE_COMPACTION_SNAPSHOT_ID: &str =
@@ -358,7 +357,6 @@ fn error_status<T>(result: sub2ops_server::error::Result<T>) -> Result<T, u16> {
 
 async fn replay_direct_case(legacy_id: &str) {
     let fixture = fixtures();
-    assert_eq!(fixture["reference_sha"], REFERENCE_SHA);
     let events = fixture["traces"][legacy_id]
         .as_array()
         .unwrap_or_else(|| panic!("missing pinned direct trace for {legacy_id}"));
@@ -851,7 +849,6 @@ fn query_url(address: &str, path: &str, params: &Value) -> reqwest::Url {
 
 async fn replay_route_case(legacy_id: &str) {
     let fixture = fixtures();
-    assert_eq!(fixture["reference_sha"], REFERENCE_SHA);
     let events = fixture["http_traces"][legacy_id]
         .as_array()
         .unwrap_or_else(|| panic!("missing pinned route trace for {legacy_id}"));

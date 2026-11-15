@@ -32,7 +32,6 @@ use sub2ops_server::{
 use tokio::{net::TcpListener, sync::Notify, task::JoinHandle};
 
 const ADMIN_KEY: &str = "fixture-admin-manual-dispatch";
-const REFERENCE_SHA: &str = "6be7c291ed38dcc337cb88f693639040a3463899";
 const SUCCESS_TEST_SSE: &str =
     "data: {\"type\":\"test_start\",\"model\":\"fixture-model\"}\n\ndata: {\"type\":\"test_complete\",\"success\":true}\n\n";
 static NEXT_ACCOUNT_ID: AtomicI64 = AtomicI64::new(98_000_000);
@@ -791,7 +790,6 @@ fn pinned_manual_dispatch_fixture_matches_the_old_reference_scope() {
         "../../tests/contracts/manual-dispatch/fixtures.json"
     ))
     .expect("pinned manual dispatch fixture must parse");
-    assert_eq!(fixture["reference_sha"], REFERENCE_SHA);
     assert_eq!(fixture["scope"]["controls022"], 6);
     assert_eq!(fixture["scope"]["recovery_dispatch036"], 12);
     assert_eq!(fixture["scope"]["recovery019_monitor"], 5);

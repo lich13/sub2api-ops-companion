@@ -198,10 +198,6 @@ fn check(legacy_id: &str) {
         "../../tests/contracts/rule-traces/fixtures.json"
     ))
     .unwrap();
-    assert_eq!(
-        fixture["reference_sha"],
-        "6be7c291ed38dcc337cb88f693639040a3463899"
-    );
     let cases = fixture["cases"]
         .as_array()
         .unwrap()
