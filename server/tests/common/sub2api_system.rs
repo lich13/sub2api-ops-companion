@@ -122,18 +122,5 @@ async fn native_system_routes_authenticate_forward_cached_reads_and_never_repeat
         );
         assert_eq!(h.upstream.matching(Method::POST, &path).len(), before + 1);
     }
-    let mut settings = (*h.runtime.settings).clone();
-    settings.read_only = true;
-    let readonly = Runtime::new(settings).await.unwrap();
-    assert!(readonly.writable().is_err());
-    assert!(sub2ops_server::sub2api_system::request(
-        &readonly.actions,
-        ADMIN_KEY,
-        "update",
-        &BTreeMap::new()
-    )
-    .await
-    .is_err());
-    readonly.close().await;
     h.finish().await;
 }

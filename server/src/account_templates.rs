@@ -218,19 +218,18 @@ pub struct Templates {
     pub store: Store,
 }
 impl Templates {
-    pub fn new(path: PathBuf, read_only: bool) -> Self {
+    pub fn new(path: PathBuf) -> Self {
         Self {
             store: Store::policy(
                 path,
                 json!({"schema_version":2,"revision":0,"configured":false,"templates":{"full":{"whitelist":[],"mappings":[]},"degraded":{"whitelist":[],"mappings":[]},"takeover":{"whitelist":[],"mappings":[]}},"template_meta":{},"template_order":["full","degraded","takeover"],"custom_templates":[]}),
-                read_only,
             ),
         }
     }
     pub fn data(&self) -> Result<Value> {
         let original = self.store.read()?;
         let normalized = normalize(original.clone())?;
-        if normalized == original || self.store.is_read_only() {
+        if normalized == original {
             return Ok(normalized);
         }
         self.store.transaction(|current| {

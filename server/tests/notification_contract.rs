@@ -89,7 +89,6 @@ fn settings(
         bark_valid,
         base_url,
         verify_url: String::new(),
-        read_only: false,
     }
 }
 
@@ -378,7 +377,7 @@ async fn assert_no_bark_call_from_notifications(runtime: &Runtime, capture: &Cap
 }
 
 async fn database() -> Database {
-    Database::open(&database_url(), false)
+    Database::open(&database_url())
         .await
         .expect("open runner-owned temporary PostgreSQL")
 }
@@ -1034,7 +1033,7 @@ async fn bark_json_settings_override_environment_and_missing_files_use_environme
         "BARK_SERVER_URL".into(),
         "https://env.example.invalid".into(),
     );
-    let reference_settings = Settings::from_env(&reference_env, false).unwrap();
+    let reference_settings = Settings::from_env(&reference_env).unwrap();
     assert_eq!(
         json!({
             "enabled":reference_settings.bark["enabled"],
@@ -1061,7 +1060,7 @@ async fn bark_json_settings_override_environment_and_missing_files_use_environme
         "BARK_SERVER_URL".into(),
         format!("{}/from-environment", capture.url),
     );
-    let loaded = Settings::from_env(&env, false).unwrap();
+    let loaded = Settings::from_env(&env).unwrap();
     assert_eq!(loaded.bark["enabled"], true);
     assert_eq!(loaded.bark["device_key"], "fixture-file-priority-key");
     assert_eq!(
@@ -1083,7 +1082,7 @@ async fn bark_json_settings_override_environment_and_missing_files_use_environme
         "BARK_SERVER_URL".into(),
         format!("{}/from-environment", capture.url),
     );
-    let loaded = Settings::from_env(&env, false).unwrap();
+    let loaded = Settings::from_env(&env).unwrap();
     let expected = &reference["bark"]["settings_environment_fallback"];
     assert_eq!(loaded.bark["enabled"], expected["enabled"]);
     assert_eq!(loaded.bark_valid, expected["config_valid"]);
@@ -1117,7 +1116,7 @@ fn malformed_and_wrong_type_bark_config_remain_invalid() {
     let malformed_path = root.path().join("invalid-bark.json");
     fs::write(&malformed_path, "{broken").unwrap();
     let env = fixture_env(root.path(), &malformed_path);
-    let invalid = Settings::from_env(&env, false).unwrap();
+    let invalid = Settings::from_env(&env).unwrap();
     assert_eq!(
         invalid.bark_valid,
         reference["bark"]["invalid_existing_config"]["config_valid"]
@@ -1134,7 +1133,7 @@ fn malformed_and_wrong_type_bark_config_remain_invalid() {
             .path()
             .join(format!("{}.json", case["id"].as_str().unwrap()));
         write_json(&path, &case["input"]);
-        let settings = Settings::from_env(&fixture_env(root.path(), &path), false).unwrap();
+        let settings = Settings::from_env(&fixture_env(root.path(), &path)).unwrap();
         assert_eq!(
             settings.bark_valid, case["expected_config_valid"],
             "invalid schema case {}",
@@ -1156,7 +1155,7 @@ fn bark_invalid_field_and_effective_url_cases_match_pinned_python() {
             .path()
             .join(format!("{}.json", case["id"].as_str().unwrap()));
         write_json(&path, &case["input"]);
-        let loaded = Settings::from_env(&fixture_env(root.path(), &path), false).unwrap();
+        let loaded = Settings::from_env(&fixture_env(root.path(), &path)).unwrap();
         assert_eq!(
             loaded.bark_valid, case["expected_config_valid"],
             "pinned invalid configuration case {}",
@@ -1172,7 +1171,7 @@ fn non_utf8_bark_config_keeps_invalid_config_panel_readable_like_pinned_python()
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("non-utf8-bark-config.json");
     fs::write(&path, [0xff, 0xfe, 0x00]).unwrap();
-    let loaded = Settings::from_env(&fixture_env(root.path(), &path), false).unwrap();
+    let loaded = Settings::from_env(&fixture_env(root.path(), &path)).unwrap();
     assert!(!loaded.bark_valid);
     let notifier = Bark::new(Arc::new(loaded)).unwrap();
     let panel = notifier.panel().unwrap_or_else(|error| {
@@ -1353,7 +1352,7 @@ async fn oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_p
     assert!(runtime.monitor.store.snapshot().unwrap()["pending_events"]
         .get("fixture:queue-credit")
         .is_none());
-    let restarted = OAuthState::new(runtime.settings.usage_path.clone(), false);
+    let restarted = OAuthState::new(runtime.settings.usage_path.clone());
     assert!(
         restarted.snapshot().unwrap()["scheduler"]["7"]["notified_keys"]
             .as_array()
@@ -1413,7 +1412,7 @@ async fn oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_p
     let invalid_path = invalid_root.path().join("malformed-bark-config.json");
     fs::write(&invalid_path, b"{broken").unwrap();
     let invalid_env = runtime_env(invalid_root.path(), &invalid_path, &capture.url);
-    let invalid_settings = Settings::from_env(&invalid_env, false).unwrap();
+    let invalid_settings = Settings::from_env(&invalid_env).unwrap();
     assert_eq!(
         invalid_settings.bark_valid,
         reference["bark"]["invalid_existing_config"]["config_valid"]
@@ -1442,7 +1441,7 @@ async fn oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_p
     env.insert("BARK_ENABLED".into(), "treu".into());
     env.insert("BARK_DEVICE_KEY".into(), "fixture-environment-key".into());
     env.insert("BARK_SERVER_URL".into(), capture.url.clone());
-    let env_settings = Settings::from_env(&env, false).unwrap();
+    let env_settings = Settings::from_env(&env).unwrap();
     assert_eq!(
         env_settings.bark_valid,
         reference["bark"]["queue"]["invalid_environment"]["config_valid"]
@@ -2334,7 +2333,7 @@ async fn gateway_history_remains_queryable_while_upgrade_clues_are_not_backfille
 
     let queries = Queries {
         db: database.clone(),
-        oauth: OAuthState::new(root.path().join("oauth-state.json"), false),
+        oauth: OAuthState::new(root.path().join("oauth-state.json")),
     };
     let reference = fixture();
     let input = &reference["gateway"]["sql_contract"]["dto_input"];
@@ -2557,13 +2556,6 @@ async fn capacity_duplicate_rescans_preserve_progress_cleanup_and_validation() {
     assert_eq!(cleaned["cursor"], 30);
     assert_eq!(cleaned["detection_events"].as_object().unwrap().len(), 3);
 
-    let mut read_only = settings(root.path(), database_url(), json!({}), true, String::new());
-    read_only.read_only = true;
-    let restricted = CapacityAlerts::new(database.clone(), &read_only);
-    assert_eq!(
-        restricted.collect(&[], false, at).unwrap_err().status,
-        StatusCode::CONFLICT
-    );
     write_json(
         alerts.store.0.path(),
         &json!({"version":1,"seen":"damaged"}),

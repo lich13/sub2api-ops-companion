@@ -135,7 +135,6 @@ async fn successful_directories_survive_restart_and_revocation_is_persistent() {
             ),
         ]
         .into(),
-        false,
     )
     .unwrap();
     let cache = Candidates::new(Default::default())

@@ -109,7 +109,6 @@ impl Candidates {
         let disk = Store::policy(
             settings.data_dir().join("account-model-cache.json"),
             json!({"entries":{}}),
-            settings.read_only,
         );
         let saved = disk.read_shared()?;
         let at = (self.clock)();
@@ -142,7 +141,7 @@ impl Candidates {
         Ok(self)
     }
     fn persist(&self, identity: &str, models: Option<&Vec<Value>>) -> Result<()> {
-        let Some(disk) = self.disk.as_ref().filter(|disk| !disk.is_read_only()) else {
+        let Some(disk) = self.disk.as_ref() else {
             return Ok(());
         };
         disk.transaction(|data| {

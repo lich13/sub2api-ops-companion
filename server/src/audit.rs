@@ -42,10 +42,7 @@ fn lock(path: &Path, exclusive: bool) -> std::io::Result<fs::File> {
     }
     Ok(file)
 }
-pub fn write(path: &Path, event: &str, payload: Value, read_only: bool) {
-    if read_only {
-        return;
-    }
+pub fn write(path: &Path, event: &str, payload: Value) {
     let result = (|| -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;

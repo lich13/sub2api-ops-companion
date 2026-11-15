@@ -175,11 +175,6 @@
     "lost_update_expected_scheduler": {
       "first": true,
       "second": true
-    },
-    "read_only_absent_state_expectation": {
-      "initial_path_exists": false,
-      "snapshot_must_not_create_parent": true,
-      "transaction_error_code": "read_only"
     }
   },
   "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",

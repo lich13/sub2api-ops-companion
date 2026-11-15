@@ -98,7 +98,6 @@ impl CreditController {
             &self.actions.settings.audit_path,
             "oauth_auto_reset_credit",
             payload,
-            self.actions.settings.read_only,
         );
     }
     pub fn saved_quota(&self, row: &Value, at: DateTime<Utc>) -> Result<Value> {
@@ -509,9 +508,6 @@ impl CreditController {
         })
     }
     pub async fn deliver_results(&self, notifier: &Bark) -> Result<()> {
-        if self.actions.settings.read_only {
-            return Ok(());
-        }
         let Ok(_guard) = self.notice_lock.try_lock() else {
             return Ok(());
         };

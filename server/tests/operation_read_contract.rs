@@ -79,7 +79,7 @@ impl Fixture {
     async fn new() -> Self {
         let database_url = env::var("DATABASE_URL")
             .expect("runner must provide a temporary DATABASE_URL for operation state tests");
-        let db = Database::open(&database_url, false)
+        let db = Database::open(&database_url)
             .await
             .expect("connect to runner-owned PostgreSQL");
         let temp = tempfile::tempdir().expect("create operation state fixture directory");
@@ -99,18 +99,17 @@ impl Fixture {
             bark_valid: true,
             base_url: String::new(),
             verify_url: String::new(),
-            read_only: false,
         });
         let upstream = Upstream::new(settings.clone()).expect("construct fixture upstream");
         let queries = Queries {
             db: db.clone(),
-            oauth: OAuthState::new(temp.path().join("oauth-state.json"), false),
+            oauth: OAuthState::new(temp.path().join("oauth-state.json")),
         };
         let actions = Actions::new(
             queries,
             upstream,
             AccountLocks::default(),
-            Templates::new(temp.path().join("account-templates.json"), false),
+            Templates::new(temp.path().join("account-templates.json")),
             settings,
         )
         .expect("construct operation actions");

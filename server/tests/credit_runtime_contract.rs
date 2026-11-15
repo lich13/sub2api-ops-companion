@@ -189,10 +189,6 @@ impl MockUpstream {
             .count()
     }
 
-    fn total(&self) -> usize {
-        self.calls.lock().unwrap().len()
-    }
-
     fn set_reset(&self, id: i64, status: u16, body: Value) {
         self.resets
             .lock()
@@ -483,10 +479,10 @@ struct Harness {
 }
 
 impl Harness {
-    async fn new(read_only: bool) -> Self {
+    async fn new() -> Self {
         let database_url = std::env::var("DATABASE_URL")
             .expect("contract runner must provide temporary PostgreSQL");
-        let db = Database::open(&database_url, false)
+        let db = Database::open(&database_url)
             .await
             .expect("connect to runner-owned PostgreSQL");
         let temp = tempfile::tempdir().expect("create test state directory");
@@ -532,7 +528,6 @@ impl Harness {
             bark_valid: true,
             base_url,
             verify_url: String::new(),
-            read_only,
         });
         let upstream = Upstream::new(settings.clone()).expect("construct fixture upstream");
         let hooks = Arc::new(HookShared {
@@ -548,12 +543,10 @@ impl Harness {
             connection_calls: AtomicUsize::new(0),
             recover_readback: AtomicBool::new(false),
         });
-        let oauth = OAuthState::new(settings.oauth_path.clone(), read_only);
-        if !read_only {
-            oauth
-                .save_admin_token(ADMIN_KEY)
-                .expect("save synthetic fixture admin key");
-        }
+        let oauth = OAuthState::new(settings.oauth_path.clone());
+        oauth
+            .save_admin_token(ADMIN_KEY)
+            .expect("save synthetic fixture admin key");
         let controller =
             Self::make_controller(&db, &settings, &upstream, &mock, &hooks, &clock, oauth);
         Self {
@@ -586,7 +579,7 @@ impl Harness {
             queries,
             upstream.clone(),
             AccountLocks::default(),
-            Templates::new(settings.model_path.clone(), settings.read_only),
+            Templates::new(settings.model_path.clone()),
             settings.clone(),
         )
         .expect("construct fixture actions");
@@ -610,7 +603,7 @@ impl Harness {
     }
 
     fn restart_controller(&self) -> CreditController {
-        let oauth = OAuthState::new(self.settings.oauth_path.clone(), self.settings.read_only);
+        let oauth = OAuthState::new(self.settings.oauth_path.clone());
         Self::make_controller(
             &self.db,
             &self.settings,
@@ -746,7 +739,7 @@ fn recovery_config(id: i64, method: &str) -> Value {
 
 #[tokio::test]
 async fn concurrent_usage_queries_share_one_dispatch_and_persist_the_budget() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let row = harness.seed_account(true, false).await;
     let id = integer(&row["id"]).unwrap();
     let gate = Arc::new(Notify::new());
@@ -800,7 +793,7 @@ async fn concurrent_usage_queries_share_one_dispatch_and_persist_the_budget() {
 
 #[tokio::test]
 async fn a_quota_budget_lock_save_failure_never_dispatches_upstream() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let row = harness.seed_account(true, false).await;
     let id = integer(&row["id"]).unwrap();
     let state_path = harness.settings.oauth_path.clone();
@@ -836,7 +829,7 @@ async fn a_quota_budget_lock_save_failure_never_dispatches_upstream() {
 
 #[tokio::test]
 async fn consume_receipts_survive_restart_and_never_replay() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let cases = [
         (
             200,
@@ -921,7 +914,7 @@ async fn consume_receipts_survive_restart_and_never_replay() {
 
 #[tokio::test]
 async fn automatic_pause_is_read_back_owned_before_consumption_result() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let row_id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(row_id, "connection"));
     let (row, evidence) = harness.seed_depletion(&harness.controller).await;
@@ -978,7 +971,7 @@ async fn automatic_pause_is_read_back_owned_before_consumption_result() {
 
 #[tokio::test]
 async fn five_minute_deadlines_and_unknown_unissued_pause_undo_are_read_back_only() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(id, "connection"));
     let (row, evidence) = harness.seed_depletion(&harness.controller).await;
@@ -1073,7 +1066,7 @@ async fn five_minute_deadlines_and_unknown_unissued_pause_undo_are_read_back_onl
 
 #[tokio::test]
 async fn a_truncated_native_sse_receipt_finishes_without_a_second_test() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(id, "connection"));
     let row = harness.seed_account(false, false).await;
@@ -1132,7 +1125,7 @@ async fn a_truncated_native_sse_receipt_finishes_without_a_second_test() {
 
 #[tokio::test]
 async fn manual_generation_change_keeps_consumption_receipt_and_never_unpauses() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let account_id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(account_id, "connection"));
     let (row, evidence) = harness.seed_depletion(&harness.controller).await;
@@ -1206,7 +1199,7 @@ async fn manual_generation_change_keeps_consumption_receipt_and_never_unpauses()
 
 #[tokio::test]
 async fn bark_delivery_is_once_only_and_failure_reservations_stop_after_five() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let delivered_id = integer(&harness.seed_account(true, false).await["id"]).unwrap();
     harness
         .seed_notice(delivered_id, "fixture-bark-delivered", fixed_now())
@@ -1242,57 +1235,6 @@ async fn bark_delivery_is_once_only_and_failure_reservations_stop_after_five() {
     harness.set_now(fixed_now() + Duration::seconds(2_000));
     harness.controller.deliver_results(&bark).await.unwrap();
     assert_eq!(harness.mock.count(Method::POST, "/push"), 6);
-}
-
-#[tokio::test]
-async fn read_only_mode_creates_no_state_and_dispatches_no_query_card_or_bark() {
-    let harness = Harness::new(true).await;
-    let row = harness.seed_account(true, false).await;
-    let id = integer(&row["id"]).unwrap();
-    let bark = Bark::new(harness.settings.clone()).expect("construct read-only Bark client");
-
-    let query = harness
-        .controller
-        .queries
-        .query(
-            id,
-            ADMIN_KEY,
-            QueryOptions {
-                source: Source::Automatic,
-                reason: "fixture-read-only".into(),
-                at: fixed_now(),
-                timeout: 2,
-                ..QueryOptions::default()
-            },
-        )
-        .await;
-    assert_eq!(query["error_code"], "read_only");
-    let (consume, _) = harness
-        .controller
-        .request(
-            &row,
-            "reset",
-            &json!({"episode": "fixture-read-only", "stage": "waiting", "revision": 0}),
-            fixed_now(),
-            Source::Manual,
-            Some(ADMIN_KEY),
-            None,
-        )
-        .await
-        .unwrap();
-    assert_eq!(consume["error_code"], "read_only");
-    assert!(harness
-        .controller
-        .manual(&row, "reset", ADMIN_KEY)
-        .await
-        .is_err());
-    harness.controller.deliver_results(&bark).await.unwrap();
-
-    let state_path = harness.settings.oauth_path.clone();
-    let state_lock = PathBuf::from(format!("{}.lock", state_path.display()));
-    assert!(!state_path.exists());
-    assert!(!state_lock.exists());
-    assert_eq!(harness.mock.total(), 0);
 }
 
 async fn seed_parameter_retry(h: &Harness) -> (i64, Value) {
@@ -1355,7 +1297,7 @@ async fn write_available_quota(h: &Harness, id: i64, at: DateTime<Utc>) {
 #[tokio::test]
 async fn parameter_recovery_scalar_edits_keep_pause_until_one_retry_verifies() {
     for (field, target) in [("priority", 7), ("concurrency", 4), ("load_factor", 9)] {
-        let h = Harness::new(false).await;
+        let h = Harness::new().await;
         let (id, _) = seed_parameter_retry(&h).await;
         assert_eq!(
             apply_parameter(&h, id, field, target).await.unwrap()["verified"],
@@ -1387,7 +1329,7 @@ async fn parameter_recovery_scalar_edits_keep_pause_until_one_retry_verifies() {
 
 #[tokio::test]
 async fn parameter_recovery_receipt_failure_reports_applied_write() {
-    let h = Harness::new(false).await;
+    let h = Harness::new().await;
     let (id, original) = seed_parameter_retry(&h).await;
     let bytes = fs::read(&h.settings.oauth_path).unwrap();
     fs::set_permissions(h._temp.path(), fs::Permissions::from_mode(0o500)).unwrap();
@@ -1403,7 +1345,7 @@ async fn parameter_recovery_receipt_failure_reports_applied_write() {
 #[tokio::test]
 async fn parameter_recovery_rejected_write_keeps_ownership() {
     for status in [400, 502] {
-        let h = Harness::new(false).await;
+        let h = Harness::new().await;
         let (id, original) = seed_parameter_retry(&h).await;
         h.mock.scalar_status.store(status, Ordering::SeqCst);
         assert!(apply_parameter(&h, id, "concurrency", 4).await.is_err());
@@ -1426,7 +1368,7 @@ async fn parameter_recovery_rejected_write_keeps_ownership() {
 #[tokio::test]
 async fn parameter_recovery_conflicting_manual_or_account_changes_never_resume_hold() {
     for change in ["generation", "identity", "priority", "concurrency"] {
-        let h = Harness::new(false).await;
+        let h = Harness::new().await;
         let (id, _) = seed_parameter_retry(&h).await;
         apply_parameter(&h, id, "concurrency", 4).await.unwrap();
         let pending = h.controller.state(id).unwrap();

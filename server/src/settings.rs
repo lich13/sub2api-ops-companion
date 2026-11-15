@@ -41,7 +41,6 @@ pub struct Settings {
     pub bark_valid: bool,
     pub base_url: String,
     pub verify_url: String,
-    pub read_only: bool,
 }
 
 pub const DEFAULT_DETECTION_MODEL: &str = "gpt-6-luna";
@@ -133,11 +132,11 @@ pub fn env_map() -> BTreeMap<String, String> {
 }
 
 impl Settings {
-    pub fn load(read_only: bool) -> Result<Self> {
-        Self::from_env(&env_map(), read_only)
+    pub fn load() -> Result<Self> {
+        Self::from_env(&env_map())
     }
 
-    pub fn from_env(env: &BTreeMap<String, String>, read_only: bool) -> Result<Self> {
+    pub fn from_env(env: &BTreeMap<String, String>) -> Result<Self> {
         let get =
             |key: &str, default: &str| env.get(key).cloned().unwrap_or_else(|| default.to_owned());
         let oauth_path = PathBuf::from(get("OAUTH_CONFIG_PATH", "/data/oauth-config.json"));
@@ -273,7 +272,6 @@ impl Settings {
             verify_url: get("SUB2API_VERIFY_BASE_URL", "")
                 .trim_end_matches('/')
                 .to_owned(),
-            read_only,
         })
     }
 

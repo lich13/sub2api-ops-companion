@@ -318,7 +318,7 @@ impl Harness {
     async fn new() -> Self {
         let database_url = std::env::var("DATABASE_URL")
             .expect("automation contract runner must supply temporary PostgreSQL");
-        let db = Database::open(&database_url, false)
+        let db = Database::open(&database_url)
             .await
             .expect("open runner-owned PostgreSQL for loopback mock");
         let temp = tempfile::tempdir().expect("create synthetic automation state directory");
@@ -374,7 +374,6 @@ impl Harness {
             bark_valid: true,
             base_url: base_url.clone(),
             verify_url: String::new(),
-            read_only: false,
         };
         let monitor_clock = clock.clone();
         let runtime =
@@ -896,7 +895,7 @@ async fn interrupted_recovery_ignores_retired_fields_and_preserves_existing_retr
         saved["recovery_write_dispatched"] = true.into();
         Ok(())
     }).unwrap();
-    let reopened = OAuthState::new(harness.runtime.settings.usage_path.clone(), false);
+    let reopened = OAuthState::new(harness.runtime.settings.usage_path.clone());
     reopened.transaction(|_| Ok(())).unwrap();
     let normalized = reopened.snapshot().unwrap();
     let saved = &normalized["scheduler"][id.to_string()]["recovery_intent"];

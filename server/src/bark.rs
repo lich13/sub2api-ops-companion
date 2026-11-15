@@ -418,9 +418,6 @@ impl Bark {
         options: &Value,
         config: &Config,
     ) -> PushResult {
-        if self.settings.read_only {
-            return PushResult::failed("read_only", 0, 0);
-        }
         if !config.valid {
             return PushResult::failed("invalid_config", 0, 0);
         }

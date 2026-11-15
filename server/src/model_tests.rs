@@ -230,7 +230,6 @@ impl ModelTests {
             actions.settings.data_dir().join("model-test-results.json"),
             json!({"version":1,"accounts":{},"requests":{},"jobs":{}}),
             validate,
-            actions.settings.read_only,
         );
         Self {
             lm_bank: crate::lm_detector::Bank::new(
@@ -436,9 +435,6 @@ impl ModelTests {
     }
     pub fn startup(&self) -> Result<()> {
         let data = self.shared_data()?;
-        if self.actions.settings.read_only {
-            return Ok(());
-        }
         if !data["jobs"].as_object().is_some_and(|jobs| {
             jobs.values().any(|job| {
                 matches!(string(&job["status"]), "running" | "retrying") || job["can_retry"] == true
@@ -474,10 +470,7 @@ impl ModelTests {
         })
     }
     pub fn resume(&self) -> Result<()> {
-        if self.actions.settings.read_only
-            || self.closing.load(Ordering::Acquire)
-            || self.actions.supervisor.is_stopping()
-        {
+        if self.closing.load(Ordering::Acquire) || self.actions.supervisor.is_stopping() {
             return Ok(());
         }
         for job in self.shared_data()?["jobs"]
@@ -496,9 +489,6 @@ impl ModelTests {
         payload: &Value,
         automatic: Option<&Value>,
     ) -> Result<Value> {
-        if self.actions.settings.read_only {
-            return Err(Error::read_only());
-        }
         if self.closing.load(Ordering::Acquire) || self.actions.supervisor.is_stopping() {
             return Err(Error::new(503, "服务正在停止"));
         }
@@ -895,9 +885,6 @@ impl ModelTests {
         self.run(job, context, prepared_row).await
     }
     pub async fn retry_failed(&self, id: &str, request: &str) -> Result<Value> {
-        if self.actions.settings.read_only {
-            return Err(Error::read_only());
-        }
         crate::validation::request_id(&json!(request))?;
         let _guard = self.start.lock().await;
         let state = self.shared_data()?;
@@ -983,9 +970,6 @@ impl ModelTests {
         Ok(Self::public(stored))
     }
     pub async fn cancel(&self, id: &str) -> Result<Value> {
-        if self.actions.settings.read_only {
-            return Err(Error::read_only());
-        }
         let handle = self
             .tasks
             .lock()

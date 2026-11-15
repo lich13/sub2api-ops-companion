@@ -150,7 +150,6 @@ struct Snapshots {
 }
 #[derive(Clone)]
 pub struct Bank {
-    settings: Arc<Settings>,
     state: Store,
     root: PathBuf,
     snapshots: Arc<Mutex<Snapshots>>,
@@ -166,10 +165,8 @@ impl Bank {
                 root.join("state.json"),
                 json!({"revision":REVISION,"checked_at":null,"synced_at":null,"error":""}),
                 valid_object,
-                settings.read_only,
             ),
             root,
-            settings,
             snapshots: Arc::new(Mutex::new(Snapshots::default())),
             sync_lock: Arc::new(tokio::sync::Mutex::new(())),
             sync_error: Arc::new(Mutex::new(None)),
@@ -243,9 +240,6 @@ impl Bank {
         )
     }
     pub async fn request_sync(&self) -> Result<Value> {
-        if self.settings.read_only {
-            return Err(Error::read_only());
-        }
         let lock = self
             .sync_lock
             .clone()
@@ -588,7 +582,7 @@ mod tests {
         );
         responses
     }
-    fn test_bank(root: &Path, read_only: bool) -> Bank {
+    fn test_bank(root: &Path) -> Bank {
         let env = BTreeMap::from([
             (
                 "DATABASE_URL".into(),
@@ -608,25 +602,14 @@ mod tests {
             ),
         ]);
         Bank::new(
-            Arc::new(Settings::from_env(&env, read_only).unwrap()),
+            Arc::new(Settings::from_env(&env).unwrap()),
             crate::supervision::Supervisor::default(),
         )
     }
     #[tokio::test]
-    async fn read_only_status_does_not_extract_into_the_data_directory() {
-        let root = tempfile::tempdir().unwrap();
-        let bank = test_bank(root.path(), true);
-        assert_eq!(
-            bank.public().await.unwrap()["version"]["revision"],
-            REVISION
-        );
-        assert!(!bank.root.exists());
-        assert!(bank.request_sync().await.is_err());
-    }
-    #[tokio::test]
     async fn compatible_unchanged_data_skips_downloads_and_preserves_the_revision() {
         let root = tempfile::tempdir().unwrap();
-        let bank = test_bank(root.path(), false);
+        let bank = test_bank(root.path());
         let revision = "1".repeat(40);
         let upstream = MockUpstream::serve(update_responses(&revision, false)).await;
         upstream.update(&bank).await.unwrap();
@@ -639,7 +622,7 @@ mod tests {
     #[tokio::test]
     async fn changed_data_is_downloaded_once_and_reused_after_restart() {
         let root = tempfile::tempdir().unwrap();
-        let bank = test_bank(root.path(), false);
+        let bank = test_bank(root.path());
         let pinned = bank.load(REVISION.into()).await.unwrap();
         let revision = "1".repeat(40);
         let upstream = MockUpstream::serve(update_responses(&revision, true)).await;
@@ -658,7 +641,7 @@ mod tests {
         );
         let next_revision = "2".repeat(40);
         let next = MockUpstream::serve(update_responses(&next_revision, true)).await;
-        let restarted = test_bank(root.path(), false);
+        let restarted = test_bank(root.path());
         next.update(&restarted).await.unwrap();
         assert_eq!(restarted.revision().unwrap(), revision);
         assert!(!restarted.root.join(next_revision).exists());
@@ -672,7 +655,7 @@ mod tests {
     #[tokio::test]
     async fn unreadable_active_cache_does_not_prevent_a_verified_new_revision() {
         let root = tempfile::tempdir().unwrap();
-        let bank = test_bank(root.path(), false);
+        let bank = test_bank(root.path());
         let (stage, mut meta) = fixture();
         let old_revision = "1".repeat(40);
         meta["revision"] = old_revision.clone().into();
@@ -681,7 +664,7 @@ mod tests {
         std::fs::write(&old_detector, b"damaged fixture cache").unwrap();
         drop(bank);
 
-        let restarted = test_bank(root.path(), false);
+        let restarted = test_bank(root.path());
         assert!(restarted.public().await.is_err());
         let revision = "2".repeat(40);
         let upstream = MockUpstream::serve(update_responses(&revision, false)).await;
@@ -722,7 +705,7 @@ mod tests {
             ),
         ] {
             let root = tempfile::tempdir().unwrap();
-            let bank = test_bank(root.path(), false);
+            let bank = test_bank(root.path());
             let mut responses = update_responses(&revision, true);
             responses.insert(path.clone(), (status, bytes));
             let upstream = MockUpstream::serve(responses).await;
@@ -750,7 +733,7 @@ mod tests {
     #[tokio::test]
     async fn updates_validate_all_files_and_keep_pinned_snapshots_across_restart() {
         let root = tempfile::tempdir().unwrap();
-        let bank = test_bank(root.path(), false);
+        let bank = test_bank(root.path());
         let pinned = bank.load(REVISION.into()).await.unwrap();
         let (stage, mut meta) = fixture();
         meta["revision"] = "1".repeat(40).into();
@@ -767,7 +750,7 @@ mod tests {
             &bank.load(REVISION.into()).await.unwrap()
         ));
         let old = Arc::downgrade(&pinned);
-        let restarted = test_bank(root.path(), false);
+        let restarted = test_bank(root.path());
         assert_eq!(
             restarted.public().await.unwrap()["version"]["revision"],
             "2".repeat(40)
@@ -795,7 +778,8 @@ mod tests {
         let (stage, mut meta) = fixture();
         meta["revision"] = "3".repeat(40).into();
         let failing = Bank {
-            state: Store::new(bank.state.path(), json!({}), valid_object, true),
+            // The parent of this path is the state file, so the write fails.
+            state: Store::new(bank.state.path().join("blocked"), json!({}), valid_object),
             ..bank.clone()
         };
         assert!(failing.activate(stage, meta).await.is_err());

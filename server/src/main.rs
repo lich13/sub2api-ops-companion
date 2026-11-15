@@ -30,19 +30,16 @@ async fn run() -> Result<()> {
         return Ok(());
     }
     if args.iter().any(|arg| arg == "--help") {
-        println!(
-            "sub2ops-server [serve] [--read-only] [--check-state] [--host ADDRESS] [--port PORT]"
-        );
+        println!("sub2ops-server [serve] [--host ADDRESS] [--port PORT]");
         return Ok(());
     }
-    let check = args.iter().any(|arg| arg == "--check-state");
-    let mut settings = Settings::load(check || args.iter().any(|arg| arg == "--read-only"))?;
+    let mut settings = Settings::load()?;
     let mut host = None;
     let mut port = None;
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
-            "serve" | "--read-only" | "--check-state" => {}
+            "serve" => {}
             "--host" | "--port" => {
                 let option = &args[index];
                 index += 1;
@@ -70,11 +67,6 @@ async fn run() -> Result<()> {
     }
     let address = settings.bind.clone();
     let runtime = Runtime::new(settings).await?;
-    if check {
-        println!("{}", runtime.preflight().await?);
-        runtime.close().await;
-        return Ok(());
-    }
     let listener = tokio::net::TcpListener::bind(address).await?;
     let bound = listener.local_addr()?;
     let scope = if bound.ip().is_unspecified() {

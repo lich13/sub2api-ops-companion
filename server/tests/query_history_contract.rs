@@ -179,7 +179,7 @@ fn transactions(statements: &[String]) -> Vec<Vec<String>> {
     complete
 }
 
-fn settings(root: &Path, database_url: String, read_only: bool, base_url: &str) -> Arc<Settings> {
+fn settings(root: &Path, database_url: String, base_url: &str) -> Arc<Settings> {
     fs::create_dir_all(root).expect("create owned settings directory");
     let connection_path = root.join("sub2api-config.json");
     fs::write(
@@ -214,7 +214,6 @@ fn settings(root: &Path, database_url: String, read_only: bool, base_url: &str) 
         bark_valid: true,
         base_url: base_url.into(),
         verify_url: base_url.into(),
-        read_only,
     })
 }
 
@@ -290,9 +289,9 @@ async fn event_pagination_matches_pinned_python_across_category_account_pages() 
     let fixed = contract();
     let oracle = reference_pages();
     let rows = oracle["rows"].as_array().expect("legacy event rows");
-    let db = Database::open(&database_url("query-history-events"), true)
+    let db = Database::open(&database_url("query-history-events"))
         .await
-        .expect("open actual business schema as a read-only Rust query database");
+        .expect("open actual business schema as a Rust query database");
     let seed = pool("query-history-event-seed").await;
 
     for account in oracle["accounts"].as_array().unwrap() {
@@ -400,7 +399,7 @@ async fn event_pagination_matches_pinned_python_across_category_account_pages() 
 
     let queries = Queries {
         db: db.clone(),
-        oauth: OAuthState::new(contract_dir().join("events-readonly-state.json"), true),
+        oauth: OAuthState::new(contract_dir().join("events-state.json")),
     };
     let page_size = fixed["event_pagination"]["page_size"].as_u64().unwrap() as usize;
     let mut expected_scopes = Vec::new();
@@ -524,7 +523,6 @@ async fn assert_event_routes_match_queries(oracle: &Value) {
     let settings = settings(
         &contract_dir().join("event-http-runtime"),
         database_url("query-history-events-http"),
-        true,
         &format!("http://{auth_address}"),
     );
     let runtime = Runtime::new(settings.as_ref().clone()).await.unwrap();
@@ -656,7 +654,7 @@ async fn each_changed_usage_filter_is_rejected_before_database_access() {
     .await;
     seed.close().await;
 
-    let source_db = Database::open(&database_url("query-history-cursor-source"), false)
+    let source_db = Database::open(&database_url("query-history-cursor-source"))
         .await
         .expect("open source database for cursor creation");
     let source_filter = Filter {
@@ -672,7 +670,7 @@ async fn each_changed_usage_filter_is_rejected_before_database_access() {
     let cursor = first["next_cursor"].as_str().unwrap().to_owned();
     source_db.close().await;
 
-    let guard_db = Database::open(&database_url("query-history-cursor-guard"), false)
+    let guard_db = Database::open(&database_url("query-history-cursor-guard"))
         .await
         .expect("open isolated cursor guard database");
     let admin_pool = pool("query-history-cursor-admin").await;
@@ -737,7 +735,7 @@ async fn usage_date_cursor_keeps_window_and_rejects_changed_or_omitted_dates_bef
 
     let start_date = start_day.format("%Y-%m-%d").to_string();
     let end_date = start_date.clone();
-    let db = Database::open(&database_url("query-history-date-source"), false)
+    let db = Database::open(&database_url("query-history-date-source"))
         .await
         .expect("open date cursor database");
     let initial = Filter {
@@ -769,7 +767,7 @@ async fn usage_date_cursor_keeps_window_and_rejects_changed_or_omitted_dates_bef
     assert!(second.get("summary").is_none());
     assert_eq!(second["latest_id"], first["latest_id"]);
 
-    let guard_db = Database::open(&database_url("query-history-date-cursor-guard"), false)
+    let guard_db = Database::open(&database_url("query-history-date-cursor-guard"))
         .await
         .expect("open isolated date cursor guard database");
     let admin_pool = pool("query-history-date-cursor-admin").await;
@@ -847,7 +845,7 @@ async fn usage_list_count_and_detail_are_bounded_read_only_select_transactions()
         .unwrap();
     seed.close().await;
 
-    let db = Database::open(&database_url("query-history-usage"), false)
+    let db = Database::open(&database_url("query-history-usage"))
         .await
         .expect("open database for usage reads");
     let service = UsageRecords(db.clone());
@@ -982,10 +980,10 @@ async fn usage_list_count_and_detail_are_bounded_read_only_select_transactions()
 #[tokio::test]
 async fn usage_collection_detail_and_options_reject_all_write_methods_over_http() {
     let root = contract_dir().join("usage-http-runtime");
-    let runtime_settings = settings(&root, database_url("query-history-http"), true, "");
+    let runtime_settings = settings(&root, database_url("query-history-http"), "");
     let runtime = Runtime::new(runtime_settings.as_ref().clone())
         .await
-        .expect("create read-only Runtime for the actual Axum router");
+        .expect("create Runtime for the actual Axum router");
     let before = logged_statements("query-history-http");
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
@@ -1105,7 +1103,7 @@ async fn coordinator_fixture(
     state_path: &Path,
     application_name: &str,
 ) -> (Database, OAuthState, Coordinator) {
-    let database = Database::open(&database_url(application_name), false)
+    let database = Database::open(&database_url(application_name))
         .await
         .expect("open OAuth query PostgreSQL database");
     let seed = pool("query-history-oauth-seed").await;
@@ -1117,8 +1115,8 @@ async fn coordinator_fixture(
     )
     .await;
     seed.close().await;
-    let state = OAuthState::new(state_path.to_owned(), false);
-    let settings = settings(root, database_url(application_name), false, base_url);
+    let state = OAuthState::new(state_path.to_owned());
+    let settings = settings(root, database_url(application_name), base_url);
     let queries = Queries {
         db: database.clone(),
         oauth: state.clone(),
@@ -1128,7 +1126,7 @@ async fn coordinator_fixture(
         queries,
         upstream,
         AccountLocks::default(),
-        Templates::new(root.join("account-templates.json"), false),
+        Templates::new(root.join("account-templates.json")),
         settings,
     )
     .expect("construct OAuth query actions");

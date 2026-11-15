@@ -163,12 +163,11 @@ pub fn validate_store(data: &Value) -> Result<()> {
 #[derive(Clone)]
 pub struct OperationStore(pub Store);
 impl OperationStore {
-    pub fn new(path: PathBuf, read_only: bool) -> Self {
+    pub fn new(path: PathBuf) -> Self {
         Self(Store::new(
             path,
             json!({"version":1,"jobs":{},"requests":{},"batches":{},"batch_requests":{}}),
             validate_store,
-            read_only,
         ))
     }
     fn normalize(data: &mut Value) {
@@ -313,9 +312,6 @@ impl OperationStore {
     }
     pub fn recover_startup(&self) -> Result<()> {
         let data = self.read_shared()?;
-        if self.0.is_read_only() {
-            return Ok(());
-        }
         let needs_recovery = data["jobs"]
             .as_object()
             .into_iter()
@@ -439,7 +435,6 @@ impl Operations {
                 .settings
                 .usage_path
                 .with_file_name("account-operations.json"),
-            actions.settings.read_only,
         );
         store.read_shared()?;
         Ok(Arc::new(Self {
@@ -731,7 +726,6 @@ impl Operations {
             &self.actions.settings.audit_path,
             "desktop_operation",
             json!({"operation_id":job["id"],"account_id":job["account_id"],"action":job["action"],"result":result}),
-            self.actions.settings.read_only,
         );
     }
     pub async fn read_account(&self, id: i64) -> Result<Option<Value>> {
@@ -752,9 +746,6 @@ impl Operations {
         Ok(())
     }
     pub async fn submit(self: &Arc<Self>, aid: i64, request: &Value, key: &str) -> Result<Value> {
-        if self.actions.settings.read_only {
-            return Err(Error::read_only());
-        }
         if aid < 1 {
             return Err(Error::new(422, "账号编号无效"));
         }
@@ -906,9 +897,6 @@ impl Operations {
         Ok(self.public(&job, false, 0))
     }
     pub async fn submit_batch(&self, request: &Value, key: &str, template: bool) -> Result<Value> {
-        if self.actions.settings.read_only {
-            return Err(Error::read_only());
-        }
         crate::request_schema::batch(request, template)?;
         let mut normalized = request.clone();
         if !template
@@ -1271,10 +1259,7 @@ impl Operations {
         self.get(jid, 0)
     }
     pub async fn tick(self: &Arc<Self>) -> Result<()> {
-        if self.actions.settings.read_only
-            || self.closing.load(Ordering::Acquire)
-            || self.actions.supervisor.is_stopping()
-        {
+        if self.closing.load(Ordering::Acquire) || self.actions.supervisor.is_stopping() {
             return Ok(());
         }
         let (mut ops_rev, mut data) = self.store.read_shared_versioned()?;

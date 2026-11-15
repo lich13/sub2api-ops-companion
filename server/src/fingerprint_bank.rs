@@ -265,7 +265,6 @@ impl FingerprintBank {
             settings.data_dir().join("modeltrace-bank-state.json"),
             defaults,
             valid_policy,
-            settings.read_only,
         );
         let cached = store.path().exists();
         let mut state = store.read()?;
@@ -365,9 +364,6 @@ impl FingerprintBank {
         value
     }
     pub fn request_sync(&self) -> Result<Value> {
-        if self.settings.read_only {
-            return Err(Error::read_only());
-        }
         let this = self.clone();
         self.tasks.spawn(async move {
             this.sync(true).await;
@@ -653,7 +649,7 @@ impl FingerprintBank {
         Ok((next, Some((bank, version))))
     }
     pub async fn sync(&self, force: bool) {
-        if self.settings.read_only || self.tasks.is_closed() {
+        if self.tasks.is_closed() {
             return;
         }
         let Ok(_guard) = self.lock.try_lock() else {
@@ -725,7 +721,6 @@ impl FingerprintBank {
                     &self.settings.audit_path,
                     &format!("fingerprint_bank_{event}"),
                     json!({"revision":revision}),
-                    false,
                 );
             }
             Err(failure) => {
@@ -767,7 +762,6 @@ impl FingerprintBank {
                     &self.settings.audit_path,
                     "fingerprint_bank_sync_error",
                     json!({"code":failure.code}),
-                    false,
                 );
             }
         }

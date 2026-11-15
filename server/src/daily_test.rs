@@ -97,10 +97,6 @@ impl Schedule {
         Self { store }
     }
     pub fn startup(&self, config: &Value, at: DateTime<Utc>) -> Result<()> {
-        if self.store.0.is_read_only() {
-            self.store.shared_snapshot()?;
-            return Ok(());
-        }
         self.store.transaction(|state| {
             let state = daily(state);
             for batch in state["batches"].as_object_mut().unwrap().values_mut() {
@@ -113,9 +109,6 @@ impl Schedule {
         })
     }
     pub fn tick(&self, config: &Value, at: DateTime<Utc>) -> Result<()> {
-        if self.store.0.is_read_only() {
-            return Ok(());
-        }
         let enabled = config["oauth_daily_test_enabled"].as_bool().unwrap_or(true);
         let time = daily_time(
             config
@@ -137,9 +130,6 @@ impl Schedule {
             state["next_run_at"]=datetime(next_time(at,&time)?).into();Ok(())})
     }
     pub fn claim(&self, config: &Value, at: DateTime<Utc>) -> Result<Option<Value>> {
-        if self.store.0.is_read_only() {
-            return Err(crate::error::Error::read_only());
-        }
         if !self.store.shared_snapshot()?["daily_test"]["batches"]
             .as_object()
             .into_iter()

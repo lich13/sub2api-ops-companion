@@ -484,13 +484,9 @@ impl Drop for RestoreDirectoryPermissions {
     }
 }
 
-async fn start_projection_runtime_fixture(
-    application_name: &str,
-    read_only: bool,
-) -> ProjectionRuntimeFixture {
+async fn start_projection_runtime_fixture(application_name: &str) -> ProjectionRuntimeFixture {
     start_projection_runtime_fixture_with_oauth_and_model_config_subdirectory(
         application_name,
-        read_only,
         json!({}),
         None,
     )
@@ -499,12 +495,10 @@ async fn start_projection_runtime_fixture(
 
 async fn start_projection_runtime_fixture_with_oauth(
     application_name: &str,
-    read_only: bool,
     oauth_overrides: Value,
 ) -> ProjectionRuntimeFixture {
     start_projection_runtime_fixture_with_oauth_and_model_config_subdirectory(
         application_name,
-        read_only,
         oauth_overrides,
         None,
     )
@@ -517,7 +511,6 @@ async fn start_projection_runtime_fixture_with_model_config_subdirectory(
 ) -> ProjectionRuntimeFixture {
     start_projection_runtime_fixture_with_oauth_and_model_config_subdirectory(
         application_name,
-        false,
         json!({}),
         Some(subdirectory),
     )
@@ -526,7 +519,6 @@ async fn start_projection_runtime_fixture_with_model_config_subdirectory(
 
 async fn start_projection_runtime_fixture_with_oauth_and_model_config_subdirectory(
     application_name: &str,
-    read_only: bool,
     oauth_overrides: Value,
     model_config_subdirectory: Option<&str>,
 ) -> ProjectionRuntimeFixture {
@@ -537,7 +529,6 @@ async fn start_projection_runtime_fixture_with_oauth_and_model_config_subdirecto
         directory.path(),
         database_url_for(application_name),
         &base_url,
-        read_only,
     )
     .as_ref()
     .clone();
@@ -688,12 +679,7 @@ fn database_url_for(application_name: &str) -> String {
     url.to_string()
 }
 
-fn test_settings(
-    root: &Path,
-    database_url: String,
-    base_url: &str,
-    read_only: bool,
-) -> Arc<Settings> {
+fn test_settings(root: &Path, database_url: String, base_url: &str) -> Arc<Settings> {
     std::fs::create_dir_all(root).expect("create owned projection settings directory");
     let connection_path = root.join("sub2api-config.json");
     std::fs::write(
@@ -731,12 +717,11 @@ fn test_settings(
         bark_valid: true,
         base_url: base_url.into(),
         verify_url: base_url.into(),
-        read_only,
     })
 }
 
 async fn open_test_database(application_name: &str) -> Database {
-    Database::open(&database_url_for(application_name), false)
+    Database::open(&database_url_for(application_name))
         .await
         .expect("connect only to the test runner's temporary PostgreSQL")
 }
@@ -831,7 +816,6 @@ async fn apikey_capacity_watermark_clues_mark_suppression_and_restart_match_pinn
         directory.path(),
         database_url_for("projection-apikey-capacity"),
         "http://127.0.0.1:9",
-        false,
     );
     let alerts = CapacityAlerts::new(db.clone(), settings.as_ref());
     alerts.initialize(Utc::now()).unwrap();
@@ -1004,7 +988,6 @@ async fn capacity_slow_ttft_poll_persists_one_clue_without_bark() {
         directory.path(),
         database_url_for("projection-capacity-slow"),
         "http://127.0.0.1:9",
-        false,
     );
     let alerts = CapacityAlerts::new(db.clone(), settings.as_ref());
     alerts.initialize(Utc::now()).unwrap();
@@ -1083,7 +1066,7 @@ async fn capacity_slow_ttft_poll_persists_one_clue_without_bark() {
 fn reasoning_store_preserves_unrelated_overrides_and_rejects_stale_revisions() {
     let expected = fixtures()["reasoning"]["store_contract"].clone();
     let directory = tempfile::tempdir().expect("create owned reasoning store directory");
-    let store = ModelConfig::new(directory.path().join("reasoning.json"), false);
+    let store = ModelConfig::new(directory.path().join("reasoning.json"));
     let group_id = expected["group_id"].as_i64().unwrap();
     let model = expected["model"].as_str().unwrap();
     let initial_revision = store.group(group_id).unwrap()["revision"]
@@ -1144,11 +1127,10 @@ async fn account_quality_detail_route_is_removed() {
         directory.path(),
         database_url_for("projection-account-quality-removed"),
         "http://127.0.0.1:9",
-        true,
     );
     let runtime = Runtime::new(settings.as_ref().clone())
         .await
-        .expect("create read-only runtime against temporary PostgreSQL");
+        .expect("create runtime against temporary PostgreSQL");
 
     let api_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -1402,13 +1384,11 @@ async fn desktop_runtime_snapshot_reuses_shared_stats_without_upstream_io() {
 
     let (upstream_url, mock, upstream_task) =
         start_projection_http_mock(Some(seed.pool.clone())).await;
-    let directory =
-        tempfile::tempdir().expect("create a temporary read-only Runtime state directory");
+    let directory = tempfile::tempdir().expect("create a temporary Runtime state directory");
     let settings = test_settings(
         directory.path(),
         database_url_for("projection-snapshot-shared-stats"),
         &upstream_url,
-        true,
     );
     let runtime = match Runtime::new(settings.as_ref().clone()).await {
         Ok(runtime) => runtime,
@@ -1428,7 +1408,7 @@ async fn desktop_runtime_snapshot_reuses_shared_stats_without_upstream_io() {
                 .await;
             upstream_task.abort();
             let _ = upstream_task.await;
-            panic!("construct read-only Runtime against the synthetic view: {error}");
+            panic!("construct Runtime against the synthetic view: {error}");
         }
     };
 
@@ -1565,7 +1545,7 @@ async fn desktop_usage_action_preconditions_reject_without_upstream_requests() {
     const APIKEY_ID: i64 = 967_402;
     const DELETED_ID: i64 = 967_403;
     const GROK_ID: i64 = 967_404;
-    let fixture = start_projection_runtime_fixture("projection-usage-preconditions", false).await;
+    let fixture = start_projection_runtime_fixture("projection-usage-preconditions").await;
     insert_runtime_account(
         &fixture.seed.pool,
         OAUTH_ID,
@@ -1678,7 +1658,7 @@ async fn desktop_usage_actions_match_paths_methods_privacy_and_reset_warning() {
     const OPENAI_ID: i64 = 967_411;
     const GROK_ID: i64 = 967_412;
     const WARNING_ID: i64 = 967_413;
-    let fixture = start_projection_runtime_fixture("projection-usage-paths", false).await;
+    let fixture = start_projection_runtime_fixture("projection-usage-paths").await;
     insert_runtime_account(
         &fixture.seed.pool,
         OPENAI_ID,
@@ -1842,7 +1822,7 @@ async fn desktop_usage_queries_coalesce_and_monitor_lease_is_per_account() {
     let _database_serial = POSTGRES_PROJECTION_LOCK.lock().await;
     const OPENAI_ID: i64 = 967_421;
     const GROK_ID: i64 = 967_422;
-    let fixture = start_projection_runtime_fixture("projection-usage-coalescing", false).await;
+    let fixture = start_projection_runtime_fixture("projection-usage-coalescing").await;
     insert_runtime_account(
         &fixture.seed.pool,
         OPENAI_ID,
@@ -1962,7 +1942,6 @@ async fn desktop_uncertain_reset_requires_confirmed_recovery_before_replay() {
     const GROK_ID: i64 = 967_432;
     let fixture = start_projection_runtime_fixture_with_oauth(
         "projection-usage-uncertain-reset",
-        false,
         json!({
             "oauth_recovery_monitor_enabled": true,
             "oauth_recovery_connection_account_ids": [RECOVERABLE_ID]
@@ -2208,7 +2187,7 @@ async fn reasoning_catalog_http_save_preserves_descriptors_auth_and_local_persis
     const ACCOUNT_ID: i64 = 968_011;
     const ADMIN_KEY: &str = "fixture-reasoning-admin-key";
     const SOURCE_KEY: &str = "fixture-reasoning-source-key";
-    let fixture = start_projection_runtime_fixture("projection-reasoning-http", false).await;
+    let fixture = start_projection_runtime_fixture("projection-reasoning-http").await;
     let descriptor = fixtures()["reasoning"]["descriptor"].clone();
     let mut old_native = descriptor.clone();
     old_native["slug"] = "native-old".into();
@@ -2460,7 +2439,7 @@ async fn reasoning_catalog_rechecks_source_labels_and_does_not_guess_missing_des
     const SOURCE_KEY: &str = "fixture-reasoning-source-label-key";
     const NATIVE_SOURCE_KEY: &str = "fixture-reasoning-native-source-key";
     const EMPTY_SOURCE_KEY: &str = "fixture-reasoning-empty-source-key";
-    let fixture = start_projection_runtime_fixture("projection-reasoning-sources", false).await;
+    let fixture = start_projection_runtime_fixture("projection-reasoning-sources").await;
     let descriptor = fixtures()["reasoning"]["descriptor"].clone();
     insert_reasoning_group_account(
         &fixture.seed.pool,
@@ -2853,7 +2832,7 @@ async fn reasoning_unknown_native_version_keeps_a_source_descriptor_as_draft() {
     const ACCOUNT_ID: i64 = 968_311;
     const ADMIN_KEY: &str = "fixture-reasoning-version-admin";
     const SOURCE_KEY: &str = "fixture-reasoning-version-source";
-    let fixture = start_projection_runtime_fixture("projection-reasoning-version", false).await;
+    let fixture = start_projection_runtime_fixture("projection-reasoning-version").await;
     let descriptor = fixtures()["reasoning"]["descriptor"].clone();
     fixture.http.set_version("0.2.99");
     insert_reasoning_group_account(
@@ -2921,7 +2900,7 @@ async fn reasoning_grok_limited_state_stays_a_draft_without_native_catalog_chang
     const ACCOUNT_ID: i64 = 968_411;
     const ADMIN_KEY: &str = "fixture-reasoning-grok-admin";
     const SOURCE_KEY: &str = "fixture-reasoning-grok-source";
-    let fixture = start_projection_runtime_fixture("projection-reasoning-grok", false).await;
+    let fixture = start_projection_runtime_fixture("projection-reasoning-grok").await;
     let descriptor = fixtures()["reasoning"]["descriptor"].clone();
     insert_reasoning_group_account(
         &fixture.seed.pool,
@@ -2996,7 +2975,7 @@ async fn reasoning_catalog_detects_conflicts_routing_changes_and_native_restore(
     const SOURCE_KEY: &str = "fixture-reasoning-conflict-source";
     const LEGACY_SOURCE_KEY: &str = "fixture-reasoning-legacy-source";
     const RESTORE_SOURCE_KEY: &str = "fixture-reasoning-restore-source";
-    let fixture = start_projection_runtime_fixture("projection-reasoning-conflicts", false).await;
+    let fixture = start_projection_runtime_fixture("projection-reasoning-conflicts").await;
     let descriptor = fixtures()["reasoning"]["descriptor"].clone();
     insert_reasoning_group_account(
         &fixture.seed.pool,
@@ -3716,18 +3695,16 @@ async fn key_template_action_verifies_mapping_and_preserves_the_full_account_row
         directory.path(),
         database_url_for("projection-key-template"),
         &upstream_url,
-        false,
     );
     let actions = Actions::new(
         Queries {
             db: db.clone(),
-            oauth: OAuthState::new(settings.usage_path.clone(), false),
+            oauth: OAuthState::new(settings.usage_path.clone()),
         },
         Upstream::new(settings.clone()).expect("create fixture-only upstream client"),
         AccountLocks::default(),
         account_templates::Templates::new(
             settings.usage_path.with_file_name("account-templates.json"),
-            false,
         ),
         settings.clone(),
     )
@@ -3819,7 +3796,7 @@ async fn key_template_action_verifies_mapping_and_preserves_the_full_account_row
 #[tokio::test]
 async fn native_account_usage_http_contract_is_private_isolated_and_keeps_child_stats() {
     let _database_serial = POSTGRES_PROJECTION_LOCK.lock().await;
-    let fixture = start_projection_runtime_fixture("native-account-usage", false).await;
+    let fixture = start_projection_runtime_fixture("native-account-usage").await;
     let cases = [
         (969_801, "anthropic", "apikey", json!({}), ""),
         (
@@ -4130,7 +4107,7 @@ async fn slow_samples_keep_tie_order_and_filter_before_limiting() {
 #[tokio::test]
 async fn key_usage_actions_keep_child_statistics_and_recheck_after_lock_wait() {
     let _serial = POSTGRES_PROJECTION_LOCK.lock().await;
-    let fixture = start_projection_runtime_fixture("key-usage-actions", false).await;
+    let fixture = start_projection_runtime_fixture("key-usage-actions").await;
     let parent = 969_821;
     let child = 969_822;
     let path = "/fixture-key/v1/usage";

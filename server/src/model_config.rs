@@ -39,14 +39,13 @@ fn validate(value: &Value) -> Result<()> {
 #[derive(Clone)]
 pub struct ModelConfig(pub Store);
 impl ModelConfig {
-    pub fn new(path: PathBuf, read_only: bool) -> Self {
+    pub fn new(path: PathBuf) -> Self {
         let lock = PathBuf::from(format!("{}.lock", path.display()));
         Self(Store::with_lock(
             path,
             lock,
             json!({"schema":1,"groups":{}}),
             validate,
-            read_only,
         ))
     }
     pub fn read(&self) -> Result<Value> {

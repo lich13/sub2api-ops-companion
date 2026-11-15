@@ -67,7 +67,6 @@ pub struct Catalog {
     pub store: ModelConfig,
     client: reqwest::Client,
     cache: Arc<Mutex<Cache>>,
-    read_only: bool,
 }
 pub fn caller_key(headers: &Headers) -> &str {
     let auth = headers
@@ -146,8 +145,7 @@ impl Catalog {
         Ok(Self {
             db,
             upstream,
-            read_only: settings.read_only,
-            store: ModelConfig::new(settings.model_path.clone(), settings.read_only),
+            store: ModelConfig::new(settings.model_path.clone()),
             client: reqwest::Client::builder()
                 .no_proxy()
                 .redirect(reqwest::redirect::Policy::none())
@@ -193,9 +191,6 @@ impl Catalog {
         client: Option<&reqwest::Client>,
         timeout: Option<Duration>,
     ) -> Result<HttpReply> {
-        if self.read_only && method != reqwest::Method::GET {
-            return Err(Error::read_only());
-        }
         let mut request = client.unwrap_or(&self.client).request(method, url);
         if let Some(timeout) = timeout {
             request = request.timeout(timeout);
@@ -1245,9 +1240,6 @@ impl Catalog {
             .group_lock(id)
     }
     pub async fn save_reasoning(&self, id: i64, key: &str, payload: &Value) -> Result<Value> {
-        if self.read_only {
-            return Err(Error::read_only());
-        }
         let model = model_id(&payload["model"])?;
         let fields = reasoning_fields(&payload["efforts"], &payload["default_effort"])?;
         let lock = self.group_lock(id);
@@ -1340,9 +1332,6 @@ impl Catalog {
         )
     }
     pub async fn remove_reasoning(&self, id: i64, key: &str, payload: &Value) -> Result<Value> {
-        if self.read_only {
-            return Err(Error::read_only());
-        }
         let model = model_id(&payload["model"])?;
         let lock = self.group_lock(id);
         let _guard = lock.lock().await;

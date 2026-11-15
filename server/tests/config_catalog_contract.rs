@@ -56,15 +56,14 @@ fn canonical_template_view(
 }
 
 #[test]
-fn account_template_schema_upgrade_matches_pinned_python_and_preserves_read_only_or_corrupt_state()
-{
+fn account_template_schema_upgrade_matches_pinned_python_and_preserves_corrupt_state() {
     let fixture = fixtures();
     let migration = &fixture["templates"]["migration"];
     let root = tempfile::tempdir().expect("temporary test root");
 
     let writable_path = root.path().join("templates-writable.json");
     write_json(&writable_path, &migration["input"]);
-    let writable = Templates::new(writable_path, false);
+    let writable = Templates::new(writable_path);
     assert_eq!(
         writable
             .view(None)
@@ -79,27 +78,11 @@ fn account_template_schema_upgrade_matches_pinned_python_and_preserves_read_only
         migration["expected_persisted"]
     );
 
-    let readonly_path = root.path().join("templates-read-only.json");
-    write_json(&readonly_path, &migration["input"]);
-    let before_readonly = fs::read(&readonly_path).expect("read-only fixture bytes");
-    let readonly = Templates::new(readonly_path.clone(), true);
-    assert_eq!(
-        readonly
-            .view(None)
-            .expect("read-only legacy state should normalize in memory"),
-        migration["readonly_view"]
-    );
-    assert_eq!(
-        fs::read(&readonly_path).expect("read-only state should remain present"),
-        before_readonly,
-        "read-only normalization must not persist a migration"
-    );
-
     let corrupt_path = root.path().join("templates-corrupt.json");
     fs::write(&corrupt_path, migration["corrupt_json"].as_str().unwrap())
         .expect("write synthetic corrupt template state");
     let before_corrupt = fs::read(&corrupt_path).expect("corrupt fixture bytes");
-    let corrupt = Templates::new(corrupt_path.clone(), false);
+    let corrupt = Templates::new(corrupt_path.clone());
     assert!(
         corrupt.view(None).is_err(),
         "corrupt template state must be rejected"
@@ -117,7 +100,7 @@ fn account_template_custom_crud_mapping_and_request_validation_match_pinned_pyth
     let contract = &fixture["templates"]["crud"];
     let root = tempfile::tempdir().expect("temporary test root");
     let path = root.path().join("account-templates.json");
-    let templates = Templates::new(path, false);
+    let templates = Templates::new(path);
 
     let initial = templates.view(None).expect("default templates should load");
     assert_eq!(initial, contract["initial_view"]);
@@ -280,7 +263,7 @@ fn model_catalog_reasoning_import_model_rules_revision_and_priority_match_pinned
 }
 
 #[test]
-fn model_config_revision_read_only_and_corrupt_state_match_pinned_python() {
+fn model_config_revision_and_corrupt_state_match_pinned_python() {
     let fixture = fixtures();
     let contract = &fixture["model"]["model_config"];
     let root = tempfile::tempdir().expect("temporary test root");
@@ -288,7 +271,7 @@ fn model_config_revision_read_only_and_corrupt_state_match_pinned_python() {
 
     let writable_path = root.path().join("model-config-writable.json");
     fs::write(&writable_path, &raw).expect("write model config fixture");
-    let writable = ModelConfig::new(writable_path, false);
+    let writable = ModelConfig::new(writable_path);
     assert_eq!(
         writable.read().expect("valid model config should read"),
         contract["state"]
@@ -301,38 +284,12 @@ fn model_config_revision_read_only_and_corrupt_state_match_pinned_python() {
         "group revision must match the pinned Python store"
     );
 
-    let readonly_path = root.path().join("model-config-read-only.json");
-    fs::write(&readonly_path, &raw).expect("write read-only model config fixture");
-    let before_readonly = fs::read(&readonly_path).expect("read-only model config bytes");
-    let readonly = ModelConfig::new(readonly_path.clone(), true);
-    assert_eq!(
-        readonly.read().expect("read-only model config should read"),
-        contract["state"]
-    );
-    let current_group = readonly
-        .group(contract["group_id"].as_i64().unwrap())
-        .expect("read-only group should load");
-    assert!(
-        readonly
-            .save(
-                contract["group_id"].as_i64().unwrap(),
-                &json!({"fixture-model":{"display_name":"fixture read-only attempt"}}),
-                current_group["revision"].as_str().unwrap(),
-            )
-            .is_err(),
-        "read-only model config must reject a write"
-    );
-    assert_eq!(
-        fs::read(&readonly_path).expect("read-only model config should remain present"),
-        before_readonly,
-        "read-only model config must not be overwritten"
-    );
     assert_eq!(contract["read_unchanged"].as_bool(), Some(true));
 
     let stale_path = root.path().join("model-config-stale.json");
     fs::write(&stale_path, &raw).expect("write stale-write fixture");
     let stale_before = fs::read(&stale_path).expect("stale-write fixture bytes");
-    let stale_store = ModelConfig::new(stale_path.clone(), false);
+    let stale_store = ModelConfig::new(stale_path.clone());
     assert!(
         stale_store
             .save(
@@ -349,7 +306,7 @@ fn model_config_revision_read_only_and_corrupt_state_match_pinned_python() {
     let corrupt_bytes = contract["corrupt_json"].as_str().unwrap().as_bytes();
     fs::write(&corrupt_path, corrupt_bytes).expect("write invalid-schema model config");
     let before_corrupt = fs::read(&corrupt_path).expect("invalid model config bytes");
-    let corrupt = ModelConfig::new(corrupt_path.clone(), false);
+    let corrupt = ModelConfig::new(corrupt_path.clone());
     assert!(
         corrupt.read().is_err(),
         "invalid model config schema must be rejected"
@@ -381,7 +338,7 @@ fn settings_priority_parsing_matches_pinned_python() {
         .collect();
     env.insert("OAUTH_CONFIG_PATH".into(), oauth_path.display().to_string());
     env.insert("BARK_CONFIG_PATH".into(), bark_path.display().to_string());
-    let settings = Settings::from_env(&env, false).expect("synthetic settings should parse");
+    let settings = Settings::from_env(&env).expect("synthetic settings should parse");
     assert_eq!(
         settings.oauth["model_detection_model_id"],
         priority["rust_additions_0_1_48"]["model_detection_model_id"],
@@ -460,7 +417,7 @@ fn neutral_settings_ignore_retired_sources_keep_defaults_and_prefer_explicit_jso
         ),
     ]);
     let original = fs::read(&legacy).unwrap();
-    let defaults = Settings::from_env(&env, false).unwrap();
+    let defaults = Settings::from_env(&env).unwrap();
     assert_eq!(
         defaults.oauth["oauth_recovery_test_model_id"],
         "gpt-5.6-luna"
@@ -478,14 +435,14 @@ fn neutral_settings_ignore_retired_sources_keep_defaults_and_prefer_explicit_jso
     }
     env.insert("OAUTH_DAILY_TEST_TIME".into(), "08:12".into());
     assert_eq!(
-        Settings::from_env(&env, false).unwrap().oauth["oauth_daily_test_time"],
+        Settings::from_env(&env).unwrap().oauth["oauth_daily_test_time"],
         "08:12"
     );
     assert_eq!(fs::read(&legacy).unwrap(), original);
     env.insert("OAUTH_DAILY_TEST_ENABLED".into(), "true".into());
     fs::write(&oauth, r#"{"oauth_daily_test_enabled":false}"#).unwrap();
     assert_eq!(
-        Settings::from_env(&env, false).unwrap().oauth["oauth_daily_test_enabled"],
+        Settings::from_env(&env).unwrap().oauth["oauth_daily_test_enabled"],
         false
     );
     fs::write(&connection,r#"{"base_url":"https://public.example.invalid/","verify_base_url":"http://127.0.0.1:8080/"}"#).unwrap();
@@ -493,7 +450,7 @@ fn neutral_settings_ignore_retired_sources_keep_defaults_and_prefer_explicit_jso
         "SUB2API_BASE_URL".into(),
         "https://ignored.example.invalid".into(),
     );
-    let settings = Settings::from_env(&env, false).unwrap();
+    let settings = Settings::from_env(&env).unwrap();
     assert_eq!(
         settings.connection_config().unwrap(),
         json!({"base_url":"https://public.example.invalid","verify_base_url":"http://127.0.0.1:8080"})

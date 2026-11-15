@@ -350,9 +350,6 @@ pub fn available(row: &Value, saved: &Value, task: &Value, at: DateTime<Utc>) ->
         })
 }
 pub async fn execute(actions: &Actions, action: &str, id: i64, key: &str, seconds: u64) -> Value {
-    if actions.settings.read_only {
-        return json!({"success":false,"uncertain":false,"error_code":"read_only"});
-    }
     let uncertain = action == "reset";
     let path = if uncertain {
         "reset-quota"

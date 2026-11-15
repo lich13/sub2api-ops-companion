@@ -103,7 +103,6 @@ impl Detection {
                 .join("model-detection-state.json"),
             json!({"version":1,"accounts":{},"consumed":{}}),
             validate,
-            actions.settings.read_only,
         );
         Self {
             actions,
@@ -201,12 +200,7 @@ impl Detection {
         })
     }
     pub fn audit(&self, event: &str, value: Value) {
-        audit::write(
-            &self.actions.settings.audit_path,
-            event,
-            value,
-            self.actions.settings.read_only,
-        );
+        audit::write(&self.actions.settings.audit_path, event, value);
     }
     pub async fn view(&self, id: i64) -> Result<Value> {
         let row = model_target::account(&self.actions, id).await?;

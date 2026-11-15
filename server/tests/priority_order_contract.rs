@@ -308,7 +308,6 @@ impl Harness {
             bark_valid: true,
             base_url: upstream_url,
             verify_url: String::new(),
-            read_only: false,
         };
         let database_pool = PgPoolOptions::new()
             .max_connections(2)
@@ -1487,70 +1486,13 @@ async fn manual_priority_write_is_mutually_exclusive_with_active_order() {
 }
 
 #[tokio::test]
-async fn read_only_startup_only_reads_priority_order_state() {
-    let mut harness = Harness::new().await;
-    let a = harness.insert_account("openai", "oauth", 6).await;
-    let view = harness.view().await;
-    let (_, accepted, _) = harness
-        .submit(
-            &[a],
-            view["version"].as_str().unwrap(),
-            "fixture-priority-readonly-0001",
-        )
-        .await;
-    let _ = harness.wait_task(accepted["id"].as_str().unwrap()).await;
-    let path = harness.runtime.priorities.store.path().to_path_buf();
-    let before = fs::read(&path).expect("priority-order state exists");
-    let mut settings = (*harness.runtime.settings).clone();
-    settings.read_only = true;
-    let read_only = Runtime::new(settings)
-        .await
-        .expect("construct read-only runtime");
-    read_only.start().await.expect("read-only startup check");
-    let after = fs::read(&path).expect("priority-order state remains");
-    assert_eq!(
-        before, after,
-        "read-only startup must not rewrite priority state"
-    );
-    read_only.close().await;
-    harness.finish().await;
-}
-
-#[tokio::test]
-async fn corrupt_priority_state_fails_explicitly_and_missing_read_only_state_stays_missing() {
+async fn corrupt_priority_state_fails_explicitly() {
     let mut harness = Harness::new().await;
     let path = harness.runtime.priorities.store.path().to_path_buf();
     assert!(
         !path.exists(),
         "fresh fixture should not create priority state"
     );
-    let mut settings = (*harness.runtime.settings).clone();
-    settings.read_only = true;
-    let read_only = Runtime::new(settings)
-        .await
-        .expect("construct read-only runtime without priority state");
-    read_only
-        .start()
-        .await
-        .expect("read-only startup should be a no-op");
-    let view = read_only
-        .priorities
-        .view()
-        .await
-        .expect("read-only view should use in-memory defaults");
-    assert!(view["platforms"].is_array());
-    let submit = read_only
-        .priorities
-        .submit(&json!({}))
-        .await
-        .expect_err("read-only submit must be rejected");
-    assert_eq!(submit.status.as_u16(), 409);
-    assert!(
-        !path.exists(),
-        "read-only startup and submit must not write state"
-    );
-    read_only.close().await;
-
     fs::write(&path, br#"{"version":1}"#).expect("write corrupt priority state fixture");
     let (status, _, text) = harness
         .request(Method::GET, "account-priorities?schema=2", None)

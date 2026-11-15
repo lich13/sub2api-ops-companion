@@ -255,7 +255,6 @@ fn settings_for_data_directory(data: &Path) -> Arc<Settings> {
         bark_valid: false,
         base_url: String::new(),
         verify_url: String::new(),
-        read_only: false,
     })
 }
 

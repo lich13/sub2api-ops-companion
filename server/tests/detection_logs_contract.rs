@@ -202,7 +202,6 @@ impl Harness {
             bark_valid: true,
             base_url: "http://127.0.0.1:9".into(),
             verify_url: String::new(),
-            read_only: false,
         };
         let runtime = Runtime::new(settings).await.unwrap();
         Self {

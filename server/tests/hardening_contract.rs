@@ -54,7 +54,7 @@ fn credit_history_limits_keep_active_pending_and_owned_receipts_in_order() {
     for count in [199_usize, 200, 203] {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("oauth.json");
-        let store = oauth_state::OAuthState::new(path.clone(), false);
+        let store = oauth_state::OAuthState::new(path.clone());
         let at = "2031-04-05T06:07:08+00:00";
         let receipt = json!({"http_status":502,"business_code":"unrecognized"});
         let mut episodes = json!({});
@@ -128,9 +128,7 @@ fn credit_history_limits_keep_active_pending_and_owned_receipts_in_order() {
             notices["fixture-pending"]
         );
         assert_eq!(
-            oauth_state::OAuthState::new(path, false)
-                .snapshot()
-                .unwrap(),
+            oauth_state::OAuthState::new(path).snapshot().unwrap(),
             state
         );
     }

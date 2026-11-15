@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::error::Result;
 use fs2::FileExt;
 use std::{
     fs::{File, OpenOptions},
@@ -46,10 +46,7 @@ impl TestSlots {
 }
 pub struct DiskLease(File);
 impl DiskLease {
-    pub fn try_acquire(state: &Path, suffix: &str, read_only: bool) -> Result<Self> {
-        if read_only {
-            return Err(Error::read_only());
-        }
+    pub fn try_acquire(state: &Path, suffix: &str) -> Result<Self> {
         if let Some(parent) = state.parent() {
             std::fs::create_dir_all(parent)?;
         }

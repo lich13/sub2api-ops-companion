@@ -93,7 +93,7 @@ impl Harness {
     async fn new() -> Self {
         let root = tempfile::tempdir().unwrap();
         let database_url = std::env::var("DATABASE_URL").unwrap();
-        let owner = Database::open(&database_url, false).await.unwrap();
+        let owner = Database::open(&database_url).await.unwrap();
         let schema = format!("catalog_{}", uuid::Uuid::new_v4().simple());
         sqlx::query(&format!("CREATE SCHEMA {schema}"))
             .execute(&owner.pool)
@@ -102,7 +102,7 @@ impl Harness {
         let mut url = reqwest::Url::parse(&database_url).unwrap();
         url.query_pairs_mut()
             .append_pair("options", &format!("-csearch_path={schema}"));
-        let seed = Database::open(url.as_str(), false).await.unwrap();
+        let seed = Database::open(url.as_str()).await.unwrap();
         sqlx::raw_sql(
             include_str!("../../tests/contracts/http/schema.sql")
                 .split("-- Every row below")
@@ -143,7 +143,7 @@ impl Harness {
                 root.path().join(file).to_string_lossy().into_owned(),
             );
         }
-        let runtime = Runtime::new(Settings::from_env(&env, false).unwrap())
+        let runtime = Runtime::new(Settings::from_env(&env).unwrap())
             .await
             .unwrap();
         Self {
@@ -208,7 +208,7 @@ fn model_store_atomic_permissions_restart_conflict_and_corruption() {
     use std::os::unix::fs::PermissionsExt;
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("model.json");
-    let store = ModelConfig::new(path.clone(), false);
+    let store = ModelConfig::new(path.clone());
     let initial = store.group(7).unwrap();
     let saved = store
         .save(
@@ -221,10 +221,7 @@ fn model_store_atomic_permissions_restart_conflict_and_corruption() {
         fs::metadata(&path).unwrap().permissions().mode() & 0o777,
         0o600
     );
-    assert_eq!(
-        ModelConfig::new(path.clone(), false).group(7).unwrap(),
-        saved
-    );
+    assert_eq!(ModelConfig::new(path.clone()).group(7).unwrap(), saved);
     let names = fs::read_dir(root.path())
         .unwrap()
         .map(|p| p.unwrap().file_name().into_string().unwrap())
@@ -258,7 +255,7 @@ fn independent_model_stores_preserve_concurrent_group_changes() {
             let path = path.clone();
             let barrier = barrier.clone();
             std::thread::spawn(move || {
-                let store = ModelConfig::new(path, false);
+                let store = ModelConfig::new(path);
                 let before = store.group(id).unwrap();
                 barrier.wait();
                 store
@@ -274,7 +271,7 @@ fn independent_model_stores_preserve_concurrent_group_changes() {
     for handle in handles {
         handle.join().unwrap();
     }
-    let store = ModelConfig::new(path, false);
+    let store = ModelConfig::new(path);
     for id in 7..=8 {
         assert_eq!(
             store.group(id).unwrap()["overrides"]["fixture-model"]["display_name"],

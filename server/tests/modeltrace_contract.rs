@@ -468,7 +468,7 @@ fn modeltrace_analysis_rejects_extreme_finite_results_and_malformed_bank_shapes(
     );
 }
 
-fn settings_at(directory: &Path, read_only: bool) -> Arc<Settings> {
+fn settings_at(directory: &Path) -> Arc<Settings> {
     Arc::new(Settings {
         database_url: "postgres://example.invalid/sub2ops".into(),
         bind: "127.0.0.1:0".into(),
@@ -485,7 +485,6 @@ fn settings_at(directory: &Path, read_only: bool) -> Arc<Settings> {
         bark_valid: false,
         base_url: String::new(),
         verify_url: String::new(),
-        read_only,
     })
 }
 
@@ -525,7 +524,7 @@ fn fingerprint_bank_cache_is_read_only_and_rejects_lost_or_corrupt_state() {
     let expectations = fixtures()["fingerprint_bank"]["cache_expectations"].clone();
 
     let absent = tempfile::tempdir().unwrap();
-    let bank = fingerprint_bank::FingerprintBank::new(settings_at(absent.path(), true)).unwrap();
+    let bank = fingerprint_bank::FingerprintBank::new(settings_at(absent.path())).unwrap();
     assert_eq!(bank.public()["source"], "bundled");
     assert_eq!(
         fs::read_dir(absent.path()).unwrap().count(),
@@ -543,7 +542,7 @@ fn fingerprint_bank_cache_is_read_only_and_rejects_lost_or_corrupt_state() {
     )
     .unwrap();
     let before = fs::read(&state_path).unwrap();
-    let bank = fingerprint_bank::FingerprintBank::new(settings_at(cached.path(), true)).unwrap();
+    let bank = fingerprint_bank::FingerprintBank::new(settings_at(cached.path())).unwrap();
     assert_eq!(
         bank.public()["source"],
         expectations["valid_read_only_source"]
@@ -554,7 +553,7 @@ fn fingerprint_bank_cache_is_read_only_and_rejects_lost_or_corrupt_state() {
     let lost = tempfile::tempdir().unwrap();
     fs::write(lost.path().join("modeltrace-bank-state.lock"), b"").unwrap();
     assert_bank_error(
-        fingerprint_bank::FingerprintBank::new(settings_at(lost.path(), true)),
+        fingerprint_bank::FingerprintBank::new(settings_at(lost.path())),
         &expectations["lost_cache_error"],
     );
     assert!(!lost.path().join("modeltrace-bank-state.json").exists());
@@ -564,7 +563,7 @@ fn fingerprint_bank_cache_is_read_only_and_rejects_lost_or_corrupt_state() {
     fs::write(&corrupt_path, b"{broken").unwrap();
     let before = fs::read(&corrupt_path).unwrap();
     assert_bank_error(
-        fingerprint_bank::FingerprintBank::new(settings_at(corrupt_json.path(), true)),
+        fingerprint_bank::FingerprintBank::new(settings_at(corrupt_json.path())),
         &expectations["corrupt_json_error"],
     );
     assert_eq!(fs::read(&corrupt_path).unwrap(), before);
@@ -576,7 +575,7 @@ fn fingerprint_bank_cache_is_read_only_and_rejects_lost_or_corrupt_state() {
     fs::write(&corrupt_path, serde_json::to_vec(&corrupt_state).unwrap()).unwrap();
     let before = fs::read(&corrupt_path).unwrap();
     assert_bank_error(
-        fingerprint_bank::FingerprintBank::new(settings_at(corrupt_cache.path(), true)),
+        fingerprint_bank::FingerprintBank::new(settings_at(corrupt_cache.path())),
         &expectations["corrupt_cache_error"],
     );
     assert_eq!(fs::read(&corrupt_path).unwrap(), before);
@@ -597,7 +596,7 @@ fn fingerprint_bank_cache_is_read_only_and_rejects_lost_or_corrupt_state() {
     .unwrap();
     let before = fs::read(&incompatible_path).unwrap();
     assert_bank_error(
-        fingerprint_bank::FingerprintBank::new(settings_at(incompatible.path(), true)),
+        fingerprint_bank::FingerprintBank::new(settings_at(incompatible.path())),
         &expectations["incompatible_cache_error"],
     );
     assert_eq!(fs::read(&incompatible_path).unwrap(), before);

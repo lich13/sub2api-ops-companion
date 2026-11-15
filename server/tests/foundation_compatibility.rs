@@ -298,7 +298,7 @@ fn credit_state_validation_errors_match_python() {
 fn manual_control_generation_rejects_stale_scheduler_results() {
     let manual = &fixture()["credit_state"]["manual_generation"];
     let temporary = tempfile::tempdir().unwrap();
-    let state = OAuthState::new(temporary.path().join("oauth-state.json"), false);
+    let state = OAuthState::new(temporary.path().join("oauth-state.json"));
     state
         .transaction(|value| {
             value["pending_events"]["keep-active"] =
@@ -377,8 +377,8 @@ fn state_transactions_preserve_peer_updates_and_detect_lost_files() {
     let persistence = &fixture()["persistence"];
     let temporary = tempfile::tempdir().unwrap();
     let path = temporary.path().join("shared-state.json");
-    let first = OAuthState::new(path.clone(), false);
-    let second = OAuthState::new(path.clone(), false);
+    let first = OAuthState::new(path.clone());
+    let second = OAuthState::new(path.clone());
 
     first
         .transaction(|value| {
@@ -435,34 +435,5 @@ fn failed_atomic_save_preserves_target_and_cleans_temporary_file() {
     assert!(
         temporary_artifacts.is_empty(),
         "failed save left temporary files: {temporary_artifacts:?}"
-    );
-}
-
-#[test]
-fn readonly_state_reads_defaults_without_creating_disk_state() {
-    let expected = &fixture()["persistence"]["read_only_absent_state_expectation"];
-    assert!(!expected["initial_path_exists"].as_bool().unwrap());
-    assert!(expected["snapshot_must_not_create_parent"]
-        .as_bool()
-        .unwrap());
-
-    let temporary = tempfile::tempdir().unwrap();
-    let parent = temporary.path().join("not-created");
-    let path = parent.join("oauth-state.json");
-    let state = OAuthState::new(path, true);
-    assert!(state.snapshot().unwrap().is_object());
-    assert!(
-        !parent.exists(),
-        "readonly snapshot must not create parent directories"
-    );
-
-    let error = state
-        .transaction(|_| Ok(()))
-        .expect_err("readonly writes must be rejected");
-    assert_eq!(error.status.as_u16(), 409);
-    assert_eq!(error.detail["code"], expected["transaction_error_code"]);
-    assert!(
-        !parent.exists(),
-        "readonly transaction must not create a lock or state file"
     );
 }

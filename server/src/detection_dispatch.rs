@@ -255,9 +255,6 @@ impl Detection {
         Ok(())
     }
     pub async fn deliver_notifications(&self) -> Result<()> {
-        if self.actions.settings.read_only {
-            return Ok(());
-        }
         let Ok(_guard) = self.notice_lock.try_lock() else {
             return Ok(());
         };

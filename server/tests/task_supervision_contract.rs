@@ -119,7 +119,6 @@ fn fixture_settings(
         bark_valid: true,
         base_url: upstream_url,
         verify_url: String::new(),
-        read_only: false,
     };
     let (bank, mut version) = sub2ops_server::modeltrace::bundled().unwrap();
     let manifest = sub2ops_server::modeltrace::manifest();
@@ -146,7 +145,6 @@ fn fixture_settings(
         directory.join("modeltrace-bank-state.json"),
         json!({}),
         valid_object,
-        false,
     )
     .transaction(|value| {
         *value = state;
@@ -323,13 +321,13 @@ fn operation_actions(runtime: &Runtime, directory: &Path) -> Actions {
     let settings = Arc::new(settings);
     let queries = Queries {
         db: runtime.db.clone(),
-        oauth: OAuthState::new(settings.usage_path.clone(), false),
+        oauth: OAuthState::new(settings.usage_path.clone()),
     };
     let mut actions = Actions::new(
         queries,
         runtime.upstream.clone(),
         runtime.actions.locks.clone(),
-        Templates::new(directory.join("independent-templates.json"), false),
+        Templates::new(directory.join("independent-templates.json")),
         settings,
     )
     .unwrap();
@@ -445,7 +443,7 @@ async fn operation_panic_closes_runtime_and_restart_checks_dispatched_work_once(
 
     let mut restarted_actions = queue.actions.clone();
     restarted_actions.supervisor = Supervisor::default();
-    restarted_actions.queries.db = Database::open(&runtime.settings.database_url, false)
+    restarted_actions.queries.db = Database::open(&runtime.settings.database_url)
         .await
         .unwrap();
     restarted_actions

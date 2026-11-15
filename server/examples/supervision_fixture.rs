@@ -27,7 +27,7 @@ async fn main() -> ExitCode {
 
 async fn run() -> std::result::Result<(), ()> {
     let recovering = Path::new(RESTART_MARKER).exists();
-    let settings = Settings::load(false).map_err(|_| ())?;
+    let settings = Settings::load().map_err(|_| ())?;
     let trigger = Arc::new(AtomicBool::new(false));
     let fired = Arc::new(AtomicBool::new(false));
     let clock_trigger = trigger.clone();

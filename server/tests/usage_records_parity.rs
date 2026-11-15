@@ -216,10 +216,7 @@ async fn sql_log_barrier(pool: &PgPool, application_name: &str) -> String {
 }
 
 fn is_pool_session_setup_statement(statement: &str) -> bool {
-    matches!(
-        statement,
-        "set time zone 'utc'" | "set default_transaction_read_only = on"
-    )
+    statement == "set time zone 'utc'"
 }
 
 fn operation_statements(
@@ -370,9 +367,9 @@ async fn replay_direct_case(legacy_id: &str) {
     let mut database: Option<Database> = None;
     if has_database {
         let (admin_pool, seed_pool) = prepare_schema().await;
-        let service_database = Database::open(&database_url("usage-parity-direct"), true)
+        let service_database = Database::open(&database_url("usage-parity-direct"))
             .await
-            .expect("open an isolated read-only usage database");
+            .expect("open an isolated usage database");
         admin = Some(admin_pool);
         seed = Some(seed_pool);
         database = Some(service_database);
@@ -423,7 +420,7 @@ async fn replay_direct_case(legacy_id: &str) {
                 let snapshot_id = event["snapshot"].as_str().expect("operation snapshot id");
                 let seed = seed.as_ref().expect("temporary PostgreSQL seed pool");
                 seed_snapshot(seed, &fixture, snapshot_id).await;
-                let database = database.as_ref().expect("read-only PostgreSQL service");
+                let database = database.as_ref().expect("PostgreSQL service");
                 let application_name = "usage-parity-direct";
                 let before_barrier = sql_log_barrier(&database.pool, application_name).await;
                 let service = UsageRecords(database.clone());
@@ -586,9 +583,9 @@ async fn assert_summary_snapshot_with_concurrent_write(
         .expect("hold the summary lock until the concurrent write commits");
 
     let application_name = "usage-parity-summary-concurrent";
-    let summary_database = Database::open(&database_url(application_name), true)
+    let summary_database = Database::open(&database_url(application_name))
         .await
-        .expect("open the isolated read-only concurrent-summary service");
+        .expect("open the isolated concurrent-summary service");
     let first_filter = Filter {
         include_summary: true,
         limit: Some(1),
@@ -656,9 +653,9 @@ async fn assert_summary_snapshot_with_concurrent_write(
         .expect("the first page retains the pre-write cursor")
         .to_owned();
 
-    let continuation_database = Database::open(&database_url(application_name), true)
+    let continuation_database = Database::open(&database_url(application_name))
         .await
-        .expect("reopen the isolated read-only service for the cursor continuation");
+        .expect("reopen the isolated service for the cursor continuation");
     let continuation = UsageRecords(continuation_database.clone());
     let page = continuation
         .list_at(
@@ -802,7 +799,6 @@ fn settings(root: &Path, database_url: String, base_url: &str) -> Arc<Settings> 
         bark_valid: true,
         base_url: base_url.into(),
         verify_url: base_url.into(),
-        read_only: true,
     })
 }
 
@@ -891,7 +887,7 @@ async fn replay_route_case(legacy_id: &str) {
         Arc::new(move || runtime_clock),
     )
     .await
-    .expect("create read-only Rust Runtime for usage routes");
+    .expect("create Rust Runtime for usage routes");
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind actual Rust usage HTTP routes on loopback");
@@ -1026,9 +1022,9 @@ async fn native_compaction_v2_is_schema_compatible_and_read_only() {
     let fixture = fixtures();
     let (admin, seed) = prepare_schema().await;
     seed_snapshot(&seed, &fixture, NATIVE_COMPACTION_SNAPSHOT_ID).await;
-    let database = Database::open(&database_url("usage-parity-native-compaction"), true)
+    let database = Database::open(&database_url("usage-parity-native-compaction"))
         .await
-        .expect("open an isolated read-only usage database");
+        .expect("open an isolated usage database");
     let service = UsageRecords(database.clone());
     let at = rfc3339(&json!("2026-09-30T12:00:00+00:00"));
     let filter = Filter {

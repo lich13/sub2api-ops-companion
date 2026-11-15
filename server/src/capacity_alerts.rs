@@ -123,12 +123,11 @@ pub fn validate(data: &Value) -> Result<()> {
 #[derive(Clone)]
 pub struct CapacityStore(pub Store);
 impl CapacityStore {
-    pub fn new(path: PathBuf, read_only: bool) -> Self {
+    pub fn new(path: PathBuf) -> Self {
         Self(Store::new(
             path,
             json!({"version":1,"cursor":null,"initialized_at":null,"seen":{},"marks":{},"pending":{},"slow_ttft":{},"slow_pending":{},"detection_events":{}}),
             validate,
-            read_only,
         ))
     }
     fn normalize(data: &mut Value) {
@@ -247,7 +246,6 @@ pub struct CapacityAlerts {
     pub store: CapacityStore,
     db: Database,
     audit_path: PathBuf,
-    read_only: bool,
     last_seen_cleanup: std::sync::Arc<std::sync::Mutex<Option<DateTime<Utc>>>>,
     slow_cache: std::sync::Arc<std::sync::Mutex<Option<SlowPollCache>>>,
 }
@@ -258,11 +256,9 @@ impl CapacityAlerts {
                 settings
                     .usage_path
                     .with_file_name("capacity-alert-state.json"),
-                settings.read_only,
             ),
             db,
             audit_path: settings.audit_path.clone(),
-            read_only: settings.read_only,
             last_seen_cleanup: std::sync::Arc::new(std::sync::Mutex::new(None)),
             slow_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
@@ -272,7 +268,6 @@ impl CapacityAlerts {
             &self.audit_path,
             &format!("capacity_alert_{event}"),
             payload,
-            self.read_only,
         );
     }
     pub fn initialize(&self, at: DateTime<Utc>) -> Result<()> {
@@ -293,9 +288,6 @@ impl CapacityAlerts {
         })
     }
     pub async fn poll(&self) -> Result<()> {
-        if self.read_only {
-            return Err(Error::read_only());
-        }
         let at = Utc::now();
         let state = self.store.shared_snapshot()?;
         if state["cursor"].is_null() {
@@ -382,9 +374,6 @@ impl CapacityAlerts {
         self.poll_slow(Utc::now()).await
     }
     pub fn collect(&self, rows: &[Value], advance: bool, at: DateTime<Utc>) -> Result<()> {
-        if self.read_only {
-            return Err(Error::read_only());
-        }
         let keep_seen = |key: &str, time: &Value, cursor: i64| {
             key.parse::<i64>().is_ok_and(|id| id > cursor)
                 || parse_datetime(time).is_some_and(|t| t >= at - Duration::minutes(10))

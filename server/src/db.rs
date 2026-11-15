@@ -13,7 +13,6 @@ use sqlx::{
 #[derive(Clone)]
 pub struct Database {
     pub pool: PgPool,
-    read_only: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -120,26 +119,21 @@ pub fn row_value(row: PgRow) -> Result<Value> {
 }
 
 impl Database {
-    pub async fn open(url: &str, read_only: bool) -> Result<Self> {
+    pub async fn open(url: &str) -> Result<Self> {
         let pool = PgPoolOptions::new()
             .min_connections(1)
             .max_connections(8)
-            .after_connect(move |connection, _| {
+            .after_connect(|connection, _| {
                 Box::pin(async move {
                     sqlx::query("SET TIME ZONE 'UTC'")
                         .execute(&mut *connection)
                         .await?;
-                    if read_only {
-                        sqlx::query("SET default_transaction_read_only = on")
-                            .execute(&mut *connection)
-                            .await?;
-                    }
                     Ok(())
                 })
             })
             .connect(url)
             .await?;
-        Ok(Self { pool, read_only })
+        Ok(Self { pool })
     }
     pub async fn all(&self, sql: &str, params: &[Param]) -> Result<Vec<Value>> {
         bind(sql, params)
@@ -157,9 +151,6 @@ impl Database {
             .transpose()
     }
     pub async fn execute(&self, sql: &str, params: &[Param]) -> Result<u64> {
-        if self.read_only {
-            return Err(Error::read_only());
-        }
         Ok(bind(sql, params).execute(&self.pool).await?.rows_affected())
     }
     pub async fn close(&self) {

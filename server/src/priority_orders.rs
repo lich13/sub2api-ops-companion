@@ -237,7 +237,6 @@ impl PriorityGate {
                     .with_file_name("account-priority-orders-v2.json"),
                 json!({"version":2,"active_id":null,"last_id":null,"jobs":{},"requests":{},"parallelism":{}}),
                 validate_store,
-                settings.read_only,
             ),
             admission: Arc::new(RwLock::new(())),
         }
@@ -484,17 +483,7 @@ impl PriorityOrders {
     pub async fn view(&self) -> Result<Value> {
         let rows = self.rows(None).await?;
         let data = self.store.read_shared()?;
-        let items: Vec<_> = rows
-            .iter()
-            .map(|row| {
-                let mut item = public_item(row);
-                if self.actions.settings.read_only {
-                    item["editable"] = false.into();
-                    item["reason"] = "Companion 处于只读模式".into();
-                }
-                item
-            })
-            .collect();
+        let items: Vec<_> = rows.iter().map(public_item).collect();
         let mut groups: BTreeMap<&str, Vec<Value>> = BTreeMap::new();
         for item in &items {
             groups
@@ -535,9 +524,6 @@ impl PriorityOrders {
             .ok_or_else(missing)
     }
     pub async fn submit(&self, request: &Value) -> Result<Value> {
-        if self.actions.settings.read_only {
-            return Err(Error::read_only());
-        }
         validate_request(request)?;
         let _submit = self.operations.submit_lock.lock().await;
         let _gate = self.actions.priorities.admission.write().await;
@@ -637,9 +623,6 @@ impl PriorityOrders {
         Ok(public_job(&job, true))
     }
     pub async fn set_parallelism(&self, request: &Value) -> Result<Value> {
-        if self.actions.settings.read_only {
-            return Err(Error::read_only());
-        }
         validate_parallelism_request(request)?;
         let _gate = self.actions.priorities.admission.write().await;
         let data = self.store.read_shared()?;
@@ -682,9 +665,6 @@ impl PriorityOrders {
         })
     }
     pub fn cancel(&self, id: &str) -> Result<Value> {
-        if self.actions.settings.read_only {
-            return Err(Error::read_only());
-        }
         self.get(id, true)?;
         self.store.transaction(|data| {
             if active(data) == Some(id) {
@@ -698,9 +678,6 @@ impl PriorityOrders {
     }
     pub fn recover_startup(&self) -> Result<()> {
         let data = self.store.read_shared()?;
-        if self.actions.settings.read_only {
-            return Ok(());
-        }
         if active(&data).is_some() {
             self.store.transaction(|data| {
                 if let Some(id) = active(data).map(str::to_owned) {
@@ -898,10 +875,7 @@ impl PriorityOrders {
         }
     }
     pub async fn tick(self: &Arc<Self>) -> Result<()> {
-        if self.actions.settings.read_only
-            || self.actions.supervisor.is_stopping()
-            || self.running.load(Ordering::Acquire)
-        {
+        if self.actions.supervisor.is_stopping() || self.running.load(Ordering::Acquire) {
             return Ok(());
         }
         let Some(id) = active(self.store.read_shared()?.as_ref()).map(str::to_owned) else {

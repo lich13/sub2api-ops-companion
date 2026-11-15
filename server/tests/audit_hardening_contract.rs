@@ -27,7 +27,7 @@ fn audit_write_redacts_nested_sensitive_values_and_preserves_public_structure() 
         "request_body":{"messages":[{"content":"fixture-audit-content"}]}
     });
 
-    audit::write(&path, "fixture.operation", payload, false);
+    audit::write(&path, "fixture.operation", payload);
 
     let records = audit::read(&path, 10, Some("fixture."));
     assert_eq!(records.len(), 1);
@@ -67,12 +67,12 @@ fn audit_write_redacts_nested_sensitive_values_and_preserves_public_structure() 
 }
 
 #[test]
-fn audit_new_file_is_private_and_read_only_mode_does_not_write() {
+fn audit_new_file_is_private() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("nested").join("audit.jsonl");
     assert!(audit::read(&path, 10, None).is_empty());
     assert!(!path.parent().unwrap().exists());
-    audit::write(&path, "fixture.private", json!({"value":1}), false);
+    audit::write(&path, "fixture.private", json!({"value":1}));
     assert!(path.is_file());
 
     #[cfg(unix)]
@@ -100,24 +100,6 @@ fn audit_new_file_is_private_and_read_only_mode_does_not_write() {
             0o640
         );
     }
-
-    let read_only_path = root.path().join("read-only-audit.jsonl");
-    audit::write(
-        &read_only_path,
-        "fixture.read-only",
-        json!({"value":1}),
-        true,
-    );
-    assert!(!read_only_path.exists());
-    fs::write(&read_only_path, b"existing fixture record\n").unwrap();
-    let before = fs::read(&read_only_path).unwrap();
-    audit::write(
-        &read_only_path,
-        "fixture.read-only",
-        json!({"value":2}),
-        true,
-    );
-    assert_eq!(fs::read(&read_only_path).unwrap(), before);
 }
 
 #[test]
@@ -128,7 +110,7 @@ fn audit_write_failure_is_ignored_without_panicking() {
     let path = parent_file.join("audit.jsonl");
 
     let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-        audit::write(&path, "fixture.failure", json!({"value":1}), false);
+        audit::write(&path, "fixture.failure", json!({"value":1}));
     }));
 
     assert!(result.is_ok());
@@ -161,7 +143,6 @@ fn capacity_message_is_classified_before_audit_redacts_attached_credentials() {
         &path,
         "fixture.capacity_evidence",
         json!({"classification":matched,"evidence":{"error_body":error_body}}),
-        false,
     );
 
     let records = audit::read(&path, 10, Some("fixture.capacity"));
@@ -315,7 +296,6 @@ fn audit_rotation_preserves_complete_logs_and_serializes_waiting_writers() {
                         path,
                         "fixture.concurrent",
                         json!({"worker":worker,"item":item,"token":"fixture-private"}),
-                        false,
                     );
                 }
             });
@@ -376,12 +356,7 @@ fn audit_normal_rotation_renames_and_filters_the_event_field_from_the_tail() {
             let path = &path;
             scope.spawn(move || {
                 for item in 0..50 {
-                    audit::write(
-                        path,
-                        "fixture.new",
-                        json!({"worker":worker,"item":item}),
-                        false,
-                    );
+                    audit::write(path, "fixture.new", json!({"worker":worker,"item":item}));
                     assert!(audit::read(path, 1, Some("fixture.new")).len() == 1);
                 }
             });

@@ -390,12 +390,6 @@ impl Upstream {
         body: Option<Value>,
         timeout: Duration,
     ) -> Result<reqwest::Response> {
-        if self.settings.read_only
-            && method != reqwest::Method::GET
-            && method != reqwest::Method::HEAD
-        {
-            return Err(Error::read_only());
-        }
         let base = self.active_url();
         if base.is_empty() {
             return Err(Error::new(502, "未配置 Sub2API 服务地址"));

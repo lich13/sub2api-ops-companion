@@ -13,8 +13,7 @@
     "preserved_existing_mode_octal": "0640",
     "no_change_preserves_inode_and_mtime": true,
     "first_empty_transaction_creates_state": true,
-    "atomic_failure_preserves_target_and_leaves_no_tempfile": true,
-    "read_only_missing_state_creates_no_parent_lock_or_state": true
+    "atomic_failure_preserves_target_and_leaves_no_tempfile": true
   },
   "cross_language": {
     "python_input": {
@@ -63,40 +62,6 @@
     "drain_releases_state_lock": true
   },
   "runtime": {
-    "legacy_config": {
-      "oauth_auto_reset_credit_enabled": false,
-      "oauth_daily_test_enabled": false,
-      "oauth_daily_test_time": "05:00",
-      "oauth_early_probe_batch_size": 8,
-      "oauth_recovery_connection_account_ids": [],
-      "oauth_recovery_model_account_ids": [],
-      "oauth_recovery_monitor_enabled": false,
-      "oauth_recovery_test_concurrency": 2,
-      "oauth_recovery_test_model_id": "fixture-model",
-      "oauth_usage_refresh_concurrency": 4,
-      "oauth_recovery_seen_account_ids": [71001, 71002],
-      "updated_at": "2031-04-05T06:07:08+00:00",
-      "updated_by": "state-contract-fixture",
-      "oauth_7d_probe_interval_seconds": 5400,
-      "oauth_early_probe_interval_seconds": 120,
-      "oauth_usage_refresh_enabled": true,
-      "discarded_legacy_field": "fixture-only"
-    },
-    "legacy_config_retained_keys": [
-      "oauth_auto_reset_credit_enabled",
-      "oauth_daily_test_enabled",
-      "oauth_daily_test_time",
-      "oauth_early_probe_batch_size",
-      "oauth_recovery_connection_account_ids",
-      "oauth_recovery_model_account_ids",
-      "oauth_recovery_monitor_enabled",
-      "oauth_recovery_test_concurrency",
-      "oauth_recovery_test_model_id",
-      "oauth_usage_refresh_concurrency",
-      "oauth_recovery_seen_account_ids",
-      "updated_at",
-      "updated_by"
-    ],
     "legacy_profile_jobs": {
       "fixture-job": {
         "items": [
@@ -142,7 +107,6 @@
       "kept_cron": "@hourly",
       "kept_auto_recover": true
     },
-    "readonly_runtime_creates_no_files_or_modifies_existing_file": true,
     "new_directory_startup_succeeds_without_profile_intents": true
   }
 }

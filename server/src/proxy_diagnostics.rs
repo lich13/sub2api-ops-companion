@@ -105,9 +105,6 @@ impl ProxyDiagnostics {
         if id <= 0 || !matches!(action, "test" | "quality-check") {
             return Err(Error::new(422, "代理检测参数无效"));
         }
-        if self.actions.settings.read_only {
-            return Err(Error::read_only());
-        }
         let identity = (sha256(key), id, action.to_owned());
         let mut receiver = {
             let mut running = self.running.lock().unwrap_or_else(|e| e.into_inner());

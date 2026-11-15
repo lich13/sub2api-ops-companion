@@ -467,7 +467,7 @@ pub struct Update {
 }
 
 impl OAuthState {
-    pub fn new(path: PathBuf, read_only: bool) -> Self {
+    pub fn new(path: PathBuf) -> Self {
         let lock = PathBuf::from(format!("{}.lock", path.display()));
         Self(Store::with_loader(
             path,
@@ -475,7 +475,6 @@ impl OAuthState {
             normalize(&json!({})),
             validate_shape,
             load,
-            read_only,
         ))
     }
     pub fn snapshot(&self) -> Result<Value> {
@@ -533,9 +532,6 @@ impl OAuthState {
         let key = key.trim();
         if key.is_empty() {
             return Ok(());
-        }
-        if self.0.is_read_only() {
-            return Err(Error::read_only());
         }
         if self.admin_token()? == key {
             return Ok(());
@@ -666,7 +662,7 @@ mod shared_tests {
     #[test]
     fn live_testing_survives_reads_and_writes_until_startup_reconciliation() {
         let root = tempfile::tempdir().unwrap();
-        let state = OAuthState::new(root.path().join("oauth.json"), false);
+        let state = OAuthState::new(root.path().join("oauth.json"));
         let intent = json!({"status":"testing","tested_at":"2031-04-05T10:00:00Z",
             "next_retry_at":"","fingerprint":"fixture-cycle"});
         state
@@ -707,7 +703,7 @@ mod shared_tests {
         let path = root.path().join("oauth.json");
         let legacy = json!({"version":5,"oauth_results":{"1":{"source":"sub2api_admin_usage","success":true}},"scheduler":{"1":{}}});
         std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
-        let state = OAuthState::new(path.clone(), false);
+        let state = OAuthState::new(path.clone());
         let first = state.shared_snapshot().unwrap();
         let original_source = state.0.read_shared().unwrap();
         assert_eq!(*first, normalize(&legacy));
@@ -750,7 +746,7 @@ mod shared_tests {
             state.snapshot().unwrap()["scheduler"]["1"]["last_regular_at"],
             "fixture-retired-field"
         );
-        let reloaded = OAuthState::new(path.clone(), false);
+        let reloaded = OAuthState::new(path.clone());
         assert_eq!(
             reloaded.snapshot().unwrap()["scheduler"]["1"]["last_regular_at"],
             "fixture-retired-field"

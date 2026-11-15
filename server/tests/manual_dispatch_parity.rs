@@ -385,7 +385,7 @@ impl Harness {
     async fn new() -> Self {
         let database_url = std::env::var("DATABASE_URL")
             .expect("manual dispatch contract runner must provide temporary PostgreSQL");
-        let database = Database::open(&database_url, false)
+        let database = Database::open(&database_url)
             .await
             .expect("open runner-owned temporary PostgreSQL");
         let pool = database.pool.clone();
@@ -440,7 +440,6 @@ impl Harness {
             bark_valid: true,
             base_url: base_url.clone(),
             verify_url: String::new(),
-            read_only: false,
         };
         let runtime_clock = clock.clone();
         let runtime = Runtime::new_with_clock(
@@ -1043,8 +1042,7 @@ fn manual_generation_filters_stale_history_and_results_without_losing_query_budg
     .unwrap();
     let now = parse_datetime(&fixture["reference_time"]).unwrap();
     let temp = tempfile::tempdir().unwrap();
-    let state =
-        sub2ops_server::oauth_state::OAuthState::new(temp.path().join("oauth-state.json"), false);
+    let state = sub2ops_server::oauth_state::OAuthState::new(temp.path().join("oauth-state.json"));
     let mut row = fixture["manual_generation"]["row"].take();
     let id = integer(&row["id"]).unwrap();
     row["schedulable"] = true.into();

@@ -309,9 +309,6 @@ pub async fn handle(
     query: &BTreeMap<String, String>,
     body: &Value,
 ) -> Result<Value> {
-    if method != Method::GET && actions.settings.read_only {
-        return Err(Error::read_only());
-    }
     let suffix = match path {
         ["proxy-management"] => String::new(),
         ["proxy-management", "batch" | "batch-delete" | "data"] => format!("/{}", path[1]),

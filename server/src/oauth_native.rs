@@ -80,9 +80,6 @@ pub fn parse_test_sse(payload: &str) -> Value {
 }
 pub async fn test(actions: &Actions, id: i64, model: &str, key: &str, seconds: u64) -> Value {
     let failure = |code: &str, error: &str, uncertain: bool| json!({"success":false,"error":error,"error_code":code,"model_id":model,"uncertain":uncertain});
-    if actions.settings.read_only {
-        return failure("read_only", "服务处于只读验收模式", false);
-    }
     if key.trim().is_empty() || actions.upstream.active_url().is_empty() {
         return failure(
             "missing_sub2api_admin_credentials",
@@ -144,9 +141,6 @@ pub(crate) async fn admin(
     method: reqwest::Method,
     seconds: u64,
 ) -> Value {
-    if actions.settings.read_only {
-        return json!({"success":false,"error_code":"read_only","error":"服务处于只读验收模式"});
-    }
     let response = match actions
         .request(
             method,

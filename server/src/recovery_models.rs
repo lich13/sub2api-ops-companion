@@ -145,9 +145,6 @@ impl Detection {
         attempt: i64,
         consume: bool,
     ) -> Result<Value> {
-        if self.actions.settings.read_only {
-            return Err(Error::read_only());
-        }
         let value = self.control(id)?;
         let state = self.monitor.shared_state()?;
         let meta = &state["scheduler"][id.to_string()];

@@ -97,7 +97,7 @@ fn post_reset_quota_supersedes_only_the_old_rate_limit_estimate() {
     assert_eq!(candidates.len(), 1);
     assert!(candidates[0]["reuse_quota"].is_object());
     let root = tempfile::tempdir().unwrap();
-    let store = OAuthState::new(root.path().join("state.json"), false);
+    let store = OAuthState::new(root.path().join("state.json"));
     store
         .transaction(|state| {
             state["scheduler"]["73"] = meta.clone();
@@ -193,7 +193,7 @@ fn manual_cancellation_does_not_follow_the_account_into_a_new_quota_cycle() {
     meta["recovery_intent"]["due_at"] = "2031-03-29T10:00:00Z".into();
     assert!(recovery_rules::control_allows(&row, &result, &meta, at));
     let root = tempfile::tempdir().unwrap();
-    let store = OAuthState::new(root.path().join("state.json"), false);
+    let store = OAuthState::new(root.path().join("state.json"));
     store
         .transaction(|state| {
             state["scheduler"]["73"] = meta.clone();
@@ -355,7 +355,7 @@ fn manual_cancellation_uses_each_window_and_captures_the_current_cycle() {
     meta["recovery_intent"]["due_at"] = "2031-04-12T12:40:00Z".into();
     assert!(recovery_rules::control_allows(&row, &result, &meta, at));
     let root = tempfile::tempdir().unwrap();
-    let store = OAuthState::new(root.path().join("state.json"), false);
+    let store = OAuthState::new(root.path().join("state.json"));
     store
         .transaction(|state| {
             state["scheduler"]["73"] = meta.clone();
@@ -387,7 +387,7 @@ fn manual_cancellation_uses_each_window_and_captures_the_current_cycle() {
         at
     ));
     // Manual control also captures a cycle before discovery has created an intent.
-    let empty = OAuthState::new(root.path().join("empty.json"), false);
+    let empty = OAuthState::new(root.path().join("empty.json"));
     row["schedulable"] = true.into();
     empty.manual_control(&row, true, at, "manual").unwrap();
     assert_eq!(
@@ -406,7 +406,7 @@ fn manual_cancellation_uses_each_window_and_captures_the_current_cycle() {
         "platform":"openai","window":"5h","threshold_percent":80,"until_unix":until.timestamp()})
     .to_string()
     .into();
-    let threshold_store = OAuthState::new(root.path().join("threshold.json"), false);
+    let threshold_store = OAuthState::new(root.path().join("threshold.json"));
     threshold_store
         .manual_control(&threshold_row, false, at, "manual")
         .unwrap();
@@ -444,7 +444,7 @@ fn fresh_release_before_the_old_boundary_accepts_fractional_429_deadlines() {
     meta["quota_query"]["last_query_at"] = result["queried_at"].clone();
     assert!(recovery_rules::quota_release(&row, &result, &meta, at));
     let root = tempfile::tempdir().unwrap();
-    let store = OAuthState::new(root.path().join("state.json"), false);
+    let store = OAuthState::new(root.path().join("state.json"));
     store
         .transaction(|state| {
             state["scheduler"]["73"] = meta.clone();
@@ -858,7 +858,7 @@ fn daily_schedule_matches_pinned_on_time_missed_interrupted_and_config_change_st
 
     let schedule_fixture = &daily["schedule"];
     let temporary = tempfile::tempdir().unwrap();
-    let state = OAuthState::new(temporary.path().join("recovery-state.json"), false);
+    let state = OAuthState::new(temporary.path().join("recovery-state.json"));
     let schedule = daily_test::Schedule::new(state.clone());
     let initial_config = json!({"oauth_daily_test_enabled":true,"oauth_daily_test_time":"05:00"});
     schedule
@@ -917,7 +917,7 @@ fn daily_schedule_matches_pinned_on_time_missed_interrupted_and_config_change_st
     );
 
     let late_temporary = tempfile::tempdir().unwrap();
-    let late_state = OAuthState::new(late_temporary.path().join("recovery-state.json"), false);
+    let late_state = OAuthState::new(late_temporary.path().join("recovery-state.json"));
     let late_schedule = daily_test::Schedule::new(late_state.clone());
     late_schedule
         .startup(
@@ -1027,7 +1027,7 @@ fn manual_generation_discards_stale_state_updates() {
     let fixture = fixtures();
     let expected = &fixture["manual_generation"];
     let temporary = tempfile::tempdir().unwrap();
-    let state = OAuthState::new(temporary.path().join("recovery-state.json"), false);
+    let state = OAuthState::new(temporary.path().join("recovery-state.json"));
     let generation = state
         .manual_control(&expected["row"], false, date(&expected["at"]), "manual")
         .unwrap();
@@ -1204,7 +1204,7 @@ fn early_quota_release_retires_old_waits_without_erasing_query_budget_or_live_re
         &row, &result, &inflight, at
     ));
     let directory = tempfile::tempdir().unwrap();
-    let store = OAuthState::new(directory.path().join("state.json"), false);
+    let store = OAuthState::new(directory.path().join("state.json"));
     store
         .transaction(|state| {
             state["scheduler"]["73"] = meta.clone();
@@ -1313,7 +1313,7 @@ fn early_new_cycle_bypasses_only_obsolete_quota_waits_before_recovery_verificati
     verifying["recovery_intent"]["test_completed_at"] = "2031-04-05T10:00:00Z".into();
     assert!(!recovery_rules::quota_ready(&row, &result, &verifying, at));
     let directory = tempfile::tempdir().unwrap();
-    let store = OAuthState::new(directory.path().join("state.json"), false);
+    let store = OAuthState::new(directory.path().join("state.json"));
     store
         .transaction(|state| {
             state["scheduler"]["74"] = meta.clone();

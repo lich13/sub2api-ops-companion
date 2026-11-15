@@ -497,7 +497,7 @@ impl Harness {
     async fn new() -> Self {
         let database_url = std::env::var("DATABASE_URL")
             .expect("scheduler contract runner must supply temporary PostgreSQL");
-        let database = Database::open(&database_url, false)
+        let database = Database::open(&database_url)
             .await
             .expect("open runner owned PostgreSQL for loopback fixtures");
         let restore_http_fixture_account_4001: bool = sqlx::query_scalar(
@@ -571,7 +571,6 @@ impl Harness {
             bark_valid: true,
             base_url: base_url.clone(),
             verify_url: String::new(),
-            read_only: false,
         };
         let runtime_clock = clock.clone();
         let runtime =
@@ -675,7 +674,7 @@ impl Harness {
     async fn cleanup_after_runtime_close(mut self) {
         let database_url = std::env::var("DATABASE_URL")
             .expect("scheduler contract runner must supply temporary PostgreSQL");
-        let database = Database::open(&database_url, false)
+        let database = Database::open(&database_url)
             .await
             .expect("reopen only runner-owned PostgreSQL after Runtime shutdown");
         let ids = { std::mem::take(&mut *self.account_ids.lock().unwrap()) };
@@ -700,7 +699,7 @@ impl Harness {
 
     fn after_restart_coordinator(&self) -> Coordinator {
         let mut actions = self.runtime.monitor.actions.clone();
-        actions.queries.oauth = OAuthState::new(self.runtime.settings.usage_path.clone(), false);
+        actions.queries.oauth = OAuthState::new(self.runtime.settings.usage_path.clone());
         let clock = self.clock.clone();
         let capacity_clock = self.runtime.monitor.config.clone();
         let mut coordinator = Coordinator::new(
@@ -911,7 +910,7 @@ fn current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill() {
             "8":{"recovery_intent":{"status":"ready","last_error_code":"connection_failed"}}},
         "recovery_history":{"fixture-history":{"id":1,"account_id":7}},"pending_events":{}});
     fs::write(&path, serde_json::to_vec(&raw).unwrap()).unwrap();
-    let store = OAuthState::new(path.clone(), false);
+    let store = OAuthState::new(path.clone());
     store.transaction(|_| Ok(())).unwrap();
     let current = store.snapshot().unwrap();
     assert_eq!(current["settings"]["sub2api_admin_token"], "fixture-admin");
@@ -929,7 +928,7 @@ fn current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill() {
         current["scheduler"]["8"]["recovery_intent"]["status"],
         "ready"
     );
-    assert_eq!(OAuthState::new(path, false).snapshot().unwrap(), current);
+    assert_eq!(OAuthState::new(path).snapshot().unwrap(), current);
 }
 
 #[tokio::test]
@@ -4389,10 +4388,7 @@ async fn interrupted_daily_test_with_unknown_response_is_marked_and_not_replayed
     gate.release.notify_one();
     *harness.mock.test_gate.lock().unwrap() = None;
 
-    let reopened = Schedule::new(OAuthState::new(
-        harness.runtime.settings.usage_path.clone(),
-        false,
-    ));
+    let reopened = Schedule::new(OAuthState::new(harness.runtime.settings.usage_path.clone()));
     reopened
         .startup(&config, due + Duration::seconds(2))
         .unwrap();

@@ -116,12 +116,7 @@ impl Monitor {
         Ok(string(&self.config.current()?["oauth_recovery_test_model_id"]).to_owned())
     }
     pub fn audit(&self, event: &str, value: Value) {
-        audit::write(
-            &self.actions.settings.audit_path,
-            event,
-            value,
-            self.actions.settings.read_only,
-        );
+        audit::write(&self.actions.settings.audit_path, event, value);
     }
     pub async fn row(&self, id: i64) -> Result<Value> {
         credit_ownership::account(&self.actions.queries.db, id).await
@@ -137,10 +132,8 @@ impl Monitor {
         let mut cache = self.inventory.lock().await;
         if refresh || cache.0.is_none_or(|at| at.elapsed().as_secs() >= 60) {
             let rows=self.actions.queries.db.all(&format!("{} AND lower(coalesce(platform,''))='openai' AND lower(coalesce(type,''))='oauth' ORDER BY id",credit_ownership::ACCOUNT_SELECT),&[]).await?;
-            if !self.actions.settings.read_only {
-                self.config.reconcile(&rows).await?;
-                self.initialize_queries(&rows)?;
-            }
+            self.config.reconcile(&rows).await?;
+            self.initialize_queries(&rows)?;
             self.queries.retain_accounts(&rows);
             *cache = (Some(Instant::now()), Arc::new(rows));
         }
@@ -244,9 +237,6 @@ impl Monitor {
     }
     pub async fn startup(&self) -> Result<()> {
         self.shared_state()?;
-        if self.actions.settings.read_only {
-            return Ok(());
-        }
         self.store.recover_interrupted(None)?;
         self.inventory(true).await?;
         self.schedule.startup(&self.config.current()?, self.now())?;
@@ -283,7 +273,7 @@ impl Monitor {
         })
     }
     pub async fn tick(&self) -> Result<()> {
-        if self.actions.settings.read_only || self.is_closed() {
+        if self.is_closed() {
             return Ok(());
         }
         let config = self.config.current()?;
@@ -643,7 +633,7 @@ impl Monitor {
         )
     }
     pub async fn deliver(&self) -> Result<()> {
-        if self.actions.settings.read_only || self.is_closed() {
+        if self.is_closed() {
             return Ok(());
         }
         let config = self.config.bark.runtime();

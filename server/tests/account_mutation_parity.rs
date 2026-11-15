@@ -918,7 +918,6 @@ impl Harness {
             bark_valid: true,
             base_url: upstream_url.clone(),
             verify_url: String::new(),
-            read_only: false,
         })
         .await
         .expect("construct Rust runtime against temporary PostgreSQL");
@@ -3170,7 +3169,7 @@ async fn desktop_grok_quota_refresh_accepts_only_fresh_complete_billing() {
 async fn template_custom_catalog_caps_crud_and_legacy_empty_state_survive_reload() {
     let root = tempfile::tempdir().expect("template state root");
     let path = root.path().join("account-templates.json");
-    let templates = Templates::new(path.clone(), false);
+    let templates = Templates::new(path.clone());
     let mut view = templates.view(None).expect("initial builtins should load");
     for index in 0..29 {
         view = templates
@@ -3224,7 +3223,7 @@ async fn template_custom_catalog_caps_crud_and_legacy_empty_state_survive_reload
             .expect("legacy template ID remains deletable");
         assert!(deleted["templates"].get(id).is_none());
     }
-    let empty = Templates::new(path, false).view(None).unwrap();
+    let empty = Templates::new(path).view(None).unwrap();
     assert_eq!(empty["templates"].as_object().unwrap().len(), 29);
     for builtin in ["full", "degraded", "takeover"] {
         assert!(
@@ -3396,12 +3395,9 @@ async fn template_http_crud_names_versions_and_deletion_match_python() {
         .await;
     assert_eq!(status, 200);
     assert!(deleted["templates"].get(&custom_id).is_none());
-    let reloaded = Templates::new(
-        harness.runtime.actions.templates.store.path().to_path_buf(),
-        false,
-    )
-    .view(None)
-    .unwrap();
+    let reloaded = Templates::new(harness.runtime.actions.templates.store.path().to_path_buf())
+        .view(None)
+        .unwrap();
     assert!(reloaded["templates"].get(&custom_id).is_none());
     harness.finish().await;
 }
@@ -3984,9 +3980,9 @@ fn operation_store_migrates_legacy_single_job_without_losing_jobs_or_request_ind
         "requests":{"fixture-request-id-0001":"11111111111111111111111111111111"}
     });
     fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
-    let store = OperationStore::new(path.clone(), false);
+    let store = OperationStore::new(path.clone());
     store.transaction(|_| Ok(())).unwrap();
-    let migrated = OperationStore::new(path, false).read().unwrap();
+    let migrated = OperationStore::new(path).read().unwrap();
     assert_eq!(migrated["jobs"], legacy["jobs"]);
     assert_eq!(migrated["requests"], legacy["requests"]);
     assert_eq!(migrated["batches"], json!({}));
@@ -4009,7 +4005,7 @@ fn template_migration_failure_preserves_original_bytes() {
     fs::write(&migration_path, &original).unwrap();
     fs::create_dir(migration_path.with_extension("lock"))
         .expect("block only this fixture's migration lock");
-    let migration = Templates::new(migration_path.clone(), false).data();
+    let migration = Templates::new(migration_path.clone()).data();
     assert!(migration.is_err(), "migration save failures must propagate");
     assert_eq!(fs::read(&migration_path).unwrap(), original);
     assert!(

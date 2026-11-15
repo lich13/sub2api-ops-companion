@@ -52,7 +52,7 @@ fn reply(status: u16, value: Value) -> Response<Body> {
 }
 fn fixture() -> (tempfile::TempDir, Service) {
     let dir = tempfile::tempdir().unwrap();
-    let service = Service::new(dir.path().join("quota.json"), false).unwrap();
+    let service = Service::new(dir.path().join("quota.json")).unwrap();
     (dir, service)
 }
 fn input(service: &Service, site: &Site, id: i64) -> Query {
@@ -320,7 +320,7 @@ fn settings_are_private_persistent_conflict_checked_and_allow_explicit_clear() {
     s.save_settings(&json!({"expected_revision":public["revision"]}), Some(1))
         .unwrap();
     assert_eq!(s.account_settings(1).unwrap(), public);
-    let restored = Service::new(dir.path().join("quota.json"), false).unwrap();
+    let restored = Service::new(dir.path().join("quota.json")).unwrap();
     assert_eq!(restored.settings().unwrap()["seconds"], 120);
     assert_eq!(restored.account_settings(1).unwrap(), public);
     #[cfg(unix)]

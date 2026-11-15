@@ -548,7 +548,7 @@ impl Harness {
         let fixture = fixtures();
         let database_url =
             std::env::var("DATABASE_URL").expect("runner must provide temporary DATABASE_URL");
-        let db = Database::open(&database_url, false)
+        let db = Database::open(&database_url)
             .await
             .expect("connect to runner-owned PostgreSQL");
         let temp = tempfile::tempdir().expect("create test state directory");
@@ -588,18 +588,17 @@ impl Harness {
             bark_valid: true,
             base_url,
             verify_url: String::new(),
-            read_only: false,
         });
         let upstream = Upstream::new(settings.clone()).expect("construct fixture upstream");
         let queries = Queries {
             db: db.clone(),
-            oauth: OAuthState::new(temp.path().join("oauth-state.json"), false),
+            oauth: OAuthState::new(temp.path().join("oauth-state.json")),
         };
         let actions = Actions::new(
             queries,
             upstream,
             AccountLocks::default(),
-            Templates::new(temp.path().join("account-templates.json"), false),
+            Templates::new(temp.path().join("account-templates.json")),
             settings,
         )
         .expect("construct operation actions");
@@ -999,7 +998,6 @@ async fn batch_acceptance_is_idempotent_conflicts_are_rejected_and_dispatch_is_d
         failed_lock,
         json!({"version":1,"jobs":{},"requests":{},"batches":{},"batch_requests":{}}),
         sub2ops_server::operations::validate_store,
-        false,
     ));
     let extra = harness.seed_accounts(2, json!({})).await;
     let failed_request = harness
@@ -1591,7 +1589,6 @@ async fn dispatch_state_save_failure_never_sends_the_native_test_request() {
         lock_path,
         json!({"version": 1, "jobs": {}, "requests": {}, "batches": {}, "batch_requests": {}}),
         sub2ops_server::operations::validate_store,
-        false,
     ));
 
     harness.operations.tick().await.unwrap();

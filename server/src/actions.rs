@@ -56,9 +56,6 @@ pub async fn set_schedulable(
     key: &str,
     seconds: u64,
 ) -> Value {
-    if actions.settings.read_only {
-        return json!({"success":false,"error_code":"read_only"});
-    }
     if key.trim().is_empty() || actions.upstream.active_url().is_empty() {
         return json!({"success":false,"error_code":"missing_sub2api_admin_credentials","error":"缺少 Sub2API 地址或 Admin API Key"});
     }
@@ -287,9 +284,6 @@ impl Actions {
         if self.supervisor.is_stopping() {
             return Err(Error::new(503, "服务正在停止"));
         }
-        if self.settings.read_only && method != reqwest::Method::GET {
-            return Err(Error::read_only());
-        }
         let base = self.upstream.active_url();
         if base.is_empty() {
             return Err(Error::new(502, "未配置 Sub2API 服务地址"));
@@ -403,9 +397,6 @@ impl Actions {
         expected: &str,
         key: &str,
     ) -> Result<Value> {
-        if self.settings.read_only {
-            return Err(Error::read_only());
-        }
         let _priority = if action == "priority" {
             Some(self.priorities.enter().await?)
         } else {
@@ -533,7 +524,6 @@ impl Actions {
             &self.settings.audit_path,
             "desktop_account_settings",
             json!({"account_id":id,"action":action,"result":"completed"}),
-            false,
         );
         Ok(result)
     }
@@ -740,9 +730,6 @@ impl Actions {
             .await
     }
     pub async fn apply_template(&self, id: i64, payload: &Value, key: &str) -> Result<Value> {
-        if self.settings.read_only {
-            return Err(Error::read_only());
-        }
         let row = self.account(id, None).await?;
         let _lease = self.locks.try_account(&row)?;
         if !account_templates::eligible(&row) {
@@ -775,7 +762,6 @@ impl Actions {
             &self.settings.audit_path,
             "account_template_applied",
             json!({"account_id":id,"template_id":payload["template_id"],"verified":verified,"code":if result.is_ok() {"ok"} else {"uncertain"}}),
-            false,
         );
         if !verified {
             return Err(Error::new(
@@ -786,9 +772,6 @@ impl Actions {
         Ok(json!({"verified":true,"account_id":id,"template_id":payload["template_id"]}))
     }
     pub async fn set_groups(&self, id: i64, payload: &Value, key: &str) -> Result<Value> {
-        if self.settings.read_only {
-            return Err(Error::read_only());
-        }
         let scope: BTreeSet<_> = payload["scope_group_ids"]
             .as_array()
             .into_iter()
@@ -866,16 +849,12 @@ impl Actions {
             &self.settings.audit_path,
             "desktop_groups",
             json!({"account_id":id,"before":original,"after":desired}),
-            false,
         );
         Ok(
             json!({"verified":true,"account_id":id,"group_ids":desired,"version":account_version(&live)}),
         )
     }
     pub async fn prepare_test(&self, id: i64, payload: &Value) -> Result<Lease> {
-        if self.settings.read_only {
-            return Err(Error::read_only());
-        }
         let row = self
             .account(id, Some(string(&payload["expected_version"])))
             .await?;

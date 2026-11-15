@@ -575,7 +575,7 @@ impl Harness {
     async fn new(output: String) -> Self {
         let database_url = std::env::var("DATABASE_URL")
             .expect("detection contract runner must provide temporary PostgreSQL");
-        let fixture_db = Database::open(&database_url, false)
+        let fixture_db = Database::open(&database_url)
             .await
             .expect("open independent pool for synthetic upstream writes");
         let temp = tempfile::tempdir().expect("create private detection state directory");
@@ -631,7 +631,6 @@ impl Harness {
             bark_valid: true,
             base_url: base_url.clone(),
             verify_url: String::new(),
-            read_only: false,
         };
         let runtime =
             Self::open_runtime(settings.clone(), clock.clone(), monotonic_origin, &base_url).await;

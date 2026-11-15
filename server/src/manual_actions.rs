@@ -115,7 +115,6 @@ impl Runtime {
             &self.settings.audit_path,
             "desktop_schedulable",
             json!({"account_id":id,"schedulable":enabled,"verified":verified,"error_code":response["error_code"]}),
-            false,
         );
         if !verified {
             return Err(Error::new(
@@ -154,7 +153,6 @@ impl Runtime {
             &self.settings.audit_path,
             "desktop_delete_account",
             json!({"account_id":id,"verified":verified,"code":code}),
-            false,
         );
         if !verified {
             return Err(Error::new(
@@ -201,7 +199,6 @@ impl Runtime {
             &self.settings.audit_path,
             "desktop_recover_state",
             json!({"account_id":id,"verified":verified,"code":code}),
-            false,
         );
         if !verified {
             return Err(uncertain(
@@ -240,7 +237,6 @@ impl Runtime {
             &self.settings.audit_path,
             "desktop_degradation_mark",
             json!({"account_id":id,"marked":marked}),
-            false,
         );
         Ok(json!({"verified":true,"account_id":id,"degradation_mark":mark}))
     }
@@ -483,7 +479,6 @@ impl Runtime {
             &self.settings.audit_path,
             "desktop_usage_action",
             json!({"account_id":id,"action":action,"code":code}),
-            false,
         );
         if code != "ok" {
             return Err(uncertain(

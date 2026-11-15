@@ -145,7 +145,7 @@ fn execute(name: &str, args: &Value) -> Result<Value> {
         "project_state" => {
             let directory = tempfile::tempdir().unwrap();
             let path = directory.path().join("state.json");
-            let store = OAuthState::new(path.clone(), false);
+            let store = OAuthState::new(path.clone());
             store.transaction(|state| {
                 state["scheduler"]["31"] = json!({"auto_reset_credit":args["value"]});
                 Ok(())
@@ -154,7 +154,7 @@ fn execute(name: &str, args: &Value) -> Result<Value> {
             let result = credit_rules::project(&args["value"], &args["notices"]);
             assert_eq!(std::fs::read(&path).unwrap(), before);
             assert_eq!(
-                OAuthState::new(path, false).snapshot()?["scheduler"]["31"]["auto_reset_credit"],
+                OAuthState::new(path).snapshot()?["scheduler"]["31"]["auto_reset_credit"],
                 args["value"]
             );
             result

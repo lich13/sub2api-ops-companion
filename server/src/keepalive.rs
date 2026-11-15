@@ -69,7 +69,6 @@ impl Keepalive {
                 &actions.settings.keepalive_path,
                 json!({"version":1,"accounts":{}}),
                 state::validate,
-                actions.settings.read_only,
             ),
             tasks: Tasks::supervised(actions.supervisor.clone()),
             detection,
@@ -122,7 +121,6 @@ impl Keepalive {
             event,
             json!({"account_id":id,"before_until":intent.before_until,"reason":intent.reason,
                 "result":result,"generation":intent.generation,"request_id":intent.id}),
-            self.detection.actions.settings.read_only,
         );
     }
     fn gates(&self) -> Result<Gates> {
@@ -216,8 +214,6 @@ impl Keepalive {
             ("running", "正在恢复临时不可调度")
         } else if !control.enabled {
             ("disabled", control.paused_reason.as_str())
-        } else if self.detection.actions.settings.read_only {
-            ("paused", "服务处于只读模式")
         } else if control.waiting(self.now()) {
             ("waiting", "等待恢复间隔或可用额度")
         } else {
@@ -236,16 +232,13 @@ impl Keepalive {
             "version":control.version(),"status":status,"reason":reason,"paused_reason":control.paused_reason,
             "last_restore_at":control.last_restore_at,"restore_count":control.restores.len(),
             "budget_used":control.used(self.now()),"next_allowed_at":control.next_allowed(self.now()),
-            "read_only":self.detection.actions.settings.read_only}),
+            "read_only":false}),
         )
     }
     pub async fn save(&self, id: i64, payload: &Value) -> Result<Value> {
         request(payload)?;
         if self.tasks.is_closed() {
             return Err(Error::new(503, "服务正在停止"));
-        }
-        if self.detection.actions.settings.read_only {
-            return Err(Error::read_only());
         }
         let _guard = self.detection.actions.locks.control(id).await;
         self.row(id)
@@ -267,7 +260,7 @@ impl Keepalive {
         self.view(id).await
     }
     pub async fn tick(&self) -> Result<()> {
-        if self.detection.actions.settings.read_only || self.tasks.is_closed() {
+        if self.tasks.is_closed() {
             return Ok(());
         }
         let Ok(_tick) = self.tick_lock.try_lock() else {
@@ -339,7 +332,6 @@ impl Keepalive {
                         &owner.detection.actions.settings.audit_path,
                         "keepalive_task_error",
                         json!({"account_id":id,"error_code":"cycle_failed"}),
-                        false,
                     );
                 }
             })?;
@@ -463,7 +455,7 @@ impl Keepalive {
         Ok(())
     }
     pub async fn deliver(&self) -> Result<()> {
-        if self.detection.actions.settings.read_only || self.tasks.is_closed() {
+        if self.tasks.is_closed() {
             return Ok(());
         }
         let Ok(_guard) = self.notice_lock.try_lock() else {

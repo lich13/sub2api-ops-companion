@@ -159,18 +159,13 @@ pub fn settings_request(value: &Value, account: bool) -> Result<()> {
     Ok(())
 }
 impl Service {
-    pub fn new(path: PathBuf, read_only: bool) -> Result<Self> {
+    pub fn new(path: PathBuf) -> Result<Self> {
         let service = Self {
             shared: Arc::new(Shared {
                 entries: Mutex::new(HashMap::new()),
                 permits: Semaphore::new(3),
             }),
-            config: Store::new(
-                path,
-                json!({"seconds":60,"accounts":{}}),
-                valid_object,
-                read_only,
-            ),
+            config: Store::new(path, json!({"seconds":60,"accounts":{}}), valid_object),
             tasks: crate::tasks::Tasks::default(),
             client: reqwest::Client::builder()
                 .no_proxy()
@@ -201,9 +196,6 @@ impl Service {
             .remove(&id.to_string());
     }
     pub fn remove_account_settings(&self, id: i64) -> Result<()> {
-        if self.config.is_read_only() {
-            return Ok(());
-        }
         let key = id.to_string();
         if self
             .config

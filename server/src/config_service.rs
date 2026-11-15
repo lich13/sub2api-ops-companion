@@ -31,18 +31,8 @@ fn conflict() -> Error {
 impl ConfigService {
     pub fn new(settings: Arc<Settings>, bark: Bark, queries: Queries) -> Self {
         Self {
-            oauth: Store::new(
-                settings.oauth_path.clone(),
-                json!({}),
-                valid_object,
-                settings.read_only,
-            ),
-            bark_store: Store::new(
-                settings.bark_path.clone(),
-                json!({}),
-                valid_object,
-                settings.read_only,
-            ),
+            oauth: Store::new(settings.oauth_path.clone(), json!({}), valid_object),
+            bark_store: Store::new(settings.bark_path.clone(), json!({}), valid_object),
             state: queries.oauth.clone(),
             settings,
             bark,
@@ -132,9 +122,6 @@ impl ConfigService {
         Ok(result)
     }
     pub async fn reconcile(&self, rows: &[Value]) -> Result<bool> {
-        if self.settings.read_only {
-            return Ok(false);
-        }
         let _guard = self.lock.lock().await;
         let eligible = recovery_policy::eligible_ids(rows);
         let before = self.oauth.read_shared()?;
@@ -198,9 +185,6 @@ impl ConfigService {
         user: &str,
         expected: Option<&str>,
     ) -> Result<Value> {
-        if self.settings.read_only {
-            return Err(Error::read_only());
-        }
         let _guard = self.lock.lock().await;
         if !matches!(section, "oauth" | "bark") {
             return Err(Error::new(422, "未知设置分区"));
@@ -429,7 +413,6 @@ impl ConfigService {
             &self.settings.audit_path,
             &format!("{section}_config_update"),
             json!({"user":user,"fields":changes.keys().collect::<BTreeSet<_>>()}),
-            false,
         );
         Ok(self.snapshot(Some(section))?[section].clone())
     }

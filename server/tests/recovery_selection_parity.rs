@@ -45,7 +45,7 @@ struct Harness {
 impl Harness {
     async fn new(raw: &Value) -> Self {
         let root = tempfile::tempdir().unwrap();
-        let owner = Database::open(&std::env::var("DATABASE_URL").unwrap(), false)
+        let owner = Database::open(&std::env::var("DATABASE_URL").unwrap())
             .await
             .unwrap();
         let schema = format!("selection_{}", uuid::Uuid::new_v4().simple());
@@ -56,7 +56,7 @@ impl Harness {
         let mut url = reqwest::Url::parse(&std::env::var("DATABASE_URL").unwrap()).unwrap();
         url.query_pairs_mut()
             .append_pair("options", &format!("-csearch_path={schema}"));
-        let scoped = Database::open(url.as_str(), false).await.unwrap();
+        let scoped = Database::open(url.as_str()).await.unwrap();
         let ddl = include_str!("../../tests/contracts/http/schema.sql")
             .split("-- Every row below")
             .next()
@@ -79,8 +79,7 @@ impl Harness {
             )
             .unwrap();
         }
-        let mut settings =
-            Settings::from_env(&environment(root.path(), url.as_str()), false).unwrap();
+        let mut settings = Settings::from_env(&environment(root.path(), url.as_str())).unwrap();
         settings.oauth = fixture()["defaults"].clone();
         let runtime = Runtime::new(settings).await.unwrap();
         Self {
@@ -243,10 +242,10 @@ async fn scenario(name: &str) {
         );
     }
     if name == "partial_save" {
-        let reloaded = Settings::from_env(
-            &environment(h.root.path(), &h.runtime.settings.database_url),
-            false,
-        )
+        let reloaded = Settings::from_env(&environment(
+            h.root.path(),
+            &h.runtime.settings.database_url,
+        ))
         .unwrap();
         assert_eq!(reloaded.oauth[C], json!([]));
         assert_eq!(reloaded.oauth[M], json!([]));

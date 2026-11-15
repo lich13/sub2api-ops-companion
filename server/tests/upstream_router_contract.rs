@@ -88,7 +88,7 @@ fn router(root: &std::path::Path, verify: &str, public: &str) -> Upstream {
     ] {
         env.insert(name.into(), root.join(name).to_string_lossy().into_owned());
     }
-    Upstream::new(Arc::new(Settings::from_env(&env, false).unwrap())).unwrap()
+    Upstream::new(Arc::new(Settings::from_env(&env).unwrap())).unwrap()
 }
 
 // These tests port every assertion of the pinned 0.1.39 router suite through

@@ -72,7 +72,7 @@ fn global_detection_model_has_its_own_default() {
         bark_path.to_string_lossy().into_owned(),
     );
 
-    let settings = Settings::from_env(&env, false).unwrap();
+    let settings = Settings::from_env(&env).unwrap();
     assert_eq!(settings.oauth["model_detection_model_id"], "gpt-6-luna");
     assert_eq!(
         settings.oauth["oauth_recovery_test_model_id"],
@@ -526,7 +526,7 @@ impl Harness {
     async fn new() -> Self {
         let database_url = std::env::var("DATABASE_URL")
             .expect("automation contract runner must supply temporary PostgreSQL");
-        let db = Database::open(&database_url, false)
+        let db = Database::open(&database_url)
             .await
             .expect("open runner-owned PostgreSQL for loopback mock");
         let temp = tempfile::tempdir().expect("create synthetic automation state directory");
@@ -582,7 +582,6 @@ impl Harness {
             bark_valid: true,
             base_url: base_url.clone(),
             verify_url: String::new(),
-            read_only: false,
         };
         let monitor_clock = clock.clone();
         let runtime =
@@ -2595,34 +2594,6 @@ async fn keepalive_defaults_off_persists_privately_and_preserves_corruption() {
         .unwrap_err();
     assert_eq!(corrupt.status.as_u16(), 503);
     assert_eq!(fs::read(&path).unwrap(), b"{");
-    h.close().await;
-}
-
-#[tokio::test]
-async fn keepalive_read_only_mode_does_not_create_default_state_or_dispatch() {
-    let mut h = Harness::new().await;
-    let id = seed_keepalive_account(&h, None, false).await;
-    set_keepalive_incident(&h, id, h.now(), h.now() + Duration::minutes(5)).await;
-    let mut settings = h.runtime.settings.as_ref().clone();
-    settings.read_only = true;
-    h.restart_with_settings(settings).await;
-
-    let path = h.runtime.settings.keepalive_path.clone();
-    let view = h.runtime.keepalive.view(id).await.unwrap();
-    assert_eq!(view["enabled"], false);
-    assert_eq!(view["read_only"], true);
-    assert!(h
-        .runtime
-        .keepalive
-        .save(
-            id,
-            &json!({"enabled":true,"expected_version":view["version"]}),
-        )
-        .await
-        .is_err());
-    h.runtime.keepalive.tick().await.unwrap();
-    assert!(!path.exists());
-    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 0);
     h.close().await;
 }
 

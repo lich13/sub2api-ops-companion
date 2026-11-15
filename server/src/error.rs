@@ -43,13 +43,6 @@ impl Error {
         )
     }
 
-    pub fn read_only() -> Self {
-        Self::new(
-            409,
-            json!({"code":"read_only","message":"服务处于只读验收模式"}),
-        )
-    }
-
     pub fn conflict(message: &str) -> Self {
         Self::new(409, message)
     }

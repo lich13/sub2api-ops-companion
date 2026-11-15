@@ -15,9 +15,6 @@ impl CreditController {
         rows: &[impl std::borrow::Borrow<Value>],
         at: DateTime<Utc>,
     ) -> Result<()> {
-        if self.actions.settings.read_only {
-            return Ok(());
-        }
         let mut live = rows
             .iter()
             .map(|row| row.borrow())
@@ -81,9 +78,6 @@ impl CreditController {
     }
 
     pub async fn run_account(&self, item: &Value, at: DateTime<Utc>) -> Result<()> {
-        if self.actions.settings.read_only {
-            return Ok(());
-        }
         let id = integer(&item["id"]).ok_or_else(Error::invalid)?;
         let enabled = self.hooks.config()?["oauth_auto_reset_credit_enabled"] == true;
         if !enabled && !truthy(&self.state(id)?) {

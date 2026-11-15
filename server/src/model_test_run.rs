@@ -286,7 +286,6 @@ impl ModelTests {
                 "classification": current["classification"],
                 "disposition_basis": disposition["basis"],
             }),
-            false,
         );
         self.contexts
             .lock()
@@ -440,7 +439,6 @@ impl ModelTests {
                 &self.actions.settings.audit_path,
                 "model_test_attempt",
                 json!({"account_id":aid,"job_id":id,"group":index+1,"attempt":attempt+1,"engine":job["engine"],"sample_count":job["planned_groups"],"resource_revision":job["resource_revision"]}),
-                false,
             );
             let callback: Progress = {
                 let this = self.clone();
@@ -478,7 +476,6 @@ impl ModelTests {
                 &self.actions.settings.audit_path,
                 "model_test_transport",
                 transport,
-                false,
             );
             match received {
                 Ok((text, model)) => {

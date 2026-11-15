@@ -725,10 +725,10 @@ struct Harness {
 }
 
 impl Harness {
-    async fn new(read_only: bool) -> Self {
+    async fn new() -> Self {
         let database_url = std::env::var("DATABASE_URL")
             .expect("contract runner must provide temporary PostgreSQL");
-        let db = Database::open(&database_url, false)
+        let db = Database::open(&database_url)
             .await
             .expect("connect to runner-owned PostgreSQL");
         let temp = tempfile::tempdir().expect("create test state directory");
@@ -775,7 +775,6 @@ impl Harness {
             bark_valid: true,
             base_url,
             verify_url: String::new(),
-            read_only,
         });
         let upstream = Upstream::new(settings.clone()).expect("construct fixture upstream");
         let hooks = Arc::new(HookShared {
@@ -795,12 +794,10 @@ impl Harness {
             model_calls: AtomicUsize::new(0),
             connection_calls: AtomicUsize::new(0),
         });
-        let oauth = OAuthState::new(settings.oauth_path.clone(), read_only);
-        if !read_only {
-            oauth
-                .save_admin_token(ADMIN_KEY)
-                .expect("save synthetic fixture admin key");
-        }
+        let oauth = OAuthState::new(settings.oauth_path.clone());
+        oauth
+            .save_admin_token(ADMIN_KEY)
+            .expect("save synthetic fixture admin key");
         let controller =
             Self::make_controller(&db, &settings, &upstream, &mock, &hooks, &clock, oauth);
         Self {
@@ -833,7 +830,7 @@ impl Harness {
             queries,
             upstream.clone(),
             AccountLocks::default(),
-            Templates::new(settings.model_path.clone(), settings.read_only),
+            Templates::new(settings.model_path.clone()),
             settings.clone(),
         )
         .expect("construct fixture actions");
@@ -859,7 +856,7 @@ impl Harness {
     }
 
     fn restart_controller(&self) -> CreditController {
-        let oauth = OAuthState::new(self.settings.oauth_path.clone(), self.settings.read_only);
+        let oauth = OAuthState::new(self.settings.oauth_path.clone());
         Self::make_controller(
             &self.db,
             &self.settings,
@@ -1145,7 +1142,7 @@ fn bark_calls(harness: &Harness) -> Vec<RecordedCall> {
 
 #[tokio::test]
 async fn account_and_live_window_preconditions_block_every_native_action() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let cases = [
         "platform",
@@ -1283,7 +1280,7 @@ async fn account_and_live_window_preconditions_block_every_native_action() {
 
 #[tokio::test]
 async fn raw_weekly_exhaustion_and_observation_time_are_required() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     for (weekly, expected) in [
         (99.99, false),
@@ -1364,7 +1361,7 @@ async fn raw_weekly_exhaustion_and_observation_time_are_required() {
 
 #[tokio::test]
 async fn fixed_five_minute_admission_boundary_uses_current_time() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     for (offset, dispatches) in [(299, 1), (300, 0)] {
         let (row, _) = harness.seed_depletion(&harness.controller).await;
@@ -1488,7 +1485,7 @@ async fn fixed_five_minute_admission_boundary_uses_current_time() {
 
 #[tokio::test]
 async fn card_granted_after_the_window_never_consumes_for_the_earlier_limit() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let (row, evidence) = harness.seed_depletion(&harness.controller).await;
     let id = integer(&row["id"]).unwrap();
@@ -1578,7 +1575,7 @@ async fn card_granted_after_the_window_never_consumes_for_the_earlier_limit() {
 
 #[tokio::test]
 async fn next_seven_day_round_triggers_without_an_observed_recovery() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let (row, evidence) = harness.seed_depletion(&harness.controller).await;
     let id = integer(&row["id"]).unwrap();
@@ -1661,7 +1658,7 @@ async fn current_cards_authorize_a_new_episode_without_a_matching_old_observatio
         "missing",
         "after_manual_use",
     ] {
-        let h = Harness::new(false).await;
+        let h = Harness::new().await;
         let now = fixed_now();
         let (row, _) = h.seed_depletion(&h.controller).await;
         let id = integer(&row["id"]).unwrap();
@@ -1744,7 +1741,7 @@ async fn current_cards_authorize_a_new_episode_without_a_matching_old_observatio
 
 #[tokio::test]
 async fn card_observed_at_the_weekly_window_start_can_be_consumed_without_refresh() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let (row, _) = harness.seed_depletion(&harness.controller).await;
     let id = integer(&row["id"]).unwrap();
@@ -1771,7 +1768,7 @@ async fn card_observed_at_the_weekly_window_start_can_be_consumed_without_refres
 
 #[tokio::test]
 async fn provider_error_and_account_fallback_evidence_are_distinct_and_redacted() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let (runtime_row, _) = harness.seed_depletion(&harness.controller).await;
     let runtime_id = integer(&runtime_row["id"]).unwrap();
@@ -2000,7 +1997,7 @@ async fn provider_error_and_account_fallback_evidence_are_distinct_and_redacted(
 
 #[tokio::test]
 async fn zero_expired_or_unconfirmed_cards_remain_silent_across_rounds() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let bark = Bark::new(harness.settings.clone()).unwrap();
     let cases = vec![
@@ -2097,7 +2094,7 @@ async fn zero_expired_or_unconfirmed_cards_remain_silent_across_rounds() {
 
 #[tokio::test]
 async fn unissued_episode_requires_manual_reopen_recovery_and_newer_depletion_after_restart() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let (row, _) = harness.seed_depletion(&harness.controller).await;
     let id = integer(&row["id"]).unwrap();
@@ -2251,7 +2248,7 @@ async fn waiting_episode_finishes_on_manual_disable_or_deletion_without_dispatch
         ("disabled", "account_disabled"),
         ("deleted", "account_deleted"),
     ] {
-        let harness = Harness::new(false).await;
+        let harness = Harness::new().await;
         let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
         harness.set_config(recovery_config(id, "connection"));
         let (row, _) = harness.seed_depletion(&harness.controller).await;
@@ -2317,7 +2314,7 @@ async fn waiting_episode_finishes_on_manual_disable_or_deletion_without_dispatch
 
 #[tokio::test]
 async fn auth_pause_conflict_and_feature_toggle_gate_real_admission() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
 
     for code in ["http_401", "http_402"] {
@@ -2395,7 +2392,7 @@ async fn auth_pause_conflict_and_feature_toggle_gate_real_admission() {
 
 #[tokio::test]
 async fn automatic_pause_is_read_back_owned_before_receipt_and_recovery_is_once_only() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(id, "connection"));
@@ -2485,7 +2482,7 @@ async fn automatic_pause_is_read_back_owned_before_receipt_and_recovery_is_once_
 
 #[tokio::test]
 async fn confirming_restart_reconciles_the_confirmed_history_without_repeating_mutations() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(id, "connection"));
@@ -2574,7 +2571,7 @@ async fn confirming_restart_preserves_manual_changes_and_new_account_blocks() {
         "new_limit",
         "manual_generation",
     ] {
-        let harness = Harness::new(false).await;
+        let harness = Harness::new().await;
         let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
         harness.set_config(recovery_config(id, "connection"));
         let (row, _) = harness.seed_depletion(&harness.controller).await;
@@ -2713,7 +2710,7 @@ async fn confirming_restart_preserves_manual_changes_and_new_account_blocks() {
 
 #[tokio::test]
 async fn uncertain_recovery_write_persists_clear_request_and_only_reconciles_after_restart() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(id, "connection"));
@@ -2760,7 +2757,7 @@ async fn uncertain_recovery_write_persists_clear_request_and_only_reconciles_aft
 
 #[tokio::test]
 async fn successful_verification_does_not_release_while_another_required_window_is_exhausted() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let (row, _) = harness.seed_depletion(&harness.controller).await;
     let id = integer(&row["id"]).unwrap();
@@ -2786,7 +2783,7 @@ async fn successful_verification_does_not_release_while_another_required_window_
 
 #[tokio::test]
 async fn configuration_change_while_pause_write_is_in_flight_prevents_card_dispatch() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let (row, _) = harness.seed_depletion(&harness.controller).await;
     let id = integer(&row["id"]).unwrap();
@@ -2812,7 +2809,7 @@ async fn configuration_change_while_pause_write_is_in_flight_prevents_card_dispa
 
 #[tokio::test]
 async fn token_renewal_during_credit_retry_preserves_pause_and_does_not_replay_card() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let (row, _) = harness.seed_depletion(&harness.controller).await;
     let id = integer(&row["id"]).unwrap();
@@ -2849,7 +2846,7 @@ async fn token_renewal_during_credit_retry_preserves_pause_and_does_not_replay_c
 
 #[tokio::test]
 async fn native_auth_test_responses_finish_paused_and_never_retry_after_credential_change() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     for status in [401, 402] {
         let (row, _) = harness.seed_depletion(&harness.controller).await;
@@ -2905,7 +2902,7 @@ async fn native_auth_test_responses_finish_paused_and_never_retry_after_credenti
 
 #[tokio::test]
 async fn native_reset_receipt_matrix_preserves_integer_http_and_redaction_boundaries() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let mut cases = vec![
         (
             "positive_reset",
@@ -3135,7 +3132,7 @@ async fn native_reset_receipt_matrix_preserves_integer_http_and_redaction_bounda
 
 #[tokio::test]
 async fn true_http_502_and_truncated_sse_are_uncertain_and_never_replayed() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(id, "connection"));
@@ -3219,7 +3216,7 @@ async fn true_http_502_and_truncated_sse_are_uncertain_and_never_replayed() {
 
 #[tokio::test]
 async fn explicit_sse_http_502_errors_retry_at_sixty_seconds_twice_without_reconsuming() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(id, "connection"));
@@ -3279,7 +3276,7 @@ async fn explicit_sse_http_502_errors_retry_at_sixty_seconds_twice_without_recon
 
 #[tokio::test]
 async fn a_retry_whose_sixty_second_delay_hits_the_five_minute_deadline_is_not_dispatched() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(id, "connection"));
@@ -3313,7 +3310,7 @@ async fn a_retry_whose_sixty_second_delay_hits_the_five_minute_deadline_is_not_d
 async fn late_manual_control_and_method_changes_cannot_release_or_repeat_a_consumed_card() {
     let now = fixed_now();
     for manual in [true, false] {
-        let harness = Harness::new(false).await;
+        let harness = Harness::new().await;
         let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
         harness.set_config(recovery_config(id, "connection"));
         let (row, _) = harness.seed_depletion(&harness.controller).await;
@@ -3376,7 +3373,7 @@ async fn late_manual_control_and_method_changes_cannot_release_or_repeat_a_consu
 
 #[tokio::test]
 async fn late_reset_receipt_after_watchdog_stop_keeps_consumption_without_replay() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(id, "connection"));
@@ -3434,7 +3431,7 @@ async fn late_reset_receipt_after_watchdog_stop_keeps_consumption_without_replay
 async fn disabled_or_auth_error_account_is_never_resumed_by_a_late_result() {
     let now = fixed_now();
     {
-        let harness = Harness::new(false).await;
+        let harness = Harness::new().await;
         let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
         harness.set_config(recovery_config(id, "connection"));
         let (row, _) = harness.seed_depletion(&harness.controller).await;
@@ -3505,7 +3502,7 @@ async fn disabled_or_auth_error_account_is_never_resumed_by_a_late_result() {
         );
     }
 
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(id, "connection"));
     let (row, _) = harness.seed_depletion(&harness.controller).await;
@@ -3572,7 +3569,7 @@ async fn disabled_or_auth_error_account_is_never_resumed_by_a_late_result() {
 
 #[tokio::test]
 async fn detection_version_hold_and_failed_readback_are_fail_closed() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(id, "connection"));
@@ -3657,7 +3654,7 @@ async fn detection_version_hold_and_failed_readback_are_fail_closed() {
 
 #[tokio::test]
 async fn confirmed_degradation_merges_into_one_credit_notice_and_bark_delivery() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(id, "connection"));
@@ -3766,7 +3763,7 @@ async fn confirmed_degradation_merges_into_one_credit_notice_and_bark_delivery()
 
 #[tokio::test]
 async fn manual_reset_uses_the_shared_receipt_and_two_controllers_dispatch_once() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let row = harness.seed_account(true, true).await;
     let id = integer(&row["id"]).unwrap();
@@ -3832,7 +3829,7 @@ async fn manual_reset_uses_the_shared_receipt_and_two_controllers_dispatch_once(
 
 #[tokio::test]
 async fn two_automatic_workers_share_the_account_lock_and_only_one_consumes() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(id, "connection"));
@@ -3876,7 +3873,7 @@ async fn two_automatic_workers_share_the_account_lock_and_only_one_consumes() {
 
 #[tokio::test]
 async fn legacy_unknown_episodes_remain_quarantined_after_restarts_without_any_io() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     for (source, has_evidence) in [(json!("manual"), false), (json!("manual"), true)] {
         let row = harness.seed_account(true, false).await;
@@ -3934,7 +3931,7 @@ async fn legacy_unknown_episodes_remain_quarantined_after_restarts_without_any_i
 
 #[tokio::test]
 async fn manual_http_502_receipt_is_not_replayed_and_requires_a_fresh_quota_confirmation() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let row = harness.seed_account(true, false).await;
     let id = integer(&row["id"]).unwrap();
@@ -4022,7 +4019,7 @@ async fn manual_http_502_receipt_is_not_replayed_and_requires_a_fresh_quota_conf
 
 #[tokio::test]
 async fn newer_depletion_after_manual_unknown_recovery_uses_a_new_episode_and_positive_card() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let initial = fixed_now();
     let mut row = harness.seed_account(true, false).await;
     let id = integer(&row["id"]).unwrap();
@@ -4125,7 +4122,7 @@ async fn newer_depletion_after_manual_unknown_recovery_uses_a_new_episode_and_po
 
 #[tokio::test]
 async fn bark_delivery_has_an_atomic_reservation_five_attempt_limit_and_no_business_replay() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let first_id = integer(&harness.seed_account(true, false).await["id"]).unwrap();
     harness
@@ -4214,7 +4211,7 @@ async fn bark_delivery_has_an_atomic_reservation_five_attempt_limit_and_no_busin
 
 #[tokio::test]
 async fn terminal_credit_outcomes_and_bark_receipts_survive_restart_once() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let bark = Bark::new(harness.settings.clone()).unwrap();
     for expected_outcome in [
@@ -4347,7 +4344,7 @@ async fn terminal_credit_outcomes_and_bark_receipts_survive_restart_once() {
 
 #[tokio::test]
 async fn coordinator_quota_results_do_not_persist_unused_card_observations() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let good = snapshot(1, now + Duration::days(2), now);
     let cases = [
@@ -4514,7 +4511,7 @@ async fn coordinator_quota_results_do_not_persist_unused_card_observations() {
 
 #[tokio::test]
 async fn usage_refresh_http_429_is_status_only_and_cannot_create_an_observation() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let (row, _) = harness.seed_depletion(&harness.controller).await;
     let id = integer(&row["id"]).unwrap();
@@ -4598,7 +4595,7 @@ async fn unused_legacy_observation_is_ignored_and_removed_on_normal_write() {
         ("available_count", json!(-1)),
         ("observed_at", json!("invalid-time")),
     ] {
-        let harness = Harness::new(false).await;
+        let harness = Harness::new().await;
         let (row, _) = harness.seed_depletion(&harness.controller).await;
         let id = integer(&row["id"]).unwrap();
         let mut legacy_snapshot = row["extra"]["codex_reset_credit_snapshot"].clone();
@@ -4627,7 +4624,7 @@ async fn unused_legacy_observation_is_ignored_and_removed_on_normal_write() {
 
 #[tokio::test]
 async fn usage_auth_failure_is_scoped_to_credentials_and_never_schedules_card_replay() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let (row, _) = harness.seed_depletion(&harness.controller).await;
     let id = integer(&row["id"]).unwrap();
@@ -4717,7 +4714,7 @@ async fn usage_auth_failure_is_scoped_to_credentials_and_never_schedules_card_re
 
 #[tokio::test]
 async fn confirmed_card_use_tests_immediately_despite_cache_warning_and_stops_on_bad_quota() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     for (name, malformed_quota) in [("cache_warning", false), ("malformed_quota", true)] {
         let expected_reset = harness.mock.count(Method::POST, "/reset-quota") + 1;
@@ -4785,43 +4782,8 @@ async fn confirmed_card_use_tests_immediately_despite_cache_warning_and_stops_on
 }
 
 #[tokio::test]
-async fn read_only_credit_runtime_dispatches_nothing_and_leaves_no_state_or_lock() {
-    let harness = Harness::new(true).await;
-    let now = fixed_now();
-    let row = harness.seed_account(true, true).await;
-    let id = integer(&row["id"]).unwrap();
-    harness.set_config(recovery_config(id, "connection"));
-
-    run_automatic(&harness, &row, now).await;
-    let query = harness
-        .controller
-        .queries
-        .query(
-            id,
-            ADMIN_KEY,
-            QueryOptions {
-                source: Source::Manual,
-                reason: "fixture-read-only".into(),
-                at: now,
-                timeout: 3,
-                ..QueryOptions::default()
-            },
-        )
-        .await;
-    assert_eq!(query["error_code"], "read_only");
-    let bark = Bark::new(harness.settings.clone()).unwrap();
-    harness.controller.deliver_results(&bark).await.unwrap();
-    let state_path = harness.settings.oauth_path.clone();
-    let lock_path = PathBuf::from(format!("{}.lock", state_path.display()));
-    assert!(!state_path.exists());
-    assert!(!lock_path.exists());
-    assert!(!harness.settings.audit_path.exists());
-    assert_eq!(harness.mock.total(), 0);
-}
-
-#[tokio::test]
 async fn explicit_loopback_card_observation_authorizes_one_real_reset_and_immediate_test() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let (row, _) = harness.seed_depletion(&harness.controller).await;
     let id = integer(&row["id"]).unwrap();
@@ -4896,7 +4858,7 @@ async fn waiting_episode_rechecks_current_cards_without_requiring_old_observatio
         "zero",
         "expired",
     ] {
-        let harness = Harness::new(false).await;
+        let harness = Harness::new().await;
         let (row, _) = harness.seed_depletion(&harness.controller).await;
         let id = integer(&row["id"]).unwrap();
         harness.set_config(recovery_config(id, "connection"));
@@ -4982,7 +4944,7 @@ async fn waiting_episode_rechecks_current_cards_without_requiring_old_observatio
 
 #[tokio::test]
 async fn automatic_usage_cooldown_and_six_per_day_budget_survive_restart() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let row = harness.seed_account(true, false).await;
     let id = integer(&row["id"]).unwrap();
@@ -5077,7 +5039,7 @@ fn recovery019_free_plan_preserves_the_full_primary_thirty_day_quota_result() {
 
 #[tokio::test]
 async fn admission_pause_and_consume_receipt_write_failures_never_dispatch_again() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let lock_path = PathBuf::from(format!("{}.lock", harness.settings.oauth_path.display()));
 
@@ -5158,7 +5120,7 @@ async fn admission_pause_and_consume_receipt_write_failures_never_dispatch_again
 
 #[tokio::test]
 async fn confirmed_receipt_survives_a_later_state_write_failure_without_reset_replay() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(id, "connection"));
@@ -5201,7 +5163,7 @@ async fn confirmed_receipt_survives_a_later_state_write_failure_without_reset_re
 
 #[tokio::test]
 async fn consumed_reset_result_survives_failed_account_readback_without_replaying_reset() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new().await;
     let now = fixed_now();
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     harness.set_config(recovery_config(id, "connection"));
@@ -5235,7 +5197,7 @@ async fn consumed_reset_result_survives_failed_account_readback_without_replayin
 
 #[tokio::test]
 async fn confirming_retries_only_schedule_enable_after_a_failed_write() {
-    let h = Harness::new(false).await;
+    let h = Harness::new().await;
     let now = fixed_now();
     let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
     h.set_config(recovery_config(id, "connection"));
@@ -5269,7 +5231,7 @@ async fn confirming_retries_only_schedule_enable_after_a_failed_write() {
 #[tokio::test]
 async fn unchanged_cards_remain_usable_after_token_refresh_new_limit_and_reset_rounding() {
     for change in ["token_refresh", "new_limit", "reset_rounding", "combined"] {
-        let h = Harness::new(false).await;
+        let h = Harness::new().await;
         let now = fixed_now();
         let (row, _) = h.seed_depletion(&h.controller).await;
         let id = integer(&row["id"]).unwrap();
@@ -5296,7 +5258,7 @@ async fn unchanged_cards_remain_usable_after_token_refresh_new_limit_and_reset_r
 
 #[tokio::test]
 async fn manual_reset_test_failure_notifies_once_without_replaying_the_card() {
-    let h = Harness::new(false).await;
+    let h = Harness::new().await;
     let row = h.seed_account(true, true).await;
     let id = integer(&row["id"]).unwrap();
     h.set_config(recovery_config(id, "connection"));
@@ -5330,7 +5292,7 @@ async fn manual_reset_test_failure_notifies_once_without_replaying_the_card() {
 
 #[tokio::test]
 async fn manual_reset_uses_the_account_state_after_the_connection_test() {
-    let h = Harness::new(false).await;
+    let h = Harness::new().await;
     let row = h.seed_account(true, true).await;
     let id = integer(&row["id"]).unwrap();
     h.set_config(recovery_config(id, "connection"));
@@ -5365,7 +5327,7 @@ async fn manual_reset_uses_the_account_state_after_the_connection_test() {
 #[tokio::test]
 async fn deleted_accounts_suppress_all_pending_credit_results_without_losing_receipts() {
     for deletion in ["application", "upstream", "retry"] {
-        let h = Harness::new(false).await;
+        let h = Harness::new().await;
         let row = h.seed_account(true, false).await;
         let id = integer(&row["id"]).unwrap();
         let now = fixed_now();
@@ -5429,7 +5391,7 @@ async fn deleted_accounts_suppress_all_pending_credit_results_without_losing_rec
 
 #[tokio::test]
 async fn legacy_manual_record_without_source_never_becomes_an_automatic_credit_task() {
-    let h = Harness::new(false).await;
+    let h = Harness::new().await;
     let id = 423;
     let task = json!({"episode":"fixture-old-manual", "stage":"manual", "owns_pause":false});
     h.controller
@@ -5460,7 +5422,7 @@ async fn legacy_manual_record_without_source_never_becomes_an_automatic_credit_t
 
 #[tokio::test]
 async fn future_credit_notices_remain_pending_when_other_accounts_are_due() {
-    let h = Harness::new(false).await;
+    let h = Harness::new().await;
     let due = integer(&h.seed_account(true, false).await["id"]).unwrap();
     let future = integer(&h.seed_account(true, false).await["id"]).unwrap();
     let now = fixed_now();

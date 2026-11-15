@@ -77,7 +77,7 @@ pub struct Runtime {
     pub(crate) requests: crate::tasks::Tasks,
     tasks: Mutex<Vec<JoinHandle<()>>>,
     stop: watch::Sender<bool>,
-    _instance: Option<DiskLease>,
+    _instance: DiskLease,
 }
 
 impl Runtime {
@@ -145,26 +145,15 @@ impl Runtime {
         ] {
             crate::store::diagnose_permissions(&path, resource);
         }
-        let instance = if settings.read_only {
-            None
-        } else {
-            Some(DiskLease::try_acquire(
-                &settings.usage_path,
-                "companion-instance",
-                false,
-            )?)
-        };
-        let db = Database::open(&settings.database_url, settings.read_only).await?;
+        let instance = DiskLease::try_acquire(&settings.usage_path, "companion-instance")?;
+        let db = Database::open(&settings.database_url).await?;
         let upstream = startup("upstream", Upstream::new(settings.clone()))?;
-        let oauth = OAuthState::new(settings.usage_path.clone(), settings.read_only);
+        let oauth = OAuthState::new(settings.usage_path.clone());
         let queries = Queries {
             db: db.clone(),
             oauth,
         };
-        let templates = Templates::new(
-            settings.data_dir().join("account-templates.json"),
-            settings.read_only,
-        );
+        let templates = Templates::new(settings.data_dir().join("account-templates.json"));
         let mut actions = Actions::new(
             queries.clone(),
             upstream.clone(),
@@ -242,10 +231,7 @@ impl Runtime {
         let proxies = ProxyDiagnostics::new(actions.clone());
         let mut key_quota = startup(
             "key_quota",
-            crate::key_quota::Service::new(
-                settings.data_dir().join("api-key-quota-config.json"),
-                settings.read_only,
-            ),
+            crate::key_quota::Service::new(settings.data_dir().join("api-key-quota-config.json")),
         )?;
         key_quota.supervise(actions.supervisor.clone());
         let requests = crate::tasks::Tasks::supervised(actions.supervisor.clone());
@@ -288,9 +274,9 @@ impl Runtime {
         Ok(runtime)
     }
 
-    /// Validation is also used by --check-state. It performs no business writes,
-    /// migrations, task dispatch or state-file creation.
-    pub async fn preflight(&self) -> Result<Value> {
+    /// Startup validation. It performs no business writes, task dispatch or
+    /// state-file creation.
+    pub async fn preflight(&self) -> Result<()> {
         startup("oauth_state", self.actions.queries.oauth.shared_snapshot())?;
         startup("oauth_config", self.config.snapshot(None))?;
         startup("model_tests", self.tests.shared_data())?;
@@ -309,26 +295,16 @@ impl Runtime {
         )?;
         startup(
             "model_config",
-            crate::model_config::ModelConfig::new(
-                self.settings.model_path.clone(),
-                self.settings.read_only,
-            )
-            .read(),
+            crate::model_config::ModelConfig::new(self.settings.model_path.clone()).read(),
         )?;
         startup("connection_config", self.settings.connection_config())?;
         let accounts = self.actions.queries.accounts().await?;
         self.actions.queries.groups(&accounts).await?;
         self.actions.queries.errors(None, None, 1, None).await?;
-        Ok(
-            json!({"ok":true,"api_version":1,"implementation":"rust","version":crate::VERSION,
-            "build_revision":crate::BUILD_REVISION,"read_only":self.settings.read_only,"account_count":accounts.len()}),
-        )
+        Ok(())
     }
 
     pub async fn start(self: &Arc<Self>) -> Result<()> {
-        if self.settings.read_only {
-            return Ok(());
-        }
         startup("operations", self.operations.store.recover_startup())?;
         startup("priority_orders", self.priorities.recover_startup())?;
         startup("model_tests", self.tests.startup())?;
@@ -403,7 +379,6 @@ impl Runtime {
                             &runtime.settings.audit_path,
                             "runtime_task_error",
                             json!({"task":kind,"error_code":"cycle_failed"}),
-                            false,
                         );
                     } else {
                         failures = 0;
@@ -476,9 +451,7 @@ impl Runtime {
     }
 
     pub fn writable(&self) -> Result<()> {
-        if self.settings.read_only {
-            Err(Error::read_only())
-        } else if self.closing.load(Ordering::Acquire) || self.actions.supervisor.is_stopping() {
+        if self.closing.load(Ordering::Acquire) || self.actions.supervisor.is_stopping() {
             Err(Error::new(503, "服务正在停止"))
         } else {
             Ok(())
@@ -490,9 +463,7 @@ impl Runtime {
             return Err(Error::new(503, "服务正在停止"));
         }
         self.upstream.authenticate(key, fresh).await?;
-        if !self.settings.read_only {
-            self.actions.queries.oauth.save_admin_token(key)?;
-        }
+        self.actions.queries.oauth.save_admin_token(key)?;
         Ok(())
     }
 

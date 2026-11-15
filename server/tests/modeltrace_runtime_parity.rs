@@ -33,7 +33,7 @@ fn runtime_fixtures() -> Value {
     serde_json::from_str(FIXTURES).expect("pinned runtime fixture JSON")
 }
 
-fn bank_settings(directory: &std::path::Path, read_only: bool) -> Arc<Settings> {
+fn bank_settings(directory: &std::path::Path) -> Arc<Settings> {
     Arc::new(Settings {
         database_url: "postgres://example.invalid/sub2ops".into(),
         bind: "127.0.0.1:0".into(),
@@ -50,7 +50,6 @@ fn bank_settings(directory: &std::path::Path, read_only: bool) -> Arc<Settings> 
         bark_valid: false,
         base_url: String::new(),
         verify_url: String::new(),
-        read_only,
     })
 }
 
@@ -1207,7 +1206,6 @@ impl RuntimeHarness {
             bark_valid: true,
             base_url: upstream_url.clone(),
             verify_url: String::new(),
-            read_only: false,
         };
         let runtime = Runtime::new(settings)
             .await
@@ -2015,7 +2013,7 @@ async fn transport_diagnostics_redact_untrusted_event_names_and_content_types() 
     assert!(!diagnostics.to_string().contains(secret));
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("audit.jsonl");
-    sub2ops_server::audit::write(&path, "model_test_transport", diagnostics.clone(), false);
+    sub2ops_server::audit::write(&path, "model_test_transport", diagnostics.clone());
     let stored = sub2ops_server::audit::read(&path, 1, None);
     assert_eq!(stored[0]["payload"], diagnostics);
     assert!(!fs::read_to_string(path).unwrap().contains(secret));
@@ -3158,7 +3156,7 @@ fn offline_fingerprint_bank_cache_preserves_hash_schema_rate_state_and_snapshot(
     let state = valid_bank_cache_state();
     fs::write(&path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
     let before = fs::read(&path).unwrap();
-    let bank = FingerprintBank::new(bank_settings(cached.path(), true))
+    let bank = FingerprintBank::new(bank_settings(cached.path()))
         .expect("load a pinned cache without network access");
     let public = bank.public();
     assert_eq!(public["source"], "cache");
@@ -3180,7 +3178,7 @@ fn offline_fingerprint_bank_cache_preserves_hash_schema_rate_state_and_snapshot(
     assert_eq!(
         fs::read(&path).unwrap(),
         before,
-        "read-only startup leaves cache bytes untouched"
+        "startup leaves cache bytes untouched"
     );
     assert!(!cached.path().join("modeltrace-bank-state.lock").exists());
 
@@ -3191,7 +3189,7 @@ fn offline_fingerprint_bank_cache_preserves_hash_schema_rate_state_and_snapshot(
     limited_state["cooldown_until"] = 1600.0.into();
     limited_state["last_error"] = json!({"code":"rate-limit"});
     fs::write(&limited_path, serde_json::to_vec(&limited_state).unwrap()).unwrap();
-    let limited_bank = FingerprintBank::new(bank_settings(limited.path(), true))
+    let limited_bank = FingerprintBank::new(bank_settings(limited.path()))
         .expect("load the persisted rate-limited cache without network access");
     let public = limited_bank.public();
     assert_eq!(public["error"], "rate-limit");
@@ -3203,7 +3201,7 @@ fn offline_fingerprint_bank_cache_preserves_hash_schema_rate_state_and_snapshot(
     let mut corrupt = valid_bank_cache_state();
     corrupt["active"]["version"]["sha256"] = "0".repeat(64).into();
     fs::write(&bad_hash_path, serde_json::to_vec(&corrupt).unwrap()).unwrap();
-    let error = FingerprintBank::new(bank_settings(bad_hash.path(), true))
+    let error = FingerprintBank::new(bank_settings(bad_hash.path()))
         .err()
         .expect("cache hash mismatch must be rejected");
     assert_eq!(error.status.as_u16(), 503);
@@ -3219,7 +3217,7 @@ fn offline_fingerprint_bank_cache_preserves_hash_schema_rate_state_and_snapshot(
     corrupt["active"]["raw_bank"] = raw.clone().into();
     corrupt["active"]["version"]["sha256"] = sub2ops_server::compat::sha256(&raw).into();
     fs::write(&bad_schema_path, serde_json::to_vec(&corrupt).unwrap()).unwrap();
-    let error = FingerprintBank::new(bank_settings(bad_schema.path(), true))
+    let error = FingerprintBank::new(bank_settings(bad_schema.path()))
         .err()
         .expect("well-hashed but schema-invalid cache must be rejected");
     assert_eq!(error.status.as_u16(), 503);

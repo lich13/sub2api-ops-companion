@@ -56,7 +56,6 @@ struct Inner {
     default_revision: u64,
     existed: AtomicBool,
     mutex: Mutex<()>,
-    read_only: bool,
     validate: Validator,
     load: Loader,
     cache: Mutex<CachedSnapshot>,
@@ -83,15 +82,10 @@ pub fn valid_policy(value: &Value) -> Result<()> {
 }
 
 impl Store {
-    pub fn new(
-        path: impl Into<PathBuf>,
-        defaults: Value,
-        validate: Validator,
-        read_only: bool,
-    ) -> Self {
+    pub fn new(path: impl Into<PathBuf>, defaults: Value, validate: Validator) -> Self {
         let path = path.into();
         let lock_path = path.with_extension("lock");
-        Self::with_lock(path, lock_path, defaults, validate, read_only)
+        Self::with_lock(path, lock_path, defaults, validate)
     }
 
     pub fn with_lock(
@@ -99,16 +93,8 @@ impl Store {
         lock_path: PathBuf,
         defaults: Value,
         validate: Validator,
-        read_only: bool,
     ) -> Self {
-        Self::with_loader(
-            path,
-            lock_path,
-            defaults,
-            validate,
-            |_| Ok(false),
-            read_only,
-        )
+        Self::with_loader(path, lock_path, defaults, validate, |_| Ok(false))
     }
 
     pub(crate) fn with_loader(
@@ -117,7 +103,6 @@ impl Store {
         defaults: Value,
         validate: Validator,
         load: Loader,
-        read_only: bool,
     ) -> Self {
         let existed = path.exists() || lock_path.exists();
         Self(Arc::new(Inner {
@@ -127,23 +112,19 @@ impl Store {
             default_revision: next_cache_revision(),
             existed: AtomicBool::new(existed),
             mutex: Mutex::new(()),
-            read_only,
             validate,
             load,
             cache: Mutex::new(None),
         }))
     }
 
-    pub fn policy(path: impl Into<PathBuf>, mut defaults: Value, read_only: bool) -> Self {
+    pub fn policy(path: impl Into<PathBuf>, mut defaults: Value) -> Self {
         defaults["version"] = json!(1);
-        Self::new(path, defaults, valid_policy, read_only)
+        Self::new(path, defaults, valid_policy)
     }
 
     pub fn path(&self) -> &Path {
         &self.0.path
-    }
-    pub fn is_read_only(&self) -> bool {
-        self.0.read_only
     }
     pub(crate) fn evict_cache(&self) {
         if let Ok(mut cache) = self.0.cache.lock() {
@@ -268,9 +249,6 @@ impl Store {
         action: impl FnOnce(&mut Value) -> Result<T>,
         validate: impl FnOnce(&Value) -> Result<()>,
     ) -> Result<T> {
-        if self.0.read_only {
-            return Err(Error::read_only());
-        }
         let _mutex = self.0.mutex.lock().map_err(|_| Error::internal())?;
         let parent = self.0.path.parent().ok_or_else(Error::internal)?;
         fs::create_dir_all(parent)?;
@@ -379,7 +357,7 @@ mod tests {
         }
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("state.json");
-        let store = Store::new(&path, json!({"version":1,"value":1}), validate, false);
+        let store = Store::new(&path, json!({"version":1,"value":1}), validate);
         store.transaction(|_| Ok(())).unwrap();
         let first = store.read_shared().unwrap();
         assert_eq!(first["value"], 1);
@@ -419,7 +397,7 @@ mod tests {
     #[test]
     fn shared_snapshots_remain_stable_across_concurrent_and_rejected_writes() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::policy(dir.path().join("state.json"), json!({"value":1}), false);
+        let store = Store::policy(dir.path().join("state.json"), json!({"value":1}));
         store.transaction(|_| Ok(())).unwrap();
         let retained = store.read_shared().unwrap();
         let writer = store.clone();
@@ -451,7 +429,7 @@ mod tests {
     fn selected_validation_preserves_snapshots_and_atomic_file_format() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
-        let store = Store::policy(&path, json!({"value":1}), false);
+        let store = Store::policy(&path, json!({"value":1}));
         store.transaction(|_| Ok(())).unwrap();
         let before = store.read_shared().unwrap();
         let change = |data: &mut Value| {
@@ -473,15 +451,12 @@ mod tests {
         let mut expected = serde_json::to_vec(&*after).unwrap();
         expected.push(b'\n');
         assert_eq!(fs::read(&path).unwrap(), expected);
-        assert_eq!(
-            Store::policy(&path, json!({}), false).read().unwrap(),
-            *after
-        );
+        assert_eq!(Store::policy(&path, json!({})).read().unwrap(), *after);
     }
     #[test]
     fn unchanged_admin_token_does_not_enter_a_transaction() {
         let dir = tempfile::tempdir().unwrap();
-        let state = crate::oauth_state::OAuthState::new(dir.path().join("state.json"), false);
+        let state = crate::oauth_state::OAuthState::new(dir.path().join("state.json"));
         state.save_admin_token("fixture-admin").unwrap();
         let before = state.0.read_shared().unwrap();
         state.save_admin_token("  fixture-admin  ").unwrap();
@@ -497,13 +472,13 @@ mod tests {
     fn transactions_merge_disk_changes_and_reject_lost_or_corrupt_state() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
-        let a = Store::policy(&path, json!({"jobs":{}}), false);
+        let a = Store::policy(&path, json!({"jobs":{}}));
         a.transaction(|value| {
             value["jobs"]["one"] = json!(1);
             Ok(())
         })
         .unwrap();
-        let b = Store::policy(&path, json!({"jobs":{}}), false);
+        let b = Store::policy(&path, json!({"jobs":{}}));
         b.transaction(|value| {
             value["jobs"]["two"] = json!(2);
             Ok(())
@@ -520,21 +495,13 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), b"{broken");
         fs::remove_file(&path).unwrap();
         assert!(a.read().is_err());
-        assert!(Store::policy(&path, json!({}), false).read().is_err());
-    }
-    #[test]
-    fn read_only_does_not_create_state_or_lock_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = Store::policy(dir.path().join("absent/state.json"), json!({}), true);
-        assert_eq!(store.read().unwrap(), json!({"version":1}));
-        assert!(store.transaction(|_| Ok(())).is_err());
-        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+        assert!(Store::policy(&path, json!({})).read().is_err());
     }
     #[test]
     fn rejected_transaction_keeps_original_bytes() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
-        let store = Store::policy(&path, json!({}), false);
+        let store = Store::policy(&path, json!({}));
         store.transaction(|_| Ok(())).unwrap();
         let before = fs::read(&path).unwrap();
         let result: Result<()> = store.transaction(|value| {

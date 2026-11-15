@@ -71,14 +71,14 @@ fn state_0184_upgrade_preserves_receipts_and_removes_unused_observations() {
         "recovery_history":{"fixture-history":{"id":1,"account_id":7,"legacy":false,"kind":"reset_credit"}},
         "daily_test":{"next_at":at},"oauth_results":{}});
     fs::write(&path, serde_json::to_vec(&raw).unwrap()).unwrap();
-    let store = OAuthState::new(path.clone(), false);
+    let store = OAuthState::new(path.clone());
     assert!(store.snapshot().unwrap()["scheduler"]["7"]["reset_credit_observation"].is_null());
     assert_eq!(
         serde_json::from_slice::<Value>(&fs::read(&path).unwrap()).unwrap(),
         raw
     );
     store.transaction(|_| Ok(())).unwrap();
-    let migrated = OAuthState::new(path.clone(), false).snapshot().unwrap();
+    let migrated = OAuthState::new(path.clone()).snapshot().unwrap();
     for field in [
         "settings",
         "pending_events",
@@ -107,7 +107,7 @@ fn state_0184_upgrade_preserves_receipts_and_removes_unused_observations() {
     assert_eq!(disk, migrated);
 }
 
-fn settings(root: &Path, database_url: String, read_only: bool) -> Settings {
+fn settings(root: &Path, database_url: String) -> Settings {
     Settings {
         database_url,
         bind: "127.0.0.1:0".into(),
@@ -134,7 +134,6 @@ fn settings(root: &Path, database_url: String, read_only: bool) -> Settings {
         bark_valid: true,
         base_url: String::new(),
         verify_url: String::new(),
-        read_only,
     }
 }
 
@@ -143,7 +142,7 @@ fn store_preserves_permissions_identity_and_atomic_failure_invariants() {
     let temporary = tempfile::tempdir().expect("create owned Store fixture directory");
     let expected = fixture()["store"].clone();
     let path = temporary.path().join("state.json");
-    let store = Store::policy(&path, json!({"payload":{"fixture":true}}), false);
+    let store = Store::policy(&path, json!({"payload":{"fixture":true}}));
 
     store
         .transaction(|_| Ok(()))
@@ -269,7 +268,7 @@ fn existing_store_instance_and_audit_locks_converge_to_private_modes() {
     let root = temporary.path();
 
     let state_path = root.join("store-state.json");
-    let store = Store::policy(&state_path, json!({"payload":{}}), false);
+    let store = Store::policy(&state_path, json!({"payload":{}}));
     store
         .transaction(|_| Ok(()))
         .expect("create synthetic Store state and lock");
@@ -287,22 +286,22 @@ fn existing_store_instance_and_audit_locks_converge_to_private_modes() {
     let lease_path = PathBuf::from(format!("{}.fixture", lease_state.display()));
     fs::write(&lease_path, b"synthetic lease fixture").unwrap();
     fs::set_permissions(&lease_path, fs::Permissions::from_mode(0o644)).unwrap();
-    let held_lease = DiskLease::try_acquire(&lease_state, "fixture", false)
+    let held_lease = DiskLease::try_acquire(&lease_state, "fixture")
         .expect("acquire and restrict the existing lease file");
     assert_eq!(mode(&lease_path), 0o600, "existing DiskLease");
     assert!(
-        DiskLease::try_acquire(&lease_state, "fixture", false).is_err(),
+        DiskLease::try_acquire(&lease_state, "fixture").is_err(),
         "a second instance cannot acquire the held disk lease"
     );
     drop(held_lease);
-    let released_lease = DiskLease::try_acquire(&lease_state, "fixture", false)
+    let released_lease = DiskLease::try_acquire(&lease_state, "fixture")
         .expect("dropping the instance lease releases its exclusive lock");
     drop(released_lease);
 
     let audit_path = root.join("audit.jsonl");
     fs::write(&audit_path, b"{}\n").unwrap();
     fs::set_permissions(&audit_path, fs::Permissions::from_mode(0o644)).unwrap();
-    sub2ops_server::audit::write(&audit_path, "fixture_event", json!({"fixture":true}), false);
+    sub2ops_server::audit::write(&audit_path, "fixture_event", json!({"fixture":true}));
     assert_eq!(mode(&audit_path), 0o600, "existing audit append target");
     assert_eq!(
         fs::read_to_string(&audit_path).unwrap().lines().count(),
@@ -312,7 +311,7 @@ fn existing_store_instance_and_audit_locks_converge_to_private_modes() {
 
     let audit_lock = root.join("audit.jsonl.lock");
     assert_eq!(mode(&audit_lock), 0o600);
-    let capacity = CapacityStore::new(root.join("capacity-state.json"), false);
+    let capacity = CapacityStore::new(root.join("capacity-state.json"));
     let expected = sub2ops_server::capacity_alerts::mark_view(71001, &Value::Null);
     capacity
         .set_mark(
@@ -326,25 +325,9 @@ fn existing_store_instance_and_audit_locks_converge_to_private_modes() {
     assert!(!root.join("capacity-alert-locks").exists());
 }
 
-#[test]
-fn read_only_store_does_not_create_parent_lock_or_state() {
-    let temporary = tempfile::tempdir().expect("create owned Store fixture directory");
-    let absent_parent = temporary.path().join("not-created");
-    let path = absent_parent.join("state.json");
-    assert_eq!(
-        fixture()["store"]["read_only_missing_state_creates_no_parent_lock_or_state"],
-        true
-    );
-    let store = Store::policy(&path, json!({"fixture":true}), true);
-    assert_eq!(store.read().unwrap(), json!({"fixture":true,"version":1}));
-    assert!(store.transaction(|_| Ok(())).is_err());
-    assert!(!absent_parent.exists());
-    assert_eq!(fs::read_dir(temporary.path()).unwrap().count(), 0);
-}
-
 #[tokio::test]
 async fn postgres_numeric_wire_scale_and_python_digest_match() {
-    let database = Database::open(&database_url(), false)
+    let database = Database::open(&database_url())
         .await
         .expect("connect to runner-owned PostgreSQL");
     let values = fixture()["numeric"]["amounts"].as_array().unwrap().clone();
@@ -555,11 +538,11 @@ impl Drop for NotifyOnDrop {
 #[tokio::test]
 async fn coordinator_drain_closes_aborts_owned_query_and_releases_state_lock() {
     let temporary = tempfile::tempdir().expect("create owned coordinator directory");
-    let database = Database::open(&database_url(), false)
+    let database = Database::open(&database_url())
         .await
         .expect("connect to runner-owned PostgreSQL");
-    let settings = Arc::new(settings(temporary.path(), database_url(), false));
-    let oauth = OAuthState::new(settings.usage_path.clone(), false);
+    let settings = Arc::new(settings(temporary.path(), database_url()));
+    let oauth = OAuthState::new(settings.usage_path.clone());
     let queries = Queries {
         db: database.clone(),
         oauth: oauth.clone(),
@@ -569,7 +552,7 @@ async fn coordinator_drain_closes_aborts_owned_query_and_releases_state_lock() {
         queries,
         upstream,
         AccountLocks::default(),
-        Templates::new(settings.model_path.clone(), false),
+        Templates::new(settings.model_path.clone()),
         settings,
     )
     .unwrap();
@@ -682,91 +665,6 @@ async fn coordinator_drain_closes_aborts_owned_query_and_releases_state_lock() {
     database.close().await;
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct DiskEntry {
-    directory: bool,
-    bytes: Option<Vec<u8>>,
-    modified: Option<SystemTime>,
-    inode: u64,
-    mode: u32,
-}
-
-#[cfg(unix)]
-fn metadata_identity(metadata: &fs::Metadata) -> (u64, u32) {
-    use std::os::unix::fs::MetadataExt;
-    (metadata.ino(), metadata.mode() & 0o777)
-}
-
-#[cfg(not(unix))]
-fn metadata_identity(_metadata: &fs::Metadata) -> (u64, u32) {
-    (0, 0)
-}
-
-fn disk_snapshot(root: &Path) -> std::io::Result<std::collections::BTreeMap<PathBuf, DiskEntry>> {
-    fn visit(
-        root: &Path,
-        directory: &Path,
-        entries: &mut std::collections::BTreeMap<PathBuf, DiskEntry>,
-    ) -> std::io::Result<()> {
-        for entry in fs::read_dir(directory)? {
-            let entry = entry?;
-            let path = entry.path();
-            let metadata = fs::symlink_metadata(&path)?;
-            let is_directory = metadata.is_dir();
-            let (inode, mode) = metadata_identity(&metadata);
-            let relative = path.strip_prefix(root).unwrap().to_owned();
-            entries.insert(
-                relative,
-                DiskEntry {
-                    directory: is_directory,
-                    bytes: if is_directory {
-                        None
-                    } else {
-                        Some(fs::read(&path)?)
-                    },
-                    modified: metadata.modified().ok(),
-                    inode,
-                    mode,
-                },
-            );
-            if is_directory {
-                visit(root, &path, entries)?;
-            }
-        }
-        Ok(())
-    }
-    let mut entries = std::collections::BTreeMap::new();
-    visit(root, root, &mut entries)?;
-    Ok(entries)
-}
-
-#[tokio::test]
-async fn readonly_runtime_preflight_and_check_state_leave_directory_unchanged() {
-    let root = contract_dir().join("runtime-readonly");
-    fs::create_dir_all(&root).expect("create runner-owned read-only directory");
-    let old_config = fixture()["runtime"]["legacy_config"].clone();
-    fs::write(
-        root.join("oauth-config.json"),
-        serde_json::to_vec_pretty(&old_config).unwrap(),
-    )
-    .unwrap();
-    let before = disk_snapshot(&root).expect("capture existing synthetic state");
-    let runtime = Runtime::new(settings(&root, database_url(), true))
-        .await
-        .expect("construct read-only Runtime against temporary PostgreSQL");
-    assert_eq!(runtime.preflight().await.unwrap()["read_only"], true);
-    runtime
-        .start()
-        .await
-        .expect("--read-only and --check-state path skips writable startup");
-    runtime.close().await;
-    assert_eq!(
-        before,
-        disk_snapshot(&root).expect("capture state after read-only preflight"),
-        "read-only preflight must preserve every existing byte/metadata and create no files"
-    );
-}
-
 fn seed_fingerprint_cache(root: &Path) {
     let raw = include_str!("../resources/modeltrace/unified_bank.json");
     let (bank, mut version) = sub2ops_server::modeltrace::bundled().unwrap();
@@ -801,7 +699,7 @@ async fn runtime_new_directory_startup_creates_valid_state_without_missing_inten
     let root = contract_dir().join("runtime-new-directory");
     fs::create_dir_all(&root).expect("create runner-owned fresh runtime directory");
     seed_fingerprint_cache(&root);
-    let runtime = Runtime::new(settings(&root, database_url(), false))
+    let runtime = Runtime::new(settings(&root, database_url()))
         .await
         .expect("construct Runtime in fresh writable directory");
     runtime
@@ -830,9 +728,7 @@ async fn runtime_start_preserves_retired_files_and_initializes_current_detection
     fs::write(&retired, b"fixture-retired-file-not-read").unwrap();
     let guard = root.join("guard-state.json");
     fs::write(&guard, b"fixture-retired-guard").unwrap();
-    let runtime = Runtime::new(settings(&root, database_url(), false))
-        .await
-        .unwrap();
+    let runtime = Runtime::new(settings(&root, database_url())).await.unwrap();
     runtime.start().await.unwrap();
     assert_eq!(
         fs::read(&retired).unwrap(),

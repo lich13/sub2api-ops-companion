@@ -213,16 +213,12 @@ impl Coordinator {
                     &self.actions.settings.audit_path,
                     "oauth_usage_deferred",
                     json!({"account_id":id,"source":"automatic","reason":blocked,"next_query_at":value.1}),
-                    self.actions.settings.read_only,
                 );
             }
         }
         Ok(())
     }
     pub async fn query(&self, id: i64, key: &str, options: QueryOptions) -> Value {
-        if self.actions.settings.read_only {
-            return skipped("read_only");
-        }
         let row = match credit_ownership::account(&self.actions.queries.db, id).await {
             Ok(row) => row,
             Err(_) => return skipped("account_read_failed"),
@@ -235,9 +231,6 @@ impl Coordinator {
         key: &str,
         options: QueryOptions,
     ) -> Value {
-        if self.actions.settings.read_only {
-            return skipped("read_only");
-        }
         let id = integer(&row["id"]).unwrap_or(0);
         if row["platform"] != "openai" || row["type"] != "oauth" {
             return skipped("account_changed");
@@ -455,9 +448,6 @@ impl Coordinator {
     pub async fn execute(&self, row: &Value, key: &str, seconds: u64, at: DateTime<Utc>) -> Value {
         let id = integer(&row["id"]).unwrap_or(0);
         let failure = |code: &str, message: &str| json!({"account_id":id,"success":false,"data":{},"error":message,"queried_at":datetime(at),"unit":"%","oauth_quota":quota::quota_windows(row,None),"source":"sub2api_admin_usage","error_code":code});
-        if self.actions.settings.read_only {
-            return failure("read_only", "服务处于只读验收模式");
-        }
         if key.trim().is_empty() || self.actions.upstream.active_url().is_empty() {
             return failure(
                 "missing_sub2api_admin_credentials",
@@ -527,7 +517,6 @@ impl Coordinator {
             &self.actions.settings.audit_path,
             "oauth_usage_query",
             json!({"account_id":id,"source":options.source.as_str(),"reason":options.reason,"requested":admitted,"success":truthy(&result["success"]),"error_code":string(&result["error_code"]),"next_query_at":result["next_query_at"]}),
-            self.actions.settings.read_only,
         );
     }
     pub async fn external_read<F, Fut, V>(
@@ -543,9 +532,6 @@ impl Coordinator {
         Fut: Future<Output = (Value, Option<Value>)> + Send + 'static,
         V: Fn(&Value) -> bool + Send + 'static,
     {
-        if self.actions.settings.read_only {
-            return (skipped("read_only"), None);
-        }
         if bypass_interval
             && (options.source != Source::Automatic || options.reason != "reset_credit_consume")
         {

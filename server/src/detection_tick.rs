@@ -12,9 +12,6 @@ use serde_json::{json, Value};
 
 impl Detection {
     pub async fn tick(&self) -> Result<()> {
-        if self.actions.settings.read_only {
-            return Ok(());
-        }
         let Ok(_guard) = self.tick_lock.try_lock() else {
             return Ok(());
         };
