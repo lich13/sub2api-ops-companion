@@ -100,30 +100,6 @@ impl ConfigService {
     pub fn current(&self) -> Result<Value> {
         Ok((*self.current_shared()?).clone())
     }
-    pub async fn migrate_legacy(&self) -> Result<()> {
-        if self.settings.read_only {
-            return Err(Error::read_only());
-        }
-        let _guard = self.lock.lock().await;
-        if self
-            .oauth
-            .read_shared()?
-            .get("oauth_7d_probe_interval_seconds")
-            .is_none()
-        {
-            return Ok(());
-        }
-        self.oauth.transaction(|raw| {
-            raw.as_object_mut()
-                .ok_or_else(Error::internal)?
-                .retain(|key, _| {
-                    OAUTH_FIELDS.contains(&key.as_str())
-                        || matches!(key.as_str(), "updated_at" | "updated_by")
-                        || key == SEEN_IDS
-                });
-            Ok(())
-        })
-    }
     pub fn snapshot(&self, section: Option<&str>) -> Result<Value> {
         let raw = if section.is_none_or(|s| s == "oauth") {
             self.oauth.read_shared()?
@@ -237,10 +213,10 @@ impl ConfigService {
         let stamp = now();
         match section {
             "oauth" => {
-                if changes.keys().any(|key| {
-                    key != "oauth_7d_probe_interval_seconds"
-                        && !OAUTH_FIELDS.contains(&key.as_str())
-                }) {
+                if changes
+                    .keys()
+                    .any(|key| !OAUTH_FIELDS.contains(&key.as_str()))
+                {
                     return Err(Error::new(422, "未知 OAuth 设置"));
                 }
                 let raw = self.oauth.read()?;
@@ -251,7 +227,7 @@ impl ConfigService {
                             return Err(Error::new(422, "检测源平台配置无效"));
                         }
                         values[key] = crate::model_rules::merge(&values[key], value);
-                    } else if key != "oauth_7d_probe_interval_seconds" {
+                    } else {
                         values[key] = value.clone();
                     }
                 }
@@ -272,7 +248,6 @@ impl ConfigService {
                     ("connection_test_max_retries", 0, 10),
                     ("oauth_usage_refresh_concurrency", 1, 16),
                     ("oauth_recovery_test_concurrency", 1, 8),
-                    ("oauth_early_probe_batch_size", 1, 50),
                     ("oauth_early_reset_interval_seconds", 2, i64::MAX / 1000),
                 ] {
                     if !values[key].is_i64()

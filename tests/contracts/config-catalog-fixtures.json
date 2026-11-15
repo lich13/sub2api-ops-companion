@@ -355,7 +355,6 @@
       "DATABASE_URL": "postgresql://example.invalid/fixture",
       "OAUTH_AUTO_RESET_CREDIT_ENABLED": "true",
       "OAUTH_DAILY_TEST_TIME": "08:15",
-      "OAUTH_EARLY_PROBE_BATCH_SIZE": "19",
       "OAUTH_RECOVERY_MONITOR_ENABLED": "true",
       "OAUTH_RECOVERY_TEST_CONCURRENCY": "7",
       "OAUTH_RECOVERY_TEST_MODEL_ID": "fixture-env-model",
@@ -365,7 +364,6 @@
       "oauth_auto_reset_credit_enabled": false,
       "oauth_daily_test_enabled": true,
       "oauth_daily_test_time": "07:30",
-      "oauth_early_probe_batch_size": 19,
       "oauth_recovery_connection_account_ids": [
         11,
         13

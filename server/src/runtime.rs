@@ -109,12 +109,6 @@ impl Runtime {
             ("keepalive", settings.keepalive_path.clone()),
             ("audit", settings.audit_path.clone()),
             (
-                "priority_orders",
-                settings
-                    .usage_path
-                    .with_file_name("account-priority-orders.json"),
-            ),
-            (
                 "priority_orders_v2",
                 settings
                     .usage_path
@@ -304,7 +298,6 @@ impl Runtime {
         startup("keepalive", self.keepalive.store.read_shared())?;
         startup("capacity", self.detection.capacity.store.shared_snapshot())?;
         startup("operations", self.operations.store.read_shared())?;
-        startup("priority_orders", self.priorities.legacy.read_shared())?;
         startup("priority_orders_v2", self.priorities.store.read_shared())?;
         startup(
             "templates",
@@ -336,11 +329,9 @@ impl Runtime {
         if self.settings.read_only {
             return Ok(());
         }
-        startup("oauth_config", self.config.migrate_legacy().await)?;
         startup("operations", self.operations.store.recover_startup())?;
-        startup("priority_orders", self.priorities.recover_startup().await)?;
+        startup("priority_orders", self.priorities.recover_startup())?;
         startup("model_tests", self.tests.startup())?;
-        startup("lm_detector", self.tests.lm_bank.migrate_bundled().await)?;
         startup(
             "capacity",
             self.detection.capacity.initialize(chrono::Utc::now()),

@@ -33,14 +33,13 @@
         "oauth_auto_reset_credit_enabled": false,
         "oauth_daily_test_enabled": true,
         "oauth_daily_test_time": "06:15",
-        "oauth_early_probe_batch_size": 8,
         "oauth_recovery_connection_account_ids": null,
         "oauth_recovery_model_account_ids": null,
         "oauth_recovery_monitor_enabled": true,
         "oauth_recovery_test_concurrency": 2,
         "oauth_recovery_test_model_id": "gpt-5.6-luna",
         "oauth_usage_refresh_concurrency": 4,
-        "revision": "cc819475e26027b1d3cb7659a99e438cc393917d3639133cd2a336b5f249e02b"
+        "revision": "9ec6ea5b5c98601fe700f075738d76b43326e967bbf114a90ca1fb993f8def6d"
       },
       "name": "legacy",
       "raw": {
@@ -200,14 +199,13 @@
         "oauth_auto_reset_credit_enabled": false,
         "oauth_daily_test_enabled": true,
         "oauth_daily_test_time": "05:00",
-        "oauth_early_probe_batch_size": 8,
         "oauth_recovery_connection_account_ids": [],
         "oauth_recovery_model_account_ids": [],
         "oauth_recovery_monitor_enabled": true,
         "oauth_recovery_test_concurrency": 2,
         "oauth_recovery_test_model_id": "gpt-5.6-luna",
         "oauth_usage_refresh_concurrency": 4,
-        "revision": "4604bd17099c28532000077992e3a54c1971d9501839026d69559a95d392ca44"
+        "revision": "52a872ccc68ffaf1aa664340e1fe8a7095680221d7c260c91b91843c15426262"
       },
       "name": "explicit_empty",
       "raw": {
@@ -283,7 +281,6 @@
         "oauth_auto_reset_credit_enabled": false,
         "oauth_daily_test_enabled": true,
         "oauth_daily_test_time": "05:00",
-        "oauth_early_probe_batch_size": 8,
         "oauth_recovery_connection_account_ids": [
           31
         ],
@@ -294,7 +291,7 @@
         "oauth_recovery_test_concurrency": 2,
         "oauth_recovery_test_model_id": "gpt-5.6-luna",
         "oauth_usage_refresh_concurrency": 4,
-        "revision": "5e002c23d3fa8ea185c01d7a7b5f71c1cb66161c761d6ade4904ed50083f9bcc"
+        "revision": "68ae88be524c91310493969f24ebc8a6f1ac6458f94982e67d361e1e7838cc6e"
       },
       "name": "explicit_selected",
       "raw": {
@@ -374,7 +371,6 @@
           "oauth_auto_reset_credit_enabled": false,
           "oauth_daily_test_enabled": true,
           "oauth_daily_test_time": "05:00",
-          "oauth_early_probe_batch_size": 8,
           "oauth_recovery_connection_account_ids": [
             32,
             39
@@ -394,7 +390,6 @@
           "oauth_auto_reset_credit_enabled": false,
           "oauth_daily_test_enabled": true,
           "oauth_daily_test_time": "05:00",
-          "oauth_early_probe_batch_size": 8,
           "oauth_recovery_connection_account_ids": [
             32,
             39
@@ -414,7 +409,6 @@
           "oauth_auto_reset_credit_enabled": false,
           "oauth_daily_test_enabled": true,
           "oauth_daily_test_time": "05:00",
-          "oauth_early_probe_batch_size": 8,
           "oauth_recovery_connection_account_ids": [
             32,
             39
@@ -434,7 +428,6 @@
           "oauth_auto_reset_credit_enabled": false,
           "oauth_daily_test_enabled": true,
           "oauth_daily_test_time": "05:00",
-          "oauth_early_probe_batch_size": 8,
           "oauth_recovery_connection_account_ids": [
             32,
             39
@@ -455,7 +448,6 @@
         "oauth_auto_reset_credit_enabled": false,
         "oauth_daily_test_enabled": true,
         "oauth_daily_test_time": "05:00",
-        "oauth_early_probe_batch_size": 8,
         "oauth_recovery_connection_account_ids": [
           31,
           32
@@ -465,7 +457,7 @@
         "oauth_recovery_test_concurrency": 2,
         "oauth_recovery_test_model_id": "gpt-5.6-luna",
         "oauth_usage_refresh_concurrency": 4,
-        "revision": "a74c031e35c9b9021f05297cd24b071e9847a35319fce594f20fc4da7d2bd18b"
+        "revision": "214aaaccb1bb209c40e28d725cc2a40716eed5664bb61c02c1eeac6d4bd8fec2"
       },
       "name": "sticky",
       "raw": {
@@ -672,7 +664,6 @@
           "oauth_auto_reset_credit_enabled": false,
           "oauth_daily_test_enabled": true,
           "oauth_daily_test_time": "05:00",
-          "oauth_early_probe_batch_size": 8,
           "oauth_recovery_connection_account_ids": [
             32
           ],
@@ -692,7 +683,6 @@
           "oauth_auto_reset_credit_enabled": false,
           "oauth_daily_test_enabled": true,
           "oauth_daily_test_time": "05:00",
-          "oauth_early_probe_batch_size": 8,
           "oauth_recovery_connection_account_ids": [
             32
           ],
@@ -713,7 +703,6 @@
         "oauth_auto_reset_credit_enabled": false,
         "oauth_daily_test_enabled": true,
         "oauth_daily_test_time": "05:00",
-        "oauth_early_probe_batch_size": 8,
         "oauth_recovery_connection_account_ids": [
           31,
           32
@@ -723,7 +712,7 @@
         "oauth_recovery_test_concurrency": 2,
         "oauth_recovery_test_model_id": "gpt-5.6-luna",
         "oauth_usage_refresh_concurrency": 4,
-        "revision": "a74c031e35c9b9021f05297cd24b071e9847a35319fce594f20fc4da7d2bd18b"
+        "revision": "214aaaccb1bb209c40e28d725cc2a40716eed5664bb61c02c1eeac6d4bd8fec2"
       },
       "name": "model_mode",
       "raw": {
@@ -790,7 +779,6 @@
           "oauth_auto_reset_credit_enabled": false,
           "oauth_daily_test_enabled": true,
           "oauth_daily_test_time": "06:15",
-          "oauth_early_probe_batch_size": 8,
           "oauth_recovery_connection_account_ids": [
             31
           ],
@@ -806,7 +794,6 @@
           "oauth_auto_reset_credit_enabled": false,
           "oauth_daily_test_enabled": true,
           "oauth_daily_test_time": "06:15",
-          "oauth_early_probe_batch_size": 8,
           "oauth_recovery_connection_account_ids": [
             32
           ],
@@ -822,7 +809,6 @@
           "oauth_auto_reset_credit_enabled": false,
           "oauth_daily_test_enabled": true,
           "oauth_daily_test_time": "06:15",
-          "oauth_early_probe_batch_size": 8,
           "oauth_recovery_connection_account_ids": [],
           "oauth_recovery_model_account_ids": [],
           "oauth_recovery_monitor_enabled": true,
@@ -835,7 +821,6 @@
         "oauth_auto_reset_credit_enabled": false,
         "oauth_daily_test_enabled": true,
         "oauth_daily_test_time": "05:00",
-        "oauth_early_probe_batch_size": 8,
         "oauth_recovery_connection_account_ids": [
           31
         ],
@@ -846,7 +831,7 @@
         "oauth_recovery_test_concurrency": 2,
         "oauth_recovery_test_model_id": "gpt-5.6-luna",
         "oauth_usage_refresh_concurrency": 4,
-        "revision": "5e002c23d3fa8ea185c01d7a7b5f71c1cb66161c761d6ade4904ed50083f9bcc"
+        "revision": "68ae88be524c91310493969f24ebc8a6f1ac6458f94982e67d361e1e7838cc6e"
       },
       "name": "partial_save",
       "raw": {
@@ -903,7 +888,6 @@
           "oauth_auto_reset_credit_enabled": false,
           "oauth_daily_test_enabled": true,
           "oauth_daily_test_time": "08:00",
-          "oauth_early_probe_batch_size": 8,
           "oauth_recovery_connection_account_ids": [
             31,
             32,
@@ -925,7 +909,6 @@
         "oauth_auto_reset_credit_enabled": false,
         "oauth_daily_test_enabled": true,
         "oauth_daily_test_time": "05:00",
-        "oauth_early_probe_batch_size": 8,
         "oauth_recovery_connection_account_ids": [
           31,
           32
@@ -935,7 +918,7 @@
         "oauth_recovery_test_concurrency": 2,
         "oauth_recovery_test_model_id": "gpt-5.6-luna",
         "oauth_usage_refresh_concurrency": 4,
-        "revision": "a74c031e35c9b9021f05297cd24b071e9847a35319fce594f20fc4da7d2bd18b"
+        "revision": "214aaaccb1bb209c40e28d725cc2a40716eed5664bb61c02c1eeac6d4bd8fec2"
       },
       "name": "stale_revision",
       "raw": {
@@ -1039,7 +1022,6 @@
           "oauth_auto_reset_credit_enabled": false,
           "oauth_daily_test_enabled": true,
           "oauth_daily_test_time": "07:30",
-          "oauth_early_probe_batch_size": 8,
           "oauth_recovery_connection_account_ids": [
             31,
             32,
@@ -1063,7 +1045,6 @@
         "oauth_auto_reset_credit_enabled": false,
         "oauth_daily_test_enabled": true,
         "oauth_daily_test_time": "05:00",
-        "oauth_early_probe_batch_size": 8,
         "oauth_recovery_connection_account_ids": [
           31,
           32
@@ -1073,7 +1054,7 @@
         "oauth_recovery_test_concurrency": 2,
         "oauth_recovery_test_model_id": "gpt-5.6-luna",
         "oauth_usage_refresh_concurrency": 4,
-        "revision": "a74c031e35c9b9021f05297cd24b071e9847a35319fce594f20fc4da7d2bd18b"
+        "revision": "214aaaccb1bb209c40e28d725cc2a40716eed5664bb61c02c1eeac6d4bd8fec2"
       },
       "name": "concurrent",
       "raw": {
@@ -1195,7 +1176,6 @@
     "oauth_auto_reset_credit_enabled": false,
     "oauth_daily_test_enabled": true,
     "oauth_daily_test_time": "05:00",
-    "oauth_early_probe_batch_size": 8,
     "oauth_recovery_connection_account_ids": null,
     "oauth_recovery_model_account_ids": null,
     "oauth_recovery_monitor_enabled": true,

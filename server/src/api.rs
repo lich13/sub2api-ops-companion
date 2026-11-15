@@ -245,7 +245,6 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
         path.first().copied(),
         Some("account-priorities" | "account-priority-orders")
     );
-    let priority_v2 = query.get("schema").is_some_and(|value| value == "2");
     let priority_summary = query.get("details").is_some_and(|value| value == "0");
     if priority_route {
         let pairs = Query::<Vec<(String, String)>>::try_from_uri(request.uri())
@@ -258,15 +257,12 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             method == Method::GET && matches!(path.as_slice(), ["account-priority-orders", _]);
         if query.iter().any(|(key, value)| match key.as_str() {
             "schema" => value != "2",
-            "details" => !priority_v2 || !detail_get || value != "0",
+            "details" => !detail_get || value != "0",
             _ => true,
         }) {
             return Err(Error::invalid());
         }
-        if ((method == Method::POST && path.as_slice() == ["account-priority-orders"])
-            || method == Method::PUT)
-            && !priority_v2
-        {
+        if !query.contains_key("schema") {
             return Err(crate::priority_orders::upgrade_required());
         }
     }
@@ -379,7 +375,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
         }
         ["capabilities"] => {
             json!({"api_version":1,"service":"Sub2API Ops Companion","platforms":["macos","android"],"version":crate::VERSION,
-            "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"sub2api_update":true,"sub2api_config":runtime.sub2api_config.available(),"account_creation":true,"key_quota_token_reveal":true,"proxy_management":true,"detection_logs":true,"global_detection_model":true,"account_priority_ordering":true,"account_priority_per_platform":true}})
+            "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"sub2api_update":true,"account_creation":true,"detection_logs":true,"account_priority_ordering":true,"account_priority_per_platform":true}})
         }
         ["snapshot"] => {
             let bytes = runtime.snapshot_bytes().await?;
@@ -422,19 +418,15 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             }
             runtime.account_usage(path_id(id)?, &key, false).await?
         }
-        ["account-priorities"] if method == Method::GET => {
-            runtime.priorities.view(priority_v2).await?
-        }
+        ["account-priorities"] if method == Method::GET => runtime.priorities.view().await?,
         ["account-priorities"] => runtime.priorities.set_parallelism(&payload).await?,
         ["account-priority-orders"] => {
             let result = runtime.priorities.submit(&payload).await?;
             runtime.priorities.tick().await?;
             result
         }
-        ["account-priority-orders", id] => {
-            runtime.priorities.get(id, priority_v2, !priority_summary)?
-        }
-        ["account-priority-orders", id, "cancel"] => runtime.priorities.cancel(id, priority_v2)?,
+        ["account-priority-orders", id] => runtime.priorities.get(id, !priority_summary)?,
+        ["account-priority-orders", id, "cancel"] => runtime.priorities.cancel(id)?,
         ["errors"] => {
             runtime
                 .actions

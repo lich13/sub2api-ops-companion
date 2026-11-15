@@ -33,38 +33,6 @@ async fn run() -> Result<()> {
         println!(
             "sub2ops-server [serve] [--read-only] [--check-state] [--host ADDRESS] [--port PORT]"
         );
-        println!("sub2ops-server migrate-oauth --env-file PATH");
-        println!("sub2ops-server migrate-desktop --env-file PATH [--keep-menu]");
-        return Ok(());
-    }
-    if args
-        .first()
-        .is_some_and(|arg| matches!(arg.as_str(), "migrate-oauth" | "migrate-desktop"))
-    {
-        let mut env_file = None;
-        let mut keep_menu = false;
-        let mut index = 1;
-        while index < args.len() {
-            match args[index].as_str() {
-                "--env-file" if env_file.is_none() => {
-                    index += 1;
-                    env_file = Some(std::path::PathBuf::from(
-                        args.get(index).ok_or_else(Error::invalid)?,
-                    ));
-                }
-                "--keep-menu" if args[0] == "migrate-desktop" => keep_menu = true,
-                _ => return Err(Error::invalid()),
-            }
-            index += 1;
-        }
-        let env_file = env_file.ok_or_else(Error::invalid)?;
-        let env = sub2ops_server::settings::env_map();
-        let result = if args[0] == "migrate-oauth" {
-            sub2ops_server::maintenance::migrate_oauth(&env, &env_file)?
-        } else {
-            sub2ops_server::maintenance::migrate_desktop(&env, &env_file, !keep_menu).await?
-        };
-        println!("{result}");
         return Ok(());
     }
     let check = args.iter().any(|arg| arg == "--check-state");

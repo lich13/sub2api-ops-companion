@@ -569,9 +569,8 @@ class ContractSuite:
         require(response.body.get("implementation") == "rust", "capabilities implementation differs")
         require(response.body.get("platforms") == ["macos", "android"],
                 "capabilities must advertise both supported clients")
-        require(response.body.get("features", {}).get("detection_logs") is True
-                and response.body.get("features", {}).get("global_detection_model") is True,
-                "capabilities must advertise logs and global detection configuration")
+        require(response.body.get("features", {}).get("detection_logs") is True,
+                "capabilities must advertise detection logs")
         return {"status": response.status, "api_version": 1}
 
     def _snapshot(self) -> dict[str, object]:

@@ -67,8 +67,7 @@ enum BulkMode {
     UnknownNotAppliedGatewayTimeout,
     MalformedResultIds,
     MalformedTotal,
-    ExplicitUnsupported,
-    GenericNotFound,
+    NotFound,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -608,14 +607,8 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
     }
     if path == "/api/v1/admin/accounts/bulk-update" && method == Method::POST {
         let mode = *state.bulk_mode.lock().unwrap_or_else(|e| e.into_inner());
-        if matches!(mode, BulkMode::ExplicitUnsupported) {
+        if matches!(mode, BulkMode::NotFound) {
             return response(StatusCode::NOT_FOUND, json!({"detail":"Not Found"}));
-        }
-        if matches!(mode, BulkMode::GenericNotFound) {
-            return response(
-                StatusCode::NOT_FOUND,
-                json!({"code":404,"message":"fixture object missing"}),
-            );
         }
         let mut ids: Vec<i64> = body["account_ids"]
             .as_array()
@@ -908,7 +901,7 @@ impl Harness {
                 "oauth_recovery_monitor_enabled":false,"oauth_daily_test_enabled":false,
                 "oauth_auto_reset_credit_enabled":false,"oauth_daily_test_time":"05:00",
                 "oauth_usage_refresh_concurrency":2,"oauth_recovery_test_concurrency":2,
-                "oauth_early_probe_batch_size":8,"oauth_recovery_test_model_id":"fixture-model",
+                "oauth_recovery_test_model_id":"fixture-model",
                 "oauth_recovery_connection_account_ids":[],"oauth_recovery_model_account_ids":[]
                 });
                 if let Some(model) = model {
@@ -4302,68 +4295,6 @@ async fn native_group_and_proxy_batches_send_exact_targets_and_never_replay_unkn
         );
     }
 
-    let fallback_first = harness
-        .insert_account("openai", "oauth", json!({}), json!({}), None, &[])
-        .await;
-    let fallback_second = harness
-        .insert_account("grok", "oauth", json!({}), json!({}), None, &[])
-        .await;
-    sqlx::query(
-        "UPDATE accounts SET proxy_id=CASE WHEN id=$1 THEN 84 ELSE 85 END WHERE id=ANY($2)",
-    )
-    .bind(fallback_first)
-    .bind(vec![fallback_first, fallback_second])
-    .execute(&harness.runtime.db.pool)
-    .await
-    .unwrap();
-    let fallback_first_row = harness.account(fallback_first).await;
-    let fallback_second_row = harness.account(fallback_second).await;
-    let fallback_request = native_batch(
-        "proxy",
-        json!({"proxy_id":PROXY_ID}),
-        vec![
-            json!({"account_id":fallback_first,"expected_version":operation_version(&fallback_first_row,"proxy")}),
-            json!({"account_id":fallback_second,"expected_version":operation_version(&fallback_second_row,"proxy")}),
-        ],
-        "fixture-native-proxy-explicit-unsupported-0001",
-    );
-    let (status, fallback, _) = harness
-        .request(
-            Method::POST,
-            "account-operations/batch",
-            Some(fallback_request),
-        )
-        .await;
-    assert_eq!(status, 202);
-    let before_fallback = harness
-        .upstream
-        .matching(Method::POST, "/api/v1/admin/accounts/bulk-update")
-        .len();
-    harness
-        .upstream
-        .set_bulk_mode(BulkMode::ExplicitUnsupported);
-    harness.runtime.operations.tick().await.unwrap();
-    assert_eq!(
-        harness
-            .wait_batch(fallback["batch_id"].as_str().unwrap())
-            .await["pending"],
-        0
-    );
-    assert_eq!(
-        harness
-            .upstream
-            .matching(Method::POST, "/api/v1/admin/accounts/bulk-update")
-            .len(),
-        before_fallback + 1
-    );
-    for id in [fallback_first, fallback_second] {
-        let path = format!("/api/v1/admin/accounts/{id}");
-        let writes = harness.upstream.matching(Method::PUT, &path);
-        assert_eq!(writes.len(), 1);
-        assert_eq!(writes[0].body, json!({"proxy_id":PROXY_ID}));
-        assert_eq!(harness.account(id).await["proxy_id"], PROXY_ID);
-    }
-
     let generic_id = harness
         .insert_account("openai", "oauth", json!({}), json!({}), None, &[])
         .await;
@@ -4379,7 +4310,7 @@ async fn native_group_and_proxy_batches_send_exact_targets_and_never_replay_unkn
         vec![
             json!({"account_id":generic_id,"expected_version":operation_version(&generic_row,"proxy")}),
         ],
-        "fixture-native-proxy-generic-404-0001",
+        "fixture-native-proxy-missing-route-0001",
     );
     let (status, generic, _) = harness
         .request(
@@ -4393,7 +4324,7 @@ async fn native_group_and_proxy_batches_send_exact_targets_and_never_replay_unkn
         .upstream
         .matching(Method::POST, "/api/v1/admin/accounts/bulk-update")
         .len();
-    harness.upstream.set_bulk_mode(BulkMode::GenericNotFound);
+    harness.upstream.set_bulk_mode(BulkMode::NotFound);
     harness.runtime.operations.tick().await.unwrap();
     let generic_result = harness
         .wait_batch(generic["batch_id"].as_str().unwrap())
@@ -4410,7 +4341,7 @@ async fn native_group_and_proxy_batches_send_exact_targets_and_never_replay_unkn
             .matching(Method::POST, "/api/v1/admin/accounts/bulk-update")
             .len(),
         before_generic + 1,
-        "generic 404 must not trigger compatibility writes or replay"
+        "a missing bulk route must not trigger per-account writes or replay"
     );
     harness.upstream.set_bulk_mode(BulkMode::Confirmed);
     harness.finish().await;

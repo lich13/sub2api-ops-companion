@@ -1192,7 +1192,6 @@ impl RuntimeHarness {
                 "oauth_auto_reset_credit_enabled":false,
                 "oauth_daily_test_enabled":false,
                 "oauth_daily_test_time":"14:08",
-                "oauth_early_probe_batch_size":1,
                 "oauth_recovery_connection_account_ids":[],
                 "oauth_recovery_model_account_ids":[],
                 "oauth_recovery_monitor_enabled":false,

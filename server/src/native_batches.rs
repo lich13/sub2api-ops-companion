@@ -8,7 +8,6 @@ use crate::{
     security::safe_error,
     upstream::read_limited,
 };
-use futures_util::{future::BoxFuture, FutureExt};
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -67,22 +66,6 @@ pub fn result_ids(
         return None;
     }
     Some((success, failed))
-}
-pub fn unsupported(status: u16, bytes: &[u8]) -> bool {
-    if !matches!(status, 404 | 405) {
-        return false;
-    }
-    if matches!(
-        String::from_utf8_lossy(bytes)
-            .trim()
-            .to_lowercase()
-            .as_str(),
-        "404 page not found" | "method not allowed" | "405 method not allowed"
-    ) {
-        return true;
-    }
-    serde_json::from_slice::<Value>(bytes)
-        .is_ok_and(|v| matches!(string(&v["detail"]), "Not Found" | "Method Not Allowed"))
 }
 impl Operations {
     pub async fn children(&self, ids: &[i64]) -> Result<BTreeMap<i64, Vec<i64>>> {
@@ -192,9 +175,6 @@ impl Operations {
                 .flatten()
                 .enumerate()
                 .filter_map(|(index, chunk)| {
-                    if chunk["status"] == "unsupported" {
-                        return None;
-                    }
                     let states: Vec<_> = chunk["job_ids"]
                         .as_array()
                         .into_iter()
@@ -401,44 +381,14 @@ impl Operations {
             }
         }
         for jobs in groups.into_values() {
-            if delete {
-                self.delete_native_chunk(bid, jobs, key).await?;
-            } else if self.store.read_shared()?["batches"][bid]["native_unsupported"] == true {
-                for job in jobs {
-                    self.send_native(bid, vec![job], key, true, false).await?;
-                }
-            } else {
-                self.send_native(bid, jobs, key, false, false).await?;
-            }
+            self.send_native(bid, jobs, key).await?;
         }
         drop(held);
         Ok(())
     }
-    async fn delete_native_chunk(&self, bid: &str, jobs: Vec<Value>, key: &str) -> Result<()> {
-        let compatibility = self.store.read_shared()?["batches"][bid]["native_unsupported"] == true;
-        let groups = if compatibility {
-            jobs.into_iter().map(|j| vec![j]).collect::<Vec<_>>()
-        } else {
-            vec![jobs]
-        };
-        for group in groups {
-            let selected = self.record_native(bid, &group, compatibility)?;
-            if selected.is_empty() {
-                continue;
-            }
-            self.send_native(bid, selected, key, compatibility, true)
-                .await?;
-        }
-        Ok(())
-    }
-    fn record_native(&self, bid: &str, jobs: &[Value], compatibility: bool) -> Result<Vec<Value>> {
+    fn record_native(&self, bid: &str, jobs: &[Value]) -> Result<Vec<Value>> {
         let cid = id();
         let at = now();
-        let mode = if compatibility {
-            "compatibility"
-        } else {
-            "native"
-        };
         self.store.transaction(|data| {
             let mut selected = vec![];
             for job in jobs {
@@ -447,7 +397,7 @@ impl Operations {
                     continue;
                 }
                 live.as_object_mut().ok_or_else(Error::internal)?.extend(
-                    json!({"status":"running","started_at":at,"updated_at":at,"reason":"","dispatch_id":cid,"execution_mode":mode,"native_target":job["native_target"]})
+                    json!({"status":"running","started_at":at,"updated_at":at,"reason":"","dispatch_id":cid,"execution_mode":"native","native_target":job["native_target"]})
                         .as_object().unwrap().clone(),
                 );
                 selected.push(live.clone());
@@ -458,96 +408,63 @@ impl Operations {
                     batch["chunks"] = json!([]);
                 }
                 batch["chunks"].as_array_mut().ok_or_else(Error::internal)?.push(
-                    json!({"id":cid,"job_ids":selected.iter().map(|j|&j["id"]).collect::<Vec<_>>(),"account_ids":selected.iter().map(|j|&j["account_id"]).collect::<Vec<_>>(),"status":"dispatched","execution_mode":mode,"dispatched_at":at}),
+                    json!({"id":cid,"job_ids":selected.iter().map(|j|&j["id"]).collect::<Vec<_>>(),"account_ids":selected.iter().map(|j|&j["account_id"]).collect::<Vec<_>>(),"status":"dispatched","execution_mode":"native","dispatched_at":at}),
                 );
             }
             Ok(selected)
         })
     }
-    fn send_native<'a>(
-        &'a self,
-        bid: &'a str,
-        jobs: Vec<Value>,
-        key: &'a str,
-        compatibility: bool,
-        prepared: bool,
-    ) -> BoxFuture<'a, Result<()>> {
-        async move {
-            let selected = if prepared {
-                jobs
-            } else {
-                self.record_native(bid, &jobs, compatibility)?
-            };
-            if selected.is_empty() {
-                return Ok(());
-            }
-            let action = string(&selected[0]["action"]);
-            let expected: BTreeSet<_> = selected
-                .iter()
-                .filter_map(|j| integer(&j["account_id"]))
-                .collect();
-            let path = if compatibility {
-                format!("accounts/{}", selected[0]["account_id"])
-            } else if action == "delete" {
-                "accounts/batch-delete".into()
-            } else {
-                "accounts/bulk-update".into()
-            };
-            let mut body = selected[0]["native_target"].clone();
-            if !compatibility {
-                body["account_ids"] = json!(expected);
-            }
-            let method = if compatibility {
-                if action == "delete" {
-                    reqwest::Method::DELETE
-                } else {
-                    reqwest::Method::PUT
-                }
-            } else {
-                reqwest::Method::POST
-            };
-            let mut parsed = None;
-            let mut unavailable = false;
-            let mut errors = BTreeMap::new();
-            if let Ok(response) = self
-                .actions
-                .request(
-                    method,
-                    &path,
-                    key,
-                    Some(&body),
-                    Duration::from_secs(30),
-                    false,
-                )
-                .await
-            {
-                let status = response.status().as_u16();
-                if let Ok(bytes) = read_limited(response, 8_000_000).await {
-                    if !compatibility && unsupported(status, &bytes) {
-                        unavailable = true;
-                    } else if (200..300).contains(&status) {
-                        if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
-                            if value["code"].as_i64() == Some(0) {
-                                parsed = if compatibility {
-                                    Some((expected.clone(), BTreeSet::new()))
+    async fn send_native(&self, bid: &str, jobs: Vec<Value>, key: &str) -> Result<()> {
+        let selected = self.record_native(bid, &jobs)?;
+        if selected.is_empty() {
+            return Ok(());
+        }
+        let action = string(&selected[0]["action"]);
+        let expected: BTreeSet<_> = selected
+            .iter()
+            .filter_map(|j| integer(&j["account_id"]))
+            .collect();
+        let path = if action == "delete" {
+            "accounts/batch-delete"
+        } else {
+            "accounts/bulk-update"
+        };
+        let mut body = selected[0]["native_target"].clone();
+        body["account_ids"] = json!(expected);
+        let mut parsed = None;
+        let mut errors = BTreeMap::new();
+        if let Ok(response) = self
+            .actions
+            .request(
+                reqwest::Method::POST,
+                path,
+                key,
+                Some(&body),
+                Duration::from_secs(30),
+                false,
+            )
+            .await
+        {
+            let status = response.status().as_u16();
+            if let Ok(bytes) = read_limited(response, 8_000_000).await {
+                if (200..300).contains(&status) {
+                    if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
+                        if value["code"].as_i64() == Some(0) {
+                            parsed = result_ids(&value["data"], &expected, action);
+                            if let Some((_, failed)) = &parsed {
+                                for item in value["data"][if action == "delete" {
+                                    "errors"
                                 } else {
-                                    result_ids(&value["data"], &expected, action)
-                                };
-                                if let Some((_, failed)) = &parsed {
-                                    for item in value["data"][if action == "delete" {
-                                        "errors"
-                                    } else {
-                                        "results"
-                                    }]
-                                    .as_array()
-                                    .into_iter()
-                                    .flatten()
+                                    "results"
+                                }]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                {
+                                    if let Some(aid) = integer(&item["account_id"])
+                                        .filter(|id| failed.contains(id))
                                     {
-                                        if let Some(aid) = integer(&item["account_id"])
-                                            .filter(|id| failed.contains(id))
-                                        {
-                                            errors.insert(aid, safe_error(&item["error"], 200));
-                                        }
+                                        errors.insert(aid, safe_error(&item["error"], 200));
                                     }
                                 }
                             }
@@ -555,106 +472,77 @@ impl Operations {
                     }
                 }
             }
-            if unavailable {
-                self.store.transaction(|data| {
-                    data["batches"][bid]["native_unsupported"] = true.into();
-                    for job in &selected {
-                        let value = &mut data["jobs"][string(&job["id"])];
-                        value["status"] = "queued".into();
-                        value["reason"] = "原生批量接口不支持，兼容执行".into();
-                    }
-                    for chunk in data["batches"][bid]["chunks"]
-                        .as_array_mut()
-                        .into_iter()
-                        .flatten()
-                    {
-                        if chunk["id"] == selected[0]["dispatch_id"] {
-                            chunk["status"] = "unsupported".into();
-                        }
-                    }
-                    Ok(())
-                })?;
-                for job in selected {
-                    self.send_native(bid, vec![job], key, true, false).await?;
-                }
-                return Ok(());
-            }
-            // This durable boundary precedes readback. A DB failure below is an
-            // unknown outcome; only a known absent route permits compatibility.
-            self.update_many(
-                &selected
-                    .iter()
-                    .map(|job| {
-                        (
-                            string(&job["id"]),
-                            json!({"status":"checking","reason":"正在核对批量结果"}),
-                        )
-                    })
-                    .collect::<Vec<_>>(),
-            )?;
-            let rows = self.native_rows(&selected).await?;
-            let mut updates = Vec::with_capacity(selected.len());
-            for job in &selected {
-                let aid = integer(&job["account_id"]).unwrap();
-                let row = rows.get(&aid);
-                let (status, reason, result) = if native_reached(row, job) {
-                    (
-                        "completed",
-                        if compatibility {
-                            "兼容执行".to_owned()
-                        } else {
-                            String::new()
-                        },
-                        native_confirmed(row, job, false),
-                    )
-                } else if parsed
-                    .as_ref()
-                    .is_some_and(|(_, failed)| failed.contains(&aid))
-                {
-                    (
-                        "failed",
-                        errors
-                            .get(&aid)
-                            .cloned()
-                            .filter(|s| !s.is_empty())
-                            .unwrap_or_else(|| "Sub2API 未完成此账号操作，请重新预览后重试".into()),
-                        Value::Null,
-                    )
-                } else {
-                    (
-                        "needs_confirmation",
-                        "批量写入结果未确认，未重复执行".into(),
-                        Value::Null,
-                    )
-                };
-                updates.push((
-                    string(&job["id"]),
-                    json!({"status":status,"reason":reason,"result":result}),
-                ));
-            }
-            self.update_many(&updates)?;
-            for (job, (_, changes)) in selected.iter().zip(&updates) {
-                if action == "delete" && changes["status"] == "completed" {
-                    self.notify_deleted_job(job);
-                }
-                self.audit(job, string(&changes["status"]));
-            }
-            self.store.transaction(|data| {
-                for chunk in data["batches"][bid]["chunks"]
-                    .as_array_mut()
-                    .into_iter()
-                    .flatten()
-                {
-                    if chunk["id"] == selected[0]["dispatch_id"] {
-                        chunk["status"] = "checked".into();
-                        chunk["response_valid"] = parsed.is_some().into();
-                    }
-                }
-                Ok(())
-            })?;
-            Ok(())
         }
-        .boxed()
+        // This durable boundary precedes readback. A DB failure below is an
+        // unknown outcome.
+        self.update_many(
+            &selected
+                .iter()
+                .map(|job| {
+                    (
+                        string(&job["id"]),
+                        json!({"status":"checking","reason":"正在核对批量结果"}),
+                    )
+                })
+                .collect::<Vec<_>>(),
+        )?;
+        let rows = self.native_rows(&selected).await?;
+        let mut updates = Vec::with_capacity(selected.len());
+        for job in &selected {
+            let aid = integer(&job["account_id"]).unwrap();
+            let row = rows.get(&aid);
+            let (status, reason, result) = if native_reached(row, job) {
+                (
+                    "completed",
+                    String::new(),
+                    native_confirmed(row, job, false),
+                )
+            } else if parsed
+                .as_ref()
+                .is_some_and(|(_, failed)| failed.contains(&aid))
+            {
+                (
+                    "failed",
+                    errors
+                        .get(&aid)
+                        .cloned()
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or_else(|| "Sub2API 未完成此账号操作，请重新预览后重试".into()),
+                    Value::Null,
+                )
+            } else {
+                (
+                    "needs_confirmation",
+                    "批量写入结果未确认，未重复执行".into(),
+                    Value::Null,
+                )
+            };
+            updates.push((
+                string(&job["id"]),
+                json!({"status":status,"reason":reason,"result":result}),
+            ));
+        }
+        self.update_many(&updates)?;
+        for (job, (_, changes)) in selected.iter().zip(&updates) {
+            if action == "delete" && changes["status"] == "completed" {
+                self.notify_deleted_job(job);
+            }
+            self.audit(job, string(&changes["status"]));
+        }
+        self.store.transaction(|data| {
+            for chunk in data["batches"][bid]["chunks"]
+                .as_array_mut()
+                .into_iter()
+                .flatten()
+            {
+                if chunk["id"] == selected[0]["dispatch_id"] {
+                    chunk["status"] = "checked".into();
+                    chunk["response_valid"] = parsed.is_some().into();
+                }
+            }
+            Ok(())
+        })?;
+        Ok(())
     }
     fn notify_deleted_job(&self, job: &Value) {
         if let Some(aid) = integer(&job["account_id"]) {

@@ -24,9 +24,6 @@ impl Service {
             apply_gate: tokio::sync::Mutex::new(()),
         }
     }
-    pub fn available(&self) -> bool {
-        self.socket.as_ref().is_some_and(|p| p.exists())
-    }
     pub fn owns_operation(&self, key: &str) -> bool {
         self.owner
             .lock()

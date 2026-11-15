@@ -16,7 +16,6 @@ pub const OAUTH_FIELDS: &[&str] = &[
     "oauth_daily_test_time",
     "oauth_early_reset_enabled",
     "oauth_early_reset_interval_seconds",
-    "oauth_early_probe_batch_size",
     "oauth_recovery_connection_account_ids",
     "oauth_recovery_model_account_ids",
     "oauth_recovery_monitor_enabled",
@@ -168,10 +167,6 @@ impl Settings {
             ("oauth_usage_refresh_concurrency", 4, 1, 16),
             ("oauth_recovery_test_concurrency", 2, 1, 8),
             ("oauth_early_reset_interval_seconds", 60, 2, i64::MAX / 1000),
-            // Historical early-probe setting: retain storage, validation and
-            // default for compatibility. Current scheduling does not probe
-            // before reset or use this value as a worker dispatch limit.
-            ("oauth_early_probe_batch_size", 8, 1, 50),
         ] {
             let value = text(&configured(key))
                 .trim()

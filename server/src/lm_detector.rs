@@ -18,7 +18,6 @@ use std::{
 
 pub const ENGINE: &str = "lm_detector";
 const REVISION: &str = "fd9b4caf6feafbec64d45a1552432515bf4efa39";
-const PREVIOUS_BUNDLED_REVISION: &str = "567e11d65a48d4fbba2713cc4dfbe685cdd05a73";
 const FILES: [(&str, &[u8], usize); 3] = [
     (
         "unified_bank.json",
@@ -223,36 +222,6 @@ impl Bank {
         let this = self.clone();
         crate::supervision::join(tokio::task::spawn_blocking(move || {
             this.snapshot(&revision)
-        }))
-        .await
-        .map_err(|_| unavailable())?
-    }
-    pub async fn migrate_bundled(&self) -> Result<()> {
-        if self.settings.read_only || self.revision()? != PREVIOUS_BUNDLED_REVISION {
-            return Ok(());
-        }
-        let _lock = self.sync_lock.lock().await;
-        let this = self.clone();
-        crate::supervision::join(tokio::task::spawn_blocking(move || {
-            let snapshot = Arc::new(Snapshot::bundled()?);
-            let changed = this.state.transaction(|state| {
-                if state["revision"] != PREVIOUS_BUNDLED_REVISION {
-                    return Ok(false);
-                }
-                state["revision"] = REVISION.into();
-                state["synced_at"] = crate::compat::now().into();
-                state["error"] = "".into();
-                state["result"] = "updated".into();
-                Ok(true)
-            })?;
-            if changed {
-                let mut cache = this.snapshots.lock().unwrap_or_else(|e| e.into_inner());
-                cache
-                    .history
-                    .insert(REVISION.into(), Arc::downgrade(&snapshot));
-                cache.active = Some(snapshot);
-            }
-            Ok(())
         }))
         .await
         .map_err(|_| unavailable())?
@@ -653,115 +622,6 @@ mod tests {
         );
         assert!(!bank.root.exists());
         assert!(bank.request_sync().await.is_err());
-    }
-    #[tokio::test]
-    async fn known_bundled_upgrade_preserves_cached_and_pinned_history() {
-        let root = tempfile::tempdir().unwrap();
-        let bank = test_bank(root.path(), false);
-        let (stage, mut meta) = fixture();
-        meta["revision"] = PREVIOUS_BUNDLED_REVISION.into();
-        bank.activate(stage, meta).await.unwrap();
-        let pinned = bank.load(PREVIOUS_BUNDLED_REVISION.into()).await.unwrap();
-        let old_version = pinned.version.clone();
-        let old_bytes = std::fs::read(
-            bank.root
-                .join(PREVIOUS_BUNDLED_REVISION)
-                .join("manifest.json"),
-        )
-        .unwrap();
-        bank.state
-            .transaction(|state| {
-                state["error"] = "上游 SDK 已变化，请升级服务端；当前检测库已保留".into();
-                state["result"] = "failed".into();
-                Ok(())
-            })
-            .unwrap();
-        bank.migrate_bundled().await.unwrap();
-        let status = bank.public().await.unwrap();
-        assert_eq!(status["version"]["revision"], REVISION);
-        assert_eq!(status["version"]["analyzer_version"], "lmfpd-0.2.0");
-        assert_eq!(status["source"], "bundled");
-        assert_eq!(status["error"], "");
-        assert_eq!(status["result"], "updated");
-        assert_eq!(pinned.version, old_version);
-        assert!(Arc::ptr_eq(
-            &pinned,
-            &bank.load(PREVIOUS_BUNDLED_REVISION.into()).await.unwrap()
-        ));
-        assert_eq!(
-            std::fs::read(
-                bank.root
-                    .join(PREVIOUS_BUNDLED_REVISION)
-                    .join("manifest.json")
-            )
-            .unwrap(),
-            old_bytes
-        );
-        let saved = std::fs::read(bank.state.path()).unwrap();
-        let restarted = test_bank(root.path(), false);
-        restarted.migrate_bundled().await.unwrap();
-        assert_eq!(std::fs::read(bank.state.path()).unwrap(), saved);
-        assert_eq!(
-            restarted.public().await.unwrap()["version"]["revision"],
-            REVISION
-        );
-        assert_eq!(
-            restarted
-                .load(PREVIOUS_BUNDLED_REVISION.into())
-                .await
-                .unwrap()
-                .version,
-            old_version
-        );
-    }
-    #[tokio::test]
-    async fn migration_handles_unextracted_old_bundle_and_leaves_other_versions_alone() {
-        let root = tempfile::tempdir().unwrap();
-        let bank = test_bank(root.path(), false);
-        bank.state
-            .transaction(|state| {
-                state["revision"] = PREVIOUS_BUNDLED_REVISION.into();
-                Ok(())
-            })
-            .unwrap();
-        assert!(!bank.root.join(PREVIOUS_BUNDLED_REVISION).exists());
-        bank.migrate_bundled().await.unwrap();
-        assert_eq!(
-            bank.public().await.unwrap()["version"]["revision"],
-            REVISION
-        );
-        let (stage, mut meta) = fixture();
-        meta["revision"] = "3".repeat(40).into();
-        bank.activate(stage, meta).await.unwrap();
-        let saved = std::fs::read(bank.state.path()).unwrap();
-        bank.migrate_bundled().await.unwrap();
-        assert_eq!(std::fs::read(bank.state.path()).unwrap(), saved);
-        assert_eq!(
-            bank.public().await.unwrap()["version"]["revision"],
-            "3".repeat(40)
-        );
-    }
-    #[tokio::test]
-    async fn migration_failure_and_read_only_mode_preserve_the_old_state() {
-        let root = tempfile::tempdir().unwrap();
-        let bank = test_bank(root.path(), false);
-        bank.state
-            .transaction(|state| {
-                state["revision"] = PREVIOUS_BUNDLED_REVISION.into();
-                Ok(())
-            })
-            .unwrap();
-        let saved = std::fs::read(bank.state.path()).unwrap();
-        let read_only = test_bank(root.path(), true);
-        read_only.migrate_bundled().await.unwrap();
-        let failing = Bank {
-            state: Store::new(bank.state.path(), json!({}), valid_object, true),
-            ..bank.clone()
-        };
-        assert!(failing.migrate_bundled().await.is_err());
-        assert_eq!(std::fs::read(bank.state.path()).unwrap(), saved);
-        assert_eq!(bank.revision().unwrap(), PREVIOUS_BUNDLED_REVISION);
-        assert!(bank.snapshots.lock().unwrap().active.is_none());
     }
     #[tokio::test]
     async fn compatible_unchanged_data_skips_downloads_and_preserves_the_revision() {

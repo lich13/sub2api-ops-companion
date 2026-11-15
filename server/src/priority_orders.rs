@@ -70,28 +70,17 @@ fn task_terminal(status: &str) -> bool {
     !ACTIVE.contains(&status)
 }
 fn validate_store(data: &Value) -> Result<()> {
-    validate_store_schema(data, false)
-}
-fn validate_v2(data: &Value) -> Result<()> {
-    validate_store_schema(data, true)
-}
-fn validate_store_schema(data: &Value, v2: bool) -> Result<()> {
-    if data["version"] != if v2 { 2 } else { 1 }
-        || !data["jobs"].is_object()
-        || !data["requests"].is_object()
-    {
+    if data["version"] != 2 || !data["jobs"].is_object() || !data["requests"].is_object() {
         return Err(invalid_state());
     }
-    if v2
-        && data.get("parallelism").is_some_and(|values| {
-            !values.as_object().is_some_and(|values| {
-                values.iter().all(|(platform, value)| {
-                    platform_valid(&Value::String(platform.clone()))
-                        && value.as_u64().is_some_and(|value| (1..=8).contains(&value))
-                })
+    if data.get("parallelism").is_some_and(|values| {
+        !values.as_object().is_some_and(|values| {
+            values.iter().all(|(platform, value)| {
+                platform_valid(&Value::String(platform.clone()))
+                    && value.as_u64().is_some_and(|value| (1..=8).contains(&value))
             })
         })
-    {
+    }) {
         return Err(invalid_state());
     }
     for field in ["active_id", "last_id"] {
@@ -136,26 +125,25 @@ fn validate_store_schema(data: &Value, v2: bool) -> Result<()> {
         {
             return Err(invalid_state());
         }
-        if v2
-            && (!platform_valid(&job["platform"])
-                || job["base"] != 1
-                || job.get("parallelism").is_some_and(|value| {
-                    !value.as_u64().is_some_and(|value| (1..=8).contains(&value))
+        if !platform_valid(&job["platform"])
+            || job["base"] != 1
+            || job
+                .get("parallelism")
+                .is_some_and(|value| !value.as_u64().is_some_and(|value| (1..=8).contains(&value)))
+            || !job["waiting_reason"].is_string()
+            || !job["waiting_account_ids"].as_array().is_some_and(|ids| {
+                let accounts: HashSet<_> = job["items"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|item| item["account_id"].as_i64())
+                    .collect();
+                let mut seen = HashSet::new();
+                ids.iter().all(|id| {
+                    id.as_i64()
+                        .is_some_and(|n| n > 0 && seen.insert(n) && accounts.contains(&n))
                 })
-                || !job["waiting_reason"].is_string()
-                || !job["waiting_account_ids"].as_array().is_some_and(|ids| {
-                    let accounts: HashSet<_> = job["items"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .filter_map(|item| item["account_id"].as_i64())
-                        .collect();
-                    let mut seen = HashSet::new();
-                    ids.iter().all(|id| {
-                        id.as_i64()
-                            .is_some_and(|n| n > 0 && seen.insert(n) && accounts.contains(&n))
-                    })
-                }))
+            })
         {
             return Err(invalid_state());
         }
@@ -163,10 +151,10 @@ fn validate_store_schema(data: &Value, v2: bool) -> Result<()> {
         let mut target_counts = HashMap::<i64, usize>::new();
         for (index, item) in job["items"].as_array().unwrap().iter().enumerate() {
             let target = item["target_priority"].as_i64();
-            let target_valid = if v2 && job.get("parallelism").is_some() {
+            let target_valid = if job.get("parallelism").is_some() {
                 target.is_some_and(|value| (0..=i32::MAX as i64).contains(&value))
             } else {
-                item["target_priority"].as_u64() == Some(index as u64 + u64::from(v2))
+                item["target_priority"].as_u64() == Some(index as u64 + 1)
             };
             if let Some(target) = target {
                 *target_counts.entry(target).or_default() += 1;
@@ -175,7 +163,7 @@ fn validate_store_schema(data: &Value, v2: bool) -> Result<()> {
                 .as_i64()
                 .is_some_and(|id| id > 0 && ids.insert(id))
                 || !target_valid
-                || v2 && item["platform"] != job["platform"]
+                || item["platform"] != job["platform"]
                 || !item["original_priority"].is_i64()
                 || validation::hex(&item["expected_version"], 64).is_err()
                 || validation::hex(&item["identity"], 64).is_err()
@@ -199,7 +187,7 @@ fn validate_store_schema(data: &Value, v2: bool) -> Result<()> {
                 return Err(invalid_state());
             }
         }
-        if v2 && job.get("parallelism").is_some() {
+        if job.get("parallelism").is_some() {
             let capacity = job["parallelism"].as_u64().unwrap_or(1) as usize;
             if target_counts.values().any(|count| *count > capacity) {
                 return Err(invalid_state());
@@ -238,7 +226,6 @@ fn validate_store_schema(data: &Value, v2: bool) -> Result<()> {
 #[derive(Clone)]
 pub struct PriorityGate {
     pub store: Store,
-    pub legacy: Store,
     admission: Arc<RwLock<()>>,
 }
 impl PriorityGate {
@@ -249,14 +236,6 @@ impl PriorityGate {
                     .usage_path
                     .with_file_name("account-priority-orders-v2.json"),
                 json!({"version":2,"active_id":null,"last_id":null,"jobs":{},"requests":{},"parallelism":{}}),
-                validate_v2,
-                settings.read_only,
-            ),
-            legacy: Store::new(
-                settings
-                    .usage_path
-                    .with_file_name("account-priority-orders.json"),
-                json!({"version":1,"active_id":null,"last_id":null,"jobs":{},"requests":{}}),
                 validate_store,
                 settings.read_only,
             ),
@@ -265,10 +244,6 @@ impl PriorityGate {
     }
     pub async fn enter(&self) -> Result<OwnedRwLockReadGuard<()>> {
         let guard = self.admission.clone().read_owned().await;
-        let legacy = self.legacy.read_shared()?;
-        if active(&legacy).is_some() {
-            return Err(Error::new(409, "旧版排序正在收束，请稍后重新核对"));
-        }
         let data = self.store.read_shared()?;
         if let Some(id) = active(&data) {
             if !ORDER.try_with(|owner| owner == id).unwrap_or(false) {
@@ -343,7 +318,6 @@ impl PriorityGate {
 
 pub struct PriorityOrders {
     pub store: Store,
-    pub legacy: Store,
     actions: Actions,
     operations: Arc<Operations>,
     running: Arc<AtomicBool>,
@@ -393,27 +367,16 @@ fn public_job(job: &Value, details: bool) -> Value {
         "created_at":job["created_at"],"updated_at":job["updated_at"],"completed_at":job["completed_at"]});
     if details {
         result["items"] = json!(items.iter().map(|item| json!({"account_id":item["account_id"],"account_name":item["account_name"],
-        "original_priority":item["original_priority"],"target_priority":item["target_priority"],"observed_priority":item["observed_priority"],"status":item["status"]})).collect::<Vec<_>>());
-    }
-    result
-}
-fn public_job_v2(job: &Value, details: bool) -> Value {
-    let mut result = public_job(job, details);
-    if result.is_null() {
-        return result;
+        "original_priority":item["original_priority"],"target_priority":item["target_priority"],"observed_priority":item["observed_priority"],"status":item["status"],
+        "platform":job["platform"]})).collect::<Vec<_>>());
     }
     result["platform"] = job["platform"].clone();
-    result["base"] = if job["base"] == 1 { json!(1) } else { json!(0) };
+    result["base"] = job["base"].clone();
     if let Some(parallelism) = job.get("parallelism") {
         result["parallelism"] = parallelism.clone();
     }
-    result["waiting_reason"] = job.get("waiting_reason").cloned().unwrap_or(json!(""));
-    result["waiting_account_ids"] = job.get("waiting_account_ids").cloned().unwrap_or(json!([]));
-    if details && job["base"] == 1 {
-        for item in result["items"].as_array_mut().unwrap() {
-            item["platform"] = job["platform"].clone();
-        }
-    }
+    result["waiting_reason"] = job["waiting_reason"].clone();
+    result["waiting_account_ids"] = job["waiting_account_ids"].clone();
     result
 }
 fn record_verified(store: &Store, id: &str, account_id: i64, row: &Value) -> Result<()> {
@@ -510,7 +473,6 @@ impl PriorityOrders {
     pub fn new(actions: Actions, operations: Arc<Operations>) -> Arc<Self> {
         Arc::new(Self {
             store: actions.priorities.store.clone(),
-            legacy: actions.priorities.legacy.clone(),
             actions,
             operations,
             running: Arc::new(AtomicBool::new(false)),
@@ -519,31 +481,20 @@ impl PriorityOrders {
     async fn rows(&self, platform: Option<&str>) -> Result<Vec<Value>> {
         account_rows(&self.actions.queries.db, platform).await
     }
-    pub async fn view(&self, v2: bool) -> Result<Value> {
+    pub async fn view(&self) -> Result<Value> {
         let rows = self.rows(None).await?;
-        let legacy = self.legacy.read_shared()?;
         let data = self.store.read_shared()?;
         let items: Vec<_> = rows
             .iter()
             .map(|row| {
                 let mut item = public_item(row);
-                if !v2 || self.actions.settings.read_only {
+                if self.actions.settings.read_only {
                     item["editable"] = false.into();
-                    item["reason"] = if !v2 {
-                        "请升级客户端以按平台排序"
-                    } else {
-                        "Companion 处于只读模式"
-                    }
-                    .into();
+                    item["reason"] = "Companion 处于只读模式".into();
                 }
                 item
             })
             .collect();
-        if !v2 {
-            return Ok(json!({"items":items,"version":list_version(&rows, 1),
-                "active_task":active(&legacy).map(|id|public_job(&legacy["jobs"][id],false)),
-                "last_task":legacy["last_id"].as_str().map(|id|public_job(&legacy["jobs"][id],false))}));
-        }
         let mut groups: BTreeMap<&str, Vec<Value>> = BTreeMap::new();
         for item in &items {
             groups
@@ -565,31 +516,23 @@ impl PriorityOrders {
             let width = parallelism(&data, platform);
             let last = data["jobs"].as_object().unwrap().values().filter(|job| job["platform"] == platform)
                 .max_by_key(|job| (string(&job["created_at"]), string(&job["id"])));
-            json!({"platform":platform,"items":items,"parallelism":width,"version":list_version(raw.get(platform).map(Vec::as_slice).unwrap_or_default(), width),"last_task":last.map(|job|public_job_v2(job,false))})
+            json!({"platform":platform,"items":items,"parallelism":width,"version":list_version(raw.get(platform).map(Vec::as_slice).unwrap_or_default(), width),"last_task":last.map(|job|public_job(job,false))})
         }).collect();
+        // Clients from 0.1.84 to 0.1.92 require the `legacy_last_task` key.
         Ok(json!({"platforms":platforms,
-            "active_task":active(&data).map(|id|public_job_v2(&data["jobs"][id],false)),
-            "legacy_last_task":legacy["last_id"].as_str().map(|id|public_job_v2(&legacy["jobs"][id],false))}))
+            "active_task":active(&data).map(|id|public_job(&data["jobs"][id],false)),
+            "legacy_last_task":null}))
     }
-    pub fn get(&self, id: &str, v2: bool, details: bool) -> Result<Value> {
+    pub fn get(&self, id: &str, details: bool) -> Result<Value> {
+        let missing = || Error::new(404, "优先级排序任务不存在");
         if !id_valid(id) {
-            return Err(Error::new(404, "优先级排序任务不存在"));
+            return Err(missing());
         }
-        if v2 {
-            let data = self.store.read_shared()?;
-            if let Some(job) = data["jobs"].get(id) {
-                return Ok(public_job_v2(job, details));
-            }
-        }
-        let data = self.legacy.read_shared()?;
-        let job = data["jobs"]
+        let data = self.store.read_shared()?;
+        data["jobs"]
             .get(id)
-            .ok_or_else(|| Error::new(404, "优先级排序任务不存在"))?;
-        Ok(if v2 {
-            public_job_v2(job, details)
-        } else {
-            public_job(job, details)
-        })
+            .map(|job| public_job(job, details))
+            .ok_or_else(missing)
     }
     pub async fn submit(&self, request: &Value) -> Result<Value> {
         if self.actions.settings.read_only {
@@ -618,14 +561,10 @@ impl PriorityOrders {
             if job["request_hash"] != signature || job["client_id"] != request["client_id"] {
                 return Err(Error::new(409, "请求 ID 已用于其他排序"));
             }
-            return Ok(public_job_v2(job, true));
+            return Ok(public_job(job, true));
         }
-        let legacy = self.legacy.read_shared()?;
-        if active(&data).is_some() || active(&legacy).is_some() {
+        if active(&data).is_some() {
             return Err(busy());
-        }
-        if legacy["requests"].get(rid).is_some() {
-            return Err(Error::new(409, "请求 ID 已用于旧版排序"));
         }
         if self.operations.store.read_shared()?["jobs"]
             .as_object()
@@ -695,7 +634,7 @@ impl PriorityOrders {
             data["last_id"] = id.clone().into();
             Ok(())
         })?;
-        Ok(public_job_v2(&job, true))
+        Ok(public_job(&job, true))
     }
     pub async fn set_parallelism(&self, request: &Value) -> Result<Value> {
         if self.actions.settings.read_only {
@@ -704,8 +643,7 @@ impl PriorityOrders {
         validate_parallelism_request(request)?;
         let _gate = self.actions.priorities.admission.write().await;
         let data = self.store.read_shared()?;
-        let legacy = self.legacy.read_shared()?;
-        if active(&data).is_some() || active(&legacy).is_some() {
+        if active(&data).is_some() {
             return Err(busy());
         }
         let platform = string(&request["platform"]);
@@ -725,7 +663,7 @@ impl PriorityOrders {
             data["parallelism"][platform] = width.into();
             Ok(())
         })?;
-        self.view(true).await
+        self.view().await
     }
     fn finish(&self, id: &str, status: &str, reason: &str) -> Result<()> {
         self.store.transaction(|data| {
@@ -743,31 +681,25 @@ impl PriorityOrders {
             Ok(())
         })
     }
-    pub fn cancel(&self, id: &str, v2: bool) -> Result<Value> {
+    pub fn cancel(&self, id: &str) -> Result<Value> {
         if self.actions.settings.read_only {
             return Err(Error::read_only());
         }
-        self.get(id, v2, true)?;
-        if v2 {
-            self.store.transaction(|data| {
-                if active(data) == Some(id) {
-                    data["jobs"][id]["cancel_requested"] = true.into();
-                    data["jobs"][id]["reason"] = "正在停止，已派发项仍需核对".into();
-                    data["jobs"][id]["updated_at"] = now().into();
-                }
-                Ok(())
-            })?;
-        }
-        self.get(id, v2, true)
+        self.get(id, true)?;
+        self.store.transaction(|data| {
+            if active(data) == Some(id) {
+                data["jobs"][id]["cancel_requested"] = true.into();
+                data["jobs"][id]["reason"] = "正在停止，已派发项仍需核对".into();
+                data["jobs"][id]["updated_at"] = now().into();
+            }
+            Ok(())
+        })?;
+        self.get(id, true)
     }
-    pub async fn recover_startup(&self) -> Result<()> {
-        self.legacy.read_shared()?;
+    pub fn recover_startup(&self) -> Result<()> {
         let data = self.store.read_shared()?;
         if self.actions.settings.read_only {
             return Ok(());
-        }
-        if !self.retire_legacy().await? {
-            return Err(Error::new(409, "旧排序任务无法收束，账号正在执行其他操作"));
         }
         if active(&data).is_some() {
             self.store.transaction(|data| {
@@ -779,66 +711,6 @@ impl PriorityOrders {
             })?;
         }
         Ok(())
-    }
-    async fn retire_legacy(&self) -> Result<bool> {
-        let data = self.legacy.read_shared()?;
-        let Some(id) = active(&data) else {
-            return Ok(true);
-        };
-        let _gate = self.actions.priorities.admission.write().await;
-        let mut observed = None;
-        let mut _lease = None;
-        if let Some(item) = data["jobs"][id]["items"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|item| item["status"] == "dispatched")
-        {
-            let rows = self.rows(None).await?;
-            if let Some(row) = rows.iter().find(|row| row["id"] == item["account_id"]) {
-                _lease = match self.actions.locks.try_account(row) {
-                    Ok(lease) => Some(lease),
-                    Err(error) if error.detail["code"] == "account_busy" => return Ok(false),
-                    Err(error) => return Err(error),
-                };
-                let fresh = self.rows(None).await?;
-                if let Some(row) = fresh
-                    .into_iter()
-                    .find(|row| row["id"] == item["account_id"])
-                {
-                    observed = Some(row);
-                }
-            }
-        }
-        self.legacy.transaction(|data| {
-            if active(data) != Some(id) {
-                return Ok(());
-            }
-            let job = &mut data["jobs"][id];
-            if let Some(row) = &observed {
-                if let Some(item) = job["items"]
-                    .as_array_mut()
-                    .unwrap()
-                    .iter_mut()
-                    .find(|item| item["account_id"] == row["id"])
-                {
-                    item["observed_priority"] = row["priority"].clone();
-                    if identity(row) == item["identity"]
-                        && row["priority"] == item["target_priority"]
-                    {
-                        item["status"] = "verified".into();
-                        item["verified_version"] = version(row);
-                    }
-                }
-            }
-            job["status"] = "needs_confirmation".into();
-            job["reason"] = "升级后停止，请在新版按平台重新核对".into();
-            job["updated_at"] = now().into();
-            job["completed_at"] = now().into();
-            data["active_id"] = Value::Null;
-            Ok(())
-        })?;
-        Ok(true)
     }
     fn waiting(&self, id: &str, ids: &[i64]) -> Result<()> {
         let value = json!(ids);

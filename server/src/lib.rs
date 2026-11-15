@@ -33,7 +33,6 @@ mod keepalive_state;
 pub mod key_quota;
 pub mod lm_detector;
 mod lm_verdict;
-pub mod maintenance;
 mod manual_actions;
 mod model_candidates;
 pub mod model_catalog;

@@ -6,9 +6,7 @@
     "active_key": "active_id",
     "last_key": "last_id",
     "jobs_key": "jobs",
-    "requests_key": "requests",
-    "legacy_filename": "account-priority-orders.json",
-    "legacy_is_readonly": "read-only after active task retirement"
+    "requests_key": "requests"
   },
   "account_scope": {
     "deleted": "excluded",
@@ -24,7 +22,7 @@
   "request_contract": {
     "required": ["platform", "ordered_account_ids", "expected_version", "request_id", "client_id"],
     "idempotency": "request_id plus platform, exact ordered ids, expected version, and client id",
-    "legacy": "a POST without schema=2 is rejected with client_upgrade_required",
+    "schema": "every priority route without schema=2 is rejected with client_upgrade_required",
     "details_zero": "GET task with schema=2 and details=0 omits items"
   },
   "write_contract": {
@@ -45,7 +43,6 @@
     "detail_item_platform": true
   },
   "recovery_contract": {
-    "legacy_active_is_retired": true,
     "dispatched_applied": "verify observed target after restart without another upstream write",
     "dispatched_unapplied": "record observed mismatch and finish needs_confirmation without replay",
     "pending_remaining": "continue never-dispatched items exactly once after restart"

@@ -548,7 +548,6 @@ impl Harness {
             "oauth_auto_reset_credit_enabled": false,
             "oauth_daily_test_enabled": false,
             "oauth_daily_test_time": "05:00",
-            "oauth_early_probe_batch_size": 1,
             "oauth_recovery_connection_account_ids": [],
             "oauth_recovery_model_account_ids": [],
             "oauth_recovery_monitor_enabled": true,
@@ -2214,6 +2213,7 @@ async fn concurrent_quota_refresh_callers_share_one_runtime_batch() {
 #[tokio::test]
 async fn quota_refresh_ignores_probe_batch_cap_and_queries_all_accounts() {
     let harness = Harness::new().await;
+    // Config files written before 0.1.93 can still carry this retired key.
     harness
         .runtime
         .config
@@ -2454,15 +2454,6 @@ async fn linked_credentials_share_locks_and_runtime_batch_ignores_probe_cap() {
         .all(|item| item["status"] == "success"));
     assert_eq!(harness.mock.count("GET", "/usage"), 2);
 
-    harness
-        .runtime
-        .config
-        .oauth
-        .transaction(|config| {
-            config["oauth_early_probe_batch_size"] = 1.into();
-            Ok(())
-        })
-        .unwrap();
     let third = harness
         .seed_account("plus", "fixture-third-credential", json!({}))
         .await;
@@ -3706,46 +3697,6 @@ async fn daily_tick_reuses_only_same_cycle_recovery_test_for_a_still_eligible_ac
         assert!(harness.mock.unexpected().is_empty());
         harness.close().await;
     }
-}
-
-#[tokio::test]
-async fn retired_probe_interval_is_accepted_but_never_saved_or_exposed() {
-    let harness = Harness::new().await;
-    let before = harness.runtime.config.snapshot(Some("oauth")).unwrap();
-    let result = harness
-        .runtime
-        .config
-        .save(
-            "oauth",
-            &json!({
-                "oauth_7d_probe_interval_seconds":60,
-                "oauth_daily_test_time":"06:15"
-            }),
-            "fixture-old-client",
-            before["oauth"]["revision"].as_str(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(result["oauth_daily_test_time"], "06:15");
-    assert!(result.get("oauth_7d_probe_interval_seconds").is_none());
-    let saved: Value =
-        serde_json::from_slice(&fs::read(&harness.runtime.settings.oauth_path).unwrap()).unwrap();
-    assert!(saved.get("oauth_7d_probe_interval_seconds").is_none());
-    assert_eq!(
-        harness
-            .runtime
-            .config
-            .current()
-            .unwrap()
-            .get("oauth_7d_probe_interval_seconds"),
-        None
-    );
-    assert_eq!(
-        harness.runtime.config.current().unwrap()["oauth_daily_test_time"],
-        "06:15"
-    );
-    assert!(harness.mock.calls().is_empty());
-    harness.close().await;
 }
 
 #[tokio::test]
@@ -5086,7 +5037,7 @@ async fn recovery_connection_retry_policy_is_frozen_bounded_and_restart_safe() {
 }
 
 #[tokio::test]
-async fn connection_retry_config_defaults_bounds_and_retired_batch_compatibility() {
+async fn connection_retry_config_defaults_and_bounds() {
     let h = Harness::new().await;
     let before = h.runtime.config.snapshot(Some("oauth")).unwrap();
     assert_eq!(
@@ -5100,6 +5051,7 @@ async fn connection_retry_config_defaults_bounds_and_retired_batch_compatibility
         json!({"connection_test_retry_interval_seconds":0}),
         json!({"connection_test_retry_interval_seconds":3601}),
         json!({"connection_test_max_retries":1.5}),
+        json!({"oauth_early_probe_batch_size":7}),
     ] {
         assert_eq!(
             h.runtime
@@ -5117,10 +5069,19 @@ async fn connection_retry_config_defaults_bounds_and_retired_batch_compatibility
             422
         );
     }
-    let saved=h.runtime.config.save("oauth",&json!({"connection_test_max_retries":0,"connection_test_retry_interval_seconds":1,"oauth_early_probe_batch_size":7}),"fixture-client",before["oauth"]["revision"].as_str()).await.unwrap();
+    let saved = h
+        .runtime
+        .config
+        .save(
+            "oauth",
+            &json!({"connection_test_max_retries":0,"connection_test_retry_interval_seconds":1}),
+            "fixture-client",
+            before["oauth"]["revision"].as_str(),
+        )
+        .await
+        .unwrap();
     assert_eq!(saved["connection_test_max_retries"], 0);
     assert_eq!(saved["connection_test_retry_interval_seconds"], 1);
-    assert_eq!(saved["oauth_early_probe_batch_size"], 7);
     h.close().await;
 }
 
