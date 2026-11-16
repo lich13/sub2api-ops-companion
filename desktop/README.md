@@ -31,7 +31,7 @@ Mac 主窗口默认 1310×860，按屏幕可用区居中收缩，八列账号表
 
 账号多选测试在整批结束 3 秒后自动收起结果，保留“测活结果”入口；手动重开不再自动关闭。运行中、提交或查询未确认时不会启动完成计时。
 
-Mac 可见时每 2 秒读取状态，驻留后台每 15 秒。Android 前台每 2 秒合并刷新，后台停止读取和进度轮询，取消未完成的只读请求与测试流，返回前台立即刷新；云端批次及自动化继续运行。离线保留最后快照并禁用写操作，已发出的写操作不重放。刷新不调用额度查询或模型测活。
+Mac 可见时每 2 秒读取状态，驻留后台每 15 秒。Android 前台每 2 秒合并刷新，后台停止读取和进度轮询，取消未完成的只读请求，返回前台立即刷新；云端批次及自动化继续运行。离线保留最后快照并禁用写操作，已发出的写操作不重放。刷新不调用额度查询或模型测活。
 
 账号质量评分及其筛选、排序、详情已移除；首次按最近调用倒序，无调用账号置底。本机统一记住最后一次排序的字段和方向，重启和切换连接后沿用；桌面、移动端下拉和“调度参数”表头共用排序选择。筛选条件不保存，排序不跨设备同步。代理质量检测、慢首字检测线索和降智标记继续保留。
 
@@ -95,8 +95,6 @@ python ../scripts/verify_android.py src-tauri/gen/android/app/build/outputs/apk/
 
 签名材料只保存在仓库外的受保护目录；`android_signing.mjs --github` 将它经 stdin 配置为本仓库 CI secrets。不得替换已有签名。Android 仅构建 ARM64，发布前验证签名、最低 API、APK 及全部原生库的 16KB 对齐。
 
-原生仪器测试使用 `node ../scripts/android_fixtures.mjs` 生成仅测试包包含的模拟数据，再构建 `assembleUniversalDebugAndroidTest`。在 ARM64 模拟器中分别运行 `AndroidRuntimeTest#persistAndLifecycle`、覆盖安装同签名 APK 后运行 `#restartUpgradeAndDisconnect`，以及 `#keyboardAndMediaPicker`。带硬件键盘的模拟器需启用软键盘。正式 APK 使用独立的 `releaseSmoke` 测试包，通过系统 UI 验证连接、五页、前后台、重启、覆盖升级和断开，不向正式应用注入测试运行器。
-
 视觉规范见 [DESIGN.md](DESIGN.md)。`desktop-v*` 标签触发构建与发布流程，仅附带 Mac DMG、Android ARM64 APK 和统一 `SHA256SUMS`；不发布 ZIP，历史发布资产保留。
 
 ## 云端接口
@@ -104,8 +102,6 @@ python ../scripts/verify_android.py src-tauri/gen/android/app/build/outputs/apk/
 `/api/desktop/v1` 只接受 `x-api-key` 管理员认证；服务端使用已配置的 Sub2API 内网地址验证权限。读取验证缓存 15 秒，写操作重新验证。账号 DTO 排除 credentials / extra，错误详情按需读取并移除请求正文。不存在桌面免认证模式。
 
 配置通过 `ConfigService` 保存，以 revision 防止覆盖并发修改。部署保持单个 Companion worker，与现有回退控制器共用进程内锁。接口不改变 Sub2API 表结构或源码。
-
-`scripts/desktop_integration.py` 仅可在专用、空账号的隔离数据库运行，要求 `DESKTOP_QA_DISPOSABLE=sub2ops-desktop` 且数据库主机为 `pg`。它验证真实 Sub2API 鉴权、调度写入、分组证据、错误脱敏及并发保存；不得用于生产。
 
 菜单栏阶段诊断保存在应用配置目录的 `panel-diagnostics.log`，最多约 64 KiB，只包含点击、定位、显示、聚焦与隐藏状态，不包含连接或账号资料。
 

@@ -22,8 +22,8 @@
 
 ## 状态与接口
 
-`KEEPALIVE_CONFIG_PATH` 默认为 `/data/keepalive-state.json`，独立保存版本为 1 的账号设置、generation、恢复记录、重试时间和通知状态，不修改 Sub2API 数据库结构。写入使用文件锁、0600 权限、原子替换及文件和目录同步。损坏或已存在后丢失的状态不会被初始化覆盖；只读检查不创建状态。
+`KEEPALIVE_CONFIG_PATH` 默认为 `/data/keepalive-state.json`，独立保存版本为 1 的账号设置、generation、恢复记录、重试时间和通知状态，不修改 Sub2API 数据库结构。写入使用文件锁、0600 权限、原子替换及文件和目录同步。损坏或已存在后丢失的状态不会被初始化覆盖。
 
-管理员接口为 `GET/PUT /api/desktop/v1/accounts/:id/keepalive`，保持 `api_version=1`。PUT 仅接受布尔值 `enabled` 和查询结果中的 `expected_version`；冲突返回 409。轮询不覆盖正在编辑的设置，需重新读取后再保存。连接离线或服务只读时不能修改；旧服务会提示需要更新。
+管理员接口为 `GET/PUT /api/desktop/v1/accounts/:id/keepalive`，保持 `api_version=1`。PUT 仅接受布尔值 `enabled` 和查询结果中的 `expected_version`；冲突返回 409。轮询不覆盖正在编辑的设置，需重新读取后再保存。连接离线时不能修改。
 
 审计只记录账号 ID、暂停时间、固定原因摘要、结果和 generation，不保存管理员 Key、模型正文或上游错误原文。

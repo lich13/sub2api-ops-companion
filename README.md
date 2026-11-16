@@ -64,9 +64,6 @@ docker compose up -d --build
 - `.env.example` 仅提供本地开发占位值；生产部署前请替换数据库连接、Sub2API 地址和 Bark 配置，切勿将 `.env` 或 `data/` 纳入公开仓库或发布产物。
 - 服务端源码位于 [`server/`](server/README.md)，正式生产镜像仅包含静态编译的 Rust 二进制与必要证书资源，不含 Python 运行时。
 - 生产部署优先加载对应提交的 `Companion-linux-amd64` CI 成品镜像并设置 `OPS_IMAGE`；容器仅挂载 `/data` 目录。
-- 预检与只读验收模式：
-  - `--check-state`：校验现有配置、状态文件与数据库连接后立即退出。
-  - `--read-only`：不派发后台任务、不写入业务库或状态文件的只读验收入口（需使用与正式服务一致的环境配置）。
 
 ### 网络与反向代理
 
@@ -105,7 +102,6 @@ docker compose up -d --build
 | `OAUTH_DAILY_TEST_TIME` | 每日测活时间（北京时间 `HH:MM`），默认 `05:00`；修改或重启后等待下一个未来时间点，错过不补跑。 |
 | `OAUTH_USAGE_REFRESH_CONCURRENCY` | 活跃额度查询并发数，默认 `4`。 |
 | `OAUTH_RECOVERY_TEST_CONCURRENCY` | 账号恢复测活并发数，默认 `2`。 |
-| `OAUTH_EARLY_PROBE_BATCH_SIZE` | 历史提前探测参数，默认 `8`（保留读取与校验兼容，当前不提前探测）。 |
 | `OAUTH_RECOVERY_TEST_MODEL_ID` | 恢复测活模型，默认 `gpt-5.6-luna`。 |
 
 ---
@@ -114,7 +110,7 @@ docker compose up -d --build
 
 - **自动更新策略**：Dependabot 每周一 09:00（Asia/Taipei）检查两份 Cargo 锁文件、前端依赖、Python 测试工具、基础镜像、GitHub Actions 与 Android 应用库；普通版本观察 7 天后提出更新，安全修复立即响应。
 - **锁文件与兼容边界**：Cargo 采用 `lockfile-only` 并限制跨越 `0.x` 兼容线的普通更新；React 与 React DOM 保持同版本；Tauri JS 包与 Rust 核心（`~2.12.5`）、构建辅助（`~2.7.4`）及插件成组对齐验证。
-- **构建与包体积门禁**：桌面与 Android 构建统一启用调试符号裁剪，CI 自动执行 Rust/Node/Python 安全审计、契约一致性测试、模型目录集成测试、Android 模拟器真机级 instrumentation 冒烟测试及归档体积上限检查。
+- **CI 检查项**：服务端执行格式检查、完整 Rust 测试（一次性 PostgreSQL）、Clippy、HTTP 与写操作契约、两份 Cargo 锁文件的依赖审计，并构建 Linux 镜像后验证健康检查与故障重启；客户端执行前端测试与类型检查、Tauri 测试与 Clippy、响应式布局检查，以及 macOS 包的隐私与签名校验、Android APK 校验。桌面与 Android 构建统一启用调试符号裁剪。
 - **已知平台范围说明**：桌面锁文件中的 `glib 0.18.5`（`GHSA-wrw7-89jp-8q8g`）仅属于未交付的 Linux 桌面依赖，macOS ARM64、Android ARM64 与服务端实际依赖图均不包含该包；告警保持开放而不加入忽略名单。
 
 ---

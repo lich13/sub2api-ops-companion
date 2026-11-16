@@ -64,9 +64,6 @@ docker compose up -d --build
 - `.env.example` contains local development placeholders only. Replace the database URL, Sub2API endpoints, and Bark settings before deploying to production. Never commit `.env` or `data/` to public repositories or release artifacts.
 - Server source code resides in [`server/`](server/README.md). Production container images ship only the compiled Rust binary and license/resource files—no Python runtime is included.
 - Production deployments should load the corresponding commit's `Companion-linux-amd64` CI artifact image and set `OPS_IMAGE`, mounting only `/data`.
-- Validation & read-only modes:
-  - `--check-state`: Validates configuration, state files, and database connectivity, then exits.
-  - `--read-only`: Starts the server without background workers or database/state writes for safe acceptance verification.
 
 ### Networking & Reverse Proxy
 
@@ -105,7 +102,6 @@ docker compose up -d --build
 | `OAUTH_DAILY_TEST_TIME` | Daily test time in `HH:MM` Asia/Shanghai (default `05:00`). Waits for the next future occurrence. |
 | `OAUTH_USAGE_REFRESH_CONCURRENCY` | Concurrency limit for active usage refreshes (default `4`). |
 | `OAUTH_RECOVERY_TEST_CONCURRENCY` | Concurrency limit for account recovery tests (default `2`). |
-| `OAUTH_EARLY_PROBE_BATCH_SIZE` | Legacy early-probe batch size (default `8`; retained for config compatibility). |
 | `OAUTH_RECOVERY_TEST_MODEL_ID` | Model ID used for recovery health checks (default `gpt-5.6-luna`). |
 
 ---
@@ -114,7 +110,7 @@ docker compose up -d --build
 
 - **Automated Updates**: Dependabot checks both Cargo lockfiles, frontend packages, Python test tooling, base Docker images, GitHub Actions, and Android libraries every Monday at 09:00 (`Asia/Taipei`) with a 7-day cooldown for routine releases and immediate PRs for security advisories.
 - **Lockfile & Compatibility Boundaries**: Cargo uses `lockfile-only` rules that prevent unreviewed `0.x` breaking bumps; React and React DOM are updated in lockstep; Tauri JS packages, Rust core (`~2.12.5`), build helpers (`~2.7.4`), and plugins are verified together across macOS and Android builds.
-- **CI Verification Gates**: Every release passes Rust/Node/Python vulnerability audits, reference parity suites, disposable PostgreSQL + Sub2API model catalog integration tests, Android emulator instrumentation smoke tests, and bundle size gates.
+- **CI Checks**: The server runs formatting, the full Rust test suite against a disposable PostgreSQL, Clippy, HTTP and mutation contracts, a dependency audit of both Cargo lockfiles, and builds the Linux image before verifying its healthcheck and fault restart. The client runs frontend tests and type checks, Tauri tests and Clippy, responsive layout checks, privacy and signature verification of the macOS bundle, and Android APK verification.
 - **Platform Scope Note**: `glib 0.18.5` (`GHSA-wrw7-89jp-8q8g`) in the desktop lockfile belongs solely to undelivered Linux desktop targets and is excluded from macOS ARM64, Android ARM64, and server dependency graphs.
 
 ---

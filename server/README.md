@@ -14,54 +14,43 @@ server/target/release/sub2ops-server --version
 配置变量见根目录 README。配置文件优先于环境变量，路径和默认值沿用 0.1.39。配置完成后：
 
 ```bash
-server/target/release/sub2ops-server --check-state
-server/target/release/sub2ops-server --read-only --host 127.0.0.1 --port 18082
 server/target/release/sub2ops-server serve
 ```
 
-`--check-state` 与 `--read-only` 不创建锁或状态文件、不迁移数据、不派发后台工作。HTTP 写操作返回 `read_only`；PostgreSQL 会话也设置为只读。正常运行使用进程独占锁，状态损坏或已有状态丢失时拒绝初始化覆盖。
+每次启动都会校验配置、状态文件和数据库连接，并取得进程独占锁；状态损坏或已有状态丢失时拒绝初始化覆盖。
 
-旧客户端继续使用 `api_version=1`。管理员鉴权、路径与别名、字段版本、幂等请求、原生模型映射及 SSE 完成语义保持兼容。`capabilities` 的 `implementation` 和 `build_revision` 用于核对实际服务；正式构建通过 `SUB2OPS_BUILD_REVISION` 注入提交。
+接口保持 `api_version=1`，0.1.84 及以后的客户端可继续连接；账号写操作统一经操作队列（`POST /accounts/{id}/operations` 与 `/account-operations/batch`）提交。`capabilities` 的 `implementation` 和 `build_revision` 用于核对实际服务；正式构建通过 `SUB2OPS_BUILD_REVISION` 注入提交。
 
 ## 验证
 
-Python 仅用于隔离测试驱动。驱动从 Git 固定提交 `6be7c291ed38dcc337cb88f693639040a3463899` 临时读取旧实现；需要完整 Git 历史、项目 Python 测试依赖及 PostgreSQL 的 `initdb`／`pg_ctl`。测试使用回环模拟上游与临时数据库，不读取生产配置。
-
-历史并发 fixture 曾用 `asyncio.sleep(0.035)` 触发首批并发，结果会受 CI 调度影响。驱动只在临时 reference 副本的 `tests/test_modeltrace022.py` 指定测试中加入首批事件屏障（最多等待 5 秒）；测试名和断言保持不变，驱动会核对 `self.assert*` 调用的 AST，旧 `app/` 文件字节不变。`--filter` 透传至 `unittest discover -k`；无参数仍运行全部 882 项。
+Python 仅用于测试驱动，需要项目的 Python 测试依赖及 PostgreSQL 的 `initdb`／`pg_ctl`。测试使用回环模拟上游与临时数据库，不读取生产配置。
 
 ```bash
 cargo fetch --locked --manifest-path server/Cargo.toml
 python scripts/check_release_versions.py
+cargo fmt --check --manifest-path server/Cargo.toml
 python scripts/server_test.py
 cargo clippy --locked --manifest-path server/Cargo.toml --all-targets --features test-fixtures -- -D warnings
+cargo build --locked --manifest-path server/Cargo.toml
 python -m unittest discover -s scripts -p test_dependency_audit.py
 python scripts/server_dependency_audit.py
-python scripts/server_reference_tests.py
-python scripts/server_reference_tests.py --filter test_concurrency_one_two_three_peaks_and_no_raw_content_in_summary
-python scripts/server_http_contract.py
+python -m unittest discover -s scripts -p test_http_client.py
 python scripts/server_http_contract.py --command-json '["server/target/debug/sub2ops-server"]'
-python scripts/server_mutation_contract.py
 python scripts/server_mutation_contract.py --command-json '["server/target/debug/sub2ops-server"]'
 ```
 
-`tests/contracts/migration-map.json` 记录旧测试与新断言的对应关系。固定数据向量覆盖跨语言哈希、时间和数值序列化；进程测试覆盖接口、请求次数和未知结果恢复。测试通过与尚未覆盖的范围分别记录。
+`scripts/server_test.py` 支持 `--test <套件>`、`--lib` 和 `--filter <名称>` 缩小范围。`tests/contracts/` 下的固定数据向量覆盖哈希、时间和数值序列化；进程测试覆盖接口、请求次数和未知结果恢复。
 
 依赖审计完整扫描两个锁文件，不忽略通告或限定平台。SQLx 0.8 使用的 `webpki-roots 0.26.11` 仅重新导出 1.x 证书数据；针对 `RUSTSEC-2026-0381`，脚本只接受该兼容包与已修复的 `1.0.10` 的精确注册源、校验和及依赖关系。旧根证书、关系变化或其他漏洞仍阻断发布。依据为[兼容包源码](https://docs.rs/webpki-roots/0.26.11/src/webpki_roots/lib.rs.html)和[上游证书修复](https://github.com/rustls/webpki-roots/pull/133)。
 
 测试驱动启用 `test-fixtures`，允许将模型请求的最终地址指向回环模拟服务，保持原有鉴权、账号与配置校验、请求正文和 SSE 处理。正式构建不启用此功能，也不提供运行时覆盖上游地址的配置。
 
-CI 在同一 Linux x86_64 主机构建两个完整服务镜像，使用相同账号、开关、并发及模拟延迟运行 20／100 账号批次和 1000 账号接受边界。结果保存在 `Companion-validation` 中，包含镜像与二进制体积、空闲／峰值内存、CPU、耗时和请求延迟。这里的自动任务开关关闭，所有运行时模块仍加载；结果不等同于生产业务负载。
-
-`scripts/server_runtime_smoke.py` 使用临时 PostgreSQL、合成配置和隔离容器验证非 root 运行、Compose 健康检查及后台故障后非零退出与重启。故障来自单独编译的 `supervision_fixture`，该测试程序不会进入正式镜像或其归档层；生产服务没有故障注入开关。结果保存在 `runtime-smoke.json`。
-
-`scripts/server_history_memory.py` 另用十万条合成用量、三千条错误和已完成操作历史，对比两个完整服务反复读取快照、操作历史、用量和错误历史的资源开销，并检查自动检测摘要及分页的合成负载。确认没有额外业务请求，并限制 Rust 的内存峰值及持续增长；结果保存在同一成品的 `history-memory.json`。
-
-镜像体积统一读取同一 CI 主机的 `docker image inspect Size`；不同 Docker 存储后端的这个值可能与 `docker system df` 不同，不能用它推算主机实际磁盘占用。部署后的磁盘统计需单独测量，共享层也不能重复相加。
+`scripts/server_runtime_smoke.py` 使用临时 PostgreSQL、合成配置和隔离容器验证非 root 运行、Compose 健康检查及后台故障后非零退出与重启。故障来自单独编译的 `supervision_fixture`，该测试程序不会进入正式镜像或其归档层；生产服务没有故障注入开关。结果保存在 `Companion-validation` 成品的 `runtime-smoke.json`。
 
 ## 部署和回退
 
-`Companion-linux-amd64` CI 成品包含镜像归档、SHA256SUMS 和提交／二进制摘要。先核对摘要、加载镜像，用现有配置、数据目录和数据库执行只读检查。保留当前版本的回退镜像。
+`Companion-linux-amd64` CI 成品包含镜像归档、SHA256SUMS 和记录版本与提交的 manifest。先核对摘要、加载镜像，并保留当前版本的回退镜像。
 
 切换时停止旧服务接收和派发任务，最多等待 60 秒收束；确认停止后使用同一状态目录启动新镜像。核对公网鉴权、实现和提交、账号与历史查询以及后台状态。启动或入口检查失败时切回旧镜像，继续使用当前状态；不要恢复过期快照。正常运行与回退均不得同时启动两个写服务。
 
-Rust 的状态写入沿用 JSON 结构和版本，使用文件锁、临时文件、原子替换以及文件和目录同步。未派发任务可以接续；已派发的请求先只读核对，未知测活、用卡或不可逆写入不得重放。人工控制版本、预算、冷却、通知去重和已送达记录持续生效。
+Rust 的状态写入沿用 JSON 结构和版本，使用文件锁、临时文件、原子替换以及文件和目录同步。未派发任务可以接续；已派发的请求先回读核对，未知测活、用卡或不可逆写入不得重放。人工控制版本、预算、冷却、通知去重和已送达记录持续生效。
