@@ -23,6 +23,7 @@ const account: Account = {
   group_ids: [7],
   blockers: [],
   version: "account-version-42",
+  operation_versions: {},
   last_success_at: null,
   last_error_at: null,
   last_error_id: null,
@@ -46,7 +47,6 @@ const baseKeepalive: AccountKeepalive = {
   restore_count: 0,
   budget_used: 0,
   next_allowed_at: null,
-  read_only: false,
 };
 
 let container: HTMLDivElement;
@@ -184,17 +184,6 @@ describe("account keepalive", () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("保活设置响应无效");
   });
 
-  it("keeps a read-only value visible and disables changes", async () => {
-    vi.mocked(api).mockResolvedValueOnce(valueFor(42, { enabled: true, read_only: true }) as never);
-    await mount();
-
-    expect(container.textContent).toContain("只读，无法修改保活设置");
-    expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true);
-    expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.disabled).toBe(true);
-    expect(button("保存").disabled).toBe(true);
-    expect(vi.mocked(api).mock.calls.filter(([method]) => method === "PUT")).toHaveLength(0);
-  });
-
   it("does not read or enable controls while offline", async () => {
     await mount({ online: false });
 
@@ -272,20 +261,12 @@ describe("account keepalive", () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
-  it("explains when an older service does not provide keepalive", async () => {
-    vi.mocked(api).mockRejectedValueOnce(new Error("HTTP 404 Not Found"));
-    await mount();
-
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("当前服务版本不支持账号保活");
-  });
-
-  it("preserves the not-found message for a deleted account without suggesting a service upgrade", async () => {
+  it("shows the server message when the account no longer exists", async () => {
     const error = "[404] 账号不存在";
     vi.mocked(api).mockRejectedValueOnce(new Error(error));
     await mount();
 
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(error);
-    expect(container.textContent).not.toContain("当前服务版本不支持账号保活");
   });
 
   it("ignores reads from the previous connection and account", async () => {

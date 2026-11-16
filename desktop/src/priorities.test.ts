@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   groupPriorityAccounts,
   movePriority,
-  priorityOrder,
   prioritySlots,
   movePrioritySlot,
   priorityPending,
@@ -26,14 +25,6 @@ const account = (id: number, platform: string, priority: number): PriorityAccoun
 });
 
 describe("priority data helpers", () => {
-  it("orders by the server priority and uses the account id as a stable tie breaker", () => {
-    expect(priorityOrder([
-      account(2, "openai", 2),
-      account(3, "openai", 1),
-      account(1, "openai", 1),
-    ])).toEqual([1, 3, 2]);
-  });
-
   it("moves exactly one id and rejects invalid or duplicate targets", () => {
     expect(movePriority([1, 2, 3], 1, 2)).toEqual([2, 3, 1]);
     expect(movePriority([1, 2, 3], 2, 0)).toEqual([2, 1, 3]);

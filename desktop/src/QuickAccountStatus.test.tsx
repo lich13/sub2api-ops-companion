@@ -25,6 +25,7 @@ const account = (overrides: Partial<Account> = {}): Account => ({
   blockers: [],
   recoverable: false,
   version: "fixture-version",
+  operation_versions: {},
   last_success_at: null,
   last_error_at: null,
   last_error_id: null,

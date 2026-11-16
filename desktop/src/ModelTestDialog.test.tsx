@@ -23,6 +23,7 @@ const account: Account = {
   group_ids: [13],
   blockers: [],
   version: "a".repeat(64),
+  operation_versions: { model_test: "c".repeat(64) },
   last_success_at: null,
   last_error_at: null,
   last_error_id: null,

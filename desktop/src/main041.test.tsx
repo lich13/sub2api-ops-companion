@@ -53,7 +53,6 @@ const state = (platform: "macos" | "android"): ViewState => ({
   error: "",
   preferences: {
     base_url: "https://main-041.example.invalid",
-    favorites: [],
     pinned: false,
     launch_at_login: false,
   },

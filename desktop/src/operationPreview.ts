@@ -7,7 +7,7 @@ function recoverPreview(account: Account) {
   account.blockers = account.blockers.filter(blocker => !(wasError && blocker.code === 'status') && !['rate_limit_reset_at', 'overload_until', 'temp_unschedulable_until'].includes(blocker.code));
   account.recoverable = false; account.error_message = '';
   account.available = account.schedulable && account.status === 'active' && account.blockers.length === 0;
-  if (account.operation_versions) account.operation_versions.recover = crypto.randomUUID().replaceAll('-', '').repeat(2);
+  account.operation_versions.recover = crypto.randomUUID().replaceAll('-', '').repeat(2);
 }
 const jobs = new Map<string, Operation>();
 const scheduledHistory = new Map<string, Recovery>();
@@ -47,10 +47,10 @@ export async function operationPreview(method: string, path: string, body: Recor
         const settings = account ? settingsPreview(account) : null;
         const eligible = action === 'proxy' ? !!settings?.capabilities.proxy.editable : action === 'test'
           ? !!account && ['openai', 'grok'].includes(account.platform) && ['oauth', 'apikey'].includes(account.type) : !!account;
-        const conflict = (action === 'proxy' ? settings?.versions.proxy : account?.operation_versions?.[action] ?? account?.version) !== target.expected_version;
+        const conflict = (action === 'proxy' ? settings?.versions.proxy : account?.operation_versions[action]) !== target.expected_version;
         const unchanged = action === 'proxy' && eligible && settings?.proxy_id === payload.proxy_id || action === 'recover' && eligible && !conflict && !account?.recoverable;
         const job: Operation = { id: crypto.randomUUID().replaceAll('-', ''), batch_id: bid, account_id: target.account_id,
-          account_name: account?.name ?? '账号', action, requested: payload, ...(['proxy', 'delete', 'groups'].includes(action) ? { execution_mode: 'native' as const } : {}),
+          account_name: account?.name ?? '账号', action, requested: payload,
           status: !eligible ? 'failed' : unchanged ? 'completed' : conflict || !available ? 'needs_confirmation' : 'queued',
           reason: !eligible ? settings?.capabilities.proxy.reason ?? '账号不存在' : unchanged ? '无变化' : !available ? '所选代理不可用' : conflict ? '账号相关状态已变化' : '等待执行',
           ...(unchanged ? { result: { verified: true, unchanged: true } } : {}) };

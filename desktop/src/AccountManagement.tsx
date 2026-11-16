@@ -25,11 +25,8 @@ export function RecoverSelectedButton({ accounts, online, report }: {
     const epoch = operationEpoch(), skipped = accounts.length - eligible.length;
     const current = () => alive.current && operationEpoch() === epoch;
     try {
-      const targets = eligible.map(account => {
-        const version = account.operation_versions?.recover;
-        if (!version) throw new Error("请刷新账号后重试");
-        return { account_id: account.id, expected_version: version };
-      }).sort((a, b) => a.account_id - b.account_id);
+      const targets = eligible.map(account => ({ account_id: account.id, expected_version: account.operation_versions.recover }))
+        .sort((a, b) => a.account_id - b.account_id);
       const signature = JSON.stringify(targets);
       if (request.current?.signature !== signature) request.current = { signature, id: crypto.randomUUID() };
       const batch = await submitAccountBatch("recover", targets, request.current.id);
@@ -99,10 +96,7 @@ export function DeleteAccountsDialog({
     setPhase("running");
     setError("");
     try {
-      const batch = await submitAccountBatch("delete", accounts.map(a => {
-        if (!a.operation_versions?.delete) throw new Error("请刷新账号后重试");
-        return { account_id: a.id, expected_version: a.operation_versions.delete, payload: {} };
-      }), requestId.current);
+      const batch = await submitAccountBatch("delete", accounts.map(a => ({ account_id: a.id, expected_version: a.operation_versions.delete, payload: {} })), requestId.current);
       accepted.current = true;
       await followAccountBatch(batch, value => {
         const outcomes = accounts.map((a): DeleteResult => {
@@ -244,7 +238,7 @@ export function ResetCreditsDialog({ accounts, online, report, close }: {
       let status = "";
       try {
         const result = await accountOperation<{ message?: string }>(account, "reset_quota", { action: "reset_quota", confirmed: true },
-          account.operation_versions?.reset_quota, job => { status = job.status; });
+          undefined, job => { status = job.status; });
         ++used;
         show({ status: "done", message: result?.message || "重置已执行" });
       } catch (error) {
@@ -301,45 +295,5 @@ export function ResetCreditsDialog({ accounts, online, report, close }: {
         </footer>
       </section>
     </div>
-  );
-}
-
-export function RecoverStateButton({
-  account,
-  online,
-  report,
-}: {
-  account: Account;
-  online: boolean;
-  report: (message: unknown) => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const running = useRef(false);
-  if (!account.recoverable) return null;
-  async function recover() {
-    if (running.current || !online) return;
-    running.current = true;
-    setBusy(true);
-    try {
-      const result = await accountOperation<{ verified: boolean }>(
-        account, "recover", {},
-      );
-      report(
-        result.verified
-          ? `${account.name}：状态已恢复`
-          : "恢复状态未确认，请刷新",
-      );
-    } catch (error) {
-      report(error);
-    } finally {
-      running.current = false;
-      setBusy(false);
-      void command("refresh");
-    }
-  }
-  return (
-    <button disabled={!online || busy} onClick={() => void recover()}>
-      {busy && <LoaderCircle size={12} className="spin" />}恢复状态
-    </button>
   );
 }

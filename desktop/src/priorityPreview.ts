@@ -13,7 +13,7 @@ function version(accounts: Account[], platform: string) {
 }
 function summary(task: PriorityTask | null) { if (!task) return null; const value = { ...task }; delete value.items; return value; }
 function list(accounts: Account[]): PriorityView {
-  const items: PriorityAccount[] = accounts.map(a => ({ id: a.id, name: a.name, platform: a.platform, type: a.type, priority: a.priority, version: a.operation_versions?.priority ?? a.version, editable: a.settings_capabilities?.priority?.editable !== false, reason: a.settings_capabilities?.priority?.reason ?? '', status: a.status, schedulable: a.schedulable }));
+  const items: PriorityAccount[] = accounts.map(a => ({ id: a.id, name: a.name, platform: a.platform, type: a.type, priority: a.priority, version: a.operation_versions.priority, editable: a.settings_capabilities?.priority?.editable !== false, reason: a.settings_capabilities?.priority?.reason ?? '', status: a.status, schedulable: a.schedulable }));
   return { platforms: groupPriorityAccounts(items).map(group => ({ ...group, parallelism: widths.get(group.platform) ?? 1, version: version(accounts, group.platform), last_task: summary([...jobs.values()].reverse().find(task => task.platform === group.platform) ?? null) })), active_task: summary(active), legacy_last_task: null };
 }
 export function priorityPreview(method: string, path: string, body: Record<string, unknown>, accounts: Account[], emit: () => void): PriorityView | PriorityTask {

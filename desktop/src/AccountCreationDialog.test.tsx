@@ -10,7 +10,7 @@ vi.mock("./bridge",()=>({api:vi.fn(),command:vi.fn()}));
 vi.mock("./mobile",()=>({useBackAction:vi.fn()}));
 Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});
 let root:Root,container:HTMLDivElement;
-const close=vi.fn(),report=vi.fn(), account=(id=1,platform="openai",type="apikey")=>({id,name:`Fixture ${id}`,platform,type,group_ids:[],priority:1,status:"active",schedulable:true,available:true,blockers:[],version:"fixture",last_success_at:null,last_error_at:null,last_error_id:null,last_error_code:null,last_error_status:null,error_message:"",success_after_error:false,usage_windows:[]} as Account);
+const close=vi.fn(),report=vi.fn(), account=(id=1,platform="openai",type="apikey")=>({id,name:`Fixture ${id}`,platform,type,group_ids:[],priority:1,status:"active",schedulable:true,available:true,blockers:[],version:"fixture",operation_versions:{},last_success_at:null,last_error_at:null,last_error_id:null,last_error_code:null,last_error_status:null,error_message:"",success_after_error:false,usage_windows:[]} as Account);
 const button=(name:string)=>[...container.querySelectorAll<HTMLButtonElement>("button")].find(b=>b.textContent?.trim()===name)!;
 const field=(name:string)=>[...container.querySelectorAll("label")].find(l=>l.firstChild?.textContent===name || l.textContent?.trim()===name)?.querySelector<HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement>("input,select,textarea")!;
 async function click(name:string){await act(async()=>button(name).click());}
@@ -18,7 +18,6 @@ async function change(el:HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement,
 async function render(accounts=[account()]){await act(async()=>root.render(<AccountCreationDialog accounts={accounts} online close={close} report={report}/>));}
 async function apiKeyStep(){await change(field("平台"),"openai");await change(field("账号类型"),"apikey");await change(field("账号名称"),"New fixture");await click("下一步");await change(field("API Key"),"fixture-secret");}
 const baseline=async(_method:string,path:string,body?:unknown):Promise<never>=>{
-  if(path==="/capabilities")return {features:{account_creation:true}} as never;
   if(path.endsWith("/options"))return {groups:[{id:1,name:"OpenAI",platform:"openai"}],proxies:[]} as never;
   if(path.endsWith("/catalog/tls"))return [] as never;
   if(path.endsWith("/catalog/gemini"))return {ai_studio_oauth_enabled:false} as never;

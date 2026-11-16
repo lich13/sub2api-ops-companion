@@ -5,7 +5,6 @@ use serde_json::Value;
 #[cfg(desktop)]
 use std::sync::Mutex as StdMutex;
 use std::{
-    collections::HashMap,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -50,7 +49,6 @@ struct SavedConnection {
 struct Preferences {
     base_url: String,
     connections: Vec<SavedConnection>,
-    favorites: Vec<i64>,
     launch_at_login: bool,
     pinned: bool,
     record_columns: Option<Vec<String>>,
@@ -111,7 +109,6 @@ struct Runtime {
     network: Mutex<()>,
     snapshot_gate: Mutex<()>,
     generation: AtomicU64,
-    tests: Mutex<HashMap<String, oneshot::Sender<()>>>,
     wake: Notify,
     path: PathBuf,
     foreground: AtomicBool,
@@ -420,7 +417,7 @@ fn allowed_request(method: &str, path: &str) -> bool {
         }
         return match method {
             "GET" => plain == "/account-priorities" || detail,
-            "PUT" => plain == "/account-priorities" && priority_api::is_v2(path),
+            "PUT" => plain == "/account-priorities",
             "POST" => {
                 plain == "/account-priority-orders"
                     || plain
@@ -491,7 +488,6 @@ fn allowed_request(method: &str, path: &str) -> bool {
                         .strip_prefix("/account-templates?account_id=")
                         .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
             }
-            "PUT" => path == "/account-templates",
             "POST" => path == "/account-templates",
             _ => false,
         };
@@ -506,11 +502,8 @@ fn allowed_request(method: &str, path: &str) -> bool {
             })
     };
     if let Some(suffix) = plain.strip_prefix("/account-templates/") {
-        if matches!(suffix, "custom" | "apply") {
+        if suffix == "apply" {
             return method == "POST" && !path.contains('?');
-        }
-        if let Some(id) = suffix.strip_prefix("custom/") {
-            return !path.contains('?') && template_id(id) && matches!(method, "PUT" | "DELETE");
         }
         return !path.contains('?') && template_id(suffix) && matches!(method, "PUT" | "DELETE");
     }
@@ -589,7 +582,6 @@ fn allowed_request(method: &str, path: &str) -> bool {
                 "/config"
                     | "/recoveries"
                     | "/quota-refresh"
-                    | "/capabilities"
                     | "/usage-records"
                     | "/usage-record-options"
             ) || plain
@@ -601,31 +593,11 @@ fn allowed_request(method: &str, path: &str) -> bool {
                     .and_then(|s| s.strip_suffix("/model-tests/latest"))
                     .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
         }
-        "PUT" => {
-            (["oauth", "bark"]
-                .iter()
-                .any(|s| plain == format!("/config/{s}"))
-                || account_path(plain, "/groups")
-                || account_path(plain, "/degradation-mark"))
-                && !path.contains('?')
-        }
+        "PUT" => matches!(path, "/config/oauth" | "/config/bark"),
         "POST" => {
-            path == "/quota-refresh"
-                || ["bark-test"]
-                    .iter()
-                    .any(|s| path == format!("/actions/{s}"))
-                || path
-                    .strip_prefix("/accounts/")
-                    .and_then(|s| {
-                        s.strip_suffix("/schedulable")
-                            .or_else(|| s.strip_suffix("/usage-action"))
-                            .or_else(|| s.strip_suffix("/priority"))
-                            .or_else(|| s.strip_suffix("/recover-state"))
-                            .or_else(|| s.strip_suffix("/model-tests"))
-                    })
-                    .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
+            matches!(path, "/quota-refresh" | "/actions/bark-test")
+                || account_path(path, "/model-tests")
         }
-        "DELETE" => !path.contains('?') && account_path(path, ""),
         _ => false,
     }
 }
@@ -637,12 +609,10 @@ fn account_path(path: &str, suffix: &str) -> bool {
 }
 
 fn model_options_path(path: &str) -> bool {
-    if path.contains('?') {
-        path.strip_suffix("?purpose=model_test")
-            .is_some_and(|plain| account_path(plain, "/models"))
-    } else {
-        account_path(path, "/models")
-    }
+    path.strip_suffix("&refresh=true")
+        .unwrap_or(path)
+        .strip_suffix("?purpose=model_test")
+        .is_some_and(|plain| account_path(plain, "/models"))
 }
 
 fn publish(app: &tauri::AppHandle, value: &ViewState) {
@@ -891,9 +861,6 @@ async fn connect(
             ),
         )
         .await?;
-        if data.get("api_version").and_then(Value::as_u64) != Some(1) {
-            return Err("云端接口版本不兼容".into());
-        }
         if should_write {
             credentials::write(app.clone(), base.clone(), resolved_key.clone()).await?;
         }
@@ -904,7 +871,6 @@ async fn connect(
         save_preferences(&state.path, &prefs)?;
         view.preferences = prefs;
         view.connection_revision = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
-        state.tests.lock().await.clear();
         view.connected = true;
         view.snapshot = None;
         view.error.clear();
@@ -1024,7 +990,6 @@ async fn disconnect(app: tauri::AppHandle, state: State<'_, Arc<Runtime>>) -> Re
     }
     *state.key.lock().await = None;
     view.connection_revision = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
-    state.tests.lock().await.clear();
     view.connected = false;
     view.online = false;
     view.snapshot = None;
@@ -1104,168 +1069,9 @@ async fn api_request(
 }
 
 #[tauri::command]
-async fn cancel_test(
-    window: tauri::WebviewWindow,
-    state: State<'_, Arc<Runtime>>,
-) -> Result<(), String> {
-    if let Some(cancel) = state.tests.lock().await.remove(window.label()) {
-        let _ = cancel.send(());
-    }
-    Ok(())
-}
-
-fn parse_sse_line(line: &[u8]) -> Option<Value> {
-    let raw = line.strip_suffix(b"\r").unwrap_or(line);
-    let payload = raw.strip_prefix(b"data:")?;
-    serde_json::from_slice(payload).ok()
-}
-
-async fn media_data(client: &reqwest::Client, value: &str, kind: &str) -> Result<String, String> {
-    use base64::Engine;
-    if value.starts_with(&format!("data:{kind}/")) {
-        return Ok(value.into());
-    }
-    let url = url::Url::parse(value).map_err(|_| "媒体地址无效")?;
-    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
-        return Err("媒体地址必须使用 HTTPS".into());
-    }
-    // This request intentionally carries no admin headers or cookies.
-    let mut response = client
-        .get(url)
-        .timeout(Duration::from_secs(90))
-        .send()
-        .await
-        .map_err(|_| "无法读取测试媒体")?;
-    if !response.status().is_success() {
-        return Err("测试媒体请求失败".into());
-    }
-    let mime = response
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("")
-        .split(';')
-        .next()
-        .unwrap_or("")
-        .to_owned();
-    if !mime.starts_with(&format!("{kind}/")) {
-        return Err("测试媒体类型无效".into());
-    }
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| "测试媒体连接中断")? {
-        if bytes.len() + chunk.len() > 64 * 1024 * 1024 {
-            return Err("测试媒体超过 64 MiB".into());
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    Ok(format!(
-        "data:{mime};base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(bytes)
-    ))
-}
-
-#[tauri::command]
-async fn run_test(
-    app: tauri::AppHandle,
-    window: tauri::WebviewWindow,
-    state: State<'_, Arc<Runtime>>,
-    account_id: u64,
-    body: Value,
-    on_event: tauri::ipc::Channel<Value>,
-) -> Result<(), String> {
-    if account_id == 0 {
-        return Err("账号无效".into());
-    }
-    let (base, key, generation) = {
-        let _gate = state.network.lock().await;
-        let view = state.view.lock().await;
-        if !view.online || !state.foreground.load(Ordering::SeqCst) {
-            return Err("当前离线".into());
-        }
-        (
-            view.preferences.base_url.clone(),
-            state.key.lock().await.clone().ok_or("尚未连接")?,
-            state.generation.load(Ordering::SeqCst),
-        )
-    };
-    let (tx, rx) = oneshot::channel();
-    {
-        let mut tests = state.tests.lock().await;
-        if tests.contains_key(window.label()) {
-            return Err("测试正在进行".into());
-        }
-        tests.insert(window.label().to_string(), tx);
-    }
-    let work = async {
-        let mut response = state
-            .client
-            .post(format!("{base}/api/desktop/v1/accounts/{account_id}/test"))
-            .header("x-api-key", key)
-            .header("Accept", "text/event-stream")
-            .timeout(Duration::from_secs(310))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|_| "测试连接失败")?;
-        if !response.status().is_success() {
-            let status = response.status().as_u16();
-            let data = api_http::read_test_error(response).await?;
-            return Err(format!(
-                "{} [{status}]",
-                data.get("detail")
-                    .and_then(Value::as_str)
-                    .unwrap_or("测试请求被拒绝")
-            ));
-        }
-        let mut buffer = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(|_| "测试连接中断")? {
-            if generation != state.generation.load(Ordering::SeqCst) {
-                return Err("连接已切换".into());
-            }
-            buffer.extend_from_slice(&chunk);
-            if buffer.len() > 128 * 1024 * 1024 {
-                return Err("测试输出过大".into());
-            }
-            while let Some(end) = buffer.iter().position(|b| *b == b'\n') {
-                let parsed = parse_sse_line(&buffer[..end]);
-                buffer.drain(..=end);
-                if let Some(mut event) = parsed {
-                    if let Some(kind @ ("image" | "audio" | "video")) =
-                        event.get("type").and_then(Value::as_str)
-                    {
-                        let kind = kind.to_owned();
-                        let field = format!("{kind}_url");
-                        if let Some(raw) = event.get(&field).and_then(Value::as_str) {
-                            event[&field] =
-                                Value::String(media_data(&state.client, raw, &kind).await?);
-                        }
-                    }
-                    on_event.send(event).map_err(|_| "测试窗口已关闭")?;
-                }
-            }
-        }
-        Ok(())
-    };
-    let result = tokio::select! { result=active_read(&state, work)=>result, _=rx=>Err("测试已取消，未重放请求".into()) };
-    let mut tests = state.tests.lock().await;
-    if tests
-        .get(window.label())
-        .is_some_and(|sender| sender.is_closed())
-    {
-        tests.remove(window.label());
-    }
-    drop(tests);
-    state.wake.notify_one();
-    let _ = app;
-    result
-}
-
-#[tauri::command]
-#[allow(clippy::too_many_arguments)] // Keep optional fields compatible with existing clients.
 async fn preferences(
     app: tauri::AppHandle,
     state: State<'_, Arc<Runtime>>,
-    favorites: Vec<i64>,
     pinned: bool,
     launch_at_login: bool,
     record_columns: Option<Vec<String>>,
@@ -1299,13 +1105,6 @@ async fn preferences(
         }
         prefs.model_test_preferences = selections;
     }
-    prefs.favorites = favorites
-        .into_iter()
-        .filter(|id| *id > 0)
-        .take(100)
-        .collect();
-    prefs.favorites.sort_unstable();
-    prefs.favorites.dedup();
     prefs.pinned = cfg!(desktop) && pinned;
     prefs.launch_at_login = cfg!(desktop) && launch_at_login;
     if let Some(columns) = record_columns {
@@ -1941,7 +1740,6 @@ pub fn run() {
                 network: Mutex::new(()),
                 snapshot_gate: Mutex::new(()),
                 generation: AtomicU64::new(0),
-                tests: Mutex::new(HashMap::new()),
                 wake: Notify::new(),
                 path,
             });
@@ -2144,8 +1942,6 @@ pub fn run() {
         disconnect,
         refresh,
         api_request,
-        run_test,
-        cancel_test,
         preferences,
         show_main,
         show_quick,
@@ -2164,8 +1960,6 @@ pub fn run() {
         disconnect,
         refresh,
         api_request,
-        run_test,
-        cancel_test,
         preferences,
         background,
         check_updates,
@@ -2267,7 +2061,6 @@ mod tests {
             network: Mutex::new(()),
             snapshot_gate: Mutex::new(()),
             generation: AtomicU64::new(0),
-            tests: Mutex::new(HashMap::new()),
             wake: Notify::new(),
             path: PathBuf::new(),
             foreground: AtomicBool::new(true),
@@ -2456,10 +2249,10 @@ mod tests {
     fn templates_allow_legacy_and_generated_ids_with_explicit_methods() {
         let id = "custom-0123456789abcdef01234567";
         assert!(allowed_request("POST", "/account-templates"));
-        assert!(allowed_request("POST", "/account-templates/custom"));
+        assert!(!allowed_request("POST", "/account-templates/custom"));
         for method in ["PUT", "DELETE"] {
             assert!(allowed_request(method, &format!("/account-templates/{id}")));
-            assert!(allowed_request(
+            assert!(!allowed_request(
                 method,
                 &format!("/account-templates/custom/{id}")
             ));
@@ -2617,22 +2410,6 @@ mod tests {
         assert!(should_poll_fast(true, true, false, true));
     }
 
-    #[test]
-    fn sse_line_parser_handles_crlf_and_ignores_non_data_lines() {
-        assert_eq!(
-            parse_sse_line(b"data: {\"type\":\"delta\",\"text\":\"ok\"}\r"),
-            Some(serde_json::json!({"type":"delta","text":"ok"}))
-        );
-        assert_eq!(
-            parse_sse_line(b"data:{\"type\":\"done\"}"),
-            Some(serde_json::json!({"type":"done"}))
-        );
-        assert!(parse_sse_line(b"").is_none());
-        assert!(parse_sse_line(b"\r").is_none());
-        assert!(parse_sse_line(b": keepalive\r").is_none());
-        assert!(parse_sse_line(b"event: message").is_none());
-        assert!(parse_sse_line(b"data: {invalid").is_none());
-    }
     #[cfg(desktop)]
     #[test]
     fn obsolete_blur_cannot_close_a_reopened_panel() {
@@ -2726,18 +2503,17 @@ mod tests {
         for method in ["POST", "PUT", "DELETE"] {
             assert!(!allowed_request(method, "/accounts/7/usage"));
         }
-        for suffix in ["groups", "degradation-mark"] {
-            assert!(allowed_request("PUT", &format!("/accounts/7/{suffix}")));
-            for method in ["GET", "POST", "DELETE"] {
-                assert!(!allowed_request(method, &format!("/accounts/7/{suffix}")));
-            }
-            for path in [
-                format!("/accounts/0/{suffix}"),
-                format!("/accounts/7/{suffix}?all=true"),
-                format!("/accounts/7/{suffix}/credentials"),
-            ] {
-                assert!(!allowed_request("PUT", &path));
-            }
+        // Account changes go through the operation queue only.
+        for (method, path) in [
+            ("PUT", "/accounts/7/groups"),
+            ("PUT", "/accounts/7/degradation-mark"),
+            ("POST", "/accounts/7/schedulable"),
+            ("POST", "/accounts/7/usage-action"),
+            ("POST", "/accounts/7/priority"),
+            ("POST", "/accounts/7/recover-state"),
+            ("DELETE", "/accounts/7"),
+        ] {
+            assert!(!allowed_request(method, path), "{method} {path}");
         }
         assert!(allowed_request(
             "GET",
@@ -2792,7 +2568,6 @@ mod tests {
             assert!(!allowed_request("GET", path));
         }
         assert!(!allowed_request("DELETE", "/model-groups/7"));
-        assert!(allowed_request("POST", "/accounts/7/schedulable"));
         assert!(allowed_request("GET", "/errors?account_id=7"));
         assert!(allowed_request("GET", "/detection-logs"));
         assert!(allowed_request("GET", "/detection-logs?limit=1"));
@@ -2826,12 +2601,18 @@ mod tests {
         ));
         assert!(!allowed_request("POST", "/detection-logs"));
         assert!(!allowed_request("GET", "/detection-logs/1"));
-        assert!(allowed_request("GET", "/accounts/7/models"));
-        assert!(allowed_request(
-            "GET",
-            "/accounts/7/models?purpose=model_test"
-        ));
         for path in [
+            "/accounts/7/models?purpose=model_test",
+            "/accounts/7/models?purpose=model_test&refresh=true",
+        ] {
+            assert!(allowed_request("GET", path), "{path}");
+        }
+        for path in [
+            "/accounts/7/models",
+            "/accounts/7/models?refresh=true",
+            "/accounts/7/models?refresh=true&purpose=model_test",
+            "/accounts/7/models?purpose=model_test&refresh=false",
+            "/accounts/7/models?purpose=model_test&refresh=true&x=1",
             "/accounts/7/models?purpose=legacy",
             "/accounts/7/models?purpose=model_test&x=1",
             "/accounts/7/models?purpose=model_test&purpose=model_test",
@@ -2840,8 +2621,6 @@ mod tests {
         ] {
             assert!(!allowed_request("GET", path));
         }
-        assert!(allowed_request("DELETE", "/accounts/7"));
-        assert!(allowed_request("POST", "/accounts/7/recover-state"));
         assert!(!allowed_request("GET", "/accounts/7/quality"));
         assert!(allowed_request("POST", "/accounts/7/model-tests"));
         assert!(allowed_request("GET", "/accounts/7/model-tests/latest"));
@@ -2952,7 +2731,6 @@ mod tests {
     fn account_templates_and_detection_have_explicit_method_and_path_allowlist() {
         for (method, path) in [
             ("GET", "/account-templates"),
-            ("PUT", "/account-templates"),
             ("GET", "/account-templates?account_id=421"),
             ("GET", "/accounts/421/model-detection"),
             ("PUT", "/accounts/421/model-detection"),
@@ -2969,7 +2747,9 @@ mod tests {
         ] {
             assert!(!allowed_request("GET", path));
         }
-        assert!(!allowed_request("DELETE", "/account-templates"));
+        for method in ["PUT", "DELETE"] {
+            assert!(!allowed_request(method, "/account-templates"));
+        }
         assert!(!allowed_request("PUT", "/modeltrace/fingerprint-bank"));
         let old: Preferences = serde_json::from_str("{}").unwrap();
         assert!(old.model_test_concurrency.is_none());
@@ -3008,7 +2788,6 @@ mod tests {
     fn old_preferences_migrate_without_losing_existing_choices() {
         let old: Preferences = serde_json::from_str(r#"{"base_url":"https://example.com","favorites":[7],"pinned":true,"launch_at_login":true}"#).unwrap();
         assert!(old.record_columns.is_none());
-        assert_eq!(old.favorites, vec![7]);
         assert!(old.pinned && old.launch_at_login);
         let d = tempfile::tempdir().unwrap();
         let p = d.path().join("prefs.json");
@@ -3029,7 +2808,6 @@ mod tests {
             Some(vec!["model".into(), "type".into(), "cost".into()])
         );
         assert_eq!(restored.base_url, "https://example.com");
-        assert_eq!(restored.favorites, vec![7]);
         assert!(restored.pinned && restored.launch_at_login);
     }
 
@@ -3040,7 +2818,6 @@ mod tests {
             prefs.record_columns,
             Some(vec!["ip".into(), "type".into(), "model".into()])
         );
-        assert_eq!(prefs.favorites, vec![7]);
         assert!(prefs.pinned && prefs.launch_at_login);
         for columns in [vec!["type".into()], vec![]] {
             let changed = Preferences {

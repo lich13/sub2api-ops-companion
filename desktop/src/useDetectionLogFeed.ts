@@ -17,7 +17,7 @@ export function useDetectionLogFeed(active: boolean, online: boolean, connection
   const [items, setItems] = useState<DetectionLog[]>([]), [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false), [error, setError] = useState("");
   const feedConnection = useRef(connectionKey);
-  const generation = useRef(0), cursorRef = useRef<string | null>(null), supported = useRef<boolean | null>(null);
+  const generation = useRef(0), cursorRef = useRef<string | null>(null);
   const current = useRef({ active, online, connectionKey }); current.current = { active, online, connectionKey };
   const load = useCallback((mode: "replace" | "more" = "replace") => {
     if (!current.current.active || !current.current.online) return Promise.resolve(false);
@@ -29,12 +29,6 @@ export function useDetectionLogFeed(active: boolean, online: boolean, connection
     const execute = async () => {
       if (!valid()) return false;
       try {
-        if (supported.current !== true) {
-          const capabilities = await api<{ features?: { detection_logs?: boolean } }>("GET", "/capabilities");
-          if (!valid()) return false;
-          supported.current = capabilities.features?.detection_logs === true;
-        }
-        if (!supported.current) throw new Error("请升级服务端以查看自动检测日志。");
         const response = await api<{ items: DetectionLog[]; next_cursor: string | null }>("GET", `/detection-logs?limit=50${before === null ? "" : `&before=${encodeURIComponent(before)}`}`);
         if (!valid()) return false;
         // Preserve server ordering, including timestamps more precise than JS milliseconds.
@@ -45,7 +39,7 @@ export function useDetectionLogFeed(active: boolean, online: boolean, connection
     };
     return execute();
   }, [connectionKey]);
-  useEffect(() => { feedConnection.current = connectionKey; setItems([]); setCursor(null); cursorRef.current = null; supported.current = null; setError(""); }, [connectionKey]);
+  useEffect(() => { feedConnection.current = connectionKey; setItems([]); setCursor(null); cursorRef.current = null; setError(""); }, [connectionKey]);
   useEffect(() => {
     if (active && online) void load(); else setLoading(false);
     return () => { ++generation.current; };

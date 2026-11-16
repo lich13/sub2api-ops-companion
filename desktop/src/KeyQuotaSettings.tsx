@@ -77,7 +77,7 @@ export function KeyQuotaProvider({
         ? accounts
             .map(
               (a) =>
-                `${a.id}:${a.operation_versions?.usage ?? a.version}`,
+                `${a.id}:${a.operation_versions.usage}`,
             )
             .join("|")
         : "",

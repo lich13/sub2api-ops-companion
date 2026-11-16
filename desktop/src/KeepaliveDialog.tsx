@@ -9,7 +9,7 @@ const labels: Record<string, string> = {
   disabled: "未启用", waiting: "等待检测", paused: "已暂停", running: "恢复中", needs_confirmation: "待核对",
 };
 function checked(value: AccountKeepalive, id: number): AccountKeepalive {
-  if (!value || value.account_id !== id || typeof value.enabled !== "boolean" || typeof value.read_only !== "boolean"
+  if (!value || value.account_id !== id || typeof value.enabled !== "boolean"
       || !/^[0-9a-f]{64}$/.test(value.version) || !Number.isSafeInteger(value.generation) || value.generation < 0
       || !Object.prototype.hasOwnProperty.call(labels, value.status) || typeof value.reason !== "string" || typeof value.paused_reason !== "string"
       || !Number.isInteger(value.restore_count) || value.restore_count < 0 || value.restore_count > 5
@@ -19,11 +19,7 @@ function checked(value: AccountKeepalive, id: number): AccountKeepalive {
   }
   return value;
 }
-function message(error: unknown) {
-  const text = error instanceof Error ? error.message : String(error);
-  if (text.includes("账号不存在")) return text;
-  return /\b404\b|接口不存在|未知接口/.test(text) ? "当前服务版本不支持账号保活，请先更新服务" : text;
-}
+const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export default function KeepaliveDialog({ account, online, connectionKey, close, report }: {
   account: Account; online: boolean; connectionKey: string; close: () => void; report: (error: unknown) => void;
@@ -77,7 +73,7 @@ export default function KeepaliveDialog({ account, online, connectionKey, close,
     return () => { alive = false; clearTimeout(timer); };
   }, [account.id, connectionKey, online, !!value]);
   async function save() {
-    if (!draft || !value || !online || value.read_only || saving.current) return;
+    if (!draft || !value || !online || saving.current) return;
     saving.current = true; setBusy(true); setError("");
     const current = epoch.current, request = ++revision.current;
     try {
@@ -93,7 +89,7 @@ export default function KeepaliveDialog({ account, online, connectionKey, close,
       if (current === epoch.current && request === revision.current) { saving.current = false; setBusy(false); }
     }
   }
-  const disabled = loading || busy || !online || !value || value.read_only;
+  const disabled = loading || busy || !online || !value;
   return <div className="modal-backdrop" onClick={dismiss}>
     <section ref={dialogRef} className="model-detection-dialog" role="dialog" aria-modal="true" aria-label="账号保活" tabIndex={-1} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); dismiss(); } }}>
       <header><div><span className="eyebrow">{account.name} #{account.id}</span><h2>账号保活</h2></div>
@@ -110,7 +106,6 @@ export default function KeepaliveDialog({ account, online, connectionKey, close,
           <dt>近一小时</dt><dd>{value.restore_count}/5 次已确认恢复</dd>
           {(value.reason || value.paused_reason) && <><dt>原因</dt><dd>{value.reason || value.paused_reason}</dd></>}
           {value.next_allowed_at && <><dt>等待至</dt><dd>{fullTime(value.next_allowed_at)}</dd></>}
-          {value.read_only && <><dt>访问模式</dt><dd>只读，无法修改保活设置</dd></>}
         </dl>
         <p className="muted">两次恢复至少间隔 60 秒，一小时最多 5 次。达到上限后暂停，需检查账号并手动重新开启。</p>
       </>}

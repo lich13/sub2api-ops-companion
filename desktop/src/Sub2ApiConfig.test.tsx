@@ -54,7 +54,6 @@ beforeEach(() => {
     configPreview("/sub2api-config", {}) as ConfigDocument,
   );
   vi.mocked(api).mockImplementation(async (_method, path) => {
-    if (path === "/capabilities") return { features: { sub2api_update: true } } as never;
     if (path === "/sub2api-system/version") return { version: "0.2.19" } as never;
     if (path === "/sub2api-system/check-updates?force=true") return { current_version: "0.2.19", latest_version: "0.2.19", has_update: false, build_type: "release" } as never;
     if (path === "/sub2api-config") return fixture as never;

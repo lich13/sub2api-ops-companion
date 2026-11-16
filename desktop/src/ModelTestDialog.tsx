@@ -126,8 +126,7 @@ export default function ModelTestDialog({ account, online, close, report, concur
     setBusy(true);
     try {
       const next = await api<Result>("POST", `/accounts/${account.id}/model-tests`, {
-        model_id: model, expected_version: account.version,
-        ...(account.operation_versions?.model_test ? { expected_operation_version: account.operation_versions.model_test } : {}),
+        model_id: model, expected_version: account.version, expected_operation_version: account.operation_versions.model_test,
         concurrency: slots, engine, ...(engine === "lm_detector" ? { sample_count: samples, tokenizer_probe: tokenizer } : {}),
         request_id: `${crypto.randomUUID().replaceAll("-", "").slice(0, 32)}`,
       });

@@ -17,7 +17,6 @@ beforeEach(() => {
   vi.clearAllMocks(); vi.useFakeTimers();
   running = "0.2.20"; hasUpdate = true; buildType = "release"; update = { message: "Update completed", need_restart: true };
   vi.mocked(api).mockImplementation(async (_method, path) => {
-    if (path === "/capabilities") return { features: { sub2api_update: true } } as never;
     if (path.endsWith("/version")) return { version: running } as never;
     if (path.endsWith("check-updates?force=true")) return { current_version: running, latest_version: "0.2.21", has_update: hasUpdate, build_type: buildType, cached: false } as never;
     if (path.endsWith("/update")) return update as never;
@@ -80,11 +79,10 @@ it("keeps a manual check available after restart verification times out", async 
   expect(button("重启生效")).toBeUndefined();
 });
 
-it("reuses the parent version and capabilities across page activation", async () => {
+it("reuses the parent version across page activation", async () => {
   await render(true, { knownVersion: "0.2.20" });
   await render(false, { knownVersion: "0.2.20" });
   await render(true, { knownVersion: "0.2.20" });
   expect(container.textContent).toContain("运行 0.2.20");
-  expect(vi.mocked(api).mock.calls.filter(([, path]) => path === "/capabilities")).toHaveLength(1);
   expect(api).not.toHaveBeenCalledWith("GET", "/sub2api-system/version");
 });

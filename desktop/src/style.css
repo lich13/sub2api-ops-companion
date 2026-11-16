@@ -2511,8 +2511,6 @@ td strong {
   .events-view .event-tabs button { min-width: 0; padding-inline: 6px; white-space: normal; }
 }
 
-.recovery-compatibility { border: 0; margin: 0; padding: 0; min-width: 0; }
-
 .test-schedule-time { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
 .test-schedule-time input { min-width: 0; font: inherit; font-variant-numeric: tabular-nums; }
 .test-schedules { list-style: none; padding: 0; margin: 0 16px 12px; }
@@ -2671,7 +2669,6 @@ td strong {
 .sidebar-instance-text strong { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-instance-text small,
 .sidebar-instance-text span { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sidebar.collapsed .sidebar-instance-button { justify-content: center; padding: 7px 0; }
 
 .connection-modal {
   width: min(460px, calc(100vw - 32px));

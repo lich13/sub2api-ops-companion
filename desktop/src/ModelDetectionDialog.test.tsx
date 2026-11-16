@@ -23,6 +23,7 @@ const account: Account = {
   group_ids: [7],
   blockers: [],
   version: "account-version-42",
+  operation_versions: {},
   last_success_at: null,
   last_error_at: null,
   last_error_id: null,
@@ -34,14 +35,14 @@ const account: Account = {
 };
 
 type Detection = {
-  schedule_mode?: "fixed" | "smart"; min_interval_minutes?: number; effective_interval_minutes?: number | null; recent_request_count?: number | null;
+  schedule_mode: "fixed" | "smart"; min_interval_minutes: number; effective_interval_minutes?: number | null; recent_request_count?: number | null;
   last_automatic_started_at?: string | null;
   enabled: boolean;
   interval_minutes: number;
   model_id: string;
   model_source?: "global" | "account";
-  model_override?: string | null;
-  global_model_id?: string;
+  model_override: string | null;
+  global_model_id: string;
   version: string;
   generation?: number;
   next_at?: string | null;
@@ -64,8 +65,12 @@ const models = [
 const baseDetection: Detection = {
   enabled: false,
   interval_minutes: 30,
+  schedule_mode: "fixed",
+  min_interval_minutes: 5,
   model_id: "gpt-6-sol",
   model_source: "global",
+  model_override: null,
+  global_model_id: "gpt-6-sol",
   version: "detection-version-1",
   next_at: null,
   status: "waiting",
@@ -192,7 +197,7 @@ describe("scheduled model detection", () => {
     expect(lastDetectionTime()).toBe("时间未知");
   });
 
-  it("shows the global model as read-only and saves only enabled and interval", async () => {
+  it("shows the global model as read-only and saves the schedule without a model override", async () => {
     await renderDialog();
     expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(false);
     expect(container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')?.value).toBe("30");
@@ -225,13 +230,15 @@ describe("scheduled model detection", () => {
       expected_version: "detection-version-1",
       enabled: true,
       interval_minutes: 45,
+      schedule_mode: "fixed",
+      min_interval_minutes: 5,
     });
     expect(command).toHaveBeenCalledWith("refresh");
     expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true);
   });
 
   it("shows an unavailable global model and prevents enabling detection", async () => {
-    await renderDialog({ ...baseDetection, enabled: true, model_id: "retired-model" }, [models[0]]);
+    await renderDialog({ ...baseDetection, enabled: true, model_id: "retired-model", global_model_id: "retired-model" }, [models[0]]);
     expect(container.querySelector('[aria-label="检测模型"]')).toBeNull();
     expect(container.textContent).toContain("当前账号上游模型目录");
     expect(button("保存").disabled).toBe(true);
@@ -266,20 +273,9 @@ describe("scheduled model detection", () => {
       expected_version: "detection-version-1",
       enabled: false,
       interval_minutes: 45,
+      schedule_mode: "fixed",
+      min_interval_minutes: 5,
     });
-  });
-
-  it("requires a global model source from the server before allowing edits", async () => {
-    const oldServer: Detection = { ...baseDetection };
-    delete oldServer.model_source;
-    await renderDialog(oldServer);
-
-    const enabled = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    const interval = container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!;
-    expect(enabled.disabled).toBe(true);
-    expect(interval.disabled).toBe(true);
-    expect(container.textContent).toContain("请升级服务端");
-    expect(button("保存").disabled).toBe(true);
   });
 
   it("keeps an edited draft when a directory reread fails", async () => {
@@ -312,7 +308,7 @@ describe("scheduled model detection", () => {
   });
 
   it("waits for a candidate reread before marking a saved model unavailable", async () => {
-    const detection = { ...baseDetection, enabled: true, model_id: "retired-model" };
+    const detection = { ...baseDetection, enabled: true, model_id: "retired-model", global_model_id: "retired-model" };
     let resolveModels!: (value: unknown) => void;
     const pendingModels = new Promise((resolve) => { resolveModels = resolve; });
     let reload = false;
@@ -348,6 +344,7 @@ describe("scheduled model detection", () => {
       ...baseDetection,
       interval_minutes: 60,
       model_id: "gpt-6-luna",
+      global_model_id: "gpt-6-luna",
       version: "detection-version-server",
     };
     vi.mocked(api).mockImplementation(async (method, path, body) => {
@@ -377,6 +374,8 @@ describe("scheduled model detection", () => {
       expected_version: "detection-version-server",
       enabled: false,
       interval_minutes: 60,
+      schedule_mode: "fixed",
+      min_interval_minutes: 5,
     });
   });
 
@@ -418,7 +417,7 @@ describe("scheduled model detection", () => {
     let resolveOldModels!: (value: unknown) => void;
     const oldDetection = new Promise<Detection>((resolve) => { resolveOldDetection = resolve; });
     const oldModels = new Promise((resolve) => { resolveOldModels = resolve; });
-    const freshDetection: Detection = { ...baseDetection, interval_minutes: 55, model_id: "gpt-6-luna", version: "fresh-version" };
+    const freshDetection: Detection = { ...baseDetection, interval_minutes: 55, model_id: "gpt-6-luna", global_model_id: "gpt-6-luna", version: "fresh-version" };
     vi.mocked(api).mockImplementation(async (method, path) => {
       if (method !== "GET") throw new Error("unexpected " + method + " " + path);
       if (path === "/accounts/42/model-detection") return oldDetection as never;
@@ -640,7 +639,7 @@ describe("scheduled model detection", () => {
 
 describe("OpenAI Key detection models", () => {
   it("saves an upstream model override and can return to the global model", async () => {
-    let current: Detection = { ...baseDetection, model_override: null, global_model_id: "gpt-6-sol" };
+    let current: Detection = baseDetection;
     vi.mocked(api).mockImplementation(async (method, path, body) => {
       if (path.endsWith("/models?purpose=model_test")) return models as never;
       if (path.endsWith("/model-detection")) {
@@ -661,7 +660,7 @@ describe("OpenAI Key detection models", () => {
     expect(button("保存").disabled).toBe(false);
     await act(async () => button("保存").click());
     expect(api).toHaveBeenCalledWith("PUT", "/accounts/42/model-detection", {
-      expected_version: baseDetection.version, enabled: false, interval_minutes: 30, model_override: "gpt-6-luna",
+      expected_version: baseDetection.version, enabled: false, interval_minutes: 30, schedule_mode: "fixed", min_interval_minutes: 5, model_override: "gpt-6-luna",
     });
     expect(close).toHaveBeenCalledTimes(1);
     await act(async () => root.render(null));
@@ -671,7 +670,7 @@ describe("OpenAI Key detection models", () => {
     await act(async () => { select.value = ""; select.dispatchEvent(new Event("change", { bubbles: true })); });
     await act(async () => button("保存").click());
     expect(api).toHaveBeenCalledWith("PUT", "/accounts/42/model-detection", {
-      expected_version: "saved-version", enabled: false, interval_minutes: 30, model_override: null,
+      expected_version: "saved-version", enabled: false, interval_minutes: 30, schedule_mode: "fixed", min_interval_minutes: 5, model_override: null,
     });
     expect(close).toHaveBeenCalledTimes(2);
     expect(vi.mocked(api).mock.calls.some(([method]) => method === "POST")).toBe(false);
@@ -689,7 +688,7 @@ describe("OpenAI Key detection models", () => {
     expect(button("保存").disabled).toBe(false);
     await act(async () => button("保存").click());
     expect(api).toHaveBeenCalledWith("PUT", "/accounts/42/model-detection", {
-      expected_version: baseDetection.version, enabled: false, interval_minutes: 30, model_override: "retired-model",
+      expected_version: baseDetection.version, enabled: false, interval_minutes: 30, schedule_mode: "fixed", min_interval_minutes: 5, model_override: "retired-model",
     });
   });
 });

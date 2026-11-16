@@ -1,5 +1,5 @@
 // Development-only, deterministic fixtures. The native build never uses this transport.
-import type { ViewState, Account, Config, TestEvent, Preferences } from "./types";
+import type { ViewState, Account, Config, Preferences } from "./types";
 import { version as appVersion } from "../package.json";
 const now = new Date().toISOString(),
   before = new Date(Date.now() - 7 * 60e3).toISOString();
@@ -16,6 +16,7 @@ const accounts: Account[] = [
     group_ids: [1],
     blockers: [],
     version: "a".repeat(64),
+    operation_versions: {},
     last_success_at: now,
     last_error_at: null,
     last_error_id: null,
@@ -57,6 +58,7 @@ const accounts: Account[] = [
     group_ids: [1],
     blockers: [{ code: "reauth", label: "需要重新认证" }],
     version: "b".repeat(64),
+    operation_versions: {},
     last_success_at: before,
     last_error_at: now,
     last_error_id: 9001,
@@ -88,6 +90,7 @@ const accounts: Account[] = [
     group_ids: [2],
     blockers: [{ code: "rate_limit_reset_at", label: "限流中", until: new Date(Date.now() + (11 * 24 + 19) * 3600_000).toISOString() }],
     version: "c".repeat(64),
+    operation_versions: {},
     last_success_at: before,
     last_error_at: now,
     last_error_id: 9002,
@@ -134,6 +137,7 @@ const accounts: Account[] = [
     group_ids: [1],
     blockers: [{ code: "disabled", label: "调度已关闭" }],
     version: "d".repeat(64),
+    operation_versions: {},
     last_success_at: null,
     last_error_at: null,
     last_error_id: null,
@@ -280,7 +284,6 @@ let state: ViewState = {
   error: "",
   preferences: {
     base_url: "https://demo.example/sub2ops",
-    favorites: [1, 2],
     pinned: false,
     launch_at_login: false,
   },
@@ -296,7 +299,6 @@ let state: ViewState = {
         account_name: accounts[0].name,
         model: "gpt-6-astra",
         upstream_model: "gpt-6-astra",
-        upstream_response_model: "gpt-6-astra",
         called_at: now,
         recent_accounts: [0, 1, 3].map((index, rank) => ({
           log_id: 100 - rank,
@@ -315,7 +317,6 @@ let state: ViewState = {
         account_name: accounts[2].name,
         model: "grok-4.6",
         upstream_model: "grok-4.6",
-        upstream_response_model: "grok-4.6",
         called_at: now,
         recent_accounts: [2, 4, 5].map((index, rank) => ({
           log_id: 90 - rank,
@@ -334,8 +335,8 @@ let state: ViewState = {
         account_name: "",
         model: "",
         upstream_model: "",
-        upstream_response_model: "",
         called_at: null,
+        recent_accounts: [],
       },
     ],
     errors: [
@@ -424,7 +425,6 @@ const config: Config = {
     oauth_daily_test_time: "05:00",
     oauth_usage_refresh_concurrency: 4,
     oauth_recovery_test_concurrency: 2,
-    oauth_early_probe_batch_size: 8,
     connection_test_retry_interval_seconds: 10,
     connection_test_max_retries: 3,
     oauth_recovery_test_model_id: "gpt-5.6-luna",
@@ -457,10 +457,10 @@ if (state.snapshot && scenario?.startsWith("lm-")) {
   const [codex, grok, empty] = state.snapshot.groups;
   accounts[0].group_ids = [1, 4];
   accounts[1].group_ids = [1, 2];
-  const outside = { ...grok.recent_accounts![0], log_id: 999 };
+  const outside = { ...grok.recent_accounts[0], log_id: 999 };
   codex.called_at = now;
-  codex.recent_accounts = [outside, ...codex.recent_accounts!.map((call) => ({ ...call, called_at: before }))];
-  grok.recent_accounts!.push({ ...codex.recent_accounts[2], log_id: 80 });
+  codex.recent_accounts = [outside, ...codex.recent_accounts.map((call) => ({ ...call, called_at: before }))];
+  grok.recent_accounts.push({ ...codex.recent_accounts[2], log_id: 80 });
   state.snapshot.groups = [
     { ...empty, id: 5, name: "从未调用" },
     { ...codex, id: 4, name: "同时调用", recent_accounts: [codex.recent_accounts[1]] },
@@ -493,7 +493,7 @@ if (state.snapshot && scenario?.startsWith("lm-")) {
   }));
   for (const account of accounts) {
     account.group_ids = state.snapshot.groups.filter((group) =>
-      group.recent_accounts?.some((call) => call.account_id === account.id),
+      group.recent_accounts.some((call) => call.account_id === account.id),
     ).map((group) => group.id);
   }
 } else if (state.snapshot && scenario === "two-groups") {
@@ -577,10 +577,6 @@ export async function run(
     return;
   if ((name === "open_authorization_url" || name === "open_sub2api_release")) return;
   if (name === "check_updates") return `预览模式 · 当前版本 ${appVersion}`;
-  if (name === "cancel_test") {
-    testCancelled = true;
-    return;
-  }
   if (name === "api_request") {
     if (String(args.path).startsWith("/sub2api-system/")) return (await import("./sub2apiConfigPreview")).systemPreview(String(args.path));
     if (String(args.path).startsWith("/sub2api-config")) return (await import("./sub2apiConfigPreview")).configPreview(String(args.path), (args.body || {}) as Record<string,unknown>);
@@ -601,7 +597,6 @@ export async function run(
     }
     if (/^\/accounts\/\d+\/apply-oauth-credentials$/.test(String(args.path))) return { account_id: Number(String(args.path).split("/")[2]), verified: true, status: "active" };
     if (String(args.path).startsWith("/account-creation")) return (await import("./accountCreationPreview")).creationPreview(String(args.path),(args.body||{}) as Record<string,unknown>,state.snapshot?.accounts??[],emit);
-    if (args.path === "/capabilities") return { api_version: 1, features: { sub2api_update: true, account_creation: true, key_quota_token_reveal: true, detection_logs: true, global_detection_model: true, account_priority_ordering: true, account_priority_per_platform: true } };
     if (String(args.path).split("?")[0] === "/account-priorities" || String(args.path).startsWith("/account-priority-orders")) return (await import("./priorityPreview")).priorityPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? [], emit);
     if (String(args.path).startsWith("/detection-logs")) return (await import("./detectionLogPreview")).detectionLogPreview(String(args.path));
     if (args.method === "POST" && typeof args.path === "string" && /^\/proxies\/[1-9]\d*\/(test|quality-check)$/.test(args.path)) {
@@ -626,21 +621,6 @@ export async function run(
       }
       return result;
     }
-    if (String(args.method) === "PUT" && /^\/accounts\/\d+\/(groups|degradation-mark)$/.test(String(args.path))) {
-      const path = String(args.path), body = args.body as Record<string, unknown>;
-      const account = state.snapshot?.accounts.find((a) => a.id === Number(path.split("/")[2]));
-      if (!account) throw new Error("账号不存在");
-      if (path.endsWith("/groups")) {
-        if (body.expected_version !== account.version) throw new Error("账号已变化，请刷新");
-        const scope = body.scope_group_ids as number[], selected = body.group_ids as number[];
-        account.group_ids = [...new Set([...account.group_ids.filter((id) => !scope.includes(id)), ...selected])].sort((a, b) => a - b);
-        account.version = Date.now().toString(16).padEnd(64, "0"); emit();
-        return { verified: true, group_ids: account.group_ids, version: account.version };
-      }
-      if (body.expected_mark_version !== account.degradation_mark?.version) throw new Error("降智标记已变化，请刷新");
-      account.degradation_mark = { marked: !!body.marked, marked_at: body.marked ? new Date().toISOString() : null, version: Date.now().toString(16).padEnd(64, "0") }; emit();
-      return { verified: true, degradation_mark: account.degradation_mark };
-    }
     if (String(args.path).startsWith("/usage-records") || String(args.path).startsWith("/usage-record-options")) {
       return (await import("./recordPreview")).recordPreview(String(args.path), accounts);
     }
@@ -651,38 +631,7 @@ export async function run(
       body = args.body as {
         changes: Record<string, unknown>;
         expected_revision: string;
-        schedulable: boolean;
-        priority: number;
       } | null;
-
-    if (args.method === "DELETE" && /^\/accounts\/\d+$/.test(path)) {
-      const id = Number(path.split("/")[2]);
-      const account = state.snapshot?.accounts.find((a) => a.id === id);
-      if (!account || !state.snapshot) throw new Error("账号不存在");
-      state.snapshot.accounts = state.snapshot.accounts.filter(
-        (a) => a.id !== id,
-      );
-      for (const group of state.snapshot.groups)
-        group.recent_accounts = group.recent_accounts?.filter(
-          (a) => a.account_id !== id,
-        );
-      emit();
-      return { deleted: true, verified: true };
-    }
-    if (path.endsWith("/recover-state")) {
-      const account = state.snapshot?.accounts.find(
-        (a) => a.id === Number(path.split("/")[2]),
-      );
-      if (!account) throw new Error("账号不存在");
-      Object.assign(account, {
-        status: "active",
-        recoverable: false,
-        blockers: [],
-        available: account.schedulable,
-      });
-      emit();
-      return { verified: true };
-    }
     if (path === "/config") return structuredClone(config);
     if (path.startsWith("/config/")) {
       if (scenario === "config-save-failure" && args.method === "PUT") throw new Error("设置保存失败，请重试");
@@ -725,18 +674,9 @@ export async function run(
     if (path.split("?", 1)[0].endsWith("/models")) {
       const query = new URLSearchParams(path.split("?")[1]);
       if (scenario === "model-directory-error" && query.get("refresh") === "true") throw new Error("模型目录暂不可用，请重试");
-      if (query.get("purpose") === "model_test") {
-        const account = state.snapshot?.accounts.find((item) => item.id === Number(path.split("/")[2]));
-        if (!account) throw new Error("账号不存在");
-        return (await import("./modelTestPreview")).modelTestCandidates(account);
-      }
-      return [
-        "gpt-6-sol",
-        "gpt-image-1",
-        "grok-4.5",
-        "grok-imagine-image",
-        "grok-imagine-video",
-      ].map((id) => ({ id, display_name: id, type: "model" }));
+      const account = state.snapshot?.accounts.find((item) => item.id === Number(path.split("/")[2]));
+      if (!account) throw new Error("账号不存在");
+      return (await import("./modelTestPreview")).modelTestCandidates(account);
     }
     if (path.startsWith("/errors/")) {
       const e = state.snapshot?.errors.find(
@@ -753,45 +693,8 @@ export async function run(
       };
     }
     if (/^\/accounts\/\d+\/usage$/.test(path)) return accounts.find(a => a.id === Number(path.split("/")[2]))?.usage;
-    if (path.endsWith("/usage-action")) return { message: "预览：操作已完成" };
-    if (path.startsWith("/accounts/")) {
-      const a = state.snapshot?.accounts.find(
-        (a) => a.id === Number(path.split("/")[2]),
-      );
-      if (a && body) {
-        if (path.endsWith("/priority")) a.priority = body.priority;
-        else a.schedulable = body.schedulable;
-        emit();
-      }
-      return { verified: true };
-    }
     if (path.startsWith("/actions/"))
       return { message: "预览：测试请求已完成", pairing_code: "DEMO-NEW1" };
   }
   throw new Error("预览未提供此操作");
-}
-let testCancelled = false;
-export async function testStream(
-  body: Record<string, unknown>,
-  callback: (event: TestEvent) => void,
-) {
-  testCancelled = false;
-  callback({ type: "test_start", model: String(body.model_id || body.mode) });
-  for (const text of [
-    "Hello",
-    " ",
-    "world!\n",
-    "  Preview output\n",
-    "\t中文 👋\n",
-  ]) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    if (testCancelled) return;
-    callback({ type: "content", text });
-  }
-  callback({
-    type: "test_complete",
-    success: true,
-    completed_at: new Date().toISOString(),
-    duration_ms: 1000,
-  });
 }

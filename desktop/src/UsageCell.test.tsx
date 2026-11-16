@@ -19,6 +19,7 @@ describe("Sub2API usage cell", () => {
     const account = {
       id: 1,
       name: "test",
+      operation_versions: {},
       usage: {
         branch: "openai_oauth",
         today: null,
@@ -74,6 +75,7 @@ describe("Sub2API usage cell", () => {
   });
   it("does not invent a percentage or OAuth actions for a Key without quota", () => {
     const account = {
+      operation_versions: {},
       usage: {
         branch: "apikey",
         windows: [],
@@ -102,6 +104,7 @@ describe("Sub2API usage cell", () => {
           account={
             {
               id: 1,
+              operation_versions: {},
               usage_windows: [],
               auto_reset_credit: status,
             } as unknown as Account
@@ -123,6 +126,7 @@ describe("Sub2API usage cell", () => {
         account={
           {
             id: 1,
+            operation_versions: {},
             usage_windows: [],
             recovery_monitor: {
               status: "waiting",
@@ -150,6 +154,7 @@ describe("Sub2API usage cell", () => {
         account={
           {
             id: 1,
+            operation_versions: {},
             usage_windows: [],
             recovery_monitor: {
               status,
@@ -176,6 +181,7 @@ describe("Sub2API usage cell", () => {
         account={
           {
             id: 1,
+            operation_versions: {},
             usage_windows: [],
             auto_reset_credit: {
               stage: "retry",
@@ -216,6 +222,7 @@ describe("Sub2API usage cell", () => {
         account={
           {
             id: 1,
+            operation_versions: {},
             usage_windows: [],
             auto_reset_credit: {
               stage,
@@ -254,7 +261,7 @@ it("shows actual OAuth duration and distinguishes failed statistics from zero us
     stats: { requests: 0, tokens: 0, cost: 0, user_cost: 0 },
   }] };
   const render = (stats_status?: "ok" | "error") => renderToStaticMarkup(<UsageCell
-    account={{ id: 1, usage: { ...usage, stats_status } } as unknown as Account}
+    account={{ id: 1, operation_versions: {}, usage: { ...usage, stats_status } } as unknown as Account}
     online refresh={async () => {}} report={() => {}} />);
   expect(render("error")).toContain("统计暂不可用，请重试");
   for (const status of [undefined, "ok"] as const) {

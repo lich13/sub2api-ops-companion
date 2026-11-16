@@ -16,23 +16,13 @@ export default function Sub2ApiVersion({ active, online, knownVersion = "", onRu
   active: boolean; online: boolean; knownVersion?: string; onRuntimeChanged?: () => void;
 }) {
   const [version, setVersion] = useState(""), [info, setInfo] = useState<Sub2ApiUpdate | null>(null);
-  const [supported, setSupported] = useState<boolean | null>(null), [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [needRestart, setNeedRestart] = useState(false), [waiting, setWaiting] = useState(false);
   const [error, setError] = useState(""), [message, setMessage] = useState("");
   const alive = useRef(true), guard = useRef(false), target = useRef("");
   const refreshRuntime = useRef(onRuntimeChanged);
   refreshRuntime.current = onRuntimeChanged;
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  useEffect(() => {
-    if (!online) { setSupported(null); return; }
-    if (!active || supported !== null) return;
-    let cancelled = false;
-    void api<{ features?: { sub2api_update?: boolean } }>("GET", "/capabilities").then(caps => {
-      if (cancelled) return;
-      setSupported(caps.features?.sub2api_update === true);
-    }).catch(e => { if (!cancelled) setError(String(e)); });
-    return () => { cancelled = true; };
-  }, [active, online, supported]);
   useEffect(() => {
     if (knownVersion) setVersion(knownVersion);
   }, [knownVersion]);
@@ -90,11 +80,10 @@ export default function Sub2ApiVersion({ active, online, knownVersion = "", onRu
       }
     } finally { guard.current = false; if (alive.current) setBusy(false); }
   }
-  if (supported === false) return null;
   return <div className="config-version">
     <div className="config-runtime"><b>运行 {version || "—"}</b>
       {info && <span>{info.has_update ? `可更新至 ${info.latest_version}` : "已经是最新版本"}</span>}
-      <button type="button" disabled={supported !== true || busy || waiting || !online} onClick={() => void run("check-updates")}>检查更新</button>
+      <button type="button" disabled={busy || waiting || !online} onClick={() => void run("check-updates")}>检查更新</button>
       <button type="button" onClick={() => void command("open_sub2api_release", { url: info?.release_info?.html_url || "https://github.com/Wei-Shaw/sub2api/releases" }).catch(e => setError(String(e)))}>查看发布</button>
       {info?.has_update && !needRestart && <button type="button" disabled={busy || waiting || !online || info.build_type !== "release"} onClick={() => void run("update")}>{busy ? "正在更新…" : "更新 Sub2API"}</button>}
       {needRestart && <button type="button" disabled={busy || waiting || !online} onClick={() => void run("restart")}>重启生效</button>}

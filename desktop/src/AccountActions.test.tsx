@@ -31,6 +31,7 @@ const account = (id: number, overrides: Partial<Account> = {}): Account => ({
   blockers: [],
   recoverable: true,
   version: `account-version-${id}`,
+  operation_versions: Object.fromEntries(["recover", "schedulable", "groups", "delete"].map(key => [key, `${key}-version-${id}`])),
   last_success_at: null,
   last_error_at: null,
   last_error_id: null,
@@ -52,7 +53,6 @@ const group = (id: number, name: string, platform = "openai"): Group => ({
   account_name: "",
   model: "fixture-model",
   upstream_model: "fixture-model",
-  upstream_response_model: "fixture-model",
   called_at: null,
   recent_accounts: [],
 });
@@ -65,7 +65,6 @@ const state = (accounts: Account[] = [account(1)]): ViewState => ({
   error: "",
   preferences: {
     base_url: "https://example.invalid",
-    favorites: [],
     pinned: false,
     launch_at_login: false,
   },
@@ -83,6 +82,9 @@ let container: HTMLDivElement;
 let root: Root;
 let receive: (next: ViewState) => void;
 
+const operation = (action: string, result: Record<string, unknown>) => ({
+  id: "f".repeat(32), account_id: 1, account_name: "Fixture 1", action, status: "completed", requested: {}, result,
+});
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason: Error) => void;
@@ -139,13 +141,13 @@ beforeEach(() => {
     if (method !== "GET") throw new Error(`Unexpected fixture write: ${method} ${path}`);
     if (path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
     if (path === "/account-operations") return { items: [] } as never;
-    if (/^\/accounts\/\d+\/models(?:\?purpose=model_test)?$/.test(path)) return [{ id: "fixture-model", type: "text" }] as never;
+    if (/^\/accounts\/\d+\/models\?purpose=model_test$/.test(path)) return [{ id: "fixture-model", type: "text" }] as never;
     if (/^\/accounts\/\d+\/model-tests\/latest$/.test(path)) return null as never;
-    if (/^\/accounts\/\d+\/model-detection$/.test(path)) return { enabled: false, interval_minutes: 30, model_id: "fixture-model", model_source: "global", version: "detection-version", status: "disabled" } as never;
+    if (/^\/accounts\/\d+\/model-detection$/.test(path)) return { enabled: false, interval_minutes: 30, schedule_mode: "fixed", min_interval_minutes: 5, model_id: "fixture-model", model_source: "global", model_override: null, global_model_id: "fixture-model", version: "detection-version", status: "disabled" } as never;
     if (/^\/accounts\/\d+\/keepalive$/.test(path)) return {
       account_id: Number(path.match(/\d+/)?.[0]), enabled: false, generation: 0, version: "a".repeat(64),
       status: "disabled", reason: "", paused_reason: "", last_restore_at: null, restore_count: 0,
-      budget_used: 0, next_allowed_at: null, read_only: false,
+      budget_used: 0, next_allowed_at: null,
     } as never;
     if (path === "/modeltrace/fingerprint-bank") return { version: { revision: "fixture-revision", sha256: "fixture-hash", built_at: "2026-10-01T00:00:00Z", analyzer_version: 1 }, source: "bundled", status: "ready" } as never;
     if (path === "/account-templates") return { version: "template-version", configured: false, templates: {}, template_meta: {}, template_order: [] } as never;
@@ -257,10 +259,10 @@ describe("shared account actions", () => {
   });
 
   it("refreshes a submitted degradation mark after its menu closes and the page changes", async () => {
-    const pending = deferred<{ verified: boolean; degradation_mark: { marked: boolean; version: string } }>();
+    const pending = deferred<unknown>();
     const original = vi.mocked(api).getMockImplementation()!;
     vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (method === "PUT" && path === "/accounts/1/degradation-mark") return pending.promise as never;
+      if (method === "POST" && path === "/accounts/1/operations") return pending.promise as never;
       return original(method, path, body);
     });
     await render();
@@ -269,20 +271,22 @@ describe("shared account actions", () => {
     await act(async () => button("标记降智", menu()!).click());
 
     expect(menu()).toBeNull();
-    expect(api).toHaveBeenCalledWith("PUT", "/accounts/1/degradation-mark", { marked: true, expected_mark_version: "mark-version-1" });
+    expect(api).toHaveBeenCalledWith("POST", "/accounts/1/operations", expect.objectContaining({
+      action: "degradation_mark", payload: { marked: true }, expected_version: "mark-version-1",
+    }));
     await act(async () => navigation("账号").click());
     expect(command).not.toHaveBeenCalledWith("refresh");
-    await act(async () => pending.resolve({ verified: true, degradation_mark: { marked: true, version: "mark-version-2" } }));
+    await act(async () => pending.resolve(operation("degradation_mark", { verified: true, degradation_mark: { marked: true, version: "mark-version-2" } })));
 
     expect(command).toHaveBeenCalledWith("refresh");
     expect(vi.mocked(api).mock.calls.filter(([method]) => method !== "GET")).toHaveLength(1);
   });
 
   it.each(["rejected", "unverified"])("keeps %s degradation feedback visible after the menu closes", async (outcome) => {
-    const pending = deferred<{ verified: boolean; degradation_mark: { marked: boolean; version: string } }>();
+    const pending = deferred<unknown>();
     const original = vi.mocked(api).getMockImplementation()!;
     vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (method === "PUT" && path === "/accounts/1/degradation-mark") return pending.promise as never;
+      if (method === "POST" && path === "/accounts/1/operations") return pending.promise as never;
       return original(method, path, body);
     });
     await render();
@@ -292,18 +296,18 @@ describe("shared account actions", () => {
     await act(async () => navigation("账号").click());
     await act(async () => {
       if (outcome === "rejected") pending.reject(new Error("标记保存失败 fixture"));
-      else pending.resolve({ verified: false, degradation_mark: { marked: true, version: "mark-version-2" } });
+      else pending.resolve(operation("degradation_mark", { verified: false, degradation_mark: { marked: true, version: "mark-version-2" } }));
     });
 
     expect(container.textContent).toContain(outcome === "rejected" ? "标记保存失败 fixture" : "降智标记保存未确认");
-    expect(command).not.toHaveBeenCalledWith("refresh");
+    expect(vi.mocked(command).mock.calls.some(([name]) => name === "refresh")).toBe(outcome === "unverified");
   });
 
   it("recovers an eligible group account once and reports the result after its menu closes", async () => {
-    const pending = deferred<{ verified: boolean }>();
+    const pending = deferred<unknown>();
     const original = vi.mocked(api).getMockImplementation()!;
     vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (method === "POST" && path === "/accounts/1/recover-state") return pending.promise as never;
+      if (method === "POST" && path === "/accounts/1/operations") return pending.promise as never;
       return original(method, path, body);
     });
     await render();
@@ -314,9 +318,11 @@ describe("shared account actions", () => {
     await openGroupMenu();
     expect(button("恢复状态", menu()!).disabled).toBe(true);
     await act(async () => button("恢复状态", menu()!).click());
-    await act(async () => pending.resolve({ verified: true }));
+    await act(async () => pending.resolve(operation("recover", { verified: true })));
 
-    expect(api).toHaveBeenCalledWith("POST", "/accounts/1/recover-state", { expected_version: "account-version-1" });
+    expect(api).toHaveBeenCalledWith("POST", "/accounts/1/operations", expect.objectContaining({
+      action: "recover", payload: {}, expected_version: "recover-version-1",
+    }));
     expect(vi.mocked(api).mock.calls.filter(([method]) => method !== "GET")).toHaveLength(1);
     expect(container.textContent).toContain("状态已恢复");
     expect(command).toHaveBeenCalledWith("refresh");
@@ -337,7 +343,6 @@ describe("shared account actions", () => {
 
   it("deletes from a group only after confirmation and preserves the other account's pending move", async () => {
     const original = vi.mocked(api).getMockImplementation()!;
-    const first = { ...account(1), operation_versions: { delete: "account-version-1" } };
     vi.mocked(api).mockImplementation(async (method, path, body) => {
       if (method === "POST" && path === "/account-operations/batch" && (body as { action?: string })?.action === "delete") {
         return {
@@ -360,7 +365,7 @@ describe("shared account actions", () => {
       }
       return original(method, path, body);
     });
-    await render(state([first, account(2, { group_ids: [2] })]));
+    await render(state([account(1), account(2, { group_ids: [2] })]));
     await openGroups();
     await moveTo("Fixture 1", "右组");
     await moveTo("Fixture 2", "左组");
@@ -380,11 +385,11 @@ describe("shared account actions", () => {
     expect(writes).toHaveLength(2);
     expect(writes[0]).toEqual(["POST", "/account-operations/batch", expect.objectContaining({
       action: "delete", payload: { confirmed: true },
-      accounts: [{ account_id: 1, expected_version: "account-version-1", payload: {} }],
+      accounts: [{ account_id: 1, expected_version: "delete-version-1", payload: {} }],
     })]);
     expect(writes[1]).toEqual(["POST", "/account-operations/batch", expect.objectContaining({
       action: "groups", payload: {},
-      accounts: [{ account_id: 2, expected_version: "account-version-2", payload: { scope_group_ids: [1, 2], group_ids: [1] } }],
+      accounts: [{ account_id: 2, expected_version: "groups-version-2", payload: { scope_group_ids: [1, 2], group_ids: [1] } }],
     })]);
   });
 
@@ -422,7 +427,6 @@ describe("shared scheduling in groups and priorities", () => {
   async function openPanel(page: "分组" | "优先级", items: Account[]) {
     const original = vi.mocked(api).getMockImplementation()!;
     vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (path === "/capabilities") return { features: { account_priority_ordering: true, account_priority_per_platform: true } } as never;
       if (path === "/account-priorities?schema=2") return { platforms: [{ platform: "openai", version: "fixture-priority-version", last_task: null,
         items: items.map(item => ({ ...item, version: `priority-${item.id}`, editable: true, reason: "" })) }], active_task: null, legacy_last_task: null } as never;
       return original(method, path, body);
@@ -464,7 +468,7 @@ describe("shared scheduling in groups and priorities", () => {
 
   it.each(["分组", "优先级"] as const)("%s keeps the last readback and refreshes after an unconfirmed schedule write", async (page) => {
     const original = vi.mocked(api).getMockImplementation()!;
-    vi.mocked(api).mockImplementation(async (method, path, body) => path === "/accounts/1/schedulable" ? { verified: false } as never : original(method, path, body));
+    vi.mocked(api).mockImplementation(async (method, path, body) => path === "/accounts/1/operations" ? operation("schedulable", { verified: false }) as never : original(method, path, body));
     await openPanel(page, [account(1), account(2)]);
     const draft = draftState(page);
     await act(async () => panelSwitch(page).click());

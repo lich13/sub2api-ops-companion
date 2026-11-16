@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { api, command, subscribe } from "./bridge";
-import { DeleteAccountsDialog, RecoverStateButton, RecoverSelectedButton, ResetCreditsDialog } from "./AccountManagement";
+import { DeleteAccountsDialog, RecoverSelectedButton, ResetCreditsDialog } from "./AccountManagement";
 import { bindOperationConnection } from "./accountOperations";
 import { RecoveryHistory } from "./AccountControls";
 import App from "./main";
@@ -50,6 +50,7 @@ const account = (id: number): Account => ({
   available: false,
   blockers: [],
   version: "a".repeat(64),
+  operation_versions: {},
   group_ids: [],
   last_success_at: null,
   last_error_at: null,
@@ -82,7 +83,6 @@ async function openAutoResetSettings(
     error: "",
     preferences: {
       base_url: "https://settings.invalid",
-      favorites: [],
       pinned: false,
       launch_at_login: false,
     },
@@ -103,7 +103,6 @@ async function openAutoResetSettings(
       oauth_daily_test_time: "09:00",
       oauth_usage_refresh_concurrency: 3,
       oauth_recovery_test_concurrency: 2,
-      oauth_early_probe_batch_size: 5,
       oauth_recovery_test_model_id: "fixture-model",
       model_detection_model_id: "gpt-6-luna",
     },
@@ -357,35 +356,6 @@ it("shows the server reason for queued, checking, and running batch jobs", async
   await act(async () => root.render(<div />));
 });
 
-it("restores directly once, without quota or test requests", async () => {
-  let resolve: (value: unknown) => void = () => {};
-  vi.mocked(api).mockImplementation(
-    () =>
-      new Promise((r) => {
-        resolve = r;
-      }),
-  );
-  await act(async () =>
-    root.render(
-      <RecoverStateButton
-        account={{ ...account(2), recoverable: true }}
-        online
-        report={vi.fn()}
-      />,
-    ),
-  );
-  await act(async () => {
-    button("恢复状态").click();
-    button("恢复状态").click();
-  });
-  expect(api).toHaveBeenCalledExactlyOnceWith(
-    "POST",
-    "/accounts/2/recover-state",
-    { expected_version: "a".repeat(64) },
-  );
-  await act(async () => resolve({ verified: true }));
-});
-
 it("filters already loaded recoveries again after deletion and a late page response", async () => {
   const records = [1, 2, 3].map(
     (id): Recovery => ({
@@ -429,7 +399,6 @@ it("selects current filters, preserves live selections on polling and clears on 
     error: "",
     preferences: {
       base_url: "https://qa.invalid",
-      favorites: [],
       pinned: false,
       launch_at_login: false,
     },
@@ -504,7 +473,6 @@ it("keeps batch actions adjacent and requires confirmation before deleting selec
     error: "",
     preferences: {
       base_url: "https://qa.invalid",
-      favorites: [],
       pinned: false,
       launch_at_login: false,
     },
@@ -642,7 +610,7 @@ it("ignores late recovery results after changing connections", async () => {
 it("offers batch reset cards only for a selection holding one and spends nothing before confirmation", async () => {
   const state: ViewState = {
     platform: "macos", connected: true, online: true, error: "",
-    preferences: { base_url: "https://qa.invalid", favorites: [], pinned: false, launch_at_login: false },
+    preferences: { base_url: "https://qa.invalid", pinned: false, launch_at_login: false },
     snapshot: { observed_at: "2026-09-26T00:00:00Z", accounts: [cardAccount(1, 1), account(2)], groups: [], errors: [], recoveries: [] },
   };
   vi.mocked(subscribe).mockImplementation(async () => () => {});

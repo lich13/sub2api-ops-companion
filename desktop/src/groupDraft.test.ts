@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { draftConflict, membershipZone, moveAccount, platformGroups } from "./groupDraft";
 import type { Account, Group } from "./types";
-const account = { id: 7, name: "同名", platform: "openai", version: "v1", group_ids: [1, 9] } as Account;
+const account = { id: 7, name: "同名", platform: "openai", operation_versions: { groups: "v1" }, group_ids: [1, 9] } as unknown as Account;
 const groups = [1, 2, 9].map((id) => ({ id, name: "组", platform: "openai" } as Group));
 describe("membership drafts", () => {
   it("moves among exact overlap regions and preserves memberships outside the pair", () => {
@@ -16,7 +16,7 @@ describe("membership drafts", () => {
   });
   it("keeps baseline and scope when editing more than two groups", () => {
     const one = moveAccount({}, account, [1, 2], "both");
-    const next = moveAccount(one, { ...account, version: "v2" }, [2, 9], "left");
+    const next = moveAccount(one, { ...account, operation_versions: { groups: "v2" } }, [2, 9], "left");
     expect(next[7]).toMatchObject({ original: [1, 9], target: [1, 2], scope: [1, 2, 9], version: "v1" });
   });
   it("covers unassigned, single groups and intersection only once", () => {
@@ -31,7 +31,7 @@ describe("membership drafts", () => {
     const draft = moveAccount({}, account, [1, 2], "right")[7];
     expect(draftConflict(draft, [account], groups)).toBe(false);
     expect(draftConflict(draft, [], groups)).toBe(true);
-    expect(draftConflict(draft, [{ ...account, version: "v2" }], groups)).toBe(true);
+    expect(draftConflict(draft, [{ ...account, operation_versions: { groups: "v2" } }], groups)).toBe(true);
     expect(draftConflict(draft, [account], groups.slice(0, 1))).toBe(true);
     expect(draftConflict(draft, [account], groups.map((g) => ({ ...g, platform: "grok" })))).toBe(true);
   });

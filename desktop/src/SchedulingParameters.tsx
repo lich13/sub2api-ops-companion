@@ -12,7 +12,7 @@ import "./account-settings.css";
 export type SchedulingField = "concurrency" | "load_factor";
 const labels = { concurrency: "并发", load_factor: "负载因子" };
 export function NumericEditor({ account, field, online, close, anchor }: { account: Account; field: SchedulingField; online: boolean; close: () => void; anchor: DOMRect }) {
-  const initial = useRef({ value: account[field], version: account.operation_versions?.[field] });
+  const initial = useRef({ value: account[field], version: account.operation_versions[field] });
   const [value, setValue] = useState(String(initial.current.value ?? "")), [automatic, setAutomatic] = useState(field === "load_factor" && initial.current.value == null);
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("");
   const alive = useRef(true), running = useRef(false), input = useRef<HTMLInputElement>(null);
@@ -59,7 +59,7 @@ export default function SchedulingParameters({ account, online }: { account: Acc
   const [editing, setEditing] = useState<{ field: SchedulingField; anchor: DOMRect; trigger: HTMLButtonElement } | null>(null);
   return <div className="scheduling-parameters">
     <div><span>优先级</span><span className="priority-value" aria-label={`${account.name}优先级`}>{account.priority}</span></div>
-    {(["concurrency", "load_factor"] as const).map(field => <div key={field}><span>{labels[field]}</span><button type="button" aria-label={`编辑${account.name}${labels[field]}`} disabled={!online || !account.operation_versions?.[field] || account.settings_capabilities?.[field]?.editable === false} onClick={e => setEditing({ field, anchor: e.currentTarget.getBoundingClientRect(), trigger: e.currentTarget })}>{field === "load_factor" && account[field] == null ? "自动" : account[field] ?? "—"}</button></div>)}
+    {(["concurrency", "load_factor"] as const).map(field => <div key={field}><span>{labels[field]}</span><button type="button" aria-label={`编辑${account.name}${labels[field]}`} disabled={!online || account.settings_capabilities?.[field]?.editable === false} onClick={e => setEditing({ field, anchor: e.currentTarget.getBoundingClientRect(), trigger: e.currentTarget })}>{field === "load_factor" && account[field] == null ? "自动" : account[field] ?? "—"}</button></div>)}
     {editing && <NumericEditor account={account} online={online} {...editing} close={() => { editing.trigger.focus({ preventScroll: true }); setEditing(null); }}/>}
   </div>;
 }

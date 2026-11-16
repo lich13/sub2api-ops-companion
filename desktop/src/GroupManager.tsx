@@ -97,7 +97,7 @@ export default function GroupManager(props: Props) {
     const current = () => mounted.current && operationEpoch() === epoch && latest.current.connectionKey === connection;
     setBusy(true); setMessage("");
     try {
-      const targets = pending.map(draft => ({ account_id: draft.id, expected_version: draft.operationVersion ?? draft.version,
+      const targets = pending.map(draft => ({ account_id: draft.id, expected_version: draft.version,
         payload: { scope_group_ids: draft.scope, group_ids: draft.target.filter(id => draft.scope.includes(id)) } }));
       const signature = JSON.stringify(targets);
       if (batchRequest.current?.signature !== signature) batchRequest.current = { signature, id: crypto.randomUUID() };

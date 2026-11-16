@@ -3,7 +3,7 @@ export type AccountKeepalive = {
   account_id: number; enabled: boolean; generation: number; version: string;
   status: string; reason: string; paused_reason: string;
   last_restore_at: string | null; restore_count: number; budget_used: number;
-  next_allowed_at: string | null; read_only: boolean;
+  next_allowed_at: string | null;
 };
 export type Account = {
   degradation_mark?: DegradationMark;
@@ -25,7 +25,7 @@ export type Account = {
   blockers: { code: string; label: string; until?: string }[];
   recoverable?: boolean;
   version: string;
-  operation_versions?: Record<string, string>;
+  operation_versions: Record<string, string>;
   last_success_at: string | null;
   last_called_at?: string | null;
   last_error_at: string | null;
@@ -132,9 +132,8 @@ export type Group = {
   account_name: string;
   model: string;
   upstream_model: string;
-  upstream_response_model: string;
   called_at: string | null;
-  recent_accounts?: RecentAccount[];
+  recent_accounts: RecentAccount[];
 };
 function callTime(value: string | null): number {
   const parsed = value ? Date.parse(value) : NaN;
@@ -144,15 +143,7 @@ function callTime(value: string | null): number {
 export function currentGroups(groups: Group[], accounts: Account[]): Group[] {
   const members = new Map(accounts.map((account) => [account.id, account]));
   return groups.map((group) => {
-    const calls = group.recent_accounts ?? (group.account_id ? [{
-      log_id: 0,
-      account_id: group.account_id,
-      account_name: group.account_name,
-      model: group.model,
-      upstream_model: group.upstream_model,
-      called_at: group.called_at,
-    }] : []);
-    const ordered = calls.filter((call) =>
+    const ordered = group.recent_accounts.filter((call) =>
       members.get(call.account_id)?.group_ids.includes(group.id),
     ).sort((a, b) => callTime(b.called_at) - callTime(a.called_at) || b.log_id - a.log_id);
     const distinct = new Map<number, RecentAccount>();
@@ -216,7 +207,6 @@ export type Preferences = {
   model_test_preferences?: Record<string, import("./modelTestTypes").ModelTestPreference>;
   base_url: string;
   connections?: SavedConnection[];
-  favorites: number[];
   pinned: boolean;
   launch_at_login: boolean;
   record_columns?: string[] | null;
@@ -275,7 +265,6 @@ export const initialState: ViewState = {
   preferences: {
     base_url: "",
     connections: [],
-    favorites: [],
     pinned: false,
     launch_at_login: false,
   },

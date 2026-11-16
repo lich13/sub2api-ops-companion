@@ -84,6 +84,7 @@ const account = (id: number, name: string, status = "active"): Account => ({
   group_ids: [],
   blockers: [],
   version: "fixture",
+  operation_versions: {},
   last_success_at: null,
   last_error_at: null,
   last_error_id: null,

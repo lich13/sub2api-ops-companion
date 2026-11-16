@@ -5,7 +5,6 @@ export type Operation = {
   id: string; account_id: number; account_name: string; action: string; status: string; batch_id?: string;
   reason?: string; requested: Record<string, unknown>; current?: Record<string, unknown>;
   result?: Record<string, unknown>; events?: TestEvent[]; next_event?: number;
-  execution_mode?: 'native' | 'compatibility';
   started_at?: string; scheduled_at?: string;
   attempt_count?: number; next_retry_at?: string | null;
   repeat?: 'quota_cycle'; repeat_series_id?: string;
@@ -86,7 +85,7 @@ export async function followAccountBatch(initial: OperationBatch, update: (batch
 }
 export async function submitOperation(account: Account, action: string, payload: Record<string, unknown>, expected?: string, scheduledAt?: string, repeat?: 'quota_cycle'): Promise<Operation> {
   const current = epoch;
-  const version = expected ?? (action === 'degradation_mark' ? account.degradation_mark?.version : account.operation_versions?.[action]);
+  const version = expected ?? (action === 'degradation_mark' ? account.degradation_mark?.version : account.operation_versions[action]);
   if (!version) throw new Error('请刷新账号后重试');
   const job = await api<Operation>('POST', `/accounts/${account.id}/operations`, {
     action, payload, expected_version: version, request_id: crypto.randomUUID(), client_id: clientId(), ...(scheduledAt ? { scheduled_at: scheduledAt } : {}), ...(repeat ? { repeat } : {}),
@@ -124,11 +123,6 @@ export async function followOperation<T>(initial: Operation, onEvent?: (event: T
   }
 }
 export async function accountOperation<T>(account: Account, action: string, payload: Record<string, unknown>, expected?: string, onUpdate?: (job: Operation) => void): Promise<T> {
-  if (!account.operation_versions && action !== 'degradation_mark') {
-    const suffix = ({ recover: 'recover-state', usage: 'usage-action', reset_quota: 'usage-action' } as Record<string, string>)[action] || action;
-    return api<T>(action === 'groups' ? 'PUT' : action === 'delete' ? 'DELETE' : 'POST', `/accounts/${account.id}${action === 'delete' ? '' : `/${suffix}`}`, { ...payload, expected_version: expected || account.version });
-  }
-  if (!account.operation_versions && action === 'degradation_mark') return api<T>('PUT', `/accounts/${account.id}/degradation-mark`, { ...payload, expected_mark_version: expected || account.degradation_mark?.version });
   const job = await submitOperation(account, action, payload, expected);
   const result = await followOperation<T>(job, undefined, onUpdate);
   void command('refresh');

@@ -31,8 +31,8 @@ const group = (id: number, fields: Partial<Group> = {}): Group => ({
   account_name: "",
   model: "",
   upstream_model: "",
-  upstream_response_model: "",
   called_at: null,
+  recent_accounts: [],
   ...fields,
 });
 
@@ -154,30 +154,6 @@ describe("current group activity", () => {
     expect(JSON.stringify({ groups, accounts })).toBe(before);
     expect(sorted[0]).not.toBe(groups[2]);
     expect(sorted[0].recent_accounts).not.toBe(groups[2].recent_accounts);
-  });
-
-  it("supports old single-account responses while keeping empty recent lists authoritative", () => {
-    const oldResponse = group(22, {
-      account_id: 22,
-      account_name: "旧账号",
-      model: "legacy-model",
-      upstream_model: "legacy-upstream",
-      called_at: "2026-09-30T00:00:00Z",
-    });
-    const sorted = currentGroups([oldResponse], [
-      { id: 22, group_ids: [22] },
-    ] as Account[]);
-
-    expect(sorted[0].recent_accounts).toEqual([
-      {
-        log_id: 0,
-        account_id: 22,
-        account_name: "旧账号",
-        model: "legacy-model",
-        upstream_model: "legacy-upstream",
-        called_at: "2026-09-30T00:00:00Z",
-      },
-    ]);
     expect(currentGroups([], [])).toEqual([]);
   });
 });

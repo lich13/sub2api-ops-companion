@@ -145,7 +145,6 @@ beforeEach(() => {
   vi.mocked(command).mockResolvedValue(undefined as never);
   vi.mocked(clientId).mockReturnValue("fixture-client");
   vi.mocked(api).mockImplementation(async (_method, path) => {
-    if (path === "/capabilities") return { features: { account_priority_ordering: true, account_priority_per_platform: true } } as never;
     if (path === "/account-priorities?schema=2") return view() as never;
     if (path === "/account-priority-orders/fixture-task") return task("completed", { verified_count: 2, reason: "全部已确认" }) as never;
     throw new Error(`Unexpected fixture request: ${path}`);
@@ -170,7 +169,6 @@ describe("platform priority manager", () => {
     let resolve!: (value: PriorityView) => void;
     const pending = new Promise<PriorityView>(done => { resolve = done; });
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { account_priority_per_platform: true } } as never;
       if (path === "/account-priorities?schema=2") return pending as never;
       throw new Error(path);
     });
@@ -185,7 +183,6 @@ describe("platform priority manager", () => {
 
   it("keeps an initial list failure visible without enabling fallback edits", async () => {
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { account_priority_per_platform: true } } as never;
       throw new Error("fixture list unavailable");
     });
     await render({ accounts: [account(priorityItem(101, "Alpha", 10))] });
@@ -194,17 +191,13 @@ describe("platform priority manager", () => {
     expect(button("应用变更")).toBeUndefined();
   });
 
-  it.each(["capabilities", "list"])("continues task polling after a failed %s refresh", async failure => {
+  it("continues task polling after a failed list refresh", async () => {
     vi.useFakeTimers();
     const running = task("running"), finished = task("completed", { verified_count: 2, reason: "全部已确认" });
-    let capsReads = 0, listReads = 0, polls = 0;
+    let listReads = 0, polls = 0;
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") {
-        if (++capsReads === 2 && failure === "capabilities") throw new Error("fixture refresh failed");
-        return { features: { account_priority_per_platform: true } } as never;
-      }
       if (path === "/account-priorities?schema=2") {
-        if (++listReads === 2 && failure === "list") throw new Error("fixture refresh failed");
+        if (++listReads === 2) throw new Error("fixture refresh failed");
         return view({ active_task: polls >= 2 ? null : running, platforms: [platform("openai", openaiItems, "openai-version", polls >= 2 ? finished : running)] }) as never;
       }
       if (path.endsWith("&details=0")) return (++polls >= 2 ? finished : running) as never;
@@ -230,7 +223,6 @@ describe("platform priority manager", () => {
     const pending = new Promise<PriorityTask>(done => { resolve = done; });
     let listReads = 0, polls = 0;
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { account_priority_per_platform: true } } as never;
       if (path === "/account-priorities?schema=2") return view({ active_task: ++listReads === 1 ? running : null }) as never;
       if (path.endsWith("&details=0")) { ++polls; return pending as never; }
       throw new Error(path);
@@ -252,7 +244,6 @@ describe("platform priority manager", () => {
   it("protects only edited drafts while preserving normalization previews", async () => {
     const changed = vi.fn(), items = [priorityItem(101, "Alpha", 10), priorityItem(102, "Beta", 20)];
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (path === "/capabilities") return { features: { account_priority_per_platform: true } } as never;
       if (path === "/account-priorities?schema=2") return view({ platforms: [platform("openai", items)] }) as never;
       if (method === "POST") return task("queued") as never;
       throw new Error(path);
@@ -324,7 +315,6 @@ describe("platform priority manager", () => {
   it("includes platform and schema fields in a submission and refreshes terminal work once", async () => {
     const completed = task("completed", { verified_count: 2, reason: "全部已确认" });
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (path === "/capabilities") return { features: { account_priority_ordering: true, account_priority_per_platform: true } } as never;
       if (path === "/account-priorities?schema=2") return view() as never;
       if (method === "POST" && path === "/account-priority-orders?schema=2") return completed as never;
       if (method === "GET" && path === "/account-priority-orders/fixture-task?schema=2") return completed as never;
@@ -354,7 +344,6 @@ describe("platform priority manager", () => {
     const pending = task("queued", { waiting_reason: "等待上游请求结束", waiting_account_ids: [101] });
     let summaryCalls = 0;
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (path === "/capabilities") return { features: { account_priority_ordering: true, account_priority_per_platform: true } } as never;
       if (path === "/account-priorities?schema=2") return view({ active_task: pending }) as never;
       if (method === "GET" && path === "/account-priority-orders/fixture-task?schema=2&details=0") { summaryCalls += 1; return pending as never; }
       if (method === "GET" && path === "/account-priority-orders/fixture-task?schema=2") return pending as never;
@@ -379,7 +368,6 @@ describe("platform priority manager", () => {
     const completed = task("completed", { verified_count: 2, reason: "全部已确认" });
     let summaryCalls = 0;
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (path === "/capabilities") return { features: { account_priority_ordering: true, account_priority_per_platform: true } } as never;
       if (path === "/account-priorities?schema=2") return view({ active_task: pending }) as never;
       if (method === "GET" && path === "/account-priority-orders/fixture-task?schema=2&details=0") { summaryCalls += 1; return completed as never; }
       if (method === "GET" && path === "/account-priority-orders/fixture-task?schema=2") return completed as never;
@@ -398,7 +386,6 @@ describe("platform priority manager", () => {
     const pending = task("running"), completed = task("completed", { verified_count: 2 });
     let finished = false;
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { account_priority_per_platform: true } } as never;
       if (path === "/account-priorities?schema=2") return view({ active_task: finished ? null : pending, platforms: [platform("openai", openaiItems, "openai-version", finished ? completed : pending)] }) as never;
       if (path === "/account-priority-orders/fixture-task?schema=2") return completed as never;
       throw new Error(path);
@@ -416,7 +403,6 @@ describe("platform priority manager", () => {
   it("allows a draft on another platform while a platform task is busy, but never submits it", async () => {
     const pending = task("running", { platform: "openai" });
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { account_priority_ordering: true, account_priority_per_platform: true } } as never;
       if (path === "/account-priorities?schema=2") return view({ active_task: pending }) as never;
       throw new Error(`Unexpected fixture request: ${path}`);
     });
@@ -456,29 +442,12 @@ describe("platform priority manager", () => {
     expect(order()).toEqual([102, 101]);
   });
 
-  it("keeps legacy full-list reads read-only and renders a base zero task", async () => {
-    const oldItems = [priorityItem(101, "Alpha", 1), priorityItem(102, "Beta", 2)];
-    const legacy = task("completed", { platform: null, base: 0, reason: "旧服务端任务", verified_count: 2 });
-    vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { account_priority_ordering: true, account_priority_per_platform: false } } as never;
-      if (path === "/account-priorities") return { items: oldItems, version: "legacy-version", active_task: null, last_task: null } as never;
-      throw new Error(`Unexpected fixture request: ${path}`);
-    });
-    await render();
-    expect(api).toHaveBeenCalledWith("GET", "/account-priorities");
-    expect(api).not.toHaveBeenCalledWith("GET", "/account-priorities?schema=2");
-    expect([...container.querySelectorAll<HTMLButtonElement>(".priority-grip")].every(item => item.disabled)).toBe(true);
-    expect(legacy.base).toBe(0);
-    expect(container.textContent).toContain("请升级服务端以按平台管理优先级");
-  });
-
   it("drops late responses after a connection change and keeps the new task", async () => {
     let resolveOld!: (value: PriorityView) => void;
     let listCalls = 0;
     const old = new Promise<PriorityView>(resolve => { resolveOld = resolve; });
     const pending = task("queued", { id: "new-task" });
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { account_priority_ordering: true, account_priority_per_platform: true } } as never;
       if (path === "/account-priorities?schema=2") {
         listCalls += 1;
         return listCalls === 1 ? old as never : view({ active_task: pending }) as never;
@@ -498,7 +467,6 @@ describe("platform priority manager", () => {
     const locked = priorityItem(102, "Locked", 3, "openai", { editable: false, reason: "由上游托管" });
     const accounts = [priorityItem(101, "Alpha", 5), locked];
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { account_priority_ordering: true, account_priority_per_platform: true } } as never;
       if (path === "/account-priorities?schema=2") return view({ platforms: [platform("openai", accounts)] }) as never;
       throw new Error(`Unexpected fixture request: ${path}`);
     });
@@ -510,7 +478,6 @@ describe("platform priority manager", () => {
   it.each([2, 3, 4])("uses the width threshold for %i platforms and falls back to tabs", async count => {
     const groups = [...view().platforms, platform("anthropic", [priorityItem(301, "Claude", 1, "anthropic")]), platform("custom", [priorityItem(401, "Custom", 1, "custom")])].slice(0, count);
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { account_priority_per_platform: true } } as never;
       if (path === "/account-priorities?schema=2") return view({ platforms: groups }) as never;
       throw new Error(path);
     });
@@ -539,7 +506,6 @@ it.each(["completed", "failed", "cancelled", "needs_confirmation"])("dismisses %
   const terminal = task(status, { verified_count: 1, reason: "fixture result" });
   let finished = false;
   vi.mocked(api).mockImplementation(async (method, path) => {
-    if (path === "/capabilities") return { features: { account_priority_per_platform: true } } as never;
     if (path === "/account-priorities?schema=2") return view({ platforms: [platform("openai", openaiItems, "openai-version", finished ? terminal : null)] }) as never;
     if (method === "POST") { finished = true; return terminal as never; }
     if (path === "/account-priority-orders/fixture-task?schema=2") return terminal as never;
@@ -581,7 +547,6 @@ it("retains an accepted submission while hidden and refreshes the result on reen
   const changed = vi.fn(), terminal = task("completed", { verified_count: 2 });
   let finish!: (value: PriorityTask) => void, accepted = false;
   vi.mocked(api).mockImplementation(async (method, path) => {
-    if (path === "/capabilities") return { features: { account_priority_per_platform: true } } as never;
     if (path === "/account-priorities?schema=2") return view({ platforms: [platform("openai", accepted ? [priorityItem(102, "Beta", 1), priorityItem(101, "Alpha", 2)] : openaiItems, "openai-version", accepted ? terminal : null)] }) as never;
     if (method === "POST") return new Promise<PriorityTask>(resolve => { finish = resolve; }) as never;
     throw new Error(path);
@@ -602,7 +567,6 @@ it("retains an accepted submission while hidden and refreshes the result on reen
 it("keeps empty slots at every priority and applies a move into a slot without renumbering peers", async () => {
   const parallel = view({ platforms: [{ ...platform("openai", openaiItems), parallelism: 3 }] });
   vi.mocked(api).mockImplementation(async (method, path) => {
-    if (path === "/capabilities") return { features: { account_priority_ordering: true, account_priority_per_platform: true } } as never;
     if (path === "/account-priorities?schema=2") return parallel as never;
     if (method === "POST") return task("queued", { parallelism: 3 }) as never;
     throw new Error(path);
@@ -614,14 +578,4 @@ it("keeps empty slots at every priority and applies a move into a slot without r
   await act(async () => list().querySelector<HTMLButtonElement>('[aria-label="拖动 Beta"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })));
   await act(async () => button("应用变更").click());
   expect(api).toHaveBeenCalledWith("POST", "/account-priority-orders?schema=2", expect.objectContaining({ ordered_account_ids: [101, 102], target_priorities: [1, 1], parallelism: 3 }));
-});
-
-it("does not show an upgrade error while capability detection is pending", async () => {
-  let resolve!: (value: unknown) => void;
-  vi.mocked(api).mockImplementation(() => new Promise(done => { resolve = done; }) as never);
-  await render();
-  expect(container.textContent).not.toContain("升级");
-  expect(container.textContent).toContain("正在读取优先级");
-  await act(async () => resolve({ features: { account_priority_ordering: false } }));
-  expect(container.textContent).toContain("升级");
 });

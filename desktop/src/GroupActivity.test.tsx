@@ -64,7 +64,6 @@ const group = (
   account_name: "目标账号",
   model: "gpt-6-sol",
   upstream_model: "gpt-6-sol",
-  upstream_response_model: "gpt-6-sol",
   called_at,
   recent_accounts,
 });
@@ -81,6 +80,7 @@ const account: Account = {
   group_ids: [5, 8, 11, 20],
   blockers: [],
   version: "account-73-version",
+  operation_versions: { recover: "recover-73-version", schedulable: "schedulable-73-version" },
   last_success_at: null,
   last_error_at: "2026-09-29T23:00:00Z",
   last_error_id: 880,
@@ -91,6 +91,10 @@ const account: Account = {
   usage_windows: [],
   degradation_mark: { marked: true, version: "mark-version" },
 };
+
+const finished = (action: string) => ({
+  id: "f".repeat(32), account_id: 73, account_name: "目标账号", action, status: "completed", requested: {}, result: { verified: true },
+});
 
 const errorDetail: OpsError = {
   id: 880,
@@ -156,7 +160,6 @@ function quickState(accounts: Account[], groups: Group[], errors: OpsError[], ov
     error: "",
     preferences: {
       base_url: "https://quick-fixture.invalid",
-      favorites: [],
       pinned: false,
       launch_at_login: false,
     },
@@ -247,7 +250,6 @@ describe("quick group activity", () => {
       error: "",
       preferences: {
         base_url: "https://fixture.invalid",
-        favorites: [73, 99],
         pinned: false,
         launch_at_login: false,
       },
@@ -280,8 +282,8 @@ describe("quick group activity", () => {
     vi.mocked(api).mockImplementation(async (method, path) => {
       if (method === "GET" && path === "/errors/880")
         return errorDetail as never;
-      if (method === "POST" && path === "/accounts/73/schedulable")
-        return { verified: true } as never;
+      if (method === "POST" && path === "/accounts/73/operations")
+        return finished("schedulable") as never;
       throw new Error(`Unexpected mocked API request: ${method} ${path}`);
     });
     const { default: App } = await import("./main");
@@ -338,7 +340,7 @@ describe("quick group activity", () => {
     );
     expect(command).toHaveBeenCalledWith(
       "preferences",
-      expect.objectContaining({ favorites: [73, 99], pinned: true }),
+      expect.objectContaining({ pinned: true }),
     );
 
     await act(async () =>
@@ -346,11 +348,11 @@ describe("quick group activity", () => {
         .querySelector<HTMLButtonElement>('[aria-label="目标账号调度"]')!
         .click(),
     );
-    expect(api).toHaveBeenCalledWith("POST", "/accounts/73/schedulable", {
-      schedulable: true,
-      expected_version: "account-73-version",
-
-    });
+    expect(api).toHaveBeenCalledWith("POST", "/accounts/73/operations", expect.objectContaining({
+      action: "schedulable",
+      payload: { schedulable: true },
+      expected_version: "schedulable-73-version",
+    }));
 
     await act(async () => {
       [...container.querySelectorAll<HTMLButtonElement>(".compact-times button")]
@@ -366,12 +368,8 @@ describe("quick group activity", () => {
     ).toEqual([
       [
         "POST",
-        "/accounts/73/schedulable",
-        {
-          schedulable: true,
-          expected_version: "account-73-version",
-
-        },
+        "/accounts/73/operations",
+        expect.objectContaining({ action: "schedulable", payload: { schedulable: true } }),
       ],
     ]);
   });
@@ -489,10 +487,10 @@ describe("quick group activity", () => {
       [quickGroup(23, "受限账号组", recoverable)],
       [currentError],
     );
-    let finishRecovery!: (value: { verified: boolean }) => void;
-    const pending = new Promise<{ verified: boolean }>((resolve) => { finishRecovery = resolve; });
+    let finishRecovery!: (value: unknown) => void;
+    const pending = new Promise<unknown>((resolve) => { finishRecovery = resolve; });
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "POST" && path === "/accounts/73/recover-state") return pending as never;
+      if (method === "POST" && path === "/accounts/73/operations") return pending as never;
       throw new Error(`Unexpected mocked API request: ${method} ${path}`);
     });
     const { deliver } = await renderQuickState(initial);
@@ -505,20 +503,15 @@ describe("quick group activity", () => {
       recoverButton.click();
       recoverButton.click();
     });
-    const recoveryCalls = vi.mocked(api).mock.calls.filter((call) =>
-      call[0] === "POST" && call[1] === "/accounts/73/recover-state",
-    );
-    expect(recoveryCalls).toEqual([[
+    const writes = () => vi.mocked(api).mock.calls.filter(([method]) => method !== "GET");
+    expect(writes()).toEqual([[
       "POST",
-      "/accounts/73/recover-state",
-      { expected_version: "account-73-version" },
+      "/accounts/73/operations",
+      expect.objectContaining({ action: "recover", payload: {}, expected_version: "recover-73-version" }),
     ]]);
     expect(recoverButton.disabled).toBe(true);
-    expect(vi.mocked(api).mock.calls.filter(([, path]) =>
-      path.endsWith("/schedulable") || path.endsWith("/degradation-mark"),
-    )).toEqual([]);
 
-    await act(async () => finishRecovery({ verified: true }));
+    await act(async () => finishRecovery(finished("recover")));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(command).toHaveBeenCalledWith("refresh");
 
@@ -545,9 +538,7 @@ describe("quick group activity", () => {
     const refreshedError = quickErrorRow(restored.name);
     expect(refreshedError.querySelector(".quick-account-restricted")).toBeNull();
     expect(refreshedError.querySelector(".quick-recover")).toBeNull();
-    expect(vi.mocked(api).mock.calls.filter(([, path]) =>
-      path.endsWith("/schedulable") || path.endsWith("/degradation-mark"),
-    )).toEqual([]);
+    expect(writes()).toHaveLength(1);
   });
 
   it("disables recovery offline and ignores a pending response after switching connections", async () => {
@@ -577,10 +568,10 @@ describe("quick group activity", () => {
       [quickGroup(23, "受限账号组", recoverable)],
       [],
     );
-    let finishRecovery!: (value: { verified: boolean }) => void;
-    const pending = new Promise<{ verified: boolean }>((resolve) => { finishRecovery = resolve; });
+    let finishRecovery!: (value: unknown) => void;
+    const pending = new Promise<unknown>((resolve) => { finishRecovery = resolve; });
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "POST" && path === "/accounts/73/recover-state") return pending as never;
+      if (method === "POST" && path === "/accounts/73/operations") return pending as never;
       throw new Error(`Unexpected mocked API request: ${method} ${path}`);
     });
     const { deliver } = await renderQuickState(pendingState);
@@ -595,14 +586,14 @@ describe("quick group activity", () => {
     await deliver(newConnection);
     const refreshCountBeforeCompletion = vi.mocked(command).mock.calls
       .filter(([name]) => name === "refresh").length;
-    await act(async () => finishRecovery({ verified: true }));
+    await act(async () => finishRecovery(finished("recover")));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
     expect(vi.mocked(command).mock.calls.filter(([name]) => name === "refresh"))
       .toHaveLength(refreshCountBeforeCompletion);
     expect(container.textContent).not.toContain("受限恢复账号：状态已恢复");
     expect(vi.mocked(api).mock.calls.filter((call) =>
-      call[0] === "POST" && call[1] === "/accounts/73/recover-state",
+      call[0] === "POST" && call[1] === "/accounts/73/operations",
     )).toHaveLength(1);
   });
 });

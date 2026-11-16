@@ -70,16 +70,13 @@ export default function UsageCell({
   const [quotaDialog, setQuotaDialog] = useState(false), [quotaBusy, setQuotaBusy] = useState(false);
   const [busy, setBusy] = useState<UsageAction | null>(null);
   const running = useRef(false);
-  const [confirm, setConfirm] = useState<{
-    action: UsageAction;
-    version: string;
-  } | null>(null);
+  const [confirm, setConfirm] = useState<{ action: UsageAction } | null>(null);
   useBackAction(!!confirm, () => setConfirm(null));
   const [native, setNative] = useState<{ identity: string; value: UsageSummary } | null>(null);
   const lastRead = useRef({ identity: "", at: 0 });
   const request = useRef(0);
   const parent = account.type === "apikey" && account.parent_account_id ? quotaSettings.accounts.find(a => a.id === account.parent_account_id) : undefined;
-  const identity = `${connectionKey}:${account.id}:${account.operation_versions?.usage ?? account.version}:${parent?.operation_versions?.usage ?? parent?.version ?? ""}`;
+  const identity = `${connectionKey}:${account.id}:${account.operation_versions.usage}:${parent?.operation_versions.usage ?? ""}`;
   const usage = native?.identity === identity ? { ...native.value,
     today: account.usage?.stats_status === "error" ? null : account.usage?.today ?? native.value.today,
     stats_status: native.value.stats_status === "error" ? "error" : account.usage?.stats_status ?? native.value.stats_status,
@@ -152,14 +149,10 @@ export default function UsageCell({
     return () => { alive = false; clearTimeout(timer); ++request.current; setQuotaBusy(false); };
   }, [identity, account.id, account.type, account.usage?.native_read, online, active, quotaSettings.visible, quotaSettings.ready, quotaSettings.seconds, quotaSettings.revision]);
   const windows = usage?.windows ?? account.usage_windows ?? [];
-  async function run(
-    action: UsageAction,
-    version = account.version,
-    confirmed = false,
-  ) {
+  async function run(action: UsageAction, confirmed = false) {
     if (running.current || !online) return;
     if (!confirmed && (action === "reset_quota" || action === "probe_quota")) {
-      setConfirm({ action, version });
+      setConfirm({ action });
       return;
     }
     running.current = true;
@@ -167,7 +160,7 @@ export default function UsageCell({
     setConfirm(null);
     try {
       const token = ++request.current;
-      const result = await accountOperation<{ message: string; account?: Account }>(account, action === "reset_quota" ? "reset_quota" : "usage", { action, confirmed }, account.operation_versions?.[action === "reset_quota" ? "reset_quota" : "usage"] ?? version);
+      const result = await accountOperation<{ message: string; account?: Account }>(account, action === "reset_quota" ? "reset_quota" : "usage", { action, confirmed });
       if (request.current !== token) return;
       if (account.type === "apikey" && action === "query_usage") {
         const value = await api<UsageSummary>("GET", `/accounts/${account.id}/usage`);
@@ -372,7 +365,7 @@ export default function UsageCell({
               <button
                 className="primary"
                 disabled={!online}
-                onClick={() => void run(confirm.action, confirm.version, true)}
+                onClick={() => void run(confirm.action, true)}
               >
                 确认{labels[confirm.action]}
               </button>

@@ -6,7 +6,7 @@ import TestDialog, { nextBeijingMinute, appointmentTimestamp, nextCycleAppointme
 import { api, command } from './bridge';
 import { setOperations } from './accountOperations';
 import type { Account, UsageSummary, UsageWindow } from './types';
-vi.mock('./bridge', () => ({ api: vi.fn(), command: vi.fn(), runTest: vi.fn() }));
+vi.mock('./bridge', () => ({ api: vi.fn(), command: vi.fn() }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let container: HTMLDivElement, root: ReturnType<typeof createRoot>;
 const account = { id: 42, name: 'Fixture', platform: 'anthropic', type: 'apikey', version: 'a'.repeat(64), operation_versions: { test: 'b'.repeat(64) } } as unknown as Account;

@@ -136,7 +136,6 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   vi.mocked(api).mockImplementation(async (_method, path) => {
-    if (path === "/capabilities") return { features: { detection_logs: true } } as never;
     if (path === "/detection-logs?limit=50") return page([]) as never;
     if (path.startsWith("/model-tests/")) return { id: path.slice("/model-tests/".length), groups: [] } as never;
     throw new Error(`Unexpected fixture request: ${path}`);
@@ -149,26 +148,6 @@ afterEach(async () => {
 });
 
 describe("automatic detection log feed", () => {
-  it("shows the upgrade prompt when the server lacks log capability and retries capability detection", async () => {
-    let supported = false;
-    vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { detection_logs: supported } } as never;
-      if (path === "/detection-logs?limit=50") return page([]) as never;
-      throw new Error(`Unexpected fixture request: ${path}`);
-    });
-
-    await render();
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("请升级服务端以查看自动检测日志");
-    expect(vi.mocked(api).mock.calls).not.toContainEqual(["GET", "/detection-logs?limit=50"]);
-
-    supported = true;
-    await act(async () => container.querySelector<HTMLButtonElement>('[role="alert"] button')!.click());
-    await settle();
-    expect(vi.mocked(api).mock.calls.filter(([, path]) => path === "/capabilities")).toHaveLength(2);
-    expect(vi.mocked(api).mock.calls).toContainEqual(["GET", "/detection-logs?limit=50"]);
-    expect(container.querySelector('[role="alert"]')).toBeNull();
-  });
-
   it("renders each result as a ten-column table row with a dedicated status badge and account opener", async () => {
     const jobId = "fixture-job-table";
     const item = log(jobId, "表格账号", {
@@ -176,7 +155,6 @@ describe("automatic detection log feed", () => {
       summary: { prediction: "汇总预测", probability: 0.84 },
     });
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { detection_logs: true } } as never;
       if (path === "/detection-logs?limit=50") return page([item]) as never;
       if (path === `/model-tests/${jobId}`) return { id: jobId, groups: [] } as never;
       throw new Error(`Unexpected fixture request: ${path}`);
@@ -230,7 +208,6 @@ describe("automatic detection log feed", () => {
       },
     });
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { detection_logs: true } } as never;
       if (path === "/detection-logs?limit=50") return page([row]) as never;
       if (path === `/model-tests/${row.job_id}`) return { id: row.job_id, groups: [] } as never;
       throw new Error(`Unexpected fixture request: ${path}`);
@@ -260,7 +237,6 @@ describe("automatic detection log feed", () => {
       group_predictions: [{ index: 1, prediction: "gpt-6-sol" }, { index: 2, prediction: "grok-4.5" }, { index: 3, prediction: "gpt-6-sol" }],
     } });
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { detection_logs: true } } as never;
       if (path === "/detection-logs?limit=50") return page([row]) as never;
       return { id: row.job_id, groups: [] } as never;
     });
@@ -286,7 +262,6 @@ describe("automatic detection log feed", () => {
       },
     });
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { detection_logs: true } } as never;
       if (path === "/detection-logs?limit=50") return page([row]) as never;
       if (path === `/model-tests/${row.job_id}`) return { id: row.job_id, groups: [] } as never;
       throw new Error(`Unexpected fixture request: ${path}`);
@@ -310,7 +285,6 @@ describe("automatic detection log feed", () => {
       summary: { prediction: "保留的汇总预测", probability: 0.84 },
     });
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { detection_logs: true } } as never;
       if (path === "/detection-logs?limit=50") return page([row]) as never;
       if (path === `/model-tests/${jobId}`) throw new Error("404 not found");
       throw new Error(`Unexpected fixture request: ${path}`);
@@ -338,7 +312,6 @@ describe("automatic detection log feed", () => {
       log("job-c", "记录 C", { created_at: "2026-10-20T10:00:00Z" }),
     ];
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { detection_logs: true } } as never;
       if (path === "/detection-logs?limit=50") return page(first, overlappingCursor) as never;
       if (path === `/detection-logs?limit=50&before=${encodeURIComponent(overlappingCursor)}`) return page(second) as never;
       throw new Error(`Unexpected fixture request: ${path}`);
@@ -360,7 +333,6 @@ describe("automatic detection log feed", () => {
     const offlinePage = deferred<{ items: DetectionLog[]; next_cursor: string | null }>();
     let pageReads = 0;
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { detection_logs: true } } as never;
       if (path.startsWith("/detection-logs?limit=50")) {
         pageReads += 1;
         if (pageReads === 1) return oldPage.promise as never;
@@ -397,7 +369,6 @@ describe("automatic detection log feed", () => {
     const offlineDetail = deferred<{ id: string; groups: { index: number; status: string }[] }>();
     let detailReads = 0;
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { detection_logs: true } } as never;
       if (path === "/detection-logs?limit=50") return page([row]) as never;
       if (path === `/model-tests/${row.job_id}`) {
         detailReads += 1;
@@ -438,7 +409,6 @@ describe("automatic detection log feed", () => {
     let oldDetailReads = 0;
     let newDetailReads = 0;
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/capabilities") return { features: { detection_logs: true } } as never;
       if (path === "/detection-logs?limit=50") {
         pageReads += 1;
         return page([pageReads === 1 ? oldRow : newRow]) as never;

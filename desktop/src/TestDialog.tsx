@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { LoaderCircle, RefreshCw, Play, Square, X } from "lucide-react";
-import { api, command, runTest } from "./bridge";
+import { api, command } from "./bridge";
 import { fullTime, type Account, type TestEvent, type UsageSummary, type UsageWindow } from "./types";
 import { submitOperation, followOperation, subscribeOperations, getOperations, setOperations, publishOperation, repeating, operationPending, type Operation } from "./accountOperations";
 import { readAccountModels, modelDirectoryRevoked } from "./accountModels";
@@ -74,9 +74,9 @@ export default function TestDialog({ account, online, close }: {account: Account
   const running = useRef(false), alive = useRef(true), cancelled = useRef(false);
   useEffect(() => {
     alive.current = true;
-    if (account.operation_versions?.test) void api<{ items: Operation[] }>("GET", "/account-operations").then(data => { if (alive.current) setOperations(data.items); }).catch(e => { if (alive.current) setError(String(e)); });
+    void api<{ items: Operation[] }>("GET", "/account-operations").then(data => { if (alive.current) setOperations(data.items); }).catch(e => { if (alive.current) setError(String(e)); });
     void readModels();
-    return () => { ++directoryRequest.current; alive.current = false; stopMediaRead(); if (running.current && !account.operation_versions) void command("cancel_test"); };
+    return () => { ++directoryRequest.current; alive.current = false; stopMediaRead(); };
   }, [account.id]);
   async function readModels(refresh = false) {
     const request = ++directoryRequest.current; setLoading(true); setModelError("");
@@ -114,7 +114,7 @@ export default function TestDialog({ account, online, close }: {account: Account
     reader.onerror = failed; reader.onabort = failed;
     try { reader.readAsDataURL(file); } catch { failed(); }
   }
-  async function cancel() { cancelled.current = true; if (operationId.current) await api("POST", `/account-operations/${operationId.current}/cancel`, {}); else await command("cancel_test"); }
+  async function cancel() { cancelled.current = true; if (operationId.current) await api("POST", `/account-operations/${operationId.current}/cancel`, {}); }
   async function fillCycleTime() {
     if (cycleReading.current || running.current || !online) return;
     cycleReading.current = true; setCycleBusy(true); setError("");
@@ -149,7 +149,7 @@ export default function TestDialog({ account, online, close }: {account: Account
     running.current = true; cancelled.current = false; setBusy(true); setText(""); setError(""); setOutputs([]); setResult(null); setStatus("正在连接");
     let terminal = false;
     try {
-      const body = {expected_version: account.version, mode, model_id: standalone ? "" : model,
+      const body = {mode, model_id: standalone ? "" : model,
         prompt: hasPrompt ? prompt || (imageModel ? defaults.image : defaults[mode]) || "" : "",
         ...(media ? {[mode === "stt" ? "audio_data_url" : "image_data_url"]: media} : {})};
       const receive = (event: TestEvent) => {
@@ -160,12 +160,9 @@ export default function TestDialog({ account, online, close }: {account: Account
         if (["image", "audio", "video"].includes(event.type)) setOutputs((old) => [...old, event]);
         if (event.type === "error" || event.type === "test_complete") { terminal = true; setResult(event); setStatus(event.type === "test_complete" && event.success ? "测试通过" : "测试失败"); if (event.error) setError(event.error); }
       };
-      if (account.operation_versions?.test) {
-        const { expected_version: _version, ...payload } = body;
-        const job = await submitOperation(account, 'test', { ...payload, confirmed: true });
-        operationId.current = job.id;
-        await followOperation(job, receive);
-      } else await runTest(account.id, body, receive);
+      const job = await submitOperation(account, 'test', { ...body, confirmed: true });
+      operationId.current = job.id;
+      await followOperation(job, receive);
       if (!terminal && !cancelled.current && alive.current) setError("连接结束，未收到完成结果");
     } catch (e) { if (alive.current && !cancelled.current) setError(String(e).replace(/^Error: /, "")); }
     finally {
@@ -178,7 +175,7 @@ export default function TestDialog({ account, online, close }: {account: Account
     <section className="test-dialog" role="dialog" aria-modal="true" aria-label="测试连接">
       <header><div><h2>测试连接</h2><strong title={account.name}>{account.name}</strong></div><button className="icon-button" title="关闭测试" onClick={dismiss}><X size={18}/></button></header>
       <div className="test-controls">
-        {account.operation_versions?.test && <label>执行<select aria-label="执行方式" disabled={busy || cycleBusy} value={execution} onChange={e => { setExecution(e.target.value); if (e.target.value !== "now") { setScheduledAt(previous => previous || nextBeijingMinute()); if (mode !== (account.platform === "grok" ? "text" : "default")) changeMode(account.platform === "grok" ? "text" : "default"); } }}><option value="now">立即</option><option value="scheduled">指定时间</option>{account.platform === "openai" && account.type === "oauth" && <option value="cycle">持续预约 · 最近周期 +3 秒</option>}</select></label>}
+        <label>执行<select aria-label="执行方式" disabled={busy || cycleBusy} value={execution} onChange={e => { setExecution(e.target.value); if (e.target.value !== "now") { setScheduledAt(previous => previous || nextBeijingMinute()); if (mode !== (account.platform === "grok" ? "text" : "default")) changeMode(account.platform === "grok" ? "text" : "default"); } }}><option value="now">立即</option><option value="scheduled">指定时间</option>{account.platform === "openai" && account.type === "oauth" && <option value="cycle">持续预约 · 最近周期 +3 秒</option>}</select></label>
         {execution === "scheduled" && <div className="test-schedule-time"><label>预约时间（北京时间）<input aria-label="预约时间" type="datetime-local" step={1} value={scheduledAt} disabled={busy || cycleBusy} onChange={e => setScheduledAt(e.target.value)}/></label><button type="button" disabled={busy || cycleBusy || !online} onClick={() => void fillCycleTime()}>{cycleBusy ? <LoaderCircle size={13} className="spin"/> : null}最近周期 +3 秒</button></div>}
         {continuous && <p className="muted">按最近额度周期重置后 3 秒持续测试，7d 额度满 100% 且上游 429 时停止。可在操作待办停止后续预约。</p>}
         <label>模式<select disabled={busy || appointment} value={mode} onChange={(e) => changeMode(e.target.value as TestMode)}>{choices.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>

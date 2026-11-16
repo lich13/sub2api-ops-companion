@@ -14,7 +14,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const account = (id: number, type: "oauth" | "apikey", platform = "openai"): Account => ({
   id, name: `Fixture ${id}`, type, platform, priority: id, status: "active", schedulable: true, available: true,
-  group_ids: [], blockers: [], version: "a".repeat(64), last_success_at: null,
+  group_ids: [], blockers: [], version: "a".repeat(64), operation_versions: {}, last_success_at: null,
   last_error_at: null, last_error_id: null, last_error_code: null, last_error_status: null,
   error_message: "", success_after_error: false, usage_windows: [],
 });
@@ -30,7 +30,7 @@ beforeEach(() => {
   vi.mocked(subscribe).mockImplementation(async (callback) => { receive = callback; return () => {}; });
   initial = {
     connected: true, online: true, platform: "macos", foreground: true, error: "",
-    preferences: { base_url: "https://example.invalid", favorites: [], pinned: false, launch_at_login: false },
+    preferences: { base_url: "https://example.invalid", pinned: false, launch_at_login: false },
     snapshot: {
       observed_at: "2026-10-08T00:00:00Z", accounts: [account(1, "oauth"), account(2, "oauth"), account(11, "apikey"), account(21, "apikey", "grok")],
       groups: [], errors: [], recoveries: [],
@@ -42,7 +42,7 @@ beforeEach(() => {
       oauth_early_reset_enabled: false, oauth_early_reset_interval_seconds: 60,
       oauth_daily_test_enabled: false, oauth_daily_test_time: "09:00", oauth_usage_refresh_concurrency: 3,
       connection_test_retry_interval_seconds: 10, connection_test_max_retries: 3,
-      oauth_recovery_test_concurrency: 2, oauth_early_probe_batch_size: 5, oauth_recovery_test_model_id: "fixture-model",
+      oauth_recovery_test_concurrency: 2, oauth_recovery_test_model_id: "fixture-model",
       model_detection_model_id: "gpt-6-luna",
       oauth_recovery_connection_account_ids: [1], oauth_recovery_model_account_ids: [2],
     },
@@ -246,15 +246,6 @@ describe("feature settings drafts", () => {
     expect(config.oauth.model_detection_model_id).toBe("gpt-6-luna");
     expect(saveButton(target).disabled).toBe(true);
     expect(target.querySelector("fieldset")?.disabled).toBe(false);
-  });
-
-  it("keeps the upgrade warning and disables recovery controls on an old service", async () => {
-    delete config.oauth.model_detection_model_id;
-    await openFeatures();
-    const target = form("恢复、测活与模型检测");
-    expect(target.textContent).toContain("请升级服务端以配置全局自动检测模型。");
-    expect(target.querySelector(".bad-text")).not.toBeNull();
-    expect(target.querySelector<HTMLFieldSetElement>("fieldset.recovery-compatibility")?.disabled).toBe(true);
   });
 });
 

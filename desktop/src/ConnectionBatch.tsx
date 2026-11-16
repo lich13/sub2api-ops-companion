@@ -114,7 +114,7 @@ export function useConnectionBatch({ connectionKey, storageKey, online, active }
     if (accounts.length > 1000) { setError('每批最多测试 1000 个账号'); return; }
     const request: Submission = { action: 'test', payload: { confirmed: true },
       accounts: accounts.map(account => ({ account_id: account.id,
-        expected_version: account.operation_versions?.test ?? account.version })),
+        expected_version: account.operation_versions.test })),
       request_id: crypto.randomUUID(), client_id: clientId() };
     await send(request);
   }

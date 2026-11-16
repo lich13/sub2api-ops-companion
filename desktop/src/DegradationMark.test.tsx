@@ -31,6 +31,7 @@ const account = (overrides: Partial<Account> = {}): Account => ({
   group_ids: [],
   blockers: [],
   version: "account-version",
+  operation_versions: {},
   last_success_at: null,
   last_error_at: null,
   last_error_id: null,
@@ -41,6 +42,11 @@ const account = (overrides: Partial<Account> = {}): Account => ({
   usage_windows: [],
   degradation_mark: { marked: false, version: "mark-version" },
   ...overrides,
+});
+
+const saved = (verified: boolean) => ({
+  id: "f".repeat(32), account_id: 11, account_name: "OAuth 账号", action: "degradation_mark", status: "completed", requested: {},
+  result: { verified, degradation_mark: { marked: true, version: "mark-version-2" } },
 });
 
 beforeEach(() => {
@@ -75,12 +81,9 @@ describe("degradation mark", () => {
     expect(badges[1].querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("renders only when marked and sends an independent verified PUT", async () => {
+  it("renders only when marked and queues one verified mark operation", async () => {
     const onError = vi.fn();
-    vi.mocked(api).mockResolvedValue({
-      verified: true,
-      degradation_mark: { marked: true, version: "mark-version-2" },
-    } as never);
+    vi.mocked(api).mockResolvedValue(saved(true) as never);
     await act(async () =>
       root.render(
         <>
@@ -95,26 +98,23 @@ describe("degradation mark", () => {
     expect(api).not.toHaveBeenCalled();
 
     await act(async () => button.click());
-    expect(api).toHaveBeenCalledExactlyOnceWith("PUT", "/accounts/11/degradation-mark", {
-      marked: true,
-      expected_mark_version: "mark-version",
-    });
-    expect(command).toHaveBeenCalledExactlyOnceWith("refresh");
+    expect(api).toHaveBeenCalledExactlyOnceWith("POST", "/accounts/11/operations", expect.objectContaining({
+      action: "degradation_mark",
+      payload: { marked: true },
+      expected_version: "mark-version",
+    }));
+    expect(command).toHaveBeenCalledWith("refresh");
     expect(onError).not.toHaveBeenCalled();
     expect(button.textContent).toContain("取消标记");
   });
 
-  it("reports an unverified write without refreshing or showing success", async () => {
+  it("reports an unverified write without showing success", async () => {
     const onError = vi.fn();
-    vi.mocked(api).mockResolvedValue({
-      verified: false,
-      degradation_mark: { marked: true, version: "mark-version-2" },
-    } as never);
+    vi.mocked(api).mockResolvedValue(saved(false) as never);
     await act(async () => root.render(<DegradationAction account={account()} online report={onError} />));
     await act(async () => container.querySelector<HTMLButtonElement>(".degradation-action")!.click());
     expect(onError).toHaveBeenCalledOnce();
     expect(String(onError.mock.calls[0][0])).toContain("降智标记保存未确认");
-    expect(command).not.toHaveBeenCalled();
     expect(container.querySelector<HTMLButtonElement>(".degradation-action")?.textContent).toContain("标记降智");
   });
 

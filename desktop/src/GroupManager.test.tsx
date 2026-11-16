@@ -44,6 +44,7 @@ const account = (
   group_ids: groupIds,
   blockers: [],
   version: `version-${id}`,
+  operation_versions: { groups: `groups-${id}` },
   last_success_at: null,
   last_error_at: null,
   last_error_id: null,
@@ -63,7 +64,6 @@ const group = (id: number, name: string, platform = "openai"): Group => ({
   account_name: "",
   model: "fixture-model",
   upstream_model: "fixture-model",
-  upstream_response_model: "fixture-model",
   called_at: null,
   recent_accounts: [],
 });
@@ -215,8 +215,8 @@ describe("group manager drafts", () => {
       action: "groups",
       payload: {},
       accounts: [
-        { account_id: 1, expected_version: "version-1", payload: { scope_group_ids: [1, 2], group_ids: [2] } },
-        { account_id: 2, expected_version: "version-2", payload: { scope_group_ids: [1, 2], group_ids: [1] } },
+        { account_id: 1, expected_version: "groups-1", payload: { scope_group_ids: [1, 2], group_ids: [2] } },
+        { account_id: 2, expected_version: "groups-2", payload: { scope_group_ids: [1, 2], group_ids: [1] } },
       ],
       request_id: expect.any(String),
       client_id: expect.any(String),
@@ -263,9 +263,9 @@ describe("group manager drafts", () => {
     await act(async () => render([initial]));
     await moveTo("Alpha", "右组");
 
-    await act(async () => render([{ ...initial, version: "version-changed" }], { active: false }));
+    await act(async () => render([{ ...initial, operation_versions: { groups: "groups-changed" } }], { active: false }));
     expect(container.querySelector(".group-account")).toBeNull();
-    await act(async () => render([{ ...initial, version: "version-changed" }]));
+    await act(async () => render([{ ...initial, operation_versions: { groups: "groups-changed" } }]));
     expect(container.textContent).toContain("冲突");
     expect(draftApplyButton().disabled).toBe(true);
     await act(async () =>
@@ -386,7 +386,7 @@ describe("group manager drafts", () => {
       payload: {},
       accounts: [{
         account_id: 2,
-        expected_version: "version-2",
+        expected_version: "groups-2",
         payload: { scope_group_ids: [1, 2], group_ids: [1] },
       }],
       request_id: expect.any(String),

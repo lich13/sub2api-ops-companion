@@ -32,6 +32,7 @@ const account = (id = 1, lastErrorId: number | null = null): Account => ({
   group_ids: [],
   blockers: [],
   version: "a".repeat(64),
+  operation_versions: {},
   last_success_at: null,
   last_error_at: lastErrorId ? "2026-10-01T03:00:00Z" : null,
   last_error_id: lastErrorId,
@@ -68,7 +69,6 @@ const state = (): ViewState => ({
   error: "",
   preferences: {
     base_url: "https://fixture.invalid",
-    favorites: [],
     pinned: false,
     launch_at_login: false,
   },
@@ -124,7 +124,7 @@ beforeEach(() => {
   vi.mocked(api).mockImplementation(async (_method, path) => {
     if (path.startsWith("/usage-records")) return recordPage() as never;
     if (path.startsWith("/errors?category=") || path === "/recoveries") return { items: [], next_cursor: null } as never;
-    if (path === "/account-priorities") return { items: [], version: "fixture-priority-version", active_task: null, last_task: null } as never;
+    if (path === "/account-priorities?schema=2") return { platforms: [], active_task: null, legacy_last_task: null } as never;
     if (path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
     throw new Error(`Unexpected fixture request: ${path}`);
   });
@@ -298,7 +298,6 @@ describe("categorized event history", () => {
     };
     vi.mocked(api).mockImplementation(async (method, path, body) => {
       if (pages[path]) return pages[path] as never;
-      if (path === "/capabilities") return { features: { detection_logs: true } } as never;
       if (path === "/detection-logs?limit=50") return { items: [], next_cursor: null } as never;
       if (path === "/recoveries") return {
         items: [{ id: 1, account_id: 1, account_name: "恢复记录账号", model_id: "fixture-model", test_completed_at: null, recovered_at: null, legacy: true }],
@@ -333,7 +332,6 @@ describe("categorized event history", () => {
     await act(async () => eventTab("日志").click());
     expect(container.querySelector("#logs-panel")?.hasAttribute("hidden")).toBe(false);
     expect(container.querySelector("#logs-panel")?.textContent).toContain("暂无自动检测记录");
-    expect(vi.mocked(api).mock.calls).toContainEqual(["GET", "/capabilities"]);
     expect(vi.mocked(api).mock.calls).toContainEqual(["GET", "/detection-logs?limit=50"]);
     await act(async () => eventTab("降智错误").click());
     expect(eventNames()).toEqual(["降智最新", "降智分页边界"]);

@@ -7,7 +7,7 @@ export function keepalivePreview(method: string, path: string, body: Record<stri
   let value = controls.get(id) ?? {
     account_id: id, enabled: false, generation: 0, version: "a".repeat(64), status: "disabled",
     reason: "", paused_reason: "", last_restore_at: null, restore_count: 0, budget_used: 0,
-    next_allowed_at: null, read_only: false,
+    next_allowed_at: null,
   };
   if (method === "PUT") {
     if (typeof body.enabled !== "boolean" || body.expected_version !== value.version) throw new Error("保活设置已变化，请重新读取");

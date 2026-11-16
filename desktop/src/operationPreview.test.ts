@@ -10,6 +10,7 @@ const account = (id: number, patch: Partial<Account> = {}): Account => ({
   platform: "openai",
   type: "apikey",
   version: `version-${id}`,
+  operation_versions: Object.fromEntries(['delete', 'groups', 'recover', 'test'].map(key => [key, `version-${id}`])),
   priority: id,
   group_ids: [],
   ...patch,
@@ -72,7 +73,7 @@ describe("account operation preview batches", () => {
 
     const initial = await operationPreview("POST", "/account-operations/batch", body, accounts, vi.fn());
     if (!initial) throw new Error("expected preview batch");
-    expect(initial).toMatchObject({ pending: 1, items: [{ action: "delete", status: "queued", execution_mode: "native" }] });
+    expect(initial).toMatchObject({ pending: 1, items: [{ action: "delete", status: "queued" }] });
     await vi.advanceTimersByTimeAsync(1200);
     const done = await operationPreview("GET", `/account-operations?batch_id=${initial.batch_id}`, {}, accounts, vi.fn());
 

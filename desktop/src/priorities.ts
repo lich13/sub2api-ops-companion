@@ -10,16 +10,14 @@ export type PriorityTask = {
   id: string; status: string; cancel_requested: boolean; reason: string; total: number;
   change_count: number; verified_count: number; created_at: string; updated_at: string;
   completed_at: string | null; items?: PriorityItem[];
-  platform: string | null; base: 0 | 1; waiting_reason: string; waiting_account_ids: number[];
+  platform: string; base: 1; waiting_reason: string; waiting_account_ids: number[];
   parallelism?: number;
 };
 export type PriorityPlatform = { platform: string; items: PriorityAccount[]; version: string; last_task: PriorityTask | null; parallelism?: number };
 export type PriorityView = { platforms: PriorityPlatform[]; active_task: PriorityTask | null; legacy_last_task: PriorityTask | null };
-export type LegacyPriorityView = { items: PriorityAccount[]; version: string };
 export type PrioritySlot = { priority: number; id: number | null };
 export type PriorityDraft = { ids: number[]; version: string; accounts: PriorityAccount[]; parallelism?: number; slots?: PrioritySlot[] };
 export const priorityPending = (task: PriorityTask | null | undefined) => !!task && ["queued", "running", "checking"].includes(task.status);
-export const priorityOrder = (accounts: PriorityAccount[]) => [...accounts].sort((a, b) => a.priority - b.priority || a.id - b.id).map(a => a.id);
 export function samePriorityAccounts(ids: number[], accounts: PriorityAccount[]) {
   const unique = new Set(ids);
   return ids.length === accounts.length && unique.size === ids.length && accounts.every(a => unique.has(a.id));

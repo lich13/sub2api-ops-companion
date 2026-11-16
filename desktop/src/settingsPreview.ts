@@ -14,7 +14,6 @@ function config(account: Account) {
 }
 export function settingsPreview(account: Account): AccountSettings {
   const value = config(account), inherited = !!account.parent_account_id;
-  account.operation_versions ??= {};
   for (const field of fields) account.operation_versions[field] ??= account.version;
   return structuredClone({ account_id: account.id, priority: account.priority, concurrency: account.concurrency ?? 2,
     load_factor: account.load_factor ?? null, effective_load_factor: account.load_factor ?? account.concurrency ?? 2,
@@ -22,7 +21,7 @@ export function settingsPreview(account: Account): AccountSettings {
     capabilities: Object.fromEntries(fields.map(field => [field, {
       editable: !inherited || ['priority', 'concurrency', 'load_factor'].includes(field),
       reason: inherited && !['priority', 'concurrency', 'load_factor'].includes(field) ? '继承母账号设置' : '',
-    }])), versions: Object.fromEntries(fields.map(field => [field, account.operation_versions![field]])) });
+    }])), versions: Object.fromEntries(fields.map(field => [field, account.operation_versions[field]])) });
 }
 export function applySettingsPreview(account: Account, action: string, payload: Record<string, unknown>, expected: string) {
   const settings = settingsPreview(account), value = config(account);
@@ -34,7 +33,7 @@ export function applySettingsPreview(account: Account, action: string, payload: 
   else if (action === 'priority' || action === 'concurrency') account[action] = Number(payload[action]);
   else if (action === 'load_factor') account.load_factor = payload.load_factor as number | null;
   const version = crypto.randomUUID().replaceAll('-', '').repeat(2);
-  account.operation_versions![action] = version;
+  account.operation_versions[action] = version;
   return { verified: true, ...payload, field_version: version, settings_versions: settingsPreview(account).versions };
 }
 export const isSettingsAction = (action: string) => fields.includes(action);

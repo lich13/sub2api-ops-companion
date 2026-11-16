@@ -22,6 +22,7 @@ const account = (overrides: Partial<Account> = {}): Account => ({
   blockers: [{ code: "rate_limit_reset_at", label: "上游限流" }],
   recoverable: false,
   version: "fixture-version",
+  operation_versions: {},
   last_success_at: null,
   last_error_at: "2026-10-16T00:00:00.000Z",
   last_error_id: 71,

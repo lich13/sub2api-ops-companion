@@ -514,7 +514,6 @@ export default function App() {
       });
       if (!result.verified) throw new Error("调度写入未确认，请刷新查看实际状态");
       if (operationEpoch() === epoch) {
-        if (!a.operation_versions) void command("refresh");
         setToast(`${a.name}：${a.schedulable ? "已关闭" : "已打开"}调度`);
       }
     } catch (e) {
@@ -562,7 +561,7 @@ export default function App() {
     );
   }
   function groupRow(g: Group, compact = false) {
-    const recent = g.recent_accounts ?? [];
+    const recent = g.recent_accounts;
     return (
       <article className={`group-row ${compact ? "compact" : ""}`} key={g.id}>
         <div className="group-heading">
@@ -1829,7 +1828,7 @@ function SettingsPage({
           >
             {(draft, set) => (
               <>
-                {Object.entries(oauthLabels).filter(([key]) => (!key.startsWith("oauth_early_reset_") || config.oauth[key] != null) && (key !== "model_detection_model_id" || typeof config.oauth.model_detection_model_id === "string") && (!key.startsWith("connection_test_") || typeof config.oauth[key] === "number")).map(([key, label]) => (
+                {Object.entries(oauthLabels).map(([key, label]) => (
                   key === "oauth_recovery_test_model_id" || key === "model_detection_model_id" ? <AccountModelField key={`${connectionKey}:${key}`} label={label} value={draft[key]} accounts={accounts} online={state.online} set={v => set(key, v)}/> : <Field
                     key={key}
                     label={label}
@@ -1840,9 +1839,8 @@ function SettingsPage({
                     set={(v) => set(key, v)}
                   />
                 ))}
-                {draft.model_detection_platforms != null && <DetectionPlatformSettings value={draft.model_detection_platforms} set={v => set("model_detection_platforms", v)}/>}
-                {typeof config.oauth.model_detection_model_id !== "string" && <p className="bad-text">请升级服务端以配置全局自动检测模型。</p>}
-                <fieldset className="recovery-compatibility" disabled={typeof config.oauth.model_detection_model_id !== "string"}><RecoveryAccounts accounts={accounts} connection={(draft.oauth_recovery_connection_account_ids as number[]) ?? []} models={(draft.oauth_recovery_model_account_ids as number[]) ?? []} change={(connection, models) => { set("oauth_recovery_connection_account_ids", connection); set("oauth_recovery_model_account_ids", models); }}/></fieldset>
+                <DetectionPlatformSettings value={draft.model_detection_platforms} set={v => set("model_detection_platforms", v)}/>
+                <RecoveryAccounts accounts={accounts} connection={(draft.oauth_recovery_connection_account_ids as number[]) ?? []} models={(draft.oauth_recovery_model_account_ids as number[]) ?? []} change={(connection, models) => { set("oauth_recovery_connection_account_ids", connection); set("oauth_recovery_model_account_ids", models); }}/>
               </>
             )}
           </ConfigForm>

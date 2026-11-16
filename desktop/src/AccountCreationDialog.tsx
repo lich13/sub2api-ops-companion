@@ -74,15 +74,14 @@ export default function AccountCreationDialog({ accounts,online,close,report }: 
   async function loadOptions() {
     setOptionError("");
     const requests = await Promise.allSettled([
-      api<{features:Record<string,boolean>}>("GET","/capabilities"), api<CreationOptions>("GET","/account-creation/options"),
+      api<CreationOptions>("GET","/account-creation/options"),
       api<{id:number;name:string}[]>("GET","/account-creation/catalog/tls"),
       api<{ai_studio_oauth_enabled:boolean}>("GET","/account-creation/catalog/gemini"),
       api<{account_quota_notify_enabled:boolean}>("GET","/account-creation/catalog/settings"),
       api<{enabled:boolean}>("GET","/account-creation/catalog/web-search"),
     ] as const);
     if (!mounted.current) return;
-    const [cap,opt,tls,gemini,settings,web]=requests;
-    if (cap.status !== "fulfilled" || !cap.value.features.account_creation) { setOptionError("服务器尚不支持添加账号，请更新服务器后重试"); return; }
+    const [opt,tls,gemini,settings,web]=requests;
     if (opt.status === "fulfilled") setOptions(opt.value);
     else setOptionError("账号选项读取失败，请重试");
     if (tls.status === "fulfilled") setTls(tls.value);

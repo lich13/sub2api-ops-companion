@@ -4,17 +4,6 @@ use std::{io::Write, path::Path, time::Duration};
 const MAX_JSON_BYTES: usize = 8 * 1024 * 1024;
 const MAX_OPERATION_JSON_BYTES: usize = 128 * 1024 * 1024;
 
-pub(crate) async fn read_test_error(mut response: reqwest::Response) -> Result<Value, String> {
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| "测试响应读取中断")? {
-        if bytes.len() + chunk.len() > MAX_JSON_BYTES {
-            return Err("测试响应超过大小限制".into());
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    Ok(serde_json::from_slice(&bytes).unwrap_or(Value::Null))
-}
-
 fn recoveries_valid(data: &Value) -> bool {
     data.as_array().is_some_and(|rows| {
         rows.iter().all(|row| {
@@ -97,6 +86,9 @@ fn snapshot_valid(data: &Value) -> bool {
                         && ["group_ids", "usage_windows", "blockers"]
                             .iter()
                             .all(|k| a[*k].is_array())
+                        && a["operation_versions"]
+                            .as_object()
+                            .is_some_and(|versions| versions.values().all(Value::is_string))
                         && a["schedulable"].is_boolean()
                         && a["available"].is_boolean()
                         && a["priority"].as_i64().is_some()
@@ -826,27 +818,15 @@ fn shape_valid(path: &str, data: &Value) -> bool {
             ["oauth", "bark"]
                 .iter()
                 .all(|k| data[*k]["revision"].is_string())
-                && data["oauth"]
-                    .get("model_detection_model_id")
-                    .is_none_or(Value::is_string)
-                && data["oauth"]
-                    .get("model_detection_platforms")
-                    .is_none_or(detection_platforms_valid)
-                && data["oauth"]
-                    .get("oauth_early_reset_enabled")
-                    .is_none_or(Value::is_boolean)
-                && data["oauth"]
-                    .get("oauth_early_reset_interval_seconds")
-                    .is_none_or(|v| v.as_i64().is_some_and(|v| v >= 2))
+                && data["oauth"]["model_detection_model_id"].is_string()
+                && detection_platforms_valid(&data["oauth"]["model_detection_platforms"])
+                && data["oauth"]["oauth_early_reset_enabled"].is_boolean()
+                && data["oauth"]["oauth_early_reset_interval_seconds"]
+                    .as_i64()
+                    .is_some_and(|v| v >= 2)
         }
         "/capabilities" => {
             data["api_version"].as_u64() == Some(1)
-                && data["features"]
-                    .get("account_priority_ordering")
-                    .is_none_or(Value::is_boolean)
-                && data["features"]
-                    .get("account_priority_per_platform")
-                    .is_none_or(Value::is_boolean)
                 && (data["upstream_connection"].is_null()
                     || connection_valid(&data["upstream_connection"]))
         }
@@ -855,26 +835,11 @@ fn shape_valid(path: &str, data: &Value) -> bool {
         p if p.starts_with("/proxies/") => proxy_diagnostic_valid(p, data),
         p if p.ends_with("/settings") => settings_valid(data),
         "/detection-logs" => detection_logs_valid(data),
-        "/account-priorities" => {
-            if crate::priority_api::is_v2(path) {
-                crate::priority_api::list_v2(data)
-            } else {
-                crate::priority_api::list(data)
-            }
-        }
-        "/account-priority-orders" => {
-            if crate::priority_api::is_v2(path) {
-                crate::priority_api::task_v2(data, true)
-            } else {
-                crate::priority_api::task(data, true)
-            }
-        }
+        "/account-priorities" => crate::priority_api::list(data),
+        "/account-priority-orders" => crate::priority_api::task(data, true),
         p if p.starts_with("/account-priority-orders/") => {
-            (if crate::priority_api::is_v2(path) {
-                crate::priority_api::task_v2(data, !crate::priority_api::is_summary(path))
-            } else {
-                crate::priority_api::task(data, true)
-            }) && p.split('/').nth(2) == data["id"].as_str()
+            crate::priority_api::task(data, !crate::priority_api::is_summary(path))
+                && p.split('/').nth(2) == data["id"].as_str()
         }
         "/errors" => data["items"].is_array(),
         "/recoveries" => recoveries_valid(&data["items"]),
@@ -922,12 +887,10 @@ fn shape_valid(path: &str, data: &Value) -> bool {
                 && data["version"].is_string()
                 && data["enabled"].is_boolean()
                 && data["interval_minutes"].as_u64().is_some_and(|v| v > 0)
-                && data
-                    .get("schedule_mode")
-                    .is_none_or(|v| v == "fixed" || v == "smart")
-                && data
-                    .get("min_interval_minutes")
-                    .is_none_or(|v| v.as_u64().is_some_and(|n| (5..=30).contains(&n)))
+                && (data["schedule_mode"] == "fixed" || data["schedule_mode"] == "smart")
+                && data["min_interval_minutes"]
+                    .as_u64()
+                    .is_some_and(|n| (5..=30).contains(&n))
                 && (data["effective_interval_minutes"].is_null()
                     || data["effective_interval_minutes"]
                         .as_u64()
@@ -945,11 +908,11 @@ fn shape_valid(path: &str, data: &Value) -> bool {
                 && data
                     .get("sample_count")
                     .is_none_or(|v| matches!(v.as_u64(), Some(1 | 3)))
+                && (data["model_source"] == "global" || data["model_source"] == "account")
                 && data
-                    .get("model_source")
-                    .is_none_or(|v| v == "global" || v == "account")
-                && (data["model_override"].is_null() || data["model_override"].is_string())
-                && data.get("global_model_id").is_none_or(Value::is_string)
+                    .get("model_override")
+                    .is_some_and(|v| v.is_null() || v.is_string())
+                && data["global_model_id"].is_string()
                 && data["status"].is_string()
                 && (data["last_automatic_started_at"].is_null()
                     || data["last_automatic_started_at"].is_string())
@@ -961,7 +924,6 @@ fn shape_valid(path: &str, data: &Value) -> bool {
                 .and_then(|id| id.parse::<u64>().ok());
             account_id.is_some_and(|id| id > 0 && data["account_id"].as_u64() == Some(id))
                 && data["enabled"].is_boolean()
-                && data["read_only"].is_boolean()
                 && data["generation"]
                     .as_u64()
                     .is_some_and(|v| v <= 9_007_199_254_740_991)
@@ -1122,7 +1084,11 @@ fn model_directory_request(method: &str, path: &str) -> bool {
     }
     matches!(
         (method, operation),
-        ("GET", "models?purpose=model_test") | ("POST", "model-tests") | ("PUT", "model-detection")
+        (
+            "GET",
+            "models?purpose=model_test" | "models?purpose=model_test&refresh=true"
+        ) | ("POST", "model-tests")
+            | ("PUT", "model-detection")
     )
 }
 
@@ -1157,10 +1123,10 @@ pub(crate) async fn http_detailed(
     {
         req = req.timeout(Duration::from_secs(390));
     }
-    if path.ends_with("/usage-action") || path.ends_with("/usage") {
+    if path.ends_with("/usage") {
         req = req.timeout(Duration::from_secs(105));
     }
-    if method == "DELETE" || path.ends_with("/recover-state") {
+    if method == "DELETE" {
         req = req.timeout(Duration::from_secs(20));
     }
     if path.starts_with("/model-groups/") {
@@ -1354,57 +1320,6 @@ mod tests {
                     "api_version":1, "platforms":platforms
                 })
             ));
-        }
-    }
-
-    #[tokio::test]
-    async fn test_error_responses_enforce_the_json_limit_with_or_without_content_length() {
-        for (extra, chunked) in [(0, false), (0, true), (1, false), (1, true)] {
-            let length = MAX_JSON_BYTES + extra;
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            let url = format!("http://{}", listener.local_addr().unwrap());
-            let server = std::thread::spawn(move || {
-                let (mut socket, _) = listener.accept().unwrap();
-                socket
-                    .set_write_timeout(Some(Duration::from_secs(5)))
-                    .unwrap();
-                let _ = socket.read(&mut [0; 4096]);
-                let framing = if chunked {
-                    "Transfer-Encoding: chunked".to_owned()
-                } else {
-                    format!("Content-Length: {length}")
-                };
-                let _ = write!(
-                    socket,
-                    "HTTP/1.1 502 Bad Gateway\r\n{framing}\r\nConnection: close\r\n\r\n"
-                );
-                let mut bytes = vec![b' '; length];
-                let json = br#"{"detail":"fixture refused"}"#;
-                bytes[..json.len()].copy_from_slice(json);
-                if chunked {
-                    let _ = write!(socket, "{length:X}\r\n");
-                }
-                let _ = socket.write_all(&bytes);
-                if chunked {
-                    let _ = socket.write_all(b"\r\n0\r\n\r\n");
-                }
-            });
-            let response = reqwest::Client::builder()
-                .no_proxy()
-                .timeout(Duration::from_secs(5))
-                .build()
-                .unwrap()
-                .get(url)
-                .send()
-                .await
-                .unwrap();
-            let result = read_test_error(response).await;
-            if extra == 0 {
-                assert_eq!(result.unwrap()["detail"], "fixture refused");
-            } else {
-                assert_eq!(result.unwrap_err(), "测试响应超过大小限制");
-            }
-            server.join().unwrap();
         }
     }
 
@@ -1702,6 +1617,7 @@ mod tests {
     async fn model_directory_routes_extend_timeout_without_replaying_writes() {
         for (method, path) in [
             ("GET", "/accounts/7/models?purpose=model_test"),
+            ("GET", "/accounts/7/models?purpose=model_test&refresh=true"),
             ("POST", "/accounts/7/model-tests"),
             ("PUT", "/accounts/7/model-detection"),
         ] {
@@ -1753,6 +1669,7 @@ mod tests {
             ("POST", "/accounts/7/model-detection"),
             ("GET", "/snapshot"),
             ("GET", "/accounts/0/models?purpose=model_test"),
+            ("GET", "/accounts/7/models?purpose=model_test&refresh=false"),
         ] {
             assert!(!model_directory_request(method, path));
         }
@@ -1858,9 +1775,9 @@ mod tests {
     }
 
     #[test]
-    fn detection_platforms_accept_legacy_and_four_platform_configuration() {
+    fn detection_platforms_accept_partial_and_four_platform_configuration() {
         use serde_json::json;
-        let mut config = json!({"oauth":{"revision":"fixture","model_detection_platforms":{"openai":{"engine":"modeltrace","sample_count":1}}},"bark":{"revision":"fixture"}});
+        let mut config = json!({"oauth":{"revision":"fixture","model_detection_model_id":"gpt-6-luna","oauth_early_reset_enabled":false,"oauth_early_reset_interval_seconds":60,"model_detection_platforms":{"openai":{"engine":"modeltrace","sample_count":1}}},"bark":{"revision":"fixture"}});
         assert!(shape_valid("/config", &config));
         for platform in ["anthropic", "grok", "deepseek"] {
             config["oauth"]["model_detection_platforms"][platform] =
@@ -1869,7 +1786,7 @@ mod tests {
         assert!(shape_valid("/config", &config));
         config["oauth"]["model_detection_platforms"]["anthropic"]["engine"] = "modeltrace".into();
         assert!(!shape_valid("/config", &config));
-        let mut detection = json!({"account_id":1,"version":"fixture","enabled":false,"interval_minutes":15,"model_id":"","model_source":"account","global_model_id":"","model_override":null,"status":"disabled","engine":"lm_detector","sample_count":1});
+        let mut detection = json!({"account_id":1,"version":"fixture","enabled":false,"interval_minutes":15,"schedule_mode":"smart","min_interval_minutes":5,"model_id":"","model_source":"account","global_model_id":"","model_override":null,"status":"disabled","engine":"lm_detector","sample_count":1});
         assert!(shape_valid("/accounts/1/model-detection", &detection));
         let mut policy = detection.clone();
         policy["verdict_mode"] = "relaxed".into();
@@ -1894,8 +1811,22 @@ mod tests {
 
     #[test]
     fn detection_templates_and_bank_response_guards() {
-        let detection = serde_json::json!({"account_id":1,"version":"fixture","enabled":false,"interval_minutes":15,"model_id":"gpt-6-luna","status":"disabled"});
+        let detection = serde_json::json!({"account_id":1,"version":"fixture","enabled":false,"interval_minutes":15,"schedule_mode":"fixed","min_interval_minutes":5,"model_id":"gpt-6-luna","model_source":"global","model_override":null,"global_model_id":"gpt-6-luna","status":"disabled"});
         assert!(shape_valid("/accounts/1/model-detection", &detection));
+        for field in [
+            "schedule_mode",
+            "min_interval_minutes",
+            "model_source",
+            "model_override",
+            "global_model_id",
+        ] {
+            let mut missing = detection.clone();
+            missing.as_object_mut().unwrap().remove(field);
+            assert!(
+                !shape_valid("/accounts/1/model-detection", &missing),
+                "{field}"
+            );
+        }
         let mut smart_detection = detection.clone();
         smart_detection["schedule_mode"] = serde_json::json!("smart");
         smart_detection["min_interval_minutes"] = serde_json::json!(5);
@@ -1941,10 +1872,20 @@ mod tests {
             assert!(!shape_valid("/accounts/1/model-detection", &invalid));
         }
         let config = serde_json::json!({
-            "oauth":{"revision":"fixture","model_detection_model_id":"gpt-6-luna"},
+            "oauth":{"revision":"fixture","model_detection_model_id":"gpt-6-luna","model_detection_platforms":{"openai":{"engine":"modeltrace","sample_count":1}},"oauth_early_reset_enabled":false,"oauth_early_reset_interval_seconds":60},
             "bark":{"revision":"fixture"}
         });
         assert!(shape_valid("/config", &config));
+        for field in [
+            "model_detection_model_id",
+            "model_detection_platforms",
+            "oauth_early_reset_enabled",
+            "oauth_early_reset_interval_seconds",
+        ] {
+            let mut missing = config.clone();
+            missing["oauth"].as_object_mut().unwrap().remove(field);
+            assert!(!shape_valid("/config", &missing), "{field}");
+        }
         let mut invalid_config = config.clone();
         invalid_config["oauth"]["model_detection_model_id"] = serde_json::json!(7);
         assert!(!shape_valid("/config", &invalid_config));
@@ -2132,7 +2073,6 @@ mod tests {
         let valid = serde_json::json!({
             "account_id":7,
             "enabled":true,
-            "read_only":false,
             "generation":3,
             "version":"a".repeat(64),
             "status":"waiting",
@@ -2568,13 +2508,18 @@ mod tests {
         let account = serde_json::json!({
             "id": 1, "name": "fixture", "platform": "openai", "type": "oauth", "version": "v1",
             "group_ids": [], "usage_windows": [], "blockers": [], "schedulable": true,
-            "available": true, "priority": 0
+            "available": true, "priority": 0, "operation_versions": {"test": "v1"}
         });
         let mut snapshot = serde_json::json!({
             "observed_at": "2026-10-11T00:00:00Z", "accounts": [account], "groups": [],
             "errors": [], "recoveries": []
         });
         assert!(snapshot_valid(&snapshot));
+        for versions in [serde_json::Value::Null, serde_json::json!({"test": 1})] {
+            let mut invalid = snapshot.clone();
+            invalid["accounts"][0]["operation_versions"] = versions;
+            assert!(!snapshot_valid(&invalid));
+        }
         snapshot["accounts"][0]["recovery_monitor"] = serde_json::Value::Null;
         assert!(snapshot_valid(&snapshot));
         snapshot["accounts"][0]["recovery_monitor"] = serde_json::json!({
