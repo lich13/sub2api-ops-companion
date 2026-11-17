@@ -431,62 +431,29 @@ public struct Sub2ApiConfigTabView: View {
             .disabled(!editable)
         } else if field.type == "array" || field.type == "object" {
             let rawText = change?.rawStructuredText ?? LightYAML.stringify(value)
-            TextEditor(
-                text: Binding(
-                    get: { rawText },
-                    set: { txt in
-                        let parsed = LightYAML.parseStructured(txt, expectedType: field.type)
-                        draft[field.path] = DraftChange(
-                            path: field.path,
-                            remove: false,
-                            value: parsed.value,
-                            rawStructuredText: txt
-                        )
-                    }
+            ConfigStructuredEditorView(textValue: rawText, editable: editable) { txt in
+                let parsed = LightYAML.parseStructured(txt, expectedType: field.type)
+                draft[field.path] = DraftChange(
+                    path: field.path,
+                    remove: false,
+                    value: parsed.value,
+                    rawStructuredText: txt
                 )
-            )
-            .font(DS.fontMono11)
-            .frame(height: 84)
-            .padding(6)
-            .background(DS.surfaceSubtle)
-            .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-            .disabled(!editable)
+            }
         } else {
             let str = scalarString(value)
             let isSecret = field.sensitive && !revealedPaths.contains(field.path)
-            HStack(spacing: 6) {
-                if isSecret {
-                    SecureField(
-                        text: Binding(get: { str }, set: { setScalarText(field, $0) }),
-                        prompt: Text(verbatim: field.default_text)
-                    ) { EmptyView() }
-                    .textFieldStyle(.plain)
-                    .font(DS.fontMono12)
-                } else {
-                    TextField(
-                        text: Binding(get: { str }, set: { setScalarText(field, $0) }),
-                        prompt: Text(verbatim: field.default_text)
-                    ) { EmptyView() }
-                    .textFieldStyle(.plain)
-                    .font(DS.fontMono12)
-                }
-                if field.sensitive {
-                    LinearIconButton(
-                        systemName: isSecret ? "eye" : "eye.slash",
-                        label: isSecret ? "显示" : "隐藏",
-                        size: 12
-                    ) {
-                        if isSecret { revealedPaths.insert(field.path) } else { revealedPaths.remove(field.path) }
-                    }
-                }
-            }
-            .padding(.horizontal, 10)
-            .frame(height: DS.controlHeightDense)
-            .background(DS.surfaceSubtle)
-            .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-            .disabled(!editable)
+            ConfigScalarEditorView(
+                textValue: str,
+                prompt: field.default_text,
+                isSecret: isSecret,
+                isSensitive: field.sensitive,
+                editable: editable,
+                onToggleSecret: {
+                    if isSecret { revealedPaths.insert(field.path) } else { revealedPaths.remove(field.path) }
+                },
+                onTextChange: { setScalarText(field, $0) }
+            )
         }
     }
 
@@ -660,6 +627,101 @@ public struct Sub2ApiConfigTabView: View {
             showConfirmApply = false
             errorText = error.localizedDescription
             hostOp = HostOperation(status: "restarting", message: "提交结果待确认，正在查询操作状态")
+        }
+    }
+}
+
+private struct ConfigStructuredEditorView: View {
+    let textValue: String
+    let editable: Bool
+    let onTextChange: (String) -> Void
+    @State private var text: String
+
+    init(textValue: String, editable: Bool, onTextChange: @escaping (String) -> Void) {
+        self.textValue = textValue
+        self.editable = editable
+        self.onTextChange = onTextChange
+        self._text = State(initialValue: textValue)
+    }
+
+    var body: some View {
+        TextEditor(text: $text)
+            .font(DS.fontMono11)
+            .frame(height: 84)
+            .padding(6)
+            .background(DS.surfaceSubtle)
+            .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+            .disabled(!editable)
+            .onChange(of: textValue) { _, next in
+                if text != next { text = next }
+            }
+            .onChange(of: text) { _, next in
+                if next != textValue { onTextChange(next) }
+            }
+    }
+}
+
+private struct ConfigScalarEditorView: View {
+    let textValue: String
+    let prompt: String
+    let isSecret: Bool
+    let isSensitive: Bool
+    let editable: Bool
+    let onToggleSecret: () -> Void
+    let onTextChange: (String) -> Void
+    @State private var text: String
+
+    init(
+        textValue: String,
+        prompt: String,
+        isSecret: Bool,
+        isSensitive: Bool,
+        editable: Bool,
+        onToggleSecret: @escaping () -> Void,
+        onTextChange: @escaping (String) -> Void
+    ) {
+        self.textValue = textValue
+        self.prompt = prompt
+        self.isSecret = isSecret
+        self.isSensitive = isSensitive
+        self.editable = editable
+        self.onToggleSecret = onToggleSecret
+        self.onTextChange = onTextChange
+        self._text = State(initialValue: textValue)
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if isSecret {
+                SecureField(text: $text, prompt: Text(verbatim: prompt)) { EmptyView() }
+                    .textFieldStyle(.plain)
+                    .font(DS.fontMono12)
+            } else {
+                TextField(text: $text, prompt: Text(verbatim: prompt)) { EmptyView() }
+                    .textFieldStyle(.plain)
+                    .font(DS.fontMono12)
+            }
+            if isSensitive {
+                LinearIconButton(
+                    systemName: isSecret ? "eye" : "eye.slash",
+                    label: isSecret ? "显示" : "隐藏",
+                    size: 12,
+                    action: onToggleSecret
+                )
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: DS.controlHeightDense)
+        .background(DS.surfaceSubtle)
+        .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+        .disabled(!editable)
+        .onChange(of: textValue) { _, next in
+            if text != next { text = next }
+        }
+        .onChange(of: text) { _, next in
+            if next != textValue { onTextChange(next) }
         }
     }
 }

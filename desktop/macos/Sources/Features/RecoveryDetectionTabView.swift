@@ -174,18 +174,9 @@ public struct RecoveryDetectionTabView: View {
                 .font(DS.fontBody)
                 .foregroundStyle(DS.ink)
             Spacer()
-            TextField(
-                text: Binding(get: { cur }, set: { setField(key, .string($0)) }),
-                prompt: Text(verbatim: placeholder)
-            ) { EmptyView() }
-            .textFieldStyle(.plain)
-            .font(DS.fontMono12)
-            .monospacedDigit()
-            .padding(.horizontal, 10)
-            .frame(width: 140, height: DS.controlHeightDense)
-            .background(DS.surface)
-            .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+            RecoveryTextInput(value: cur, placeholder: placeholder) { next in
+                setField(key, .string(next))
+            }
         }
     }
 
@@ -196,29 +187,8 @@ public struct RecoveryDetectionTabView: View {
                 .font(DS.fontBody)
                 .foregroundStyle(disabled ? DS.muted : DS.ink)
             Spacer()
-            HStack(spacing: 6) {
-                TextField(
-                    text: Binding(
-                        get: { "\(curInt)" },
-                        set: { raw in
-                            if let parsed = Int(raw.trimmingCharacters(in: .whitespaces)), parsed >= min {
-                                setField(key, .int(Int64(parsed)))
-                            }
-                        }
-                    ),
-                    prompt: Text(verbatim: "\(min)")
-                ) { EmptyView() }
-                .textFieldStyle(.plain)
-                .font(DS.fontMono12)
-                .monospacedDigit()
-                .multilineTextAlignment(.trailing)
-                .padding(.horizontal, 10)
-                .frame(width: 96, height: DS.controlHeightDense)
-                .background(DS.surface)
-                .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-                .disabled(disabled)
-                .opacity(disabled ? 0.5 : 1.0)
+            RecoveryIntInput(value: curInt, min: min, disabled: disabled) { parsed in
+                setField(key, .int(Int64(parsed)))
             }
         }
     }
@@ -251,5 +221,79 @@ public struct RecoveryDetectionTabView: View {
                 conflict = true
             }
         }
+    }
+}
+
+private struct RecoveryTextInput: View {
+    let value: String
+    let placeholder: String
+    let onCommit: (String) -> Void
+    @State private var text: String
+
+    init(value: String, placeholder: String, onCommit: @escaping (String) -> Void) {
+        self.value = value
+        self.placeholder = placeholder
+        self.onCommit = onCommit
+        self._text = State(initialValue: value)
+    }
+
+    var body: some View {
+        TextField(text: $text, prompt: Text(verbatim: placeholder)) { EmptyView() }
+            .textFieldStyle(.plain)
+            .font(DS.fontMono12)
+            .monospacedDigit()
+            .padding(.horizontal, 10)
+            .frame(width: 140, height: DS.controlHeightDense)
+            .background(DS.surface)
+            .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+            .onChange(of: value) { _, next in
+                if text != next { text = next }
+            }
+            .onChange(of: text) { _, next in
+                if next != value { onCommit(next) }
+            }
+    }
+}
+
+private struct RecoveryIntInput: View {
+    let value: Int
+    let min: Int
+    let disabled: Bool
+    let onCommit: (Int) -> Void
+    @State private var text: String
+
+    init(value: Int, min: Int, disabled: Bool, onCommit: @escaping (Int) -> Void) {
+        self.value = value
+        self.min = min
+        self.disabled = disabled
+        self.onCommit = onCommit
+        self._text = State(initialValue: "\(value)")
+    }
+
+    var body: some View {
+        TextField(text: $text, prompt: Text(verbatim: "\(min)")) { EmptyView() }
+            .textFieldStyle(.plain)
+            .font(DS.fontMono12)
+            .monospacedDigit()
+            .multilineTextAlignment(.trailing)
+            .padding(.horizontal, 10)
+            .frame(width: 96, height: DS.controlHeightDense)
+            .background(DS.surface)
+            .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+            .disabled(disabled)
+            .opacity(disabled ? 0.5 : 1.0)
+            .onChange(of: value) { _, next in
+                let formatted = "\(next)"
+                if Int(text.trimmingCharacters(in: .whitespaces)) != next {
+                    text = formatted
+                }
+            }
+            .onChange(of: text) { _, raw in
+                if let parsed = Int(raw.trimmingCharacters(in: .whitespaces)), parsed >= min, parsed != value {
+                    onCommit(parsed)
+                }
+            }
     }
 }

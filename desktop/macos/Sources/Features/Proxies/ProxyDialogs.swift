@@ -89,10 +89,11 @@ public struct ProxyEditorSheet: View {
                     HStack(spacing: 10) {
                         labeledField(
                             row?.username_set == true ? "用户名（已保存，留空保留）" : "用户名（可选）",
-                            text: Binding(get: { username }, set: { username = $0; usernameDirty = true }),
+                            text: $username,
                             prompt: "username",
                             mono: true
                         )
+                        .onChange(of: username) { _, _ in usernameDirty = true }
                         VStack(alignment: .leading, spacing: 4) {
                             Text(row?.password_set == true ? "密码（留空保留）" : "密码（可选）")
                                 .font(DS.fontCompactMedium)

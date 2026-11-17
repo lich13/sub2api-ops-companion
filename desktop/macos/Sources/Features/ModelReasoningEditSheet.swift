@@ -149,13 +149,7 @@ public struct ModelReasoningEditSheet: View {
                         .font(DS.fontCompactMedium)
                         .foregroundStyle(DS.ink)
                     TextField(
-                        text: Binding(
-                            get: { draft.model },
-                            set: { next in
-                                draft.model = next.trimmingCharacters(in: .whitespaces)
-                                confirmAllowlist = false
-                            }
-                        ),
+                        text: $draft.model,
                         prompt: Text(verbatim: "例如 gpt-5.4 或 claude-opus-4-6")
                     ) { EmptyView() }
                     .textFieldStyle(.plain)
@@ -166,6 +160,11 @@ public struct ModelReasoningEditSheet: View {
                     .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
                     .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
                     .disabled(draft.editing || saving)
+                    .onChange(of: draft.model) { _, next in
+                        let trimmed = next.trimmingCharacters(in: .whitespaces)
+                        if trimmed != next { draft.model = trimmed }
+                        confirmAllowlist = false
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 6) {

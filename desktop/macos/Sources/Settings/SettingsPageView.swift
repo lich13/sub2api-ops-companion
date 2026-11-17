@@ -7,6 +7,7 @@ public struct SettingsPageView: View {
 
     @State private var removingUrl: String? = nil
     @State private var barkDraft: [String: JSONValue] = [:]
+    @State private var barkDeviceKey: String = ""
     @State private var barkChanges: [String: JSONValue] = [:]
     @State private var barkBusy: Bool = false
     @State private var barkConflict: Bool = false
@@ -234,10 +235,7 @@ public struct SettingsPageView: View {
                             .foregroundStyle(DS.ink)
                         Spacer()
                         SecureField(
-                            text: Binding(
-                                get: { barkDraft["device_key"]?.stringValue ?? "" },
-                                set: { setBarkField("device_key", .string($0)) }
-                            ),
+                            text: $barkDeviceKey,
                             prompt: Text(verbatim: keySet ? "留空保留现有 Device Key" : "输入 Bark Device Key")
                         ) { EmptyView() }
                         .textFieldStyle(.plain)
@@ -247,6 +245,11 @@ public struct SettingsPageView: View {
                         .background(DS.surface)
                         .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
                         .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+                        .onChange(of: barkDeviceKey) { _, next in
+                            if (barkDraft["device_key"]?.stringValue ?? "") != next {
+                                setBarkField("device_key", .string(next))
+                            }
+                        }
                     }
 
                     HStack {
@@ -319,6 +322,7 @@ public struct SettingsPageView: View {
         guard !cur.isEmpty else { return }
         if force || barkChanges.isEmpty {
             barkDraft = cur
+            barkDeviceKey = cur["device_key"]?.stringValue ?? ""
             barkChanges = [:]
             barkConflict = false
             seededBarkRev = serverBarkRevision

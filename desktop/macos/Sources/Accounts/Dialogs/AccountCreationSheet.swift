@@ -120,40 +120,53 @@ public struct AccountCreationSheet: View {
                         Text("平台")
                             .font(DS.fontCompactSemibold)
                             .foregroundStyle(DS.ink)
-                        Picker("", selection: Binding(
-                            get: { draft.platform },
-                            set: { next in
-                                oauthSession = nil
-                                oauthCallback = ""
-                                draft.selectPlatform(next)
-                            }
-                        )) {
+                        Menu {
                             ForEach(catalog.platforms) { p in
-                                Text(p.label).tag(p.id)
+                                Button(p.label) {
+                                    oauthSession = nil
+                                    oauthCallback = ""
+                                    draft.selectPlatform(p.id)
+                                }
                             }
+                        } label: {
+                            let pLabel = catalog.platforms.first(where: { $0.id == draft.platform })?.label ?? draft.platform
+                            HStack {
+                                Text(pLabel).font(DS.fontCompact).foregroundStyle(DS.ink)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 8)
+                            .frame(width: 150, height: DS.controlHeightDense)
+                            .background(DS.surface)
+                            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(DS.line, lineWidth: 1))
                         }
-                        .labelsHidden()
-                        .frame(width: 150)
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("认证方式")
                             .font(DS.fontCompactSemibold)
                             .foregroundStyle(DS.ink)
-                        Picker("", selection: Binding(
-                            get: { draft.type },
-                            set: { next in
-                                oauthSession = nil
-                                oauthCallback = ""
-                                draft.selectType(next)
-                            }
-                        )) {
+                        Menu {
                             ForEach(currentPlatformSpec?.types ?? ["apikey"], id: \.self) { t in
-                                Text(PlatformMeta.typeLabel(t)).tag(t)
+                                Button(PlatformMeta.typeLabel(t)) {
+                                    oauthSession = nil
+                                    oauthCallback = ""
+                                    draft.selectType(t)
+                                }
                             }
+                        } label: {
+                            HStack {
+                                Text(PlatformMeta.typeLabel(draft.type)).font(DS.fontCompact).foregroundStyle(DS.ink)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 8)
+                            .frame(width: 140, height: DS.controlHeightDense)
+                            .background(DS.surface)
+                            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(DS.line, lineWidth: 1))
                         }
-                        .labelsHidden()
-                        .frame(width: 140)
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
                     }
                 }
 

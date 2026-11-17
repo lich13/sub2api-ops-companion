@@ -9,6 +9,7 @@ public struct AccountModelFieldView: View {
     public let connectionKey: String
     public let onChange: @MainActor (String) -> Void
 
+    @State private var textValue: String
     @State private var selectedAccountId: Int = 0
     @State private var models: [AccountModelItem] = []
     @State private var loading: Bool = false
@@ -28,6 +29,7 @@ public struct AccountModelFieldView: View {
         self.online = online
         self.connectionKey = connectionKey
         self.onChange = onChange
+        self._textValue = State(initialValue: value)
     }
 
     private var candidateAccounts: [Account] {
@@ -53,7 +55,7 @@ public struct AccountModelFieldView: View {
                 Spacer()
                 HStack(spacing: 6) {
                     TextField(
-                        text: Binding(get: { value }, set: onChange),
+                        text: $textValue,
                         prompt: Text(verbatim: "输入或选择模型 ID")
                     ) { EmptyView() }
                     .textFieldStyle(.plain)
@@ -63,6 +65,12 @@ public struct AccountModelFieldView: View {
                     .background(DS.surface)
                     .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
                     .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+                    .onChange(of: value) { _, next in
+                        if textValue != next { textValue = next }
+                    }
+                    .onChange(of: textValue) { _, next in
+                        if next != value { onChange(next) }
+                    }
 
                     if !models.isEmpty {
                         Menu {

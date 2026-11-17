@@ -71,10 +71,7 @@ public struct RecordDatePickerView: View {
                         Text("开始日期")
                             .font(DS.fontResetTime)
                             .foregroundStyle(DS.muted)
-                        TextField(text: Binding(
-                            get: { draft.start },
-                            set: { next in draft = RecordDateRange(preset: nil, start: next, end: draft.end) }
-                        ), prompt: Text(verbatim: "YYYY-MM-DD")) { EmptyView() }
+                        TextField(text: $draft.start, prompt: Text(verbatim: "YYYY-MM-DD")) { EmptyView() }
                         .textFieldStyle(.plain)
                         .font(DS.fontMono12)
                         .monospacedDigit()
@@ -82,16 +79,18 @@ public struct RecordDatePickerView: View {
                         .frame(height: DS.controlHeightCompact)
                         .background(DS.surface)
                         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(DS.line, lineWidth: 1))
+                        .onChange(of: draft.start) { old, next in
+                            if old != next, let p = draft.preset, BeijingDateLogic.presetRange(p).start != next {
+                                draft.preset = nil
+                            }
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("结束日期")
                             .font(DS.fontResetTime)
                             .foregroundStyle(DS.muted)
-                        TextField(text: Binding(
-                            get: { draft.end },
-                            set: { next in draft = RecordDateRange(preset: nil, start: draft.start, end: next) }
-                        ), prompt: Text(verbatim: "YYYY-MM-DD")) { EmptyView() }
+                        TextField(text: $draft.end, prompt: Text(verbatim: "YYYY-MM-DD")) { EmptyView() }
                         .textFieldStyle(.plain)
                         .font(DS.fontMono12)
                         .monospacedDigit()
@@ -99,6 +98,11 @@ public struct RecordDatePickerView: View {
                         .frame(height: DS.controlHeightCompact)
                         .background(DS.surface)
                         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(DS.line, lineWidth: 1))
+                        .onChange(of: draft.end) { old, next in
+                            if old != next, let p = draft.preset, BeijingDateLogic.presetRange(p).end != next {
+                                draft.preset = nil
+                            }
+                        }
                     }
                 }
 
