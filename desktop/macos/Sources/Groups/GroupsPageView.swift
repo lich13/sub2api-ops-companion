@@ -1,0 +1,561 @@
+import SwiftUI
+
+public struct GroupsPageView: View {
+    @Bindable public var store: AppStore
+
+    @State private var selectedPlatform: String = "openai"
+    @State private var query: String = ""
+    @State private var drafts: [Int: GroupDraftEntry] = [:]
+    @State private var history: [[Int: GroupDraftEntry]] = []
+    @State private var saving: Bool = false
+    @State private var expandedDraftList: Bool = false
+    @State private var statusMessage: String = ""
+    @State private var hoveredZone: GroupMembershipZone? = nil
+
+    public init(store: AppStore) {
+        self.store = store
+    }
+
+    private var platforms: [String] {
+        let all = store.accounts.map(\.platform) + store.groups.map(\.platform)
+        return PlatformMeta.sortPlatforms(all)
+    }
+
+    private var activePlatform: String {
+        if platforms.contains(selectedPlatform) { return selectedPlatform }
+        return platforms.first ?? "openai"
+    }
+
+    private var availableGroups: [Group] {
+        GroupDraftLogic.platformGroups(store.groups, platform: activePlatform)
+    }
+
+    private var pair: [Int] {
+        Array(availableGroups.prefix(2).map(\.id))
+    }
+
+    private var candidates: [Account] {
+        store.accounts
+            .filter { $0.platform == activePlatform }
+            .sorted { a, b in
+                let cmp = a.name.localizedStandardCompare(b.name)
+                if cmp != .orderedSame { return cmp == .orderedAscending }
+                return a.id < b.id
+            }
+    }
+
+    private var pendingDrafts: [GroupDraftEntry] {
+        drafts.values.sorted { $0.id < $1.id }
+    }
+
+    private var conflictDrafts: [GroupDraftEntry] {
+        pendingDrafts.filter { GroupDraftLogic.hasConflict(draft: $0, accounts: store.accounts, groups: store.groups) }
+    }
+
+    private func memberships(for account: Account) -> [Int] {
+        drafts[account.id]?.target ?? account.group_ids
+    }
+
+    private func matchesQuery(_ account: Account) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return true }
+        return "\(account.name) #\(account.id)".lowercased().contains(q)
+    }
+
+    private func groupName(_ id: Int) -> String {
+        store.groups.first(where: { $0.id == id })?.name ?? "#\(id)"
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            toolbar
+
+            if availableGroups.isEmpty {
+                HStack(spacing: 10) {
+                    Image(systemName: "square.3.layers.3d")
+                        .font(DS.iconFont(20))
+                    Text("此平台没有分组")
+                        .font(DS.fontBody)
+                }
+                .foregroundStyle(DS.muted)
+                .padding(.vertical, 28)
+            } else {
+                vennHeading
+                vennMap
+            }
+
+            poolSection
+
+            if !pendingDrafts.isEmpty {
+                draftFooterPanel
+            }
+
+            if !statusMessage.isEmpty {
+                HStack {
+                    Text(statusMessage)
+                        .font(DS.fontCompact)
+                        .foregroundStyle(DS.accent)
+                    Spacer()
+                    LinearIconButton(systemName: "xmark", label: "关闭分组提示", size: 11) {
+                        statusMessage = ""
+                    }
+                }
+            }
+        }
+        .onChange(of: drafts) { _, next in
+            store.groupChangesCount = next.count
+        }
+        .onChange(of: saving) { _, next in
+            store.groupSavingBusy = next
+        }
+        .onChange(of: store.connectionKey) { _, _ in
+            drafts = [:]
+            history = []
+            statusMessage = ""
+            expandedDraftList = false
+        }
+        .onChange(of: store.accounts) { _, live in
+            let liveIds = Set(live.map(\.id))
+            if drafts.keys.contains(where: { !liveIds.contains($0) }) {
+                drafts = drafts.filter { liveIds.contains($0.key) }
+                history = history.map { snap in snap.filter { liveIds.contains($0.key) } }
+                statusMessage = "已删除账号的分组草稿已失效"
+            }
+        }
+    }
+
+    private var toolbar: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 3) {
+                ForEach(platforms, id: \.self) { pid in
+                    let active = pid == activePlatform
+                    Button(PlatformMeta.priorityName(pid)) {
+                        selectedPlatform = pid
+                        query = ""
+                    }
+                    .font(active ? DS.fontCompactSemibold : DS.fontCompact)
+                    .foregroundStyle(active ? DS.ink : DS.muted)
+                    .padding(.horizontal, 12)
+                    .frame(height: DS.controlHeightCompact)
+                    .background(active ? DS.surface : DS.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .buttonStyle(.plain)
+                    .disabled(saving)
+                }
+            }
+            .padding(3)
+            .background(DS.surfaceSubtle)
+            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(DS.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 9))
+
+            Spacer()
+
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(DS.iconFont(12))
+                    .foregroundStyle(DS.muted)
+                TextField(text: $query, prompt: Text(verbatim: "搜索名称或账号 ID")) { EmptyView() }
+                    .textFieldStyle(.plain)
+                    .font(DS.fontCompact)
+            }
+            .padding(.horizontal, 10)
+            .frame(width: 240, height: DS.controlHeightCompact)
+            .background(DS.surface)
+            .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+
+            LinearIconButton(systemName: "arrow.clockwise", label: "刷新分组", disabled: !store.state.online || saving) {
+                store.refresh()
+            }
+        }
+    }
+
+    private var vennHeading: some View {
+        HStack(spacing: 20) {
+            if let first = pair.first {
+                groupHeaderPill(id: first, isRight: false)
+            }
+            Spacer()
+            if pair.count > 1 {
+                groupHeaderPill(id: pair[1], isRight: true)
+            }
+        }
+    }
+
+    private func groupHeaderPill(id: Int, isRight: Bool) -> some View {
+        let count = candidates.filter { memberships(for: $0).contains(id) }.count
+        return HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(isRight ? DS.groupTeal : DS.accent)
+                .frame(width: 8, height: 26)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(groupName(id))
+                    .font(DS.fontDialogTitle)
+                    .foregroundStyle(DS.ink)
+                Text("#\(id)")
+                    .font(DS.fontMono11)
+                    .foregroundStyle(DS.muted)
+            }
+            Text("\(count)")
+                .font(DS.fontStatValue)
+                .monospacedDigit()
+                .foregroundStyle(DS.muted)
+                .padding(.leading, 8)
+        }
+    }
+
+    private var vennMap: some View {
+        let leftItems = candidates.filter { GroupDraftLogic.membershipZone(memberships: memberships(for: $0), pair: pair) == .left }
+        let bothItems = candidates.filter { GroupDraftLogic.membershipZone(memberships: memberships(for: $0), pair: pair) == .both }
+        let rightItems = candidates.filter { GroupDraftLogic.membershipZone(memberships: memberships(for: $0), pair: pair) == .right }
+
+        return ZStack {
+            GeometryReader { geo in
+                let outlineW = pair.count > 1 ? geo.size.width * (2.0 / 3.0) : geo.size.width
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 28)
+                        .fill(DS.groupLeftFill)
+                        .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(DS.groupLeftBorder, lineWidth: 1))
+                        .frame(width: outlineW)
+                    if pair.count > 1 {
+                        HStack {
+                            Spacer()
+                            RoundedRectangle(cornerRadius: 28)
+                                .fill(DS.groupRightFill)
+                                .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(DS.groupRightBorder, lineWidth: 1))
+                                .frame(width: outlineW)
+                        }
+                    }
+                }
+            }
+
+            if pair.count == 1 {
+                zoneColumn(zone: .left, title: groupName(pair[0]), items: leftItems, accentTitle: false)
+                    .padding(20)
+            } else {
+                HStack(alignment: .top, spacing: 16) {
+                    zoneColumn(zone: .left, title: "仅 \(groupName(pair[0]))", items: leftItems, accentTitle: false)
+                    zoneColumn(zone: .both, title: "两组共有", items: bothItems, accentTitle: true)
+                    zoneColumn(zone: .right, title: "仅 \(groupName(pair[1]))", items: rightItems, accentTitle: false)
+                }
+                .padding(20)
+            }
+        }
+        .frame(minHeight: 220)
+    }
+
+    private var poolSection: some View {
+        let noneRegion = candidates.filter { GroupDraftLogic.membershipZone(memberships: memberships(for: $0), pair: pair) == .none }
+        let unassigned = noneRegion.filter { acc in
+            !memberships(for: acc).contains { gid in store.groups.contains(where: { $0.id == gid }) }
+        }
+        let otherGroups = noneRegion.filter { acc in !unassigned.contains(where: { $0.id == acc.id }) }
+
+        return VStack(alignment: .leading, spacing: 14) {
+            Rectangle().fill(DS.line).frame(height: 1)
+            poolGrid(title: "待分组", items: unassigned)
+            if !otherGroups.isEmpty {
+                poolGrid(title: "其他分组", items: otherGroups)
+            }
+        }
+    }
+
+    private func zoneColumn(zone: GroupMembershipZone, title: String, items: [Account], accentTitle: Bool) -> some View {
+        let visible = items.filter(matchesQuery)
+        let isHover = hoveredZone == zone
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(title)
+                    .font(accentTitle ? DS.fontCompactSemibold : DS.fontCompactMedium)
+                    .foregroundStyle(accentTitle ? DS.accent : DS.muted)
+                Spacer()
+                Text("\(items.count)")
+                    .font(DS.fontCompact)
+                    .monospacedDigit()
+                    .foregroundStyle(DS.muted)
+            }
+
+            if visible.isEmpty {
+                Text(query.isEmpty ? "暂无账号" : "无匹配账号")
+                    .font(DS.fontCompact)
+                    .foregroundStyle(DS.muted)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 20)
+            } else {
+                ForEach(visible) { acc in
+                    accountCard(acc)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(isHover ? DS.accentBg.opacity(0.55) : DS.clear)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(isHover ? DS.accent : DS.clear, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .dropDestination(for: String.self) { dropped, _ in
+            guard let first = dropped.first, let id = Int(first) else { return false }
+            move(accountId: id, to: zone)
+            return true
+        } isTargeted: { targeted in
+            hoveredZone = targeted ? zone : (hoveredZone == zone ? nil : hoveredZone)
+        }
+    }
+
+    private func poolGrid(title: String, items: [Account]) -> some View {
+        let visible = items.filter(matchesQuery)
+        let cols = [
+            GridItem(.flexible(minimum: 220), spacing: 10),
+            GridItem(.flexible(minimum: 220), spacing: 10),
+            GridItem(.flexible(minimum: 220), spacing: 10),
+        ]
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(title)
+                    .font(DS.fontSectionTitle)
+                    .foregroundStyle(DS.ink)
+                Spacer()
+                Text("\(items.count)")
+                    .font(DS.fontCompact)
+                    .monospacedDigit()
+                    .foregroundStyle(DS.muted)
+            }
+            if visible.isEmpty {
+                Text(query.isEmpty ? "暂无账号" : "无匹配账号")
+                    .font(DS.fontCompact)
+                    .foregroundStyle(DS.muted)
+            } else {
+                LazyVGrid(columns: cols, spacing: 10) {
+                    ForEach(visible) { acc in
+                        accountCard(acc)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 6)
+        .dropDestination(for: String.self) { dropped, _ in
+            guard let first = dropped.first, let id = Int(first) else { return false }
+            move(accountId: id, to: .none)
+            return true
+        }
+    }
+
+    private func accountCard(_ account: Account) -> some View {
+        let dirty = drafts[account.id]
+        let conflict = dirty.map { GroupDraftLogic.hasConflict(draft: $0, accounts: store.accounts, groups: store.groups) } ?? false
+
+        return HStack(spacing: 6) {
+            Menu {
+                if let first = pair.first {
+                    Button(pair.count > 1 ? "移入 仅 \(groupName(first))" : "移入 \(groupName(first))") {
+                        move(accountId: account.id, to: .left)
+                    }
+                }
+                if pair.count > 1 {
+                    Button("移入 两组共有") { move(accountId: account.id, to: .both) }
+                    Button("移入 仅 \(groupName(pair[1]))") { move(accountId: account.id, to: .right) }
+                }
+                Button("移出当前组（待分组）") { move(accountId: account.id, to: .none) }
+            } label: {
+                Image(systemName: "line.3.horizontal")
+                    .font(DS.iconFont(12))
+                    .foregroundStyle(DS.muted)
+                    .frame(width: 20, height: 24)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: 22)
+            .disabled(!store.state.online || saving || pair.isEmpty)
+            .help("拖拽或点击调整分组")
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(account.name)
+                    .font(DS.fontBodyMedium)
+                    .foregroundStyle(DS.ink)
+                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Text("#\(account.id)")
+                        .font(DS.fontMono11)
+                    Text(PlatformMeta.typeLabel(account.type))
+                        .font(DS.fontResetTime)
+                    DegradationBadgeView(account: account, compact: true)
+                    if !account.available {
+                        Text(account.blockers.first?.label ?? "不可调度")
+                            .font(DS.fontResetTime)
+                            .foregroundStyle(DS.warn)
+                    }
+                    if dirty != nil {
+                        Text(conflict ? "冲突" : "待应用")
+                            .font(DS.fontResetTimeSemibold)
+                            .foregroundStyle(conflict ? DS.bad : DS.accent)
+                    }
+                }
+                .foregroundStyle(DS.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            LinearSwitch(
+                isOn: account.schedulable,
+                disabled: !store.state.online || saving || store.busyScheduleAccountId == account.id,
+                label: "\(account.name) 调度"
+            ) {
+                Task { await store.toggleSchedulable(account) }
+            }
+
+            AccountActionMenuView(account: account, disabled: !store.state.online || saving) { action in
+                store.triggerAccountAction(action)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .background(DS.surface)
+        .overlay(
+            RoundedRectangle(cornerRadius: 9)
+                .strokeBorder(dirty != nil ? (conflict ? DS.bad : DS.accent) : DS.line, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 9))
+        .draggable("\(account.id)")
+    }
+
+    private var draftFooterPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Button {
+                    expandedDraftList.toggle()
+                } label: {
+                    HStack(spacing: 5) {
+                        Text("\(pendingDrafts.count) 个账号待应用")
+                            .font(DS.fontCompactSemibold)
+                            .monospacedDigit()
+                            .foregroundStyle(DS.ink)
+                        Image(systemName: expandedDraftList ? "chevron.up" : "chevron.down")
+                            .font(DS.iconFont(10, weight: .semibold))
+                            .foregroundStyle(DS.muted)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button("撤销") {
+                    if let prev = history.last {
+                        drafts = prev
+                        history.removeLast()
+                        statusMessage = ""
+                    }
+                }
+                .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                .disabled(saving || history.isEmpty)
+
+                Button("放弃全部") {
+                    drafts = [:]
+                    history = []
+                    statusMessage = ""
+                }
+                .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                .disabled(saving)
+
+                Button(saving ? "正在保存…" : "应用变更 \(pendingDrafts.count)") {
+                    Task { await applyDrafts() }
+                }
+                .buttonStyle(LinearButtonStyle(variant: .primary, compact: true))
+                .disabled(!store.state.online || saving || !conflictDrafts.isEmpty)
+            }
+
+            if expandedDraftList {
+                Rectangle().fill(DS.line).frame(height: 1)
+                ForEach(pendingDrafts) { d in
+                    let isConflict = GroupDraftLogic.hasConflict(draft: d, accounts: store.accounts, groups: store.groups)
+                    HStack(spacing: 8) {
+                        Text("\(d.name) #\(d.id)")
+                            .font(DS.fontCompactSemibold)
+                            .foregroundStyle(DS.ink)
+                        Text(d.original.map(groupName).joined(separator: "、").isEmpty ? "待分组" : d.original.map(groupName).joined(separator: "、"))
+                            .font(DS.fontCompact)
+                            .foregroundStyle(DS.muted)
+                        Image(systemName: "arrow.right")
+                            .font(DS.iconFont(10))
+                            .foregroundStyle(DS.muted)
+                        Text(d.target.map(groupName).joined(separator: "、").isEmpty ? "待分组" : d.target.map(groupName).joined(separator: "、"))
+                            .font(DS.fontCompactMedium)
+                            .foregroundStyle(DS.accent)
+                        Spacer()
+                        if isConflict {
+                            Button("放弃冲突项") {
+                                drafts.removeValue(forKey: d.id)
+                                history.removeAll()
+                            }
+                            .buttonStyle(LinearButtonStyle(variant: .danger, compact: true))
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(DS.surface)
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(DS.lineStrong, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func move(accountId: Int, to zone: GroupMembershipZone) {
+        guard store.state.online, !saving, let account = store.accounts.first(where: { $0.id == accountId }) else { return }
+        let next = GroupDraftLogic.moveAccount(drafts: drafts, account: account, pair: pair, zone: zone)
+        if next != drafts {
+            history.append(drafts)
+            drafts = next
+            statusMessage = ""
+        }
+    }
+
+    private func applyDrafts() async {
+        guard store.state.online, !saving, !pendingDrafts.isEmpty else { return }
+        if !conflictDrafts.isEmpty {
+            statusMessage = "账号或分组已变化，请先处理冲突"
+            expandedDraftList = true
+            return
+        }
+        saving = true
+        statusMessage = ""
+        defer { saving = false }
+
+        let snapshotPending = pendingDrafts
+        let targets: [[String: JSONValue]] = snapshotPending.map { d in
+            [
+                "account_id": .int(Int64(d.id)),
+                "expected_version": .string(d.version),
+                "payload": .object([
+                    "scope_group_ids": .array(d.scope.map { .int(Int64($0)) }),
+                    "group_ids": .array(d.target.filter { d.scope.contains($0) }.map { .int(Int64($0)) }),
+                ]),
+            ]
+        }
+        do {
+            let initial = try await store.operations.submitBatch(
+                action: "groups",
+                accounts: targets,
+                requestId: UUID().uuidString.lowercased()
+            )
+            let final = try await store.operations.followBatch(initial: initial)
+            let completed = final.items.filter { $0.status == "completed" && $0.result?["verified"]?.boolValue != false }
+            for job in completed {
+                drafts.removeValue(forKey: job.account_id)
+            }
+            if !completed.isEmpty {
+                history.removeAll()
+            }
+            let failed = final.items.filter { OperationStore.isTerminal($0.status) && $0.status != "completed" }
+            if failed.isEmpty {
+                statusMessage = "已保存 \(completed.count) 个账号"
+                expandedDraftList = false
+            } else {
+                statusMessage = "已保存 \(completed.count) 个账号；\(failed.map { "\($0.account_name)：\($0.reason ?? $0.status)" }.joined(separator: "；"))"
+            }
+            store.refresh()
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+}

@@ -49,8 +49,58 @@ enum SnapshotRenderUtility {
         guard let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
             return
         }
-        NSAppearance.current = appearance
-        hosting.cacheDisplay(in: hosting.bounds, to: rep)
+        appearance.performAsCurrentDrawingAppearance {
+            hosting.cacheDisplay(in: hosting.bounds, to: rep)
+        }
+        if let pngData = rep.representation(using: .png, properties: [:]) {
+            try FileManager.default.createDirectory(
+                at: outputURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try pngData.write(to: outputURL)
+        }
+        window.orderOut(nil)
+    }
+
+    static func renderPNGAsync<V: View>(
+        view: V,
+        size: CGSize,
+        dark: Bool,
+        outputURL: URL
+    ) async throws {
+        ensureAppKit()
+        let appearanceName: NSAppearance.Name = dark ? .darkAqua : .aqua
+        guard let appearance = NSAppearance(named: appearanceName) else { return }
+
+        let window = NSWindow(
+            contentRect: CGRect(origin: .zero, size: size),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.appearance = appearance
+        window.backgroundColor = dark
+            ? NSColor(srgbRed: 0x17 / 255.0, green: 0x19 / 255.0, blue: 0x1F / 255.0, alpha: 1.0)
+            : NSColor(srgbRed: 0xF5 / 255.0, green: 0xF6 / 255.0, blue: 0xF9 / 255.0, alpha: 1.0)
+        window.isReleasedWhenClosed = false
+
+        let themedView = view
+            .environment(\.colorScheme, dark ? .dark : .light)
+            .frame(width: size.width, height: size.height)
+        let hosting = NSHostingView(rootView: themedView)
+        hosting.appearance = appearance
+        hosting.frame = CGRect(origin: .zero, size: size)
+        window.contentView = hosting
+        hosting.layoutSubtreeIfNeeded()
+        try? await Task.sleep(for: .milliseconds(60))
+        hosting.layoutSubtreeIfNeeded()
+
+        guard let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
+            return
+        }
+        appearance.performAsCurrentDrawingAppearance {
+            hosting.cacheDisplay(in: hosting.bounds, to: rep)
+        }
         if let pngData = rep.representation(using: .png, properties: [:]) {
             try FileManager.default.createDirectory(
                 at: outputURL.deletingLastPathComponent(),

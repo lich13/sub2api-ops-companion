@@ -30,6 +30,10 @@ public struct PageContentRouterView: View {
                 switch store.page {
                 case .accounts:
                     AccountsPageView(store: store)
+                case .groups:
+                    GroupsPageView(store: store)
+                case .priorities:
+                    PrioritiesPageView(store: store)
                 case .settings:
                     VStack(alignment: .leading, spacing: 16) {
                         ConnectionStatusCardView(connectionKey: store.connectionKey)
