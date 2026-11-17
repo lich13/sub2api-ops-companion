@@ -165,6 +165,9 @@ impl CreditController {
             return Ok(Value::Null);
         }
         let evidence = credit_rules::upstream_evidence(&self.actions.queries.db, row, at).await?;
+        if evidence["source"] != "upstream_error" {
+            return Ok(Value::Null);
+        }
         Ok(credit_rules::depletion_evidence(row, &saved, &evidence, at))
     }
     pub fn positive_credit_reason(&self, row: &Value, at: DateTime<Utc>) -> &'static str {

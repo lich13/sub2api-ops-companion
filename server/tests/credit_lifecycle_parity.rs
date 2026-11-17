@@ -1801,17 +1801,23 @@ async fn provider_error_and_account_fallback_evidence_are_distinct_and_redacted(
         .execute(&harness.db.pool)
         .await
         .unwrap();
-    let fallback = harness
-        .controller
-        .depletion(&row, now, false)
+    let raw_fallback = credit_rules::upstream_evidence(&harness.db, &row, now)
         .await
         .unwrap();
+    let saved = harness.controller.saved_quota(&row, now).unwrap();
+    let fallback = credit_rules::depletion_evidence(&row, &saved, &raw_fallback, now);
     assert_eq!(fallback["evidence_source"], "account_rate_limit");
     assert!(fallback["evidence_id"]
         .as_str()
         .unwrap()
         .starts_with("account-rate-limit:"));
     assert!(fallback["evidence_fingerprint"].as_str().unwrap().len() == 64);
+    assert!(harness
+        .controller
+        .depletion(&row, now, false)
+        .await
+        .unwrap()
+        .is_null());
 
     insert_error(
         &harness,
@@ -1910,28 +1916,32 @@ async fn provider_error_and_account_fallback_evidence_are_distinct_and_redacted(
         .execute(&harness.db.pool)
         .await
         .unwrap();
-    let fallback_evidence = harness
-        .controller
-        .depletion(&fallback_row, now, false)
+    let raw_fallback = credit_rules::upstream_evidence(&harness.db, &fallback_row, now)
         .await
         .unwrap();
+    let fallback_saved = harness.controller.saved_quota(&fallback_row, now).unwrap();
+    let fallback_evidence =
+        credit_rules::depletion_evidence(&fallback_row, &fallback_saved, &raw_fallback, now);
     assert_eq!(fallback_evidence["evidence_source"], "account_rate_limit");
     assert_eq!(
         parse_datetime(&fallback_evidence["evidence_at"]),
         Some(recent_limit_start)
     );
+    assert!(harness
+        .controller
+        .depletion(&fallback_row, now, false)
+        .await
+        .unwrap()
+        .is_null());
     harness.set_config(recovery_config(fallback_id, "connection"));
     run_automatic(&harness, &fallback_row, now).await;
     let fallback_task = harness.controller.state(fallback_id).unwrap();
-    assert_eq!(fallback_task["evidence_source"], "account_rate_limit");
-    assert!(fallback_task["evidence_id"]
-        .as_str()
-        .unwrap()
-        .starts_with("account-rate-limit:"));
-    assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 2);
+    assert_eq!(fallback_task, json!({}));
+    assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 1);
 
     for name in [
         "limit_reset_at_current",
+        "limit_reset_misaligned",
         "missing_limited_at",
         "expired_account",
         "weekly_not_exhausted",
@@ -1947,6 +1957,9 @@ async fn provider_error_and_account_fallback_evidence_are_distinct_and_redacted(
             .unwrap();
         match name {
             "limit_reset_at_current" => candidate["rate_limit_reset_at"] = json!(datetime(now)),
+            "limit_reset_misaligned" => {
+                candidate["rate_limit_reset_at"] = json!(datetime(now + Duration::hours(5)))
+            }
             "missing_limited_at" => candidate["rate_limited_at"] = Value::Null,
             "expired_account" => {
                 candidate["expires_at"] = json!(datetime(now - Duration::seconds(1)));
@@ -1990,9 +2003,278 @@ async fn provider_error_and_account_fallback_evidence_are_distinct_and_redacted(
             .unwrap();
         assert!(
             blocked.is_null(),
-            "fallback incorrectly accepted {name}: {blocked}"
+            "depletion incorrectly accepted {name}: {blocked}"
+        );
+        if name != "expired_account" {
+            let candidate_raw = credit_rules::upstream_evidence(&harness.db, &candidate, now)
+                .await
+                .unwrap();
+            let candidate_saved = harness.controller.saved_quota(&candidate, now).unwrap();
+            let cycle_blocked =
+                credit_rules::depletion_evidence(&candidate, &candidate_saved, &candidate_raw, now);
+            assert!(
+                cycle_blocked.is_null(),
+                "fallback incorrectly accepted {name}: {cycle_blocked}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn reset_quota_runtime_extra_writes_preserve_ownership_and_complete_recovery() {
+    let harness = Harness::new().await;
+    let now = fixed_now();
+    let (row, _) = harness.seed_depletion(&harness.controller).await;
+    let id = integer(&row["id"]).unwrap();
+    harness.set_config(recovery_config(id, "connection"));
+    harness.mock.set_reset(
+        id,
+        200,
+        reset_response(now, 10.0, 15.0, "success", json!(1)),
+    );
+    harness.mock.set_sse(id, successful_sse());
+    let gate = Arc::new(Notify::new());
+    harness.mock.set_reset_gate(gate);
+
+    let controller = harness.controller.clone();
+    let run_row = row.clone();
+    let worker = tokio::spawn(async move { controller.run_account(&run_row, now).await });
+    harness.mock.wait_for(Method::POST, "/reset-quota", 1).await;
+
+    // Simulate upstream Sub2API writing back runtime extra fields during /reset-quota.
+    let runtime_extra = json!({
+        "codex_primary_used_percent": 10.0,
+        "codex_primary_reset_at": datetime(now + Duration::hours(5)),
+        "codex_secondary_used_percent": 15.0,
+        "codex_secondary_reset_at": datetime(now + Duration::days(7)),
+        "codex_spark_used_percent": 0.0,
+        "codex_turn_ticket:abc": "ticket-1",
+        "passive_usage_updated_at": datetime(now),
+        "codex_auto_reset_credit_state": {"last_reset_at": datetime(now)},
+        "codex_referral_snapshot": {"count": 1},
+        "codex_degradation_check": {"ok": true},
+        "codex_fingerprint_seed": "seed-1",
+        "model_rate_limits": {"gpt-5": {"remaining": 100}},
+        "privacy_mode": "zero_data_retention",
+        "openai_compact_supported": true,
+        "openai_compact_last_status": 200,
+        "upstream_model_metadata": {"models": 3},
+        "quota_used": 12.5,
+        "quota_weekly_used": 12.5
+    });
+    sqlx::query("UPDATE accounts SET extra = COALESCE(extra, '{}'::jsonb) || $1 WHERE id = $2")
+        .bind(SqlJson(runtime_extra))
+        .bind(id)
+        .execute(&harness.db.pool)
+        .await
+        .unwrap();
+
+    harness.mock.release_reset();
+    worker.await.unwrap().unwrap();
+
+    let task = harness.controller.state(id).unwrap();
+    assert_eq!(task["stage"], "recovered");
+    assert_eq!(task["owns_pause"], false);
+    assert_eq!(harness.mock.count(Method::POST, "/reset-quota"), 1);
+    assert_eq!(harness.mock.count(Method::POST, "/test"), 1);
+    let final_row = reload_account(&harness, id).await;
+    assert_eq!(final_row["schedulable"], true);
+
+    // Config keys in extra (e.g., *_enabled, quota_*_limit) must still affect signature.
+    let before_sig = credit_ownership::signature(&final_row);
+    let mut config_modified = final_row.clone();
+    config_modified["extra"]["codex_auto_reset_credit_enabled"] = json!(false);
+    assert_ne!(credit_ownership::signature(&config_modified), before_sig);
+    let mut limit_modified = final_row.clone();
+    limit_modified["extra"]["quota_weekly_limit"] = json!(100);
+    assert_ne!(credit_ownership::signature(&limit_modified), before_sig);
+}
+
+#[tokio::test]
+async fn non_weekly_429_variants_do_not_trigger_auto_credit_or_fallback() {
+    let harness = Harness::new().await;
+    let now = fixed_now();
+    let five_hour_reset = (now + Duration::hours(5)).timestamp();
+    let seven_day_reset = (now + Duration::days(5)).timestamp();
+
+    let non_weekly_cases: Vec<(&str, Option<&str>, Option<&str>, String)> = vec![
+        (
+            "five_hour_usage_limit",
+            None,
+            Some("usage_limit_reached"),
+            json!({
+                "error": {
+                    "type": "usage_limit_reached",
+                    "message": "The usage limit has been reached",
+                    "resets_at": five_hour_reset,
+                    "resets_in_seconds": 18000
+                }
+            })
+            .to_string(),
+        ),
+        (
+            "overloaded_capacity",
+            None,
+            Some("server_is_overloaded"),
+            json!({
+                "error": {
+                    "type": "server_is_overloaded",
+                    "message": "Our servers are currently overloaded. Please try again later."
+                }
+            })
+            .to_string(),
+        ),
+        (
+            "ws_short_cooldown_rate_limit_error",
+            None,
+            Some("rate_limit_error"),
+            json!({
+                "type": "response.failed",
+                "response": {
+                    "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Rate limit reached, please try again in 5s"
+                    }
+                }
+            })
+            .to_string(),
+        ),
+        (
+            "spark_model_quota",
+            Some("codex-mini-spark"),
+            Some("usage_limit_reached"),
+            json!({
+                "error": {
+                    "type": "usage_limit_reached",
+                    "message": "The usage limit has been reached",
+                    "resets_at": seven_day_reset
+                }
+            })
+            .to_string(),
+        ),
+        (
+            "go_usage_limit_error",
+            Some("gpt-5"),
+            Some("GoUsageLimitError"),
+            json!({
+                "error": {
+                    "type": "GoUsageLimitError",
+                    "message": "Model quota exhausted"
+                }
+            })
+            .to_string(),
+        ),
+    ];
+
+    for (label, model, err_type, body) in non_weekly_cases {
+        let (row, _) = harness.seed_depletion(&harness.controller).await;
+        let id = integer(&row["id"]).unwrap();
+        sqlx::query("DELETE FROM ops_error_logs WHERE account_id=$1")
+            .bind(id)
+            .execute(&harness.db.pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO ops_error_logs \
+             (id,account_id,created_at,platform,error_owner,error_phase,status_code,upstream_status_code,model,error_type,error_message,upstream_error_message,error_body) \
+             VALUES ($1,$2,$3,'openai','provider','upstream',429,429,$4,$5,'upstream 429','upstream 429',$6)",
+        )
+        .bind(id + 2_000_000_000)
+        .bind(id)
+        .bind(now - Duration::seconds(30))
+        .bind(model)
+        .bind(err_type)
+        .bind(&body)
+        .execute(&harness.db.pool)
+        .await
+        .unwrap();
+
+        let single = credit_rules::upstream_evidence(&harness.db, &row, now)
+            .await
+            .unwrap();
+        assert!(
+            single.is_null(),
+            "non-weekly case {label} must not fall back to account_rate_limit: {single}"
+        );
+        let batch =
+            credit_rules::upstream_evidence_batch(&harness.db, std::slice::from_ref(&row), now)
+                .await
+                .unwrap();
+        assert!(
+            !batch.contains_key(&id),
+            "batch non-weekly case {label} must not fall back: {batch:?}"
+        );
+        assert!(
+            harness
+                .controller
+                .depletion(&row, now, false)
+                .await
+                .unwrap()
+                .is_null(),
+            "depletion must reject {label}"
         );
     }
+
+    // Verify >20 burst non-7d 429s before a newer genuine 7d 429 do not hide the real 7d 429.
+    let (burst_row, _) = harness.seed_depletion(&harness.controller).await;
+    let burst_id = integer(&burst_row["id"]).unwrap();
+    sqlx::query("DELETE FROM ops_error_logs WHERE account_id=$1")
+        .bind(burst_id)
+        .execute(&harness.db.pool)
+        .await
+        .unwrap();
+    let overload_body = json!({
+        "error": {
+            "type": "server_is_overloaded",
+            "message": "Our servers are currently overloaded. Please try again later."
+        }
+    })
+    .to_string();
+    for idx in 0..25_i64 {
+        sqlx::query(
+            "INSERT INTO ops_error_logs \
+             (id,account_id,created_at,platform,error_owner,error_phase,status_code,upstream_status_code,error_type,error_body) \
+             VALUES ($1,$2,$3,'openai','provider','upstream',429,429,'server_is_overloaded',$4)",
+        )
+        .bind(burst_id + 3_000_000_000 + idx)
+        .bind(burst_id)
+        .bind(now - Duration::seconds(55 - idx))
+        .bind(&overload_body)
+        .execute(&harness.db.pool)
+        .await
+        .unwrap();
+    }
+    let genuine_id = burst_id + 3_000_000_999;
+    let genuine_body = json!({
+        "error": {
+            "type": "usage_limit_reached",
+            "message": "The usage limit has been reached",
+            "resets_at": seven_day_reset,
+            "resets_in_seconds": 432000
+        }
+    })
+    .to_string();
+    sqlx::query(
+        "INSERT INTO ops_error_logs \
+         (id,account_id,created_at,platform,error_owner,error_phase,status_code,upstream_status_code,error_type,error_body) \
+         VALUES ($1,$2,$3,'openai','provider','upstream',429,429,'usage_limit_reached',$4)",
+    )
+    .bind(genuine_id)
+    .bind(burst_id)
+    .bind(now - Duration::seconds(5))
+    .bind(&genuine_body)
+    .execute(&harness.db.pool)
+    .await
+    .unwrap();
+
+    let accepted = harness
+        .controller
+        .depletion(&burst_row, now, false)
+        .await
+        .unwrap();
+    assert_eq!(accepted["evidence_source"], "upstream_error");
+    assert_eq!(accepted["evidence_id"], genuine_id.to_string());
 }
 
 #[tokio::test]

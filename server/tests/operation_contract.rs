@@ -2748,7 +2748,7 @@ async fn cycle_quota(
     .bind(id)
     .bind(SqlJson(extra))
     .bind(limited.then_some(at - chrono::Duration::seconds(30)))
-    .bind(limited.then_some(at + chrono::Duration::hours(1)))
+    .bind(limited.then_some(cycle_start() + chrono::Duration::days(6)))
     .execute(&harness.db.pool)
     .await
     .unwrap();

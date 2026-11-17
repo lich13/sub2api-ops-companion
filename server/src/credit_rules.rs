@@ -179,6 +179,14 @@ pub fn quota_result(
     }
     out
 }
+const EVIDENCE_COLUMNS: &str = "e.id,e.created_at,e.error_owner,e.error_phase,\
+to_jsonb(e)->>'model' AS model,to_jsonb(e)->>'requested_model' AS requested_model,\
+to_jsonb(e)->>'upstream_model' AS upstream_model,to_jsonb(e)->>'provider_error_code' AS provider_error_code,\
+to_jsonb(e)->>'provider_error_type' AS provider_error_type,to_jsonb(e)->>'error_type' AS error_type,\
+to_jsonb(e)->>'upstream_error_message' AS upstream_error_message,to_jsonb(e)->>'error_message' AS error_message,\
+to_jsonb(e)->'error_body' AS error_body,to_jsonb(e)->'upstream_error_detail' AS upstream_error_detail,\
+to_jsonb(e)->'upstream_errors' AS upstream_errors";
+
 pub async fn upstream_evidence(db: &Database, row: &Value, at: DateTime<Utc>) -> Result<Value> {
     let (Some(start), Some(reset)) = (
         parse_datetime(&row["rate_limited_at"]),
@@ -194,14 +202,32 @@ pub async fn upstream_evidence(db: &Database, row: &Value, at: DateTime<Utc>) ->
         (start - TimeDelta::seconds(5)).into(),
         at.into(),
     ];
-    let sql=format!("SELECT e.id,e.created_at,e.error_owner,e.error_phase,to_jsonb(e)->>'upstream_error_message' AS upstream_error_message,to_jsonb(e)->>'error_message' AS error_message,to_jsonb(e)->'error_body' AS error_body,to_jsonb(e)->'upstream_error_detail' AS upstream_error_detail,to_jsonb(e)->'upstream_errors' AS upstream_errors FROM ops_error_logs e WHERE e.account_id=$1 AND e.upstream_status_code=429 AND coalesce(e.error_owner,'') <> 'client' AND NOT {} AND e.created_at >= $2 AND e.created_at <= $3 AND NOT EXISTS (SELECT 1 FROM ops_error_logs x WHERE x.account_id=e.account_id AND x.created_at>e.created_at AND x.upstream_status_code IN (401,402)) ORDER BY e.created_at ASC,e.id ASC LIMIT 1",sql::ERRORS_LOCAL_THROTTLE);
-    let candidate = db
-        .one(&sql, &params)
+    let sql = format!(
+        "SELECT {EVIDENCE_COLUMNS} FROM ops_error_logs e \
+         WHERE e.account_id=$1 AND e.upstream_status_code=429 AND coalesce(e.error_owner,'') <> 'client' \
+         AND NOT {local} AND e.created_at >= $2 AND e.created_at <= $3 \
+         AND NOT EXISTS (SELECT 1 FROM ops_error_logs x WHERE x.account_id=e.account_id AND x.created_at>e.created_at AND x.upstream_status_code IN (401,402)) \
+         ORDER BY e.created_at DESC,e.id DESC LIMIT 20",
+        local = sql::ERRORS_LOCAL_THROTTLE
+    );
+    let candidates = db
+        .all(&sql, &params)
         .await
         .map_err(|_| Error::new(503, "限流证据无法可靠读取"))?;
-    if let Some(mut candidate) = candidate.filter(|v| !error_evidence::local_throttle(v)) {
-        candidate["source"] = "upstream_error".into();
-        return Ok(candidate);
+    let had_candidates = !candidates.is_empty();
+    for mut candidate in candidates.into_iter().rev() {
+        if !error_evidence::local_throttle(&candidate)
+            && !error_evidence::non_weekly_429(&candidate, Some(reset))
+        {
+            if let Some(error_reset) = error_evidence::error_reset_at(&candidate) {
+                candidate["error_reset_at"] = datetime(error_reset).into();
+            }
+            candidate["source"] = "upstream_error".into();
+            return Ok(candidate);
+        }
+    }
+    if had_candidates {
+        return Ok(Value::Null);
     }
     let sql=format!("SELECT e.id FROM ops_error_logs e WHERE e.account_id=$1 AND e.created_at >= $2 AND e.created_at <= $3 AND (e.upstream_status_code IN (401,402) OR {} OR (e.error_owner='client' AND (e.status_code=429 OR e.upstream_status_code=429))) ORDER BY e.created_at DESC,e.id DESC LIMIT 1",sql::ERRORS_LOCAL_THROTTLE);
     if db
@@ -242,13 +268,12 @@ pub async fn upstream_evidence_batch(
         EXISTS (SELECT 1 FROM ops_error_logs e WHERE e.account_id=w.account_id AND e.created_at>=w.since AND e.created_at<=$2
             AND (e.upstream_status_code IN (401,402) OR {local} OR (e.error_owner='client' AND (e.status_code=429 OR e.upstream_status_code=429)))) AS excluded
         FROM jsonb_to_recordset($1::jsonb) AS w(account_id bigint,since timestamptz)
-        LEFT JOIN LATERAL (SELECT e.id,e.created_at,e.error_owner,e.error_phase,
-            to_jsonb(e)->>'upstream_error_message' AS upstream_error_message,to_jsonb(e)->>'error_message' AS error_message,
-            to_jsonb(e)->'error_body' AS error_body,to_jsonb(e)->'upstream_error_detail' AS upstream_error_detail,to_jsonb(e)->'upstream_errors' AS upstream_errors
+        LEFT JOIN LATERAL (SELECT {EVIDENCE_COLUMNS}
             FROM ops_error_logs e WHERE e.account_id=w.account_id AND e.upstream_status_code=429 AND coalesce(e.error_owner,'')<>'client'
             AND NOT {local} AND e.created_at>=w.since AND e.created_at<=$2
             AND NOT EXISTS (SELECT 1 FROM ops_error_logs x WHERE x.account_id=e.account_id AND x.created_at>e.created_at AND x.upstream_status_code IN (401,402))
-            ORDER BY e.created_at ASC,e.id ASC LIMIT 1) c ON TRUE",local=sql::ERRORS_LOCAL_THROTTLE);
+            ORDER BY e.created_at DESC,e.id DESC LIMIT 20) c ON TRUE
+        ORDER BY w.account_id ASC, c.created_at DESC, c.id DESC",local=sql::ERRORS_LOCAL_THROTTLE);
     let results = db
         .all(&sql, &[crate::db::Param::Json(json!(windows)), at.into()])
         .await
@@ -257,16 +282,43 @@ pub async fn upstream_evidence_batch(
         .into_iter()
         .map(|window| (window["account_id"].as_i64().unwrap_or(0), window))
         .collect();
-    for mut candidate in results {
-        let id = candidate["requested_account_id"].as_i64().unwrap_or(0);
-        if !candidate["id"].is_null() && !error_evidence::local_throttle(&candidate) {
-            let fields = candidate.as_object_mut().unwrap();
+    let mut grouped: std::collections::BTreeMap<i64, (bool, Vec<Value>)> =
+        std::collections::BTreeMap::new();
+    for mut row in results {
+        let id = row["requested_account_id"].as_i64().unwrap_or(0);
+        let excluded = row["excluded"] == true;
+        if let Some(fields) = row.as_object_mut() {
             fields.remove("requested_account_id");
             fields.remove("excluded");
-            candidate["source"] = "upstream_error".into();
+        }
+        let entry = grouped.entry(id).or_insert((excluded, Vec::new()));
+        entry.0 |= excluded;
+        if !row["id"].is_null() {
+            entry.1.push(row);
+        }
+    }
+    for (id, (excluded, candidates)) in grouped {
+        let Some(window) = windows.get(&id) else {
+            continue;
+        };
+        let account_reset = parse_datetime(&window["reset"]);
+        let had_candidates = !candidates.is_empty();
+        let mut chosen = None;
+        for mut candidate in candidates.into_iter().rev() {
+            if !error_evidence::local_throttle(&candidate)
+                && !error_evidence::non_weekly_429(&candidate, account_reset)
+            {
+                if let Some(error_reset) = error_evidence::error_reset_at(&candidate) {
+                    candidate["error_reset_at"] = datetime(error_reset).into();
+                }
+                candidate["source"] = "upstream_error".into();
+                chosen = Some(candidate);
+                break;
+            }
+        }
+        if let Some(candidate) = chosen {
             evidence.insert(id, candidate);
-        } else if candidate["excluded"] != true {
-            let window = &windows[&id];
+        } else if !had_candidates && !excluded {
             let fingerprint = sha256(format!(
                 "{}:{}:{}",
                 id,
@@ -302,6 +354,14 @@ pub fn depletion_evidence(
     };
     if !quota::percent(&seven["used_percent"]).is_some_and(|v| v >= 100.0) {
         return Value::Null;
+    }
+    if (reset - block).num_seconds().abs() > 300 {
+        return Value::Null;
+    }
+    if let Some(error_reset) = parse_datetime(&evidence["error_reset_at"]) {
+        if (reset - error_reset).num_seconds().abs() > 300 {
+            return Value::Null;
+        }
     }
     let Some(stamp) = parse_datetime(&evidence["created_at"]).filter(|t| *t <= at) else {
         return Value::Null;

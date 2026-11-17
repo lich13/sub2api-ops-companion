@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { beforeEach, afterEach, it, expect, vi } from 'vitest';
 import TestDialog, { nextBeijingMinute, appointmentTimestamp, nextCycleAppointment } from './TestDialog';
 import { api, command } from './bridge';
-import { setOperations } from './accountOperations';
+import { getOperations, setOperations } from './accountOperations';
 import type { Account, UsageSummary, UsageWindow } from './types';
 vi.mock('./bridge', () => ({ api: vi.fn(), command: vi.fn() }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -291,4 +291,65 @@ it('keeps the selected connection model during refresh and failure, then drops r
   expect(select.value).toBe(models[0].id);
   expect(select.textContent).toContain('当前不可用');
   expect(select.options).toHaveLength(2);
+});
+
+it('cancels an in-flight submission as soon as its job ID arrives without reusing stale IDs', async () => {
+  const previous = vi.mocked(api).getMockImplementation()!;
+  let run = 0;
+  let resolveSecondSubmit!: (value: never) => void;
+  vi.mocked(api).mockImplementation((method, path, body) => {
+    if (method === 'POST' && path === '/accounts/42/operations') {
+      run += 1;
+      if (run === 1) {
+        return Promise.resolve({
+          id: '1'.repeat(32),
+          account_id: 42,
+          account_name: 'Fixture',
+          action: 'test',
+          status: 'completed',
+          requested: {},
+          events: [{ type: 'test_complete', success: true }],
+        } as never);
+      }
+      return new Promise(resolve => { resolveSecondSubmit = resolve; });
+    }
+    if (method === 'POST' && path === `/account-operations/${'2'.repeat(32)}/cancel`) {
+      return Promise.resolve({
+        id: '2'.repeat(32),
+        account_id: 42,
+        account_name: 'Fixture',
+        action: 'test',
+        status: 'cancelled',
+        requested: {},
+      } as never);
+    }
+    return previous(method, path, body);
+  });
+
+  await act(async () => root.render(<TestDialog account={account} online close={() => {}}/>));
+  // First run finishes normally and populates operationId internally before finally resets it.
+  await act(async () => startButton().click());
+  expect(container.textContent).toContain('测试通过');
+
+  // Second run starts; click Cancel BEFORE submitOperation resolves.
+  await act(async () => startButton().click());
+  const cancelBtn = [...container.querySelectorAll('button')].find(button => button.textContent === '取消')!;
+  await act(async () => cancelBtn.click());
+  // Must NOT cancel stale job 1!
+  expect(vi.mocked(api).mock.calls.some(([, path]) => path.includes('1'.repeat(32)))).toBe(false);
+
+  // Now submitOperation resolves with job 2 -> must immediately cancel job 2 and skip followOperation.
+  await act(async () => resolveSecondSubmit({
+    id: '2'.repeat(32),
+    account_id: 42,
+    account_name: 'Fixture',
+    action: 'test',
+    status: 'queued',
+    requested: {},
+  } as never));
+
+  expect(api).toHaveBeenCalledWith('POST', `/account-operations/${'2'.repeat(32)}/cancel`, {});
+  expect(vi.mocked(api).mock.calls.some(([method, path]) => method === 'GET' && path.includes('2'.repeat(32)))).toBe(false);
+  expect(getOperations()[0]).toMatchObject({ id: '2'.repeat(32), status: 'cancelled' });
+  expect(container.textContent).toContain('已取消，未重放请求');
 });

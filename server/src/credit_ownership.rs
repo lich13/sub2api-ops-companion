@@ -45,12 +45,50 @@ fn quota_extra(key: &str) -> bool {
     [
         "codex_5h_",
         "codex_7d_",
+        "codex_primary_",
+        "codex_secondary_",
+        "codex_spark_",
         "codex_usage_",
         "codex_reset_credit_",
         "codex_credits_",
+        "codex_turn_ticket:",
+        "passive_usage_",
     ]
     .iter()
     .any(|prefix| key.starts_with(prefix))
+        || matches!(
+            key,
+            "codex_auto_reset_credit_state"
+                | "codex_referral_snapshot"
+                | "codex_degradation_check"
+                | "codex_fingerprint_seed"
+                | "model_rate_limits"
+                | "antigravity_quota_scopes"
+                | "session_window_utilization"
+                | "upstream_billing_probe"
+                | "upstream_billing_rate_sync"
+                | "ollama_cloud_usage"
+                | "ollama_cloud_usage_snapshot"
+                | "ollama_cloud_usage_session"
+                | "opencode_go_usage_snapshot"
+                | "grok_billing_snapshot"
+                | "grok_usage_snapshot"
+                | "grok_quota_snapshot"
+                | "grok_sched_reset_at"
+                | "privacy_mode"
+                | "openai_compact_supported"
+                | "openai_compact_last_status"
+                | "openai_compact_last_error"
+                | "upstream_model_metadata"
+                | "quota_used"
+                | "quota_daily_used"
+                | "quota_daily_start"
+                | "quota_daily_reset_at"
+                | "quota_weekly_used"
+                | "quota_weekly_start"
+                | "quota_weekly_reset_at"
+                | "crs_synced_at"
+        )
 }
 fn priority(row: &Value) -> &Value {
     row.get("account_priority").unwrap_or(&row["priority"])

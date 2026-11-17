@@ -114,7 +114,15 @@ export default function TestDialog({ account, online, close }: {account: Account
     reader.onerror = failed; reader.onabort = failed;
     try { reader.readAsDataURL(file); } catch { failed(); }
   }
-  async function cancel() { cancelled.current = true; if (operationId.current) await api("POST", `/account-operations/${operationId.current}/cancel`, {}); }
+  async function cancel() {
+    cancelled.current = true;
+    const id = operationId.current;
+    if (id) {
+      operationId.current = null;
+      const stopped = await api<Operation>("POST", `/account-operations/${id}/cancel`, {});
+      publishOperation(stopped);
+    }
+  }
   async function fillCycleTime() {
     if (cycleReading.current || running.current || !online) return;
     cycleReading.current = true; setCycleBusy(true); setError("");
@@ -146,7 +154,7 @@ export default function TestDialog({ account, online, close }: {account: Account
       finally { running.current = false; if (alive.current) setBusy(false); }
       return;
     }
-    running.current = true; cancelled.current = false; setBusy(true); setText(""); setError(""); setOutputs([]); setResult(null); setStatus("正在连接");
+    running.current = true; cancelled.current = false; operationId.current = null; setBusy(true); setText(""); setError(""); setOutputs([]); setResult(null); setStatus("正在连接");
     let terminal = false;
     try {
       const body = {mode, model_id: standalone ? "" : model,
@@ -161,11 +169,17 @@ export default function TestDialog({ account, online, close }: {account: Account
         if (event.type === "error" || event.type === "test_complete") { terminal = true; setResult(event); setStatus(event.type === "test_complete" && event.success ? "测试通过" : "测试失败"); if (event.error) setError(event.error); }
       };
       const job = await submitOperation(account, 'test', { ...body, confirmed: true });
+      if (cancelled.current) {
+        const stopped = await api<Operation>("POST", `/account-operations/${job.id}/cancel`, {});
+        publishOperation(stopped);
+        return;
+      }
       operationId.current = job.id;
       await followOperation(job, receive);
       if (!terminal && !cancelled.current && alive.current) setError("连接结束，未收到完成结果");
     } catch (e) { if (alive.current && !cancelled.current) setError(String(e).replace(/^Error: /, "")); }
     finally {
+      operationId.current = null;
       running.current = false;
       if (alive.current) { setBusy(false); if (cancelled.current) setStatus("已取消，未重放请求"); }
       void command("refresh");
