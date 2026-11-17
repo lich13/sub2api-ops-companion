@@ -5,6 +5,7 @@ public struct KeyQuotaSettingsSheet: View {
     public let targetAccount: Account?
     public let onClose: () -> Void
 
+    @State private var autoRefresh: Bool = true
     @State private var secondsText: String = "60"
     @State private var globalRevision: String = ""
     @State private var accountRevision: String = ""
@@ -23,7 +24,7 @@ public struct KeyQuotaSettingsSheet: View {
 
     public var body: some View {
         LinearModalCard(
-            title: targetAccount == nil ? "余额刷新设置" : "余额令牌设置",
+            title: targetAccount == nil ? "余额刷新设置" : "余额查询设置",
             subtitle: targetAccount.map { "\($0.name) #\($0.id)" },
             width: 460,
             closeDisabled: saving,
@@ -76,22 +77,29 @@ public struct KeyQuotaSettingsSheet: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("后台余额轮询间隔（秒）")
-                    .font(DS.fontCompactSemibold)
-                    .foregroundStyle(DS.ink)
-                TextField(text: $secondsText, prompt: Text(verbatim: "15–86400")) { EmptyView() }
-                    .textFieldStyle(.plain)
-                    .font(DS.fontBody)
-                    .monospacedDigit()
-                    .padding(.horizontal, 10)
-                    .frame(height: DS.controlHeightField)
-                    .background(DS.surface)
-                    .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-                Text("适用于所有启用原生余额读取的按量 API Key 账号")
-                    .font(DS.fontResetTime)
-                    .foregroundStyle(DS.muted)
+            if targetAccount == nil {
+                VStack(alignment: .leading, spacing: 8) {
+                    LinearCheckbox(isChecked: autoRefresh, label: "余额自动刷新", disabled: saving || !store.state.online) {
+                        autoRefresh.toggle()
+                    }
+                    if autoRefresh {
+                        Text("间隔 / 秒")
+                            .font(DS.fontCompactSemibold)
+                            .foregroundStyle(DS.ink)
+                        TextField(text: $secondsText, prompt: Text(verbatim: "10–86400")) { EmptyView() }
+                            .textFieldStyle(.plain)
+                            .font(DS.fontBody)
+                            .monospacedDigit()
+                            .padding(.horizontal, 10)
+                            .frame(height: DS.controlHeightField)
+                            .background(DS.surface)
+                            .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
+                            .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+                    }
+                    Text("适用于所有启用原生余额读取的按量 API Key 账号")
+                        .font(DS.fontResetTime)
+                        .foregroundStyle(DS.muted)
+                }
             }
 
             if !error.isEmpty {
@@ -108,7 +116,7 @@ public struct KeyQuotaSettingsSheet: View {
                 Task { await submit() }
             }
             .buttonStyle(LinearButtonStyle(variant: .primary))
-            .disabled(!store.state.online || loading || saving)
+            .disabled(!store.state.online || loading || saving || loadedRevision.isEmpty)
         }
         .sub2opsDialogFocus(onEscape: onClose)
         .task {
@@ -121,13 +129,15 @@ public struct KeyQuotaSettingsSheet: View {
         loading = true
         defer { loading = false }
         do {
-            let global: KeyQuotaGlobalConfig = try await RustBridge.shared.api("GET", "/config/key-quota")
-            secondsText = String(global.seconds)
-            globalRevision = global.revision
             if let acc = targetAccount {
                 let accSettings: AccountKeyQuotaSettings = try await RustBridge.shared.api("GET", "/accounts/\(acc.id)/key-quota-settings")
                 hasToken = accSettings.has_access_token
                 accountRevision = accSettings.revision
+            } else {
+                let global: KeyQuotaGlobalConfig = try await RustBridge.shared.api("GET", "/config/key-quota")
+                autoRefresh = global.seconds != 0
+                secondsText = String(global.seconds == 0 ? 60 : global.seconds)
+                globalRevision = global.revision
             }
             error = ""
         } catch {
@@ -166,39 +176,49 @@ public struct KeyQuotaSettingsSheet: View {
         }
     }
 
+    private var loadedRevision: String {
+        targetAccount == nil ? globalRevision : accountRevision
+    }
+
     private func submit() async {
-        guard let secs = Int(secondsText.trimmingCharacters(in: .whitespacesAndNewlines)), secs >= 15 else {
-            error = "请输入不少于 15 秒的整数间隔"
-            return
+        // Server contract: 10–86400 seconds, or 0 to turn automatic refresh off.
+        let secs = autoRefresh ? Int(secondsText.trimmingCharacters(in: .whitespacesAndNewlines)) : 0
+        if targetAccount == nil {
+            guard let secs, !autoRefresh || (10...86400).contains(secs) else {
+                error = "余额刷新间隔需为 10–86400 秒"
+                return
+            }
         }
         saving = true
+        error = ""
         defer { saving = false }
         do {
-            let updatedGlobal: KeyQuotaGlobalConfig = try await RustBridge.shared.api(
-                "PUT",
-                "/config/key-quota",
-                body: .object([
-                    "seconds": .int(Int64(secs)),
-                    "expected_revision": .string(globalRevision),
-                ])
-            )
-            globalRevision = updatedGlobal.revision
-
-            let trimmedToken = tokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let acc = targetAccount, !trimmedToken.isEmpty {
+            if let acc = targetAccount {
+                let trimmedToken = tokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                var body: [String: JSONValue] = ["expected_revision": .string(accountRevision)]
+                if !trimmedToken.isEmpty {
+                    body["access_token"] = .string(trimmedToken)
+                }
                 let updatedAcc: AccountKeyQuotaSettings = try await RustBridge.shared.api(
                     "PUT",
                     "/accounts/\(acc.id)/key-quota-settings",
-                    body: .object([
-                        "access_token": .string(trimmedToken),
-                        "expected_revision": .string(accountRevision),
-                    ])
+                    body: .object(body)
                 )
                 hasToken = updatedAcc.has_access_token
                 accountRevision = updatedAcc.revision
+            } else {
+                let updatedGlobal: KeyQuotaGlobalConfig = try await RustBridge.shared.api(
+                    "PUT",
+                    "/config/key-quota",
+                    body: .object([
+                        "seconds": .int(Int64(secs ?? 0)),
+                        "expected_revision": .string(globalRevision),
+                    ])
+                )
+                globalRevision = updatedGlobal.revision
             }
             store.refresh()
-            store.showToast("余额刷新设置已保存")
+            store.showToast(targetAccount == nil ? "余额刷新设置已保存" : "余额查询设置已保存")
             onClose()
         } catch {
             self.error = error.localizedDescription

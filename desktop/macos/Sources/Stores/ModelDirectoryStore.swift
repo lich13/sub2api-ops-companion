@@ -55,8 +55,9 @@ public final class ModelDirectoryStore {
         if !refresh, let cached = cache[accountId] {
             return cached
         }
-        let suffix = refresh ? "?refresh=true" : ""
-        let raw: JSONValue = try await RustBridge.shared.api("GET", "/accounts/\(accountId)/models\(suffix)")
+        // The client allowlist and the server only serve the model-test directory.
+        let suffix = refresh ? "&refresh=true" : ""
+        let raw: JSONValue = try await RustBridge.shared.api("GET", "/accounts/\(accountId)/models?purpose=model_test\(suffix)")
         let data = try JSONEncoder().encode(raw)
         let list: [AccountModelItem]
         if let direct = try? JSONDecoder().decode([AccountModelItem].self, from: data) {

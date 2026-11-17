@@ -8,6 +8,7 @@ public struct UsageCellView: View {
     public let onOpenKeyQuotaSettings: (Account) -> Void
 
     @State private var confirmReset: Bool = false
+    @State private var confirmProbe: Bool = false
     @State private var actionBusy: String = ""
     @State private var creditExpanded: Bool = false
 
@@ -260,14 +261,14 @@ public struct UsageCellView: View {
                     if summary?.native_read == true {
                         nativeUsage.refresh(accountId: account.id)
                     } else {
-                        await runUsageOperation(action: "usage")
+                        await runUsageOperation(action: "usage", payload: Self.usagePayload("query_usage"))
                     }
                 }
             }
             if actions.contains("query_reset_credits") {
                 let countText = summary?.reset_credits?.available.map { "次数 \($0)" } ?? "次数"
                 inlineActionButton(title: countText, icon: "arrow.clockwise", color: DS.usageActionBlue, key: "credits") {
-                    await runUsageOperation(action: "usage", payload: ["include_reset_credits": .bool(true)])
+                    await runUsageOperation(action: "usage", payload: Self.usagePayload("query_reset_credits"))
                 }
             }
             if actions.contains("reset_quota") {
@@ -275,28 +276,47 @@ public struct UsageCellView: View {
                     HStack(spacing: 6) {
                         Button("确认用卡") {
                             confirmReset = false
-                            Task { await runUsageOperation(action: "reset_quota", payload: ["action": .string("reset_quota"), "confirmed": .bool(true)]) }
+                            Task { await runUsageOperation(action: "reset_quota", payload: Self.usagePayload("reset_quota", confirmed: true)) }
                         }
                         .font(DS.fontResetTimeSemibold)
                         .foregroundStyle(DS.usageActionOrange)
-                        .buttonStyle(.plain)
+                        .buttonStyle(.linearPlain)
 
                         Button("取消") {
                             confirmReset = false
                         }
                         .font(DS.fontResetTime)
                         .foregroundStyle(DS.muted)
-                        .buttonStyle(.plain)
+                        .buttonStyle(.linearPlain)
                     }
                 } else {
-                    inlineActionButton(title: "重置", icon: "arrow.counterclockwise", color: DS.usageActionOrange, key: "reset_quota") {
+                    inlineActionButton(title: "重置", icon: "arrow.counterclockwise", color: DS.usageActionOrange, key: "reset_quota", extraDisabled: (summary?.reset_credits?.available ?? 0) <= 0) {
                         confirmReset = true
                     }
                 }
             }
             if actions.contains("probe_quota") {
-                inlineActionButton(title: "探测", icon: "arrow.clockwise", color: DS.usageActionCyan, key: "probe") {
-                    await runUsageOperation(action: "usage", payload: ["probe": .bool(true)])
+                if confirmProbe {
+                    HStack(spacing: 6) {
+                        Button("确认探测") {
+                            confirmProbe = false
+                            Task { await runUsageOperation(action: "usage", payload: Self.usagePayload("probe_quota", confirmed: true)) }
+                        }
+                        .font(DS.fontResetTimeSemibold)
+                        .foregroundStyle(DS.usageActionCyan)
+                        .buttonStyle(.linearPlain)
+
+                        Button("取消") {
+                            confirmProbe = false
+                        }
+                        .font(DS.fontResetTime)
+                        .foregroundStyle(DS.muted)
+                        .buttonStyle(.linearPlain)
+                    }
+                } else {
+                    inlineActionButton(title: "探测", icon: "arrow.clockwise", color: DS.usageActionCyan, key: "probe") {
+                        confirmProbe = true
+                    }
                 }
             }
             if account.type == "apikey" && summary?.key_quota != nil {
@@ -307,7 +327,7 @@ public struct UsageCellView: View {
                         .font(DS.iconFont(10))
                         .foregroundStyle(DS.muted)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.linearPlain)
                 .help("配置余额查询访问令牌")
             }
         }
@@ -319,6 +339,7 @@ public struct UsageCellView: View {
         icon: String,
         color: Color,
         key: String,
+        extraDisabled: Bool = false,
         action: @escaping @MainActor () async -> Void
     ) -> some View {
         let isBusy = actionBusy == key
@@ -334,9 +355,9 @@ public struct UsageCellView: View {
             }
             .foregroundStyle(color)
         }
-        .buttonStyle(.plain)
-        .disabled(!store.state.online || !actionBusy.isEmpty)
-        .opacity(!store.state.online || (!actionBusy.isEmpty && !isBusy) ? 0.45 : 1.0)
+        .buttonStyle(.linearPlain)
+        .disabled(!store.state.online || !actionBusy.isEmpty || extraDisabled)
+        .opacity(!store.state.online || extraDisabled || (!actionBusy.isEmpty && !isBusy) ? 0.45 : 1.0)
     }
 
     private func autoResetCreditBlock(_ state: AutoResetCreditState) -> some View {
@@ -354,7 +375,7 @@ public struct UsageCellView: View {
                         .foregroundStyle(DS.muted)
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.linearPlain)
 
             if creditExpanded {
                 VStack(alignment: .leading, spacing: 2) {
@@ -378,6 +399,11 @@ public struct UsageCellView: View {
                 .padding(.leading, 9)
             }
         }
+    }
+
+    /// Server contract for `usage` / `reset_quota`: `{action, confirmed}` only.
+    static func usagePayload(_ action: String, confirmed: Bool = false) -> [String: JSONValue] {
+        ["action": .string(action), "confirmed": .bool(confirmed)]
     }
 
     private func runUsageOperation(action: String, payload: [String: JSONValue] = [:]) async {

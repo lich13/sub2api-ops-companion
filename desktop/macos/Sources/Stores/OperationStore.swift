@@ -247,7 +247,10 @@ public final class OperationStore {
         customPayload: [String: JSONValue]? = nil
     ) async throws -> OperationBatch {
         let currentEpoch = epoch
-        let payloadObj: [String: JSONValue] = customPayload ?? (action == "delete" ? ["confirmed": .bool(true)] : [:])
+        // Server contract: `test` and `delete` batches require `{confirmed: true}`;
+        // `groups` and `recover` require `{}`.
+        let payloadObj: [String: JSONValue] = customPayload
+            ?? (action == "delete" || action == "test" ? ["confirmed": .bool(true)] : [:])
         let batch: OperationBatch = try await RustBridge.shared.api(
             "POST",
             "/account-operations/batch",
