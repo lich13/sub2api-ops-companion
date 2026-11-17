@@ -18,5 +18,7 @@ desktop/src-tauri/gen/android/app/tauri.build.gradle.kts
 desktop/src-tauri/gen/android/tauri.settings.gradle
 desktop/src-tauri/gen/android/app/src/main/jniLibs/
 desktop/artifacts/
+desktop/macos/.build/
+desktop/macos/.swiftpm/
 experiments/connection_probe/rust/target/
 server/target/

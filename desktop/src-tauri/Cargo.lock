@@ -3402,8 +3402,6 @@ name = "sub2ops"
 version = "0.1.93"
 dependencies = [
  "keyring",
- "objc2",
- "objc2-app-kit",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

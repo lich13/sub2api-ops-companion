@@ -31,7 +31,7 @@
     "active": true,
     "android": { "minSdkVersion": 31 },
     "targets": ["app", "dmg"],
-    "macOS": { "minimumSystemVersion": "12.0", "signingIdentity": "-", "infoPlist": "Info.plist" },
+    "macOS": { "minimumSystemVersion": "14.0", "signingIdentity": "-", "infoPlist": "Info.plist" },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

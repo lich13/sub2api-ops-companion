@@ -1,22 +1,11 @@
-use objc2::{rc::Retained, MainThreadMarker};
-use objc2_app_kit::NSApplication;
-use std::cell::OnceCell;
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::watch;
 
 const BACKGROUND: &str = "应用已转入后台，已停止读取";
 
-thread_local! {
-    static APP: OnceCell<Option<Retained<NSApplication>>> = const { OnceCell::new() };
-}
-
 pub(crate) fn application_active() -> bool {
-    APP.with(|cell| {
-        cell.get_or_init(|| MainThreadMarker::new().map(NSApplication::sharedApplication))
-            .as_ref()
-            .is_some_and(|app| app.isActive())
-    })
+    crate::macos_bridge::application_active()
 }
 
 pub(crate) fn record_path(path: &str) -> bool {

@@ -2,8 +2,6 @@ mod account_creation;
 mod key_quota;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-#[cfg(desktop)]
-use std::sync::Mutex as StdMutex;
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -12,13 +10,9 @@ use std::{
     },
     time::Duration,
 };
-#[cfg(desktop)]
-use tauri::{
-    menu::{Menu, MenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    WebviewUrl, WebviewWindowBuilder,
-};
-use tauri::{Emitter, Manager, State, WindowEvent};
+#[cfg(mobile)]
+use tauri::{Emitter, WindowEvent};
+use tauri::{Manager, State};
 #[cfg(desktop)]
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_opener::OpenerExt;
@@ -33,9 +27,9 @@ use api_http::{http, http_detailed, HttpFailure};
 const RELEASES: &str = "https://github.com/lich13/sub2api-ops-companion/releases";
 
 #[cfg(target_os = "macos")]
-mod record_activity;
+mod macos_bridge;
 #[cfg(target_os = "macos")]
-mod tray_macos;
+mod record_activity;
 
 #[derive(Clone, Default, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -115,57 +109,6 @@ struct Runtime {
     read_epoch: watch::Sender<u64>,
     #[cfg(target_os = "macos")]
     record_activity: record_activity::RecordActivity,
-    #[cfg(desktop)]
-    pinned: AtomicBool,
-    #[cfg(desktop)]
-    quitting: AtomicBool,
-    #[cfg(desktop)]
-    panel: StdMutex<PanelLifecycle>,
-}
-
-#[cfg(desktop)]
-struct PanelLifecycle {
-    generation: u64,
-    focused: bool,
-    showing: bool,
-    height: f64,
-    anchor: Option<tauri::Rect>,
-}
-
-#[cfg(desktop)]
-impl Default for PanelLifecycle {
-    fn default() -> Self {
-        Self {
-            generation: 0,
-            focused: false,
-            showing: false,
-            height: 520.,
-            anchor: None,
-        }
-    }
-}
-
-#[cfg(desktop)]
-impl PanelLifecycle {
-    fn show(&mut self, focused: bool) {
-        self.generation += 1;
-        self.focused = focused;
-        self.showing = false;
-    }
-    fn focus(&mut self) {
-        self.generation += 1;
-        self.focused = true;
-    }
-    fn blur(&mut self) -> Option<u64> {
-        if !self.focused || self.showing {
-            return None;
-        }
-        self.focused = false;
-        Some(self.generation)
-    }
-    fn can_hide(&self, generation: u64) -> bool {
-        generation == self.generation && !self.focused && !self.showing
-    }
 }
 
 fn normalize_base(raw: &str) -> Result<String, String> {
@@ -615,73 +558,13 @@ fn model_options_path(path: &str) -> bool {
         .is_some_and(|plain| account_path(plain, "/models"))
 }
 
-fn publish(app: &tauri::AppHandle, value: &ViewState) {
+fn publish(_app: &tauri::AppHandle, value: &ViewState) {
     // Android's window visibility getter always returns false. Its suspended /
     // resumed events already control polling and carry foreground in ViewState.
     #[cfg(mobile)]
-    let _ = app.emit("ops-state", value);
-    #[cfg(desktop)]
-    publish_visible_windows(app, value);
-}
-
-#[cfg(desktop)]
-fn publish_visible_windows(app: &tauri::AppHandle, value: &ViewState) {
-    let windows = app.webview_windows();
-    let visible: Vec<&str> = windows
-        .iter()
-        .filter_map(|(label, window)| {
-            let is_visible = window.is_visible().unwrap_or(false);
-            is_visible.then_some(label.as_str())
-        })
-        .collect();
-    if visible.is_empty() {
-        return;
-    }
-    if visible.len() == windows.len() {
-        let _ = app.emit("ops-state", value);
-    } else {
-        for label in visible {
-            let _ = app.emit_to(label, "ops-state", value);
-        }
-    }
-}
-
-#[cfg(desktop)]
-fn emit_view_to_window(app: &tauri::AppHandle, label: &str) {
-    let state = app.state::<Arc<Runtime>>();
+    let _ = _app.emit("ops-state", value);
     #[cfg(target_os = "macos")]
-    let changed = state
-        .record_activity
-        .set_active(record_activity::application_active());
-    #[cfg(not(target_os = "macos"))]
-    let changed = false;
-    if let Ok(mut view) = state.view.try_lock() {
-        #[cfg(target_os = "macos")]
-        if changed {
-            view.foreground = state.record_activity.active();
-        }
-        if changed {
-            publish(app, &view);
-        } else {
-            let _ = app.emit_to(label, "ops-state", &*view);
-        }
-    } else {
-        let app = app.clone();
-        let state = state.inner().clone();
-        let label = label.to_owned();
-        tauri::async_runtime::spawn(async move {
-            let mut view = state.view.lock().await;
-            #[cfg(target_os = "macos")]
-            if changed {
-                view.foreground = state.record_activity.active();
-            }
-            if changed {
-                publish(&app, &view);
-            } else {
-                let _ = app.emit_to(&label, "ops-state", &*view);
-            }
-        });
-    };
+    macos_bridge::publish_state(value);
 }
 
 fn apply_refresh(view: &mut ViewState, result: Result<Value, HttpFailure>) {
@@ -739,25 +622,8 @@ async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
     }
     let mut view = state.view.lock().await;
     apply_refresh(&mut view, result);
-    #[cfg(desktop)]
-    if let Some(tray) = app.tray_by_id("ops") {
-        let text = if view.online {
-            "Sub2Ops · 已连接"
-        } else {
-            match view
-                .upstream_connection
-                .as_ref()
-                .and_then(|c| c["state"].as_str())
-            {
-                Some("auth_rejected") => "Sub2Ops · 管理员 Key 被拒绝",
-                Some("network_unreachable") => "Sub2Ops · 上游不可达",
-                Some("route_not_found") => "Sub2Ops · 管理接口路径不兼容",
-                Some("protocol_mismatch") => "Sub2Ops · 管理接口响应不兼容",
-                _ => "Sub2Ops · 离线",
-            }
-        };
-        let _ = tray.set_tooltip(Some(text));
-    }
+    #[cfg(target_os = "macos")]
+    macos_bridge::publish_tooltip(&view);
     publish(app, &view);
 }
 
@@ -817,12 +683,12 @@ async fn check_record_activity(app: &tauri::AppHandle) -> Result<(), String> {
     }
 }
 
-#[tauri::command]
+#[cfg_attr(mobile, tauri::command)]
 async fn get_state(state: State<'_, Arc<Runtime>>) -> Result<ViewState, String> {
     Ok(state.view.lock().await.clone())
 }
 
-#[tauri::command]
+#[cfg_attr(mobile, tauri::command)]
 async fn connect(
     app: tauri::AppHandle,
     state: State<'_, Arc<Runtime>>,
@@ -886,7 +752,7 @@ async fn connect(
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(mobile, tauri::command)]
 async fn save_connection_profile(
     app: tauri::AppHandle,
     state: State<'_, Arc<Runtime>>,
@@ -966,7 +832,7 @@ where
     Ok(prefs)
 }
 
-#[tauri::command]
+#[cfg_attr(mobile, tauri::command)]
 async fn remove_connection(
     app: tauri::AppHandle,
     state: State<'_, Arc<Runtime>>,
@@ -981,7 +847,7 @@ async fn remove_connection(
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(mobile, tauri::command)]
 async fn disconnect(app: tauri::AppHandle, state: State<'_, Arc<Runtime>>) -> Result<(), String> {
     let _gate = state.network.lock().await;
     let mut view = state.view.lock().await;
@@ -1001,13 +867,13 @@ async fn disconnect(app: tauri::AppHandle, state: State<'_, Arc<Runtime>>) -> Re
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(mobile, tauri::command)]
 async fn refresh(state: State<'_, Arc<Runtime>>) -> Result<(), String> {
     state.wake.notify_one();
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(mobile, tauri::command)]
 async fn api_request(
     _app: tauri::AppHandle,
     state: State<'_, Arc<Runtime>>,
@@ -1068,7 +934,7 @@ async fn api_request(
     result
 }
 
-#[tauri::command]
+#[cfg_attr(mobile, tauri::command)]
 async fn preferences(
     app: tauri::AppHandle,
     state: State<'_, Arc<Runtime>>,
@@ -1111,71 +977,12 @@ async fn preferences(
         prefs.record_columns = Some(normalize_record_columns(columns));
     }
     save_preferences(&state.path, &prefs)?;
-    #[cfg(desktop)]
-    state.pinned.store(pinned, Ordering::Relaxed);
     view.preferences = prefs;
     publish(&app, &view);
     Ok(())
 }
 
-#[tauri::command]
-#[cfg(desktop)]
-fn show_main(app: tauri::AppHandle) -> Result<(), String> {
-    queue_main(app, true)
-}
-
-#[cfg(desktop)]
-fn main_visibility(app: &tauri::AppHandle, visible: bool) -> Result<(), String> {
-    let window = app.get_webview_window("main").ok_or("主窗口不存在")?;
-    if !visible {
-        window.hide().map_err(|_| "无法关闭主窗口")?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let policy = if visible {
-            tauri::ActivationPolicy::Regular
-        } else {
-            tauri::ActivationPolicy::Accessory
-        };
-        app.set_activation_policy(policy)
-            .map_err(|_| "无法切换 Dock 状态")?;
-        app.set_dock_visibility(visible)
-            .map_err(|_| "无法更新 Dock 图标")?;
-        if visible {
-            app.show().map_err(|_| "无法显示客户端")?;
-        }
-    }
-    if visible {
-        window.show().map_err(|_| "无法打开窗口")?;
-        window.unminimize().map_err(|_| "无法恢复主窗口")?;
-        window.set_focus().map_err(|_| "无法聚焦主窗口")?;
-        emit_view_to_window(app, "main");
-        app.state::<Arc<Runtime>>().wake.notify_one();
-    }
-    panel_trace(
-        app,
-        "main_visibility",
-        if visible {
-            "open_dock_visible"
-        } else {
-            "closed_dock_hidden"
-        },
-    );
-    Ok(())
-}
-
-#[cfg(desktop)]
-fn queue_main(app: tauri::AppHandle, visible: bool) -> Result<(), String> {
-    let handle = app.clone();
-    app.run_on_main_thread(move || {
-        if let Err(error) = main_visibility(&handle, visible) {
-            panel_trace(&handle, "main_failed", &error);
-        }
-    })
-    .map_err(|_| "无法调度主窗口操作".to_string())
-}
-
-#[tauri::command]
+#[cfg_attr(mobile, tauri::command)]
 async fn open_authorization_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
     if !account_creation::authorization_url(&url) {
         return Err("授权链接必须是 HTTPS 地址".into());
@@ -1185,7 +992,7 @@ async fn open_authorization_url(app: tauri::AppHandle, url: String) -> Result<()
         .map_err(|_| "无法打开系统浏览器".into())
 }
 
-#[tauri::command]
+#[cfg_attr(mobile, tauri::command)]
 async fn open_sub2api_release(app: tauri::AppHandle, url: String) -> Result<(), String> {
     let parsed = url::Url::parse(&url).map_err(|_| "发布链接无效")?;
     if parsed.scheme() != "https"
@@ -1203,7 +1010,7 @@ async fn open_sub2api_release(app: tauri::AppHandle, url: String) -> Result<(), 
         .map_err(|_| "无法打开系统浏览器".into())
 }
 
-#[tauri::command]
+#[cfg_attr(mobile, tauri::command)]
 async fn check_updates(
     app: tauri::AppHandle,
     state: State<'_, Arc<Runtime>>,
@@ -1328,33 +1135,7 @@ fn release_update(releases: &Value, current: &str, android: bool) -> Option<(Str
 }
 
 #[cfg(desktop)]
-fn panel_bounds(
-    anchor: tauri::PhysicalPosition<f64>,
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-    scale: f64,
-    content_height: f64,
-) -> (tauri::PhysicalPosition<i32>, tauri::PhysicalSize<u32>) {
-    let w = (420. * scale).min((width as f64 - 16.).max(1.));
-    let h = (content_height.clamp(128., 520.) * scale).min((height as f64 - 16.).max(1.));
-    let px = (anchor.x - w + 20.).clamp(
-        x as f64 + 8.,
-        (x as f64 + width as f64 - w - 8.).max(x as f64 + 8.),
-    );
-    let py = (anchor.y + 10.).clamp(
-        y as f64 + 8.,
-        (y as f64 + height as f64 - h - 8.).max(y as f64 + 8.),
-    );
-    (
-        tauri::PhysicalPosition::new(px as i32, py as i32),
-        tauri::PhysicalSize::new(w as u32, h as u32),
-    )
-}
-
-#[cfg(desktop)]
-fn panel_trace(app: &tauri::AppHandle, stage: &str, detail: &str) {
+pub(crate) fn panel_trace(app: &tauri::AppHandle, stage: &str, detail: &str) {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
     let Ok(dir) = app.path().app_config_dir() else {
@@ -1380,257 +1161,8 @@ fn panel_trace(app: &tauri::AppHandle, stage: &str, detail: &str) {
 }
 
 #[cfg(desktop)]
-fn create_quick(app: &tauri::AppHandle) -> tauri::Result<()> {
-    WebviewWindowBuilder::new(
-        app,
-        "quick",
-        WebviewUrl::App("index.html?panel=quick".into()),
-    )
-    .title("Sub2Ops 快捷面板")
-    .inner_size(420., 520.)
-    .decorations(false)
-    .resizable(false)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .visible(false)
-    .focused(false)
-    .build()?;
-    panel_trace(app, "precreated", "hidden");
-    Ok(())
-}
-
-#[cfg(desktop)]
-fn quick_panel(
-    app: &tauri::AppHandle,
-    rect: tauri::Rect,
-) -> Result<(), Box<dyn std::error::Error>> {
-    panel_trace(app, "show_begin", "");
-    let window = app.get_webview_window("quick").ok_or("快捷窗口未创建")?;
-    let height = {
-        let state = app.state::<Arc<Runtime>>();
-        let mut panel = state.panel.lock().unwrap();
-        panel.show(false);
-        panel.showing = true;
-        panel.anchor = Some(rect);
-        panel.height
-    };
-    position_quick(app, &window, rect, height)?;
-    #[cfg(target_os = "macos")]
-    app.show()?;
-    window.show()?;
-    emit_view_to_window(app, "quick");
-    panel_trace(app, "shown", "");
-    window.set_focus()?;
-    let focused = window.is_focused()?;
-    {
-        let state = app.state::<Arc<Runtime>>();
-        let mut panel = state.panel.lock().unwrap();
-        panel.showing = false;
-        panel.focused = focused;
-    }
-    panel_trace(
-        app,
-        "focus_requested",
-        if focused { "focused" } else { "awaiting_event" },
-    );
-    app.state::<Arc<Runtime>>().wake.notify_one();
-    Ok(())
-}
-
-#[cfg(desktop)]
-fn position_quick(
-    app: &tauri::AppHandle,
-    window: &tauri::WebviewWindow,
-    rect: tauri::Rect,
-    height: f64,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let position = rect.position.to_physical::<f64>(1.0);
-    let size = rect.size.to_physical::<f64>(1.0);
-    let anchor = tauri::PhysicalPosition::new(position.x + size.width, position.y + size.height);
-    let monitors = window.available_monitors()?;
-    let monitor = monitors
-        .iter()
-        .find(|m| {
-            let p = m.position();
-            let s = m.size();
-            anchor.x >= p.x as f64
-                && anchor.x < p.x as f64 + s.width as f64
-                && anchor.y >= p.y as f64
-                && anchor.y < p.y as f64 + s.height as f64
-        })
-        .ok_or("菜单栏边界未匹配到屏幕")?;
-    {
-        let m = monitor;
-        let area = m.work_area();
-        let (position, size) = panel_bounds(
-            anchor,
-            area.position.x,
-            area.position.y,
-            area.size.width,
-            area.size.height,
-            m.scale_factor(),
-            height,
-        );
-        window.set_size(size)?;
-        window.set_position(position)?;
-        panel_trace(
-            app,
-            "positioned",
-            &format!(
-                "x={} y={} width={} height={}",
-                position.x, position.y, size.width, size.height
-            ),
-        );
-    }
-    Ok(())
-}
-
-#[tauri::command]
-#[cfg(desktop)]
-fn resize_quick(
-    app: tauri::AppHandle,
-    window: tauri::WebviewWindow,
-    height: f64,
-) -> Result<(), String> {
-    if window.label() != "quick" || !height.is_finite() {
-        return Err("快捷窗口尺寸无效".into());
-    }
-    let handle = app.clone();
-    app.run_on_main_thread(move || {
-        let state = handle.state::<Arc<Runtime>>();
-        let height = height.ceil().clamp(128., 520.);
-        let anchor = {
-            let mut panel = state.panel.lock().unwrap();
-            if panel.height == height {
-                return;
-            }
-            panel.height = height;
-            panel.anchor
-        };
-        let result = if let Some(rect) = anchor {
-            position_quick(&handle, &window, rect, height).map_err(|e| e.to_string())
-        } else {
-            window
-                .set_size(tauri::LogicalSize::new(420., height))
-                .map_err(|e| e.to_string())
-        };
-        if let Err(error) = result {
-            panel_trace(&handle, "resize_failed", &error);
-        }
-    })
-    .map_err(|_| "无法调整快捷窗口尺寸".into())
-}
-
-#[tauri::command]
-#[cfg(desktop)]
-fn show_quick(app: tauri::AppHandle) -> Result<(), String> {
-    queue_quick(app, None)
-}
-
-#[cfg(desktop)]
-fn queue_quick(app: tauri::AppHandle, event_rect: Option<tauri::Rect>) -> Result<(), String> {
-    let handle = app.clone();
-    app.run_on_main_thread(move || {
-        // Tray clicks use the event's geometry. The toolbar alone needs a lookup.
-        let rect = event_rect.or_else(|| {
-            handle
-                .tray_by_id("ops")
-                .and_then(|t| t.rect().ok().flatten())
-        });
-        let result = rect
-            .ok_or_else(|| "菜单栏边界不可用".to_string())
-            .and_then(|rect| quick_panel(&handle, rect).map_err(|e| e.to_string()));
-        if let Err(error) = result {
-            handle.state::<Arc<Runtime>>().panel.lock().unwrap().showing = false;
-            panel_trace(&handle, "show_failed", &error);
-            let _ = handle.emit("update-result", format!("无法打开快捷面板：{error}"));
-        }
-    })
-    .map_err(|_| "无法打开快捷面板".into())
-}
-
-#[tauri::command]
-#[cfg(desktop)]
-fn hide_quick(app: tauri::AppHandle) -> Result<(), String> {
-    let handle = app.clone();
-    app.run_on_main_thread(move || {
-        handle
-            .state::<Arc<Runtime>>()
-            .panel
-            .lock()
-            .unwrap()
-            .show(false);
-        if let Some(window) = handle.get_webview_window("quick") {
-            match window.hide() {
-                Ok(()) => panel_trace(&handle, "hidden", "explicit"),
-                Err(error) => panel_trace(&handle, "hide_failed", &error.to_string()),
-            }
-        }
-    })
-    .map_err(|_| "无法关闭快捷面板".into())
-}
-
-#[cfg(desktop)]
-fn defer_panel_blur(app: &tauri::AppHandle) {
-    panel_trace(app, "blur", "");
-    let generation = app.state::<Arc<Runtime>>().panel.lock().unwrap().blur();
-    let Some(generation) = generation else {
-        return;
-    };
-    let handle = app.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(150)).await;
-        let app = handle.clone();
-        let _ = handle.run_on_main_thread(move || {
-            let state = app.state::<Arc<Runtime>>();
-            if state.pinned.load(Ordering::Relaxed) {
-                return;
-            }
-            let eligible = state.panel.lock().unwrap().can_hide(generation);
-            if eligible {
-                if let Some(window) = app.get_webview_window("quick") {
-                    if !window.is_focused().unwrap_or(true) {
-                        let mut panel = state.panel.lock().unwrap();
-                        if !panel.can_hide(generation) {
-                            return;
-                        }
-                        panel.show(false);
-                        drop(panel);
-                        match window.hide() {
-                            Ok(()) => panel_trace(&app, "hidden", "blur"),
-                            Err(error) => panel_trace(&app, "hide_failed", &error.to_string()),
-                        }
-                    }
-                }
-            }
-        });
-    });
-}
-
-#[cfg(desktop)]
 fn silent_launch(args: &[String]) -> bool {
     args.iter().any(|arg| arg == "--autostart")
-}
-
-#[cfg(desktop)]
-fn fit_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
-    let window = app.get_webview_window("main").expect("main window");
-    if let Some(monitor) = window.current_monitor()?.or(window.primary_monitor()?) {
-        let area = monitor.work_area();
-        let scale = monitor.scale_factor();
-        let width = (1310. * scale).min((area.size.width as f64 - 24. * scale).max(1.));
-        let height = (860. * scale).min((area.size.height as f64 - 24. * scale).max(1.));
-        window.set_min_size(Some(tauri::PhysicalSize::new(
-            (900. * scale).min(width) as u32,
-            (620. * scale).min(height) as u32,
-        )))?;
-        window.set_size(tauri::PhysicalSize::new(width as u32, height as u32))?;
-        window.set_position(tauri::PhysicalPosition::new(
-            area.position.x + ((area.size.width as f64 - width) / 2.) as i32,
-            area.position.y + ((area.size.height as f64 - height) / 2.) as i32,
-        ))?;
-    }
-    Ok(())
 }
 
 #[cfg(mobile)]
@@ -1658,19 +1190,11 @@ fn should_poll_fast(
 }
 
 #[cfg(desktop)]
-fn active_polling_visible(app: &tauri::AppHandle, state: &Runtime) -> bool {
-    let (main_visible, main_minimized) = app
-        .get_webview_window("main")
-        .map(|w| {
-            (
-                w.is_visible().unwrap_or(false),
-                w.is_minimized().unwrap_or(false),
-            )
-        })
-        .unwrap_or((false, false));
-    let quick_visible = app
-        .get_webview_window("quick")
-        .is_some_and(|w| w.is_visible().unwrap_or(false));
+fn active_polling_visible(state: &Runtime) -> bool {
+    #[cfg(target_os = "macos")]
+    let (main_visible, main_minimized, quick_visible) = macos_bridge::window_visibility();
+    #[cfg(not(target_os = "macos"))]
+    let (main_visible, main_minimized, quick_visible) = (true, false, false);
     #[cfg(target_os = "macos")]
     let app_active = state.record_activity.active();
     #[cfg(not(target_os = "macos"))]
@@ -1686,9 +1210,10 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init());
     #[cfg(desktop)]
     let builder = builder
-        .plugin(tauri_plugin_single_instance::init(|app, args, _| {
+        .plugin(tauri_plugin_single_instance::init(|_app, args, _| {
             if !silent_launch(&args) {
-                let _ = show_main(app.clone());
+                #[cfg(target_os = "macos")]
+                macos_bridge::emit_reopen();
             }
         }))
         .plugin(
@@ -1699,258 +1224,113 @@ pub fn run() {
         );
     #[cfg(mobile)]
     let builder = builder.plugin(credentials::plugin());
-    let builder = builder
-        .setup(|app| {
-            let path = app.path().app_config_dir()?.join("preferences.json");
-            let prefs = normalize_preferences(
-                std::fs::read(&path)
-                    .ok()
-                    .and_then(|data| serde_json::from_slice(&data).ok())
-                    .unwrap_or_default(),
-            );
+    let builder = builder.setup(|app| {
+        let path = app.path().app_config_dir()?.join("preferences.json");
+        let prefs = normalize_preferences(
+            std::fs::read(&path)
+                .ok()
+                .and_then(|data| serde_json::from_slice(&data).ok())
+                .unwrap_or_default(),
+        );
+        #[cfg(target_os = "macos")]
+        let initial_active = record_activity::application_active();
+        #[cfg(not(target_os = "macos"))]
+        let initial_active = true;
+        let state = Arc::new(Runtime {
+            client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .redirect(reqwest::redirect::Policy::none())
+                .retry(reqwest::retry::never())
+                .build()?,
+            foreground: AtomicBool::new(true),
+            read_epoch: watch::channel(0).0,
             #[cfg(target_os = "macos")]
-            let initial_active = record_activity::application_active();
-            #[cfg(not(target_os = "macos"))]
-            let initial_active = true;
-            let state = Arc::new(Runtime {
-                client: reqwest::Client::builder()
-                    .timeout(Duration::from_secs(10))
-                    .redirect(reqwest::redirect::Policy::none())
-                    .retry(reqwest::retry::never())
-                    .build()?,
-                #[cfg(desktop)]
-                pinned: AtomicBool::new(prefs.pinned),
-                #[cfg(desktop)]
-                quitting: AtomicBool::new(false),
-                #[cfg(desktop)]
-                panel: StdMutex::new(PanelLifecycle::default()),
-                foreground: AtomicBool::new(true),
-                read_epoch: watch::channel(0).0,
-                #[cfg(target_os = "macos")]
-                record_activity: record_activity::RecordActivity::new(initial_active),
-                view: Mutex::new(ViewState {
-                    platform: if cfg!(mobile) { "android" } else { "macos" },
-                    foreground: initial_active,
-                    initializing: true,
-                    preferences: prefs,
-                    ..Default::default()
-                }),
-                key: Mutex::new(None),
-                connecting_url: Mutex::new(None),
-                network: Mutex::new(()),
-                snapshot_gate: Mutex::new(()),
-                generation: AtomicU64::new(0),
-                wake: Notify::new(),
-                path,
-            });
-            app.manage(state.clone());
-            #[cfg(desktop)]
-            {
-                fit_main_window(app.handle())?;
-                create_quick(app.handle())?;
-                // Re-register an existing LaunchAgent with the new arguments without
-                // changing the user's preference or enabling a disabled login item.
-                if app.autolaunch().is_enabled()? {
-                    app.autolaunch().enable()?;
-                }
-                main_visibility(
-                    app.handle(),
-                    !silent_launch(&std::env::args().collect::<Vec<_>>()),
-                )?;
-                let menu = Menu::with_items(
-                    app,
-                    &[
-                        &MenuItem::with_id(app, "open", "打开 Sub2Ops", true, None::<&str>)?,
-                        &MenuItem::with_id(app, "updates", "检查更新", true, None::<&str>)?,
-                        &MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?,
-                    ],
-                )?;
-                // Original monochrome pulse mark, drawn in memory for the macOS template icon.
-                let mut pixels = vec![0u8; 22 * 22 * 4];
-                for x in 2..20usize {
-                    let y = match x {
-                        6..=8 => 11 - (x - 5) * 2,
-                        9..=12 => 5 + (x - 8) * 3,
-                        13..=15 => 17 - (x - 12) * 2,
-                        _ => 11,
-                    };
-                    for d in 0..2 {
-                        let i = ((y + d).min(21) * 22 + x) * 4;
-                        pixels[i + 3] = 255;
-                    }
-                }
-                let tray = TrayIconBuilder::with_id("ops")
-                    .icon(tauri::image::Image::new_owned(pixels, 22, 22))
-                    .icon_as_template(true)
-                    .tooltip("Sub2Ops")
-                    .menu(&menu)
-                    .show_menu_on_left_click(false)
-                    .on_tray_icon_event(|tray, event| {
-                        if let TrayIconEvent::Click {
-                            button,
-                            button_state,
-                            rect,
-                            ..
-                        } = event
-                        {
-                            panel_trace(
-                                tray.app_handle(),
-                                "tray_click",
-                                &format!("{button:?} {button_state:?}"),
-                            );
-                            if button == MouseButton::Left && button_state == MouseButtonState::Up {
-                                if let Err(error) =
-                                    queue_quick(tray.app_handle().clone(), Some(rect))
-                                {
-                                    panel_trace(tray.app_handle(), "dispatch_failed", &error);
-                                }
-                            }
-                            #[cfg(target_os = "macos")]
-                            if button == MouseButton::Right
-                                && button_state == MouseButtonState::Down
-                            {
-                                if let Err(error) = tray_macos::show_menu(tray) {
-                                    panel_trace(
-                                        tray.app_handle(),
-                                        "menu_failed",
-                                        &error.to_string(),
-                                    );
-                                }
-                            }
-                        }
-                    })
-                    .on_menu_event(|app, event| match event.id().as_ref() {
-                        "open" => {
-                            let _ = show_main(app.clone());
-                        }
-                        "updates" => {
-                            let handle = app.clone();
-                            tauri::async_runtime::spawn(async move {
-                                let result = check_updates(handle.clone(), handle.state()).await;
-                                let _ = handle.emit("update-result", result.unwrap_or_else(|e| e));
-                                let _ = show_main(handle);
-                            });
-                        }
-                        "quit" => {
-                            app.state::<Arc<Runtime>>()
-                                .quitting
-                                .store(true, Ordering::Relaxed);
-                            app.exit(0);
-                        }
-                        _ => (),
-                    })
-                    .build(app)?;
-                #[cfg(target_os = "macos")]
-                {
-                    tray_macos::install(&tray)?;
-                    panel_trace(app.handle(), "tray_ready", "transient_menu_macos27");
-                }
+            record_activity: record_activity::RecordActivity::new(initial_active),
+            view: Mutex::new(ViewState {
+                platform: if cfg!(mobile) { "android" } else { "macos" },
+                foreground: initial_active,
+                initializing: true,
+                preferences: prefs,
+                ..Default::default()
+            }),
+            key: Mutex::new(None),
+            connecting_url: Mutex::new(None),
+            network: Mutex::new(()),
+            snapshot_gate: Mutex::new(()),
+            generation: AtomicU64::new(0),
+            wake: Notify::new(),
+            path,
+        });
+        app.manage(state.clone());
+        #[cfg(desktop)]
+        {
+            // Re-register an existing LaunchAgent with the new arguments without
+            // changing the user's preference or enabling a disabled login item.
+            if app.autolaunch().is_enabled()? {
+                app.autolaunch().enable()?;
             }
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                let base = state.view.lock().await.preferences.base_url.clone();
-                let stored = credentials::read(handle.clone(), base).await;
-                {
-                    let _gate = state.network.lock().await;
-                    let mut view = state.view.lock().await;
-                    if state.generation.load(Ordering::SeqCst) == 0 {
-                        match stored {
-                            Ok(key) => {
-                                view.connected = key.is_some();
-                                *state.key.lock().await = key;
-                            }
-                            Err(error) => view.error = error,
+            #[cfg(target_os = "macos")]
+            macos_bridge::init(app.handle().clone());
+        }
+        let handle = app.handle().clone();
+        tauri::async_runtime::spawn(async move {
+            let base = state.view.lock().await.preferences.base_url.clone();
+            let stored = credentials::read(handle.clone(), base).await;
+            {
+                let _gate = state.network.lock().await;
+                let mut view = state.view.lock().await;
+                if state.generation.load(Ordering::SeqCst) == 0 {
+                    match stored {
+                        Ok(key) => {
+                            view.connected = key.is_some();
+                            *state.key.lock().await = key;
                         }
-                    }
-                    view.initializing = false;
-                    publish(&handle, &view);
-                }
-                loop {
-                    if !state.foreground.load(Ordering::SeqCst) {
-                        state.wake.notified().await;
-                        continue;
-                    }
-                    refresh_inner(&handle, &state).await;
-                    #[cfg(desktop)]
-                    let active_visible = active_polling_visible(&handle, &state);
-                    #[cfg(mobile)]
-                    let active_visible = true;
-                    let interval = Duration::from_secs(if active_visible { 2 } else { 15 });
-                    tokio::select! {
-                        _ = tokio::time::sleep(interval) => {}
-                        _ = state.wake.notified() => {}
+                        Err(error) => view.error = error,
                     }
                 }
-            });
-            Ok(())
-        })
-        .on_window_event(|window, event| {
-            let state = window.state::<Arc<Runtime>>();
-            match event {
+                view.initializing = false;
+                publish(&handle, &view);
+            }
+            loop {
+                if !state.foreground.load(Ordering::SeqCst) {
+                    state.wake.notified().await;
+                    continue;
+                }
+                refresh_inner(&handle, &state).await;
                 #[cfg(desktop)]
-                WindowEvent::CloseRequested { api, .. }
-                    if !state.quitting.load(Ordering::Relaxed) =>
-                {
-                    api.prevent_close();
-                    if window.label() == "main" {
-                        if let Err(error) = queue_main(window.app_handle().clone(), false) {
-                            panel_trace(window.app_handle(), "main_failed", &error);
-                        }
-                    } else if let Err(error) = window.hide() {
-                        panel_trace(window.app_handle(), "hide_failed", &error.to_string());
-                    }
-                }
-                #[cfg(desktop)]
-                WindowEvent::Focused(false) if window.label() == "quick" => {
-                    defer_panel_blur(window.app_handle())
-                }
-                #[cfg(desktop)]
-                WindowEvent::Focused(true) => {
-                    if window.label() == "quick" {
-                        state.panel.lock().unwrap().focus();
-                        panel_trace(window.app_handle(), "focused", "event");
-                    }
-                    state.wake.notify_one();
-                }
+                let active_visible = active_polling_visible(&state);
                 #[cfg(mobile)]
-                WindowEvent::Suspended | WindowEvent::Resumed => {
-                    let active = matches!(event, WindowEvent::Resumed);
-                    state.foreground.store(active, Ordering::SeqCst);
-                    if !active {
-                        state.read_epoch.send_modify(|epoch| *epoch += 1);
-                    }
-                    let handle = window.app_handle().clone();
-                    let state = state.inner().clone();
-                    tauri::async_runtime::spawn(async move {
-                        let mut view = state.view.lock().await;
-                        view.foreground = state.foreground.load(Ordering::SeqCst);
-                        view.online = false;
-                        view.error.clear();
-                        publish(&handle, &view);
-                        state.wake.notify_one();
-                    });
+                let active_visible = true;
+                let interval = Duration::from_secs(if active_visible { 2 } else { 15 });
+                tokio::select! {
+                    _ = tokio::time::sleep(interval) => {}
+                    _ = state.wake.notified() => {}
                 }
-                _ => (),
             }
         });
-    #[cfg(desktop)]
-    let builder = builder.invoke_handler(tauri::generate_handler![
-        get_state,
-        connect,
-        save_connection_profile,
-        remove_connection,
-        disconnect,
-        refresh,
-        api_request,
-        preferences,
-        show_main,
-        show_quick,
-        hide_quick,
-        resize_quick,
-        check_updates,
-        open_authorization_url,
-        open_sub2api_release
-    ]);
+        Ok(())
+    });
+    #[cfg(mobile)]
+    let builder = builder.on_window_event(|window, event| {
+        let state = window.state::<Arc<Runtime>>();
+        if let WindowEvent::Suspended | WindowEvent::Resumed = event {
+            let active = matches!(event, WindowEvent::Resumed);
+            state.foreground.store(active, Ordering::SeqCst);
+            if !active {
+                state.read_epoch.send_modify(|epoch| *epoch += 1);
+            }
+            let handle = window.app_handle().clone();
+            let state = state.inner().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut view = state.view.lock().await;
+                view.foreground = state.foreground.load(Ordering::SeqCst);
+                view.online = false;
+                view.error.clear();
+                publish(&handle, &view);
+                state.wake.notify_one();
+            });
+        }
+    });
     #[cfg(mobile)]
     let builder = builder.invoke_handler(tauri::generate_handler![
         get_state,
@@ -1967,16 +1347,9 @@ pub fn run() {
         open_sub2api_release
     ]);
     #[cfg(target_os = "macos")]
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    enum ActivityTick {
-        Pending,
-        SkipCleared,
-        Checked,
-    }
-    #[cfg(target_os = "macos")]
     let mut cached_state: Option<Arc<Runtime>> = None;
     #[cfg(target_os = "macos")]
-    let mut activity_tick = ActivityTick::Pending;
+    let mut activity_checked = false;
     builder
         .build(tauri::generate_context!())
         .expect("Sub2Ops failed to start")
@@ -1988,44 +1361,21 @@ pub fn run() {
                 match &_event {
                     tauri::RunEvent::Ready
                     | tauri::RunEvent::Resumed
-                    | tauri::RunEvent::Reopen { .. }
-                    | tauri::RunEvent::MenuEvent(_)
-                    | tauri::RunEvent::WindowEvent {
-                        event: WindowEvent::Focused(_),
-                        ..
-                    }
-                    | tauri::RunEvent::TrayIconEvent(TrayIconEvent::Click { .. }) => {
+                    | tauri::RunEvent::Reopen { .. } => {
                         sync_record_activity_with(_app, state);
-                        activity_tick = ActivityTick::Checked;
-                    }
-                    tauri::RunEvent::TrayIconEvent(
-                        TrayIconEvent::Move { .. }
-                        | TrayIconEvent::Enter { .. }
-                        | TrayIconEvent::Leave { .. },
-                    )
-                    | tauri::RunEvent::WindowEvent {
-                        event:
-                            WindowEvent::Moved(_)
-                            | WindowEvent::Resized(_)
-                            | WindowEvent::ScaleFactorChanged { .. },
-                        ..
-                    } => {
-                        if activity_tick == ActivityTick::Pending {
-                            activity_tick = ActivityTick::SkipCleared;
-                        }
+                        activity_checked = true;
                     }
                     tauri::RunEvent::MainEventsCleared => {
-                        if activity_tick == ActivityTick::Pending {
+                        if !activity_checked {
                             sync_record_activity_with(_app, state);
                         }
-                        activity_tick = ActivityTick::Pending;
+                        activity_checked = false;
                     }
                     _ => {}
                 }
-            }
-            #[cfg(desktop)]
-            if let tauri::RunEvent::Reopen { .. } = _event {
-                let _ = show_main(_app.clone());
+                if let tauri::RunEvent::Reopen { .. } = _event {
+                    macos_bridge::emit_reopen();
+                }
             }
         });
 }
@@ -2067,12 +1417,6 @@ mod tests {
             read_epoch: watch::channel(0).0,
             #[cfg(target_os = "macos")]
             record_activity: record_activity::RecordActivity::default(),
-            #[cfg(desktop)]
-            pinned: AtomicBool::new(false),
-            #[cfg(desktop)]
-            quitting: AtomicBool::new(false),
-            #[cfg(desktop)]
-            panel: StdMutex::new(PanelLifecycle::default()),
         }
     }
     #[tokio::test]
@@ -2410,44 +1754,6 @@ mod tests {
         assert!(should_poll_fast(true, true, false, true));
     }
 
-    #[cfg(desktop)]
-    #[test]
-    fn obsolete_blur_cannot_close_a_reopened_panel() {
-        let mut panel = PanelLifecycle::default();
-        panel.show(false);
-        assert_eq!(panel.blur(), None);
-        panel.focus();
-        let blur = panel.blur().unwrap();
-        assert!(panel.can_hide(blur));
-        panel.show(false);
-        assert!(!panel.can_hide(blur));
-        panel.focus();
-        let blur = panel.blur().unwrap();
-        panel.focus();
-        assert!(!panel.can_hide(blur));
-    }
-    #[cfg(desktop)]
-    #[test]
-    fn panel_stays_inside_secondary_and_scaled_displays() {
-        for (x, y, w, h, scale, ax, ay) in [
-            (-1920, 24, 1920, 1056, 1., -8., 0.),
-            (0, 50, 2560, 1614, 2., 2540., 20.),
-            (0, -900, 800, 850, 2., 200., -900.),
-        ] {
-            let (p, s) = panel_bounds(
-                tauri::PhysicalPosition::new(ax, ay),
-                x,
-                y,
-                w,
-                h,
-                scale,
-                520.,
-            );
-            assert!(p.x >= x && p.y >= y);
-            assert!(p.x + s.width as i32 <= x + w as i32);
-            assert!(p.y + s.height as i32 <= y + h as i32);
-        }
-    }
     #[test]
     fn url_policy() {
         assert_eq!(
@@ -2688,23 +1994,6 @@ mod tests {
             "sub2ops".into(),
             "--autostart=false".into()
         ]));
-    }
-    #[cfg(desktop)]
-    #[test]
-    fn compact_panel_height_is_content_bounded() {
-        for (height, expected) in [(100., 128), (386., 386), (800., 520)] {
-            let (_, size) = panel_bounds(
-                tauri::PhysicalPosition::new(800., 24.),
-                0,
-                24,
-                1400,
-                900,
-                1.,
-                height,
-            );
-            assert_eq!(size.width, 420);
-            assert_eq!(size.height, expected);
-        }
     }
     #[test]
     fn preferences_have_no_credentials() {
