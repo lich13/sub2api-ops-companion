@@ -568,6 +568,11 @@ impl Harness {
         if let Some(runtime) = self.runtime.0.take() {
             runtime.close().await;
             if !self.account_ids.is_empty() {
+                sqlx::query("DELETE FROM ops_error_logs WHERE account_id = ANY($1)")
+                    .bind(&self.account_ids)
+                    .execute(&self.pool)
+                    .await
+                    .expect("remove only this harness's synthetic error logs");
                 sqlx::query("DELETE FROM accounts WHERE id = ANY($1)")
                     .bind(self.account_ids)
                     .execute(&self.pool)
@@ -2159,9 +2164,18 @@ async fn unknown_or_zero_reset_credit_skips_dispatcher_http_before_any_worker_re
         )
         .bind(SqlJson(extra))
         .bind(now - Duration::minutes(1))
-        .bind(now + Duration::hours(1))
+        .bind(now + Duration::days(5))
         .bind(now)
         .bind(id)
+        .execute(&harness.pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO ops_error_logs (id,account_id,created_at,platform,error_owner,error_phase,status_code,upstream_status_code,error_message,upstream_error_message) VALUES ($1,$2,$3,'openai','provider','upstream',429,429,'fixture-error','fixture-error')",
+        )
+        .bind(900_000_000 + id)
+        .bind(id)
+        .bind(now - Duration::seconds(30))
         .execute(&harness.pool)
         .await
         .unwrap();
@@ -2241,7 +2255,7 @@ async fn continuous_appointment_uses_real_runtime_quota_refresh_and_stops_indepe
         100,
     )))
     .bind(at - Duration::seconds(30))
-    .bind(at + Duration::hours(4))
+    .bind(at + Duration::days(6))
     .execute(&harness.pool)
     .await
     .unwrap();

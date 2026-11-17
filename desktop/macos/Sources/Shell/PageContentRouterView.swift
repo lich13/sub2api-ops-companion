@@ -38,24 +38,10 @@ public struct PageContentRouterView: View {
                     RecordsPageView(store: store)
                 case .events:
                     EventsPageView(store: store)
+                case .features:
+                    FeaturesPageView(store: store)
                 case .settings:
-                    VStack(alignment: .leading, spacing: 16) {
-                        ConnectionStatusCardView(connectionKey: store.connectionKey)
-                        CardSection {
-                            ConnectionOnboardingView(store: store, embeddedInSettings: true)
-                        }
-                    }
-                    .frame(maxWidth: 820)
-                default:
-                    CardSection {
-                        HStack(spacing: 8) {
-                            StatusDot(store.state.online ? .good : .warning)
-                            Text("已连接 \(store.accounts.count) 个账号 · \(store.groups.count) 个分组")
-                                .font(DS.fontBody)
-                                .monospacedDigit()
-                                .foregroundStyle(DS.ink)
-                        }
-                    }
+                    SettingsPageView(store: store)
                 }
             }
             .padding(.horizontal, 24)

@@ -1,5 +1,14 @@
 # 升级与回退
 
+## 0.1.94 macOS 原生界面、用卡归属修复与 429 来源加固
+
+Companion、配置宿主及客户端同步升级（先升级服务端，再更新客户端）。0.1.84 及以后版本可直接升级，HTTP 接口、JSON 状态格式与业务数据库结构不变，无需数据库迁移；回退 0.1.93 沿用保留的旧镜像与当前数据，不恢复旧状态快照。
+
+- **macOS 原生界面与系统要求**：macOS 客户端界面层由 Tauri WebView 替换为纯原生 Swift 6 + SwiftUI / AppKit 实现，最低系统版本调整为 **macOS 14.0（Sonoma，Apple Silicon `arm64`）**；既有 Keychain 凭据（`com.lich13.sub2ops`）与 `preferences.json` 原地复用，无需重新登录。Android 客户端保持不变。
+- **自动用卡暂停归属修复与线上历史账号核对**：修复上游 `/reset-quota` 写回 `accounts.extra` 运行态额度/积分字段时触发 `ownership_changed` 误判、导致扣卡成功后未执行恢复验证且调度保持关闭的问题。此前已以 `result_reason=ownership_changed` 结束的旧任务（`owns_pause=false`）不会在升级后自动改写，部署后请对历史命中 `ownership_changed` 且 `schedulable=false` 的账号人工核对并手动恢复调度。
+- **7d 满额 429 正面证据规则**：自动用卡要求 `ops_error_logs` 中存在明确指向 7d 周窗口耗尽的上游 HTTP 429 正面证据（重置时间与 7d 窗口 ±300 秒对齐，排除过载/容量/并发、RPM/TPM/短冷却、5h 窗口及独立限流模型如 `-spark`、`gpt-image`、`GoUsageLimitError`）；未落错误日志的 `account_rate_limit` 回退仅用于停止 `quota_cycle` 周期预约测试。
+- **连接测试取消竞态修复**：在任务 ID 返回前点击“取消”时，客户端会在提交返回后立即补发取消请求，避免界面提示已取消但后台仍继续执行测试。
+
 ## 0.1.93 移除历史兼容路径
 
 Companion、配置宿主及客户端同步升级。0.1.84 及以后版本可直接升级，JSON 状态格式与业务数据库结构不变，无需数据库迁移；回退 0.1.92 使用保留的旧镜像和当前数据，不恢复旧状态快照。更早的版本请先升级到 0.1.84 至 0.1.92 中的任一版本并正常启动一次：0.1.84 之前的启动迁移以及 `migrate-oauth`、`migrate-desktop` 子命令已移除。

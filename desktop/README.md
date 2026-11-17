@@ -1,6 +1,6 @@
 # Sub2Ops for macOS / Android
 
-Rust / Tauri 2 / React 运维客户端，支持 macOS 12+ 的 Apple Silicon 和 Android 12+ 的 ARM64。
+Rust 核心运维客户端：macOS 端采用纯原生 Swift 6 + SwiftUI / AppKit（支持 macOS 14+ Apple Silicon），Android 端采用 Tauri 2 + React（支持 Android 12+ ARM64）。
 
 ## 安装与连接
 
@@ -55,7 +55,7 @@ Codex 模型测试固定账号、有效凭据、当前账号上游目录中的�
 
 账号模板支持独立编辑、改名、保存和删除，所有模板规则一致，删除后不会重建。账号列表可勾选多个账号应用指定模板：先查看逐账号差异，再提交整批请求；忙碌账号独立排队，完整结果可在操作待办查看。模板只手动应用，仅更新白名单与模型映射。
 
-自动用卡结合当前有效的上游限流与同窗口 7d 原始额度证据；WS 错误未写入错误表时可使用账号限流状态，消费前再次核对。只有消费确认成功、所选验证通过且调度恢复确认后，才发送一条合并 Bark。
+自动用卡要求 `ops_error_logs` 中存在明确命中 7d 周窗口上限的上游 429 正面证据（重置时间与已存 7d 窗口 ±300 秒对齐，并排除 5h、RPM/TPM、容量过载、并发上限与独立限流模型）；未落错误表的账号限流状态仅用于停止持续预约测活，不触发自动扣卡。只有消费确认成功、所选验证通过且调度恢复确认后，才发送一条合并 Bark。
 
 恢复监控每两秒读取已选账号的必要状态。服务端明确恢复时间到点即开始复核，多个必要阻断取最晚时间；仅估算时间保留 60 秒余量。各账号独立核对额度并验证，Bark 投递不会阻塞检查。额度查询预算、验证退避和模型五分钟冷却仍然有效，等待时显示具体原因与下次允许时间。
 
@@ -77,6 +77,7 @@ Tauri Android 库仍需要 SDK 36，并使用 `kotlin-android`，AGP 9 暂时设
 pnpm install --frozen-lockfile
 pnpm test
 pnpm build
+swift test --package-path macos
 cargo test --manifest-path src-tauri/Cargo.toml --locked
 cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
 pnpm bundle

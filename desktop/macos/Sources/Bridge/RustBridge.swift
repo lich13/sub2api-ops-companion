@@ -127,8 +127,8 @@ public final class RustBridge: Sendable {
             }
 
             let requestId = registration.0
-            var cmdBytes = Array(name.utf8)
-            var payloadBytes = Array(payloadJSON.utf8)
+            let cmdBytes = Array(name.utf8)
+            let payloadBytes = Array(payloadJSON.utf8)
             cmdBytes.withUnsafeBufferPointer { cmdBuf in
                 payloadBytes.withUnsafeBufferPointer { payloadBuf in
                     callbacks.invoke(
@@ -144,7 +144,9 @@ public final class RustBridge: Sendable {
     }
 
     public func command<T: Decodable & Sendable>(_ name: String, args: JSONValue = .object([:])) async throws -> T {
-        let payloadData = try JSONEncoder().encode(args)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        let payloadData = try encoder.encode(args)
         let payloadJSON = String(data: payloadData, encoding: .utf8) ?? "{}"
         let responseData = try await rawCommand(name, payloadJSON: payloadJSON)
         do {
@@ -155,7 +157,9 @@ public final class RustBridge: Sendable {
     }
 
     public func commandVoid(_ name: String, args: JSONValue = .object([:])) async throws {
-        let payloadData = try JSONEncoder().encode(args)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        let payloadData = try encoder.encode(args)
         let payloadJSON = String(data: payloadData, encoding: .utf8) ?? "{}"
         _ = try await rawCommand(name, payloadJSON: payloadJSON)
     }

@@ -17,7 +17,7 @@
 
 ### 2. Intelligent OAuth & API Key Quota Monitoring
 - **Automated Recovery Tracking**: Tracks OAuth quota reset windows and cooldown states across OpenAI, Claude, Gemini, Antigravity, Grok, and more—automatically verifying quota and running health checks once reset windows expire.
-- **7d 100% + 429 Auto-Reset Credit**: Automatically triggers credit reset when an OpenAI OAuth account reaches 100% 7-day usage and encounters upstream HTTP 429 rate limits (mutually exclusive with native Sub2API auto-credit to prevent double consumption).
+- **7d 100% + 429 Auto-Reset Credit**: Automatically triggers credit reset when an OpenAI OAuth account reaches 100% 7-day usage with positive `ops_error_logs` upstream HTTP 429 evidence aligned to the 7-day reset window (excluding 5h windows, RPM/TPM, capacity overload, and separate model quotas; mutually exclusive with native Sub2API auto-credit).
 - **Per-Account Keepalive Controls**: Opt-in per-account keepalive clears eligible temporary unschedulable states while preserving manual scheduling locks, degradation flags, and recovery budgets.
 - **Platform-Aware Refresh**: Supports single-account and concurrent batch OAuth refreshes; Grok refreshes official billing endpoints without consuming model inference tokens.
 
@@ -31,7 +31,7 @@
 - **Reasoning Effort Completion**: Automatically supplements reasoning effort levels and model catalog entries for new upstream models with group-version concurrency guards.
 
 ### 5. Native Cross-Platform Clients & Bark Push Alerts
-- **macOS & Android Native Apps**: Built with Tauri v2. Includes a resident macOS menu bar quick panel (pinning, group summaries, quick instance switching, and one-click quota refresh) and a mobile-optimized Android ARM64 app.
+- **macOS & Android Native Apps**: Powered by a shared Rust core; macOS 14+ uses pure native Swift 6 + SwiftUI / AppKit (non-activating `NSPanel` resident menu bar quick panel, pinning, group summaries, instant instance switching, and full main console), while Android 12+ ARM64 uses Tauri v2.
 - **Real-Time Bark Notifications**: Instant push alerts for OAuth recovery, daily health check failures, auto-recovery failures, keepalive rate-limit pauses, and HTTP 401/402 authentication errors.
 
 ---

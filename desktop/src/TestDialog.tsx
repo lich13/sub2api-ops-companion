@@ -170,8 +170,10 @@ export default function TestDialog({ account, online, close }: {account: Account
       };
       const job = await submitOperation(account, 'test', { ...body, confirmed: true });
       if (cancelled.current) {
-        const stopped = await api<Operation>("POST", `/account-operations/${job.id}/cancel`, {});
-        publishOperation(stopped);
+        if (!["completed", "failed", "cancelled", "needs_confirmation"].includes(job.status)) {
+          const stopped = await api<Operation>("POST", `/account-operations/${job.id}/cancel`, {});
+          publishOperation(stopped);
+        }
         return;
       }
       operationId.current = job.id;

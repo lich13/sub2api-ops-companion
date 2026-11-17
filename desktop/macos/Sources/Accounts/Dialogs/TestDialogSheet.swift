@@ -291,9 +291,11 @@ public struct TestDialogSheet: View {
             )
             operationId = job.id
 
-            // Stage 0 fix: if user clicked Cancel before job.id arrived, immediately cancel on server!
+            // Stage 0 fix: if user clicked Cancel before job.id arrived, immediately cancel active job on server!
             if cancelled {
-                _ = try? await store.operations.cancelJobId(job.id)
+                if !["completed", "failed", "cancelled", "needs_confirmation"].contains(job.status) {
+                    _ = try? await store.operations.cancelJobId(job.id)
+                }
                 statusLine = "已取消，未重放请求"
                 return
             }
