@@ -246,7 +246,7 @@ public struct LinearSelect: View {
             .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
             .background(MenuAnchorRepresentable(triggerToken: triggerToken, entries: entries))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.linearPlain)
         .disabled(disabled || entries.isEmpty)
         .compositingGroup()
         .opacity(disabled ? 0.5 : 1.0)
@@ -318,7 +318,7 @@ public struct LinearMenuIconTrigger: View {
             .clipShape(RoundedRectangle(cornerRadius: bordered ? DS.cornerRadius : 6))
             .background(MenuAnchorRepresentable(triggerToken: triggerToken, entries: entries))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.linearPlain)
         .disabled(disabled || entries.isEmpty)
         .compositingGroup()
         .opacity(disabled ? 0.45 : 1.0)
@@ -400,7 +400,7 @@ public struct LinearCheckbox: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.linearPlain)
         .disabled(disabled)
         .compositingGroup()
         .opacity(disabled ? 0.45 : 1.0)
@@ -459,7 +459,7 @@ public struct LinearSearchField: View {
                         .font(DS.iconFont(12))
                         .foregroundStyle(DS.muted)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.linearPlain)
                 .accessibilityLabel("清空搜索")
             }
         }
@@ -562,7 +562,7 @@ public struct LinearUnderlineTabs<ID: Hashable & Sendable>: View {
                 .fixedSize(horizontal: true, vertical: false)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.linearPlain)
             .onHover { hovered = $0 }
         }
     }
@@ -620,7 +620,7 @@ public struct LinearSegmentedTabs<ID: Hashable & Sendable>: View {
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.linearPlain)
                 .disabled(disabled)
             }
         }

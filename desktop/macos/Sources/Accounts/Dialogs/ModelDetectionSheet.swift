@@ -313,7 +313,7 @@ public struct ModelDetectionSheet: View {
                     }
                     .font(DS.fontCompactMedium)
                     .foregroundStyle(DS.accent)
-                    .buttonStyle(.plain)
+                    .buttonStyle(.linearPlain)
                 }
             }
         } footer: {

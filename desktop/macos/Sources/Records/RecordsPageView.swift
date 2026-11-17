@@ -340,7 +340,7 @@ public struct RecordsPageView: View {
                                         .background(hoveredRowId == row.id ? DS.rowHover : DS.surface)
                                         .contentShape(Rectangle())
                                     }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(.linearPlain)
                                     .onHover { hov in
                                         if hov { hoveredRowId = row.id } else if hoveredRowId == row.id { hoveredRowId = nil }
                                     }
@@ -858,7 +858,7 @@ public struct RecordDetailDrawerView: View {
                         .font(DS.iconFont(10))
                         .foregroundStyle(DS.muted)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.linearPlain)
             }
         }
     }

@@ -235,7 +235,7 @@ public struct DetectionLogsTableView: View {
             .background(hoveredJobId == row.job_id ? DS.rowHover : DS.clear)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.linearPlain)
         .onHover { hovering in
             if hovering {
                 hoveredJobId = row.job_id

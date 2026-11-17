@@ -106,7 +106,7 @@ public struct ModelTestSheet: View {
                                 }
                                 .font(DS.fontCompactMedium)
                                 .foregroundStyle(DS.accent)
-                                .buttonStyle(.plain)
+                                .buttonStyle(.linearPlain)
                             }
                         } else if !loadingModels && models.isEmpty {
                             Text("暂无可用模型")
@@ -261,7 +261,7 @@ public struct ModelTestSheet: View {
                             }
                             .font(DS.fontBodyMedium)
                             .foregroundStyle(DS.accent)
-                            .buttonStyle(.plain)
+                            .buttonStyle(.linearPlain)
                             .disabled(policySaving || !store.state.online)
                         }
                     }

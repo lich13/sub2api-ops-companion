@@ -132,7 +132,7 @@ public struct QuickAccountRowView: View {
                         .font(DS.fontResetTime)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.linearPlain)
                     .onHover { errorHovered = $0 }
                 } else {
                     HStack(spacing: 5) {
@@ -159,7 +159,7 @@ public struct QuickAccountRowView: View {
                                 .frame(width: 24, height: 18)
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.linearPlain)
                         .disabled(!online || recoverBusy)
                         .opacity(!online || recoverBusy ? 0.45 : 1.0)
                         .help("恢复状态：\(account.name)")

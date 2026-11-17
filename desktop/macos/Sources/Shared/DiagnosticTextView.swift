@@ -34,7 +34,7 @@ public struct DiagnosticTextView: View {
                         .font(DS.iconFont(12))
                         .foregroundStyle(DS.muted)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.linearPlain)
                 .help("复制完整检测详情")
                 .accessibilityLabel("复制完整检测详情")
 

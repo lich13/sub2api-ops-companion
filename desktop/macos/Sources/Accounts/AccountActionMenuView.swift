@@ -24,7 +24,7 @@ public struct AccountActionMenuView: View {
                 .background(isOpen ? DS.hover : DS.clear)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.linearPlain)
         .disabled(disabled)
         .accessibilityLabel("\(account.name)操作")
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
@@ -48,7 +48,7 @@ public struct AccountActionMenuView: View {
                         .frame(width: 152, alignment: .leading)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.linearPlain)
                 }
             }
             .padding(6)

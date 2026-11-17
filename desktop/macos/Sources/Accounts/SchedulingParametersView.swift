@@ -50,7 +50,7 @@ public struct SchedulingParametersView: View {
                         .background(canEdit("concurrency") ? DS.surfaceSubtle : DS.clear)
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.linearPlain)
                 .disabled(!canEdit("concurrency"))
                 .accessibilityLabel("编辑\(account.name)并发")
                 .popover(isPresented: $editingConcurrency, arrowEdge: .bottom) {
@@ -84,7 +84,7 @@ public struct SchedulingParametersView: View {
                         .background(canEdit("load_factor") ? DS.surfaceSubtle : DS.clear)
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.linearPlain)
                 .disabled(!canEdit("load_factor"))
                 .accessibilityLabel("编辑\(account.name)负载因子")
                 .popover(isPresented: $editingLoadFactor, arrowEdge: .bottom) {
@@ -154,7 +154,7 @@ private struct NumericParameterPopover: View {
                             .foregroundStyle(DS.ink)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.linearPlain)
             }
 
             TextField(text: $text, prompt: Text(verbatim: "正整数")) { EmptyView() }

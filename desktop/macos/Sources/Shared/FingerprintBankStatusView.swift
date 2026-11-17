@@ -97,7 +97,7 @@ public struct FingerprintBankStatusView: View {
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.linearPlain)
 
                 Spacer()
 
@@ -112,7 +112,7 @@ public struct FingerprintBankStatusView: View {
                     }
                     .foregroundStyle(DS.muted)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.linearPlain)
                 .disabled(!online || isBusy)
             }
 

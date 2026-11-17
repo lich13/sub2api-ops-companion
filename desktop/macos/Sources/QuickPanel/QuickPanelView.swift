@@ -143,7 +143,7 @@ public struct QuickPanelRootView: View {
                     .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(DS.line, lineWidth: 1))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.linearPlain)
                 .accessibilityLabel("切换 Sub2API 实例")
                 .onAppear { quickPopoverOpen = (store.switcherAnchor == .quick) }
                 .onChange(of: store.switcherAnchor) { _, next in
@@ -318,7 +318,7 @@ public struct QuickPanelRootView: View {
                             }
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.linearPlain)
 
                         if let acc, acc.recoverable == true {
                             Button {
@@ -329,7 +329,7 @@ public struct QuickPanelRootView: View {
                                     .foregroundStyle(DS.warn)
                                     .frame(width: 24, height: 24)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.linearPlain)
                             .disabled(!store.state.online || store.busyRecoverAccountIds.contains(acc.id))
                             .help("恢复状态：\(acc.name)")
                         } else {
@@ -370,8 +370,9 @@ public struct QuickPanelRootView: View {
                 }
                 .font(DS.fontPriorityMeta)
                 .foregroundStyle(DS.accent)
+                .frame(height: 28)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.linearPlain)
         }
         .padding(.horizontal, 10)
         .frame(height: 28)
@@ -428,7 +429,7 @@ public struct QuickPanelRootView: View {
             .background(selected ? DS.accentBg : DS.clear)
             .clipShape(RoundedRectangle(cornerRadius: 5))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.linearPlain)
     }
 }
 

@@ -145,7 +145,7 @@ public struct PrioritiesPageView: View {
                             .background(sel ? DS.accentBg : DS.clear)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.linearPlain)
                     }
                 }
             }

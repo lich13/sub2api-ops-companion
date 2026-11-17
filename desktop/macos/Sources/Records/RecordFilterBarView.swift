@@ -97,7 +97,7 @@ public struct RecordOptionPickerView: View {
             .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.linearPlain)
         .disabled(!active)
         .accessibilityLabel("\(kind.label)筛选")
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
@@ -234,7 +234,7 @@ public struct RecordOptionPickerView: View {
             .background(isSelected ? DS.accentBg : DS.clear)
             .clipShape(RoundedRectangle(cornerRadius: 5))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.linearPlain)
     }
 
     private func fetchPage(cursor pageCursor: String?) async {

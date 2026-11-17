@@ -225,7 +225,7 @@ public struct AccountActionsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.linearPlain)
             .disabled(disabled)
             .compositingGroup()
             .opacity(disabled ? 0.45 : 1.0)

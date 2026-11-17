@@ -27,7 +27,7 @@ public struct InstanceSwitcherPopoverContent: View {
                     }
                     .font(DS.fontPriorityMeta)
                     .foregroundStyle(DS.muted)
-                    .buttonStyle(.plain)
+                    .buttonStyle(.linearPlain)
                 }
             }
             .padding(.horizontal, 8)
@@ -122,7 +122,7 @@ public struct InstanceSwitcherPopoverContent: View {
                 .clipShape(RoundedRectangle(cornerRadius: 7))
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.linearPlain)
             .disabled(disabled)
             .onHover { hovered = $0 }
         }

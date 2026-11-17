@@ -61,7 +61,7 @@ public struct OperationToolbarButton: View {
                 .padding(.horizontal, 7)
                 .frame(height: 28)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.linearPlain)
             .help("操作待办 \(pendingCount)")
             .accessibilityLabel("操作待办 \(pendingCount)")
             .popover(isPresented: Bindable(ops).isOpen, arrowEdge: .bottom) {

@@ -41,7 +41,7 @@ public struct RecordDatePickerView: View {
             .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.linearPlain)
         .disabled(disabled)
         .accessibilityLabel("时间范围")
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {

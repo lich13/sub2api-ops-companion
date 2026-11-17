@@ -214,6 +214,7 @@ public struct LinearButtonStyle: ButtonStyle {
                 }
                 .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
                 .compositingGroup()
+                .contentShape(Rectangle())
                 .opacity(isEnabled ? 1.0 : 0.45)
                 .onHover { hovered = $0 }
         }
@@ -273,6 +274,23 @@ public struct LinearButtonStyle: ButtonStyle {
     }
 }
 
+/// Plain button whose whole label frame (padding, spacers, transparent areas) is clickable.
+/// SwiftUI's built-in `.plain` only hit-tests drawn pixels, so rows with a clear
+/// background could only be clicked on the glyphs themselves.
+public struct LinearPlainButtonStyle: ButtonStyle {
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(Rectangle())
+            .opacity(configuration.isPressed ? 0.7 : 1.0)
+    }
+}
+
+public extension ButtonStyle where Self == LinearPlainButtonStyle {
+    static var linearPlain: LinearPlainButtonStyle { LinearPlainButtonStyle() }
+}
+
 public struct LinearIconButton: View {
     public let systemName: String
     public let label: String
@@ -321,7 +339,7 @@ public struct LinearIconButton: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: bordered ? DS.cornerRadius : 6))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.linearPlain)
         .disabled(disabled)
         .compositingGroup()
         .opacity(disabled ? 0.45 : 1.0)
@@ -367,7 +385,7 @@ public struct LinearSwitch: View {
                     .padding(.horizontal, 2)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.linearPlain)
         .disabled(disabled)
         .compositingGroup()
         .opacity(disabled ? 0.45 : 1.0)

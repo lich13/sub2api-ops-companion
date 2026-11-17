@@ -123,7 +123,7 @@ public struct ErrorDetailDrawerView: View {
                                                 .font(DS.iconFont(11))
                                                 .foregroundStyle(copiedId ? DS.good : DS.muted)
                                         }
-                                        .buttonStyle(.plain)
+                                        .buttonStyle(.linearPlain)
                                         .help("复制请求 ID")
                                         Spacer(minLength: 0)
                                     }

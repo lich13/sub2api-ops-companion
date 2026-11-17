@@ -336,7 +336,7 @@ public struct Sub2ApiConfigTabView: View {
                         .background(isSelected ? DS.accentBg : DS.clear)
                         .clipShape(RoundedRectangle(cornerRadius: 7))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.linearPlain)
                 }
             }
             .padding(10)
@@ -369,7 +369,7 @@ public struct Sub2ApiConfigTabView: View {
                             }
                             .foregroundStyle(DS.muted)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.linearPlain)
                     }
 
                     if showSourceLegend {
@@ -478,7 +478,7 @@ public struct Sub2ApiConfigTabView: View {
                         .foregroundStyle(DS.muted)
                         .padding(.top, 2)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.linearPlain)
 
                     if isNoteOpen {
                         Text(field.description)

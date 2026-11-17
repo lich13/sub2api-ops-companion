@@ -202,7 +202,7 @@ public struct MainShellView: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.linearPlain)
             .onHover { hovered = $0 }
             .help(store.activeConnection?.base_url ?? "切换或新增 Sub2API 实例")
             .onAppear { popoverOpen = (store.switcherAnchor == .sidebar) }
@@ -248,7 +248,7 @@ public struct MainShellView: View {
                 .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.linearPlain)
             .onHover { hovered = $0 }
         }
     }
@@ -344,7 +344,7 @@ public struct MainShellView: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.linearPlain)
             .onHover { hovered = $0 }
             .accessibilityLabel("切换 Sub2API 实例")
             .onAppear { topbarPopoverOpen = (store.switcherAnchor == .topbar) }
@@ -458,7 +458,7 @@ public struct MainShellView: View {
                     .font(DS.iconFont(11, weight: .semibold))
                     .foregroundStyle(DS.muted)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.linearPlain)
             .accessibilityLabel("关闭提示")
         }
         .padding(.horizontal, 14)

@@ -379,7 +379,7 @@ public struct ProxyManagementTabView: View {
             .foregroundStyle(DS.muted)
             .frame(width: width, alignment: .leading)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.linearPlain)
         .disabled(!busyLabel.isEmpty)
     }
 
@@ -452,7 +452,7 @@ public struct ProxyManagementTabView: View {
                         .font(DS.iconFont(11))
                         .foregroundStyle(DS.muted)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.linearPlain)
                 .disabled(!online || !busyLabel.isEmpty)
                 .help("复制 \(row.name) 地址")
                 .accessibilityLabel("复制 \(row.name) 地址")
@@ -478,7 +478,7 @@ public struct ProxyManagementTabView: View {
                         .background(DS.hover)
                         .clipShape(RoundedRectangle(cornerRadius: 5))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.linearPlain)
                     .disabled(!online || !busyLabel.isEmpty)
                     .help("查看 \(row.name) 认证")
                     .accessibilityLabel("查看 \(row.name) 认证")
@@ -509,7 +509,7 @@ public struct ProxyManagementTabView: View {
                     .background(DS.accentBg)
                     .clipShape(Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.linearPlain)
             .disabled(!online || !busyLabel.isEmpty)
             .frame(width: 74, alignment: .leading)
 
@@ -556,7 +556,7 @@ public struct ProxyManagementTabView: View {
                         .font(DS.fontResetTime)
                         .monospacedDigit()
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.linearPlain)
                     .disabled(cachedQ == nil)
                 }
             }
@@ -580,7 +580,7 @@ public struct ProxyManagementTabView: View {
                     .background(row.status == "active" ? DS.goodBg : DS.hover)
                     .clipShape(RoundedRectangle(cornerRadius: 5))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.linearPlain)
             .disabled(!online || !busyLabel.isEmpty)
             .accessibilityLabel("\(row.status == "active" ? "停用" : "启用") \(row.name)")
             .frame(width: 52, alignment: .leading)
@@ -631,7 +631,7 @@ public struct ProxyManagementTabView: View {
             .frame(width: 33, height: 36)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.linearPlain)
         .disabled(!online || !busyLabel.isEmpty)
         .help(label)
     }

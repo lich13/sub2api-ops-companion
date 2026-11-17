@@ -152,7 +152,7 @@ public struct ProxyOptionsPickerView: View {
             .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(chosen ? DS.accent : DS.line, lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.linearPlain)
     }
 
     private func proxyRow(_ item: ProxyOptionItem) -> some View {
@@ -189,7 +189,7 @@ public struct ProxyOptionsPickerView: View {
                         Spacer(minLength: 4)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.linearPlain)
 
                 HStack(spacing: 6) {
                     Button(testingIds.contains(item.id) ? "测试中" : "测试连接") {

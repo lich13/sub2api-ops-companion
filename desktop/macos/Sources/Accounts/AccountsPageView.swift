@@ -313,10 +313,10 @@ public struct AccountsPageView: View {
                             .font(DS.iconFont(9, weight: .semibold))
                             .foregroundStyle(DS.muted)
                     }
+                    .frame(width: metrics.nameW, alignment: .leading)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.linearPlain)
                 .help(nameExpanded ? "收起长账号名" : "展开完整账号名")
-                .frame(width: metrics.nameW, alignment: .leading)
 
                 Button {
                     sortStore.selectKey(.priority)
@@ -329,9 +329,9 @@ public struct AccountsPageView: View {
                     }
                     .font(DS.fontTableHeader)
                     .foregroundStyle(DS.muted)
+                    .frame(width: metrics.paramsW, alignment: .leading)
                 }
-                .buttonStyle(.plain)
-                .frame(width: metrics.paramsW, alignment: .leading)
+                .buttonStyle(.linearPlain)
 
                 Text("当前状态")
                     .font(DS.fontTableHeader)
@@ -443,7 +443,7 @@ public struct AccountsPageView: View {
                             .monospacedDigit()
                             .foregroundStyle(DS.accent)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.linearPlain)
                 }
             }
             .frame(width: metrics.nameW, alignment: .leading)
@@ -525,7 +525,7 @@ public struct AccountsPageView: View {
                             .foregroundStyle(DS.muted)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.linearPlain)
             } else if !account.error_message.isEmpty || account.last_error_status != nil {
                 Text(account.last_error_at == nil ? "错误时间未知" : BeijingTime.fullTime(account.last_error_at))
                     .font(DS.fontCompactMedium)

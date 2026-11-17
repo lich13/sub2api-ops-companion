@@ -375,7 +375,7 @@ public struct TestDialogSheet: View {
                             }
                             .font(DS.fontPriorityMeta)
                             .foregroundStyle(DS.bad)
-                            .buttonStyle(.plain)
+                            .buttonStyle(.linearPlain)
                             .disabled(running)
                         }
                     }

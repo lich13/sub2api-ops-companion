@@ -510,7 +510,7 @@ public struct GroupsPageView: View {
                             .foregroundStyle(DS.muted)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.linearPlain)
 
                 Spacer()
 
@@ -652,7 +652,7 @@ private struct GroupMoveHandle: View {
                 .background(hovered && !disabled ? DS.hover : DS.clear)
                 .clipShape(RoundedRectangle(cornerRadius: 5))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.linearPlain)
         .disabled(disabled)
         .onHover { hovered = $0 }
         .help("拖拽或点击调整分组")
@@ -675,7 +675,7 @@ private struct GroupMoveHandle: View {
                                 .frame(width: 170, alignment: .leading)
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.linearPlain)
                     }
                 }
             }

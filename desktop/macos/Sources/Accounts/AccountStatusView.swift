@@ -52,7 +52,7 @@ public struct AccountStatusView: View {
                         .background(DS.warnBg)
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.linearPlain)
                     .disabled(account.last_error_id == nil)
                     .help(account.last_error_id != nil ? "查看最近报错原文" : "暂无关联报错记录")
                 }

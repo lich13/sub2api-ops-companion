@@ -107,7 +107,7 @@ public struct CostDetailsPopover: View {
                     .foregroundStyle(DS.costOrange)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.linearPlain)
         .accessibilityLabel("查看费用明细")
         .popover(isPresented: $isOpen, arrowEdge: .trailing) {
             VStack(alignment: .leading, spacing: 8) {

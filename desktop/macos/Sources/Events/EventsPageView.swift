@@ -264,6 +264,6 @@ public struct EventsPageView: View {
             .padding(.vertical, 14)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.linearPlain)
     }
 }

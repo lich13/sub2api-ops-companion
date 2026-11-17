@@ -145,8 +145,9 @@ public struct ProxyEditorSheet: View {
                                 Image(systemName: showPassword ? "eye.slash" : "eye")
                                     .font(DS.iconFont(12))
                                     .foregroundStyle(DS.muted)
+                                    .frame(width: 24, height: 24)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.linearPlain)
                             .disabled(clearAuth)
                             .accessibilityLabel(showPassword ? "隐藏密码" : "显示密码")
                         }

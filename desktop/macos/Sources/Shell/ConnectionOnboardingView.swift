@@ -128,7 +128,7 @@ public struct ConnectionOnboardingView: View {
                                     }
                                     .contentShape(Rectangle())
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.linearPlain)
                                 .disabled(busy || store.switchingUrl != nil)
 
                                 Button("填入") {
@@ -138,7 +138,7 @@ public struct ConnectionOnboardingView: View {
                                 }
                                 .font(DS.fontPriorityMeta)
                                 .foregroundStyle(DS.muted)
-                                .buttonStyle(.plain)
+                                .buttonStyle(.linearPlain)
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)

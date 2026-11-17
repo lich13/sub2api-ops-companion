@@ -58,7 +58,7 @@ public struct BatchToolbarView: View {
                 Button("取消选择", action: onClear)
                     .font(DS.fontPriorityMeta)
                     .foregroundStyle(DS.muted)
-                    .buttonStyle(.plain)
+                    .buttonStyle(.linearPlain)
                     .disabled(busy)
             }
 
