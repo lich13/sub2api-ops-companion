@@ -37,7 +37,11 @@ public struct AccountModalHostView: View {
         ZStack {
             DS.backdrop
                 .ignoresSafeArea()
-                .onTapGesture(perform: onClose)
+                .onTapGesture {
+                    // The creation form guards unsaved input and in-flight submissions itself.
+                    if case .addAccount = destination { return }
+                    onClose()
+                }
 
             switch destination {
             case .addAccount:

@@ -4,6 +4,18 @@ import SwiftUI
 import Testing
 @testable import Sub2OpsMacOS
 
+/// Renders every creation field group expanded, outside the bounded dialog scroll view.
+private struct AccountCreationFieldsPreview: View {
+    @State var draft: AccountCreationFormDraft
+
+    var body: some View {
+        AccountCreationFieldsView(draft: $draft, expandAll: true)
+            .padding(24)
+            .frame(width: 668)
+            .background(DS.surface)
+    }
+}
+
 extension Sub2OpsMacOSTestRoot {
 @Suite("M2 Accounts, Catalog, Actions & UI Snapshots", .serialized)
 struct StageM2Tests {
@@ -461,6 +473,26 @@ struct StageM2Tests {
                 size: CGSize(width: 720, height: 780),
                 dark: dark,
                 outputURL: baseURL.appendingPathComponent("m2_creation_dialog_\(suffix).png")
+            )
+            var routedDraft = AccountCreationFormDraft()
+            routedDraft.applyPlatformDefaults(for: "opencode_go", authType: "apikey")
+            routedDraft.name = "OpenCode 路由账号"
+            routedDraft.mappings = Array(routedDraft.mappings.prefix(2))
+            routedDraft.setValue("credentials.temp_unschedulable_enabled", .bool(true))
+            routedDraft.pauseRules = [PauseRuleDraft(keywords: "rate limit, overloaded", description: "上游限流")]
+            try SnapshotRenderUtility.renderPNG(
+                view: ZStack { DS.backdrop; AccountCreationFieldsPreview(draft: routedDraft) }
+                    .frame(width: 720, height: 1500),
+                size: CGSize(width: 720, height: 1500),
+                dark: dark,
+                outputURL: baseURL.appendingPathComponent("m2_creation_routing_fields_\(suffix).png")
+            )
+            try await SnapshotRenderUtility.renderPNGAsync(
+                view: ZStack { DS.backdrop; KeyQuotaSettingsSheet(store: store, targetAccount: nil, onClose: {}) }
+                    .frame(width: 560, height: 320),
+                size: CGSize(width: 560, height: 320),
+                dark: dark,
+                outputURL: baseURL.appendingPathComponent("m2_key_quota_settings_\(suffix).png")
             )
             try await SnapshotRenderUtility.renderPNGAsync(
                 view: ZStack { DS.backdrop; ModelTestSheet(account: acc1, store: store, onClose: {}) }

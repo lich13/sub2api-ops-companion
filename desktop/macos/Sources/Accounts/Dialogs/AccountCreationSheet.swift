@@ -1,11 +1,22 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 private struct CreationOutcome: Identifiable, Sendable, Equatable {
     var index: Int
+    /// success | failed | unknown
     var status: String
     var message: String
     var id: Int { index }
+}
+
+private struct ResolvedIdentity: Sendable, Equatable {
+    var credentials: [String: JSONValue]
+    var extra: [String: JSONValue]
+}
+
+private struct GeminiCatalogResponse: Decodable, Sendable {
+    var ai_studio_oauth_enabled: Bool
 }
 
 private struct MixedChannelCheckResponse: Decodable, Sendable {
@@ -22,8 +33,11 @@ public struct AccountCreationSheet: View {
     public let onClose: () -> Void
 
     @State private var step: Int = 1
-    @State private var draft = AccountCreationFormDraft()
+    @State private var draft: AccountCreationFormDraft
+    @State private var initialDraft: AccountCreationFormDraft?
     @State private var options: CreationOptionsResponse?
+    @State private var optionError: String = ""
+    @State private var aiStudioEnabled: Bool = false
     @State private var tlsProfiles: [CreationTLSProfileOption] = []
     @State private var quotaNotifyEnabled: Bool = false
     @State private var webSearchEnabled: Bool = false
@@ -34,17 +48,28 @@ public struct AccountCreationSheet: View {
     @State private var authMethod: String = "manual"
     @State private var authInput: String = ""
     @State private var oauthSession: OAuthAuthorizationSession?
+    @State private var identity: ResolvedIdentity?
     @State private var previewModels: [String] = []
     @State private var previewSelected: Set<String> = []
     @State private var modelsPreviewed: Bool = false
     @State private var mixedRisk: Bool = false
     @State private var mixedConfirmed: Bool = false
+    @State private var errorCodesConfirmed: String = ""
     @State private var outcomes: [CreationOutcome] = []
+    /// Outcome per submitted credential, so a sent-but-unconfirmed item is never posted twice.
+    @State private var ledger: [String: CreationOutcome] = [:]
+    @State private var scope: Int = 0
+    @State private var confirmDiscard: Bool = false
     @State private var busy: Bool = false
     @State private var error: String = ""
 
-    public init(store: AppStore, onClose: @escaping () -> Void) {
+    public init(
+        store: AppStore,
+        draft: AccountCreationFormDraft = AccountCreationFormDraft(),
+        onClose: @escaping () -> Void
+    ) {
         self.store = store
+        self._draft = State(initialValue: draft)
         self.onClose = onClose
     }
 
@@ -79,6 +104,42 @@ public struct AccountCreationSheet: View {
         return store.groups.filter { $0.platform == draft.platform }.map { ($0.id, $0.name) }
     }
 
+    private var groupLongContext: Bool {
+        !draft.groupIds.isEmpty && draft.groupIds.allSatisfy { id in
+            options?.groups?.contains(where: { $0.id == id && $0.long_context_pricing_enabled == true }) ?? false
+        }
+    }
+
+    private var errorRiskKey: String {
+        draft.customErrorRisks.map(String.init).joined(separator: ",")
+    }
+
+    private var isDirty: Bool {
+        (initialDraft.map { $0 != draft } ?? false) || !authInput.isEmpty || oauthSession != nil
+    }
+
+    private var blockedDirect: Bool {
+        ledger["direct:direct"]?.status == "unknown"
+    }
+
+    private var requireName: Bool {
+        !(draft.platform == "grok" && draft.type == "oauth" && (step == 1 || authMethod == "grok-sso"))
+    }
+
+    private var authScopeKey: [String] {
+        [
+            draft.proxyId.map(String.init) ?? "",
+            draft.values["credentials.oauth_type"]?.stringValue ?? "",
+            draft.values["credentials.project_id"]?.stringValue ?? "",
+            draft.values["credentials.tier_id"]?.stringValue ?? "",
+        ]
+    }
+
+    private var previewScopeKey: [String] {
+        [draft.apiKey, draft.values["credentials.base_url"]?.stringValue ?? ""]
+            + draft.protocolURLs.keys.sorted().map { "\($0)=\(draft.protocolURLs[$0] ?? "")" }
+    }
+
     private func typeDisplayName(_ raw: String) -> String {
         if draft.platform == "antigravity" && raw == "apikey" {
             return "Upstream"
@@ -87,20 +148,100 @@ public struct AccountCreationSheet: View {
     }
 
     public var body: some View {
+        ZStack {
+            creationCard
+            if confirmDiscard {
+                discardConfirmCard
+            }
+        }
+        .onAppear {
+            if initialDraft == nil { initialDraft = draft }
+        }
+        .onChange(of: authScopeKey) { _, _ in clearAuth() }
+        .onChange(of: previewScopeKey) { _, _ in modelsPreviewed = false }
+        .task(id: store.state.online) {
+            guard store.state.online else { return }
+            await loadOptions()
+        }
+        .task(id: "\(draft.platform):\(draft.type):\(store.state.online)") {
+            await loadAntigravityDefaults()
+        }
+    }
+
+    private var discardConfirmCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("放弃未保存的更改？")
+                .font(DS.fontSectionTitle)
+                .foregroundStyle(DS.ink)
+            HStack(spacing: 8) {
+                Spacer()
+                Button("继续编辑") {
+                    confirmDiscard = false
+                }
+                .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                Button("放弃修改", action: onClose)
+                    .buttonStyle(LinearButtonStyle(variant: .danger, compact: true))
+            }
+        }
+        .padding(18)
+        .frame(width: 320)
+        .background(DS.surface)
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(DS.lineStrong, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .shadow(color: DS.modalShadowColor, radius: 16, x: 0, y: 8)
+    }
+
+    private func requestClose(fromEscape: Bool) {
+        guard !busy else { return }
+        if confirmDiscard {
+            confirmDiscard = false
+            return
+        }
+        if isDirty {
+            if !fromEscape {
+                confirmDiscard = true
+            }
+            return
+        }
+        onClose()
+    }
+
+    private var creationCard: some View {
         LinearModalCard(
             title: "添加账号",
             subtitle: step == 1 ? "1 · 基本信息与配置" : "2 · 凭据与授权",
             width: 668,
             closeDisabled: busy,
-            onClose: onClose
+            onClose: { requestClose(fromEscape: false) }
         ) {
             LinearBoundedScrollView(maxHeight: 590) {
                 VStack(alignment: .leading, spacing: 12) {
-                    if step == 1 {
-                        stepOneBody
-                    } else {
-                        stepTwoBody
+                    if !optionError.isEmpty {
+                        HStack(spacing: 8) {
+                            Text(optionError)
+                                .font(DS.fontCompact)
+                                .foregroundStyle(DS.bad)
+                            Spacer()
+                            Button("重新读取选项") {
+                                Task { await loadOptions() }
+                            }
+                            .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                            .disabled(busy || !store.state.online)
+                        }
+                    } else if options == nil {
+                        Text("正在读取账号选项…")
+                            .font(DS.fontCompact)
+                            .foregroundStyle(DS.muted)
                     }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        if step == 1 {
+                            stepOneBody
+                        } else {
+                            stepTwoBody
+                        }
+                    }
+                    .disabled(busy || !store.state.online)
 
                     if mixedRisk {
                         VStack(alignment: .leading, spacing: 8) {
@@ -118,12 +259,37 @@ public struct AccountCreationSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
 
+                    if !draft.customErrorRisks.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(draft.customErrorRisks, id: \.self) { code in
+                                Text("将 \(String(code)) 加入自定义错误码后，该错误会停止账号调度，并覆盖原生的\(code == 429 ? "临时限流" : "临时过载")处理。")
+                                    .font(DS.fontCompact)
+                                    .foregroundStyle(DS.warn)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            LinearCheckbox(
+                                isChecked: errorCodesConfirmed == errorRiskKey,
+                                label: "确认这些错误码停止账号调度",
+                                disabled: busy
+                            ) {
+                                errorCodesConfirmed = errorCodesConfirmed == errorRiskKey ? "" : errorRiskKey
+                            }
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(DS.warnBg)
+                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(DS.warn, lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+
                     if !outcomes.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             ForEach(outcomes) { item in
                                 Text("#\(item.index) · \(item.message)")
                                     .font(DS.fontCompact)
-                                    .foregroundStyle(item.status == "success" ? DS.good : DS.bad)
+                                    .foregroundStyle(item.status == "success" ? DS.good : (item.status == "unknown" ? DS.warn : DS.bad))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .textSelection(.enabled)
                             }
                         }
                         .padding(10)
@@ -138,6 +304,12 @@ public struct AccountCreationSheet: View {
                 Text(error)
                     .font(DS.fontCompact)
                     .foregroundStyle(DS.bad)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if blockedDirect {
+                Text("请刷新核对账号是否已经创建，再关闭此窗口。")
+                    .font(DS.fontCompact)
+                    .foregroundStyle(DS.warn)
             }
         } footer: {
             Button(step == 2 ? "上一步" : "取消") {
@@ -145,7 +317,7 @@ public struct AccountCreationSheet: View {
                     step = 1
                     error = ""
                 } else {
-                    onClose()
+                    requestClose(fromEscape: false)
                 }
             }
             .buttonStyle(LinearButtonStyle(variant: .secondary))
@@ -170,14 +342,10 @@ public struct AccountCreationSheet: View {
                 )
             }
             .buttonStyle(LinearButtonStyle(variant: .primary))
-            .disabled(!store.state.online || busy || reusing || (mixedRisk && !mixedConfirmed))
+            .disabled(!store.state.online || busy || reusing || options == nil || blockedDirect || (mixedRisk && !mixedConfirmed))
         }
         .sub2opsDialogFocus {
-            if !busy { onClose() }
-        }
-        .task(id: store.state.online) {
-            guard store.state.online else { return }
-            await loadOptions()
+            requestClose(fromEscape: true)
         }
     }
 
@@ -247,13 +415,11 @@ public struct AccountCreationSheet: View {
                         entries: [
                             LinearMenuEntry(id: "none", title: "不使用代理", checked: draft.proxyId == nil) {
                                 draft.proxyId = nil
-                                oauthSession = nil
                             },
                         ] + proxies.map { p in
                             let suffix = (p.status != nil && p.status != "active") ? "（未启用）" : ""
                             return LinearMenuEntry(id: "\(p.id)", title: "\(p.name)\(suffix)", checked: draft.proxyId == p.id) {
                                 draft.proxyId = p.id
-                                oauthSession = nil
                             }
                         }
                     )
@@ -263,7 +429,7 @@ public struct AccountCreationSheet: View {
                 labeledTextField("负载因子", text: $draft.loadFactor, prompt: "跟随并发数")
                 labeledTextField("优先级", text: $draft.priority, prompt: "1")
                 labeledTextField("计费倍率", text: $draft.rateMultiplier, prompt: "1")
-                labeledTextField("到期时间（可选）", text: $draft.expiresAtText, prompt: "YYYY-MM-DD HH:mm")
+                labeledTextField("到期时间（本地时区）", text: $draft.expiresAtText, prompt: "YYYY-MM-DD HH:mm，可留空")
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -306,8 +472,16 @@ public struct AccountCreationSheet: View {
                 draft: $draft,
                 tlsProfiles: tlsProfiles,
                 quotaNotifyEnabled: quotaNotifyEnabled,
-                webSearchEnabled: webSearchEnabled
+                webSearchEnabled: webSearchEnabled,
+                aiStudioEnabled: aiStudioEnabled,
+                groupLongContext: groupLongContext
             )
+
+            if draft.platform == "anthropic" && draft.type == "apikey" {
+                Text("全局 Web Search 模拟：\(webSearchEnabled ? "开启" : "关闭")")
+                    .font(DS.fontResetTime)
+                    .foregroundStyle(DS.muted)
+            }
         }
     }
 
@@ -391,7 +565,7 @@ public struct AccountCreationSheet: View {
                             LinearMenuEntry(id: m.id, title: m.label, checked: authMethod == m.id) {
                                 authMethod = m.id
                                 authInput = ""
-                                oauthSession = nil
+                                clearAuth()
                                 error = ""
                                 outcomes = []
                             }
@@ -473,12 +647,31 @@ public struct AccountCreationSheet: View {
                 )
                 .font(DS.fontResetTime)
                 .foregroundStyle(DS.muted)
+
+                if ["codex-session", "agent-identity"].contains(authMethod) {
+                    Button {
+                        if let text = readCredentialFiles(multiple: true) { authInput = text }
+                    } label: {
+                        Label("导入凭据文件", systemImage: "doc.badge.plus")
+                    }
+                    .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                }
             }
-        } else if draft.type == "service_account" && !(draft.platform == "gemini" && draft.values["credentials.auth_mode"]?.stringValue == "apikey") {
+            .onChange(of: authInput) { _, _ in identity = nil }
+        } else if draft.type == "service_account" && !draft.isVertexApiKey {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Service Account JSON")
-                    .font(DS.fontCompactMedium)
-                    .foregroundStyle(DS.muted)
+                HStack {
+                    Text("Service Account JSON")
+                        .font(DS.fontCompactMedium)
+                        .foregroundStyle(DS.muted)
+                    Spacer()
+                    Button {
+                        if let text = readCredentialFiles(multiple: false) { draft.serviceAccountJSON = text }
+                    } label: {
+                        Label("选择 JSON 文件", systemImage: "doc.badge.plus")
+                    }
+                    .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                }
                 TextEditor(text: $draft.serviceAccountJSON)
                     .font(DS.fontMono11)
                     .foregroundStyle(DS.ink)
@@ -505,7 +698,7 @@ public struct AccountCreationSheet: View {
                             Task { await previewUpstreamModels() }
                         }
                         .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                        .disabled(busy || draft.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(draft.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         Spacer()
                     }
 
@@ -582,9 +775,38 @@ public struct AccountCreationSheet: View {
         }
     }
 
+    private func clearAuth() {
+        oauthSession = nil
+        identity = nil
+    }
+
+    private func readCredentialFiles(multiple: Bool) -> String? {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = multiple ? [.json, .plainText] : [.json]
+        panel.allowsMultipleSelection = multiple
+        guard panel.runModal() == .OK else { return nil }
+        var total = 0
+        var texts: [String] = []
+        for url in panel.urls {
+            guard let data = try? Data(contentsOf: url), let text = String(data: data, encoding: .utf8) else {
+                error = "凭据文件读取失败"
+                return nil
+            }
+            total += data.count
+            if total > 1_000_000 {
+                error = "凭据文件过大"
+                return nil
+            }
+            texts.append(text)
+        }
+        error = ""
+        return texts.joined(separator: "\n")
+    }
+
     private func switchKind(platform: String, type: String?) {
         let savedName = draft.name
         let savedNotes = draft.notes
+        scope &+= 1
         if let type {
             draft.applyPlatformDefaults(for: platform, authType: type)
         } else {
@@ -592,66 +814,109 @@ public struct AccountCreationSheet: View {
         }
         draft.name = savedName
         draft.notes = savedNotes
-        selectedSourceId = nil
+        selectedSourceId = reuseCandidates.count == 1 ? reuseCandidates[0].id : nil
         sourceQuery = ""
         reuseNotice = ""
+        reusing = false
+        busy = false
         authMethod = "manual"
         authInput = ""
-        oauthSession = nil
+        clearAuth()
         outcomes = []
+        ledger = [:]
         error = ""
         mixedRisk = false
         mixedConfirmed = false
+        errorCodesConfirmed = ""
         previewModels = []
         modelsPreviewed = false
         step = 1
     }
 
     private func loadOptions() async {
-        if let opt: CreationOptionsResponse = try? await RustBridge.shared.api("GET", "/account-creation/options") {
+        optionError = ""
+        var partial = false
+        do {
+            let opt: CreationOptionsResponse = try await RustBridge.shared.api("GET", "/account-creation/options")
             options = opt
+        } catch {
+            optionError = "账号选项读取失败，请重试"
         }
-        if let tls: [CreationTLSProfileOption] = try? await RustBridge.shared.api("GET", "/account-creation/catalog/tls") {
+        do {
+            let tls: [CreationTLSProfileOption] = try await RustBridge.shared.api("GET", "/account-creation/catalog/tls")
             tlsProfiles = tls
-        }
-        if let settingsObj: [String: JSONValue] = try? await RustBridge.shared.api("GET", "/account-creation/catalog/settings") {
+        } catch { partial = true }
+        do {
+            let gemini: GeminiCatalogResponse = try await RustBridge.shared.api("GET", "/account-creation/catalog/gemini")
+            aiStudioEnabled = gemini.ai_studio_oauth_enabled
+        } catch { partial = true }
+        do {
+            let settingsObj: [String: JSONValue] = try await RustBridge.shared.api("GET", "/account-creation/catalog/settings")
             quotaNotifyEnabled = settingsObj["account_quota_notify_enabled"]?.boolValue ?? false
-        }
-        if let wsObj: [String: JSONValue] = try? await RustBridge.shared.api("GET", "/account-creation/catalog/web-search") {
+        } catch { partial = true }
+        do {
+            let wsObj: [String: JSONValue] = try await RustBridge.shared.api("GET", "/account-creation/catalog/web-search")
             webSearchEnabled = wsObj["enabled"]?.boolValue ?? false
+        } catch { partial = true }
+        if partial && optionError.isEmpty {
+            optionError = "部分高级选项读取失败，请重试以读取完整选项"
         }
-        if reuseCandidates.count == 1 {
+        if selectedSourceId == nil, reuseCandidates.count == 1 {
             selectedSourceId = reuseCandidates[0].id
         }
     }
 
+    /// Antigravity ships its default model mapping from the server; fill it while the
+    /// mapping is still empty for the platform/type that requested it.
+    private func loadAntigravityDefaults() async {
+        guard draft.platform == "antigravity", store.state.online, draft.mappings.isEmpty else { return }
+        let current = scope
+        do {
+            let map: [String: String] = try await RustBridge.shared.api("GET", "/account-creation/catalog/antigravity-models")
+            guard current == scope, draft.platform == "antigravity", draft.mappings.isEmpty else { return }
+            draft.mappings = map.keys.sorted().map { KeyValuePairDraft(key: $0, value: map[$0] ?? "") }
+        } catch {
+            if current == scope {
+                self.error = "默认模型映射读取失败，可手动填写或切换平台后重试"
+            }
+        }
+    }
+
     private func reuseConfiguration() async {
-        guard let sourceId = selectedSourceId, store.state.online, !reusing else { return }
+        guard let sourceId = selectedSourceId, store.state.online, !reusing, !busy else { return }
+        let current = scope
         reusing = true
         error = ""
         reuseNotice = ""
-        defer { reusing = false }
+        defer { if current == scope { reusing = false } }
         do {
             let sourceObj: [String: JSONValue] = try await RustBridge.shared.api("GET", "/account-creation/source/\(sourceId)")
+            guard current == scope, selectedSourceId == sourceId else { return }
             try draft.applyReusedSource(sourceObj)
+            mixedRisk = false
+            mixedConfirmed = false
+            errorCodesConfirmed = ""
+            modelsPreviewed = false
             reuseNotice = "已复用配置，可继续修改；账号名称与新填凭据已保留"
         } catch {
-            self.error = error.localizedDescription
+            if current == scope { self.error = error.localizedDescription }
         }
     }
 
     private func generateAuthorizationURL() async {
         guard store.state.online, !busy else { return }
+        let current = scope
         busy = true
         error = ""
-        oauthSession = nil
-        defer { busy = false }
+        clearAuth()
+        defer { if current == scope { busy = false } }
         do {
             let res: OAuthAuthorizationSession = try await RustBridge.shared.api(
                 "POST",
                 "/account-creation/auth/\(draft.authProvider)/authorize",
                 body: .object(draft.authConfigBody)
             )
+            guard current == scope else { return }
             var resolved = res
             if (resolved.state ?? "").isEmpty,
                let comps = URLComponents(string: res.auth_url),
@@ -661,29 +926,32 @@ public struct AccountCreationSheet: View {
             }
             oauthSession = resolved
         } catch {
-            self.error = error.localizedDescription
+            if current == scope { self.error = error.localizedDescription }
         }
     }
 
     private func previewUpstreamModels() async {
         guard store.state.online, !busy else { return }
+        let current = scope
         busy = true
         error = ""
-        defer { busy = false }
+        defer { if current == scope { busy = false } }
         do {
-            let payload = try draft.buildPayload(requireCredentials: true)
+            let payload = try draft.buildPayload(requireCredentials: true, requireName: false)
             let creds = payload["credentials"]?.objectValue ?? [:]
+            var body: [String: JSONValue] = [
+                "platform": .string(draft.platform),
+                "type": .string(draft.type),
+            ]
+            for key in ["base_url", "api_key", "model_mapping"] {
+                if let value = creds[key], value != .null { body[key] = value }
+            }
             let res: PreviewModelsResponse = try await RustBridge.shared.api(
                 "POST",
                 "/account-creation/models",
-                body: .object([
-                    "platform": .string(draft.platform),
-                    "type": .string(draft.type),
-                    "base_url": creds["base_url"] ?? .null,
-                    "api_key": creds["api_key"] ?? .null,
-                    "model_mapping": creds["model_mapping"] ?? .null,
-                ])
+                body: .object(body)
             )
+            guard current == scope else { return }
             modelsPreviewed = true
             previewModels = res.models
             previewSelected = Set(res.models)
@@ -691,22 +959,24 @@ public struct AccountCreationSheet: View {
                 error = warnings.joined(separator: "；")
             }
         } catch {
-            self.error = error.localizedDescription
+            if current == scope { self.error = error.localizedDescription }
         }
     }
 
-    private func exchangeCredential(item: String) async throws -> (credentials: [String: JSONValue], extra: [String: JSONValue]) {
-        var config = draft.authConfigBody
-        config.removeValue(forKey: "project_id")
+    private func authorizedIdentity(item: String) async throws -> ResolvedIdentity {
+        if authMethod == "manual", let identity {
+            return identity
+        }
+        var body = draft.authConfigBody
+        body.removeValue(forKey: "project_id")
         let action: String
-        var body = config
         if authMethod == "manual" {
             guard let oauthSession else {
                 throw RustBridgeError("请先生成授权链接")
             }
             var code = item.trimmingCharacters(in: .whitespacesAndNewlines)
             var state = oauthSession.state
-            if let comps = URLComponents(string: code), comps.scheme != nil {
+            if let comps = URLComponents(string: code), comps.scheme != nil, comps.host != nil {
                 code = comps.queryItems?.first(where: { $0.name == "code" })?.value ?? ""
                 if let s = comps.queryItems?.first(where: { $0.name == "state" })?.value, !s.isEmpty {
                     state = s
@@ -743,38 +1013,50 @@ public struct AccountCreationSheet: View {
         guard resolved.credentials["access_token"] != nil else {
             throw RustBridgeError("授权未返回可用令牌，请重新授权")
         }
-        return resolved
+        let result = ResolvedIdentity(credentials: resolved.credentials, extra: resolved.extra)
+        if authMethod == "manual" {
+            identity = result
+        }
+        return result
+    }
+
+    private func checkMixedChannel() async throws -> Bool {
+        if mixedConfirmed || !["anthropic", "antigravity"].contains(draft.platform) { return true }
+        let check: MixedChannelCheckResponse = try await RustBridge.shared.api(
+            "POST",
+            "/account-creation/check-mixed-channel",
+            body: .object([
+                "platform": .string(draft.platform),
+                "group_ids": .array(draft.groupIds.sorted().map { .int(Int64($0)) }),
+            ])
+        )
+        if check.has_risk {
+            mixedRisk = true
+            return false
+        }
+        return true
     }
 
     private func submitAction() async {
-        guard store.state.online, !busy, !reusing else { return }
-        let requireName = !(draft.platform == "grok" && draft.type == "oauth" && (step == 1 || authMethod == "grok-sso"))
-        let stepProblem = draft.validateStepOne(requireName: requireName)
-        if !stepProblem.isEmpty {
-            error = stepProblem
+        guard store.state.online, !busy, !reusing, options != nil else { return }
+        let problem = draft.validate(requireCredentials: step == 2 && !draft.isOAuthFlow, requireName: requireName)
+        if !problem.isEmpty {
+            error = problem
+            return
+        }
+        if !errorRiskKey.isEmpty && errorCodesConfirmed != errorRiskKey {
+            error = "请先确认自定义错误码对调度的影响"
             return
         }
 
+        let current = scope
         busy = true
         error = ""
-        defer { busy = false }
+        defer { if current == scope { busy = false } }
 
         do {
-            if !mixedConfirmed && ["anthropic", "antigravity"].contains(draft.platform) {
-                let check: MixedChannelCheckResponse = try await RustBridge.shared.api(
-                    "POST",
-                    "/account-creation/check-mixed-channel",
-                    body: .object([
-                        "platform": .string(draft.platform),
-                        "group_ids": .array(draft.groupIds.sorted().map { .int(Int64($0)) }),
-                    ])
-                )
-                if check.has_risk {
-                    mixedRisk = true
-                    return
-                }
-            }
-
+            guard try await checkMixedChannel() else { return }
+            guard current == scope else { return }
             if step == 1 {
                 step = 2
                 return
@@ -785,82 +1067,114 @@ public struct AccountCreationSheet: View {
             if !draft.isOAuthFlow {
                 items = ["direct"]
             } else if ["manual", "codex-session", "agent-identity", "codex-pat"].contains(authMethod) {
-                let trimmed = authInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                items = trimmed.isEmpty ? [] : [trimmed]
+                items = [authInput.trimmingCharacters(in: .whitespacesAndNewlines)]
             } else {
                 items = authInput
                     .components(separatedBy: .newlines)
                     .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                     .filter { !$0.isEmpty }
             }
-
-            guard !items.isEmpty else {
+            guard !items.isEmpty, !items.contains(where: \.isEmpty) else {
                 error = "请填写凭据"
                 return
             }
 
+            let baseName = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
             var nextOutcomes: [CreationOutcome] = []
             for (idx, item) in items.enumerated() {
-                var itemDraft = draft
-                if items.count > 1 && !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    itemDraft.name = "\(draft.name) #\(idx + 1)"
+                guard current == scope else { break }
+                let key = "\(draft.isOAuthFlow ? authMethod : "direct"):\(item)"
+                if let previous = ledger[key], previous.status != "failed" {
+                    nextOutcomes.append(CreationOutcome(index: idx + 1, status: previous.status, message: previous.message))
+                    continue
                 }
-
+                var sent = false
+                let outcome: CreationOutcome
                 do {
+                    var itemDraft = draft
+                    if items.count > 1 && !baseName.isEmpty {
+                        itemDraft.name = "\(draft.name) #\(idx + 1)"
+                    }
+                    var detail = "已创建"
+                    var partial = false
                     if isNativeImport {
-                        var base = try itemDraft.buildPayload(requireCredentials: false, requireName: false)
-                        let credExtras = base.removeValue(forKey: "credentials") ?? .object([:])
-                        base.removeValue(forKey: "platform")
-                        base.removeValue(forKey: "type")
-
+                        var body = try itemDraft.importParameters()
+                        sent = true
                         if authMethod == "grok-sso" {
-                            base["credentials"] = credExtras
-                            base["sso_tokens"] = .array([.string(item)])
-                            let res: [String: JSONValue] = try await RustBridge.shared.api("POST", "/account-creation/import/grok-sso", body: .object(base))
-                            let createdArr = res["created"]?.arrayValue ?? []
-                            if !(res["failed"]?.arrayValue ?? []).isEmpty || createdArr.isEmpty {
+                            body["credentials"] = body.removeValue(forKey: "credential_extras") ?? .object([:])
+                            body["sso_tokens"] = .array([.string(item)])
+                            let res: [String: JSONValue] = try await RustBridge.shared.api("POST", "/account-creation/import/grok-sso", body: .object(body))
+                            if !(res["failed"]?.arrayValue ?? []).isEmpty {
+                                sent = false
                                 throw RustBridgeError("SSO 导入失败，请检查凭据后重试")
                             }
-                            let newId = createdArr[0]["account"]?["id"]?.intValue ?? 0
-                            nextOutcomes.append(CreationOutcome(index: idx + 1, status: "success", message: "已创建 #\(newId)"))
+                            guard let first = res["created"]?.arrayValue?.first else {
+                                throw RustBridgeError("SSO 导入未返回创建结果")
+                            }
+                            detail = "已创建 #\(first["account"]?["id"]?.intValue ?? 0)"
                         } else if authMethod == "codex-pat" {
-                            base["credential_extras"] = credExtras
-                            base["access_token"] = .string(item)
-                            let res: CreationCreatedResponse = try await RustBridge.shared.api("POST", "/account-creation/import/codex-pat", body: .object(base))
-                            nextOutcomes.append(CreationOutcome(index: idx + 1, status: "success", message: "已创建 #\(res.account.id)"))
+                            body["access_token"] = .string(item)
+                            let res: CreationCreatedResponse = try await RustBridge.shared.api("POST", "/account-creation/import/codex-pat", body: .object(body))
+                            detail = "已创建 #\(res.account.id)"
                         } else {
-                            base["credential_extras"] = credExtras
-                            base["content"] = .string(item)
-                            base["update_existing"] = .bool(true)
-                            let res: [String: JSONValue] = try await RustBridge.shared.api("POST", "/account-creation/import/codex-session", body: .object(base))
-                            let c = res["created"]?.intValue ?? 0
-                            let u = res["updated"]?.intValue ?? 0
-                            let f = res["failed"]?.intValue ?? 0
-                            nextOutcomes.append(CreationOutcome(index: idx + 1, status: f > 0 ? "failed" : "success", message: "创建 \(c)，更新 \(u)，失败 \(f)"))
+                            body["content"] = .string(item)
+                            body["update_existing"] = .bool(true)
+                            let res: [String: JSONValue] = try await RustBridge.shared.api("POST", "/account-creation/import/codex-session", body: .object(body))
+                            let failed = res["failed"]?.intValue ?? 0
+                            detail = "创建 \(res["created"]?.intValue ?? 0)，更新 \(res["updated"]?.intValue ?? 0)，跳过 \(res["skipped"]?.intValue ?? 0)，失败 \(failed)"
+                            let failedIndexes = (res["errors"]?.arrayValue ?? []).compactMap { $0["index"]?.intValue }
+                            if !failedIndexes.isEmpty {
+                                detail += "；失败项 \(failedIndexes.map { String($0) }.joined(separator: "、"))，请仅填入失败项重试"
+                            }
+                            let warnings = (res["warnings"]?.arrayValue ?? []).map {
+                                "#\($0["index"]?.intValue ?? 0) \($0["message"]?.stringValue ?? "")"
+                            }
+                            if !warnings.isEmpty {
+                                detail += "；\(warnings.joined(separator: "；"))"
+                            }
+                            partial = failed > 0
                         }
                     } else {
-                        let resolved = draft.isOAuthFlow ? try await exchangeCredential(item: item) : nil
+                        let auth = draft.isOAuthFlow ? try await authorizedIdentity(item: item) : nil
+                        guard current == scope else { break }
                         var payload = try itemDraft.buildPayload(
-                            identityCredentials: resolved?.credentials,
-                            identityExtra: resolved?.extra,
+                            identityCredentials: auth?.credentials,
+                            identityExtra: auth?.extra,
                             requireCredentials: true,
                             requireName: true
                         )
                         if mixedConfirmed {
                             payload["confirm_mixed_channel_risk"] = .bool(true)
                         }
+                        sent = true
                         let path = modelsPreviewed ? "/account-creation?sync_models=true" : "/account-creation"
                         let created: CreationCreatedResponse = try await RustBridge.shared.api("POST", path, body: .object(payload))
-                        let warnSuffix = (created.warnings ?? []).isEmpty ? "" : "；\((created.warnings ?? []).joined(separator: "；"))"
-                        nextOutcomes.append(CreationOutcome(index: idx + 1, status: "success", message: "已创建 #\(created.account.id)\(warnSuffix)"))
+                        let warnings = created.warnings ?? []
+                        detail = "已创建 #\(created.account.id)\(warnings.isEmpty ? "" : "；\(warnings.joined(separator: "；"))")"
                     }
+                    outcome = CreationOutcome(index: idx + 1, status: partial ? "unknown" : "success", message: detail)
                 } catch {
-                    nextOutcomes.append(CreationOutcome(index: idx + 1, status: "failed", message: error.localizedDescription))
+                    let text = error.localizedDescription
+                    // A request that left the client without a definite 4xx answer may have created the account.
+                    let unknown = sent && text.range(of: "\\[4\\d\\d\\]", options: .regularExpression) == nil
+                    if text.contains("mixed_channel_warning") {
+                        mixedRisk = true
+                        mixedConfirmed = false
+                    }
+                    outcome = CreationOutcome(
+                        index: idx + 1,
+                        status: unknown ? "unknown" : "failed",
+                        message: unknown ? "结果未知，请刷新账号列表核对。此项不会重复提交。" : text
+                    )
                 }
-                outcomes = nextOutcomes
+                ledger[key] = outcome
+                nextOutcomes.append(outcome)
+                if current == scope { outcomes = nextOutcomes }
             }
 
-            if nextOutcomes.contains(where: { $0.status == "success" }) {
+            guard current == scope else { return }
+            outcomes = nextOutcomes
+            if nextOutcomes.contains(where: { $0.status != "failed" }) {
                 store.refresh()
             }
             if !nextOutcomes.isEmpty && nextOutcomes.allSatisfy({ $0.status == "success" }) {
@@ -868,7 +1182,7 @@ public struct AccountCreationSheet: View {
                 onClose()
             }
         } catch {
-            self.error = error.localizedDescription
+            if current == scope { self.error = error.localizedDescription }
         }
     }
 }
