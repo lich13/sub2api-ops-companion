@@ -60,17 +60,27 @@ public enum DS {
 
     // Usage & Group Domain Colors
     public static let windowIndigo = Color(nsColor: dynamicNSColor(lightHex: 0x6262CE, darkHex: 0x9797EF))
+    public static let windowIndigoBg = Color(nsColor: dynamicNSColor(lightHex: 0xECECFA, darkHex: 0x2B2C44))
     public static let windowEmerald = Color(nsColor: dynamicNSColor(lightHex: 0x278062, darkHex: 0x68BC9F))
+    public static let windowEmeraldBg = Color(nsColor: dynamicNSColor(lightHex: 0xE7F5EF, darkHex: 0x1E342D))
     public static let windowPurple = Color(nsColor: dynamicNSColor(lightHex: 0x8256D0, darkHex: 0xB392F0))
+    public static let windowPurpleBg = Color(nsColor: dynamicNSColor(lightHex: 0xF1ECFA, darkHex: 0x312846))
     public static let tokenCyan = Color(nsColor: dynamicNSColor(lightHex: 0x1B7C83, darkHex: 0x56D4DD))
     public static let costOrange = Color(nsColor: dynamicNSColor(lightHex: 0xC46B16, darkHex: 0xF09A48))
-    public static let groupTeal = Color(nsColor: dynamicNSColor(lightHex: 0x1B7C83, darkHex: 0x56D4DD))
+    public static let latencySlow = Color(nsColor: dynamicNSColor(lightHex: 0xC46B16, darkHex: 0xF09A48))
+    public static let groupTeal = Color(nsColor: dynamicNSColor(lightHex: 0x387F8B, darkHex: 0x78BAC4))
     public static let groupTealBg = Color(nsColor: dynamicNSColor(lightHex: 0xE8F5F6, darkHex: 0x1D3236))
+    public static let groupLeftFill = Color(nsColor: dynamicNSColor(lightHex: 0x6262CE, darkHex: 0x9797EF, alpha: 0.04))
+    public static let groupRightFill = Color(nsColor: dynamicNSColor(lightHex: 0x387F8B, darkHex: 0x78BAC4, alpha: 0.04))
+    public static let groupLeftBorder = Color(nsColor: dynamicNSColor(lightHex: 0x9E9EE0, darkHex: 0x5C5DA0))
+    public static let groupRightBorder = Color(nsColor: dynamicNSColor(lightHex: 0x7BAEB7, darkHex: 0x4A7882))
 
     // MARK: - Typography Scale (12 / 13 / 14 / 18 / 26pt + Explicit Micro Exceptions)
 
     /// 26pt Page Title
     public static let fontPageTitle = Font.system(size: 26, weight: .semibold)
+    /// 22pt Numeric Summary Counter
+    public static let fontStatValue = Font.system(size: 22, weight: .medium)
     /// 18pt Brand / Dialog Title
     public static let fontBrand = Font.system(size: 18, weight: .semibold)
     public static let fontDialogTitle = Font.system(size: 18, weight: .semibold)

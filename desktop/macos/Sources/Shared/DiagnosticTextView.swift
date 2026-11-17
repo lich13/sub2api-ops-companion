@@ -5,17 +5,19 @@ import SwiftUI
 /// without truncation or masking, with an explicit copy button and status feedback.
 public struct DiagnosticTextView: View {
     public let text: String
+    public var monospaced: Bool
     @State private var copyStatus: String = ""
 
-    public init(text: String) {
+    public init(text: String, monospaced: Bool = false) {
         self.text = text
+        self.monospaced = monospaced
     }
 
     public var body: some View {
         if !text.isEmpty {
             HStack(alignment: .top, spacing: 6) {
-                Text(text)
-                    .font(DS.fontCompact)
+                Text(verbatim: text)
+                    .font(monospaced ? DS.fontMono11 : DS.fontCompact)
                     .foregroundStyle(DS.ink)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)

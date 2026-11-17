@@ -62,7 +62,8 @@ enum SnapshotRenderUtility {
     }
 }
 
-@Suite("UI Light & Dark Snapshot Renderer")
+extension Sub2OpsMacOSTestRoot {
+@Suite("UI Light & Dark Snapshot Renderer", .serialized)
 struct SnapshotRenderTests {
     @Test("Render Stage M1 Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")
     @MainActor
@@ -156,4 +157,5 @@ struct SnapshotRenderTests {
             )
         }
     }
+}
 }

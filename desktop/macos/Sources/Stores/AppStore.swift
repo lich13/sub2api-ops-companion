@@ -89,6 +89,7 @@ public final class AppStore {
     public var detailError: OpsError?
     public var detailBusy: Bool = false
     private var detailGeneration: UInt64 = 0
+    public var accountModal: AccountModalDestination?
 
     public var config: [String: JSONValue]?
     public let operations = OperationStore()
@@ -100,7 +101,14 @@ public final class AppStore {
     public var onOpenModelTest: (@MainActor (Account) -> Void)?
     public var onOpenTemplates: (@MainActor (Account?) -> Void)?
 
-    public init() {}
+    public init() {
+        self.onOpenModelTest = { [weak self] acc in
+            self?.accountModal = .modelTest(acc)
+        }
+        self.onOpenTemplates = { [weak self] acc in
+            self?.accountModal = .templates(acc)
+        }
+    }
 
     public var connectionKey: String {
         "\(state.preferences.base_url):\(state.connected):\(state.connection_revision ?? 0)"
@@ -182,6 +190,7 @@ public final class AppStore {
 
     private func resetConnectionScopedState() {
         closeDetail()
+        accountModal = nil
         connectionModal = nil
         switcherAnchor = nil
         busyScheduleAccountId = nil
@@ -192,6 +201,42 @@ public final class AppStore {
         if let pending = pendingDiscardContinuation {
             pendingDiscardContinuation = nil
             pending.resume(returning: false)
+        }
+    }
+
+    public func triggerAccountAction(_ action: AccountDialogAction) {
+        switch action {
+        case .modelTest(let acc):
+            accountModal = .modelTest(acc)
+        case .toggleDegradation(let acc):
+            Task { await DegradationMarkActions.toggle(account: acc, store: self) }
+        case .modelDetection(let acc):
+            accountModal = .modelDetection(acc)
+        case .connectionTest(let acc):
+            accountModal = .testConnection(acc)
+        case .keepalive(let acc):
+            accountModal = .keepalive(acc)
+        case .reauthorize(let acc):
+            accountModal = .reauthorize(acc)
+        case .recoverState(let acc):
+            Task {
+                do {
+                    _ = try await operations.accountOperation(account: acc, action: "recover", payload: [:])
+                    showToast("\(acc.name)：已恢复状态")
+                } catch {
+                    report(error)
+                }
+            }
+        case .applyTemplate(let acc):
+            accountModal = .templates(acc)
+        case .settingsWhitelist(let acc):
+            accountModal = .accountSettings(acc, .whitelist)
+        case .settingsMapping(let acc):
+            accountModal = .accountSettings(acc, .mapping)
+        case .settingsProxy(let acc):
+            accountModal = .accountSettings(acc, .proxy)
+        case .deleteAccount(let acc):
+            accountModal = .deleteAccounts([acc])
         }
     }
 

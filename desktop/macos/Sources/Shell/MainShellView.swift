@@ -57,6 +57,22 @@ public struct MainShellView: View {
                         store.resolveDiscardPrompt(proceed: false)
                     }
                 }
+
+                if let modal = store.accountModal {
+                    AccountModalHostView(
+                        store: store,
+                        destination: modal,
+                        onClose: { store.accountModal = nil }
+                    )
+                }
+
+                if store.detailError != nil || store.detailBusy {
+                    ErrorDetailDrawerView(
+                        error: store.detailError,
+                        busy: store.detailBusy,
+                        onClose: { store.closeDetail() }
+                    )
+                }
             }
         }
         .ignoresSafeArea(.container, edges: .top)

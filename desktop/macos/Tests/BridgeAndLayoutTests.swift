@@ -3,7 +3,11 @@ import Foundation
 import Testing
 @testable import Sub2OpsMacOS
 
-@Suite("M1 Bridge, Domain & Panel Layout")
+@Suite("Sub2Ops macOS Test Suite", .serialized)
+enum Sub2OpsMacOSTestRoot {}
+
+extension Sub2OpsMacOSTestRoot {
+@Suite("M1 Bridge, Domain & Panel Layout", .serialized)
 struct BridgeAndLayoutTests {
     @Test("Obsolete blur cannot close a reopened panel")
     func obsoleteBlurCannotCloseReopenedPanel() {
@@ -101,4 +105,5 @@ struct BridgeAndLayoutTests {
         // Zero-length slice with nil pointer must not crash
         sub2ops_macos_on_event(kind: 4, ptr: nil, len: 0)
     }
+}
 }

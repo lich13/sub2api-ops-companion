@@ -243,16 +243,17 @@ public final class OperationStore {
     public func submitBatch(
         action: String,
         accounts: [[String: JSONValue]],
-        requestId: String
+        requestId: String,
+        customPayload: [String: JSONValue]? = nil
     ) async throws -> OperationBatch {
         let currentEpoch = epoch
-        let payload: JSONValue = action == "delete" ? .object(["confirmed": .bool(true)]) : .object([:])
+        let payloadObj: [String: JSONValue] = customPayload ?? (action == "delete" ? ["confirmed": .bool(true)] : [:])
         let batch: OperationBatch = try await RustBridge.shared.api(
             "POST",
             "/account-operations/batch",
             body: .object([
                 "action": .string(action),
-                "payload": payload,
+                "payload": .object(payloadObj),
                 "accounts": .array(accounts.map(JSONValue.object)),
                 "request_id": .string(requestId),
                 "client_id": .string(clientId()),
@@ -266,11 +267,45 @@ public final class OperationStore {
         return batch
     }
 
-    public func cancelJob(_ job: Operation) async throws {
+    public func followBatch(
+        initial: OperationBatch,
+        onUpdate: (@MainActor (OperationBatch) -> Void)? = nil
+    ) async throws -> OperationBatch {
         let currentEpoch = epoch
-        let next: Operation = try await RustBridge.shared.api("POST", "/account-operations/\(job.id)/cancel", body: .object([:]))
-        guard epoch == currentEpoch else { return }
-        publish(next)
-        batchItems = batchItems.map { $0.id == next.id ? next : $0 }
+        var current = initial
+        onUpdate?(current)
+        while !current.items.allSatisfy({ Self.isTerminal($0.status) }) {
+            try await Task.sleep(for: .milliseconds(600))
+            guard epoch == currentEpoch else {
+                throw RustBridgeError("连接已切换；请求保留在原连接")
+            }
+            let envelope: OperationListEnvelope = try await RustBridge.shared.api(
+                "GET",
+                "/account-operations?batch_id=\(current.batch_id)"
+            )
+            guard epoch == currentEpoch else {
+                throw RustBridgeError("连接已切换；请求保留在原连接")
+            }
+            let remaining = envelope.items.filter { !Self.isTerminal($0.status) }.count
+            current = OperationBatch(batch_id: current.batch_id, items: envelope.items, pending: remaining)
+            let batchIds = Set(current.items.map(\.id))
+            setOperations(current.items + rows.filter { !batchIds.contains($0.id) })
+            onUpdate?(current)
+        }
+        return current
+    }
+
+    public func cancelJobId(_ id: String) async throws -> Operation {
+        let currentEpoch = epoch
+        let next: Operation = try await RustBridge.shared.api("POST", "/account-operations/\(id)/cancel", body: .object([:]))
+        if epoch == currentEpoch {
+            publish(next)
+            batchItems = batchItems.map { $0.id == next.id ? next : $0 }
+        }
+        return next
+    }
+
+    public func cancelJob(_ job: Operation) async throws {
+        _ = try await cancelJobId(job.id)
     }
 }

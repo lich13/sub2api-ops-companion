@@ -161,6 +161,14 @@ public struct UsageStats: Codable, Sendable, Equatable {
     public var cost: Double
     public var standard_cost: Double
     public var user_cost: Double
+
+    public init(requests: Int, tokens: Int, cost: Double, standard_cost: Double, user_cost: Double) {
+        self.requests = requests
+        self.tokens = tokens
+        self.cost = cost
+        self.standard_cost = standard_cost
+        self.user_cost = user_cost
+    }
 }
 
 public struct QuotaPlan: Codable, Sendable, Equatable {
@@ -216,6 +224,12 @@ public struct ResetCreditsInfo: Codable, Sendable, Equatable {
     public var available: Int?
     public var expires_at: [String]
     public var observed_at: String?
+
+    public init(available: Int?, expires_at: [String], observed_at: String? = nil) {
+        self.available = available
+        self.expires_at = expires_at
+        self.observed_at = observed_at
+    }
 }
 
 public struct UsageWindow: Codable, Sendable, Equatable {
@@ -269,6 +283,26 @@ public struct UsageSummary: Codable, Sendable, Equatable {
     public var prepaid_balance: Double?
     public var monthly_limit: Double?
     public var monthly_used: Double?
+
+    public init(
+        branch: String,
+        windows: [UsageWindow] = [],
+        today: UsageStats? = nil,
+        actions: [String] = [],
+        reset_credits: ResetCreditsInfo? = nil,
+        key_quota: KeyQuota? = nil,
+        balances: [UsageBalance]? = nil,
+        native_read: Bool? = nil
+    ) {
+        self.branch = branch
+        self.windows = windows
+        self.today = today
+        self.actions = actions
+        self.reset_credits = reset_credits
+        self.key_quota = key_quota
+        self.balances = balances
+        self.native_read = native_read
+    }
 }
 
 public struct Account: Codable, Sendable, Equatable, Identifiable {
