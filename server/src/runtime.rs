@@ -308,6 +308,7 @@ impl Runtime {
         startup("operations", self.operations.store.recover_startup())?;
         startup("priority_orders", self.priorities.recover_startup())?;
         startup("model_tests", self.tests.startup())?;
+        startup("lm_detector", self.tests.lm_bank.migrate_bundled())?;
         startup(
             "capacity",
             self.detection.capacity.initialize(chrono::Utc::now()),

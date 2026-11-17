@@ -1,6 +1,6 @@
 {
   "repository": "Ikaleio/lm-detector",
-  "revision": "fd9b4caf6feafbec64d45a1552432515bf4efa39",
+  "revision": "f920cfe2ff0bab94989ce01ac061e21425b6e321",
   "analyzer_version": "lmfpd-0.2.0",
   "files": {
     "sdk/rust/Cargo.toml": {
@@ -74,14 +74,14 @@
       "bytes": 1064
     },
     "data/unified_bank.json": {
-      "sha256": "7117831989ca8e1793cd954899ec5f614541a37ea65a4174b711f80e6036fb1b",
-      "git_blob": "647f2e8d301698ee48117f0aa6d3f13405ccd00d",
-      "bytes": 12928618
+      "sha256": "5460e6d79e0245aa695d9e63063c767712dee8faec52c9ab1b215aae473454ce",
+      "git_blob": "6f71ea7dc1d2fa1dfbafce83a06ba053622d5bac",
+      "bytes": 13319512
     },
     "data/shared_detector.bin": {
-      "sha256": "9ac93e5e580f5bac887f97a20bfae15d0a3ad08c6372e4b3552fce6708078a80",
-      "git_blob": "0e19e0220716d71607c84b1a2149dd9ca7e13902",
-      "bytes": 4667588
+      "sha256": "59dffad8128dca8bcf0cfb024f0fcebe7f0b7d7fbae3583b4b5d1418c18e601f",
+      "git_blob": "3386798a7465e30a5138d7ef7b412d79e5ef0382",
+      "bytes": 4808724
     },
     "data/tokenizer_bank.json": {
       "sha256": "6dbf15a693deabfc36c4dfab9da64e9cdeee518f54eecf9cc69567ff5af26723",
