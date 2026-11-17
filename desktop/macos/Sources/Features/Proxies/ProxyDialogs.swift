@@ -14,8 +14,11 @@ public struct ProxyEditorSheet: View {
     @State private var status: String
     @State private var username: String = ""
     @State private var password: String = ""
+    @State private var showPassword: Bool = false
     @State private var usernameDirty: Bool = false
     @State private var clearAuth: Bool = false
+    @State private var expiryText: String
+    @State private var expiryDirty: Bool = false
     @State private var warnDays: String
     @State private var fallbackMode: String
     @State private var backupProxyId: Int = 0
@@ -33,185 +36,213 @@ public struct ProxyEditorSheet: View {
         self._host = State(initialValue: row?.host ?? "")
         self._port = State(initialValue: "\(row?.port ?? 1080)")
         self._status = State(initialValue: row?.status == "inactive" ? "inactive" : "active")
+        self._expiryText = State(initialValue: Self.formatBeijingExpiry(row?.expires_at))
         self._warnDays = State(initialValue: "\(row?.expiry_warn_days ?? 7)")
         self._fallbackMode = State(initialValue: row?.fallback_mode ?? "none")
         self._backupProxyId = State(initialValue: row?.backup_proxy_id ?? 0)
     }
 
-    public var body: some View {
-        ZStack {
-            DS.backdrop.ignoresSafeArea().onTapGesture { if !busy { onClose() } }
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text(row == nil ? "新增 IP" : "编辑 IP")
-                        .font(DS.fontDialogTitle)
-                        .foregroundStyle(DS.ink)
-                    Spacer()
-                    LinearIconButton(systemName: "xmark", label: "关闭", disabled: busy, action: onClose)
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    labeledField("名称", text: $name, prompt: "节点备注名")
-                    HStack(spacing: 10) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("协议").font(DS.fontCompactMedium).foregroundStyle(DS.ink)
-                            Menu {
-                                ForEach(["http", "https", "socks5", "socks5h"], id: \.self) { p in
-                                    Button(p.uppercased()) { proto = p }
-                                }
-                            } label: {
-                                menuBox(proto.uppercased())
-                            }
-                            .menuStyle(.borderlessButton)
-                            .menuIndicator(.hidden)
-                        }
-                        if row != nil {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("状态").font(DS.fontCompactMedium).foregroundStyle(DS.ink)
-                                Menu {
-                                    Button("启用") { status = "active" }
-                                    Button("停用") { status = "inactive" }
-                                } label: {
-                                    menuBox(status == "active" ? "启用" : "停用")
-                                }
-                                .menuStyle(.borderlessButton)
-                                .menuIndicator(.hidden)
-                            .menuIndicator(.hidden)
-                            }
-                        }
-                    }
-
-                    HStack(spacing: 10) {
-                        labeledField("主机地址", text: $host, prompt: "proxy.example.invalid", mono: true)
-                        labeledField("端口", text: $port, prompt: "1080", mono: true, width: 96)
-                    }
-
-                    HStack(spacing: 10) {
-                        labeledField(
-                            row?.username_set == true ? "用户名（已保存，留空保留）" : "用户名（可选）",
-                            text: $username,
-                            prompt: "username",
-                            mono: true
-                        )
-                        .onChange(of: username) { _, _ in usernameDirty = true }
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(row?.password_set == true ? "密码（留空保留）" : "密码（可选）")
-                                .font(DS.fontCompactMedium)
-                                .foregroundStyle(DS.ink)
-                            SecureField(text: $password, prompt: Text(verbatim: "password")) { EmptyView() }
-                                .textFieldStyle(.plain)
-                                .font(DS.fontMono12)
-                                .padding(.horizontal, 10)
-                                .frame(height: DS.controlHeightDense)
-                                .background(DS.surface)
-                                .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                                .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-                        }
-                    }
-
-                    if row?.username_set == true || row?.password_set == true {
-                        Button {
-                            clearAuth.toggle()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: clearAuth ? "checkmark.square.fill" : "square")
-                                    .font(DS.iconFont(13))
-                                    .foregroundStyle(clearAuth ? DS.accent : DS.muted)
-                                Text("清除已保存的认证凭据")
-                                    .font(DS.fontCompact)
-                                    .foregroundStyle(DS.ink)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    HStack(spacing: 10) {
-                        labeledField("到期提醒天数", text: $warnDays, prompt: "7", mono: true, width: 120)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("到期回退方式").font(DS.fontCompactMedium).foregroundStyle(DS.ink)
-                            Menu {
-                                Button("不切换（保持原代理）") { fallbackMode = "none" }
-                                Button("切换直连") { fallbackMode = "direct" }
-                                Button("切换备用代理") { fallbackMode = "proxy" }
-                            } label: {
-                                let labelText = fallbackMode == "proxy" ? "切换备用代理" : (fallbackMode == "direct" ? "切换直连" : "不切换")
-                                menuBox(labelText)
-                            }
-                            .menuStyle(.borderlessButton)
-                            .menuIndicator(.hidden)
-                        }
-                    }
-
-                    if fallbackMode == "proxy" {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("备用代理").font(DS.fontCompactMedium).foregroundStyle(DS.ink)
-                            Menu {
-                                ForEach(backupOptions) { opt in
-                                    Button("\(opt.name) (\(opt.formattedAddress))") { backupProxyId = opt.id }
-                                }
-                            } label: {
-                                let cur = backupOptions.first(where: { $0.id == backupProxyId })
-                                menuBox(cur.map { "\($0.name) (\($0.formattedAddress))" } ?? "请选择备用代理")
-                            }
-                            .menuStyle(.borderlessButton)
-                            .menuIndicator(.hidden)
-                        }
-                    }
-                }
-                .disabled(!online || busy)
-
-                if !errorText.isEmpty {
-                    Text(errorText).font(DS.fontCompact).foregroundStyle(DS.bad)
-                }
-
-                HStack {
-                    Spacer()
-                    Button("取消", action: onClose)
-                        .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                        .disabled(busy)
-                    Button(busy ? "保存中…" : (row == nil ? "新增" : "保存")) {
-                        Task { await submit() }
-                    }
-                    .buttonStyle(LinearButtonStyle(variant: .primary, compact: true))
-                    .disabled(!online || busy)
-                }
-            }
-            .padding(20)
-            .frame(width: 480)
-            .background(DS.surface)
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DS.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .sub2opsDialogFocus(onEscape: { if !busy { onClose() } })
-            .task(id: fallbackMode) {
-                guard fallbackMode == "proxy", online else { return }
-                if let p: ProxyManagedPage = try? await RustBridge.shared.api("GET", "/proxy-management?page=1&page_size=200&status=active") {
-                    backupOptions = p.items.filter { $0.id != row?.id }
-                }
-            }
-        }
+    private static func formatBeijingExpiry(_ raw: String?) -> String {
+        guard let raw, let d = BeijingTime.parseISO(raw) else { return "" }
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        df.dateFormat = "yyyy-MM-dd HH:mm"
+        return df.string(from: d)
     }
 
-    private func menuBox(_ title: String) -> some View {
-        HStack {
-            Text(title).font(DS.fontCompact).foregroundStyle(DS.ink).lineLimit(1)
-            Spacer()
-            Image(systemName: "chevron.down").font(DS.iconFont(10)).foregroundStyle(DS.muted)
+    private static func parseBeijingExpiry(_ raw: String) -> Date? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        for fmt in ["yyyy-MM-dd HH:mm", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd'T'HH:mm:ss"] {
+            df.dateFormat = fmt
+            if let d = df.date(from: trimmed) { return d }
         }
-        .padding(.horizontal, 10)
-        .frame(height: DS.controlHeightDense)
-        .background(DS.surface)
-        .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+        return nil
+    }
+
+    public var body: some View {
+        LinearModalCard(
+            title: row == nil ? "新增 IP" : "编辑 IP",
+            subtitle: row.map { "\($0.name) · #\($0.id)" },
+            width: 500,
+            closeDisabled: busy,
+            onClose: onClose
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                labeledField("名称", text: $name, prompt: "节点备注名")
+
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("协议").font(DS.fontCompactMedium).foregroundStyle(DS.muted)
+                        LinearSelect(
+                            label: proto.uppercased(),
+                            accessibilityTitle: "协议",
+                            height: DS.controlHeight,
+                            expandWidth: true,
+                            entries: ["http", "https", "socks5", "socks5h"].map { p in
+                                LinearMenuEntry(id: p, title: p.uppercased(), checked: proto == p) {
+                                    proto = p
+                                }
+                            }
+                        )
+                    }
+
+                    if row != nil {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("状态").font(DS.fontCompactMedium).foregroundStyle(DS.muted)
+                            LinearSelect(
+                                label: status == "active" ? "启用" : "停用",
+                                accessibilityTitle: "状态",
+                                height: DS.controlHeight,
+                                expandWidth: true,
+                                entries: [
+                                    LinearMenuEntry(id: "active", title: "启用", checked: status == "active") { status = "active" },
+                                    LinearMenuEntry(id: "inactive", title: "停用", checked: status == "inactive") { status = "inactive" },
+                                ]
+                            )
+                        }
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    labeledField("主机地址", text: $host, prompt: "proxy.example.invalid")
+                    labeledField("端口", text: $port, prompt: "1080", width: 104)
+                }
+
+                HStack(spacing: 10) {
+                    labeledField(
+                        row?.username_set == true ? "用户名（已保存，留空保留）" : "用户名（可选）",
+                        text: $username,
+                        prompt: "username",
+                        mono: true
+                    )
+                    .onChange(of: username) { _, _ in usernameDirty = true }
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(row?.password_set == true ? "密码（留空保留）" : "密码（可选）")
+                            .font(DS.fontCompactMedium)
+                            .foregroundStyle(DS.muted)
+                        HStack(spacing: 6) {
+                            SwiftUI.Group {
+                                if showPassword {
+                                    TextField(text: $password, prompt: Text(verbatim: "password")) { EmptyView() }
+                                } else {
+                                    SecureField(text: $password, prompt: Text(verbatim: "password")) { EmptyView() }
+                                }
+                            }
+                            .textFieldStyle(.plain)
+                            .font(DS.fontBody)
+                            .foregroundStyle(DS.ink)
+                            .disabled(clearAuth)
+
+                            Button {
+                                showPassword.toggle()
+                            } label: {
+                                Image(systemName: showPassword ? "eye.slash" : "eye")
+                                    .font(DS.iconFont(12))
+                                    .foregroundStyle(DS.muted)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(clearAuth)
+                            .accessibilityLabel(showPassword ? "隐藏密码" : "显示密码")
+                        }
+                        .padding(.horizontal, 10)
+                        .frame(height: DS.controlHeight)
+                        .background(DS.surface)
+                        .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+                    }
+                }
+
+                if row != nil && (row?.username_set == true || row?.password_set == true) {
+                    LinearCheckbox(isChecked: clearAuth, label: "清除已保存的用户名和密码") {
+                        clearAuth.toggle()
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    labeledField("到期时间（可选）", text: $expiryText, prompt: "YYYY-MM-DD HH:mm")
+                        .onChange(of: expiryText) { _, _ in expiryDirty = true }
+                    labeledField("到期提醒天数", text: $warnDays, prompt: "7", width: 112)
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("到期回退方式").font(DS.fontCompactMedium).foregroundStyle(DS.muted)
+                    let fallbackLabel = fallbackMode == "proxy" ? "切换备用代理" : (fallbackMode == "direct" ? "切换直连" : "不切换（保持原代理）")
+                    LinearSelect(
+                        label: fallbackLabel,
+                        accessibilityTitle: "到期回退方式",
+                        height: DS.controlHeight,
+                        expandWidth: true,
+                        entries: [
+                            LinearMenuEntry(id: "none", title: "不切换（保持原代理）", checked: fallbackMode == "none") { fallbackMode = "none" },
+                            LinearMenuEntry(id: "direct", title: "切换直连", checked: fallbackMode == "direct") { fallbackMode = "direct" },
+                            LinearMenuEntry(id: "proxy", title: "切换备用代理", checked: fallbackMode == "proxy") { fallbackMode = "proxy" },
+                        ]
+                    )
+                }
+
+                if fallbackMode == "proxy" {
+                    let cur = backupOptions.first(where: { $0.id == backupProxyId })
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("备用代理").font(DS.fontCompactMedium).foregroundStyle(DS.muted)
+                        LinearSelect(
+                            label: cur.map { "\($0.name) (\($0.formattedAddress))" } ?? "请选择备用代理",
+                            accessibilityTitle: "备用代理",
+                            height: DS.controlHeight,
+                            expandWidth: true,
+                            mutedLabel: cur == nil,
+                            entries: backupOptions.map { opt in
+                                LinearMenuEntry(
+                                    id: "\(opt.id)",
+                                    title: "\(opt.name) (\(opt.formattedAddress))",
+                                    checked: backupProxyId == opt.id
+                                ) {
+                                    backupProxyId = opt.id
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+            .disabled(!online || busy)
+
+            if !errorText.isEmpty {
+                Text(errorText).font(DS.fontCompact).foregroundStyle(DS.bad)
+            }
+        } footer: {
+            Spacer()
+            Button("取消", action: onClose)
+                .buttonStyle(LinearButtonStyle(variant: .secondary))
+                .disabled(busy)
+            Button(busy ? "保存中…" : (row == nil ? "新增" : "保存")) {
+                Task { await submit() }
+            }
+            .buttonStyle(LinearButtonStyle(variant: .primary))
+            .disabled(!online || busy)
+        }
+        .sub2opsDialogFocus(onEscape: { if !busy { onClose() } })
+        .task(id: fallbackMode) {
+            guard fallbackMode == "proxy", online else { return }
+            if let p: ProxyManagedPage = try? await RustBridge.shared.api("GET", "/proxy-management?page=1&page_size=200&status=active") {
+                backupOptions = p.items.filter { $0.id != row?.id }
+            }
+        }
     }
 
     private func labeledField(_ title: String, text: Binding<String>, prompt: String, mono: Bool = false, width: CGFloat? = nil) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(DS.fontCompactMedium).foregroundStyle(DS.ink)
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(DS.fontCompactMedium).foregroundStyle(DS.muted)
             TextField(text: text, prompt: Text(verbatim: prompt)) { EmptyView() }
                 .textFieldStyle(.plain)
                 .font(mono ? DS.fontMono12 : DS.fontBody)
+                .foregroundStyle(DS.ink)
                 .padding(.horizontal, 10)
-                .frame(width: width, height: DS.controlHeightDense)
+                .frame(width: width, height: DS.controlHeight)
                 .background(DS.surface)
                 .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
                 .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
@@ -233,6 +264,17 @@ public struct ProxyEditorSheet: View {
             errorText = "请选择备用代理"
             return
         }
+        let trimmedExpiry = expiryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsedExpiry: Date?
+        if trimmedExpiry.isEmpty {
+            parsedExpiry = nil
+        } else {
+            guard let d = Self.parseBeijingExpiry(trimmedExpiry) else {
+                errorText = "到期时间格式应为 YYYY-MM-DD HH:mm"
+                return
+            }
+            parsedExpiry = d
+        }
         var body: [String: JSONValue] = [
             "name": .string(trimmedName),
             "protocol": .string(proto),
@@ -244,8 +286,9 @@ public struct ProxyEditorSheet: View {
         ]
         if row != nil {
             body["status"] = .string(status)
-        } else {
-            body["expires_at"] = .null
+        }
+        if row == nil || expiryDirty {
+            body["expires_at"] = parsedExpiry.map { .int(Int64(floor($0.timeIntervalSince1970))) } ?? .null
         }
         if clearAuth {
             body["username"] = .string("")
@@ -290,90 +333,80 @@ public struct ProxyBatchAddSheet: View {
     }
 
     public var body: some View {
-        ZStack {
-            DS.backdrop.ignoresSafeArea().onTapGesture { if !busy { onClose() } }
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("批量添加 IP")
-                        .font(DS.fontDialogTitle)
-                        .foregroundStyle(DS.ink)
-                    Spacer()
-                    LinearIconButton(systemName: "xmark", label: "关闭", disabled: busy, action: onClose)
-                }
+        LinearModalCard(
+            title: "批量添加 IP",
+            subtitle: "每行一条，格式：protocol://[user:pass@]host:port（支持 http / https / socks5 / socks5h）",
+            width: 540,
+            closeDisabled: busy,
+            onClose: onClose
+        ) {
+            TextEditor(text: $text)
+                .font(DS.fontMono12)
+                .foregroundStyle(DS.ink)
+                .scrollContentBackground(.hidden)
+                .frame(height: 156)
+                .padding(6)
+                .background(DS.surface)
+                .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+                .disabled(busy || !results.isEmpty)
 
-                Text("每行一条，格式：protocol://[user:pass@]host:port（支持 http / https / socks5 / socks5h）")
-                    .font(DS.fontResetTime)
+            HStack(spacing: 10) {
+                Text("有效 \(parsed.proxies.count) 个")
+                    .foregroundStyle(DS.ink)
+                Text("重复 \(parsed.duplicates) 个")
                     .foregroundStyle(DS.muted)
-
-                TextEditor(text: $text)
-                    .font(DS.fontMono12)
-                    .frame(height: 150)
-                    .padding(6)
-                    .background(DS.surface)
-                    .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-                    .disabled(busy || !results.isEmpty)
-
-                HStack(spacing: 10) {
-                    Text("识别 \(parsed.proxies.count) 条")
-                        .foregroundStyle(DS.ink)
-                    if parsed.duplicates > 0 {
-                        Text("去重 \(parsed.duplicates) 条").foregroundStyle(DS.muted)
-                    }
-                    if !parsed.errors.isEmpty {
-                        Text("格式错误行：\(parsed.errors.prefix(8).map(String.init).joined(separator: ", "))")
-                            .foregroundStyle(DS.bad)
-                    }
+                if !parsed.errors.isEmpty {
+                    Text("第 \(parsed.errors.prefix(8).map(String.init).joined(separator: "、")) 行格式无效")
+                        .foregroundStyle(DS.bad)
                 }
-                .font(DS.fontResetTime)
-                .monospacedDigit()
+            }
+            .font(DS.fontResetTime)
+            .monospacedDigit()
 
-                if !results.isEmpty {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(Array(results.enumerated()), id: \.offset) { _, item in
-                                HStack {
-                                    Text(verbatim: item.address).font(DS.fontMono11).foregroundStyle(DS.ink)
-                                    Spacer()
+            if !results.isEmpty {
+                LinearBoundedScrollView(maxHeight: 160) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(results.enumerated()), id: \.offset) { _, item in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(verbatim: item.address)
+                                    .font(DS.fontPriorityMeta).monospacedDigit()
+                                    .foregroundStyle(DS.ink)
+                                if item.ok {
                                     Text(item.message)
                                         .font(DS.fontResetTime)
-                                        .foregroundStyle(item.ok ? DS.good : DS.bad)
+                                        .foregroundStyle(DS.good)
+                                } else {
+                                    DiagnosticTextView(text: item.message)
                                 }
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                    }
-                    .frame(maxHeight: 130)
-                }
-
-                HStack {
-                    Spacer()
-                    Button(results.isEmpty ? "取消" : "完成") {
-                        if results.isEmpty {
-                            onClose()
-                        } else {
-                            let okCount = results.filter(\.ok).count
-                            onSaved("批量添加完成：成功 \(okCount) / \(results.count)")
-                        }
-                    }
-                    .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                    .disabled(busy)
-
-                    if results.isEmpty {
-                        Button(busy ? "提交中…" : "开始添加") {
-                            Task { await runBatch() }
-                        }
-                        .buttonStyle(LinearButtonStyle(variant: .primary, compact: true))
-                        .disabled(!online || busy || parsed.proxies.isEmpty || !parsed.errors.isEmpty || parsed.proxies.count > 1000)
                     }
                 }
             }
-            .padding(20)
-            .frame(width: 520)
-            .background(DS.surface)
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DS.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .sub2opsDialogFocus(onEscape: { if !busy { onClose() } })
+        } footer: {
+            Spacer()
+            Button(results.isEmpty ? "取消" : "完成") {
+                if results.isEmpty {
+                    onClose()
+                } else {
+                    let okCount = results.filter(\.ok).count
+                    onSaved("批量添加完成：成功 \(okCount) / \(results.count)")
+                }
+            }
+            .buttonStyle(LinearButtonStyle(variant: .secondary))
+            .disabled(busy)
+
+            if results.isEmpty {
+                Button(busy ? "提交中…" : "开始添加") {
+                    Task { await runBatch() }
+                }
+                .buttonStyle(LinearButtonStyle(variant: .primary))
+                .disabled(!online || busy || parsed.proxies.isEmpty || !parsed.errors.isEmpty || parsed.proxies.count > 1000)
+            }
         }
+        .sub2opsDialogFocus(onEscape: { if !busy { onClose() } })
     }
 
     private func runBatch() async {

@@ -1,18 +1,20 @@
 import SwiftUI
 
-/// Matches `ModelConfig` in `desktop/src/ModelConfig.tsx`.
+/// Matches `ModelConfig` in `desktop/src/ModelConfig.tsx` (`features_models_light.png`).
 public struct ModelConfigTabView: View {
+    public var store: AppStore?
     public let online: Bool
     public let connectionKey: String
 
     @State private var groups: [ModelReasoningGroup] = []
     @State private var selectedGroupId: Int = 0
     @State private var config: ModelReasoningConfig? = nil
-    @State private var editingDraft: ModelReasoningDraft? = nil
+    @State private var fallbackDraft: ModelReasoningDraft? = nil
     @State private var loading: Bool = false
     @State private var removingModel: String = ""
     @State private var errorText: String = ""
     @State private var noticeText: String = ""
+    @State private var hoveredModel: String? = nil
 
     private static let stateLabels: [String: String] = [
         "active": "目录已补全",
@@ -28,76 +30,73 @@ public struct ModelConfigTabView: View {
         "legacy": "旧配置待核对",
     ]
 
-    public init(online: Bool, connectionKey: String) {
+    public init(store: AppStore? = nil, online: Bool, connectionKey: String) {
+        self.store = store
         self.online = online
         self.connectionKey = connectionKey
     }
 
     public var body: some View {
         ZStack {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 8) {
-                    Menu {
-                        ForEach(groups) { g in
-                            Button {
+                    let current = groups.first(where: { $0.id == selectedGroupId })
+                    LinearSelect(
+                        label: current?.name ?? "选择模型分组",
+                        accessibilityTitle: "选择模型分组",
+                        height: DS.controlHeight,
+                        minWidth: 196,
+                        mutedLabel: current == nil,
+                        disabled: !online || groups.isEmpty || loading,
+                        entries: groups.map { g in
+                            LinearMenuEntry(
+                                id: "\(g.id)",
+                                title: "\(g.name) (\(g.platform))",
+                                checked: g.id == selectedGroupId
+                            ) {
                                 selectedGroupId = g.id
-                            } label: {
-                                Text("\(g.name) (\(g.platform))")
                             }
                         }
-                    } label: {
-                        let current = groups.first(where: { $0.id == selectedGroupId })
-                        HStack(spacing: 6) {
-                            Text(current.map { "\($0.name) · \($0.platform)" } ?? "选择模型分组")
-                                .font(DS.fontCompactSemibold)
-                                .foregroundStyle(DS.ink)
-                            Image(systemName: "chevron.down")
-                                .font(DS.iconFont(10))
-                                .foregroundStyle(DS.muted)
-                        }
-                        .padding(.horizontal, 10)
-                        .frame(height: DS.controlHeightCompact)
-                        .background(DS.surface)
-                        .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                        .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .disabled(!online || groups.isEmpty || loading)
-
-                    if let status = config?.status {
-                        Text(status.message)
-                            .font(DS.fontResetTime)
-                            .foregroundStyle(status.state == "healthy" || status.state == "active" ? DS.good : DS.muted)
-                    }
-
-                    Spacer()
+                    )
 
                     LinearIconButton(
                         systemName: "arrow.clockwise",
                         label: "刷新思考档位",
+                        size: 13,
+                        boxSize: DS.controlHeight,
+                        bordered: true,
                         disabled: !online || loading || selectedGroupId == 0
                     ) {
                         Task { await loadGroupReasoning(id: selectedGroupId) }
                     }
 
+                    if let status = config?.status, !status.message.isEmpty {
+                        Text(status.message)
+                            .font(DS.fontResetTime)
+                            .foregroundStyle(status.state == "healthy" || status.state == "active" ? DS.good : DS.muted)
+                            .padding(.leading, 4)
+                    }
+
+                    Spacer()
+
                     Button {
-                        editingDraft = ModelReasoningDraft(
-                            model: "",
-                            efforts: [],
-                            default_effort: "",
-                            editing: false,
-                            loaded: false
+                        openEditor(
+                            ModelReasoningDraft(
+                                model: "",
+                                efforts: [],
+                                default_effort: "",
+                                editing: false,
+                                loaded: false
+                            )
                         )
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 5) {
                             Image(systemName: "plus")
-                                .font(DS.iconFont(11, weight: .semibold))
-                            Text("新增模型档位")
+                                .font(DS.iconFont(12, weight: .semibold))
+                            Text("添加模型")
                         }
                     }
-                    .buttonStyle(LinearButtonStyle(variant: .primary, compact: true))
+                    .buttonStyle(LinearButtonStyle(variant: .primary))
                     .disabled(!online || selectedGroupId == 0 || loading)
                 }
 
@@ -112,42 +111,51 @@ public struct ModelConfigTabView: View {
                         .foregroundStyle(DS.bad)
                 }
 
+                let hasItems = !(config?.items ?? []).isEmpty
                 VStack(spacing: 0) {
-                    HStack(spacing: 10) {
-                        Text("模型")
-                            .frame(width: 190, alignment: .leading)
-                        Text("可用档位")
+                    HStack(spacing: 12) {
+                        Text("模型 ID")
+                            .frame(width: 240, alignment: .leading)
+                        Text("思考档位")
                             .frame(maxWidth: .infinity, alignment: .leading)
                         Text("默认")
-                            .frame(width: 80, alignment: .leading)
-                        Text("状态 / 来源")
+                            .frame(width: 84, alignment: .leading)
+                        Text("状态")
                             .frame(width: 170, alignment: .leading)
-                        Text("更新时间")
-                            .frame(width: 112, alignment: .leading)
-                        Text("操作")
-                            .frame(width: 124, alignment: .trailing)
+                        if hasItems {
+                            DS.clear
+                                .frame(width: 136)
+                        }
                     }
                     .font(DS.fontTableHeader)
                     .foregroundStyle(DS.muted)
-                    .padding(.horizontal, 14)
-                    .frame(height: 34)
+                    .padding(.horizontal, 16)
+                    .frame(height: 36)
                     .background(DS.surfaceSubtle)
 
                     Rectangle().fill(DS.line).frame(height: 1)
 
                     if let items = config?.items, !items.isEmpty {
                         ForEach(Array(items.enumerated()), id: \.element.model) { idx, item in
-                            HStack(spacing: 10) {
-                                Text(verbatim: item.model)
-                                    .font(DS.fontMono12)
-                                    .foregroundStyle(DS.ink)
-                                    .lineLimit(1)
-                                    .frame(width: 190, alignment: .leading)
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(verbatim: item.model)
+                                        .font(DS.fontCompactMedium)
+                                        .foregroundStyle(DS.ink)
+                                        .lineLimit(1)
+                                    if let updated = item.updated_at, !updated.isEmpty {
+                                        Text(BeijingTime.fullTime(updated))
+                                            .font(DS.fontResetTime)
+                                            .monospacedDigit()
+                                            .foregroundStyle(DS.muted)
+                                    }
+                                }
+                                .frame(width: 240, alignment: .leading)
 
-                                HStack(spacing: 4) {
+                                HStack(spacing: 5) {
                                     ForEach(item.efforts, id: \.self) { ef in
                                         Text(verbatim: ef)
-                                            .font(DS.fontMono11)
+                                            .font(DS.fontPriorityMeta).monospacedDigit()
                                             .foregroundStyle(ef == item.default_effort ? DS.accent : DS.ink)
                                             .padding(.horizontal, 6)
                                             .padding(.vertical, 2)
@@ -158,12 +166,12 @@ public struct ModelConfigTabView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
 
                                 Text(verbatim: item.default_effort)
-                                    .font(DS.fontMono11)
+                                    .font(DS.fontPriorityMeta).monospacedDigit()
                                     .foregroundStyle(DS.ink)
-                                    .frame(width: 80, alignment: .leading)
+                                    .frame(width: 84, alignment: .leading)
 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(Self.stateLabels[item.state] ?? item.state)
+                                    Text(Self.stateLabels[item.state] ?? "转发未核实")
                                         .font(DS.fontCompactMedium)
                                         .foregroundStyle(item.state == "active" || item.state == "native" ? DS.good : DS.warn)
                                     Text(Self.sourceLabels[item.source] ?? item.source)
@@ -172,46 +180,50 @@ public struct ModelConfigTabView: View {
                                 }
                                 .frame(width: 170, alignment: .leading)
 
-                                Text(BeijingTime.fullTime(item.updated_at))
-                                    .font(DS.fontResetTime)
-                                    .monospacedDigit()
-                                    .foregroundStyle(DS.muted)
-                                    .frame(width: 112, alignment: .leading)
-
                                 HStack(spacing: 6) {
                                     Button("编辑") {
-                                        editingDraft = ModelReasoningDraft(
-                                            model: item.model,
-                                            efforts: item.efforts,
-                                            default_effort: item.default_effort,
-                                            editing: true,
-                                            loaded: true
+                                        openEditor(
+                                            ModelReasoningDraft(
+                                                model: item.model,
+                                                efforts: item.efforts,
+                                                default_effort: item.default_effort,
+                                                editing: true,
+                                                loaded: true
+                                            )
                                         )
                                     }
                                     .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
                                     .disabled(!online || !removingModel.isEmpty)
 
-                                    Button("恢复原生") {
+                                    Button(item.state == "native" ? "恢复原生" : "移除") {
                                         Task { await removeItem(item) }
                                     }
-                                    .buttonStyle(LinearButtonStyle(variant: .danger, compact: true))
+                                    .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
                                     .disabled(!online || !removingModel.isEmpty)
                                 }
-                                .frame(width: 124, alignment: .trailing)
+                                .frame(width: 136, alignment: .trailing)
                             }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 9)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(hoveredModel == item.model ? DS.rowHover : DS.clear)
+                            .onHover { hovering in
+                                if hovering {
+                                    hoveredModel = item.model
+                                } else if hoveredModel == item.model {
+                                    hoveredModel = nil
+                                }
+                            }
 
                             if idx < items.count - 1 {
                                 Rectangle().fill(DS.line).frame(height: 1)
                             }
                         }
                     } else {
-                        Text(loading ? "正在读取模型思考档位…" : "当前分组暂无自定义模型思考档位补全")
+                        Text(loading ? "正在读取…" : "暂无补全")
                             .font(DS.fontCompact)
                             .foregroundStyle(DS.muted)
-                            .padding(16)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 32)
+                            .frame(maxWidth: .infinity, alignment: .center)
                     }
                 }
                 .background(DS.surface)
@@ -219,18 +231,21 @@ public struct ModelConfigTabView: View {
                 .clipShape(RoundedRectangle(cornerRadius: DS.cardRadius))
             }
 
-            if let draft = editingDraft {
-                ModelReasoningEditSheet(
-                    groupId: selectedGroupId,
-                    online: online,
-                    initialDraft: draft,
-                    onSaved: { nextCfg, msg in
-                        config = nextCfg
-                        noticeText = msg
-                        editingDraft = nil
-                    },
-                    onClose: { editingDraft = nil }
-                )
+            if let draft = fallbackDraft {
+                ZStack {
+                    DS.backdrop.ignoresSafeArea().onTapGesture { fallbackDraft = nil }
+                    ModelReasoningEditSheet(
+                        groupId: selectedGroupId,
+                        online: online,
+                        initialDraft: draft,
+                        onSaved: { nextCfg, msg in
+                            config = nextCfg
+                            noticeText = msg
+                            fallbackDraft = nil
+                        },
+                        onClose: { fallbackDraft = nil }
+                    )
+                }
             }
         }
         .task(id: "\(connectionKey):\(online)") {
@@ -239,6 +254,28 @@ public struct ModelConfigTabView: View {
         .onChange(of: selectedGroupId) { _, nextId in
             guard nextId > 0 else { return }
             Task { await loadGroupReasoning(id: nextId) }
+        }
+    }
+
+    private func openEditor(_ draft: ModelReasoningDraft) {
+        if let store {
+            let gid = selectedGroupId
+            let isOnline = online
+            store.presentWindowModal(onBackdrop: { store.dismissWindowModal() }) {
+                ModelReasoningEditSheet(
+                    groupId: gid,
+                    online: isOnline,
+                    initialDraft: draft,
+                    onSaved: { nextCfg, msg in
+                        config = nextCfg
+                        noticeText = msg
+                        store.dismissWindowModal()
+                    },
+                    onClose: { store.dismissWindowModal() }
+                )
+            }
+        } else {
+            fallbackDraft = draft
         }
     }
 

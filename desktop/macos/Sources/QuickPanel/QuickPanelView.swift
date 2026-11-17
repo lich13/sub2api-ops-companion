@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// Stage M2 full QuickPanel surface matching `main.tsx` Quick mode & `QuickAccountStatus.tsx`.
+/// Stage M2 full QuickPanel surface matching `main.tsx` Quick mode & `QuickAccountStatus.tsx` + `DESIGN.md` lines 9, 12, 13.
 public struct QuickPanelRootView: View {
     @Bindable var store: AppStore
     let onContentHeightChange: @MainActor (CGFloat) -> Void
+    @State private var quickPopoverOpen: Bool = false
 
     public init(store: AppStore, onContentHeightChange: @escaping @MainActor (CGFloat) -> Void = { _ in }) {
         self.store = store
@@ -22,39 +23,39 @@ public struct QuickPanelRootView: View {
         ZStack {
             VStack(spacing: 0) {
                 headerBar
-                Divider().overlay(DS.line)
+                Rectangle().fill(DS.line).frame(height: 1)
 
                 if store.state.connected && !store.state.online {
                     HStack(spacing: 6) {
                         Image(systemName: "wifi.slash")
-                            .font(DS.iconFont(11, weight: .medium))
+                            .font(DS.iconFont(10, weight: .medium))
                         Text(store.state.error.isEmpty ? "连接中断，显示上次状态" : store.state.error)
                             .font(DS.fontResetTime)
                             .lineLimit(1)
                         Spacer()
                     }
                     .foregroundStyle(DS.warn)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 10)
                     .padding(.vertical, 5)
                     .background(DS.offlineBg)
-                    Divider().overlay(DS.line)
+                    Rectangle().fill(DS.line).frame(height: 1)
                 }
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
+                let bodyMaxHeight = DS.quickPanelMaxHeight - ((store.state.connected && !store.state.online) ? 90 : 66)
+                LinearBoundedScrollView(maxHeight: bodyMaxHeight) {
+                    VStack(alignment: .leading, spacing: 6) {
                         if !store.state.connected {
-                            Text("尚未连接运维服务，请打开主窗口配置连接")
-                                .font(DS.fontCompact)
-                                .foregroundStyle(DS.muted)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .padding(.vertical, 22)
+                            ConnectionOnboardingView(store: store, compactQuick: true)
+                                .padding(.vertical, 8)
                         } else if store.quickTab == .groups {
                             groupsBody
                         } else {
                             errorsBody
                         }
                     }
-                    .padding(10)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 4)
+                    .padding(.bottom, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         GeometryReader { geo in
@@ -62,9 +63,8 @@ public struct QuickPanelRootView: View {
                         }
                     )
                 }
-                .frame(maxHeight: DS.quickPanelMaxHeight - 66)
 
-                Divider().overlay(DS.line)
+                Rectangle().fill(DS.line).frame(height: 1)
                 footerBar
             }
             .frame(width: DS.quickPanelWidth)
@@ -80,11 +80,14 @@ public struct QuickPanelRootView: View {
             }
         }
         .onPreferenceChange(QuickPanelContentHeightKey.self) { bodyHeight in
-            let clamped = min(max(bodyHeight + 66, DS.quickPanelMinHeight), DS.quickPanelMaxHeight)
+            let offlineExtra: CGFloat = (store.state.connected && !store.state.online) ? 24 : 0
+            let clamped = min(max(bodyHeight + 66 + offlineExtra, DS.quickPanelMinHeight), DS.quickPanelMaxHeight)
             onContentHeightChange(clamped)
         }
         .onExitCommand {
-            if store.detailError != nil || store.detailBusy {
+            if store.switcherAnchor == .quick {
+                store.switcherAnchor = nil
+            } else if store.detailError != nil || store.detailBusy {
                 store.closeDetail()
             } else {
                 store.onHideQuickPanel?()
@@ -93,9 +96,9 @@ public struct QuickPanelRootView: View {
     }
 
     private var headerBar: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 4) {
-                tabButton(title: "分组", count: activeGroups.isEmpty ? nil : activeGroups.count, selected: store.quickTab == .groups) {
+        HStack(spacing: 6) {
+            HStack(spacing: 3) {
+                tabButton(title: "分组", count: nil, selected: store.quickTab == .groups) {
                     store.quickTab = .groups
                 }
                 tabButton(
@@ -106,35 +109,80 @@ public struct QuickPanelRootView: View {
                     store.quickTab = .errors
                 }
             }
-            Spacer()
-            HStack(spacing: 5) {
+
+            Spacer(minLength: 4)
+
+            HStack(spacing: 4) {
                 StatusDot(store.state.online ? .good : (store.state.connected ? .warning : .muted), size: 6)
                 Text(store.state.online ? "已连接" : (store.state.connected ? "连接中断" : "未连接"))
-                    .font(DS.fontPriorityMeta)
+                    .font(DS.fontResetTime)
                     .foregroundStyle(DS.muted)
+                    .lineLimit(1)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(DS.surface)
-            .overlay(Capsule().strokeBorder(DS.line, lineWidth: 1))
-            .clipShape(Capsule())
+            .padding(.trailing, 2)
 
-            LinearIconButton(systemName: "arrow.clockwise", label: "立即刷新", size: 12) {
-                store.refresh()
+            if !store.savedConnections.isEmpty || store.state.connected {
+                Button {
+                    store.switcherAnchor = (store.switcherAnchor == .quick) ? nil : .quick
+                } label: {
+                    HStack(spacing: 4) {
+                        if store.switchingUrl != nil {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Image(systemName: "powerplug")
+                                .font(DS.iconFont(10, weight: .medium))
+                        }
+                        Text(store.activeConnection?.name ?? "选择实例")
+                            .font(DS.fontPriorityMeta)
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(DS.ink)
+                    .padding(.horizontal, 7)
+                    .frame(maxWidth: 124, minHeight: 24)
+                    .background(DS.surfaceSubtle)
+                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(DS.line, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("切换 Sub2API 实例")
+                .onAppear { quickPopoverOpen = (store.switcherAnchor == .quick) }
+                .onChange(of: store.switcherAnchor) { _, next in
+                    let shouldOpen = (next == .quick)
+                    if quickPopoverOpen != shouldOpen { quickPopoverOpen = shouldOpen }
+                }
+                .onChange(of: quickPopoverOpen) { _, open in
+                    if open && store.switcherAnchor != .quick {
+                        store.switcherAnchor = .quick
+                    } else if !open && store.switcherAnchor == .quick {
+                        store.switcherAnchor = nil
+                    }
+                }
+                .popover(isPresented: $quickPopoverOpen, arrowEdge: .bottom) {
+                    InstanceSwitcherPopoverContent(store: store, isQuick: true) {
+                        store.switcherAnchor = nil
+                    }
+                }
             }
-            LinearIconButton(
-                systemName: store.state.preferences.pinned ? "pin.fill" : "pin",
-                label: store.state.preferences.pinned ? "取消固定" : "固定面板",
-                size: 12,
-                selected: store.state.preferences.pinned
-            ) {
-                Task { await store.updatePreferences(pinned: !store.state.preferences.pinned) }
-            }
-            LinearIconButton(systemName: "xmark", label: "关闭快捷面板", size: 12) {
-                store.onHideQuickPanel?()
+
+            HStack(spacing: 2) {
+                LinearIconButton(systemName: "arrow.clockwise", label: "立即刷新", size: 12, boxSize: 27) {
+                    store.refresh()
+                }
+                LinearIconButton(
+                    systemName: store.state.preferences.pinned ? "pin.fill" : "pin",
+                    label: store.state.preferences.pinned ? "取消固定" : "固定面板",
+                    size: 12,
+                    boxSize: 27,
+                    selected: store.state.preferences.pinned
+                ) {
+                    Task { await store.updatePreferences(pinned: !store.state.preferences.pinned) }
+                }
+                LinearIconButton(systemName: "xmark", label: "关闭快捷面板", size: 12, boxSize: 27) {
+                    store.onHideQuickPanel?()
+                }
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 10)
         .frame(height: 36)
         .background(DS.topbar)
     }
@@ -148,45 +196,48 @@ public struct QuickPanelRootView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 18)
         } else {
-            ForEach(activeGroups) { group in
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Text(group.name)
-                            .font(DS.fontCompactSemibold)
-                            .foregroundStyle(DS.ink)
-                        Text(PlatformMeta.displayName(group.platform))
-                            .font(DS.fontUsageStatMedium)
-                            .foregroundStyle(DS.muted)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(DS.surface)
-                            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(DS.line, lineWidth: 1))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                        Spacer()
-                        if !group.model.isEmpty {
-                            Text(verbatim: group.model)
-                                .font(DS.fontMono11)
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(activeGroups) { group in
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack(spacing: 6) {
+                            Text(group.name)
+                                .font(DS.fontBadge)
+                                .foregroundStyle(DS.ink)
+                                .lineLimit(1)
+                            Text(verbatim: group.platform)
+                                .font(DS.fontResetTime)
                                 .foregroundStyle(DS.muted)
                                 .lineLimit(1)
+                            Spacer(minLength: 0)
                         }
-                    }
+                        .frame(height: 24)
 
-                    if group.recent_accounts.isEmpty {
-                        Text("近期无成员调用")
-                            .font(DS.fontResetTime)
-                            .foregroundStyle(DS.muted)
-                            .padding(.vertical, 2)
-                    } else {
-                        ForEach(group.recent_accounts, id: \.log_id) { call in
-                            if let acc = accountById[call.account_id] {
+                        if group.recent_accounts.isEmpty {
+                            Rectangle().fill(DS.line).frame(height: 1)
+                            Text("暂无成功调用")
+                                .font(DS.fontPriorityMeta)
+                                .foregroundStyle(DS.muted)
+                                .padding(.vertical, 10)
+                        } else {
+                            ForEach(group.recent_accounts, id: \.account_id) { call in
+                                let acc = accountById[call.account_id]
+                                Rectangle().fill(DS.line).frame(height: 1)
                                 QuickAccountRowView(
                                     account: acc,
-                                    callModel: call.model,
+                                    displayName: call.account_name.isEmpty ? (acc?.name ?? "账号 #\(call.account_id)") : call.account_name,
                                     calledAt: call.called_at,
                                     online: store.state.online,
-                                    scheduleBusy: store.busyScheduleAccountId == acc.id,
+                                    scheduleBusy: store.busyScheduleAccountId == call.account_id,
+                                    recoverBusy: store.busyRecoverAccountIds.contains(call.account_id),
                                     onToggleSchedulable: {
-                                        Task { await store.toggleSchedulable(acc) }
+                                        if let acc {
+                                            Task { await store.toggleSchedulable(acc) }
+                                        }
+                                    },
+                                    onRecover: {
+                                        if let acc {
+                                            Task { await store.recoverAccount(acc) }
+                                        }
                                     },
                                     onOpenError: { errId in
                                         store.openErrorDetail(id: errId)
@@ -196,10 +247,6 @@ public struct QuickPanelRootView: View {
                         }
                     }
                 }
-                .padding(9)
-                .background(DS.surfaceSubtle)
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(DS.line, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
             }
         }
     }
@@ -213,51 +260,103 @@ public struct QuickPanelRootView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 18)
         } else {
-            ForEach(store.errors.prefix(12)) { err in
-                Button {
-                    store.openErrorDetail(id: err.id)
-                } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 6) {
-                            Text("\(err.status_code)")
-                                .font(DS.fontResetTimeSemibold)
-                                .monospacedDigit()
-                                .foregroundStyle(DS.bad)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1)
-                                .background(DS.badBg)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                            Text(err.account_name.isEmpty ? "#\(err.account_id ?? 0)" : err.account_name)
-                                .font(DS.fontCompactSemibold)
-                                .foregroundStyle(DS.ink)
-                                .lineLimit(1)
-                            Spacer()
-                            Text(BeijingTime.fullTime(err.created_at))
-                                .font(DS.fontResetTime)
-                                .monospacedDigit()
-                                .foregroundStyle(DS.muted)
+            let visibleErrors = Array(store.errors.prefix(12))
+            VStack(spacing: 0) {
+                ForEach(Array(visibleErrors.enumerated()), id: \.element.id) { idx, err in
+                    let acc = err.account_id.flatMap { accountById[$0] }
+                    let restriction = QuickAccountStatusHelper.restriction(for: acc)
+                    let codeVal = err.upstream_status_code ?? err.status_code
+                    let isWarnCode = codeVal == 429
+                    let isCurrent = acc?.last_error_id == err.id
+
+                    HStack(alignment: .center, spacing: 8) {
+                        Button {
+                            store.openErrorDetail(id: err.id)
+                        } label: {
+                            HStack(alignment: .top, spacing: 10) {
+                                Text(codeVal > 0 ? "\(codeVal)" : "ERR")
+                                    .font(DS.fontResetTimeSemibold)
+                                    .monospacedDigit()
+                                    .foregroundStyle(isWarnCode ? DS.warn : DS.bad)
+                                    .frame(minWidth: 34)
+                                    .padding(.vertical, 5)
+                                    .background(isWarnCode ? DS.warnBg : DS.badBg)
+                                    .clipShape(RoundedRectangle(cornerRadius: 5))
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack(spacing: 4) {
+                                        Text(err.account_name.isEmpty ? (err.account_id.map { "账号 #\($0)" } ?? "未关联账号") : err.account_name)
+                                            .font(DS.fontCompactSemibold)
+                                            .foregroundStyle(restriction.isEmpty ? DS.ink : DS.warn)
+                                            .lineLimit(1)
+                                        if !restriction.isEmpty {
+                                            Image(systemName: "exclamationmark.circle")
+                                                .font(DS.iconFont(10, weight: .medium))
+                                                .foregroundStyle(DS.warn)
+                                        }
+                                        if let acc {
+                                            DegradationBadgeView(account: acc, compact: true)
+                                        }
+                                    }
+
+                                    HStack(spacing: 6) {
+                                        Text(isCurrent ? "当前" : "历史")
+                                            .font(DS.fontResetTimeSemibold)
+                                            .foregroundStyle(isCurrent ? DS.warn : DS.muted)
+                                        Text(err.provider_error_code.isEmpty ? (err.message.isEmpty ? "查看错误详情" : err.message) : err.provider_error_code)
+                                            .font(DS.fontPriorityMeta)
+                                            .foregroundStyle(DS.muted)
+                                            .lineLimit(1)
+                                    }
+
+                                    Text(BeijingTime.fullTime(err.created_at))
+                                        .font(DS.fontPriorityMeta)
+                                        .monospacedDigit()
+                                        .foregroundStyle(DS.muted)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .contentShape(Rectangle())
                         }
-                        Text(err.message.isEmpty ? err.provider_error_code : err.message)
-                            .font(DS.fontResetTime)
-                            .foregroundStyle(DS.muted)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
+                        .buttonStyle(.plain)
+
+                        if let acc, acc.recoverable == true {
+                            Button {
+                                Task { await store.recoverAccount(acc) }
+                            } label: {
+                                Image(systemName: "arrow.counterclockwise")
+                                    .font(DS.iconFont(12, weight: .semibold))
+                                    .foregroundStyle(DS.warn)
+                                    .frame(width: 24, height: 24)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(!store.state.online || store.busyRecoverAccountIds.contains(acc.id))
+                            .help("恢复状态：\(acc.name)")
+                        } else {
+                            Image(systemName: "chevron.right")
+                                .font(DS.iconFont(11, weight: .medium))
+                                .foregroundStyle(DS.muted)
+                                .frame(width: 20)
+                        }
                     }
-                    .padding(9)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(DS.surfaceSubtle)
-                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(DS.line, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 9)
+
+                    if idx < visibleErrors.count - 1 {
+                        Rectangle().fill(DS.line).frame(height: 1)
+                    }
                 }
-                .buttonStyle(.plain)
             }
+            .background(DS.surface)
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(DS.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         }
     }
 
     private var footerBar: some View {
         HStack {
             Text(BeijingTime.fullTime(store.state.snapshot?.observed_at))
-                .font(DS.fontResetTime)
+                .font(DS.fontPriorityMeta)
                 .monospacedDigit()
                 .foregroundStyle(DS.muted)
             Spacer()
@@ -274,9 +373,9 @@ public struct QuickPanelRootView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 10)
         .frame(height: 28)
-        .background(DS.surfaceSubtle)
+        .background(DS.surface)
     }
 
     private func quickErrorOverlay(_ detail: OpsError) -> some View {
@@ -286,11 +385,11 @@ public struct QuickPanelRootView: View {
                     .font(DS.fontSectionTitle)
                     .foregroundStyle(DS.ink)
                 Spacer()
-                LinearIconButton(systemName: "xmark", label: "关闭详情", size: 12) {
+                LinearIconButton(systemName: "xmark", label: "关闭详情", size: 12, boxSize: 26) {
                     store.closeDetail()
                 }
             }
-            Text("\(detail.account_name) · HTTP \(detail.status_code) · \(BeijingTime.fullTime(detail.created_at))")
+            Text("\(detail.account_name) · HTTP \(detail.upstream_status_code ?? detail.status_code) · \(BeijingTime.fullTime(detail.created_at))")
                 .font(DS.fontResetTime)
                 .monospacedDigit()
                 .foregroundStyle(DS.muted)
@@ -306,9 +405,8 @@ public struct QuickPanelRootView: View {
             }
         }
         .padding(12)
-        .frame(width: DS.quickPanelWidth, height: 340)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(DS.surface)
-        .overlay(RoundedRectangle(cornerRadius: DS.cardRadius).strokeBorder(DS.lineStrong, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: DS.cardRadius))
     }
 
@@ -316,28 +414,26 @@ public struct QuickPanelRootView: View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Text(title)
+                    .font(selected ? DS.fontCompactSemibold : DS.fontCompact)
+                    .foregroundStyle(selected ? DS.accent : DS.muted)
                 if let count {
                     Text("\(count)")
+                        .font(DS.fontPriorityMeta)
                         .monospacedDigit()
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(selected ? DS.accentBg : DS.surfaceSubtle)
-                        .clipShape(Capsule())
+                        .foregroundStyle(selected ? DS.accent : DS.muted)
                 }
             }
-            .font(selected ? DS.fontCompactSemibold : DS.fontCompact)
-            .foregroundStyle(selected ? DS.accent : DS.muted)
             .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .frame(height: 26)
             .background(selected ? DS.accentBg : DS.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: 5))
         }
         .buttonStyle(.plain)
     }
 }
 
-struct QuickPanelContentHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 120
+private struct QuickPanelContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
     }

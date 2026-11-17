@@ -16,24 +16,97 @@ public enum ModelTestEngine: String, CaseIterable, Codable, Sendable {
     }
 }
 
-public struct FingerprintBankStatusInfo: Codable, Sendable, Equatable {
-    public var available: Bool
-    public var revision: String?
-    public var model_count: Int?
-    public var updated_at: String?
-    public var syncing: Bool?
-    public var message: String?
-    public var error: String?
+public struct FingerprintBankVersion: Codable, Sendable, Equatable {
+    public var revision: String
+    public var sha256: String?
+    public var built_at: String?
+    public var analyzer_version: String?
+
+    enum CodingKeys: String, CodingKey {
+        case revision, sha256, built_at, analyzer_version
+    }
+
+    public init(revision: String = "", sha256: String? = nil, built_at: String? = nil, analyzer_version: String? = nil) {
+        self.revision = revision
+        self.sha256 = sha256
+        self.built_at = built_at
+        self.analyzer_version = analyzer_version
+    }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        available = try c.decodeIfPresent(Bool.self, forKey: .available) ?? false
-        revision = try c.decodeIfPresent(String.self, forKey: .revision)
-        model_count = try c.decodeIfPresent(Int.self, forKey: .model_count)
-        updated_at = try c.decodeIfPresent(String.self, forKey: .updated_at)
-        syncing = try c.decodeIfPresent(Bool.self, forKey: .syncing)
-        message = try c.decodeIfPresent(String.self, forKey: .message)
-        error = try c.decodeIfPresent(String.self, forKey: .error)
+        revision = (try? c.decodeIfPresent(String.self, forKey: .revision)) ?? ""
+        sha256 = try? c.decodeIfPresent(String.self, forKey: .sha256)
+        built_at = try? c.decodeIfPresent(String.self, forKey: .built_at)
+        if let s = try? c.decodeIfPresent(String.self, forKey: .analyzer_version) {
+            analyzer_version = s
+        } else if let n = try? c.decodeIfPresent(Int.self, forKey: .analyzer_version) {
+            analyzer_version = String(n)
+        } else {
+            analyzer_version = nil
+        }
+    }
+}
+
+public struct FingerprintBankStatusInfo: Codable, Sendable, Equatable {
+    public var version: FingerprintBankVersion?
+    public var source: String?
+    public var status: String?
+    public var result: String?
+    public var checked_at: String?
+    public var synced_at: String?
+    public var cooldown_until: String?
+    public var error: String?
+    public var available: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case version, source, status, result, checked_at, synced_at, cooldown_until, error
+        case available, revision, updated_at
+    }
+
+    private static func decodeFlexibleTimestamp<K: CodingKey>(_ c: KeyedDecodingContainer<K>, key: K) -> String? {
+        if let s = try? c.decodeIfPresent(String.self, forKey: key), !s.isEmpty {
+            return s
+        }
+        if let secs = try? c.decodeIfPresent(Double.self, forKey: key), secs > 0 {
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime]
+            return iso.string(from: Date(timeIntervalSince1970: secs))
+        }
+        return nil
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let ver = try? c.decodeIfPresent(FingerprintBankVersion.self, forKey: .version) {
+            version = ver
+            available = !ver.revision.isEmpty
+        } else if let legacyRev = try? c.decodeIfPresent(String.self, forKey: .revision) {
+            version = FingerprintBankVersion(revision: legacyRev)
+            available = (try? c.decodeIfPresent(Bool.self, forKey: .available)) ?? !legacyRev.isEmpty
+        } else {
+            version = nil
+            available = (try? c.decodeIfPresent(Bool.self, forKey: .available)) ?? false
+        }
+        source = try? c.decodeIfPresent(String.self, forKey: .source)
+        status = try? c.decodeIfPresent(String.self, forKey: .status)
+        result = try? c.decodeIfPresent(String.self, forKey: .result)
+        checked_at = Self.decodeFlexibleTimestamp(c, key: .checked_at)
+        synced_at = Self.decodeFlexibleTimestamp(c, key: .synced_at) ?? Self.decodeFlexibleTimestamp(c, key: .updated_at)
+        cooldown_until = Self.decodeFlexibleTimestamp(c, key: .cooldown_until)
+        error = try? c.decodeIfPresent(String.self, forKey: .error)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(version, forKey: .version)
+        try c.encodeIfPresent(source, forKey: .source)
+        try c.encodeIfPresent(status, forKey: .status)
+        try c.encodeIfPresent(result, forKey: .result)
+        try c.encodeIfPresent(checked_at, forKey: .checked_at)
+        try c.encodeIfPresent(synced_at, forKey: .synced_at)
+        try c.encodeIfPresent(cooldown_until, forKey: .cooldown_until)
+        try c.encodeIfPresent(error, forKey: .error)
     }
 }
 
@@ -127,6 +200,8 @@ public struct ModelFingerprintReport: Codable, Sendable, Equatable {
 public struct ModelTestGroupStatus: Codable, Sendable, Equatable, Identifiable {
     public var index: Int
     public var status: String
+    public var attempts: Int?
+    public var ttft_ms: Double?
     public var duration_ms: Double?
     public var error: String?
 
@@ -138,8 +213,22 @@ public struct ModelTestJob: Codable, Sendable, Equatable, Identifiable {
     public var account_id: Int?
     public var account_name: String?
     public var model_id: String?
+    public var requested_model: String?
+    public var forwarded_model: String?
+    public var returned_models: [String]?
     public var engine: String?
     public var sample_count: Int?
+    public var planned_groups: Int?
+    public var completed_groups: Int?
+    public var valid_groups: Int?
+    public var concurrency: Int?
+    public var attempts: Int?
+    public var duration_ms: Double?
+    public var phase: String?
+    public var completion_reason: String?
+    public var verdict_mode: String?
+    public var degraded_model_id: String?
+    public var can_retry: Bool?
     public var status: String
     public var reason: String?
     public var error: String?
@@ -147,6 +236,7 @@ public struct ModelTestJob: Codable, Sendable, Equatable, Identifiable {
     public var completed_at: String?
     public var groups: [ModelTestGroupStatus]?
     public var report: ModelFingerprintReport?
+    public var bank_version: FingerprintBankVersion?
 
     public var isTerminal: Bool {
         ["completed", "failed", "cancelled", "interrupted", "needs_confirmation"].contains(status)

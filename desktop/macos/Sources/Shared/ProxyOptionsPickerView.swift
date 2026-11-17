@@ -106,7 +106,7 @@ public struct ProxyOptionsPickerView: View {
                     .foregroundStyle(DS.bad)
             }
 
-            ScrollView {
+            LinearBoundedScrollView(maxHeight: 240) {
                 VStack(alignment: .leading, spacing: 6) {
                     directOptionRow
                     ForEach(filteredProxies) { item in
@@ -120,7 +120,6 @@ public struct ProxyOptionsPickerView: View {
                     }
                 }
             }
-            .frame(maxHeight: 240)
         }
         .task(id: "\(connectionKey):\(online)") {
             guard online else { return }
@@ -177,11 +176,13 @@ public struct ProxyOptionsPickerView: View {
                                     .foregroundStyle(DS.ink)
                                     .lineLimit(1)
                                 Text("#\(item.id)")
-                                    .font(DS.fontMono11)
+                                    .font(DS.fontPriorityMeta)
+                                    .monospacedDigit()
                                     .foregroundStyle(DS.muted)
                             }
                             Text(verbatim: item.addressSummary)
-                                .font(DS.fontMono11)
+                                .font(DS.fontPriorityMeta)
+                                .monospacedDigit()
                                 .foregroundStyle(DS.muted)
                                 .lineLimit(1)
                         }

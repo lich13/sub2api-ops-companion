@@ -27,13 +27,13 @@ public struct ModelFingerprintResultView: View {
                 HStack(spacing: 12) {
                     metricPill("检测源", value: ModelTestEngine.name(for: report.engine ?? job.engine))
                     if let pred = report.prediction_name ?? report.prediction, !pred.isEmpty {
-                        metricPill("汇总预测", value: pred, mono: true)
+                        metricPill("汇总预测", value: pred)
                     }
                     if let prob = report.probability {
                         metricPill("匹配度", value: String(format: "%.1f%%", prob * 100.0))
                     }
                     if let first = report.first_prediction, !first.isEmpty {
-                        metricPill("首组", value: first, mono: true)
+                        metricPill("首组", value: first)
                     }
                 }
 
@@ -52,7 +52,7 @@ public struct ModelFingerprintResultView: View {
                             let pct = cand.probability.map { min(100, max(0, $0 * 100.0)) }
                             HStack(spacing: 8) {
                                 Text(verbatim: cand.display_name ?? cand.model)
-                                    .font(DS.fontMono11)
+                                    .font(DS.fontCompact)
                                     .foregroundStyle(DS.ink)
                                     .frame(width: 170, alignment: .leading)
                                     .lineLimit(1)
@@ -67,14 +67,14 @@ public struct ModelFingerprintResultView: View {
                                     }
                                     .frame(height: 5)
                                     Text(String(format: "%.1f%%", pct))
-                                        .font(DS.fontMono11)
+                                        .font(DS.fontPriorityMeta)
                                         .monospacedDigit()
                                         .foregroundStyle(DS.ink)
                                         .frame(width: 48, alignment: .trailing)
                                 } else if let sc = cand.score {
                                     Spacer()
                                     Text(String(format: "%.3f", sc))
-                                        .font(DS.fontMono11)
+                                        .font(DS.fontPriorityMeta)
                                         .monospacedDigit()
                                         .foregroundStyle(DS.muted)
                                 }

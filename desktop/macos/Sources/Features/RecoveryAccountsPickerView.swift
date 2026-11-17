@@ -60,7 +60,7 @@ public struct RecoveryAccountsPickerView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("恢复测活方式分配（OpenAI OAuth）")
@@ -72,20 +72,13 @@ public struct RecoveryAccountsPickerView: View {
                         .foregroundStyle(DS.muted)
                 }
                 Spacer()
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .font(DS.iconFont(11))
-                        .foregroundStyle(DS.muted)
-                    TextField(text: $search, prompt: Text("搜索账号")) { EmptyView() }
-                        .textFieldStyle(.plain)
-                        .font(DS.fontCompact)
-                        .frame(width: 150)
-                }
-                .padding(.horizontal, 8)
-                .frame(height: DS.controlHeightDense)
-                .background(DS.surface)
-                .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+                LinearSearchField(
+                    text: $search,
+                    prompt: "搜索账号",
+                    height: 32,
+                    width: 190,
+                    compactFont: true
+                )
             }
 
             if filteredAccounts.isEmpty {
@@ -106,19 +99,19 @@ public struct RecoveryAccountsPickerView: View {
                         Text("测试连接")
                             .font(DS.fontTableHeader)
                             .foregroundStyle(DS.muted)
-                            .frame(width: 84, alignment: .center)
+                            .frame(width: 88, alignment: .center)
                         Text("模型测试")
                             .font(DS.fontTableHeader)
                             .foregroundStyle(DS.muted)
-                            .frame(width: 84, alignment: .center)
+                            .frame(width: 88, alignment: .center)
                     }
-                    .padding(.horizontal, 12)
-                    .frame(height: 30)
+                    .padding(.horizontal, 14)
+                    .frame(height: 32)
                     .background(DS.surfaceSubtle)
 
                     Rectangle().fill(DS.line).frame(height: 1)
 
-                    ScrollView {
+                    LinearBoundedScrollView(maxHeight: 220) {
                         VStack(spacing: 0) {
                             ForEach(Array(filteredAccounts.enumerated()), id: \.element.id) { idx, acc in
                                 let isConn = connectionIds.contains(acc.id)
@@ -130,45 +123,37 @@ public struct RecoveryAccountsPickerView: View {
                                             .foregroundStyle(DS.ink)
                                             .lineLimit(1)
                                         Text("#\(acc.id)")
-                                            .font(DS.fontMono11)
+                                            .font(DS.fontPriorityMeta).monospacedDigit()
                                             .foregroundStyle(DS.muted)
                                     }
                                     Spacer()
-                                    Button {
-                                        toggleConnection(acc.id)
-                                    } label: {
-                                        Image(systemName: isConn ? "checkmark.square.fill" : "square")
-                                            .font(DS.iconFont(14))
-                                            .foregroundStyle(isConn ? DS.accent : DS.muted)
-                                            .frame(width: 84, height: 28)
+                                    HStack {
+                                        LinearCheckbox(isChecked: isConn, accessibilityTitle: "\(acc.name) 测试连接") {
+                                            toggleConnection(acc.id)
+                                        }
                                     }
-                                    .buttonStyle(.plain)
+                                    .frame(width: 88, alignment: .center)
 
-                                    Button {
-                                        toggleModel(acc.id)
-                                    } label: {
-                                        Image(systemName: isModel ? "checkmark.square.fill" : "square")
-                                            .font(DS.iconFont(14))
-                                            .foregroundStyle(isModel ? DS.accent : DS.muted)
-                                            .frame(width: 84, height: 28)
+                                    HStack {
+                                        LinearCheckbox(isChecked: isModel, accessibilityTitle: "\(acc.name) 模型测试") {
+                                            toggleModel(acc.id)
+                                        }
                                     }
-                                    .buttonStyle(.plain)
+                                    .frame(width: 88, alignment: .center)
                                 }
-                                .padding(.horizontal, 12)
-                                .frame(height: 32)
+                                .padding(.horizontal, 14)
+                                .frame(height: 36)
                                 if idx < filteredAccounts.count - 1 {
                                     Rectangle().fill(DS.line).frame(height: 1)
                                 }
                             }
                         }
                     }
-                    .frame(maxHeight: 220)
                 }
                 .background(DS.surface)
                 .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
                 .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
             }
         }
-        .padding(.top, 4)
     }
 }

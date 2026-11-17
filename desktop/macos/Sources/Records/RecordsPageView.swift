@@ -13,10 +13,9 @@ public struct RecordsPageView: View {
     @State private var modelInput: String = ""
     @State private var appliedModel: String = ""
     @State private var mismatchOnly: Bool = false
-    @State private var detailRecord: UsageRecord? = nil
-    @State private var detailLoading: Bool = false
-    @State private var detailError: String = ""
-    @State private var selectedRecordId: Int? = nil
+    @State private var hScrollOffset: CGFloat = 0
+    @State private var rightPaneWidth: CGFloat = 980
+    @State private var hoveredRowId: Int? = nil
 
     public init(store: AppStore) {
         self.store = store
@@ -54,46 +53,37 @@ public struct RecordsPageView: View {
     }
 
     public var body: some View {
-        ZStack(alignment: .trailing) {
-            VStack(alignment: .leading, spacing: 12) {
-                filterToolbar
-                summaryAndActionsBar
+        VStack(alignment: .leading, spacing: 14) {
+            Text("记录")
+                .font(DS.fontPageTitle)
+                .foregroundStyle(DS.ink)
 
-                if !feed.error.isEmpty {
-                    HStack(spacing: 8) {
-                        Text(feed.error)
-                            .font(DS.fontCompact)
-                            .foregroundStyle(DS.bad)
-                        Button("重试") {
-                            Task { await feed.refresh() }
-                        }
-                        .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                        .disabled(!active || feed.loading)
-                    }
-                }
+            filterToolbar
+            summaryAndActionsBar
 
-                if !store.state.online {
-                    Text("连接已断开，显示已读取记录")
+            if !feed.error.isEmpty {
+                HStack(spacing: 8) {
+                    Text(feed.error)
                         .font(DS.fontCompact)
-                        .foregroundStyle(DS.warn)
-                }
-
-                recordsTableSurface
-            }
-
-            if selectedRecordId != nil {
-                RecordDetailDrawerView(
-                    row: detailRecord,
-                    loading: detailLoading,
-                    error: detailError,
-                    onClose: {
-                        selectedRecordId = nil
-                        detailRecord = nil
-                        detailError = ""
+                        .foregroundStyle(DS.bad)
+                    Button("重试") {
+                        Task { await feed.refresh() }
                     }
-                )
+                    .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                    .disabled(!active || feed.loading)
+                }
             }
+
+            if !store.state.online {
+                Text("连接已断开，显示已读取记录")
+                    .font(DS.fontCompact)
+                    .foregroundStyle(DS.warn)
+            }
+
+            recordsTableSurface
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task(id: modelInput) {
             let trimmed = modelInput.trimmingCharacters(in: .whitespacesAndNewlines)
             guard trimmed != appliedModel else { return }
@@ -101,8 +91,8 @@ public struct RecordsPageView: View {
             guard !Task.isCancelled else { return }
             appliedModel = trimmed
         }
-        .task(id: "\(store.connectionKey):\(queryString):\(active):\(selectedRecordId != nil)") {
-            feed.bind(query: queryString, active: active, holding: selectedRecordId != nil)
+        .task(id: "\(store.connectionKey):\(queryString):\(active):\(store.selectedRecordId != nil)") {
+            feed.bind(query: queryString, active: active, holding: store.selectedRecordId != nil)
         }
         .onDisappear {
             feed.stop()
@@ -111,36 +101,39 @@ public struct RecordsPageView: View {
 
     private var filterToolbar: some View {
         let platforms = PlatformMeta.sortPlatforms(PlatformMeta.preferredOrder + store.accounts.map(\.platform))
-        return HStack(spacing: 8) {
+        return HStack(spacing: 6) {
             RecordDatePickerView(value: range, disabled: !active || feed.loading) { next in
                 if next.start == range.start && next.end == range.end {
                     Task { await feed.refresh() }
                 }
                 range = next
             }
+            .fixedSize(horizontal: true, vertical: false)
 
-            Menu {
-                Button("全部平台") { platformFilter = "" }
-                ForEach(platforms, id: \.self) { pid in
-                    Button(PlatformMeta.priorityName(pid)) {
+            LinearSelect(
+                label: platformFilter.isEmpty ? "全部平台" : PlatformMeta.priorityName(platformFilter),
+                accessibilityTitle: "平台筛选",
+                height: DS.controlHeightDense,
+                minWidth: 88,
+                compactFont: true,
+                entries: [
+                    LinearMenuEntry(id: "__all__", title: "全部平台", checked: platformFilter.isEmpty) {
+                        platformFilter = ""
+                    },
+                ] + platforms.map { pid in
+                    LinearMenuEntry(
+                        id: pid,
+                        title: PlatformMeta.priorityName(pid),
+                        checked: platformFilter == pid
+                    ) {
                         platformFilter = pid
                         if let selAcc = accountFilter, selAcc.platform != pid {
                             accountFilter = nil
                         }
                     }
                 }
-            } label: {
-                Text(platformFilter.isEmpty ? "全部平台" : PlatformMeta.priorityName(platformFilter))
-                    .font(DS.fontCompact)
-                    .foregroundStyle(DS.ink)
-                    .padding(.horizontal, 10)
-                    .frame(height: DS.controlHeightCompact)
-                    .background(DS.surface)
-                    .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+            )
+            .fixedSize(horizontal: true, vertical: false)
 
             RecordOptionPickerView(kind: .users, active: active, selected: userFilter) { next in
                 userFilter = next
@@ -155,56 +148,45 @@ public struct RecordsPageView: View {
                 keyFilter = next
             }
 
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .font(DS.iconFont(12))
-                    .foregroundStyle(DS.muted)
-                TextField(text: $modelInput, prompt: Text(verbatim: "搜索模型")) { EmptyView() }
-                    .textFieldStyle(.plain)
-                    .font(DS.fontCompact)
-                    .onSubmit {
-                        appliedModel = modelInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                    }
-            }
-            .padding(.horizontal, 8)
-            .frame(minWidth: 140, maxWidth: 200)
-            .frame(height: DS.controlHeightCompact)
-            .background(DS.surface)
-            .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-
-            Button {
-                mismatchOnly.toggle()
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: mismatchOnly ? "checkmark.square.fill" : "square")
-                        .font(DS.iconFont(12))
-                        .foregroundStyle(mismatchOnly ? DS.accent : DS.muted)
-                    Text("返回差异")
-                        .font(DS.fontCompact)
-                        .foregroundStyle(DS.ink)
+            LinearSearchField(
+                text: $modelInput,
+                prompt: "搜索模型",
+                height: DS.controlHeightDense,
+                compactFont: true,
+                onSubmit: {
+                    appliedModel = modelInput.trimmingCharacters(in: .whitespacesAndNewlines)
                 }
+            )
+            .frame(minWidth: 96, maxWidth: .infinity)
+
+            LinearCheckbox(
+                isChecked: mismatchOnly,
+                label: "返回差异"
+            ) {
+                mismatchOnly.toggle()
             }
-            .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
         }
     }
 
     private var summaryAndActionsBar: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
+        let currentKeys = shownColumns.map(\.rawValue)
+        return HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Text("总消费")
                     .font(DS.fontCompact)
                     .foregroundStyle(DS.muted)
-                Text(RecordFormatting.money(feed.totalCost, digits: 6))
-                    .font(DS.fontSectionTitle)
-                    .monospacedDigit()
-                    .foregroundStyle(DS.ink)
+                if feed.loading && feed.items.isEmpty {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(DS.good)
+                        .frame(width: 22, height: 3)
+                } else {
+                    Text(RecordFormatting.money(feed.totalCost, digits: 6))
+                        .font(DS.fontSectionTitle)
+                        .monospacedDigit()
+                        .foregroundStyle(DS.good)
+                }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(DS.surface)
-            .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
 
             Spacer()
 
@@ -229,169 +211,231 @@ public struct RecordsPageView: View {
                 .disabled(!active || feed.loading)
             }
 
-            LinearIconButton(systemName: "arrow.clockwise", label: "刷新记录", disabled: !active || feed.loading) {
+            LinearIconButton(
+                systemName: "arrow.clockwise",
+                label: "刷新记录",
+                size: 13,
+                boxSize: DS.controlHeightCompact,
+                bordered: true,
+                disabled: !active || feed.loading
+            ) {
                 Task { await feed.refresh() }
             }
 
-            Menu {
-                let currentKeys = shownColumns.map(\.rawValue)
-                ForEach(RecordColumnSpec.allCases, id: \.rawValue) { col in
+            LinearSelect(
+                label: "列",
+                accessibilityTitle: "显示列",
+                leadingIcon: "line.3.horizontal.decrease",
+                height: DS.controlHeightCompact,
+                compactFont: true,
+                entries: RecordColumnSpec.allCases.map { col in
                     let isOn = currentKeys.contains(col.rawValue)
-                    Button {
+                    return LinearMenuEntry(
+                        id: col.rawValue,
+                        title: col.label,
+                        checked: isOn
+                    ) {
                         let next = isOn
                             ? currentKeys.filter { $0 != col.rawValue }
                             : (currentKeys + [col.rawValue])
                         Task { await store.updatePreferences(recordColumns: next) }
-                    } label: {
-                        HStack {
-                            Text(col.label)
-                            if isOn { Image(systemName: "checkmark") }
-                        }
                     }
                 }
-            } label: {
-                Text("列")
-                    .font(DS.fontCompactMedium)
-                    .foregroundStyle(DS.ink)
-                    .padding(.horizontal, 10)
-                    .frame(height: DS.controlHeightCompact)
-                    .background(DS.surface)
-                    .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+            )
         }
+    }
+
+    private func rowHeight(for row: UsageRecord, showModel: Bool) -> CGFloat {
+        guard showModel else { return 48 }
+        let routeCount = max(1, RecordFormatting.modelRoute(row).count) + (row.upstream_model_mismatch ? 1 : 0)
+        return max(48, CGFloat(routeCount) * 14 + 12)
     }
 
     private var recordsTableSurface: some View {
         let cols = shownColumns
         let hasApiKeyCol = cols.contains(.api_key)
+        let hasModelCol = cols.contains(.model)
         let trailingCols = cols.filter { $0 != .api_key }
-        let rowHeight: CGFloat = 58
+        let userColWidth: CGFloat = 110
+        let timeColWidth: CGFloat = 96
+        let colSpacing: CGFloat = 10
+        let hCellPad: CGFloat = 8
+        let colCount = (hasApiKeyCol ? 1 : 0) + 1 + trailingCols.count
+        let sumWidths = (hasApiKeyCol ? RecordColumnSpec.api_key.width : 0)
+            + timeColWidth
+            + trailingCols.reduce(CGFloat(0)) { $0 + $1.width }
+        let dataMinWidth = sumWidths + CGFloat(max(0, colCount - 1)) * colSpacing + hCellPad * 2
+        let effectiveDataWidth = max(dataMinWidth, rightPaneWidth)
 
         return VStack(spacing: 0) {
+            // Pinned top header bar (zero-minWidth clipped viewport synchronized horizontally with right ScrollView)
+            HStack(spacing: 0) {
+                Text("用户")
+                    .font(DS.fontTableHeader)
+                    .foregroundStyle(DS.muted)
+                    .padding(.horizontal, hCellPad)
+                    .frame(width: userColWidth, height: 30, alignment: .leading)
+
+                Rectangle().fill(DS.line).frame(width: 1, height: 30)
+
+                DS.clear
+                    .frame(maxWidth: .infinity, minHeight: 30, maxHeight: 30)
+                    .background(LinearWidthObserver { rightPaneWidth = $0 })
+                    .overlay(alignment: .leading) {
+                        HStack(spacing: colSpacing) {
+                            if hasApiKeyCol {
+                                headerCell("API 密钥", width: RecordColumnSpec.api_key.width)
+                            }
+                            headerCell("时间", width: timeColWidth)
+                            ForEach(trailingCols, id: \.rawValue) { col in
+                                headerCell(
+                                    col.label,
+                                    width: col.width,
+                                    trailing: col == .cost || col == .tokens || col == .latency
+                                )
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, hCellPad)
+                        .frame(width: effectiveDataWidth, height: 30, alignment: .leading)
+                        .offset(x: -hScrollOffset)
+                    }
+                    .clipped()
+            }
+            .frame(height: 30)
+            .background(DS.surfaceSubtle)
+
+            Rectangle().fill(DS.line).frame(height: 1)
+
             if feed.items.isEmpty {
                 Text(feed.loading ? "正在读取记录…" : (feed.error.isEmpty ? "暂无记录" : "记录暂不可用"))
                     .font(DS.fontCompact)
                     .foregroundStyle(DS.muted)
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 32)
+                    .padding(.vertical, 36)
+                Spacer(minLength: 0)
             } else {
-                HStack(alignment: .top, spacing: 0) {
-                    // Sticky User column
+                // Vertically scrollable table body keeping left User column sticky & right columns horizontally scrollable
+                ScrollView(.vertical) {
                     VStack(spacing: 0) {
-                        Text("用户")
-                            .font(DS.fontTableHeader)
-                            .foregroundStyle(DS.muted)
-                            .padding(.horizontal, 12)
-                            .frame(width: 132, height: 36, alignment: .leading)
-                            .background(DS.surfaceSubtle)
-                        Rectangle().fill(DS.line).frame(height: 1)
+                        HStack(alignment: .top, spacing: 0) {
+                            VStack(spacing: 0) {
+                                ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, row in
+                                    let rh = rowHeight(for: row, showModel: hasModelCol)
+                                    Button {
+                                        openDetail(id: row.id)
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(row.user_name ?? row.user_email ?? "#\(row.user_id)")
+                                                .font(DS.fontCompactSemibold)
+                                                .foregroundStyle(DS.ink)
+                                                .lineLimit(1)
+                                            Text("#\(row.user_id)")
+                                                .font(DS.fontResetTime)
+                                                .monospacedDigit()
+                                                .foregroundStyle(DS.muted)
+                                        }
+                                        .padding(.horizontal, hCellPad)
+                                        .frame(width: userColWidth, height: rh, alignment: .leading)
+                                        .background(hoveredRowId == row.id ? DS.rowHover : DS.surface)
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .onHover { hov in
+                                        if hov { hoveredRowId = row.id } else if hoveredRowId == row.id { hoveredRowId = nil }
+                                    }
 
-                        ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, row in
-                            Button {
-                                openDetail(id: row.id)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(row.user_name ?? row.user_email ?? "#\(row.user_id)")
-                                        .font(DS.fontCompactSemibold)
-                                        .foregroundStyle(DS.ink)
-                                        .lineLimit(1)
-                                    Text("#\(row.user_id)")
-                                        .font(DS.fontMono11)
-                                        .foregroundStyle(DS.muted)
+                                    if idx < feed.items.count - 1 {
+                                        Rectangle().fill(DS.line).frame(height: 1)
+                                    }
                                 }
-                                .padding(.horizontal, 12)
-                                .frame(width: 132, height: rowHeight, alignment: .leading)
-                                .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            .frame(width: userColWidth)
 
-                            if idx < feed.items.count - 1 {
-                                Rectangle().fill(DS.line).frame(height: 1)
+                            Rectangle().fill(DS.line).frame(width: 1)
+
+                            ScrollView(.horizontal) {
+                                VStack(spacing: 0) {
+                                    GeometryReader { geo in
+                                        DS.clear.preference(
+                                            key: RecordsHScrollOffsetKey.self,
+                                            value: max(0, -geo.frame(in: .named("recordsHScroll")).minX)
+                                        )
+                                    }
+                                    .frame(height: 0)
+
+                                    ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, row in
+                                        let rh = rowHeight(for: row, showModel: hasModelCol)
+                                        HStack(spacing: colSpacing) {
+                                            if hasApiKeyCol {
+                                                cellView(.api_key, row: row)
+                                            }
+                                            Text(BeijingTime.fullTime(row.created_at))
+                                                .font(DS.fontPriorityMeta)
+                                                .monospacedDigit()
+                                                .foregroundStyle(DS.muted)
+                                                .frame(width: timeColWidth, alignment: .leading)
+                                            ForEach(trailingCols, id: \.rawValue) { col in
+                                                cellView(col, row: row)
+                                            }
+                                            Spacer(minLength: 0)
+                                        }
+                                        .padding(.horizontal, hCellPad)
+                                        .frame(width: effectiveDataWidth, height: rh, alignment: .leading)
+                                        .background(hoveredRowId == row.id ? DS.rowHover : DS.surface)
+                                        .contentShape(Rectangle())
+                                        .onHover { hov in
+                                            if hov { hoveredRowId = row.id } else if hoveredRowId == row.id { hoveredRowId = nil }
+                                        }
+                                        .onTapGesture {
+                                            openDetail(id: row.id)
+                                        }
+
+                                        if idx < feed.items.count - 1 {
+                                            Rectangle().fill(DS.line).frame(height: 1)
+                                        }
+                                    }
+                                }
+                            }
+                            .coordinateSpace(name: "recordsHScroll")
+                            .onPreferenceChange(RecordsHScrollOffsetKey.self) { next in
+                                if abs(next - hScrollOffset) >= 0.5 {
+                                    hScrollOffset = next
+                                }
                             }
                         }
-                    }
-                    .frame(width: 132)
 
-                    Rectangle().fill(DS.line).frame(width: 1)
-
-                    // Horizontally scrollable data columns
-                    ScrollView(.horizontal) {
-                        VStack(spacing: 0) {
-                            HStack(spacing: 12) {
-                                if hasApiKeyCol {
-                                    headerCell("API 密钥", width: RecordColumnSpec.api_key.width)
-                                }
-                                headerCell("时间", width: 108)
-                                ForEach(trailingCols, id: \.rawValue) { col in
-                                    headerCell(col.label, width: col.width, trailing: col == .cost || col == .tokens)
-                                }
-                            }
-                            .padding(.horizontal, 12)
-                            .frame(height: 36)
-                            .background(DS.surfaceSubtle)
-
+                        if !feed.pageError.isEmpty || feed.cursor != nil || !feed.items.isEmpty {
                             Rectangle().fill(DS.line).frame(height: 1)
-
-                            ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, row in
-                                HStack(spacing: 12) {
-                                    if hasApiKeyCol {
-                                        cellView(.api_key, row: row)
+                            HStack(spacing: 8) {
+                                Spacer()
+                                if !feed.pageError.isEmpty {
+                                    Text(feed.pageError)
+                                        .font(DS.fontCompact)
+                                        .foregroundStyle(DS.bad)
+                                    Button("重试加载") {
+                                        Task { await feed.loadMore(retry: true) }
                                     }
-                                    Text(BeijingTime.fullTime(row.created_at))
+                                    .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                                } else if feed.cursor != nil {
+                                    Button(feed.loading ? "正在读取…" : "加载下一页") {
+                                        Task { await feed.loadMore() }
+                                    }
+                                    .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                                    .disabled(!active || feed.loading)
+                                } else if !feed.loading {
+                                    Text("已全部加载")
                                         .font(DS.fontResetTime)
-                                        .monospacedDigit()
                                         .foregroundStyle(DS.muted)
-                                        .frame(width: 108, alignment: .leading)
-                                    ForEach(trailingCols, id: \.rawValue) { col in
-                                        cellView(col, row: row)
-                                    }
                                 }
-                                .padding(.horizontal, 12)
-                                .frame(height: rowHeight)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    openDetail(id: row.id)
-                                }
-
-                                if idx < feed.items.count - 1 {
-                                    Rectangle().fill(DS.line).frame(height: 1)
-                                }
+                                Spacer()
                             }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 9)
                         }
                     }
                 }
-            }
-
-            if !feed.pageError.isEmpty || feed.cursor != nil || !feed.items.isEmpty {
-                Rectangle().fill(DS.line).frame(height: 1)
-                HStack(spacing: 8) {
-                    if !feed.pageError.isEmpty {
-                        Text(feed.pageError)
-                            .font(DS.fontCompact)
-                            .foregroundStyle(DS.bad)
-                        Button("重试加载") {
-                            Task { await feed.loadMore(retry: true) }
-                        }
-                        .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                    } else if feed.cursor != nil {
-                        Button(feed.loading ? "正在读取…" : "加载下一页") {
-                            Task { await feed.loadMore() }
-                        }
-                        .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                        .disabled(!active || feed.loading)
-                    } else if !feed.loading {
-                        Text("已全部加载")
-                            .font(DS.fontResetTime)
-                            .foregroundStyle(DS.muted)
-                    }
-                    Spacer()
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(DS.surfaceSubtle)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
         .background(DS.surface)
@@ -416,7 +460,7 @@ public struct RecordsPageView: View {
                     .foregroundStyle(DS.ink)
                     .lineLimit(1)
                 Text("#\(row.api_key_id)")
-                    .font(DS.fontMono11)
+                    .font(DS.fontPriorityMeta).monospacedDigit()
                     .foregroundStyle(DS.muted)
             }
             .frame(width: col.width, alignment: .leading)
@@ -431,44 +475,62 @@ public struct RecordsPageView: View {
         case .model:
             let steps = RecordFormatting.modelRoute(row)
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(steps.prefix(2).enumerated()), id: \.offset) { idx, step in
-                    HStack(spacing: 4) {
-                        if idx > 0 {
-                            Text("↳")
-                                .font(DS.fontResetTime)
-                                .foregroundStyle(DS.muted)
+                if steps.isEmpty {
+                    Text("—")
+                        .font(DS.fontCompact)
+                        .foregroundStyle(DS.muted)
+                } else {
+                    ForEach(Array(steps.enumerated()), id: \.offset) { idx, step in
+                        let stageLabel = step.labels.contains("返回")
+                            ? "返回"
+                            : (step.labels.contains("转发") ? "转发" : "映射")
+                        HStack(spacing: 3) {
+                            if idx > 0 {
+                                Text("↳")
+                                    .font(DS.fontResetTime)
+                                    .foregroundStyle(DS.muted)
+                                Text(stageLabel)
+                                    .font(DS.fontResetTime)
+                                    .foregroundStyle(DS.muted)
+                            }
+                            Text(verbatim: step.model)
+                                .font(DS.fontPriorityMeta).monospacedDigit()
+                                .foregroundStyle(idx == 0 ? DS.ink : DS.muted)
+                                .lineLimit(1)
                         }
-                        Text(verbatim: step.model)
-                            .font(DS.fontMono11)
-                            .foregroundStyle(DS.ink)
-                            .lineLimit(1)
+                        .help("\(step.labels.joined(separator: " · "))：\(step.model)")
                     }
                 }
                 if row.upstream_model_mismatch {
-                    Text("返回差异")
-                        .font(DS.fontUsageStatMedium)
-                        .foregroundStyle(DS.warn)
+                    HStack(spacing: 3) {
+                        Image(systemName: "exclamationmark.circle")
+                            .font(DS.iconFont(9, weight: .semibold))
+                        Text("返回差异")
+                            .font(DS.fontResetTimeMedium)
+                    }
+                    .foregroundStyle(DS.warn)
                 }
             }
             .frame(width: col.width, alignment: .leading)
 
         case .type:
             let rt = RecordFormatting.requestTypeKey(row)
+            let tone = requestTypeColors(rt.key)
             HStack(spacing: 4) {
                 Text(rt.label)
-                    .font(DS.fontBadge)
-                    .foregroundStyle(DS.accent)
-                    .padding(.horizontal, 6)
+                    .font(DS.fontResetTimeMedium)
+                    .foregroundStyle(tone.fg)
+                    .padding(.horizontal, 5)
                     .padding(.vertical, 1)
-                    .background(DS.accentBg)
+                    .background(tone.bg)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                 if row.native_compaction_v2 == true {
                     Text("压缩")
-                        .font(DS.fontBadge)
-                        .foregroundStyle(DS.windowEmerald)
+                        .font(DS.fontResetTimeMedium)
+                        .foregroundStyle(DS.recordCompactFg)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
-                        .background(DS.windowEmeraldBg)
+                        .background(DS.recordCompactBg)
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
             }
@@ -479,30 +541,50 @@ public struct RecordsPageView: View {
                 Text(row.requested_reasoning_effort ?? row.reasoning_effort ?? "—")
                     .font(DS.fontCompact)
                     .foregroundStyle(DS.ink)
+                    .lineLimit(1)
                 if let req = row.requested_reasoning_effort, let act = row.reasoning_effort, req != act {
                     Text("↳ \(act)")
                         .font(DS.fontResetTime)
                         .foregroundStyle(DS.muted)
+                        .lineLimit(1)
                 }
             }
             .frame(width: col.width, alignment: .leading)
 
         case .tokens:
-            VStack(alignment: .trailing, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text("↓\(RecordFormatting.tokenCount(row.input_tokens))")
-                        .foregroundStyle(DS.good)
-                    Text("↑\(RecordFormatting.tokenCount(row.output_tokens))")
-                        .foregroundStyle(DS.windowPurple)
+            Grid(alignment: .trailing, horizontalSpacing: 6, verticalSpacing: 2) {
+                GridRow {
+                    HStack(spacing: 2) {
+                        Image(systemName: "arrow.down")
+                            .font(DS.iconFont(9, weight: .semibold))
+                            .foregroundStyle(DS.good)
+                        Text(RecordFormatting.tokenCount(row.input_tokens))
+                            .foregroundStyle(DS.ink)
+                    }
+                    HStack(spacing: 2) {
+                        Image(systemName: "arrow.up")
+                            .font(DS.iconFont(9, weight: .semibold))
+                            .foregroundStyle(DS.windowPurple)
+                        Text(RecordFormatting.tokenCount(row.output_tokens))
+                            .foregroundStyle(DS.ink)
+                    }
                 }
-                HStack(spacing: 6) {
-                    Text("R \(RecordFormatting.cacheTokenCount(row.cache_read_tokens))")
-                        .foregroundStyle(DS.tokenCyan)
-                    Text("W \(RecordFormatting.cacheTokenCount(row.cache_creation_tokens))")
-                        .foregroundStyle(DS.warn)
+                GridRow {
+                    HStack(spacing: 2) {
+                        Image(systemName: "archivebox")
+                            .font(DS.iconFont(9))
+                        Text(RecordFormatting.cacheTokenCount(row.cache_read_tokens))
+                    }
+                    .foregroundStyle(DS.tokenCyan)
+                    HStack(spacing: 2) {
+                        Image(systemName: "square.and.pencil")
+                            .font(DS.iconFont(9))
+                        Text(RecordFormatting.cacheTokenCount(row.cache_creation_tokens))
+                    }
+                    .foregroundStyle(DS.warn)
                 }
             }
-            .font(DS.fontResetTime)
+            .font(DS.fontPriorityMeta)
             .monospacedDigit()
             .frame(width: col.width, alignment: .trailing)
 
@@ -513,23 +595,44 @@ public struct RecordsPageView: View {
         case .latency:
             let firstTone = latencyColor(RecordFormatting.latencyTone(row.first_token_ms, firstToken: true))
             let totalTone = latencyColor(RecordFormatting.latencyTone(row.duration_ms, firstToken: false))
-            HStack(spacing: 5) {
+            let tpsRaw = RecordFormatting.outputRate(row)
+            HStack(spacing: 6) {
                 VStack(spacing: 1) {
-                    RoundedRectangle(cornerRadius: 1).fill(firstTone).frame(width: 3, height: 14)
-                    RoundedRectangle(cornerRadius: 1).fill(totalTone).frame(width: 3, height: 14)
+                    RoundedRectangle(cornerRadius: 1.5).fill(firstTone).frame(width: 3, height: 15)
+                    RoundedRectangle(cornerRadius: 1.5).fill(totalTone).frame(width: 3, height: 18)
                 }
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("首 \(RecordFormatting.latency(row.first_token_ms))")
-                        .foregroundStyle(firstTone)
-                    Text("总 \(RecordFormatting.latency(row.duration_ms))")
-                        .foregroundStyle(totalTone)
-                    Text(RecordFormatting.outputRate(row))
-                        .foregroundStyle(DS.muted)
+                VStack(spacing: 1) {
+                    HStack(spacing: 4) {
+                        Text("首字")
+                            .font(DS.fontResetTime)
+                            .foregroundStyle(DS.muted)
+                        Spacer(minLength: 4)
+                        Text(RecordFormatting.latency(row.first_token_ms))
+                            .font(DS.fontPriorityMeta)
+                            .foregroundStyle(firstTone)
+                    }
+                    HStack(spacing: 4) {
+                        Text("总耗时")
+                            .font(DS.fontResetTime)
+                            .foregroundStyle(DS.muted)
+                        Spacer(minLength: 4)
+                        Text(RecordFormatting.latency(row.duration_ms))
+                            .font(DS.fontPriorityMeta)
+                            .foregroundStyle(totalTone)
+                    }
+                    HStack(spacing: 4) {
+                        Text("输出 TPS")
+                            .font(DS.fontResetTime)
+                            .foregroundStyle(DS.muted)
+                        Spacer(minLength: 4)
+                        Text(tpsRaw)
+                            .font(DS.fontResetTime)
+                            .foregroundStyle(DS.ink)
+                    }
                 }
-                .font(DS.fontUsageStat)
                 .monospacedDigit()
             }
-            .frame(width: col.width, alignment: .leading)
+            .frame(width: col.width, alignment: .trailing)
 
         case .user_agent:
             Text(verbatim: row.user_agent ?? "—")
@@ -540,7 +643,7 @@ public struct RecordsPageView: View {
 
         case .ip:
             Text(verbatim: row.ip_address ?? "—")
-                .font(DS.fontMono11)
+                .font(DS.fontPriorityMeta).monospacedDigit()
                 .foregroundStyle(DS.muted)
                 .lineLimit(1)
                 .frame(width: col.width, alignment: .leading)
@@ -548,7 +651,7 @@ public struct RecordsPageView: View {
         case .endpoint:
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: row.inbound_endpoint ?? "—")
-                    .font(DS.fontMono11)
+                    .font(DS.fontPriorityMeta).monospacedDigit()
                     .foregroundStyle(DS.ink)
                     .lineLimit(1)
                 Text(verbatim: row.upstream_endpoint ?? "—")
@@ -588,6 +691,17 @@ public struct RecordsPageView: View {
         }
     }
 
+    private func requestTypeColors(_ key: String) -> (fg: Color, bg: Color) {
+        switch key {
+        case "stream": return (DS.recordStreamFg, DS.recordStreamBg)
+        case "ws_v2": return (DS.recordWsFg, DS.recordWsBg)
+        case "cyber": return (DS.bad, DS.badBg)
+        case "live": return (DS.windowEmerald, DS.windowEmeraldBg)
+        case "unknown": return (DS.warn, DS.warnBg)
+        default: return (DS.recordSyncFg, DS.recordSyncBg)
+        }
+    }
+
     private func latencyColor(_ level: RecordFormatting.LatencyLevel) -> Color {
         switch level {
         case .good: return DS.good
@@ -599,35 +713,32 @@ public struct RecordsPageView: View {
     }
 
     private func openDetail(id: Int) {
-        selectedRecordId = id
-        detailRecord = feed.items.first(where: { $0.id == id })
-        detailLoading = true
-        detailError = ""
-        Task {
-            do {
-                let loaded = try await feed.loadDetail(id: id)
-                if selectedRecordId == id {
-                    detailRecord = loaded
-                }
-            } catch {
-                if selectedRecordId == id && detailRecord == nil {
-                    detailError = error.localizedDescription
-                }
-            }
-            if selectedRecordId == id {
-                detailLoading = false
-            }
-        }
+        let seed = feed.items.first(where: { $0.id == id })
+        store.openRecordDetail(id: id, seed: seed)
     }
 }
 
-private struct RecordDetailDrawerView: View {
-    let row: UsageRecord?
-    let loading: Bool
-    let error: String
-    let onClose: () -> Void
+private struct RecordsHScrollOffsetKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
 
-    var body: some View {
+public struct RecordDetailDrawerView: View {
+    public let row: UsageRecord?
+    public let loading: Bool
+    public let error: String
+    public let onClose: () -> Void
+
+    public init(row: UsageRecord?, loading: Bool, error: String, onClose: @escaping () -> Void) {
+        self.row = row
+        self.loading = loading
+        self.error = error
+        self.onClose = onClose
+    }
+
+    public var body: some View {
         ZStack(alignment: .trailing) {
             DS.backdrop.ignoresSafeArea().onTapGesture(perform: onClose)
             VStack(alignment: .leading, spacing: 0) {

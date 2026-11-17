@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Matches `AccountModelField` in `desktop/src/AccountModelField.tsx`.
+/// Matches `AccountModelField` in `desktop/src/AccountModelField.tsx` (2-column grid: model input + refresh | source account select).
 public struct AccountModelFieldView: View {
     public let label: String
     public let value: String
@@ -33,130 +33,112 @@ public struct AccountModelFieldView: View {
     }
 
     private var candidateAccounts: [Account] {
-        accounts.filter { $0.status == "active" && !$0.name.isEmpty }
+        accounts.filter { !$0.name.isEmpty }
     }
 
-    private var resolvedAccountId: Int {
-        if candidateAccounts.contains(where: { $0.id == selectedAccountId }) {
-            return selectedAccountId
+    private var selectedAccountName: String {
+        guard let found = candidateAccounts.first(where: { $0.id == selectedAccountId }) else {
+            return "选择账号"
         }
-        if let openaiActive = candidateAccounts.first(where: { $0.platform == "openai" && $0.schedulable }) {
-            return openaiActive.id
-        }
-        return candidateAccounts.first?.id ?? 0
+        return "\(found.name) · \(PlatformMeta.priorityName(found.platform)) #\(found.id)"
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .center, spacing: 10) {
-                Text(label)
-                    .font(DS.fontBody)
-                    .foregroundStyle(DS.ink)
-                Spacer()
-                HStack(spacing: 6) {
-                    TextField(
-                        text: $textValue,
-                        prompt: Text(verbatim: "输入或选择模型 ID")
-                    ) { EmptyView() }
-                    .textFieldStyle(.plain)
-                    .font(DS.fontMono12)
-                    .padding(.horizontal, 10)
-                    .frame(width: 220, height: DS.controlHeightDense)
-                    .background(DS.surface)
-                    .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-                    .onChange(of: value) { _, next in
-                        if textValue != next { textValue = next }
-                    }
-                    .onChange(of: textValue) { _, next in
-                        if next != value { onChange(next) }
-                    }
+            HStack(alignment: .top, spacing: 18) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(label)
+                        .font(DS.fontCompactMedium)
+                        .foregroundStyle(DS.muted)
 
-                    if !models.isEmpty {
-                        Menu {
-                            ForEach(models) { item in
-                                Button {
-                                    onChange(item.id)
-                                } label: {
-                                    Text(verbatim: item.display_name == item.id ? item.id : "\(item.id) (\(item.display_name))")
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text("候选 (\(models.count))")
-                                    .monospacedDigit()
-                                Image(systemName: "chevron.down")
-                                    .font(DS.iconFont(10))
-                            }
-                            .font(DS.fontCompactMedium)
-                            .foregroundStyle(DS.ink)
-                            .padding(.horizontal, 8)
-                            .frame(height: DS.controlHeightDense)
-                            .background(DS.surface)
-                            .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                            .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+                    HStack(spacing: 6) {
+                        TextField(
+                            text: $textValue,
+                            prompt: Text(verbatim: "输入或选择模型 ID")
+                        ) { EmptyView() }
+                        .textFieldStyle(.plain)
+                        .font(DS.fontBody)
+                        .foregroundStyle(DS.ink)
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: DS.controlHeight)
+                        .background(DS.surface)
+                        .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+                        .onChange(of: value) { _, next in
+                            if textValue != next { textValue = next }
                         }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .fixedSize()
-                    }
+                        .onChange(of: textValue) { _, next in
+                            if next != value { onChange(next) }
+                        }
 
-                    if !candidateAccounts.isEmpty {
-                        Menu {
-                            ForEach(candidateAccounts) { acc in
-                                Button {
-                                    selectedAccountId = acc.id
-                                    Task { await loadModels(accountId: acc.id, refresh: false) }
-                                } label: {
-                                    Text("\(acc.name) (#\(acc.id))")
+                        if !models.isEmpty {
+                            LinearSelect(
+                                label: "候选 (\(models.count))",
+                                accessibilityTitle: "\(label)候选",
+                                height: DS.controlHeight,
+                                compactFont: true,
+                                entries: models.map { item in
+                                    let title = item.display_name == item.id ? item.id : "\(item.id) (\(item.display_name))"
+                                    return LinearMenuEntry(id: item.id, title: title, checked: item.id == textValue) {
+                                        onChange(item.id)
+                                    }
                                 }
-                            }
-                        } label: {
-                            let activeName = candidateAccounts.first(where: { $0.id == resolvedAccountId })?.name ?? "账号"
-                            HStack(spacing: 4) {
-                                Text(activeName)
-                                    .lineLimit(1)
-                                Image(systemName: "chevron.down")
-                                    .font(DS.iconFont(10))
-                            }
-                            .font(DS.fontCompact)
-                            .foregroundStyle(DS.muted)
-                            .padding(.horizontal, 8)
-                            .frame(maxWidth: 130, minHeight: DS.controlHeightDense)
-                            .background(DS.surfaceSubtle)
-                            .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                            .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+                            )
                         }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .fixedSize()
 
                         LinearIconButton(
                             systemName: "arrow.clockwise",
                             label: "刷新模型列表",
-                            size: 12,
-                            disabled: !online || loading || resolvedAccountId == 0
+                            size: 13,
+                            boxSize: DS.controlHeight,
+                            bordered: true,
+                            disabled: !online || loading || selectedAccountId == 0
                         ) {
-                            Task { await loadModels(accountId: resolvedAccountId, refresh: true) }
+                            Task { await loadModels(accountId: selectedAccountId, refresh: true) }
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("来源账号")
+                        .font(DS.fontCompactMedium)
+                        .foregroundStyle(DS.muted)
+
+                    LinearSelect(
+                        label: selectedAccountName,
+                        accessibilityTitle: "\(label)来源账号",
+                        height: DS.controlHeight,
+                        expandWidth: true,
+                        mutedLabel: selectedAccountId == 0,
+                        disabled: !online || candidateAccounts.isEmpty,
+                        entries: [
+                            LinearMenuEntry(id: "0", title: "选择账号", checked: selectedAccountId == 0) {
+                                selectedAccountId = 0
+                                models = []
+                            },
+                        ] + candidateAccounts.map { acc in
+                            LinearMenuEntry(id: "\(acc.id)", title: "\(acc.name) · \(PlatformMeta.priorityName(acc.platform)) #\(acc.id)", checked: selectedAccountId == acc.id) {
+                                selectedAccountId = acc.id
+                                Task { await loadModels(accountId: acc.id, refresh: false) }
+                            }
+                        }
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            if candidateAccounts.isEmpty {
-                Text("当前没有可读取模型列表的在线账号，可直接输入模型 ID。")
-                    .font(DS.fontResetTime)
-                    .foregroundStyle(DS.muted)
-            } else if !errorText.isEmpty {
+            if !errorText.isEmpty {
                 Text(errorText)
                     .font(DS.fontResetTime)
                     .foregroundStyle(DS.bad)
             }
         }
-        .task(id: "\(connectionKey):\(online):\(resolvedAccountId)") {
+        .task(id: "\(connectionKey):\(online):\(selectedAccountId)") {
             ModelDirectoryStore.shared.bindConnection(connectionKey)
-            guard online, resolvedAccountId != 0 else { return }
-            await loadModels(accountId: resolvedAccountId, refresh: false)
+            guard online, selectedAccountId > 0 else { return }
+            await loadModels(accountId: selectedAccountId, refresh: false)
         }
     }
 

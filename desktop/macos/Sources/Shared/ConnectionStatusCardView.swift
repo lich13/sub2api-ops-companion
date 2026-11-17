@@ -22,27 +22,29 @@ public struct ConnectionStatusCardView: View {
     }
 
     public var body: some View {
-        CardSection {
-            HStack(alignment: .center) {
-                Text("连接诊断")
-                    .font(DS.fontSectionTitle)
-                    .foregroundStyle(DS.ink)
-                Spacer()
-                Button {
-                    revision &+= 1
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(DS.iconFont(12, weight: .medium))
-                        Text("重新检查")
+        CardSection(padding: 20) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center) {
+                    Text("连接诊断")
+                        .font(DS.fontSectionTitle)
+                        .foregroundStyle(DS.ink)
+                    Spacer()
+                    Button {
+                        revision &+= 1
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(DS.iconFont(12, weight: .medium))
+                            Text("重新检查")
+                        }
                     }
+                    .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                    .disabled(loading)
                 }
-                .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                .disabled(loading)
-            }
-            Divider().overlay(DS.line)
 
-            if let status {
+                Rectangle().fill(DS.line).frame(height: 1)
+
+                if let status {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 7) {
                         StatusDot(status.state == "ok" ? .good : .bad)
@@ -75,10 +77,11 @@ public struct ConnectionStatusCardView: View {
                 }
             }
 
-            if !error.isEmpty {
-                Text(error)
-                    .font(DS.fontCompact)
-                    .foregroundStyle(DS.bad)
+                if !error.isEmpty {
+                    Text(error)
+                        .font(DS.fontCompact)
+                        .foregroundStyle(DS.bad)
+                }
             }
         }
         .task(id: "\(connectionKey)#\(revision)") {

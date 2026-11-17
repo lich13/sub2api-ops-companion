@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Matches `Sub2ApiConfig` in `desktop/src/Sub2ApiConfig.tsx`.
+/// Matches `Sub2ApiConfig` in `desktop/src/Sub2ApiConfig.tsx` (`features_sub2api_light.png`).
 public struct Sub2ApiConfigTabView: View {
+    public var store: AppStore?
     public let active: Bool
     public let online: Bool
     public let connectionKey: String
@@ -97,11 +98,14 @@ public struct Sub2ApiConfigTabView: View {
     @State private var errorText: String = ""
     @State private var messageText: String = ""
     @State private var issues: [ConfigIssue] = []
-    @State private var showConfirmApply: Bool = false
+    @State private var fallbackShowConfirm: Bool = false
+    @State private var showSourceLegend: Bool = false
+    @State private var expandedDescriptions: Set<String> = []
     @State private var hostOp: HostOperation? = nil
     @State private var revealedPaths: Set<String> = []
 
-    public init(active: Bool, online: Bool, connectionKey: String) {
+    public init(store: AppStore? = nil, active: Bool, online: Bool, connectionKey: String) {
+        self.store = store
         self.active = active
         self.online = online
         self.connectionKey = connectionKey
@@ -138,54 +142,79 @@ public struct Sub2ApiConfigTabView: View {
 
     public var body: some View {
         ZStack {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
+                headerStrip
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+
+                Rectangle().fill(DS.line).frame(height: 1)
+
                 Sub2ApiVersionCardView(
                     active: active,
                     online: online,
-                    knownVersion: document?.version ?? ""
+                    knownVersion: document?.version ?? "",
+                    embedded: true
                 ) {
                     Task { await loadConfig(resetDraft: false) }
                 }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
 
-                toolbarBar
+                Rectangle().fill(DS.line).frame(height: 1)
+
+                searchAndFilterBar
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
 
                 if let doc = document, !doc.editable, !doc.reason.isEmpty {
+                    Rectangle().fill(DS.line).frame(height: 1)
                     Text(doc.reason)
                         .font(DS.fontCompactMedium)
                         .foregroundStyle(DS.warn)
-                        .padding(10)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 8)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(DS.warnBg)
-                        .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
                 }
-                if let op = hostOp, !op.status.isEmpty, op.status != "idle" {
-                    Text("宿主机操作 (\(op.status))：\(op.message ?? "正在执行")")
-                        .font(DS.fontCompactMedium)
-                        .foregroundStyle(op.status == "failed" ? DS.bad : DS.accent)
-                }
-                if !messageText.isEmpty {
-                    Text(messageText).font(DS.fontCompactMedium).foregroundStyle(DS.good)
-                }
-                if !errorText.isEmpty {
-                    Text(errorText).font(DS.fontCompact).foregroundStyle(DS.bad)
-                }
+
+                Rectangle().fill(DS.line).frame(height: 1)
 
                 if let doc = document {
-                    HStack(alignment: .top, spacing: 14) {
+                    HStack(alignment: .top, spacing: 0) {
                         groupSidebar(doc)
-                        fieldsColumn(doc)
+                        Rectangle().fill(DS.line).frame(width: 1)
+                        fieldsPane(doc)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    CardSection {
-                        Text(busy ? "正在读取 Sub2API 配置目录…" : "暂无可用配置数据")
+                    VStack {
+                        Spacer()
+                        Text(busy ? "正在读取 Sub2API 配置目录…" : (errorText.isEmpty ? "暂无可用配置数据" : errorText))
                             .font(DS.fontCompact)
-                            .foregroundStyle(DS.muted)
+                            .foregroundStyle(errorText.isEmpty ? DS.muted : DS.bad)
+                        Spacer()
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-            }
 
-            if showConfirmApply {
-                confirmApplyDialog
+                Rectangle().fill(DS.line).frame(height: 1)
+
+                bottomActionBar
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(DS.surface)
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DS.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+
+            if fallbackShowConfirm {
+                ZStack {
+                    DS.backdrop.ignoresSafeArea().onTapGesture {
+                        if !busy { fallbackShowConfirm = false }
+                    }
+                    confirmApplyCard(dismiss: { fallbackShowConfirm = false })
+                }
             }
         }
         .task(id: "\(connectionKey):\(active):\(online)") {
@@ -207,113 +236,186 @@ public struct Sub2ApiConfigTabView: View {
         }
     }
 
-    private var toolbarBar: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").font(DS.iconFont(11)).foregroundStyle(DS.muted)
-                TextField(text: $query, prompt: Text("搜索配置路径、说明或环境变量")) { EmptyView() }
-                    .textFieldStyle(.plain)
-                    .font(DS.fontCompact)
-                    .frame(width: 220)
-            }
-            .padding(.horizontal, 8)
-            .frame(height: DS.controlHeightCompact)
-            .background(DS.surface)
-            .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+    private var headerStrip: some View {
+        HStack(spacing: 10) {
+            Text("Sub2API 配置")
+                .font(DS.fontDialogTitle)
+                .foregroundStyle(DS.ink)
 
-            ForEach([("all", "全部"), ("configured", "已配置"), ("changed", "已修改 (\(draft.count))")], id: \.0) { item in
-                Button(item.1) { filterMode = item.0 }
-                    .buttonStyle(LinearButtonStyle(variant: filterMode == item.0 ? .selectedGhost : .ghost, compact: true))
+            if let doc = document {
+                if !doc.commit.isEmpty {
+                    Text(verbatim: String(doc.commit.prefix(8)))
+                        .font(DS.fontMono12)
+                        .foregroundStyle(DS.ink)
+                }
+                Text(doc.healthy ? "服务健康" : "服务异常")
+                    .font(DS.fontCompactMedium)
+                    .foregroundStyle(doc.healthy ? DS.good : DS.bad)
+                if !doc.catalog.version.isEmpty {
+                    Text("说明 \(doc.catalog.version)")
+                        .font(DS.fontCompact)
+                        .monospacedDigit()
+                        .foregroundStyle(DS.muted)
+                }
             }
 
             Spacer()
 
-            LinearIconButton(systemName: "arrow.clockwise", label: "重新读取", disabled: busy || !online) {
+            Button {
                 Task { await loadConfig(resetDraft: false) }
-            }
-
-            if !draft.isEmpty {
-                Button("撤销全部") {
-                    draft.removeAll()
-                    issues.removeAll()
-                    messageText = ""
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(DS.iconFont(12, weight: .medium))
+                    Text("刷新")
                 }
-                .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                .disabled(busy || isOperationRunning)
-            }
-
-            Button("校验配置") {
-                Task { await validateChanges(openConfirm: false) }
             }
             .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-            .disabled(isBlocked || draft.isEmpty)
+            .disabled(busy || !online)
+        }
+    }
 
-            Button("保存并重启") {
-                Task { await validateChanges(openConfirm: true) }
+    private var searchAndFilterBar: some View {
+        let filterLabel: String = {
+            switch filterMode {
+            case "configured": return "已配置"
+            case "changed": return draft.isEmpty ? "已修改" : "已修改 (\(draft.count))"
+            default: return "全部字段"
             }
-            .buttonStyle(LinearButtonStyle(variant: .primary, compact: true))
-            .disabled(isBlocked || draft.isEmpty)
+        }()
+        return HStack(spacing: 10) {
+            LinearSearchField(
+                text: $query,
+                prompt: "搜索字段、路径或中文含义",
+                height: DS.controlHeight
+            )
+
+            LinearSelect(
+                label: filterLabel,
+                accessibilityTitle: "字段筛选",
+                height: DS.controlHeight,
+                minWidth: 124,
+                entries: [
+                    LinearMenuEntry(id: "all", title: "全部字段", checked: filterMode == "all") { filterMode = "all" },
+                    LinearMenuEntry(id: "configured", title: "已配置", checked: filterMode == "configured") { filterMode = "configured" },
+                    LinearMenuEntry(id: "changed", title: "已修改 (\(draft.count))", checked: filterMode == "changed") { filterMode = "changed" },
+                ]
+            )
         }
     }
 
     private func groupSidebar(_ doc: ConfigDocumentDTO) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(doc.catalog.groups) { g in
-                let changedCount = doc.catalog.fields.filter { $0.group == g.id && draft[$0.path] != nil }.count
-                Button {
-                    selectedGroup = g.id
-                    query = ""
-                } label: {
-                    HStack {
-                        Text(g.label)
-                            .font(selectedGroup == g.id ? DS.fontCompactSemibold : DS.fontCompact)
-                            .foregroundStyle(selectedGroup == g.id ? DS.accent : DS.ink)
-                        Spacer()
-                        if changedCount > 0 {
-                            Text("\(changedCount)")
-                                .font(DS.fontResetTimeSemibold)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(doc.catalog.groups) { g in
+                    let groupFields = doc.catalog.fields.filter { !$0.internal && $0.group == g.id }
+                    let changedCount = groupFields.filter { draft[$0.path] != nil }.count
+                    let isSelected = query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedGroup == g.id
+                    Button {
+                        selectedGroup = g.id
+                        query = ""
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(g.label)
+                                .font(isSelected ? DS.fontCompactSemibold : DS.fontCompact)
+                                .foregroundStyle(isSelected ? DS.accent : DS.ink)
+                                .lineLimit(1)
+                            Spacer(minLength: 4)
+                            if changedCount > 0 {
+                                Circle()
+                                    .fill(DS.accent)
+                                    .frame(width: 5, height: 5)
+                            }
+                            Text("\(groupFields.count)")
+                                .font(DS.fontResetTime)
                                 .monospacedDigit()
-                                .foregroundStyle(DS.accent)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1)
-                                .background(DS.accentBg)
-                                .clipShape(Capsule())
+                                .foregroundStyle(isSelected ? DS.accent : DS.muted)
                         }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(isSelected ? DS.accentBg : DS.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(selectedGroup == g.id ? DS.accentBg : DS.clear)
-                    .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
+            .padding(10)
         }
-        .padding(8)
-        .frame(width: 184)
-        .background(DS.surface)
-        .overlay(RoundedRectangle(cornerRadius: DS.cardRadius).strokeBorder(DS.line, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: DS.cardRadius))
+        .frame(width: 218)
+        .frame(maxHeight: .infinity)
     }
 
-    private func fieldsColumn(_ doc: ConfigDocumentDTO) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if visibleFields.isEmpty {
-                CardSection {
+    private func fieldsPane(_ doc: ConfigDocumentDTO) -> some View {
+        let activeGroupLabel = doc.catalog.groups.first(where: { $0.id == selectedGroup })?.label ?? selectedGroup
+        let isSearching = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("\(visibleFields.count) 个字段")
+                            .font(DS.fontResetTime)
+                            .monospacedDigit()
+                            .foregroundStyle(DS.muted)
+                        Spacer()
+                        Button {
+                            showSourceLegend.toggle()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: showSourceLegend ? "arrowtriangle.down.fill" : "arrowtriangle.right.fill")
+                                    .font(DS.iconFont(8))
+                                Text("配置值来源")
+                                    .font(DS.fontResetTime)
+                            }
+                            .foregroundStyle(DS.muted)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    if showSourceLegend {
+                        Text("优先级：宿主机环境变量 (ENV) > config.yaml 显式配置 > Sub2API 内置默认值。被 ENV 覆盖的项只读。")
+                            .font(DS.fontResetTime)
+                            .foregroundStyle(DS.muted)
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(DS.surfaceSubtle)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(isSearching ? "搜索结果" : activeGroupLabel)
+                            .font(DS.fontSectionTitle)
+                            .foregroundStyle(DS.ink)
+                        Text("\(visibleFields.count)")
+                            .font(DS.fontCompact)
+                            .monospacedDigit()
+                            .foregroundStyle(DS.muted)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+
+                Rectangle().fill(DS.line).frame(height: 1)
+
+                if visibleFields.isEmpty {
                     Text("当前筛选下没有匹配的配置字段")
                         .font(DS.fontCompact)
                         .foregroundStyle(DS.muted)
-                }
-            } else {
-                ForEach(visibleFields) { field in
-                    fieldCard(field, doc: doc)
+                        .padding(24)
+                } else {
+                    ForEach(Array(visibleFields.enumerated()), id: \.element.id) { idx, field in
+                        fieldRow(field, doc: doc)
+                        if idx < visibleFields.count - 1 {
+                            Rectangle().fill(DS.line).frame(height: 1)
+                        }
+                    }
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func fieldCard(_ field: CatalogField, doc: ConfigDocumentDTO) -> some View {
+    private func fieldRow(_ field: CatalogField, doc: ConfigDocumentDTO) -> some View {
         let runtime = doc.values[field.path]
         let change = draft[field.path]
         let overridden = runtime?.environment != nil
@@ -326,74 +428,107 @@ public struct Sub2ApiConfigTabView: View {
             runtime?.effective ?? field.default_value
         }
         let fieldIssues = issues.filter { $0.path == field.path }
+        let summaryLine = field.description.components(separatedBy: CharacterSet(charactersIn: "。\n")).first ?? field.description
+        let hasExtraNote = field.description.trimmingCharacters(in: .whitespacesAndNewlines).count > summaryLine.count + 1
+        let isNoteOpen = expandedDescriptions.contains(field.path)
+        let sourceText: String = {
+            if let envName = runtime?.environment { return "环境变量 \(envName)" }
+            if runtime?.configured == true { return "config.yaml 已配置" }
+            return "使用默认值"
+        }()
 
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        return HStack(alignment: .top, spacing: 24) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(summaryLine)
+                    .font(DS.fontBodySemibold)
+                    .foregroundStyle(DS.ink)
+
                 Text(verbatim: field.path)
                     .font(DS.fontMono12)
-                    .foregroundStyle(DS.ink)
-                Text(field.type_label)
-                    .font(DS.fontResetTime)
                     .foregroundStyle(DS.muted)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(DS.surfaceSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                if let envName = runtime?.environment {
-                    Text(verbatim: "ENV: \(envName)")
-                        .font(DS.fontResetTimeSemibold)
-                        .foregroundStyle(DS.warn)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(DS.warnBg)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                }
-                if change != nil {
-                    Text(change?.remove == true ? "待恢复默认" : "已修改")
-                        .font(DS.fontResetTimeSemibold)
-                        .foregroundStyle(DS.accent)
-                }
-                Spacer()
-                if runtime?.configured == true && fieldEditable {
-                    Button("恢复默认") {
-                        draft[field.path] = DraftChange(path: field.path, remove: true, value: nil)
+                    .textSelection(.enabled)
+
+                HStack(spacing: 10) {
+                    Text(field.type_label)
+                        .foregroundStyle(DS.muted)
+                    Text(sourceText)
+                        .foregroundStyle(overridden ? DS.warn : DS.muted)
+                    if let change {
+                        Text(change.remove ? "待恢复默认" : "已修改")
+                            .font(DS.fontResetTimeSemibold)
+                            .foregroundStyle(DS.accent)
                     }
-                    .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
                 }
-                if change != nil {
-                    Button("撤销") {
-                        draft.removeValue(forKey: field.path)
+                .font(DS.fontResetTime)
+
+                if hasExtraNote {
+                    Button {
+                        if isNoteOpen {
+                            expandedDescriptions.remove(field.path)
+                        } else {
+                            expandedDescriptions.insert(field.path)
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: isNoteOpen ? "chevron.down" : "chevron.right")
+                                .font(DS.iconFont(9, weight: .semibold))
+                            Text("完整说明")
+                                .font(DS.fontResetTime)
+                        }
+                        .foregroundStyle(DS.muted)
+                        .padding(.top, 2)
                     }
-                    .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
+                    .buttonStyle(.plain)
+
+                    if isNoteOpen {
+                        Text(field.description)
+                            .font(DS.fontResetTime)
+                            .foregroundStyle(DS.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(8)
+                            .background(DS.surfaceSubtle)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(field.description.components(separatedBy: CharacterSet(charactersIn: "。\n")).first ?? field.description)
-                .font(DS.fontCompact)
+            VStack(alignment: .leading, spacing: 6) {
+                fieldInputControl(field: field, value: effectiveVal, change: change, editable: fieldEditable)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("默认: \(field.default_text.isEmpty ? "\"\"" : field.default_text)")
+                    Text("范围: \(field.range.isEmpty ? "官方未声明额外范围" : field.range)")
+                }
+                .font(DS.fontResetTime)
                 .foregroundStyle(DS.muted)
 
-            fieldInputControl(field: field, value: effectiveVal, change: change, editable: fieldEditable)
+                if (runtime?.configured == true && fieldEditable) || change != nil {
+                    HStack(spacing: 8) {
+                        if runtime?.configured == true && fieldEditable && change?.remove != true {
+                            Button("恢复默认") {
+                                draft[field.path] = DraftChange(path: field.path, remove: true, value: nil)
+                            }
+                            .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
+                        }
+                        if change != nil {
+                            Button("撤销修改") {
+                                draft.removeValue(forKey: field.path)
+                            }
+                            .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
+                        }
+                    }
+                }
 
-            HStack(spacing: 12) {
-                Text("默认：\(field.default_text.isEmpty ? "—" : field.default_text)")
-                if !field.range.isEmpty {
-                    Text("范围：\(field.range)")
+                ForEach(fieldIssues) { iss in
+                    Text(iss.message).font(DS.fontResetTime).foregroundStyle(DS.bad)
                 }
             }
-            .font(DS.fontResetTime)
-            .foregroundStyle(DS.muted)
-
-            ForEach(fieldIssues) { iss in
-                Text(iss.message).font(DS.fontResetTime).foregroundStyle(DS.bad)
-            }
+            .frame(width: 320, alignment: .leading)
         }
-        .padding(12)
-        .background(DS.surface)
-        .overlay(
-            RoundedRectangle(cornerRadius: DS.cardRadius)
-                .strokeBorder(fieldIssues.isEmpty ? (change != nil ? DS.accent : DS.line) : DS.bad, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: DS.cardRadius))
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .background(change != nil ? DS.accentBg.opacity(0.28) : DS.clear)
     }
 
     @ViewBuilder
@@ -405,30 +540,31 @@ public struct Sub2ApiConfigTabView: View {
     ) -> some View {
         if field.type == "boolean" || field.type == "bool" {
             let b = value?.boolValue ?? false
-            LinearSwitch(isOn: b, disabled: !editable, label: field.path) {
-                setFieldValue(field, .bool(!b))
+            HStack(spacing: 8) {
+                LinearSwitch(isOn: b, disabled: !editable, label: field.path) {
+                    setFieldValue(field, .bool(!b))
+                }
+                Text(b ? "开启" : "关闭")
+                    .font(DS.fontCompact)
+                    .foregroundStyle(DS.muted)
             }
+            .frame(height: 28)
         } else if let choices = field.choices, !choices.isEmpty {
             let cur = value?.stringValue ?? ""
-            Menu {
-                ForEach(choices, id: \.self) { opt in
-                    Button { setFieldValue(field, .string(opt)) } label: { Text(verbatim: opt) }
+            LinearSelect(
+                label: cur.isEmpty ? "未设置" : cur,
+                accessibilityTitle: field.path,
+                height: DS.controlHeight,
+                expandWidth: true,
+                monospaced: true,
+                mutedLabel: cur.isEmpty,
+                disabled: !editable,
+                entries: choices.map { opt in
+                    LinearMenuEntry(id: opt, title: opt, checked: cur == opt) {
+                        setFieldValue(field, .string(opt))
+                    }
                 }
-            } label: {
-                HStack {
-                    Text(verbatim: cur.isEmpty ? "未设置" : cur).font(DS.fontMono12).foregroundStyle(DS.ink)
-                    Spacer()
-                    Image(systemName: "chevron.down").font(DS.iconFont(10)).foregroundStyle(DS.muted)
-                }
-                .padding(.horizontal, 10)
-                .frame(height: DS.controlHeightDense)
-                .background(DS.surfaceSubtle)
-                .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .disabled(!editable)
+            )
         } else if field.type == "array" || field.type == "object" {
             let rawText = change?.rawStructuredText ?? LightYAML.stringify(value)
             ConfigStructuredEditorView(textValue: rawText, editable: editable) { txt in
@@ -443,9 +579,10 @@ public struct Sub2ApiConfigTabView: View {
         } else {
             let str = scalarString(value)
             let isSecret = field.sensitive && !revealedPaths.contains(field.path)
+            let promptText = field.default_text == "\"\"" || field.default_text.isEmpty ? "空字符串" : field.default_text
             ConfigScalarEditorView(
                 textValue: str,
-                prompt: field.default_text,
+                prompt: promptText,
                 isSecret: isSecret,
                 isSensitive: field.sensitive,
                 editable: editable,
@@ -457,50 +594,109 @@ public struct Sub2ApiConfigTabView: View {
         }
     }
 
-    private var confirmApplyDialog: some View {
-        ZStack {
-            DS.backdrop.ignoresSafeArea().onTapGesture { if !busy { showConfirmApply = false } }
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("确认写入配置并重启 Sub2API")
-                        .font(DS.fontDialogTitle)
-                        .foregroundStyle(DS.ink)
-                    Spacer()
-                    LinearIconButton(systemName: "xmark", label: "关闭", disabled: busy) { showConfirmApply = false }
-                }
-                Text("共 \(draft.count) 项变更通过校验，保存后将重启宿主机 Sub2API 进程：")
+    private var bottomActionBar: some View {
+        HStack(spacing: 10) {
+            if let op = hostOp, !op.status.isEmpty, op.status != "idle" {
+                Text("宿主机操作 (\(op.status))：\(op.message ?? "正在执行")")
+                    .font(DS.fontCompactMedium)
+                    .foregroundStyle(op.status == "failed" ? DS.bad : DS.accent)
+            } else if !errorText.isEmpty {
+                Text(errorText)
                     .font(DS.fontCompact)
-                    .foregroundStyle(DS.muted)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(draft.keys.sorted(), id: \.self) { k in
-                            let c = draft[k]!
+                    .foregroundStyle(DS.bad)
+                    .lineLimit(1)
+            } else if !messageText.isEmpty {
+                Text(messageText)
+                    .font(DS.fontCompactMedium)
+                    .foregroundStyle(DS.good)
+            } else {
+                Text(draft.isEmpty ? "没有待应用的修改" : "已修改 \(draft.count) 项")
+                    .font(DS.fontCompact)
+                    .monospacedDigit()
+                    .foregroundStyle(draft.isEmpty ? DS.muted : DS.accent)
+            }
+
+            if !draft.isEmpty {
+                Button("撤销全部") {
+                    draft.removeAll()
+                    issues.removeAll()
+                    messageText = ""
+                }
+                .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
+                .disabled(busy || isOperationRunning)
+            }
+
+            Spacer()
+
+            Button("检查配置") {
+                Task { await validateChanges(openConfirm: false) }
+            }
+            .buttonStyle(LinearButtonStyle(variant: .secondary))
+            .disabled(isBlocked || draft.isEmpty)
+
+            Button("应用并重启") {
+                Task { await validateChanges(openConfirm: true) }
+            }
+            .buttonStyle(LinearButtonStyle(variant: .primary))
+            .disabled(isBlocked || draft.isEmpty)
+        }
+    }
+
+    private func presentConfirmApply() {
+        if let store {
+            store.presentWindowModal(onBackdrop: {
+                if !busy { store.dismissWindowModal() }
+            }) {
+                confirmApplyCard(dismiss: { store.dismissWindowModal() })
+            }
+        } else {
+            fallbackShowConfirm = true
+        }
+    }
+
+    private func dismissConfirmApply() {
+        if let store {
+            store.dismissWindowModal()
+        } else {
+            fallbackShowConfirm = false
+        }
+    }
+
+    private func confirmApplyCard(dismiss: @escaping () -> Void) -> some View {
+        LinearModalCard(
+            title: "确认写入配置并重启 Sub2API",
+            subtitle: "共 \(draft.count) 项变更通过校验，保存后将重启宿主机 Sub2API 进程",
+            width: 520,
+            closeDisabled: busy,
+            onClose: dismiss
+        ) {
+            LinearBoundedScrollView(maxHeight: 190) {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(draft.keys.sorted(), id: \.self) { k in
+                        if let c = draft[k] {
                             Text(verbatim: "\(k): \(c.remove ? "<恢复默认>" : LightYAML.stringify(c.value))")
                                 .font(DS.fontMono11)
                                 .foregroundStyle(DS.ink)
                         }
                     }
                 }
-                .frame(maxHeight: 180)
-                HStack {
-                    Spacer()
-                    Button("取消") { showConfirmApply = false }
-                        .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                        .disabled(busy)
-                    Button(busy ? "提交中…" : "确认写入并重启") {
-                        Task { await applyChanges() }
-                    }
-                    .buttonStyle(LinearButtonStyle(variant: .primary, compact: true))
-                    .disabled(busy)
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(20)
-            .frame(width: 500)
-            .background(DS.surface)
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DS.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .sub2opsDialogFocus(onEscape: { if !busy { showConfirmApply = false } })
+            .padding(10)
+            .background(DS.surfaceSubtle)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        } footer: {
+            Spacer()
+            Button("取消", action: dismiss)
+                .buttonStyle(LinearButtonStyle(variant: .secondary))
+                .disabled(busy)
+            Button(busy ? "提交中…" : "确认写入并重启") {
+                Task { await applyChanges() }
+            }
+            .buttonStyle(LinearButtonStyle(variant: .primary))
+            .disabled(busy)
         }
+        .sub2opsDialogFocus(onEscape: { if !busy { dismiss() } })
     }
 
     private func scalarString(_ v: JSONValue?) -> String {
@@ -602,7 +798,7 @@ public struct Sub2ApiConfigTabView: View {
             issues = res.errors
             if res.valid {
                 messageText = "配置检查通过"
-                if openConfirm { showConfirmApply = true }
+                if openConfirm { presentConfirmApply() }
             }
         } catch {
             errorText = error.localizedDescription
@@ -621,10 +817,10 @@ public struct Sub2ApiConfigTabView: View {
                 body: buildPayload(doc)
             )
             hostOp = op
-            showConfirmApply = false
+            dismissConfirmApply()
             messageText = ""
         } catch {
-            showConfirmApply = false
+            dismissConfirmApply()
             errorText = error.localizedDescription
             hostOp = HostOperation(status: "restarting", message: "提交结果待确认，正在查询操作状态")
         }
@@ -647,9 +843,11 @@ private struct ConfigStructuredEditorView: View {
     var body: some View {
         TextEditor(text: $text)
             .font(DS.fontMono11)
+            .foregroundStyle(DS.ink)
+            .scrollContentBackground(.hidden)
             .frame(height: 84)
             .padding(6)
-            .background(DS.surfaceSubtle)
+            .background(DS.surface)
             .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
             .disabled(!editable)
@@ -696,11 +894,13 @@ private struct ConfigScalarEditorView: View {
             if isSecret {
                 SecureField(text: $text, prompt: Text(verbatim: prompt)) { EmptyView() }
                     .textFieldStyle(.plain)
-                    .font(DS.fontMono12)
+                    .font(DS.fontBody)
+                    .foregroundStyle(DS.ink)
             } else {
                 TextField(text: $text, prompt: Text(verbatim: prompt)) { EmptyView() }
                     .textFieldStyle(.plain)
-                    .font(DS.fontMono12)
+                    .font(DS.fontBody)
+                    .foregroundStyle(DS.ink)
             }
             if isSensitive {
                 LinearIconButton(
@@ -711,9 +911,9 @@ private struct ConfigScalarEditorView: View {
                 )
             }
         }
-        .padding(.horizontal, 10)
-        .frame(height: DS.controlHeightDense)
-        .background(DS.surfaceSubtle)
+        .padding(.horizontal, 12)
+        .frame(height: DS.controlHeight)
+        .background(DS.surface)
         .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
         .disabled(!editable)

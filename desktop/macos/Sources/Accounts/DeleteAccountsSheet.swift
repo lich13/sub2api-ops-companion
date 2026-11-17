@@ -8,7 +8,7 @@ public struct DeleteAccountsSheet: View {
 
     @State private var busy: Bool = false
     @State private var error: String = ""
-    @State private var results: [(name: String, ok: Bool, reason: String)] = []
+    @State private var results: [(id: Int, name: String, ok: Bool, reason: String)] = []
 
     public init(
         accounts: [Account],
@@ -22,90 +22,100 @@ public struct DeleteAccountsSheet: View {
         self.onClose = onClose
     }
 
+    private var affectedChildrenCount: Int {
+        let parentIds = Set(accounts.map(\.id))
+        return store.accounts.filter { acc in
+            guard let pid = acc.parent_account_id else { return false }
+            return parentIds.contains(pid) && !parentIds.contains(acc.id)
+        }.count
+    }
+
     public var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("删除 \(accounts.count) 个账号？")
-                    .font(DS.fontDialogTitle)
-                    .monospacedDigit()
-                    .foregroundStyle(DS.ink)
-                Spacer()
-                LinearIconButton(systemName: "xmark", label: "关闭删除确认", disabled: busy, action: onClose)
+        LinearModalCard(
+            title: results.isEmpty ? (busy ? "正在删除账号" : "删除 \(accounts.count) 个账号？") : "删除结果",
+            width: 480,
+            closeDisabled: busy,
+            onClose: onClose
+        ) {
+            if results.isEmpty {
+                Text("删除后无法撤销。\(affectedChildrenCount > 0 ? "母账号关联的 \(affectedChildrenCount) 个子账号也会被删除。" : "")")
+                    .font(DS.fontCompact)
+                    .foregroundStyle(DS.muted)
             }
 
-            Text("删除后账号将从 Sub2API 调度池移除，请核对目标账号名称与 ID。")
-                .font(DS.fontCompact)
-                .foregroundStyle(DS.muted)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 6) {
+            LinearBoundedScrollView(maxHeight: 260) {
+                VStack(spacing: 0) {
                     if results.isEmpty {
-                        ForEach(accounts) { acc in
-                            HStack(spacing: 8) {
+                        ForEach(Array(accounts.enumerated()), id: \.element.id) { idx, acc in
+                            HStack(spacing: 12) {
                                 Text(acc.name)
                                     .font(DS.fontCompactSemibold)
                                     .foregroundStyle(DS.ink)
                                     .lineLimit(1)
+                                Spacer(minLength: 8)
                                 Text("#\(acc.id)")
-                                    .font(DS.fontMono11)
-                                    .foregroundStyle(DS.muted)
-                                Spacer()
-                                Text("\(PlatformMeta.displayName(acc.platform)) · \(PlatformMeta.typeLabel(acc.type))")
-                                    .font(DS.fontResetTime)
+                                    .font(DS.fontPriorityMeta)
+                                    .monospacedDigit()
                                     .foregroundStyle(DS.muted)
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(DS.surfaceSubtle)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .padding(.vertical, 8)
+                            if idx < accounts.count - 1 {
+                                Rectangle().fill(DS.line).frame(height: 1)
+                            }
                         }
                     } else {
-                        ForEach(Array(results.enumerated()), id: \.offset) { _, row in
-                            HStack(spacing: 8) {
+                        ForEach(Array(results.enumerated()), id: \.offset) { idx, row in
+                            HStack(spacing: 10) {
                                 StatusDot(row.ok ? .good : .bad)
                                 Text(row.name)
                                     .font(DS.fontCompactMedium)
                                     .foregroundStyle(DS.ink)
+                                    .lineLimit(1)
+                                Text("#\(row.id)")
+                                    .font(DS.fontPriorityMeta)
+                                    .monospacedDigit()
+                                    .foregroundStyle(DS.muted)
                                 Spacer()
                                 Text(row.reason)
-                                    .font(DS.fontResetTime)
+                                    .font(DS.fontPriorityMeta)
                                     .foregroundStyle(row.ok ? DS.good : DS.bad)
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(DS.surfaceSubtle)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .padding(.vertical, 8)
+                            if idx < results.count - 1 {
+                                Rectangle().fill(DS.line).frame(height: 1)
+                            }
                         }
                     }
                 }
             }
-            .frame(maxHeight: 240)
+
+            if !results.isEmpty {
+                let okCount = results.filter(\.ok).count
+                let failCount = results.count - okCount
+                Text("\(okCount) 个已删除，\(failCount) 个失败")
+                    .font(DS.fontCompactMedium)
+                    .monospacedDigit()
+                    .foregroundStyle(DS.ink)
+            }
 
             if !error.isEmpty {
                 Text(error)
                     .font(DS.fontCompact)
                     .foregroundStyle(DS.bad)
             }
-
-            HStack(spacing: 10) {
-                Spacer()
-                Button(results.isEmpty ? "取消" : "完成", action: onClose)
-                    .buttonStyle(LinearButtonStyle(variant: .secondary))
-                    .disabled(busy)
-                if results.isEmpty {
-                    Button(busy ? "正在删除…" : "确认删除") {
-                        Task { await confirmDelete() }
-                    }
-                    .buttonStyle(LinearButtonStyle(variant: .danger))
-                    .disabled(!store.state.online || busy)
+        } footer: {
+            Spacer()
+            Button(results.isEmpty ? "取消" : "关闭", action: onClose)
+                .buttonStyle(LinearButtonStyle(variant: .secondary))
+                .disabled(busy)
+            if results.isEmpty {
+                Button(busy ? "删除中…" : "确认删除") {
+                    Task { await confirmDelete() }
                 }
+                .buttonStyle(LinearButtonStyle(variant: .solidDanger))
+                .disabled(!store.state.online || busy)
             }
         }
-        .padding(22)
-        .frame(width: 440)
-        .background(DS.surface)
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DS.line, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
         .sub2opsDialogFocus {
             if !busy { onClose() }
         }
@@ -121,6 +131,7 @@ public struct DeleteAccountsSheet: View {
             return [
                 "account_id": .int(Int64(acc.id)),
                 "expected_version": .string(ver),
+                "payload": .object([:]),
             ]
         }
         do {
@@ -131,11 +142,12 @@ public struct DeleteAccountsSheet: View {
             )
             let final = try await store.operations.followBatch(initial: initial)
             var deleted = Set<Int>()
-            var out: [(String, Bool, String)] = []
-            for job in final.items {
-                let ok = job.status == "completed"
-                if ok { deleted.insert(job.account_id) }
-                out.append((job.account_name, ok, ok ? "已删除" : (job.reason ?? "删除未完成")))
+            var out: [(Int, String, Bool, String)] = []
+            for acc in accounts {
+                let job = final.items.first(where: { $0.account_id == acc.id })
+                let ok = job?.status == "completed" && (job?.result?["deleted"]?.boolValue ?? true)
+                if ok { deleted.insert(acc.id) }
+                out.append((acc.id, acc.name, ok, ok ? "已删除" : (job?.reason ?? "删除未完成")))
             }
             onDeleted(deleted)
             store.refresh()

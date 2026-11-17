@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 
 public enum AppPage: String, CaseIterable, Sendable, Identifiable {
     case accounts
@@ -29,7 +30,7 @@ public enum AppPage: String, CaseIterable, Sendable, Identifiable {
         case .accounts: return "person.2"
         case .groups: return "square.3.layers.3d"
         case .priorities: return "list.number"
-        case .records: return "doc.text.magnifyingglass"
+        case .records: return "list.bullet.rectangle"
         case .events: return "bell"
         case .features: return "slider.horizontal.3"
         case .settings: return "gearshape"
@@ -40,6 +41,7 @@ public enum AppPage: String, CaseIterable, Sendable, Identifiable {
 public enum SwitcherAnchor: String, Sendable {
     case sidebar
     case topbar
+    case quick
 }
 
 public enum QuickTab: String, Sendable {
@@ -70,6 +72,10 @@ public final class AppStore {
             if oldValue != page {
                 switcherAnchor = nil
                 closeDetail()
+                closeRecordDetail()
+                selectedDetectionLog = nil
+                windowModalView = nil
+                windowModalOnBackdrop = nil
             }
         }
     }
@@ -80,6 +86,7 @@ public final class AppStore {
     public var connectionModal: ConnectionModalTarget?
     public var switcherAnchor: SwitcherAnchor?
     public var busyScheduleAccountId: Int?
+    public var busyRecoverAccountIds: Set<Int> = []
 
     public var groupChangesCount: Int = 0
     public var groupSavingBusy: Bool = false
@@ -90,6 +97,16 @@ public final class AppStore {
     public var detailBusy: Bool = false
     private var detailGeneration: UInt64 = 0
     public var accountModal: AccountModalDestination?
+
+    // Window-level Record Detail Drawer & Secondary Modals
+    public var selectedRecordId: Int?
+    public var detailRecord: UsageRecord?
+    public var recordDetailLoading: Bool = false
+    public var recordDetailError: String = ""
+    private var recordDetailGeneration: UInt64 = 0
+    public var selectedDetectionLog: DetectionLog?
+    public var windowModalView: AnyView?
+    public var windowModalOnBackdrop: (@MainActor () -> Void)?
 
     public var config: [String: JSONValue]?
     public let operations = OperationStore()
@@ -190,10 +207,15 @@ public final class AppStore {
 
     private func resetConnectionScopedState() {
         closeDetail()
+        closeRecordDetail()
+        selectedDetectionLog = nil
+        windowModalView = nil
+        windowModalOnBackdrop = nil
         accountModal = nil
         connectionModal = nil
         switcherAnchor = nil
         busyScheduleAccountId = nil
+        busyRecoverAccountIds.removeAll()
         config = nil
         groupChangesCount = 0
         groupSavingBusy = false
@@ -202,6 +224,71 @@ public final class AppStore {
             pendingDiscardContinuation = nil
             pending.resume(returning: false)
         }
+    }
+
+    public func recoverAccount(_ acc: Account) async {
+        guard state.online, !busyRecoverAccountIds.contains(acc.id) else { return }
+        let capturedEpoch = operations.epoch
+        busyRecoverAccountIds.insert(acc.id)
+        defer {
+            busyRecoverAccountIds.remove(acc.id)
+        }
+        do {
+            let res = try await operations.accountOperation(account: acc, action: "recover", payload: [:])
+            if operations.epoch == capturedEpoch {
+                let verified = res["verified"]?.boolValue == true
+                showToast(verified ? "\(acc.name)：状态已恢复" : "恢复状态未确认，请刷新")
+                refresh()
+            }
+        } catch {
+            if operations.epoch == capturedEpoch {
+                report(error)
+                refresh()
+            }
+        }
+    }
+
+    public func openRecordDetail(id: Int, seed: UsageRecord? = nil) {
+        recordDetailGeneration &+= 1
+        let gen = recordDetailGeneration
+        selectedRecordId = id
+        recordDetailLoading = true
+        recordDetailError = ""
+        detailRecord = seed
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let row: UsageRecord = try await RustBridge.shared.api("GET", "/usage-records/\(id)")
+                if self.recordDetailGeneration == gen {
+                    self.detailRecord = row
+                }
+            } catch {
+                if self.recordDetailGeneration == gen {
+                    self.recordDetailError = error.localizedDescription
+                }
+            }
+            if self.recordDetailGeneration == gen {
+                self.recordDetailLoading = false
+            }
+        }
+    }
+
+    public func closeRecordDetail() {
+        recordDetailGeneration &+= 1
+        selectedRecordId = nil
+        detailRecord = nil
+        recordDetailLoading = false
+        recordDetailError = ""
+    }
+
+    public func presentWindowModal<Content: View>(onBackdrop: (@MainActor () -> Void)? = nil, @ViewBuilder content: () -> Content) {
+        windowModalOnBackdrop = onBackdrop
+        windowModalView = AnyView(content())
+    }
+
+    public func dismissWindowModal() {
+        windowModalView = nil
+        windowModalOnBackdrop = nil
     }
 
     public func triggerAccountAction(_ action: AccountDialogAction) {
@@ -219,14 +306,7 @@ public final class AppStore {
         case .reauthorize(let acc):
             accountModal = .reauthorize(acc)
         case .recoverState(let acc):
-            Task {
-                do {
-                    _ = try await operations.accountOperation(account: acc, action: "recover", payload: [:])
-                    showToast("\(acc.name)：已恢复状态")
-                } catch {
-                    report(error)
-                }
-            }
+            Task { await recoverAccount(acc) }
         case .applyTemplate(let acc):
             accountModal = .templates(acc)
         case .settingsWhitelist(let acc):

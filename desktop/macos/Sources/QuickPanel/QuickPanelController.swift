@@ -151,6 +151,27 @@ public final class QuickPanelController: NSObject, NSWindowDelegate {
         scheduleBlurCheck()
     }
 
+    public func isPanelOrAttachedWindowActive() -> Bool {
+        if LinearMenuTracking.isTracking || store.switcherAnchor == .quick {
+            return true
+        }
+        guard let p = panel else { return false }
+        if p.isKeyWindow { return true }
+        if let children = p.childWindows, children.contains(where: { $0.isKeyWindow || $0.isVisible }) {
+            return true
+        }
+        return false
+    }
+
+    public func isPointInsidePanelOrChild(_ screenPoint: CGPoint) -> Bool {
+        guard let p = panel else { return false }
+        if p.frame.contains(screenPoint) { return true }
+        if let children = p.childWindows, children.contains(where: { $0.isVisible && $0.frame.contains(screenPoint) }) {
+            return true
+        }
+        return false
+    }
+
     private func scheduleBlurCheck() {
         RustBridge.shared.panelTrace("blur", "")
         guard let gen = lifecycle.blur() else { return }
@@ -159,6 +180,10 @@ public final class QuickPanelController: NSObject, NSWindowDelegate {
             try? await Task.sleep(for: .milliseconds(150))
             guard !Task.isCancelled, let self else { return }
             guard !self.store.state.preferences.pinned else { return }
+            guard !self.isPanelOrAttachedWindowActive() else {
+                self.lifecycle.focus()
+                return
+            }
             guard self.lifecycle.canHide(generation: gen) else { return }
             if let p = self.panel, !p.isKeyWindow {
                 self.hidePanel(reason: "blur")
@@ -174,8 +199,9 @@ public final class QuickPanelController: NSObject, NSWindowDelegate {
             MainActor.assumeIsolated {
                 guard let self, let p = self.panel, p.isVisible else { return }
                 guard !self.store.state.preferences.pinned else { return }
+                guard !LinearMenuTracking.isTracking else { return }
                 let mouseLoc = NSEvent.mouseLocation
-                if !p.frame.contains(mouseLoc) {
+                if !self.isPointInsidePanelOrChild(mouseLoc) {
                     self.scheduleBlurCheck()
                 }
             }

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Matches `Connection` form in `desktop/src/main.tsx` (onboarding, settings embed, and modal).
+/// Matches `Connection` form in `desktop/src/main.tsx` (onboarding, settings embed, quick panel, and modal).
 public struct ConnectionOnboardingView: View {
     @Bindable public var store: AppStore
     public var initialUrl: String?
@@ -8,6 +8,7 @@ public struct ConnectionOnboardingView: View {
     public var requireKey: Bool
     public var showNameField: Bool
     public var embeddedInSettings: Bool
+    public var compactQuick: Bool
     public var onConnected: (() -> Void)?
     public var onCancel: (() -> Void)?
 
@@ -16,6 +17,13 @@ public struct ConnectionOnboardingView: View {
     @State private var nameOpen: Bool = false
     @State private var apiKey: String = ""
     @State private var busy: Bool = false
+    @FocusState private var focusedField: Field?
+
+    private enum Field: Hashable {
+        case url
+        case key
+        case name
+    }
 
     public init(
         store: AppStore,
@@ -24,6 +32,7 @@ public struct ConnectionOnboardingView: View {
         requireKey: Bool = false,
         showNameField: Bool = false,
         embeddedInSettings: Bool = false,
+        compactQuick: Bool = false,
         onConnected: (() -> Void)? = nil,
         onCancel: (() -> Void)? = nil
     ) {
@@ -33,6 +42,7 @@ public struct ConnectionOnboardingView: View {
         self.requireKey = requireKey
         self.showNameField = showNameField
         self.embeddedInSettings = embeddedInSettings
+        self.compactQuick = compactQuick
         self.onConnected = onConnected
         self.onCancel = onCancel
     }
@@ -62,15 +72,15 @@ public struct ConnectionOnboardingView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: compactQuick ? 12 : 16) {
             if !embeddedInSettings {
-                HStack {
+                HStack(alignment: .top) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 14)
                             .fill(DS.accentBg)
-                            .frame(width: 50, height: 50)
+                            .frame(width: compactQuick ? 42 : 52, height: compactQuick ? 42 : 52)
                         Image(systemName: "powerplug")
-                            .font(DS.iconFont(22, weight: .semibold))
+                            .font(DS.iconFont(compactQuick ? 18 : 22, weight: .semibold))
                             .foregroundStyle(DS.accent)
                     }
                     Spacer()
@@ -81,18 +91,19 @@ public struct ConnectionOnboardingView: View {
             }
 
             Text(headingTitle)
-                .font(embeddedInSettings ? DS.fontSectionTitle : DS.fontDialogTitle)
+                .font(embeddedInSettings ? DS.fontCardHeading : (compactQuick ? DS.fontDialogTitle : DS.fontOnboardingTitle))
                 .foregroundStyle(DS.ink)
 
             if embeddedInSettings {
-                Divider().overlay(DS.line)
+                Rectangle().fill(DS.line).frame(height: 1)
             }
 
             if !store.state.connected && !store.savedConnections.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("已保存实例")
-                        .font(DS.fontPriorityMeta)
+                        .font(DS.fontBadge)
                         .foregroundStyle(DS.muted)
+
                     VStack(spacing: 6) {
                         ForEach(store.savedConnections, id: \.base_url) { item in
                             HStack(spacing: 8) {
@@ -100,26 +111,22 @@ public struct ConnectionOnboardingView: View {
                                     onCancel?()
                                     Task { await store.switchConnection(item) }
                                 } label: {
-                                    HStack(spacing: 8) {
+                                    HStack(spacing: 6) {
                                         Image(systemName: "powerplug")
-                                            .font(DS.iconFont(12))
+                                            .font(DS.iconFont(11, weight: .medium))
                                             .foregroundStyle(DS.accent)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(item.name)
-                                                .font(DS.fontCompactSemibold)
-                                                .foregroundStyle(DS.ink)
-                                            Text(item.base_url)
-                                                .font(DS.fontMono11)
-                                                .foregroundStyle(DS.muted)
-                                                .lineLimit(1)
-                                        }
-                                        Spacer()
+                                        Text(item.name)
+                                            .font(DS.fontCompactSemibold)
+                                            .foregroundStyle(DS.ink)
+                                            .lineLimit(1)
+                                        Text(verbatim: item.base_url)
+                                            .font(DS.fontPriorityMeta)
+                                            .foregroundStyle(DS.muted)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                        Spacer(minLength: 4)
                                     }
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(DS.surfaceSubtle)
-                                    .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                                    .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+                                    .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(busy || store.switchingUrl != nil)
@@ -129,63 +136,93 @@ public struct ConnectionOnboardingView: View {
                                     name = item.name
                                     nameOpen = true
                                 }
-                                .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
+                                .font(DS.fontPriorityMeta)
+                                .foregroundStyle(DS.muted)
+                                .buttonStyle(.plain)
                             }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(DS.surface)
+                            .overlay(Capsule().strokeBorder(DS.line, lineWidth: 1))
+                            .clipShape(Capsule())
                         }
                     }
                 }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(DS.surfaceSubtle)
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(DS.line, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
             }
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 7) {
                 Text("服务地址")
                     .font(DS.fontCompactMedium)
                     .foregroundStyle(DS.ink)
-                TextField(text: $url, prompt: Text(verbatim: "https://example.invalid/sub2ops")) { EmptyView() }
+                TextField(text: $url, prompt: Text(verbatim: "https://example.invalid/sub2ops").foregroundStyle(DS.placeholder)) { EmptyView() }
                     .textFieldStyle(.plain)
                     .font(DS.fontBody)
+                    .foregroundStyle(DS.ink)
+                    .focused($focusedField, equals: .url)
                     .padding(.horizontal, 10)
                     .frame(height: DS.controlHeightField)
                     .background(DS.surface)
-                    .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.cornerRadius)
+                            .strokeBorder(focusedField == .url ? DS.accent : DS.line, lineWidth: 1)
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
             }
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 7) {
                 Text("管理员 API Key")
                     .font(DS.fontCompactMedium)
                     .foregroundStyle(DS.ink)
-                SecureField(text: $apiKey, prompt: Text(verbatim: isEditingSaved ? "留空则仅保存实例名称" : "粘贴已有的管理员 Key")) { EmptyView() }
+                SecureField(text: $apiKey, prompt: Text(verbatim: isEditingSaved ? "留空则仅保存实例名称" : "粘贴已有的管理员 Key").foregroundStyle(DS.placeholder)) { EmptyView() }
                     .textFieldStyle(.plain)
                     .font(DS.fontBody)
+                    .foregroundStyle(DS.ink)
+                    .focused($focusedField, equals: .key)
                     .padding(.horizontal, 10)
                     .frame(height: DS.controlHeightField)
                     .background(DS.surface)
-                    .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.cornerRadius)
+                            .strokeBorder(focusedField == .key ? DS.accent : DS.line, lineWidth: 1)
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
             }
 
             if nameOpen {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 7) {
                     Text("实例名称（可选）")
                         .font(DS.fontCompactMedium)
                         .foregroundStyle(DS.ink)
-                    TextField(text: $name, prompt: Text(verbatim: "例如：主力生产节点")) { EmptyView() }
+                    TextField(text: $name, prompt: Text(verbatim: "例如：主力生产节点").foregroundStyle(DS.placeholder)) { EmptyView() }
                         .textFieldStyle(.plain)
                         .font(DS.fontBody)
+                        .foregroundStyle(DS.ink)
+                        .focused($focusedField, equals: .name)
                         .padding(.horizontal, 10)
                         .frame(height: DS.controlHeightField)
                         .background(DS.surface)
-                        .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: DS.cornerRadius)
+                                .strokeBorder(focusedField == .name ? DS.accent : DS.line, lineWidth: 1)
+                        )
                         .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
                 }
             } else {
                 Button("设置实例备注名") {
                     nameOpen = true
                 }
-                .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
+                .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
             }
 
             HStack(spacing: 10) {
+                if !embeddedInSettings {
+                    Spacer(minLength: 0)
+                }
                 if let onCancel {
                     Button("取消", action: onCancel)
                         .buttonStyle(LinearButtonStyle(variant: .secondary))
@@ -201,14 +238,18 @@ public struct ConnectionOnboardingView: View {
                             Image(systemName: "powerplug")
                                 .font(DS.iconFont(13, weight: .medium))
                         }
-                        Text(isEditingSaved && apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "保存实例名称" : "验证并连接")
+                        Text(isEditingSaved && apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "保存实例名称" : (embeddedInSettings ? "更新连接" : "验证并连接"))
                     }
                 }
                 .buttonStyle(LinearButtonStyle(variant: .primary))
                 .disabled(busy || url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if embeddedInSettings {
+                    Spacer(minLength: 0)
+                }
             }
+            .padding(.top, 2)
         }
-        .frame(maxWidth: embeddedInSettings ? .infinity : 420, alignment: .leading)
+        .frame(maxWidth: embeddedInSettings ? .infinity : (compactQuick ? .infinity : 420), alignment: .leading)
         .onAppear {
             url = defaultUrl
             name = defaultName

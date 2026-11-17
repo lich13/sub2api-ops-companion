@@ -5,6 +5,7 @@ public struct Sub2ApiVersionCardView: View {
     public let active: Bool
     public let online: Bool
     public var knownVersion: String
+    public var embedded: Bool
     public var onRuntimeChanged: (() -> Void)?
 
     private struct ReleaseInfo: Codable, Sendable, Equatable {
@@ -45,11 +46,13 @@ public struct Sub2ApiVersionCardView: View {
         active: Bool,
         online: Bool,
         knownVersion: String = "",
+        embedded: Bool = false,
         onRuntimeChanged: (() -> Void)? = nil
     ) {
         self.active = active
         self.online = online
         self.knownVersion = knownVersion
+        self.embedded = embedded
         self.onRuntimeChanged = onRuntimeChanged
     }
 
@@ -57,25 +60,17 @@ public struct Sub2ApiVersionCardView: View {
         v.hasPrefix("v") ? String(v.dropFirst()) : v
     }
 
+    private var displayVersion: String {
+        version.isEmpty ? (knownVersion.isEmpty ? "—" : knownVersion) : version
+    }
+
     public var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let content = VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
-                Text("Sub2API 运行 \(version.isEmpty ? (knownVersion.isEmpty ? "—" : knownVersion) : version)")
-                    .font(DS.fontBodySemibold)
+                Text("运行 \(displayVersion)")
+                    .font(DS.fontCompactSemibold)
                     .monospacedDigit()
                     .foregroundStyle(DS.ink)
-
-                if let info {
-                    Text(info.has_update ? "可更新至 \(info.latest_version)" : "已经是最新版本")
-                        .font(DS.fontResetTimeSemibold)
-                        .foregroundStyle(info.has_update ? DS.accent : DS.good)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(info.has_update ? DS.accentBg : DS.goodBg)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                }
-
-                Spacer()
 
                 Button("检查更新") {
                     Task { await checkUpdates() }
@@ -97,6 +92,18 @@ public struct Sub2ApiVersionCardView: View {
                     }
                 }
                 .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+
+                if let info {
+                    Text(info.has_update ? "可更新至 \(info.latest_version)" : "已是最新版本")
+                        .font(DS.fontResetTimeSemibold)
+                        .foregroundStyle(info.has_update ? DS.accent : DS.good)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(info.has_update ? DS.accentBg : DS.goodBg)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+
+                Spacer()
 
                 if let info, info.has_update && !needRestart {
                     Button(busy ? "正在更新…" : "更新 Sub2API") {
@@ -130,10 +137,18 @@ public struct Sub2ApiVersionCardView: View {
                 Text(errorText).font(DS.fontResetTime).foregroundStyle(DS.bad)
             }
         }
-        .padding(12)
-        .background(DS.surface)
-        .overlay(RoundedRectangle(cornerRadius: DS.cardRadius).strokeBorder(DS.line, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: DS.cardRadius))
+
+        SwiftUI.Group {
+            if embedded {
+                content
+            } else {
+                content
+                    .padding(12)
+                    .background(DS.surface)
+                    .overlay(RoundedRectangle(cornerRadius: DS.cardRadius).strokeBorder(DS.line, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: DS.cardRadius))
+            }
+        }
         .onAppear {
             if !knownVersion.isEmpty && version.isEmpty {
                 version = knownVersion
@@ -193,7 +208,7 @@ public struct Sub2ApiVersionCardView: View {
             } else if res.already_up_to_date == true, let cur = res.current_version {
                 version = cur
                 needRestart = false
-                messageText = "已经是最新版本"
+                messageText = "已是最新版本"
                 if var updated = info {
                     updated.current_version = cur
                     if let lat = res.latest_version { updated.latest_version = lat }

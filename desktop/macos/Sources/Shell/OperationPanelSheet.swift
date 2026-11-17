@@ -138,7 +138,7 @@ public struct OperationPanelSheet: View {
 
             Divider().overlay(DS.line)
 
-            ScrollView {
+            LinearBoundedScrollView(maxHeight: 420) {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(displayed) { job in
                         operationRow(job)
@@ -152,7 +152,6 @@ public struct OperationPanelSheet: View {
                     }
                 }
             }
-            .frame(maxHeight: 420)
         }
         .padding(16)
         .frame(width: 440)
@@ -184,7 +183,8 @@ public struct OperationPanelSheet: View {
                     .font(DS.fontCompactSemibold)
                     .foregroundStyle(DS.ink)
                 Text("#\(job.account_id)")
-                    .font(DS.fontMono11)
+                    .font(DS.fontPriorityMeta)
+                    .monospacedDigit()
                     .foregroundStyle(DS.muted)
                 Spacer()
                 Text("\(actionTitle) · \(statusText)")

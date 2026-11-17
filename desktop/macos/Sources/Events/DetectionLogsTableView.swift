@@ -3,9 +3,12 @@ import SwiftUI
 public struct DetectionLogsTableView: View {
     public let online: Bool
     public let connectionKey: String
+    public var onSelectLog: ((DetectionLog) -> Void)?
 
     @State private var feed = DetectionLogStore()
-    @State private var selectedRow: DetectionLog? = nil
+    @State private var fallbackSelectedRow: DetectionLog? = nil
+    @State private var viewportWidth: CGFloat = 1100
+    @State private var hoveredJobId: String? = nil
 
     private static let statuses: [String: String] = [
         "completed": "已完成", "failed": "失败", "cancelled": "已取消",
@@ -26,24 +29,25 @@ public struct DetectionLogsTableView: View {
         "delivered": "已推送", "suppressed": "已取消", "failed": "投递失败",
     ]
 
-    public init(online: Bool, connectionKey: String) {
+    public init(online: Bool, connectionKey: String, onSelectLog: ((DetectionLog) -> Void)? = nil) {
         self.online = online
         self.connectionKey = connectionKey
+        self.onSelectLog = onSelectLog
     }
 
     public var body: some View {
         ZStack {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("自动检测结果与恢复 · \(feed.items.count) 条记录")
-                        .font(DS.fontCompactMedium)
+                    Text("\(feed.items.count) 条记录")
+                        .font(DS.fontCompact)
                         .monospacedDigit()
                         .foregroundStyle(DS.muted)
                     Spacer()
                     Button("刷新记录") {
                         Task { await feed.load(replace: true, online: online) }
                     }
-                    .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
+                    .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
                     .disabled(!online || feed.loading)
                 }
 
@@ -78,9 +82,10 @@ public struct DetectionLogsTableView: View {
                             }
                         }
                     }
-                    .frame(minWidth: 1041, maxWidth: .infinity, alignment: .leading)
+                    .frame(minWidth: max(1041, viewportWidth), maxWidth: .infinity, alignment: .leading)
                 }
                 .focusEffectDisabled()
+                .background(LinearWidthObserver { viewportWidth = $0 })
                 .background(DS.surface)
                 .overlay(RoundedRectangle(cornerRadius: DS.cardRadius).strokeBorder(DS.line, lineWidth: 1))
                 .clipShape(RoundedRectangle(cornerRadius: DS.cardRadius))
@@ -94,9 +99,9 @@ public struct DetectionLogsTableView: View {
                 }
             }
 
-            if let selectedRow {
+            if let selectedRow = fallbackSelectedRow {
                 DetectionLogDetailModal(row: selectedRow, online: online) {
-                    self.selectedRow = nil
+                    self.fallbackSelectedRow = nil
                 }
             }
         }
@@ -106,17 +111,21 @@ public struct DetectionLogsTableView: View {
         }
     }
 
+    private var extraWidth: CGFloat {
+        max(0, viewportWidth - 1041)
+    }
+
     private var headerRow: some View {
         HStack(spacing: 7) {
             colHead("结果时间", width: 96)
-            colHead("账号", width: 112)
-            colHead("模型", width: 100)
+            colHead("账号", width: 112 + round(extraWidth * 0.25))
+            colHead("模型", width: 100 + round(extraWidth * 0.20))
             colHead("触发", width: 104)
             colHead("执行", width: 58)
             colHead("结论", width: 106)
-            colHead("预测", width: 116)
+            colHead("预测", width: 116 + round(extraWidth * 0.30))
             colHead("匹配度", width: 80)
-            colHead("处置／恢复", width: 106)
+            colHead("处置／恢复", width: 106 + round(extraWidth * 0.25))
             colHead("通知", width: 76)
             Spacer(minLength: 0)
         }
@@ -134,7 +143,11 @@ public struct DetectionLogsTableView: View {
 
     private func logRow(_ row: DetectionLog) -> some View {
         Button {
-            selectedRow = row
+            if let onSelectLog {
+                onSelectLog(row)
+            } else {
+                fallbackSelectedRow = row
+            }
         } label: {
             HStack(alignment: .center, spacing: 7) {
                 Text(BeijingTime.fullTime(row.created_at))
@@ -149,16 +162,16 @@ public struct DetectionLogsTableView: View {
                         .foregroundStyle(DS.ink)
                         .lineLimit(1)
                     Text("#\(row.account_id)")
-                        .font(DS.fontMono11)
+                        .font(DS.fontPriorityMeta).monospacedDigit()
                         .foregroundStyle(DS.muted)
                 }
-                .frame(width: 112, alignment: .leading)
+                .frame(width: 112 + round(extraWidth * 0.25), alignment: .leading)
 
                 Text(verbatim: row.model_id)
-                    .font(DS.fontMono11)
+                    .font(DS.fontPriorityMeta).monospacedDigit()
                     .foregroundStyle(DS.ink)
                     .lineLimit(1)
-                    .frame(width: 100, alignment: .leading)
+                    .frame(width: 100 + round(extraWidth * 0.20), alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.triggers.map { Self.triggers[$0] ?? "自动检测" }.joined(separator: "、"))
@@ -185,7 +198,7 @@ public struct DetectionLogsTableView: View {
                 .font(DS.fontResetTime)
                 .foregroundStyle(DS.ink)
                 .lineLimit(1)
-                .frame(width: 116, alignment: .leading)
+                .frame(width: 116 + round(extraWidth * 0.30), alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("首组 \(probText(row.summary.first_probability))")
@@ -197,7 +210,7 @@ public struct DetectionLogsTableView: View {
                 .frame(width: 80, alignment: .leading)
 
                 receiptsCell(row)
-                    .frame(width: 106, alignment: .leading)
+                    .frame(width: 106 + round(extraWidth * 0.25), alignment: .leading)
 
                 if let n = row.notification {
                     VStack(alignment: .leading, spacing: 2) {
@@ -219,9 +232,17 @@ public struct DetectionLogsTableView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
+            .background(hoveredJobId == row.job_id ? DS.rowHover : DS.clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            if hovering {
+                hoveredJobId = row.job_id
+            } else if hoveredJobId == row.job_id {
+                hoveredJobId = nil
+            }
+        }
     }
 
     private enum BadgeTone { case good, warn, bad, neutral }
@@ -300,38 +321,36 @@ public struct DetectionLogsTableView: View {
     }
 }
 
-private struct DetectionLogDetailModal: View {
-    let row: DetectionLog
-    let online: Bool
-    let onClose: () -> Void
+public struct DetectionLogDetailModal: View {
+    public let row: DetectionLog
+    public let online: Bool
+    public let onClose: () -> Void
 
     @State private var groups: [ModelTestGroupStatus] = []
     @State private var loading: Bool = false
     @State private var note: String = ""
 
-    var body: some View {
+    public init(row: DetectionLog, online: Bool, onClose: @escaping () -> Void) {
+        self.row = row
+        self.online = online
+        self.onClose = onClose
+    }
+
+    public var body: some View {
         ZStack {
             DS.backdrop.ignoresSafeArea().onTapGesture(perform: onClose)
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(row.account_name) #\(row.account_id)")
-                            .font(DS.fontResetTimeSemibold)
-                            .foregroundStyle(DS.muted)
-                        Text("自动检测日志")
-                            .font(DS.fontDialogTitle)
-                            .foregroundStyle(DS.ink)
-                    }
-                    Spacer()
-                    LinearIconButton(systemName: "xmark", label: "关闭日志详情", action: onClose)
-                }
-
+            LinearModalCard(
+                title: "自动检测日志",
+                subtitle: "\(row.account_name) · #\(row.account_id)",
+                width: 540,
+                onClose: onClose
+            ) {
                 VStack(alignment: .leading, spacing: 6) {
-                    fact("请求模型", row.model_id, mono: true)
+                    fact("请求模型", row.model_id)
                     fact("检测源", "\(ModelTestEngine.name(for: row.summary.engine)) · \(row.summary.sample_count ?? 3) 组")
                     fact("判定模式", row.summary.verdict_mode == "relaxed" ? "宽松模式 · \(row.summary.degraded_model_id ?? "gpt-5.6-luna")" : "严格模式")
-                    fact("首组预测", row.summary.first_prediction.isEmpty ? "暂无记录" : row.summary.first_prediction, mono: true)
-                    fact("汇总预测", (row.summary.prediction_name ?? row.summary.prediction).isEmpty ? "暂无记录" : (row.summary.prediction_name ?? row.summary.prediction), mono: true)
+                    fact("首组预测", row.summary.first_prediction.isEmpty ? "暂无记录" : row.summary.first_prediction)
+                    fact("汇总预测", (row.summary.prediction_name ?? row.summary.prediction).isEmpty ? "暂无记录" : (row.summary.prediction_name ?? row.summary.prediction))
                     fact("开始时间", BeijingTime.fullTime(row.started_at))
                     fact("结束时间", BeijingTime.fullTime(row.completed_at))
                     if !row.error.isEmpty {
@@ -364,12 +383,11 @@ private struct DetectionLogDetailModal: View {
                         .font(DS.fontResetTime)
                         .foregroundStyle(DS.muted)
                 }
+            } footer: {
+                Spacer()
+                Button("关闭", action: onClose)
+                    .buttonStyle(LinearButtonStyle(variant: .secondary))
             }
-            .padding(20)
-            .frame(width: 520)
-            .background(DS.surface)
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DS.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
             .sub2opsDialogFocus(onEscape: onClose)
             .task {
                 guard online else { return }

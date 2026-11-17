@@ -51,6 +51,43 @@ struct StageM5Tests {
         }
     }
 
+    @Test("FingerprintBankStatusInfo decodes nested server version object and Unix timestamps")
+    func fingerprintBankDecodesNestedServerPayloadAndUnixTimestamps() throws {
+        let serverJSON = Data("""
+        {
+          "version": {
+            "revision": "8f31c2a09b1e4d00",
+            "sha256": "0123456789abcdef",
+            "built_at": "2026-11-17T06:00:00Z",
+            "analyzer_version": "0.2.0"
+          },
+          "source": "remote",
+          "status": "idle",
+          "result": "updated",
+          "checked_at": 1794902400,
+          "synced_at": "2026-11-17T08:00:00Z"
+        }
+        """.utf8)
+        let info = try JSONDecoder().decode(FingerprintBankStatusInfo.self, from: serverJSON)
+        #expect(info.version?.revision == "8f31c2a09b1e4d00")
+        #expect(String((info.version?.revision ?? "").prefix(8)) == "8f31c2a0")
+        #expect(info.available)
+        #expect(info.result == "updated")
+        #expect(info.checked_at != nil && !(info.checked_at ?? "").isEmpty)
+        #expect(info.synced_at == "2026-11-17T08:00:00Z")
+
+        let reportJSON = Data("""
+        {
+          "engine": "modeltrace",
+          "prediction": "gpt-5.4",
+          "probability": 0.98,
+          "bank_version": { "revision": "deadbeef12345678" }
+        }
+        """.utf8)
+        let report = try JSONDecoder().decode(ModelFingerprintReport.self, from: reportJSON)
+        #expect(report.bank_revision == "deadbeef12345678")
+    }
+
     @Test("Render Stage M5 Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")
     @MainActor
     func renderM5Snapshots() async throws {
@@ -220,7 +257,10 @@ struct StageM5Tests {
 
         RustBridge.shared.setMockHandler { _, payload in
             if payload.contains("/fingerprint-bank") {
-                return "{\"available\":true,\"model_count\":28,\"revision\":\"8f31c2a0\",\"updated_at\":\"2026-11-17T08:00:00Z\"}"
+                return "{\"version\":{\"revision\":\"8f31c2a09b1e4d00\",\"sha256\":\"0123456789abcdef\",\"built_at\":\"2026-11-17T06:00:00Z\",\"analyzer_version\":\"0.2.0\"},\"source\":\"cache\",\"status\":\"idle\",\"result\":\"up-to-date\",\"checked_at\":\"2026-11-17T08:00:00Z\",\"synced_at\":\"2026-11-17T08:00:00Z\"}"
+            }
+            if payload.contains("/account-operations") {
+                return "{\"items\":[]}"
             }
             if payload.contains("/accounts/101/models") {
                 return "{\"models\":[{\"id\":\"gpt-5.4\",\"display_name\":\"GPT-5.4\"}]}"
@@ -299,6 +339,23 @@ struct StageM5Tests {
                 size: CGSize(width: 1090, height: 420),
                 dark: dark,
                 outputURL: baseURL.appendingPathComponent("m5_features_ip_\(suffix).png")
+            )
+            let narrowIpView = FeaturesPageView(store: featStore, initialTab: .ip)
+                .padding(16)
+                .frame(width: 760, height: 420, alignment: .topLeading)
+                .background(DS.canvas)
+            try await SnapshotRenderUtility.renderPNGAsync(
+                view: narrowIpView,
+                size: CGSize(width: 760, height: 420),
+                dark: dark,
+                outputURL: baseURL.appendingPathComponent("m5_features_ip_narrow_\(suffix).png")
+            )
+            try SnapshotRenderUtility.renderPNG(
+                view: ZStack { DS.backdrop; ProxyBatchAddSheet(online: true, onSaved: { _ in }, onClose: {}) }
+                    .frame(width: 640, height: 860),
+                size: CGSize(width: 640, height: 860),
+                dark: dark,
+                outputURL: baseURL.appendingPathComponent("m5_proxy_batch_add_\(suffix).png")
             )
             let sub2apiView = FeaturesPageView(store: featStore, initialTab: .sub2api)
                 .padding(24)

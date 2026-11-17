@@ -205,21 +205,21 @@ public enum RecordColumnSpec: String, CaseIterable, Sendable {
 
     public var width: CGFloat {
         switch self {
-        case .api_key: return 118
-        case .account: return 124
-        case .model: return 190
-        case .type: return 96
-        case .reasoning: return 74
-        case .tokens: return 128
-        case .cost: return 116
-        case .latency: return 120
-        case .user_agent: return 128
-        case .ip: return 112
-        case .endpoint: return 132
-        case .group: return 96
-        case .billing: return 76
-        case .request_id: return 132
-        case .upstream_id: return 132
+        case .api_key: return 88
+        case .account: return 90
+        case .model: return 134
+        case .type: return 74
+        case .reasoning: return 56
+        case .tokens: return 120
+        case .cost: return 88
+        case .latency: return 128
+        case .user_agent: return 120
+        case .ip: return 108
+        case .endpoint: return 128
+        case .group: return 88
+        case .billing: return 68
+        case .request_id: return 130
+        case .upstream_id: return 130
         }
     }
 

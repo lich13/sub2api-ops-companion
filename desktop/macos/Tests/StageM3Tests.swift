@@ -92,7 +92,12 @@ struct StageM3Tests {
           "legacy_last_task": null
         }
         """
-        RustBridge.shared.setMockHandler { _, _ in priorityMockJSON }
+        RustBridge.shared.setMockHandler { _, payload in
+            if payload.contains("/account-operations") {
+                return "{\"items\":[]}"
+            }
+            return priorityMockJSON
+        }
 
         var acc1 = Account(id: 101, name: "Codex · 主力", priority: 1, platform: "openai", type: "oauth", group_ids: [1])
         var acc2 = Account(id: 102, name: "Codex · 备用账号", priority: 2, platform: "openai", type: "oauth", group_ids: [1, 3])

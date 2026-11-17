@@ -131,171 +131,137 @@ public struct ModelReasoningEditSheet: View {
     }
 
     public var body: some View {
-        ZStack {
-            DS.backdrop.ignoresSafeArea().onTapGesture {
-                if !saving { onClose() }
+        LinearModalCard(
+            title: draft.editing ? "编辑模型思考档位" : "补全模型思考档位",
+            width: 480,
+            closeDisabled: saving,
+            onClose: onClose
+        ) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("模型 ID")
+                    .font(DS.fontCompactMedium)
+                    .foregroundStyle(DS.muted)
+                TextField(
+                    text: $draft.model,
+                    prompt: Text(verbatim: "例如 gpt-5.4 或 claude-opus-4-6")
+                ) { EmptyView() }
+                .textFieldStyle(.plain)
+                .font(DS.fontBody)
+                .foregroundStyle(DS.ink)
+                .padding(.horizontal, 10)
+                .frame(height: DS.controlHeight)
+                .background(DS.surface)
+                .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+                .disabled(draft.editing || saving)
+                .onChange(of: draft.model) { _, next in
+                    let trimmed = next.trimmingCharacters(in: .whitespaces)
+                    if trimmed != next { draft.model = trimmed }
+                    confirmAllowlist = false
+                }
             }
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text(draft.editing ? "编辑模型思考档位" : "补全模型思考档位")
-                        .font(DS.fontDialogTitle)
-                        .foregroundStyle(DS.ink)
-                    Spacer()
-                    LinearIconButton(systemName: "xmark", label: "关闭", disabled: saving, action: onClose)
-                }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("模型 ID")
-                        .font(DS.fontCompactMedium)
-                        .foregroundStyle(DS.ink)
-                    TextField(
-                        text: $draft.model,
-                        prompt: Text(verbatim: "例如 gpt-5.4 或 claude-opus-4-6")
-                    ) { EmptyView() }
-                    .textFieldStyle(.plain)
-                    .font(DS.fontMono12)
-                    .padding(.horizontal, 10)
-                    .frame(height: DS.controlHeightField)
-                    .background(DS.surface)
-                    .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-                    .disabled(draft.editing || saving)
-                    .onChange(of: draft.model) { _, next in
-                        let trimmed = next.trimmingCharacters(in: .whitespaces)
-                        if trimmed != next { draft.model = trimmed }
-                        confirmAllowlist = false
+            VStack(alignment: .leading, spacing: 6) {
+                Text("可用推理强度")
+                    .font(DS.fontCompactMedium)
+                    .foregroundStyle(DS.muted)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
+                    ForEach(ModelReasoningDraft.allEfforts, id: \.self) { effort in
+                        let selected = draft.efforts.contains(effort)
+                        Button {
+                            toggleEffort(effort)
+                        } label: {
+                            Text(verbatim: effort)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(LinearButtonStyle(variant: selected ? .selectedGhost : .secondary, compact: true))
+                        .disabled(saving)
                     }
                 }
+            }
 
+            VStack(alignment: .leading, spacing: 6) {
+                Text("默认推理强度")
+                    .font(DS.fontCompactMedium)
+                    .foregroundStyle(DS.muted)
+                LinearSelect(
+                    label: draft.default_effort.isEmpty ? "请选择默认强度" : draft.default_effort,
+                    accessibilityTitle: "默认推理强度",
+                    height: DS.controlHeight,
+                    expandWidth: true,
+                    mutedLabel: draft.default_effort.isEmpty,
+                    disabled: draft.efforts.isEmpty || saving,
+                    entries: draft.efforts.map { effort in
+                        LinearMenuEntry(id: effort, title: effort, checked: draft.default_effort == effort) {
+                            draft.default_effort = effort
+                            draft.loaded = true
+                            confirmAllowlist = false
+                        }
+                    }
+                )
+            }
+
+            if resolving {
+                Text("正在核实上游转发与目录状态…")
+                    .font(DS.fontResetTime)
+                    .foregroundStyle(DS.muted)
+            } else if let r = resolution {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("可用推理强度")
-                        .font(DS.fontCompactMedium)
-                        .foregroundStyle(DS.ink)
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
-                        ForEach(ModelReasoningDraft.allEfforts, id: \.self) { effort in
-                            let selected = draft.efforts.contains(effort)
-                            Button {
-                                toggleEffort(effort)
-                            } label: {
-                                Text(verbatim: effort)
-                                    .frame(maxWidth: .infinity)
+                    HStack {
+                        Text("转发状态：\(r.forwarding.state == "verified" ? "已核实" : r.forwarding.state)")
+                            .font(DS.fontResetTimeSemibold)
+                            .foregroundStyle(isVerified ? DS.good : DS.warn)
+                        Spacer()
+                        Button(detailsExpanded ? "收起详情" : "核实详情") {
+                            detailsExpanded.toggle()
+                        }
+                        .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
+                    }
+                    if detailsExpanded {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("来源：\(r.source) · 原生默认：\(r.native_default.isEmpty ? "—" : r.native_default)")
+                            if !r.forwarding.reason.isEmpty {
+                                Text(r.forwarding.reason)
                             }
-                            .buttonStyle(LinearButtonStyle(variant: selected ? .selectedGhost : .secondary, compact: true))
-                            .disabled(saving)
                         }
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("默认推理强度")
-                        .font(DS.fontCompactMedium)
-                        .foregroundStyle(DS.ink)
-                    Menu {
-                        ForEach(draft.efforts, id: \.self) { effort in
-                            Button {
-                                draft.default_effort = effort
-                                draft.loaded = true
-                                confirmAllowlist = false
-                            } label: {
-                                Text(verbatim: effort)
-                            }
-                        }
-                    } label: {
-                        HStack {
-                            Text(verbatim: draft.default_effort.isEmpty ? "请选择默认强度" : draft.default_effort)
-                                .font(DS.fontMono12)
-                                .foregroundStyle(draft.default_effort.isEmpty ? DS.muted : DS.ink)
-                            Spacer()
-                            Image(systemName: "chevron.down")
-                                .font(DS.iconFont(11))
-                                .foregroundStyle(DS.muted)
-                        }
-                        .padding(.horizontal, 10)
-                        .frame(height: DS.controlHeightField)
-                        .background(DS.surface)
-                        .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                        .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .disabled(draft.efforts.isEmpty || saving)
-                }
-
-                if resolving {
-                    Text("正在核实上游转发与目录状态…")
                         .font(DS.fontResetTime)
                         .foregroundStyle(DS.muted)
-                } else if let r = resolution {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("转发状态：\(r.forwarding.state == "verified" ? "已核实" : r.forwarding.state)")
-                                .font(DS.fontResetTimeSemibold)
-                                .foregroundStyle(isVerified ? DS.good : DS.warn)
-                            Spacer()
-                            Button(detailsExpanded ? "收起详情" : "核实详情") {
-                                detailsExpanded.toggle()
-                            }
-                            .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
-                        }
-                        if detailsExpanded {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("来源：\(r.source) · 原生默认：\(r.native_default.isEmpty ? "—" : r.native_default)")
-                                if !r.forwarding.reason.isEmpty {
-                                    Text(r.forwarding.reason)
-                                }
-                            }
-                            .font(DS.fontResetTime)
-                            .foregroundStyle(DS.muted)
-                        }
                     }
-                    .padding(10)
-                    .background(DS.surfaceSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
                 }
+                .padding(10)
+                .background(DS.surfaceSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+            }
 
-                if needsAllowlist {
-                    Button {
-                        confirmAllowlist.toggle()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: confirmAllowlist ? "checkmark.square.fill" : "square")
-                                .font(DS.iconFont(13))
-                                .foregroundStyle(confirmAllowlist ? DS.accent : DS.muted)
-                            Text("确认同步将该模型加入组内账号的模型白名单")
-                                .font(DS.fontCompact)
-                                .foregroundStyle(DS.ink)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                if !formError.isEmpty {
-                    Text(formError)
-                        .font(DS.fontCompact)
-                        .foregroundStyle(DS.bad)
-                }
-
-                HStack {
-                    Spacer()
-                    Button("取消") { onClose() }
-                        .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                        .disabled(saving)
-                    Button(saving ? "保存中…" : "保存") {
-                        Task { await save() }
-                    }
-                    .buttonStyle(LinearButtonStyle(variant: .primary, compact: true))
-                    .disabled(!canSave)
+            if needsAllowlist {
+                LinearCheckbox(
+                    isChecked: confirmAllowlist,
+                    label: "确认同步将该模型加入组内账号的模型白名单",
+                    disabled: saving
+                ) {
+                    confirmAllowlist.toggle()
                 }
             }
-            .padding(20)
-            .frame(width: 460)
-            .background(DS.surface)
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DS.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .sub2opsDialogFocus(onEscape: { if !saving { onClose() } })
-            .task(id: "\(groupId):\(online):\(draft.signature)") {
-                await debounceResolve()
+
+            if !formError.isEmpty {
+                Text(formError)
+                    .font(DS.fontCompact)
+                    .foregroundStyle(DS.bad)
             }
+        } footer: {
+            Spacer()
+            Button("取消") { onClose() }
+                .buttonStyle(LinearButtonStyle(variant: .secondary))
+                .disabled(saving)
+            Button(saving ? "保存中…" : "保存") {
+                Task { await save() }
+            }
+            .buttonStyle(LinearButtonStyle(variant: .primary))
+            .disabled(!canSave)
+        }
+        .sub2opsDialogFocus(onEscape: { if !saving { onClose() } })
+        .task(id: "\(groupId):\(online):\(draft.signature)") {
+            await debounceResolve()
         }
     }
 

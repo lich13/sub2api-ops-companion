@@ -52,10 +52,19 @@ public struct RecordOptionPickerView: View {
         return "全部\(kind.label)"
     }
 
+    private var parsedPositiveId: Int? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let digits = trimmed.hasPrefix("#") ? String(trimmed.dropFirst()) : trimmed
+        guard !digits.isEmpty, digits.first != "0", digits.allSatisfy(\.isNumber), let id = Int(digits), id > 0 else {
+            return nil
+        }
+        return id
+    }
+
     private var displayedItems: [RecordOption] {
         if kind == .accounts {
             let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let idMatch = Int(needle.replacingOccurrences(of: "#", with: ""))
+            let idMatch = parsedPositiveId
             return (localOptions ?? []).filter { opt in
                 guard !opt.deleted else { return false }
                 if needle.isEmpty { return true }
@@ -71,17 +80,19 @@ public struct RecordOptionPickerView: View {
             query = ""
             isOpen.toggle()
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 Text(buttonTitle)
                     .font(DS.fontCompact)
-                    .foregroundStyle(DS.ink)
+                    .foregroundStyle(selected == nil ? DS.muted : DS.ink)
                     .lineLimit(1)
+                Spacer(minLength: 4)
                 Image(systemName: "chevron.down")
                     .font(DS.iconFont(10, weight: .semibold))
                     .foregroundStyle(DS.muted)
             }
-            .padding(.horizontal, 10)
-            .frame(height: DS.controlHeightCompact)
+            .padding(.horizontal, 9)
+            .frame(minWidth: 74, maxWidth: 156)
+            .frame(height: DS.controlHeightDense)
             .background(DS.surface)
             .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
@@ -98,13 +109,22 @@ public struct RecordOptionPickerView: View {
                     TextField(text: $query, prompt: Text(verbatim: kind == .users ? "名称、邮箱或 ID" : "名称或 ID")) { EmptyView() }
                         .textFieldStyle(.plain)
                         .font(DS.fontCompact)
+                        .onSubmit {
+                            if let id = parsedPositiveId, let match = displayedItems.first(where: { $0.id == id }) {
+                                onSelect(match)
+                                isOpen = false
+                            } else if displayedItems.count == 1 {
+                                onSelect(displayedItems[0])
+                                isOpen = false
+                            }
+                        }
                 }
                 .padding(.horizontal, 8)
                 .frame(height: 28)
                 .background(DS.surface)
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(DS.line, lineWidth: 1))
 
-                ScrollView {
+                LinearBoundedScrollView(maxHeight: 240) {
                     VStack(alignment: .leading, spacing: 2) {
                         optionButton(nil)
                         ForEach(displayedItems) { opt in
@@ -142,10 +162,9 @@ public struct RecordOptionPickerView: View {
                         }
                     }
                 }
-                .frame(maxHeight: 240)
             }
             .padding(10)
-            .frame(width: 280)
+            .frame(width: 328)
             .background(DS.surface)
             .task(id: "\(isOpen):\(query):\(userId ?? -1)") {
                 guard isOpen, active, kind != .accounts else { return }
@@ -174,7 +193,7 @@ public struct RecordOptionPickerView: View {
                                 .foregroundStyle(DS.ink)
                                 .lineLimit(1)
                             Text("#\(item.id)")
-                                .font(DS.fontMono11)
+                                .font(DS.fontPriorityMeta).monospacedDigit()
                                 .foregroundStyle(DS.muted)
                         }
                         if let uid = item.user_id {
@@ -195,6 +214,15 @@ public struct RecordOptionPickerView: View {
                     }
                 }
                 Spacer()
+                if let status = item?.status, !status.isEmpty, status != "active" {
+                    Text(status == "error" ? "异常" : "停用")
+                        .font(DS.fontUsageStat)
+                        .foregroundStyle(status == "error" ? DS.bad : DS.muted)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(status == "error" ? DS.badBg : DS.surfaceSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(DS.iconFont(11, weight: .semibold))
@@ -231,14 +259,18 @@ public struct RecordOptionPickerView: View {
         let qs = comps.percentEncodedQuery ?? ""
         do {
             let res: RecordOptionPage = try await RustBridge.shared.api("GET", "/usage-record-options?\(qs)")
-            let filtered = res.items.filter { !$0.deleted }
             if pageCursor != nil {
-                var seen = Set(items.map(\.id))
-                for row in filtered where seen.insert(row.id).inserted {
-                    items.append(row)
+                var order: [Int] = []
+                var byId: [Int: RecordOption] = [:]
+                for row in items + res.items {
+                    if byId[row.id] == nil {
+                        order.append(row.id)
+                    }
+                    byId[row.id] = row
                 }
+                items = order.compactMap { byId[$0] }.filter { !$0.deleted }
             } else {
-                items = filtered
+                items = res.items.filter { !$0.deleted }
             }
             cursor = res.next_cursor
         } catch {

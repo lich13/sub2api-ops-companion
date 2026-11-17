@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-/// Matches `SettingsPage(page: "settings")` in `desktop/src/main.tsx`.
+/// Matches `SettingsPage(page: "settings")` in `desktop/src/main.tsx` (`settings_light.png`).
 public struct SettingsPageView: View {
     @Bindable public var store: AppStore
 
@@ -31,17 +31,39 @@ public struct SettingsPageView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            ConnectionStatusCardView(connectionKey: store.connectionKey)
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("设置")
+                    .font(DS.fontPageTitle)
+                    .foregroundStyle(DS.ink)
 
-            instanceManagementCard
+                Spacer()
 
-            clientPreferencesCard
+                if let observed = store.state.snapshot?.observed_at, !observed.isEmpty {
+                    HStack(spacing: 5) {
+                        Image(systemName: "clock")
+                            .font(DS.iconFont(11))
+                        Text("更新于 \(BeijingTime.fullTime(observed))")
+                            .font(DS.fontPriorityMeta)
+                            .monospacedDigit()
+                    }
+                    .foregroundStyle(DS.muted)
+                }
+            }
 
-            barkConfigCard
+            VStack(alignment: .leading, spacing: 16) {
+                ConnectionStatusCardView(connectionKey: store.connectionKey)
 
-            connectionManagementCard
+                instanceManagementCard
+
+                clientPreferencesCard
+
+                barkConfigCard
+
+                connectionManagementCard
+            }
+            .frame(maxWidth: 820)
         }
-        .frame(maxWidth: 820)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: "\(store.connectionKey):\(store.state.online)") {
             if store.state.online && store.config == nil {
                 await store.reloadConfig()
@@ -54,8 +76,8 @@ public struct SettingsPageView: View {
     }
 
     private var instanceManagementCard: some View {
-        CardSection {
-            VStack(alignment: .leading, spacing: 12) {
+        CardSection(padding: 20) {
+            VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Text("Sub2API 实例管理")
                         .font(DS.fontSectionTitle)
@@ -73,7 +95,7 @@ public struct SettingsPageView: View {
                     .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
                 }
 
-                Divider().overlay(DS.line)
+                Rectangle().fill(DS.line).frame(height: 1)
 
                 let connections = store.savedConnections
                 if connections.isEmpty {
@@ -89,21 +111,21 @@ public struct SettingsPageView: View {
 
                             HStack(spacing: 10) {
                                 StatusDot(isCurrent ? (store.state.online ? .good : .warning) : .muted)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    HStack(spacing: 6) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack(spacing: 8) {
                                         Text(item.name)
                                             .font(DS.fontBodySemibold)
                                             .foregroundStyle(DS.ink)
                                         Text(isCurrent ? "当前连接" : "已保存")
                                             .font(DS.fontResetTimeSemibold)
                                             .foregroundStyle(isCurrent ? DS.accent : DS.muted)
-                                            .padding(.horizontal, 6)
+                                            .padding(.horizontal, 8)
                                             .padding(.vertical, 2)
                                             .background(isCurrent ? DS.accentBg : DS.surfaceSubtle)
-                                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                                            .clipShape(Capsule())
                                     }
                                     Text(verbatim: item.base_url)
-                                        .font(DS.fontMono11)
+                                        .font(DS.fontPriorityMeta).monospacedDigit()
                                         .foregroundStyle(DS.muted)
                                         .lineLimit(1)
                                 }
@@ -126,21 +148,28 @@ public struct SettingsPageView: View {
                                     }
                                     .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
 
-                                    Button("删除实例") {
+                                    Button {
                                         Task { await removeInstance(item) }
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "trash")
+                                                .font(DS.iconFont(11))
+                                            Text("删除实例")
+                                        }
                                     }
                                     .buttonStyle(LinearButtonStyle(variant: .danger, compact: true))
                                     .disabled(isCurrent || store.switchingUrl != nil || isRemoving)
                                     .help(isCurrent ? "当前实例正在使用中，请先切换到其他实例或断开连接后再删除" : "删除此实例并清除对应的本机 Key")
                                 }
                             }
-                            .padding(10)
-                            .background(isCurrent ? DS.surfaceSubtle : DS.surface)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(DS.surface)
                             .overlay(
-                                RoundedRectangle(cornerRadius: DS.cornerRadius)
-                                    .strokeBorder(isCurrent ? DS.accent : DS.line, lineWidth: 1)
+                                RoundedRectangle(cornerRadius: 8)
+                                    .strokeBorder(isCurrent ? DS.accent.opacity(0.45) : DS.line, lineWidth: 1)
                             )
-                            .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                     }
                 }
@@ -149,19 +178,16 @@ public struct SettingsPageView: View {
     }
 
     private var clientPreferencesCard: some View {
-        CardSection {
-            VStack(alignment: .leading, spacing: 12) {
+        CardSection(padding: 20) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text("客户端")
                     .font(DS.fontSectionTitle)
                     .foregroundStyle(DS.ink)
+                    .padding(.bottom, 12)
 
-                Divider().overlay(DS.line)
+                Rectangle().fill(DS.line).frame(height: 1)
 
-                HStack {
-                    Text("开机启动")
-                        .font(DS.fontBody)
-                        .foregroundStyle(DS.ink)
-                    Spacer()
+                LinearSettingRow("开机启动") {
                     LinearSwitch(
                         isOn: store.state.preferences.launch_at_login,
                         label: "开机启动"
@@ -172,11 +198,7 @@ public struct SettingsPageView: View {
                     }
                 }
 
-                HStack {
-                    Text("当前版本")
-                        .font(DS.fontBody)
-                        .foregroundStyle(DS.ink)
-                    Spacer()
+                LinearSettingRow("当前版本", showDivider: false) {
                     Button {
                         Task { await store.checkUpdatesAndNotify() }
                     } label: {
@@ -194,8 +216,8 @@ public struct SettingsPageView: View {
     }
 
     private var barkConfigCard: some View {
-        CardSection {
-            VStack(alignment: .leading, spacing: 12) {
+        CardSection(padding: 20) {
+            VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Text("Bark 事件推送")
                         .font(DS.fontSectionTitle)
@@ -213,35 +235,29 @@ public struct SettingsPageView: View {
                     .buttonStyle(LinearButtonStyle(variant: .primary, compact: true))
                     .disabled(!store.state.online || barkBusy || barkChanges.isEmpty || barkConflict)
                 }
+                .padding(.bottom, 12)
 
-                Divider().overlay(DS.line)
+                Rectangle().fill(DS.line).frame(height: 1)
 
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 0) {
                     let isEnabled = barkDraft["enabled"]?.boolValue ?? false
-                    HStack {
-                        Text("启用推送")
-                            .font(DS.fontBody)
-                            .foregroundStyle(DS.ink)
-                        Spacer()
+                    LinearSettingRow("启用推送") {
                         LinearSwitch(isOn: isEnabled, label: "启用推送") {
                             setBarkField("enabled", .bool(!isEnabled))
                         }
                     }
 
                     let keySet = serverBark["device_key_set"]?.boolValue == true
-                    HStack {
-                        Text("Device Key\(keySet ? "（已保存，留空保留）" : "")")
-                            .font(DS.fontBody)
-                            .foregroundStyle(DS.ink)
-                        Spacer()
+                    LinearSettingRow("Device Key\(keySet ? "（已保存，留空保留）" : "")") {
                         SecureField(
                             text: $barkDeviceKey,
-                            prompt: Text(verbatim: keySet ? "留空保留现有 Device Key" : "输入 Bark Device Key")
+                            prompt: Text(verbatim: keySet ? "留空保留现有 Device Key" : "输入 Bark Device Key").foregroundStyle(DS.placeholder)
                         ) { EmptyView() }
                         .textFieldStyle(.plain)
-                        .font(DS.fontMono12)
-                        .padding(.horizontal, 10)
-                        .frame(width: 260, height: DS.controlHeightDense)
+                        .font(DS.fontBody)
+                        .foregroundStyle(DS.ink)
+                        .padding(.horizontal, 12)
+                        .frame(width: 260, height: DS.controlHeight)
                         .background(DS.surface)
                         .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
                         .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
@@ -260,6 +276,7 @@ public struct SettingsPageView: View {
                         .disabled(!store.state.online || barkBusy)
                         Spacer()
                     }
+                    .padding(.top, 12)
                 }
                 .disabled(!store.state.online || barkBusy)
 
@@ -278,6 +295,7 @@ public struct SettingsPageView: View {
                         .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
                     }
                     .padding(10)
+                    .padding(.top, 10)
                     .background(DS.warnBg)
                     .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
                 }
@@ -286,11 +304,11 @@ public struct SettingsPageView: View {
     }
 
     private var connectionManagementCard: some View {
-        CardSection {
+        CardSection(padding: 20) {
             VStack(alignment: .leading, spacing: 14) {
                 ConnectionOnboardingView(store: store, embeddedInSettings: true)
 
-                Divider().overlay(DS.line)
+                Rectangle().fill(DS.line).frame(height: 1)
 
                 HStack {
                     Button {

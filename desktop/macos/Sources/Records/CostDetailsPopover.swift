@@ -124,7 +124,7 @@ public struct CostDetailsPopover: View {
                             .foregroundStyle(DS.muted)
                         Spacer(minLength: 12)
                         Text(verbatim: pair.value)
-                            .font(DS.fontMono11)
+                            .font(DS.fontPriorityMeta).monospacedDigit()
                             .monospacedDigit()
                             .foregroundStyle(pair.label == "用户扣费" || pair.label == "账号计费" ? DS.good : DS.ink)
                     }

@@ -22,15 +22,13 @@ public struct KeyQuotaSettingsSheet: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text(targetAccount == nil ? "余额刷新设置" : "\(targetAccount!.name) · 余额令牌设置")
-                    .font(DS.fontDialogTitle)
-                    .foregroundStyle(DS.ink)
-                Spacer()
-                LinearIconButton(systemName: "xmark", label: "关闭余额设置", action: onClose)
-            }
-
+        LinearModalCard(
+            title: targetAccount == nil ? "余额刷新设置" : "余额令牌设置",
+            subtitle: targetAccount.map { "\($0.name) #\($0.id)" },
+            width: 460,
+            closeDisabled: saving,
+            onClose: onClose
+        ) {
             if let account = targetAccount {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -101,24 +99,17 @@ public struct KeyQuotaSettingsSheet: View {
                     .font(DS.fontCompact)
                     .foregroundStyle(DS.bad)
             }
-
-            HStack(spacing: 10) {
-                Spacer()
-                Button("取消", action: onClose)
-                    .buttonStyle(LinearButtonStyle(variant: .secondary))
-                    .disabled(saving)
-                Button(saving ? "保存中…" : "保存设置") {
-                    Task { await submit() }
-                }
-                .buttonStyle(LinearButtonStyle(variant: .primary))
-                .disabled(!store.state.online || loading || saving)
+        } footer: {
+            Spacer()
+            Button("取消", action: onClose)
+                .buttonStyle(LinearButtonStyle(variant: .secondary))
+                .disabled(saving)
+            Button(saving ? "保存中…" : "保存设置") {
+                Task { await submit() }
             }
+            .buttonStyle(LinearButtonStyle(variant: .primary))
+            .disabled(!store.state.online || loading || saving)
         }
-        .padding(22)
-        .frame(width: 440)
-        .background(DS.surface)
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DS.line, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
         .sub2opsDialogFocus(onEscape: onClose)
         .task {
             await loadSettings()

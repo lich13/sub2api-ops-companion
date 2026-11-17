@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct AccountsPageView: View {
     @Bindable public var store: AppStore
+    public var viewportWidth: CGFloat?
 
     @State private var sortStore = AccountSortStore()
     @State private var nativeUsage = NativeUsageReader()
@@ -11,13 +12,20 @@ public struct AccountsPageView: View {
     @State private var typeFilter: String = ""
     @State private var statusFilter: String = ""
     @State private var selectedIds: Set<Int> = []
-    @State private var collapsedAccountName: Bool = false
+    @State private var nameExpanded: Bool = UserDefaults.standard.bool(forKey: "sub2ops-account-name-expanded")
     @State private var quotaJob: QuotaRefreshJob? = nil
     @State private var connectionBatch: OperationBatch? = nil
     @State private var batchBusy: Bool = false
+    @State private var measuredWidth: CGFloat = 1085
+    @State private var hoveredAccountId: Int? = nil
 
-    public init(store: AppStore) {
+    public init(store: AppStore, viewportWidth: CGFloat? = nil) {
         self.store = store
+        self.viewportWidth = viewportWidth
+    }
+
+    private var availableWidth: CGFloat {
+        viewportWidth ?? measuredWidth
     }
 
     private var filteredSortedAccounts: [Account] {
@@ -41,7 +49,7 @@ public struct AccountsPageView: View {
     }
 
     private var selectedAccounts: [Account] {
-        store.accounts.filter { selectedIds.contains($0.id) }
+        filteredSortedAccounts.filter { selectedIds.contains($0.id) }
     }
 
     public var body: some View {
@@ -56,7 +64,7 @@ public struct AccountsPageView: View {
                     busy: batchBusy,
                     onBatchTest: { Task { await startBatchConnectionTest(selectedAccounts) } },
                     onBatchRecover: { Task { await runBatchRecover(selectedAccounts.filter { $0.recoverable == true }) } },
-                    onBatchCredits: { store.accountModal = .batchCredits(selectedAccounts.filter { $0.platform == "openai" && $0.type == "oauth" }) },
+                    onBatchCredits: { store.accountModal = .batchCredits(selectedAccounts) },
                     onBatchProxy: { store.accountModal = .batchProxy(selectedAccounts) },
                     onBatchDelete: { store.accountModal = .deleteAccounts(selectedAccounts) },
                     onClear: { selectedIds.removeAll() }
@@ -76,6 +84,10 @@ public struct AccountsPageView: View {
             QuotaRefreshBarView(job: quotaJob)
 
             accountsTable
+        }
+        .background(LinearWidthObserver { if viewportWidth == nil { measuredWidth = $0 } })
+        .onChange(of: "\(query)|\(groupFilter)|\(platformFilter)|\(typeFilter)|\(statusFilter)") { _, _ in
+            selectedIds.removeAll()
         }
         .task(id: "\(store.connectionKey):\(store.accounts.count):\(store.state.online)") {
             nativeUsage.bindConnection(store.connectionKey)
@@ -99,17 +111,19 @@ public struct AccountsPageView: View {
             .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
             .disabled(!store.state.online)
 
-            Button {
-                store.accountModal = .keyQuotaSettings(nil)
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(DS.iconFont(12))
-                    Text("余额刷新")
+            if store.accounts.contains(where: { $0.type == "apikey" }) {
+                Button {
+                    store.accountModal = .keyQuotaSettings(nil)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(DS.iconFont(12))
+                        Text("余额刷新")
+                    }
                 }
+                .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                .disabled(!store.state.online)
             }
-            .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-            .disabled(!store.state.online)
 
             Button {
                 Task { await triggerQuotaRefresh() }
@@ -123,43 +137,59 @@ public struct AccountsPageView: View {
             .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
             .disabled(!store.state.online || quotaJob?.status == "running")
 
-            Spacer()
+            Spacer(minLength: 12)
 
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Text("排序")
                     .font(DS.fontCompact)
                     .foregroundStyle(DS.muted)
-                Menu {
-                    ForEach(AccountSortKey.allCases, id: \.rawValue) { key in
-                        Button {
-                            sortStore.selectKey(key)
-                        } label: {
-                            HStack {
-                                Text(key.label)
-                                if sortStore.option.key == key {
-                                    Image(systemName: sortStore.option.ascending ? "arrow.up" : "arrow.down")
-                                }
-                            }
-                        }
+
+                let sortLabel: String = {
+                    switch (sortStore.option.key, sortStore.option.ascending) {
+                    case (.recent, false): return "最近调用"
+                    case (.recent, true): return "最早调用"
+                    case (.priority, true): return "优先级 ↑"
+                    case (.priority, false): return "优先级 ↓"
+                    default: return "\(sortStore.option.key.label) \(sortStore.option.ascending ? "↑" : "↓")"
                     }
-                } label: {
-                    HStack(spacing: 5) {
-                        Text(sortStore.option.key.label)
-                            .font(DS.fontCompactMedium)
-                        Image(systemName: sortStore.option.ascending ? "arrow.up" : "arrow.down")
-                            .font(DS.iconFont(10, weight: .semibold))
-                            .foregroundStyle(DS.muted)
-                    }
-                    .foregroundStyle(DS.ink)
-                    .padding(.horizontal, 10)
-                    .frame(height: DS.controlHeightCompact)
-                    .background(DS.surface)
-                    .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
+                }()
+
+                LinearSelect(
+                    label: sortLabel,
+                    accessibilityTitle: "账号排序",
+                    height: DS.controlHeightCompact,
+                    compactFont: true,
+                    entries: [
+                        LinearMenuEntry(
+                            id: "recent:desc",
+                            title: "最近调用",
+                            checked: sortStore.option == AccountSortOption(key: .recent, ascending: false)
+                        ) {
+                            sortStore.option = AccountSortOption(key: .recent, ascending: false)
+                        },
+                        LinearMenuEntry(
+                            id: "recent:asc",
+                            title: "最早调用",
+                            checked: sortStore.option == AccountSortOption(key: .recent, ascending: true)
+                        ) {
+                            sortStore.option = AccountSortOption(key: .recent, ascending: true)
+                        },
+                        LinearMenuEntry(
+                            id: "priority:asc",
+                            title: "优先级 ↑",
+                            checked: sortStore.option == AccountSortOption(key: .priority, ascending: true)
+                        ) {
+                            sortStore.option = AccountSortOption(key: .priority, ascending: true)
+                        },
+                        LinearMenuEntry(
+                            id: "priority:desc",
+                            title: "优先级 ↓",
+                            checked: sortStore.option == AccountSortOption(key: .priority, ascending: false)
+                        ) {
+                            sortStore.option = AccountSortOption(key: .priority, ascending: false)
+                        },
+                    ]
+                )
             }
 
             Button("账号模板") {
@@ -172,166 +202,171 @@ public struct AccountsPageView: View {
 
     private var filterToolbar: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(DS.iconFont(13))
-                    .foregroundStyle(DS.muted)
-                TextField(text: $query, prompt: Text(verbatim: "搜索名称或账号 ID")) { EmptyView() }
-                    .textFieldStyle(.plain)
-                    .font(DS.fontCompact)
-                if !query.isEmpty {
-                    Button {
-                        query = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(DS.iconFont(12))
-                            .foregroundStyle(DS.muted)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 10)
-            .frame(height: DS.controlHeightCompact)
-            .background(DS.surface)
-            .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+            LinearSearchField(
+                text: $query,
+                prompt: "搜索名称或账号 ID",
+                height: DS.controlHeightCompact,
+                compactFont: true
+            )
 
-            filterMenu(
-                label: groupFilter.isEmpty ? "全部分组" : (store.groups.first(where: { "\($0.id)" == groupFilter })?.name ?? "分组 #\(groupFilter)"),
+            LinearSelect(
+                selection: $groupFilter,
                 options: [("", "全部分组")] + store.groups.map { ("\($0.id)", $0.name) },
-                selection: $groupFilter
+                accessibilityTitle: "分组筛选",
+                height: DS.controlHeightCompact,
+                compactFont: true
             )
 
-            filterMenu(
-                label: platformFilter.isEmpty ? "全部平台" : PlatformMeta.displayName(platformFilter),
+            LinearSelect(
+                selection: $platformFilter,
                 options: [("", "全部平台")] + availablePlatforms.map { ($0, PlatformMeta.displayName($0)) },
-                selection: $platformFilter
+                accessibilityTitle: "平台筛选",
+                height: DS.controlHeightCompact,
+                compactFont: true
             )
 
-            filterMenu(
-                label: typeFilter.isEmpty ? "全部类型" : PlatformMeta.typeLabel(typeFilter),
+            LinearSelect(
+                selection: $typeFilter,
                 options: [("", "全部类型")] + availableTypes.map { ($0, PlatformMeta.typeLabel($0)) },
-                selection: $typeFilter
+                accessibilityTitle: "认证类型筛选",
+                height: DS.controlHeightCompact,
+                compactFont: true
             )
 
-            filterMenu(
-                label: statusLabel(statusFilter),
+            LinearSelect(
+                selection: $statusFilter,
                 options: [
                     ("", "全部状态"),
                     ("ready", "可调度"),
-                    ("error", "有报错"),
-                    ("disabled", "已停调度"),
+                    ("off", "调度关闭"),
+                    ("error", "曾有错误"),
                 ],
-                selection: $statusFilter
+                accessibilityTitle: "状态筛选",
+                height: DS.controlHeightCompact,
+                compactFont: true
             )
         }
     }
 
-    private func filterMenu(label: String, options: [(String, String)], selection: Binding<String>) -> some View {
-        Menu {
-            ForEach(options, id: \.0) { value, text in
-                Button(text) { selection.wrappedValue = value }
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Text(label)
-                    .font(DS.fontCompact)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(DS.iconFont(10, weight: .semibold))
-                    .foregroundStyle(DS.muted)
-            }
-            .foregroundStyle(DS.ink)
-            .padding(.horizontal, 10)
-            .frame(height: DS.controlHeightCompact)
-            .background(DS.surface)
-            .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-    }
+    public struct TableColumnMetrics {
+        // Mirrors responsive.css `.accounts-table` col widths (border-box, 7px cell padding):
+        // select 30, name 128/240, priority 120, status 128, usage 262, error 122, schedule 72, actions auto (≥110).
+        public let selectW: CGFloat = 16
+        public let nameW: CGFloat
+        public let paramsW: CGFloat = 106
+        public let statusW: CGFloat = 114
+        public let usageW: CGFloat = 248
+        public let errorW: CGFloat = 108
+        public let scheduleW: CGFloat = 58
+        public let actionsW: CGFloat
+        public let gap: CGFloat = 14
+        public let horizontalPad: CGFloat = 7
+        public var separatorInset: CGFloat { gap / 2 }
+        public let totalWidth: CGFloat
 
-    private func statusLabel(_ key: String) -> String {
-        switch key {
-        case "ready": return "可调度"
-        case "error": return "有报错"
-        case "disabled": return "已停调度"
-        default: return "全部状态"
+        public init(containerWidth: CGFloat, nameExpanded: Bool) {
+            let nameBase: CGFloat = nameExpanded ? 226 : 114
+            let minActions: CGFloat = 96
+            let fixedCols = selectW + nameBase + paramsW + statusW + usageW + errorW + scheduleW + (gap * 7) + (horizontalPad * 2)
+            let minTotal = fixedCols + minActions
+            self.nameW = nameBase
+            if containerWidth >= minTotal {
+                self.actionsW = minActions + (containerWidth - minTotal)
+                self.totalWidth = containerWidth
+            } else {
+                self.actionsW = minActions
+                self.totalWidth = minTotal
+            }
         }
     }
 
     private var accountsTable: some View {
         let rows = filteredSortedAccounts
         let allSelected = !rows.isEmpty && rows.allSatisfy { selectedIds.contains($0.id) }
-        let nameWidth: CGFloat = collapsedAccountName ? 86 : 164
+        let metrics = TableColumnMetrics(containerWidth: max(320, availableWidth), nameExpanded: nameExpanded)
+        let needsHorizontalScroll = metrics.totalWidth > availableWidth + 0.5
 
-        return VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Button {
+        let tableContent = VStack(spacing: 0) {
+            HStack(spacing: metrics.gap) {
+                LinearCheckbox(
+                    isChecked: allSelected,
+                    accessibilityTitle: "全选当前筛选结果",
+                    disabled: rows.isEmpty
+                ) {
                     if allSelected {
                         for r in rows { selectedIds.remove(r.id) }
                     } else {
                         for r in rows { selectedIds.insert(r.id) }
                     }
-                } label: {
-                    Image(systemName: allSelected ? "checkmark.square.fill" : "square")
-                        .font(DS.iconFont(13))
-                        .foregroundStyle(allSelected ? DS.accent : DS.muted)
                 }
-                .buttonStyle(.plain)
-                .frame(width: 20)
-                .accessibilityLabel("全选账号")
+                .frame(width: metrics.selectW, alignment: .center)
 
                 Button {
-                    collapsedAccountName.toggle()
+                    nameExpanded.toggle()
+                    UserDefaults.standard.set(nameExpanded, forKey: "sub2ops-account-name-expanded")
                 } label: {
                     HStack(spacing: 4) {
                         Text("账号")
                             .font(DS.fontTableHeader)
                             .foregroundStyle(DS.muted)
-                        Image(systemName: collapsedAccountName ? "chevron.left" : "chevron.right")
+                        Image(systemName: nameExpanded ? "chevron.left" : "chevron.right")
                             .font(DS.iconFont(9, weight: .semibold))
                             .foregroundStyle(DS.muted)
                     }
                 }
                 .buttonStyle(.plain)
-                .frame(width: nameWidth, alignment: .leading)
+                .help(nameExpanded ? "收起长账号名" : "展开完整账号名")
+                .frame(width: metrics.nameW, alignment: .leading)
 
-                Text("调度参数")
+                Button {
+                    sortStore.selectKey(.priority)
+                } label: {
+                    HStack(spacing: 3) {
+                        Text("调度参数")
+                        if sortStore.option.key == .priority {
+                            Text(sortStore.option.ascending ? "↑" : "↓")
+                        }
+                    }
                     .font(DS.fontTableHeader)
                     .foregroundStyle(DS.muted)
-                    .frame(width: 96, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .frame(width: metrics.paramsW, alignment: .leading)
 
                 Text("当前状态")
                     .font(DS.fontTableHeader)
                     .foregroundStyle(DS.muted)
-                    .frame(width: 118, alignment: .leading)
+                    .frame(width: metrics.statusW, alignment: .leading)
 
                 Text("用量窗口")
                     .font(DS.fontTableHeader)
                     .foregroundStyle(DS.muted)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(width: metrics.usageW, alignment: .leading)
 
                 Text("最近报错")
                     .font(DS.fontTableHeader)
                     .foregroundStyle(DS.muted)
-                    .frame(width: 126, alignment: .leading)
+                    .frame(width: metrics.errorW, alignment: .leading)
 
                 Text("允许调度")
                     .font(DS.fontTableHeader)
                     .foregroundStyle(DS.muted)
-                    .frame(width: 56, alignment: .center)
+                    .frame(width: metrics.scheduleW, alignment: .center)
 
                 Text("操作")
                     .font(DS.fontTableHeader)
                     .foregroundStyle(DS.muted)
-                    .frame(width: 214, alignment: .leading)
+                    .frame(width: metrics.actionsW, height: 35, alignment: .leading)
             }
-            .padding(.horizontal, 12)
-            .frame(height: 36)
+            .padding(.horizontal, metrics.horizontalPad)
+            .frame(width: metrics.totalWidth, height: 35, alignment: .leading)
             .background(DS.surfaceSubtle)
+            .overlay(alignment: .trailing) {
+                HStack(spacing: 0) {
+                    Rectangle().fill(DS.line).frame(width: 1)
+                    DS.clear.frame(width: metrics.actionsW + metrics.horizontalPad + metrics.separatorInset - 1)
+                }
+            }
 
             Rectangle().fill(DS.line).frame(height: 1)
 
@@ -340,11 +375,11 @@ public struct AccountsPageView: View {
                     .font(DS.fontCompact)
                     .foregroundStyle(DS.muted)
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 32)
+                    .padding(.vertical, 36)
             } else {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { idx, account in
-                        accountRow(account, nameWidth: nameWidth)
+                        accountRow(account, metrics: metrics)
                         if idx < rows.count - 1 {
                             Rectangle().fill(DS.line).frame(height: 1)
                         }
@@ -352,37 +387,47 @@ public struct AccountsPageView: View {
                 }
             }
         }
+        .frame(width: metrics.totalWidth)
+
+        return SwiftUI.Group {
+            if needsHorizontalScroll {
+                ScrollView(.horizontal, showsIndicators: true) {
+                    tableContent
+                }
+            } else {
+                tableContent
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(DS.surface)
         .overlay(RoundedRectangle(cornerRadius: DS.cardRadius).strokeBorder(DS.line, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: DS.cardRadius))
+        .shadow(color: DS.shadowColor, radius: 2, x: 0, y: 1)
     }
 
-    private func accountRow(_ account: Account, nameWidth: CGFloat) -> some View {
+    private func accountRow(_ account: Account, metrics: TableColumnMetrics) -> some View {
         let checked = selectedIds.contains(account.id)
         let pendingOps = store.operations.pendingForAccount(account.id)
 
-        return HStack(alignment: .center, spacing: 12) {
-            Button {
+        return HStack(alignment: .center, spacing: metrics.gap) {
+            LinearCheckbox(
+                isChecked: checked,
+                accessibilityTitle: "选择 \(account.name)"
+            ) {
                 if checked { selectedIds.remove(account.id) } else { selectedIds.insert(account.id) }
-            } label: {
-                Image(systemName: checked ? "checkmark.square.fill" : "square")
-                    .font(DS.iconFont(13))
-                    .foregroundStyle(checked ? DS.accent : DS.muted)
             }
-            .buttonStyle(.plain)
-            .frame(width: 20)
-            .accessibilityLabel("选择 \(account.name)")
+            .frame(width: metrics.selectW, alignment: .center)
 
             VStack(alignment: .leading, spacing: 3) {
-                if !collapsedAccountName {
-                    Text(account.name)
-                        .font(DS.fontBodySemibold)
-                        .foregroundStyle(DS.ink)
-                        .lineLimit(2)
-                        .help(account.name)
-                }
+                Text(account.name)
+                    .font(DS.fontCompactSemibold)
+                    .foregroundStyle(DS.ink)
+                    .lineLimit(nameExpanded ? 4 : 1)
+                    .truncationMode(.tail)
+                    .help(account.name)
                 Text("#\(account.id)")
-                    .font(DS.fontMono11)
+                    .font(DS.fontResetTime)
+                    .monospacedDigit()
                     .foregroundStyle(DS.muted)
                 Text("\(PlatformMeta.displayName(account.platform)) · \(PlatformMeta.typeLabel(account.type))")
                     .font(DS.fontResetTime)
@@ -394,21 +439,22 @@ public struct AccountsPageView: View {
                         store.operations.isOpen = true
                     } label: {
                         Text("\(pendingOps.count) 项任务进行中")
-                            .font(DS.fontUsageStatMedium)
+                            .font(DS.fontResetTimeMedium)
                             .monospacedDigit()
                             .foregroundStyle(DS.accent)
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .frame(width: nameWidth, alignment: .leading)
+            .frame(width: metrics.nameW, alignment: .leading)
 
             SchedulingParametersView(account: account, store: store)
+                .frame(width: metrics.paramsW, alignment: .leading)
 
             AccountStatusView(account: account) { errId in
                 store.openErrorDetail(id: errId)
             }
-            .frame(width: 118, alignment: .leading)
+            .frame(width: metrics.statusW, alignment: .leading)
 
             UsageCellView(
                 account: account,
@@ -418,9 +464,10 @@ public struct AccountsPageView: View {
                     store.accountModal = .keyQuotaSettings(target)
                 }
             )
+            .frame(width: metrics.usageW, alignment: .leading)
 
             errorCell(account)
-                .frame(width: 126, alignment: .leading)
+                .frame(width: metrics.errorW, alignment: .leading)
 
             LinearSwitch(
                 isOn: account.schedulable,
@@ -429,38 +476,60 @@ public struct AccountsPageView: View {
             ) {
                 Task { await store.toggleSchedulable(account) }
             }
-            .frame(width: 56, alignment: .center)
+            .frame(width: metrics.scheduleW, alignment: .center)
 
-            AccountActionsView(account: account, disabled: !store.state.online) { action in
+            AccountActionsView(
+                account: account,
+                totalWidth: metrics.actionsW,
+                disabled: !store.state.online
+            ) { action in
                 store.triggerAccountAction(action)
             }
+            .frame(width: metrics.actionsW, alignment: .leading)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 12)
-        .background(checked ? DS.accentBg.opacity(0.35) : DS.surface)
+        .padding(.horizontal, metrics.horizontalPad)
+        .padding(.vertical, 10)
+        .frame(width: metrics.totalWidth, alignment: .leading)
+        .background(checked ? DS.accentBg.opacity(0.32) : (hoveredAccountId == account.id ? DS.rowHover : DS.surface))
+        .overlay(alignment: .trailing) {
+            HStack(spacing: 0) {
+                Rectangle().fill(DS.line).frame(width: 1)
+                DS.clear.frame(width: metrics.actionsW + metrics.horizontalPad + metrics.separatorInset - 1)
+            }
+        }
+        .onHover { isHovering in
+            if isHovering {
+                hoveredAccountId = account.id
+            } else if hoveredAccountId == account.id {
+                hoveredAccountId = nil
+            }
+        }
     }
 
     @ViewBuilder
     private func errorCell(_ account: Account) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 4) {
             if let errId = account.last_error_id {
                 Button {
                     store.openErrorDetail(id: errId)
                 } label: {
-                    Text(verbatim: account.last_error_code?.isEmpty == false ? account.last_error_code! : "HTTP \(account.last_error_status ?? 500)")
-                        .font(DS.fontMono11)
-                        .foregroundStyle(DS.bad)
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(verbatim: account.last_error_code?.isEmpty == false ? account.last_error_code! : "HTTP \(account.last_error_status ?? 500)")
+                            .font(DS.fontResetTimeMedium)
+                            .foregroundStyle(DS.bad)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        Text(account.last_error_at == nil ? "错误时间未知" : BeijingTime.fullTime(account.last_error_at))
+                            .font(DS.fontResetTime)
+                            .monospacedDigit()
+                            .foregroundStyle(DS.muted)
+                    }
                 }
                 .buttonStyle(.plain)
-
-                Text(account.last_error_at == nil ? "错误时间未知" : BeijingTime.fullTime(account.last_error_at))
-                    .font(DS.fontResetTime)
-                    .monospacedDigit()
-                    .foregroundStyle(DS.muted)
             } else if !account.error_message.isEmpty || account.last_error_status != nil {
                 Text(account.last_error_at == nil ? "错误时间未知" : BeijingTime.fullTime(account.last_error_at))
                     .font(DS.fontCompactMedium)
+                    .monospacedDigit()
                     .foregroundStyle(DS.ink)
             } else {
                 Text("暂无记录")
@@ -469,13 +538,18 @@ public struct AccountsPageView: View {
             }
 
             if let okAt = account.last_success_at, !okAt.isEmpty {
-                Text("最后成功")
-                    .font(DS.fontUsageStat)
-                    .foregroundStyle(DS.muted)
-                Text(BeijingTime.fullTime(okAt))
-                    .font(DS.fontResetTime)
-                    .monospacedDigit()
-                    .foregroundStyle(DS.muted)
+                let recoveredAfterErr = account.success_after_error
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("最后成功")
+                        .font(DS.fontResetTime)
+                        .foregroundStyle(recoveredAfterErr ? DS.good : DS.muted)
+                    Text(BeijingTime.fullTime(okAt))
+                        .font(DS.fontResetTime)
+                        .monospacedDigit()
+                        .foregroundStyle(recoveredAfterErr ? DS.good : DS.muted)
+                }
+                .padding(.top, 2)
+                .help(recoveredAfterErr ? "最近报错后已有成功调用" : "最后成功调用时间")
             }
         }
     }

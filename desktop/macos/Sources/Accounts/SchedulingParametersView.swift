@@ -101,7 +101,8 @@ public struct SchedulingParametersView: View {
                 }
             }
         }
-        .frame(width: 96)
+        .padding(.trailing, 8)
+        .frame(maxWidth: .infinity)
     }
 
     private func saveParameter(action: String, key: String, value: Int?) async throws {

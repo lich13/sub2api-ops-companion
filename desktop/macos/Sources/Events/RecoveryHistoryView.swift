@@ -14,6 +14,8 @@ public struct RecoveryHistoryView: View {
     @State private var nextCursor: Int?
     @State private var loading: Bool = false
     @State private var error: String = ""
+    @State private var viewportWidth: CGFloat = 1100
+    @State private var hoveredRowId: Int? = nil
 
     public init(online: Bool, connectionKey: String, initialItems: [Recovery] = []) {
         self.online = online
@@ -21,18 +23,22 @@ public struct RecoveryHistoryView: View {
         self.initialItems = initialItems
     }
 
+    private var displayItems: [Recovery] {
+        items.isEmpty ? initialItems : items
+    }
+
     public var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("自动恢复与定时测活记录 · \(displayItems.count) 条")
-                    .font(DS.fontCompactMedium)
+                Text("\(displayItems.count) 条记录")
+                    .font(DS.fontCompact)
                     .monospacedDigit()
                     .foregroundStyle(DS.muted)
                 Spacer()
                 Button("刷新记录") {
                     Task { await load(replace: true) }
                 }
-                .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
+                .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
                 .disabled(!online || loading)
             }
 
@@ -53,13 +59,30 @@ public struct RecoveryHistoryView: View {
                 Text(loading ? "正在读取恢复记录…" : "暂无自动恢复记录")
                     .font(DS.fontCompact)
                     .foregroundStyle(DS.muted)
-                    .padding(.vertical, 14)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 28)
+                    .background(DS.surface)
+                    .overlay(RoundedRectangle(cornerRadius: DS.cardRadius).strokeBorder(DS.line, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: DS.cardRadius))
             } else {
-                VStack(spacing: 8) {
-                    ForEach(displayItems) { row in
-                        rowCard(row)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        headerRow
+                        Rectangle().fill(DS.line).frame(height: 1)
+                        ForEach(Array(displayItems.enumerated()), id: \.element.id) { idx, row in
+                            tableRow(row)
+                            if idx < displayItems.count - 1 {
+                                Rectangle().fill(DS.line).frame(height: 1)
+                            }
+                        }
                     }
+                    .frame(minWidth: max(960, viewportWidth), maxWidth: .infinity, alignment: .leading)
                 }
+                .focusEffectDisabled()
+                .background(LinearWidthObserver { viewportWidth = $0 })
+                .background(DS.surface)
+                .overlay(RoundedRectangle(cornerRadius: DS.cardRadius).strokeBorder(DS.line, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: DS.cardRadius))
             }
 
             if nextCursor != nil {
@@ -76,76 +99,130 @@ public struct RecoveryHistoryView: View {
         }
     }
 
-    private var displayItems: [Recovery] {
-        items.isEmpty ? initialItems : items
+    private var headerRow: some View {
+        HStack(spacing: 12) {
+            Text("账号")
+                .frame(minWidth: 180, maxWidth: .infinity, alignment: .leading)
+            Text("恢复类型")
+                .frame(width: 84, alignment: .leading)
+            Text("验证方式")
+                .frame(width: 84, alignment: .leading)
+            Text("测试模型")
+                .frame(width: 132, alignment: .leading)
+            Text("尝试次数")
+                .frame(width: 68, alignment: .trailing)
+                .padding(.trailing, 14)
+            Text("用卡时间")
+                .frame(width: 124, alignment: .leading)
+            Text("测试完成时间")
+                .frame(width: 124, alignment: .leading)
+            Text("结果 / 恢复时间")
+                .frame(width: 124, alignment: .leading)
+        }
+        .font(DS.fontTableHeader)
+        .foregroundStyle(DS.muted)
+        .padding(.horizontal, 14)
+        .frame(height: 36)
+        .background(DS.surfaceSubtle)
     }
 
-    private func rowCard(_ row: Recovery) -> some View {
-        HStack(alignment: .center, spacing: 10) {
-            StatusDot(row.recovered_at != nil || row.result_status == "completed" ? .good : .warning)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(row.account_name.isEmpty ? "账号 #\(row.account_id)" : row.account_name)
-                        .font(DS.fontBodySemibold)
-                        .foregroundStyle(DS.ink)
-                    Text("#\(row.account_id)")
-                        .font(DS.fontMono11)
-                        .foregroundStyle(DS.muted)
-                    kindBadge(row)
-                    if !row.model_id.isEmpty {
-                        Text(verbatim: row.model_id)
-                            .font(DS.fontMono11)
-                            .foregroundStyle(DS.muted)
-                    }
-                }
-                HStack(spacing: 10) {
-                    if let attempts = row.attempt_count, attempts > 0 {
-                        Text("尝试 \(attempts) 次")
-                    }
-                    if let tested = row.test_completed_at, !tested.isEmpty {
-                        Text("验证 \(BeijingTime.fullTime(tested))")
-                    }
-                    if let rec = row.recovered_at, !rec.isEmpty {
-                        Text("恢复 \(BeijingTime.fullTime(rec))")
-                    }
-                }
-                .font(DS.fontResetTime)
+    private func tableRow(_ row: Recovery) -> some View {
+        let kindLabel: String = {
+            if row.kind == "connection_test" { return "预约测试" }
+            if row.kind == "reset_credit" || row.reset_credit != nil { return "用卡恢复" }
+            return "额度恢复"
+        }()
+
+        let verificationLabel: String = {
+            if row.kind == "connection_test" { return "测试连接" }
+            if let method = row.reset_credit?.verification_method {
+                if method == "connection_test" { return "测试连接" }
+                if method == "model_test" { return "模型测试" }
+                return method
+            }
+            return "—"
+        }()
+
+        let cardTime: String = {
+            guard let completed = row.reset_credit?.completed_at, !completed.isEmpty else { return "—" }
+            return BeijingTime.fullTime(completed)
+        }()
+
+        let testTime: String = {
+            guard let completed = row.test_completed_at, !completed.isEmpty else { return "—" }
+            return BeijingTime.fullTime(completed)
+        }()
+
+        let resultOrRecovered: String = {
+            if let rec = row.recovered_at, !rec.isEmpty {
+                return BeijingTime.fullTime(rec)
+            }
+            switch row.result_status {
+            case "completed": return "已完成"
+            case "failed": return "失败"
+            case "cancelled": return "已取消"
+            default: return "—"
+            }
+        }()
+
+        return HStack(alignment: .center, spacing: 12) {
+            Text(row.account_name.isEmpty ? "账号 #\(row.account_id)" : row.account_name)
+                .font(DS.fontCompactMedium)
+                .foregroundStyle(DS.ink)
+                .lineLimit(2)
+                .frame(minWidth: 180, maxWidth: .infinity, alignment: .leading)
+
+            Text(kindLabel)
+                .font(DS.fontCompact)
+                .foregroundStyle(DS.ink)
+                .frame(width: 84, alignment: .leading)
+
+            Text(verificationLabel)
+                .font(DS.fontCompact)
+                .foregroundStyle(verificationLabel == "—" ? DS.muted : DS.ink)
+                .frame(width: 84, alignment: .leading)
+
+            Text(verbatim: row.model_id.isEmpty ? "—" : row.model_id)
+                .font(row.model_id.isEmpty ? DS.fontCompact : DS.fontCompact)
+                .foregroundStyle(row.model_id.isEmpty ? DS.muted : DS.ink)
+                .lineLimit(1)
+                .frame(width: 132, alignment: .leading)
+
+            Text(row.attempt_count.map(String.init) ?? "—")
+                .font(DS.fontCompact)
+                .monospacedDigit()
+                .foregroundStyle(row.attempt_count == nil ? DS.muted : DS.ink)
+                .frame(width: 68, alignment: .trailing)
+                .padding(.trailing, 14)
+
+            Text(cardTime)
+                .font(DS.fontCompact)
                 .monospacedDigit()
                 .foregroundStyle(DS.muted)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(DS.surface)
-        .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-    }
+                .frame(width: 124, alignment: .leading)
 
-    private func kindBadge(_ row: Recovery) -> some View {
-        let label: String
-        let fg: Color
-        let bg: Color
-        if row.kind == "reset_credit" || row.reset_credit != nil {
-            label = "自动用卡恢复"
-            fg = DS.accent
-            bg = DS.accentBg
-        } else if row.kind == "connection_test" {
-            label = "定时测活"
-            fg = DS.windowEmerald
-            bg = DS.windowEmeraldBg
-        } else {
-            label = "额度恢复"
-            fg = DS.good
-            bg = DS.goodBg
+            Text(testTime)
+                .font(DS.fontCompact)
+                .monospacedDigit()
+                .foregroundStyle(DS.muted)
+                .frame(width: 124, alignment: .leading)
+
+            Text(resultOrRecovered)
+                .font(DS.fontCompact)
+                .monospacedDigit()
+                .foregroundStyle(DS.muted)
+                .frame(width: 124, alignment: .leading)
         }
-        return Text(label)
-            .font(DS.fontResetTimeSemibold)
-            .foregroundStyle(fg)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 1)
-            .background(bg)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(hoveredRowId == row.id ? DS.rowHover : DS.clear)
+        .onHover { hovering in
+            if hovering {
+                hoveredRowId = row.id
+            } else if hoveredRowId == row.id {
+                hoveredRowId = nil
+            }
+        }
     }
 
     private func load(replace: Bool) async {

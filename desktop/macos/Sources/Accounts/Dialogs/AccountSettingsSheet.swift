@@ -21,11 +21,86 @@ public enum AccountSettingsTab: String, CaseIterable, Sendable {
     }
 }
 
-private struct AccountSettingsPayload: Decodable, Sendable {
-    var whitelist: [String]?
-    var mapping: [String: String]?
+public struct AccountModelMappingRule: Codable, Sendable, Equatable {
+    public var source: String
+    public var target: String
+
+    public init(source: String = "", target: String = "") {
+        self.source = source
+        self.target = target
+    }
+}
+
+public struct AccountModelProfile: Codable, Sendable, Equatable {
+    public var whitelist: [String]
+    public var mappings: [AccountModelMappingRule]
+
+    public init(whitelist: [String] = [], mappings: [AccountModelMappingRule] = []) {
+        self.whitelist = whitelist
+        self.mappings = mappings
+    }
+
+    public static func validate(_ profile: AccountModelProfile) -> String {
+        var seen = Set<String>()
+        let exactRegex = try? NSRegularExpression(pattern: "^[A-Za-z0-9._:/-]{1,200}$")
+        let sourceRegex = try? NSRegularExpression(pattern: "^(?:[A-Za-z0-9._:/-]{1,199}\\*?|\\*)$")
+
+        func matches(_ text: String, _ regex: NSRegularExpression?) -> Bool {
+            guard let regex else { return !text.isEmpty }
+            let range = NSRange(text.startIndex..<text.endIndex, in: text)
+            return regex.firstMatch(in: text, range: range) != nil
+        }
+
+        for model in profile.whitelist {
+            if !matches(model, exactRegex) {
+                return "白名单必须是精确模型 ID"
+            }
+            if !seen.insert(model).inserted {
+                return "重复的模型：\(model)"
+            }
+        }
+        for rule in profile.mappings {
+            if !matches(rule.source, sourceRegex) || !matches(rule.target, exactRegex) {
+                return "映射源只允许末尾通配符，目标必须是精确模型 ID"
+            }
+            if seen.contains(rule.source) || rule.source == rule.target {
+                return "模型条目冲突：\(rule.source)"
+            }
+            seen.insert(rule.source)
+        }
+        return ""
+    }
+
+    public var policySummary: String {
+        if whitelist.isEmpty && mappings.isEmpty {
+            return "不限制模型"
+        }
+        let items = whitelist + mappings.map { "\($0.source) → \($0.target)" }
+        return items.joined(separator: "、")
+    }
+}
+
+private struct AccountSettingsCapabilityItem: Decodable, Sendable, Equatable {
+    var editable: Bool
+    var reason: String
+}
+
+private struct AccountSettingsResponse: Decodable, Sendable {
+    var account_id: Int
+    var priority: Int?
+    var concurrency: Int?
+    var load_factor: Int?
+    var effective_load_factor: Int?
     var proxy_id: Int?
-    var version: String?
+    var model_config: AccountModelProfile
+    var capabilities: [String: AccountSettingsCapabilityItem]
+    var versions: [String: String]
+}
+
+private struct SyncModelsResponse: Decodable, Sendable {
+    var models: [String]
+    var warnings: [String]
+    var synced_at: String?
 }
 
 public struct AccountSettingsSheet: View {
@@ -35,17 +110,19 @@ public struct AccountSettingsSheet: View {
     public let onClose: () -> Void
 
     @State private var tab: AccountSettingsTab
-    @State private var whitelistRows: [String] = []
-    @State private var origWhitelist: [String] = []
-    @State private var mappingRows: [KeyValuePairDraft] = []
-    @State private var origMapping: [String: String] = [:]
+    @State private var settings: AccountSettingsResponse?
+    @State private var profile = AccountModelProfile()
     @State private var selectedProxyId: Int? = nil
-    @State private var origProxyId: Int? = nil
-    @State private var loadedVersion: String = ""
-    @State private var loading: Bool = false
+    @State private var proxyRefreshNonce: Int = 0
+    @State private var catalog: SyncModelsResponse?
+    @State private var query: String = ""
+    @State private var selectedCatalogModels: Set<String> = []
+    @State private var loading: Bool = true
     @State private var saving: Bool = false
+    @State private var syncing: Bool = false
     @State private var confirmDiscard: Bool = false
     @State private var error: String = ""
+    @State private var notice: String = ""
 
     public init(account: Account, store: AppStore, initialTab: AccountSettingsTab, onClose: @escaping () -> Void) {
         self.account = account
@@ -55,219 +132,419 @@ public struct AccountSettingsSheet: View {
         self._tab = State(initialValue: initialTab)
     }
 
-    private var currentWhitelistNormalized: [String] {
-        whitelistRows.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    private var isProxyMode: Bool {
+        initialTab == .proxy || tab == .proxy
     }
 
-    private var currentMappingNormalized: [String: String] {
-        Dictionary(
-            mappingRows.compactMap { pair -> (String, String)? in
-                let k = pair.key.trimmingCharacters(in: .whitespacesAndNewlines)
-                let v = pair.value.trimmingCharacters(in: .whitespacesAndNewlines)
-                return (!k.isEmpty && !v.isEmpty) ? (k, v) : nil
-            },
-            uniquingKeysWith: { _, last in last }
-        )
+    private var currentAction: String {
+        isProxyMode ? "proxy" : "model_config"
     }
 
-    private var isModelDirty: Bool {
-        currentWhitelistNormalized != origWhitelist || currentMappingNormalized != origMapping
-    }
-
-    private var isProxyDirty: Bool {
-        selectedProxyId != origProxyId
+    private var writable: Bool {
+        settings?.capabilities[currentAction]?.editable ?? false
     }
 
     private var isDirty: Bool {
-        isModelDirty || isProxyDirty
+        guard let settings else { return false }
+        if isProxyMode {
+            return selectedProxyId != settings.proxy_id
+        }
+        return profile != settings.model_config
+    }
+
+    private var validationMessage: String {
+        isProxyMode ? "" : AccountModelProfile.validate(profile)
     }
 
     public var body: some View {
         ZStack {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(tab.heading) · \(account.name)")
-                            .font(DS.fontDialogTitle)
-                            .foregroundStyle(DS.ink)
-                        Text("#\(account.id) · \(PlatformMeta.displayName(account.platform))")
-                            .font(DS.fontResetTime)
-                            .monospacedDigit()
-                            .foregroundStyle(DS.muted)
-                    }
-                    Spacer()
-                    LinearIconButton(systemName: "xmark", label: "关闭账号设置", disabled: saving) {
-                        requestClose(fromEscape: false)
-                    }
-                }
-
-                HStack(spacing: 4) {
-                    ForEach(AccountSettingsTab.allCases, id: \.rawValue) { item in
-                        Button(item.label) {
-                            tab = item
+            LinearModalCard(
+                title: isProxyMode ? "选择代理" : "模型配置",
+                subtitle: "\(account.name) · #\(account.id)",
+                width: 560,
+                closeDisabled: saving,
+                onClose: { requestClose(fromEscape: false) }
+            ) {
+                if !isProxyMode {
+                    LinearUnderlineTabs(
+                        items: [
+                            LinearTabItem(id: AccountSettingsTab.whitelist, label: "模型白名单"),
+                            LinearTabItem(id: AccountSettingsTab.mapping, label: "模型映射"),
+                        ],
+                        selection: tab,
+                        onSelect: { next in
+                            tab = next
+                            query = ""
                         }
-                        .buttonStyle(LinearButtonStyle(variant: tab == item ? .selectedGhost : .ghost, compact: true))
-                    }
+                    )
                 }
 
                 if loading {
-                    Text("正在读取账号设置…")
-                        .font(DS.fontCompact)
-                        .foregroundStyle(DS.muted)
-                        .padding(.vertical, 20)
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("正在读取账号设置…")
+                            .font(DS.fontCompact)
+                            .foregroundStyle(DS.muted)
+                    }
+                    .padding(.vertical, 20)
+                } else if settings == nil {
+                    HStack {
+                        Text(error.isEmpty ? "无法读取账号设置" : error)
+                            .font(DS.fontCompact)
+                            .foregroundStyle(DS.bad)
+                        Spacer()
+                        Button("重新读取") {
+                            Task { await load() }
+                        }
+                        .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                    }
                 } else {
-                    switch tab {
-                    case .whitelist:
-                        whitelistEditor
-                    case .mapping:
-                        mappingEditor
-                    case .proxy:
+                    if !writable, let reason = settings?.capabilities[currentAction]?.reason, !reason.isEmpty {
+                        Text(reason)
+                            .font(DS.fontCompact)
+                            .foregroundStyle(DS.warn)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(DS.warnBg)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+
+                    if isProxyMode {
+                        HStack {
+                            Text("配置此账号发起上游请求时使用的出口代理")
+                                .font(DS.fontCompact)
+                                .foregroundStyle(DS.muted)
+                            Spacer()
+                            Button {
+                                error = ""
+                                proxyRefreshNonce &+= 1
+                            } label: {
+                                Label("刷新代理", systemImage: "arrow.clockwise")
+                            }
+                            .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                            .disabled(saving || !store.state.online)
+                        }
+
                         ProxyOptionsPickerView(
                             selectedProxyId: $selectedProxyId,
                             online: store.state.online,
-                            connectionKey: store.connectionKey
+                            connectionKey: "\(store.connectionKey):\(proxyRefreshNonce)"
                         )
+                        .disabled(!writable || saving)
+                    } else {
+                        if profile.whitelist.isEmpty && profile.mappings.isEmpty {
+                            Text("当前不限制模型（上游支持的全部模型均可调度）")
+                                .font(DS.fontCompact)
+                                .foregroundStyle(DS.muted)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(DS.surfaceSubtle)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+
+                        if tab == .whitelist {
+                            whitelistEditor
+                        } else {
+                            mappingEditor
+                        }
                     }
                 }
 
-                if !error.isEmpty {
-                    Text(error)
+                let alertText = !error.isEmpty ? error : validationMessage
+                if !alertText.isEmpty {
+                    Text(alertText)
                         .font(DS.fontCompact)
                         .foregroundStyle(DS.bad)
                 }
-
-                HStack(spacing: 10) {
-                    Spacer()
-                    Button("取消") {
-                        requestClose(fromEscape: false)
-                    }
-                    .buttonStyle(LinearButtonStyle(variant: .secondary))
-                    .disabled(saving)
-
-                    Button(saving ? "保存中…" : "保存") {
-                        Task { await save() }
-                    }
-                    .buttonStyle(LinearButtonStyle(variant: .primary))
-                    .disabled(!store.state.online || loading || saving || !isDirty)
+                if !notice.isEmpty {
+                    Text(notice)
+                        .font(DS.fontCompact)
+                        .foregroundStyle(DS.muted)
                 }
+            } footer: {
+                Button("放弃修改") {
+                    if let settings {
+                        profile = settings.model_config
+                        selectedProxyId = settings.proxy_id
+                        error = ""
+                        notice = ""
+                    }
+                }
+                .buttonStyle(LinearButtonStyle(variant: .secondary))
+                .disabled(!isDirty || saving)
+
+                Spacer()
+
+                Button("取消") {
+                    requestClose(fromEscape: false)
+                }
+                .buttonStyle(LinearButtonStyle(variant: .secondary))
+                .disabled(saving)
+
+                Button {
+                    Task { await save() }
+                } label: {
+                    Label(saving ? "保存中…" : "保存", systemImage: "checkmark")
+                }
+                .buttonStyle(LinearButtonStyle(variant: .primary))
+                .disabled(!store.state.online || loading || saving || !writable || !isDirty || !validationMessage.isEmpty)
             }
-            .padding(22)
-            .frame(width: 540)
-            .background(DS.surface)
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DS.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
             .sub2opsDialogFocus {
                 requestClose(fromEscape: true)
             }
 
             if confirmDiscard {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("放弃未保存的更改？")
-                        .font(DS.fontSectionTitle)
-                        .foregroundStyle(DS.ink)
-                    HStack(spacing: 8) {
-                        Spacer()
-                        Button("继续编辑") {
-                            confirmDiscard = false
-                        }
-                        .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                        Button("放弃修改", action: onClose)
-                            .buttonStyle(LinearButtonStyle(variant: .danger, compact: true))
-                    }
-                }
-                .padding(18)
-                .frame(width: 320)
-                .background(DS.surface)
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(DS.lineStrong, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .shadow(color: DS.shadowColor, radius: 12, x: 0, y: 4)
+                discardConfirmCard
             }
         }
-        .task {
+        .task(id: account.id) {
             await load()
         }
     }
 
     private var whitelistEditor: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("允许调度的模型 ID（留空表示不限制）")
-                    .font(DS.fontCompact)
-                    .foregroundStyle(DS.muted)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text("放行模型")
+                    .font(DS.fontCompactSemibold)
+                    .foregroundStyle(DS.ink)
                 Spacer()
-                Button("添加模型") {
-                    whitelistRows.append("")
+                Button {
+                    profile.whitelist.append("")
+                } label: {
+                    Label("添加模型", systemImage: "plus")
                 }
                 .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                .disabled(!writable || saving)
+
+                let canSync = settings?.capabilities["sync_models"]?.editable ?? false
+                Button {
+                    Task { await syncModels() }
+                } label: {
+                    Label(syncing ? "同步中…" : "同步上游模型", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                .disabled(!store.state.online || saving || syncing || !canSync)
             }
-            ScrollView {
-                VStack(spacing: 6) {
-                    ForEach(whitelistRows.indices, id: \.self) { idx in
-                        HStack(spacing: 6) {
-                            TextField(text: $whitelistRows[idx], prompt: Text(verbatim: "白名单模型 \(idx + 1)")) { EmptyView() }
-                                .textFieldStyle(.plain)
-                                .font(DS.fontMono12)
-                                .padding(.horizontal, 8)
-                                .frame(height: DS.controlHeightCompact)
-                                .background(DS.surface)
-                                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(DS.line, lineWidth: 1))
-                            LinearIconButton(systemName: "trash", label: "删除白名单项", size: 12) {
-                                whitelistRows.remove(at: idx)
+
+            if !profile.whitelist.isEmpty {
+                LinearBoundedScrollView(maxHeight: 190) {
+                    VStack(spacing: 6) {
+                        ForEach(Array(profile.whitelist.enumerated()), id: \.offset) { idx, current in
+                            HStack(spacing: 6) {
+                                TrimmedEntryField(
+                                    value: current,
+                                    prompt: "白名单模型 \(idx + 1)",
+                                    font: DS.fontCompact,
+                                    horizontalPadding: 10,
+                                    height: DS.controlHeightCompact,
+                                    cornerRadius: 6,
+                                    disabled: !writable || saving
+                                ) { trimmed in
+                                    if profile.whitelist.indices.contains(idx) {
+                                        profile.whitelist[idx] = trimmed
+                                    }
+                                }
+
+                                LinearIconButton(
+                                    systemName: "xmark",
+                                    label: "移除白名单 \(idx + 1)",
+                                    size: 12,
+                                    boxSize: 28,
+                                    disabled: !writable || saving
+                                ) {
+                                    if profile.whitelist.indices.contains(idx) {
+                                        profile.whitelist.remove(at: idx)
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
-            .frame(maxHeight: 220)
+
+            if let catalog {
+                syncedCatalogSection(catalog)
+            }
         }
     }
 
-    private var mappingEditor: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("请求模型 -> 上游转发模型（支持 * 通配符）")
-                    .font(DS.fontCompact)
+    private func syncedCatalogSection(_ catalog: SyncModelsResponse) -> some View {
+        let present = Set(profile.whitelist)
+        let sourceSet = Set(profile.mappings.map(\.source))
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let candidates = catalog.models.filter { q.isEmpty || $0.lowercased().contains(q) }
+        let missing = candidates.filter { !present.contains($0) && !sourceSet.contains($0) }
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                LinearSearchField(text: $query, prompt: "搜索支持模型", height: 30, compactFont: true)
+                Text("\(catalog.models.count) 个模型")
+                    .font(DS.fontPriorityMeta)
+                    .monospacedDigit()
                     .foregroundStyle(DS.muted)
-                Spacer()
-                Button("添加映射") {
-                    mappingRows.append(KeyValuePairDraft())
+                Button("全选缺少项") {
+                    selectedCatalogModels.formUnion(missing)
                 }
                 .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                .disabled(saving || !writable || missing.isEmpty)
+
+                Button("添加所选") {
+                    let additions = catalog.models.filter {
+                        selectedCatalogModels.contains($0) && !present.contains($0) && !sourceSet.contains($0)
+                    }
+                    if profile.whitelist.count + additions.count > 300 {
+                        error = "白名单最多 300 项"
+                        return
+                    }
+                    profile.whitelist.append(contentsOf: additions)
+                    selectedCatalogModels.removeAll()
+                }
+                .buttonStyle(LinearButtonStyle(variant: .primary, compact: true))
+                .disabled(saving || !writable || selectedCatalogModels.isEmpty)
             }
-            ScrollView {
-                VStack(spacing: 6) {
-                    ForEach($mappingRows) { $pair in
-                        HStack(spacing: 6) {
-                            TextField(text: $pair.key, prompt: Text(verbatim: "请求模型")) { EmptyView() }
-                                .textFieldStyle(.plain)
-                                .font(DS.fontMono12)
-                                .padding(.horizontal, 8)
-                                .frame(height: DS.controlHeightCompact)
-                                .background(DS.surface)
-                                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(DS.line, lineWidth: 1))
-                            Image(systemName: "arrow.right")
-                                .font(DS.iconFont(11))
-                                .foregroundStyle(DS.muted)
-                            TextField(text: $pair.value, prompt: Text(verbatim: "转发模型")) { EmptyView() }
-                                .textFieldStyle(.plain)
-                                .font(DS.fontMono12)
-                                .padding(.horizontal, 8)
-                                .frame(height: DS.controlHeightCompact)
-                                .background(DS.surface)
-                                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(DS.line, lineWidth: 1))
-                            LinearIconButton(systemName: "trash", label: "删除映射项", size: 12) {
-                                mappingRows.removeAll { $0.id == pair.id }
+
+            ForEach(catalog.warnings, id: \.self) { w in
+                Text(w).font(DS.fontResetTime).foregroundStyle(DS.muted)
+            }
+
+            LinearBoundedScrollView(maxHeight: 130) {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(candidates, id: \.self) { model in
+                        let conflict = sourceSet.contains(model)
+                        let added = present.contains(model)
+                        HStack(spacing: 8) {
+                            LinearCheckbox(
+                                isChecked: selectedCatalogModels.contains(model),
+                                label: model,
+                                disabled: saving || !writable || conflict || added
+                            ) {
+                                if selectedCatalogModels.contains(model) {
+                                    selectedCatalogModels.remove(model)
+                                } else {
+                                    selectedCatalogModels.insert(model)
+                                }
+                            }
+                            Spacer()
+                            if conflict || added {
+                                Text(conflict ? "与映射源冲突" : "已添加")
+                                    .font(DS.fontResetTime)
+                                    .foregroundStyle(DS.muted)
                             }
                         }
                     }
                 }
             }
-            .frame(maxHeight: 220)
         }
+        .padding(10)
+        .background(DS.surfaceSubtle)
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(DS.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var mappingEditor: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("请求模型 → 转发模型（源末尾支持 * 通配符）")
+                    .font(DS.fontCompactSemibold)
+                    .foregroundStyle(DS.ink)
+                Spacer()
+                Button {
+                    profile.mappings.append(AccountModelMappingRule())
+                } label: {
+                    Label("添加映射", systemImage: "plus")
+                }
+                .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                .disabled(!writable || saving)
+            }
+
+            if !profile.mappings.isEmpty {
+                LinearBoundedScrollView(maxHeight: 220) {
+                    VStack(spacing: 6) {
+                        ForEach(Array(profile.mappings.enumerated()), id: \.offset) { idx, rule in
+                            HStack(spacing: 6) {
+                                TrimmedEntryField(
+                                    value: rule.source,
+                                    prompt: "请求模型",
+                                    font: DS.fontCompact,
+                                    horizontalPadding: 10,
+                                    height: DS.controlHeightCompact,
+                                    cornerRadius: 6,
+                                    disabled: !writable || saving
+                                ) { trimmed in
+                                    if profile.mappings.indices.contains(idx) {
+                                        profile.mappings[idx].source = trimmed
+                                    }
+                                }
+
+                                Image(systemName: "arrow.right")
+                                    .font(DS.iconFont(11, weight: .semibold))
+                                    .foregroundStyle(DS.muted)
+
+                                TrimmedEntryField(
+                                    value: rule.target,
+                                    prompt: "转发模型",
+                                    font: DS.fontCompact,
+                                    horizontalPadding: 10,
+                                    height: DS.controlHeightCompact,
+                                    cornerRadius: 6,
+                                    disabled: !writable || saving
+                                ) { trimmed in
+                                    if profile.mappings.indices.contains(idx) {
+                                        profile.mappings[idx].target = trimmed
+                                    }
+                                }
+
+                                LinearIconButton(
+                                    systemName: "xmark",
+                                    label: "移除映射 \(idx + 1)",
+                                    size: 12,
+                                    boxSize: 28,
+                                    disabled: !writable || saving
+                                ) {
+                                    if profile.mappings.indices.contains(idx) {
+                                        profile.mappings.remove(at: idx)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var discardConfirmCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("放弃未保存的更改？")
+                .font(DS.fontSectionTitle)
+                .foregroundStyle(DS.ink)
+            HStack(spacing: 8) {
+                Spacer()
+                Button("继续编辑") {
+                    confirmDiscard = false
+                }
+                .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                Button("放弃修改", action: onClose)
+                    .buttonStyle(LinearButtonStyle(variant: .danger, compact: true))
+            }
+        }
+        .padding(18)
+        .frame(width: 320)
+        .background(DS.surface)
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(DS.lineStrong, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .shadow(color: DS.modalShadowColor, radius: 16, x: 0, y: 8)
     }
 
     private func requestClose(fromEscape: Bool) {
         guard !saving else { return }
+        if confirmDiscard {
+            confirmDiscard = false
+            return
+        }
         if isDirty {
             if !fromEscape {
                 confirmDiscard = true
@@ -278,58 +555,78 @@ public struct AccountSettingsSheet: View {
     }
 
     private func load() async {
-        guard store.state.online else { return }
+        guard store.state.online else {
+            loading = false
+            return
+        }
         loading = true
+        error = ""
         defer { loading = false }
         do {
-            let loaded: AccountSettingsPayload = try await RustBridge.shared.api("GET", "/accounts/\(account.id)/settings")
-            let wl = loaded.whitelist ?? []
-            origWhitelist = wl
-            whitelistRows = wl.isEmpty ? [""] : wl
-            let mp = loaded.mapping ?? [:]
-            origMapping = mp
-            mappingRows = mp.sorted { $0.key < $1.key }.map { KeyValuePairDraft(key: $0.key, value: $0.value) }
-            origProxyId = loaded.proxy_id
+            let loaded: AccountSettingsResponse = try await RustBridge.shared.api("GET", "/accounts/\(account.id)/settings")
+            settings = loaded
+            profile = loaded.model_config
             selectedProxyId = loaded.proxy_id
-            loadedVersion = loaded.version ?? account.version
-            error = ""
         } catch {
             self.error = error.localizedDescription
         }
     }
 
+    private func syncModels() async {
+        guard let settings, store.state.online, !syncing else { return }
+        syncing = true
+        error = ""
+        catalog = nil
+        selectedCatalogModels.removeAll()
+        notice = "正在同步上游模型…"
+        defer { syncing = false }
+        do {
+            let result = try await store.operations.accountOperation(
+                account: account,
+                action: "sync_models",
+                payload: [:],
+                expectedVersion: settings.versions["sync_models"]
+            )
+            let data = try JSONEncoder().encode(JSONValue.object(result))
+            catalog = try JSONDecoder().decode(SyncModelsResponse.self, from: data)
+            notice = ""
+        } catch {
+            notice = ""
+            self.error = error.localizedDescription
+        }
+    }
+
     private func save() async {
-        guard store.state.online, !saving else { return }
+        guard let settings, store.state.online, writable, isDirty, validationMessage.isEmpty, !saving else { return }
         saving = true
         error = ""
+        notice = "正在保存…"
         defer { saving = false }
         do {
-            if isModelDirty {
-                let ver = account.operation_versions["model_config"] ?? loadedVersion
-                _ = try await store.operations.accountOperation(
-                    account: account,
-                    action: "model_config",
-                    payload: [
-                        "whitelist": .array(currentWhitelistNormalized.map(JSONValue.string)),
-                        "mapping": .object(currentMappingNormalized.mapValues(JSONValue.string)),
-                    ],
-                    expectedVersion: ver
-                )
+            let payload: [String: JSONValue]
+            if isProxyMode {
+                payload = ["proxy_id": selectedProxyId.map { .int(Int64($0)) } ?? .null]
+            } else {
+                payload = [
+                    "whitelist": .array(profile.whitelist.map(JSONValue.string)),
+                    "mappings": .array(profile.mappings.map {
+                        .object(["source": .string($0.source), "target": .string($0.target)])
+                    }),
+                ]
             }
-            if isProxyDirty {
-                let ver = account.operation_versions["proxy"] ?? loadedVersion
-                _ = try await store.operations.accountOperation(
-                    account: account,
-                    action: "proxy",
-                    payload: [
-                        "proxy_id": selectedProxyId.map { .int(Int64($0)) } ?? .null,
-                    ],
-                    expectedVersion: ver
-                )
+            let result = try await store.operations.accountOperation(
+                account: account,
+                action: currentAction,
+                payload: payload,
+                expectedVersion: settings.versions[currentAction]
+            )
+            if result["verified"]?.boolValue == false {
+                throw RustBridgeError("保存尚未确认，请在待办中查看")
             }
             store.showToast("已保存 \(account.name) 设置")
             onClose()
         } catch {
+            notice = ""
             self.error = error.localizedDescription
         }
     }

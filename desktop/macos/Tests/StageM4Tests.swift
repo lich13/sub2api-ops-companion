@@ -135,8 +135,47 @@ struct StageM4Tests {
         }
         """
 
+        let recoveriesJSON = """
+        {
+          "items": [
+            {
+              "id": 301,
+              "account_id": 101,
+              "account_name": "Codex · 主力",
+              "model_id": "gpt-6-sol",
+              "test_completed_at": "2026-11-17T11:43:05Z",
+              "recovered_at": null,
+              "legacy": false,
+              "kind": "connection_test",
+              "result_status": "completed",
+              "attempt_count": 1,
+              "reset_credit": null
+            },
+            {
+              "id": 302,
+              "account_id": 101,
+              "account_name": "Codex · 主力",
+              "model_id": "gpt-6-luna",
+              "test_completed_at": "2026-11-17T11:43:05Z",
+              "recovered_at": "2026-11-17T11:50:05Z",
+              "legacy": false,
+              "kind": "reset_credit",
+              "result_status": "completed",
+              "attempt_count": 3,
+              "reset_credit": {
+                "consumed": true,
+                "completed_at": "2026-11-17T11:43:05Z",
+                "verification_method": "model_test"
+              }
+            }
+          ],
+          "next_cursor": null
+        }
+        """
+
         RustBridge.shared.setMockHandler { _, payload in
             if payload.contains("/detection-logs") { return logsJSON }
+            if payload.contains("/recoveries") { return recoveriesJSON }
             if payload.contains("/errors") { return errorsJSON }
             return recordsJSON
         }
@@ -186,9 +225,77 @@ struct StageM4Tests {
                 dark: dark,
                 outputURL: baseURL.appendingPathComponent("m4_detection_logs_\(suffix).png")
             )
+            let recoveriesView = EventsPageView(store: eventsStore, initialTab: .recoveries)
+                .padding(24)
+                .frame(width: 1090, height: 360, alignment: .topLeading)
+                .background(DS.canvas)
+            try await SnapshotRenderUtility.renderPNGAsync(
+                view: recoveriesView,
+                size: CGSize(width: 1090, height: 360),
+                dark: dark,
+                outputURL: baseURL.appendingPathComponent("m4_recoveries_\(suffix).png")
+            )
         }
         recStore.page = .settings
         eventsStore.page = .settings
+
+        // Also render 25-row vertical scroll case to ensure sticky header + sticky left column + footer stay intact
+        let manyItems = (1...25).map { idx in
+            """
+            {
+              "id": \(300 + idx),
+              "created_at": "2026-11-17T09:\(String(format: "%02d", idx % 60)):00Z",
+              "user_id": \(10 + idx),
+              "user_name": "并发测试组-\(idx)",
+              "api_key_id": \(40 + idx),
+              "api_key_name": "Key-\(idx)",
+              "account_id": 101,
+              "account_name": "Codex · 主力",
+              "group_id": 1,
+              "group_name": "Codex",
+              "model": "gpt-6-astra",
+              "requested_model": "gpt-6",
+              "upstream_model": "gpt-6-astra",
+              "upstream_response_model": "gpt-6-astra",
+              "upstream_model_mismatch": false,
+              "reasoning_effort": "high",
+              "request_type": "stream",
+              "native_compaction_v2": true,
+              "input_tokens": 18420,
+              "output_tokens": 2460,
+              "cache_read_tokens": 14000,
+              "cache_creation_tokens": 1200,
+              "total_cost": "0.07374",
+              "actual_cost": "0.07374",
+              "account_cost": "0.058992",
+              "rate_multiplier": "1.0",
+              "account_rate_multiplier": "0.8",
+              "first_token_ms": 1420,
+              "duration_ms": 18600
+            }
+            """
+        }.joined(separator: ",")
+        let manyRecordsJSON = """
+        {
+          "items": [\(manyItems)],
+          "next_cursor": "cursor-page-2",
+          "latest_id": 325,
+          "observed_at": "2026-11-17T09:30:00Z",
+          "summary": { "actual_cost": "88.240000" }
+        }
+        """
+        RustBridge.shared.setMockHandler { _, _ in manyRecordsJSON }
+        let scrollRecStore = AppStore()
+        scrollRecStore.ready = true
+        scrollRecStore.page = .records
+        scrollRecStore.applyViewState(eventsStore.state)
+        try await SnapshotRenderUtility.renderPNGAsync(
+            view: MainShellView(store: scrollRecStore),
+            size: CGSize(width: 1310, height: 860),
+            dark: false,
+            outputURL: baseURL.appendingPathComponent("m4_records_25rows_light.png")
+        )
+        scrollRecStore.page = .settings
     }
 }
 }

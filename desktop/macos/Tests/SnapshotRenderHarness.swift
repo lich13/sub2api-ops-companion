@@ -42,6 +42,7 @@ enum SnapshotRenderUtility {
         hosting.appearance = appearance
         hosting.frame = CGRect(origin: .zero, size: size)
         window.contentView = hosting
+        window.makeFirstResponder(nil)
         hosting.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.03))
         hosting.layoutSubtreeIfNeeded()
@@ -91,6 +92,7 @@ enum SnapshotRenderUtility {
         hosting.appearance = appearance
         hosting.frame = CGRect(origin: .zero, size: size)
         window.contentView = hosting
+        window.makeFirstResponder(nil)
         hosting.layoutSubtreeIfNeeded()
         try? await Task.sleep(for: .milliseconds(60))
         hosting.layoutSubtreeIfNeeded()
@@ -185,6 +187,18 @@ struct SnapshotRenderTests {
             ),
         ])
 
+        let opsOnlineStore = AppStore()
+        opsOnlineStore.ready = true
+        opsOnlineStore.applyViewState(
+            ViewState(
+                connected: true,
+                online: true,
+                snapshot: shellStore.state.snapshot,
+                preferences: shellStore.state.preferences
+            )
+        )
+        opsOnlineStore.operations.setOperations(shellStore.operations.rows)
+
         for dark in [false, true] {
             let suffix = dark ? "dark" : "light"
             try SnapshotRenderUtility.renderPNG(
@@ -200,8 +214,8 @@ struct SnapshotRenderTests {
                 outputURL: baseURL.appendingPathComponent("m1_shell_offline_\(suffix).png")
             )
             try SnapshotRenderUtility.renderPNG(
-                view: OperationPanelSheet(store: shellStore),
-                size: CGSize(width: 440, height: 320),
+                view: OperationPanelSheet(store: opsOnlineStore),
+                size: CGSize(width: 440, height: 300),
                 dark: dark,
                 outputURL: baseURL.appendingPathComponent("m1_operations_\(suffix).png")
             )

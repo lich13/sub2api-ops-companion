@@ -34,8 +34,9 @@ public struct RecordDatePickerView: View {
                     .font(DS.iconFont(10, weight: .semibold))
                     .foregroundStyle(DS.muted)
             }
-            .padding(.horizontal, 10)
-            .frame(height: DS.controlHeightCompact)
+            .padding(.horizontal, 9)
+            .frame(minWidth: 104)
+            .frame(height: DS.controlHeightDense)
             .background(DS.surface)
             .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
@@ -73,7 +74,7 @@ public struct RecordDatePickerView: View {
                             .foregroundStyle(DS.muted)
                         TextField(text: $draft.start, prompt: Text(verbatim: "YYYY-MM-DD")) { EmptyView() }
                         .textFieldStyle(.plain)
-                        .font(DS.fontMono12)
+                        .font(DS.fontCompact).monospacedDigit()
                         .monospacedDigit()
                         .padding(.horizontal, 8)
                         .frame(height: DS.controlHeightCompact)
@@ -92,7 +93,7 @@ public struct RecordDatePickerView: View {
                             .foregroundStyle(DS.muted)
                         TextField(text: $draft.end, prompt: Text(verbatim: "YYYY-MM-DD")) { EmptyView() }
                         .textFieldStyle(.plain)
-                        .font(DS.fontMono12)
+                        .font(DS.fontCompact).monospacedDigit()
                         .monospacedDigit()
                         .padding(.horizontal, 8)
                         .frame(height: DS.controlHeightCompact)

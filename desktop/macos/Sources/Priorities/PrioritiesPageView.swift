@@ -14,7 +14,7 @@ public struct PrioritiesPageView: View {
     @State private var submittingPlatform: String = ""
     @State private var settingParallelism: String = ""
     @State private var error: String = ""
-    @State private var surfaceWidth: CGFloat = 1040
+    @State private var surfaceWidth: CGFloat = 1133
 
     private static let taskLabels: [String: String] = [
         "queued": "等待执行",
@@ -71,30 +71,34 @@ public struct PrioritiesPageView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .font(DS.iconFont(12))
-                        .foregroundStyle(DS.muted)
-                    TextField(text: $query, prompt: Text(verbatim: "搜索名称或账号 ID")) { EmptyView() }
-                        .textFieldStyle(.plain)
-                        .font(DS.fontCompact)
-                }
-                .padding(.horizontal, 10)
-                .frame(width: 260, height: DS.controlHeightCompact)
-                .background(DS.surface)
-                .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+            HStack(alignment: .center, spacing: 12) {
+                Text("优先级")
+                    .font(DS.fontPageTitle)
+                    .foregroundStyle(DS.ink)
 
                 Spacer()
 
                 LinearIconButton(
                     systemName: "arrow.clockwise",
                     label: "刷新优先级",
+                    size: 13,
+                    boxSize: DS.controlHeightCompact,
+                    bordered: true,
                     disabled: !store.state.online || loading || !submittingPlatform.isEmpty
                 ) {
                     Task { await readPriorities() }
                 }
+            }
+
+            HStack(spacing: 10) {
+                LinearSearchField(
+                    text: $query,
+                    prompt: "搜索名称或账号 ID",
+                    height: DS.controlHeightCompact,
+                    width: 280,
+                    compactFont: true
+                )
+                Spacer()
             }
 
             if !store.state.online {
@@ -119,7 +123,7 @@ public struct PrioritiesPageView: View {
             }
 
             if !useMultiColumn && platforms.count > 1 {
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
                     ForEach(platforms) { grp in
                         let sel = grp.platform == activeTabPlatform
                         Button {
@@ -129,15 +133,15 @@ public struct PrioritiesPageView: View {
                                 Text(PlatformMeta.priorityName(grp.platform))
                                 Text("\(grp.items.count)")
                                     .monospacedDigit()
-                                    .foregroundStyle(DS.muted)
+                                    .foregroundStyle(sel ? DS.accent : DS.muted)
                                 if drafts[grp.platform] != nil {
                                     Circle().fill(DS.accent).frame(width: 5, height: 5)
                                 }
                             }
-                            .font(sel ? DS.fontCompactSemibold : DS.fontCompact)
+                            .font(sel ? DS.fontCompactSemibold : DS.fontCompactMedium)
                             .foregroundStyle(sel ? DS.accent : DS.ink)
-                            .padding(.horizontal, 10)
-                            .frame(height: DS.controlHeightCompact)
+                            .padding(.horizontal, 12)
+                            .frame(height: 30)
                             .background(sel ? DS.accentBg : DS.clear)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
@@ -147,22 +151,29 @@ public struct PrioritiesPageView: View {
             }
 
             if useMultiColumn {
+                let weights = platforms.map { grp -> CGFloat in
+                    let p = max(1, min(8, drafts[grp.platform]?.parallelism ?? grp.parallelism ?? 1))
+                    return CGFloat(max(320, p * 220 + 72))
+                }
+                let totalWeight = max(1, weights.reduce(0, +))
+                let gapTotal = CGFloat(max(0, platforms.count - 1)) * 12
+                let availableColsW = max(320 * CGFloat(platforms.count), surfaceWidth - gapTotal)
+
                 HStack(alignment: .top, spacing: 12) {
-                    ForEach(platforms) { grp in
+                    ForEach(Array(platforms.enumerated()), id: \.element.id) { idx, grp in
+                        let colWidth = floor(availableColsW * weights[idx] / totalWeight)
                         platformColumn(grp)
+                            .frame(width: colWidth)
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else if let currentGrp = platforms.first(where: { $0.platform == activeTabPlatform }) {
                 platformColumn(currentGrp)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
-        .background(
-            GeometryReader { geo in
-                DS.clear
-                    .onAppear { surfaceWidth = geo.size.width }
-                    .onChange(of: geo.size.width) { _, next in surfaceWidth = next }
-            }
-        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(LinearWidthObserver { surfaceWidth = $0 })
         .onChange(of: totalChangesCount) { _, count in
             store.priorityChangesCount = count
         }
@@ -201,6 +212,12 @@ public struct PrioritiesPageView: View {
         let filtered = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let editing = store.state.online && view != nil && !loading && settingParallelism.isEmpty && !filtered && !conflict && submittingPlatform != platform && !(activeTask?.isPending == true && activeTask?.platform == platform)
         let lanes = groupLanes(slots: slots)
+        let visibleLanes = lanes.filter { lane in
+            !filtered || lane.slots.contains(where: { entry in
+                guard let id = entry.slot.id, let acc = byId[id] else { return false }
+                return matchesQuery(acc)
+            })
+        }
         let task = (activeTask?.platform == platform) ? activeTask : group.last_task
 
         return VStack(alignment: .leading, spacing: 0) {
@@ -212,31 +229,48 @@ public struct PrioritiesPageView: View {
                     .font(DS.fontCompact)
                     .monospacedDigit()
                     .foregroundStyle(DS.muted)
-                Spacer()
-                HStack(spacing: 4) {
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 3) {
                     Text("并列")
                         .font(DS.fontCompact)
                         .foregroundStyle(DS.muted)
-                    LinearIconButton(systemName: "minus", label: "减少并列值", size: 11, disabled: width <= 1 || draft != nil || !editing) {
+                    LinearIconButton(
+                        systemName: "minus",
+                        label: "减少\(PlatformMeta.priorityName(platform))并列值",
+                        size: 11,
+                        boxSize: 22,
+                        disabled: width <= 1 || draft != nil || !editing
+                    ) {
                         Task { await updateParallelism(group: group, next: width - 1) }
                     }
                     Text("\(width)")
                         .font(DS.fontCompactMedium)
                         .monospacedDigit()
                         .foregroundStyle(DS.ink)
-                        .frame(minWidth: 16)
-                    LinearIconButton(systemName: "plus", label: "增加并列值", size: 11, disabled: width >= 8 || draft != nil || !editing) {
+                        .frame(minWidth: 16, alignment: .center)
+                    LinearIconButton(
+                        systemName: "plus",
+                        label: "增加\(PlatformMeta.priorityName(platform))并列值",
+                        size: 11,
+                        boxSize: 22,
+                        disabled: width >= 8 || draft != nil || !editing
+                    ) {
                         Task { await updateParallelism(group: group, next: width + 1) }
                     }
                 }
+
                 if !changes.isEmpty {
                     Text("\(changes.count) 项变更")
                         .font(DS.fontCompactMedium)
                         .monospacedDigit()
                         .foregroundStyle(DS.accent)
+                        .padding(.leading, 4)
                 }
             }
-            .padding(12)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 48)
             .background(DS.surface)
 
             Rectangle().fill(DS.line).frame(height: 1)
@@ -246,97 +280,154 @@ public struct PrioritiesPageView: View {
                     Text("该平台账号集合或优先级已变化，草稿已保留，请重新核对。")
                         .font(DS.fontCompact)
                         .foregroundStyle(DS.bad)
+                    Spacer()
                     Button("重新核对") {
                         Task { await readPriorities(repreparePlatform: platform) }
                     }
                     .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
                 }
-                .padding(10)
+                .padding(12)
+                Rectangle().fill(DS.line).frame(height: 1)
             }
 
             if !blocked.isEmpty {
                 Text("重编号会修改不可编辑账号：\(blocked.map { "\($0.name) #\($0.id)" }.joined(separator: "、"))")
                     .font(DS.fontCompact)
                     .foregroundStyle(DS.bad)
-                    .padding(10)
+                    .padding(12)
+                Rectangle().fill(DS.line).frame(height: 1)
             }
 
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(lanes, id: \.priority) { lane in
-                        if !filtered || lane.slots.contains(where: { entry in
-                            guard let id = entry.slot.id, let acc = byId[id] else { return false }
-                            return matchesQuery(acc)
-                        }) {
-                            HStack(alignment: .top, spacing: 8) {
-                                Text("\(lane.priority)")
-                                    .font(DS.fontCompact)
-                                    .monospacedDigit()
-                                    .foregroundStyle(DS.muted)
-                                    .frame(width: 24, alignment: .trailing)
-                                    .padding(.top, 12)
+            let lanesContent = VStack(spacing: 0) {
+                ForEach(Array(visibleLanes.enumerated()), id: \.element.priority) { laneIdx, lane in
+                    if width == 1, let singleEntry = lane.slots.first {
+                        singleLaneRow(
+                            platform: platform,
+                            priority: lane.priority,
+                            slotIndex: singleEntry.index,
+                            slot: singleEntry.slot,
+                            totalSlots: slots.count,
+                            byId: byId,
+                            liveById: liveById,
+                            editing: editing
+                        )
+                    } else {
+                        let gridCols = Array(repeating: GridItem(.flexible(), spacing: 8), count: min(width, 3))
+                        HStack(alignment: .top, spacing: 10) {
+                            Text("\(lane.priority)")
+                                .font(DS.fontCompact)
+                                .monospacedDigit()
+                                .foregroundStyle(DS.muted)
+                                .frame(width: 22, alignment: .trailing)
+                                .padding(.top, 12)
 
-                                VStack(spacing: 6) {
-                                    ForEach(lane.slots, id: \.index) { entry in
-                                        slotCell(
-                                            platform: platform,
-                                            slotIndex: entry.index,
-                                            slot: entry.slot,
-                                            totalSlots: slots.count,
-                                            byId: byId,
-                                            liveById: liveById,
-                                            editing: editing
-                                        )
-                                    }
+                            LazyVGrid(columns: gridCols, alignment: .leading, spacing: 8) {
+                                ForEach(lane.slots, id: \.index) { entry in
+                                    parallelSlotCard(
+                                        platform: platform,
+                                        slotIndex: entry.index,
+                                        slot: entry.slot,
+                                        totalSlots: slots.count,
+                                        byId: byId,
+                                        liveById: liveById,
+                                        editing: editing
+                                    )
                                 }
                             }
-                            .padding(8)
-                            Rectangle().fill(DS.line).frame(height: 1)
                         }
+                        .padding(12)
+                    }
+
+                    if laneIdx < visibleLanes.count - 1 {
+                        Rectangle().fill(DS.line).frame(height: 1)
                     }
                 }
             }
-            .frame(maxHeight: 460)
+
+            LinearBoundedScrollView(maxHeight: 540) {
+                lanesContent
+            }
+
+            if filtered && visibleLanes.isEmpty {
+                Text("无匹配账号")
+                    .font(DS.fontCompact)
+                    .foregroundStyle(DS.muted)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 20)
+            }
 
             if !changes.isEmpty || draft != nil {
                 Rectangle().fill(DS.line).frame(height: 1)
-                HStack(spacing: 8) {
-                    Button("撤销") {
-                        undoDraft(platform: platform)
-                    }
-                    .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                    .disabled((history[platform] ?? []).isEmpty || !editing)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Button {
+                            undoDraft(platform: platform)
+                        } label: {
+                            Label("撤销", systemImage: "arrow.uturn.backward")
+                        }
+                        .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                        .disabled((history[platform] ?? []).isEmpty || !editing)
 
-                    Button("放弃全部") {
-                        drafts.removeValue(forKey: platform)
-                        history[platform] = []
-                    }
-                    .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                    .disabled(draft == nil || !editing)
+                        Button("放弃全部") {
+                            drafts.removeValue(forKey: platform)
+                            history[platform] = []
+                        }
+                        .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                        .disabled(draft == nil || !editing)
 
-                    Spacer()
+                        Spacer()
 
-                    Button(submittingPlatform == platform ? "正在提交…" : "应用变更") {
-                        Task { await applyOrder(group: group, ids: ids, targets: occupied.map(\.target), parallelism: width, expectedVersion: draft?.version ?? group.version) }
+                        Button {
+                            Task {
+                                await applyOrder(
+                                    group: group,
+                                    ids: ids,
+                                    targets: occupied.map(\.target),
+                                    parallelism: width,
+                                    expectedVersion: draft?.version ?? group.version
+                                )
+                            }
+                        } label: {
+                            Label(submittingPlatform == platform ? "正在提交…" : "应用变更", systemImage: "checkmark")
+                        }
+                        .buttonStyle(LinearButtonStyle(variant: .primary, compact: true))
+                        .disabled(!editing || isBusy || !blocked.isEmpty || changes.isEmpty)
                     }
-                    .buttonStyle(LinearButtonStyle(variant: .primary, compact: true))
-                    .disabled(!editing || isBusy || !blocked.isEmpty || changes.isEmpty)
+
+                    if activeTask?.isPending == true && activeTask?.platform != platform {
+                        Text("其他平台排序任务进行中，草稿已保留。")
+                            .font(DS.fontCompact)
+                            .foregroundStyle(DS.muted)
+                    }
                 }
-                .padding(10)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
             }
 
             if let notice = notices[platform], !notice.isEmpty {
                 Text(notice)
                     .font(DS.fontCompact)
                     .foregroundStyle(DS.muted)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 10)
             }
 
             if let task, task.status != "completed" {
+                Rectangle().fill(DS.line).frame(height: 1)
                 HStack(spacing: 8) {
                     if task.isPending {
-                        Text("\(Self.taskLabels[task.status] ?? task.status) · \(task.verified_count)/\(task.total) 已确认")
+                        let waitingDetail: String = {
+                            guard !task.waiting_reason.isEmpty else { return "" }
+                            if task.waiting_account_ids.isEmpty {
+                                return " · \(task.waiting_reason)"
+                            }
+                            let names = task.waiting_account_ids.map { wid in
+                                let name = byId[wid]?.name ?? liveById[wid]?.name ?? "账号"
+                                return "\(name) #\(wid)"
+                            }.joined(separator: "、")
+                            return " · \(task.waiting_reason)：\(names)"
+                        }()
+                        Text("\(Self.taskLabels[task.status] ?? task.status) · \(task.verified_count)/\(task.total) 已确认\(waitingDetail)")
                             .font(DS.fontCompact)
                             .monospacedDigit()
                             .foregroundStyle(DS.muted)
@@ -351,28 +442,148 @@ public struct PrioritiesPageView: View {
                             Task { await readPriorities(repreparePlatform: platform) }
                         }
                         .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                        .disabled(!store.state.online || loading || isBusy)
+                        .disabled(!store.state.online || loading || isBusy || filtered)
                     }
                 }
-                .padding(10)
+                .padding(12)
             }
 
             if let res = results[platform], !res.isEmpty {
                 Text(res)
                     .font(DS.fontCompact)
                     .foregroundStyle(DS.good)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 14)
                     .padding(.bottom, 10)
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(DS.surface)
-        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(DS.line, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(DS.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     @ViewBuilder
-    private func slotCell(
+    private func singleLaneRow(
+        platform: String,
+        priority: Int,
+        slotIndex: Int,
+        slot: PrioritySlot,
+        totalSlots: Int,
+        byId: [Int: PriorityAccount],
+        liveById: [Int: Account],
+        editing: Bool
+    ) -> some View {
+        if let accId = slot.id, let acc = byId[accId] {
+            let live = liveById[acc.id]
+            let isSchedulable = live?.schedulable ?? acc.schedulable
+            let changed = acc.priority != slot.priority
+            let warningText: String? = {
+                if !acc.editable { return acc.reason.isEmpty ? "不可编辑" : acc.reason }
+                if acc.status != "active" { return acc.status }
+                if !isSchedulable { return "不可调度" }
+                return nil
+            }()
+
+            HStack(alignment: .center, spacing: 10) {
+                Text("\(priority)")
+                    .font(DS.fontCompact)
+                    .monospacedDigit()
+                    .foregroundStyle(DS.muted)
+                    .frame(width: 20, alignment: .trailing)
+
+                SixDotGripIcon()
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(acc.name)
+                        .font(DS.fontBodySemibold)
+                        .foregroundStyle(DS.ink)
+                        .lineLimit(2)
+
+                    HStack(spacing: 8) {
+                        Text("#\(acc.id)")
+                            .font(DS.fontPriorityMeta).monospacedDigit()
+                        Text(acc.type)
+                            .font(DS.fontPriorityMeta)
+                    }
+                    .foregroundStyle(DS.muted)
+
+                    if let warningText {
+                        Text(warningText)
+                            .font(DS.fontPriorityMeta)
+                            .foregroundStyle(DS.warn)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    HStack(spacing: 8) {
+                        Text("当前")
+                            .foregroundStyle(DS.muted)
+                        Text("\(acc.priority)")
+                            .monospacedDigit()
+                            .foregroundStyle(DS.ink)
+                            .frame(minWidth: 20, alignment: .trailing)
+                    }
+                    HStack(spacing: 8) {
+                        Text("目标")
+                            .foregroundStyle(changed ? DS.accent : DS.muted)
+                        Text("\(slot.priority)")
+                            .font(changed ? DS.fontCompactSemibold : DS.fontCompact)
+                            .monospacedDigit()
+                            .foregroundStyle(changed ? DS.accent : DS.muted)
+                            .frame(minWidth: 20, alignment: .trailing)
+                    }
+                }
+                .font(DS.fontCompact)
+
+                VStack(spacing: 2) {
+                    LinearIconButton(
+                        systemName: "arrow.up",
+                        label: "上移 \(acc.name)",
+                        size: 11,
+                        boxSize: 22,
+                        disabled: !editing || !acc.editable || slotIndex == 0
+                    ) {
+                        moveItem(platform: platform, id: acc.id, targetIndex: slotIndex - 1)
+                    }
+                    LinearIconButton(
+                        systemName: "arrow.down",
+                        label: "下移 \(acc.name)",
+                        size: 11,
+                        boxSize: 22,
+                        disabled: !editing || !acc.editable || slotIndex >= totalSlots - 1
+                    ) {
+                        moveItem(platform: platform, id: acc.id, targetIndex: slotIndex + 1)
+                    }
+                }
+
+                LinearSwitch(
+                    isOn: isSchedulable,
+                    disabled: !store.state.online || live == nil || store.busyScheduleAccountId == acc.id,
+                    label: "\(acc.name) 调度"
+                ) {
+                    if let live {
+                        Task { await store.toggleSchedulable(live) }
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(minHeight: 62)
+            .contentShape(Rectangle())
+            .draggable("\(platform):\(acc.id)")
+            .dropDestination(for: String.self) { items, _ in
+                guard let raw = items.first, raw.hasPrefix("\(platform):"),
+                      let draggedId = Int(raw.dropFirst(platform.count + 1))
+                else { return false }
+                moveItem(platform: platform, id: draggedId, targetIndex: slotIndex)
+                return true
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func parallelSlotCard(
         platform: String,
         slotIndex: Int,
         slot: PrioritySlot,
@@ -383,69 +594,88 @@ public struct PrioritiesPageView: View {
     ) -> some View {
         if let accId = slot.id, let acc = byId[accId] {
             if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !matchesQuery(acc) {
-                EmptyView()
+                DS.clear.frame(height: 0)
             } else {
                 let live = liveById[acc.id]
+                let isSchedulable = live?.schedulable ?? acc.schedulable
                 let changed = acc.priority != slot.priority
-                HStack(spacing: 8) {
-                    Image(systemName: "line.3.horizontal")
-                        .font(DS.iconFont(12))
-                        .foregroundStyle(DS.muted)
-                        .frame(width: 18)
+                let warningText: String? = {
+                    if !acc.editable { return acc.reason.isEmpty ? "不可编辑" : acc.reason }
+                    if acc.status != "active" { return acc.status }
+                    if !isSchedulable { return "不可调度" }
+                    return nil
+                }()
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(acc.name)
-                            .font(DS.fontBodySemibold)
-                            .foregroundStyle(DS.ink)
-                            .lineLimit(1)
-                        HStack(spacing: 6) {
-                            Text("#\(acc.id)")
-                                .font(DS.fontMono11)
-                            Text(PlatformMeta.typeLabel(acc.type))
-                                .font(DS.fontPriorityMeta)
-                            if !acc.editable {
-                                Text(acc.reason.isEmpty ? "不可编辑" : acc.reason)
-                                    .font(DS.fontPriorityMeta)
-                                    .foregroundStyle(DS.warn)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .top, spacing: 8) {
+                        SixDotGripIcon()
+                            .padding(.top, 1)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(acc.name)
+                                .font(DS.fontBodySemibold)
+                                .foregroundStyle(DS.ink)
+                                .lineLimit(1)
+                            HStack(spacing: 6) {
+                                Text("#\(acc.id)").font(DS.fontPriorityMeta).monospacedDigit()
+                                Text(acc.type).font(DS.fontPriorityMeta)
+                                if let warningText {
+                                    Text(warningText)
+                                        .font(DS.fontPriorityMeta)
+                                        .foregroundStyle(DS.warn)
+                                }
+                            }
+                            .foregroundStyle(DS.muted)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        VStack(alignment: .trailing, spacing: 2) {
+                            HStack(spacing: 4) {
+                                Text("当前").foregroundStyle(DS.muted)
+                                Text("\(acc.priority)")
+                                    .monospacedDigit()
+                                    .foregroundStyle(DS.ink)
+                                    .frame(minWidth: 16, alignment: .trailing)
+                            }
+                            HStack(spacing: 4) {
+                                Text("目标").foregroundStyle(changed ? DS.accent : DS.muted)
+                                Text("\(slot.priority)")
+                                    .font(changed ? DS.fontCompactSemibold : DS.fontCompact)
+                                    .monospacedDigit()
+                                    .foregroundStyle(changed ? DS.accent : DS.muted)
+                                    .frame(minWidth: 16, alignment: .trailing)
                             }
                         }
-                        .foregroundStyle(DS.muted)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("当前 \(acc.priority)")
-                            .font(DS.fontCompact)
-                            .monospacedDigit()
-                            .foregroundStyle(DS.muted)
-                        Text("目标 \(slot.priority)")
-                            .font(DS.fontCompactMedium)
-                            .monospacedDigit()
-                            .foregroundStyle(changed ? DS.accent : DS.muted)
+                        .font(DS.fontPriorityMeta)
                     }
 
-                    if let live {
-                        LinearSwitch(
-                            isOn: live.schedulable,
-                            disabled: !store.state.online || store.busyScheduleAccountId == live.id,
-                            label: "\(acc.name) 调度"
-                        ) {
-                            Task { await store.toggleSchedulable(live) }
+                    HStack(spacing: 8) {
+                        if let live {
+                            LinearSwitch(
+                                isOn: live.schedulable,
+                                disabled: !store.state.online || store.busyScheduleAccountId == live.id,
+                                compact: true,
+                                label: "\(acc.name) 调度"
+                            ) {
+                                Task { await store.toggleSchedulable(live) }
+                            }
+                        }
+                        Spacer(minLength: 4)
+                        HStack(spacing: 2) {
+                            LinearIconButton(systemName: "arrow.up", label: "上移 \(acc.name)", size: 10, boxSize: 22, disabled: !editing || !acc.editable || slotIndex == 0) {
+                                moveItem(platform: platform, id: acc.id, targetIndex: slotIndex - 1)
+                            }
+                            LinearIconButton(systemName: "arrow.down", label: "下移 \(acc.name)", size: 10, boxSize: 22, disabled: !editing || !acc.editable || slotIndex >= totalSlots - 1) {
+                                moveItem(platform: platform, id: acc.id, targetIndex: slotIndex + 1)
+                            }
                         }
                     }
-
-                    VStack(spacing: 2) {
-                        LinearIconButton(systemName: "arrow.up", label: "上移 \(acc.name)", size: 11, disabled: !editing || !acc.editable || slotIndex == 0) {
-                            moveItem(platform: platform, id: acc.id, targetIndex: slotIndex - 1)
-                        }
-                        LinearIconButton(systemName: "arrow.down", label: "下移 \(acc.name)", size: 11, disabled: !editing || !acc.editable || slotIndex >= totalSlots - 1) {
-                            moveItem(platform: platform, id: acc.id, targetIndex: slotIndex + 1)
-                        }
-                    }
+                    .padding(.leading, 22)
                 }
                 .padding(8)
-                .background(DS.surfaceSubtle)
-                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(DS.line, lineWidth: 1))
+                .frame(minHeight: 64)
+                .background(DS.surface)
+                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(changed ? DS.accent : DS.line, lineWidth: 1))
                 .clipShape(RoundedRectangle(cornerRadius: 7))
                 .draggable("\(platform):\(acc.id)")
                 .dropDestination(for: String.self) { items, _ in
@@ -464,7 +694,7 @@ public struct PrioritiesPageView: View {
                     .foregroundStyle(DS.muted)
                 Spacer()
             }
-            .frame(height: 46)
+            .frame(minHeight: 64)
             .background(DS.surfaceSubtle)
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(DS.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
             .clipShape(RoundedRectangle(cornerRadius: 7))

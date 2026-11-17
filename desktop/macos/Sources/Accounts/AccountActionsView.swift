@@ -20,7 +20,24 @@ public struct AccountActionEntry: Identifiable, Sendable {
     public let label: String
     public let icon: String
     public let destructive: Bool
+    public let itemDisabled: Bool
     public let command: AccountDialogAction
+
+    public init(
+        id: String,
+        label: String,
+        icon: String,
+        destructive: Bool,
+        itemDisabled: Bool = false,
+        command: AccountDialogAction
+    ) {
+        self.id = id
+        self.label = label
+        self.icon = icon
+        self.destructive = destructive
+        self.itemDisabled = itemDisabled
+        self.command = command
+    }
 
     public static func entries(for account: Account) -> [AccountActionEntry] {
         let isOpenAI = account.platform == "openai" && ["oauth", "apikey"].contains(account.type)
@@ -35,12 +52,15 @@ public struct AccountActionEntry: Identifiable, Sendable {
                 destructive: false,
                 command: .modelTest(account)
             ))
-            let marked = account.degradation_mark?.marked == true
+            let mark = account.degradation_mark
+            let marked = mark?.marked == true
+            let hasError = (mark?.error ?? "").isEmpty == false
             list.append(AccountActionEntry(
                 id: "degradation",
-                label: marked ? "取消标记" : "标记降智",
-                icon: marked ? "bell" : "bell.slash",
+                label: hasError ? "标记读取失败" : (marked ? "取消标记" : "标记降智"),
+                icon: "bell.slash",
                 destructive: false,
+                itemDisabled: (mark?.version ?? "").isEmpty,
                 command: .toggleDegradation(account)
             ))
             list.append(AccountActionEntry(
@@ -62,7 +82,7 @@ public struct AccountActionEntry: Identifiable, Sendable {
         list.append(AccountActionEntry(
             id: "keepalive",
             label: "账号保活",
-            icon: "bolt.heart",
+            icon: "waveform.path.ecg",
             destructive: false,
             command: .keepalive(account)
         ))
@@ -127,49 +147,89 @@ public struct AccountActionEntry: Identifiable, Sendable {
 
 public struct AccountActionsView: View {
     public let account: Account
+    public var totalWidth: CGFloat
     public let disabled: Bool
     public let onTrigger: (AccountDialogAction) -> Void
 
-    private let columns = [
-        GridItem(.flexible(minimum: 94), spacing: 6),
-        GridItem(.flexible(minimum: 94), spacing: 6),
-    ]
-
-    public init(account: Account, disabled: Bool = false, onTrigger: @escaping (AccountDialogAction) -> Void) {
+    public init(
+        account: Account,
+        totalWidth: CGFloat = 212,
+        disabled: Bool = false,
+        onTrigger: @escaping (AccountDialogAction) -> Void
+    ) {
         self.account = account
+        self.totalWidth = totalWidth
         self.disabled = disabled
         self.onTrigger = onTrigger
     }
 
     public var body: some View {
         let items = AccountActionEntry.entries(for: account)
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 5) {
-            ForEach(items) { item in
-                Button {
-                    onTrigger(item.command)
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: item.icon)
-                            .font(DS.iconFont(11, weight: .medium))
-                            .frame(width: 12, alignment: .center)
-                        Text(item.label)
-                            .font(DS.fontCompact)
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
+        // Mirrors `.account-actions`: repeat(auto-fit, minmax(96px, 1fr)); gap 4px 6px.
+        let gap: CGFloat = 6
+        let fit = max(1, Int(floor((totalWidth + gap) / (96 + gap))))
+        let colCount = max(1, min(items.count, fit))
+        let buttonWidth = max(96, floor((totalWidth - gap * CGFloat(colCount - 1)) / CGFloat(colCount)))
+        let rowCount = (items.count + colCount - 1) / colCount
+
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(0..<rowCount, id: \.self) { rowIdx in
+                HStack(spacing: gap) {
+                    ForEach(0..<colCount, id: \.self) { colIdx in
+                        let itemIdx = rowIdx * colCount + colIdx
+                        if itemIdx < items.count {
+                            ActionGridButton(
+                                item: items[itemIdx],
+                                width: buttonWidth,
+                                disabled: disabled || items[itemIdx].itemDisabled,
+                                onTrigger: onTrigger
+                            )
+                        } else {
+                            DS.clear.frame(width: buttonWidth, height: 24)
+                        }
                     }
-                    .foregroundStyle(item.destructive ? DS.bad : DS.ink)
-                    .padding(.horizontal, 8)
-                    .frame(height: 26)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(DS.surface)
-                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(DS.line, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
-                .buttonStyle(.plain)
-                .disabled(disabled)
-                .opacity(disabled ? 0.45 : 1.0)
             }
         }
-        .frame(width: 214)
+        .frame(width: totalWidth, alignment: .leading)
+    }
+
+    private struct ActionGridButton: View {
+        let item: AccountActionEntry
+        let width: CGFloat
+        let disabled: Bool
+        let onTrigger: (AccountDialogAction) -> Void
+        @State private var hovered: Bool = false
+
+        var body: some View {
+            Button {
+                onTrigger(item.command)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: item.icon)
+                        .font(DS.iconFont(10, weight: .medium))
+                        .frame(width: 12, alignment: .center)
+                    Text(item.label)
+                        .font(DS.fontPriorityMeta)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(item.destructive ? DS.bad : DS.ink)
+                .padding(.horizontal, 6)
+                .frame(width: width, height: 24, alignment: .leading)
+                .background(hovered && !disabled ? (item.destructive ? DS.badBg : DS.hover) : DS.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(hovered && !disabled ? (item.destructive ? DS.bad : DS.lineStrong) : DS.line, lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(disabled)
+            .compositingGroup()
+            .opacity(disabled ? 0.45 : 1.0)
+            .onHover { hovered = $0 }
+        }
     }
 }

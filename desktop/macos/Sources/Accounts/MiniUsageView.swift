@@ -1,60 +1,51 @@
 import SwiftUI
 
+/// Matches `MiniUsage` in `desktop/src/AccountControls.tsx` and `.compact .mini-usage` in `style.css`.
 public struct MiniUsageView: View {
     public let windows: [UsageWindow]
 
     public init(windows: [UsageWindow]) {
-        self.windows = windows
+        self.windows = windows.filter { ["5h", "7d", "30d", "24h"].contains($0.label) }
     }
 
     public var body: some View {
-        HStack(spacing: 6) {
-            ForEach(windows.prefix(2), id: \.key) { w in
-                HStack(spacing: 4) {
-                    Text(w.label)
-                        .font(DS.fontUsageStatMedium)
-                        .foregroundStyle(labelForeground(w))
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(labelBackground(w))
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
+        if !windows.isEmpty {
+            HStack(spacing: 8) {
+                ForEach(windows, id: \.key) { w in
+                    let suffix = w.status == "stale" ? "*" : (w.status == "error" ? "!" : "")
+                    let tipSuffix = w.status == "stale" ? " · 历史快照" : (w.status == "error" ? " · 查询异常" : "")
+                    HStack(spacing: 4) {
+                        Text(w.label)
+                            .font(DS.fontResetTimeMedium)
+                            .foregroundStyle(DS.muted)
 
-                    if let pct = w.used_percent {
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(DS.line)
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(DS.line)
+                                .frame(width: 24, height: 4)
+                            if let pct = w.used_percent {
+                                let clamped = max(0, min(100, pct))
                                 Capsule()
-                                    .fill(barFill(pct: pct, window: w))
-                                    .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(pct / 100.0))))
+                                    .fill(barFill(pct: clamped))
+                                    .frame(width: 24 * CGFloat(clamped / 100.0), height: 4)
                             }
                         }
-                        .frame(width: 24, height: 4)
 
-                        Text("\(Int(pct.rounded()))%")
+                        Text(w.used_percent == nil ? "未知\(suffix)" : "\(Int(w.used_percent!.rounded()))%\(suffix)")
                             .font(DS.fontResetTime)
                             .monospacedDigit()
-                            .foregroundStyle(pct >= 90 ? DS.bad : DS.ink)
-                    } else {
-                        Text("—")
-                            .font(DS.fontResetTime)
                             .foregroundStyle(DS.muted)
                     }
+                    .help("采集 \(BeijingTime.fullTime(w.observed_at)) · 重置 \(BeijingTime.fullTime(w.reset_at))\(tipSuffix)")
                 }
             }
+            .lineLimit(1)
         }
     }
 
-    private func labelForeground(_ w: UsageWindow) -> Color {
-        w.color == "emerald" ? DS.windowEmerald : DS.windowIndigo
-    }
-
-    private func labelBackground(_ w: UsageWindow) -> Color {
-        w.color == "emerald" ? DS.windowEmeraldBg : DS.windowIndigoBg
-    }
-
-    private func barFill(pct: Double, window: UsageWindow) -> Color {
-        if pct >= 90 { return DS.bad }
-        if pct >= 75 { return DS.warn }
-        return window.color == "emerald" ? DS.windowEmerald : DS.windowIndigo
+    private func barFill(pct: Double) -> Color {
+        if pct >= 90 { return DS.usageFillRed }
+        if pct >= 75 { return DS.usageFillAmber }
+        return DS.usageFillGreen
     }
 }
