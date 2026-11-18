@@ -119,7 +119,6 @@ pub struct Actions {
     pub settings: Arc<Settings>,
     pub supervisor: crate::supervision::Supervisor,
     pub(crate) candidates: Candidates,
-    pub directory_cache: crate::model_directory::SourceCache,
     client: reqwest::Client,
     #[cfg(any(test, feature = "test-fixtures"))]
     pub(crate) directory_endpoint: Arc<std::sync::Mutex<Option<String>>>,
@@ -248,7 +247,6 @@ impl Actions {
             templates,
             priorities: crate::priority_orders::PriorityGate::new(&settings),
             candidates: Candidates::new(supervisor.clone()).persisted(&settings)?,
-            directory_cache: Default::default(),
             settings,
             supervisor,
             client,

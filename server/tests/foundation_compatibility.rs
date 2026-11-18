@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use sub2ops_server::{
-    compat, model_directory, model_rules,
+    compat,
     oauth_state::{self, OAuthState, Update},
     quota, store, usage,
 };
@@ -112,22 +112,6 @@ fn all_version_vectors_match_the_pinned_python_contract() {
                     );
                 }
             }
-            "model_catalog_account_cache_identity" => {
-                let input = python_value(&item["input"]);
-                assert_hash(
-                    model_directory::source_identity(&input),
-                    &item["expected_revision"],
-                    id,
-                );
-            }
-            "model_rules_revision_compact_unicode_null_number" => {
-                let input = python_value(&item["input"]);
-                assert_hash(
-                    model_rules::revision(&input),
-                    &item["expected_revision"],
-                    id,
-                );
-            }
             "operation_digest_unicode_null_number_datetime" => {
                 let input = python_value(&item["input"]);
                 assert_hash(compat::digest(&input), &item["expected_sha256"], id);
@@ -178,8 +162,6 @@ fn all_version_vectors_match_the_pinned_python_contract() {
         "account_versions_parent_child_identity",
         "config_revision_unicode_null_number_datetime",
         "desktop_account_dto_version_group_order_invariance",
-        "model_catalog_account_cache_identity",
-        "model_rules_revision_compact_unicode_null_number",
         "operation_digest_unicode_null_number_datetime",
         "operation_versions_full_synthetic_account",
         "operation_versions_group_order_invariance",
@@ -190,7 +172,7 @@ fn all_version_vectors_match_the_pinned_python_contract() {
     .collect();
     assert_eq!(
         tested, expected,
-        "all 10 declared Python/Rust vectors must be mapped"
+        "all 8 declared Python/Rust vectors must be mapped"
     );
 }
 

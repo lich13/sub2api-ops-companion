@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use sub2ops_server::{
     compat, credit_rules,
     error::Result,
-    error_evidence, model_rules, model_target,
+    error_evidence, model_target,
     oauth_state::{self, OAuthState},
     queries, quota, recovery_events, recovery_rules, reset_credit_observation,
 };
@@ -107,7 +107,6 @@ fn execute(name: &str, args: &Value) -> Result<Value> {
             time(&args["now"]),
             args["recovery_monitor_enabled"].as_bool().unwrap()
         )?),
-        "merge" => model_rules::merge(&args["base"], &args["patch"]),
         "codex_identity" => json!(model_target::identity(&args["values"])),
         "standard_codex_user_agent" => json!(model_target::standard_agent(
             args["version"].as_str().unwrap()

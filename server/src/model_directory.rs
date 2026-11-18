@@ -6,7 +6,6 @@ use crate::{
     db::Database,
     error::{Error, Result},
     model_candidates::Failure,
-    model_rules::revision,
     model_test_stream::Target,
     security::clean,
     upstream::read_limited,
@@ -14,20 +13,12 @@ use crate::{
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 pub const CLIENT_VERSION: &str = "0.146.0";
 const MAX_BODY: usize = 8 * 1024 * 1024;
 type Headers = BTreeMap<String, String>;
-
-#[derive(Clone, Default)]
-pub struct SourceCache(Arc<Mutex<BTreeMap<String, (Instant, Value)>>>);
-
-pub fn source_identity(account: &Value) -> String {
-    revision(account)
-}
 
 pub fn endpoint(target: &Target) -> Result<reqwest::Url> {
     let base = target
@@ -202,22 +193,8 @@ async fn read_http_timeout(
     Ok((status, read_limited(response, MAX_BODY).await?))
 }
 
-pub async fn source_catalog_read(
-    db: &Database,
-    cache: &SourceCache,
-    account: &Value,
-    timeout: Duration,
-    refresh: bool,
-) -> Result<Value> {
-    let identity = source_identity(account);
-    {
-        let guard = cache.0.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((until, value)) = guard.get(&identity) {
-            if !refresh && *until > Instant::now() {
-                return Ok(value.clone());
-            }
-        }
-    }
+pub async fn source_catalog_read(db: &Database, account: &Value) -> Result<Value> {
+    let timeout = Duration::from_secs(8);
     let credentials = &account["credentials"];
     let platform = string(&account["platform"]);
     let kind = string(&account["type"]);
@@ -376,7 +353,6 @@ pub async fn source_catalog_read(
     {
         return Err(Error::new(422, "上游目录地址无效"));
     }
-    let request_timeout = timeout.max(Duration::from_millis(100));
     let client = if let Some(id) = integer(&account["proxy_id"]).filter(|v| *v != 0) {
         let proxy = db
             .one(
@@ -407,7 +383,7 @@ pub async fn source_catalog_read(
         reqwest::Client::builder()
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
-            .timeout(request_timeout)
+            .timeout(timeout)
             .proxy(
                 reqwest::Proxy::all(url.as_str()).map_err(|_| Error::new(422, "账号代理不可用"))?,
             )
@@ -426,11 +402,11 @@ pub async fn source_catalog_read(
             None => reqwest::Client::builder()
                 .no_proxy()
                 .redirect(reqwest::redirect::Policy::none())
-                .timeout(request_timeout)
+                .timeout(timeout)
                 .build()?,
         }
     };
-    let (status, body) = read_http_timeout(&client, &url, &headers, request_timeout).await?;
+    let (status, body) = read_http_timeout(&client, &url, &headers, timeout).await?;
     if status != 200 {
         return Err(Error::new(
             if matches!(status, 401 | 403) {
@@ -473,7 +449,7 @@ pub async fn source_catalog_read(
         page_url.query_pairs_mut().append_pair(key, &cursor);
         let (reply_status, reply_body) = tokio::time::timeout_at(
             deadline,
-            read_http_timeout(&client, page_url.as_str(), &headers, request_timeout),
+            read_http_timeout(&client, page_url.as_str(), &headers, timeout),
         )
         .await
         .map_err(|_| Error::new(504, "上游模型目录读取超时"))??;
@@ -522,26 +498,10 @@ pub async fn source_catalog_read(
         }
     }
     scrub(&mut data, &secrets);
-    {
-        let mut guard = cache.0.lock().unwrap_or_else(|e| e.into_inner());
-        guard.retain(|_, v| v.0 > Instant::now());
-        if guard.len() >= 64 {
-            guard.clear();
-        }
-        guard.insert(
-            identity,
-            (Instant::now() + Duration::from_secs(60), data.clone()),
-        );
-    }
     Ok(data)
 }
 
-pub async fn account_models_read(
-    db: &Database,
-    cache: &SourceCache,
-    id: i64,
-    refresh: bool,
-) -> Result<Vec<Value>> {
+pub async fn account_models_read(db: &Database, id: i64) -> Result<Vec<Value>> {
     let account = db
         .one(
             "SELECT a.id,a.platform,a.type,coalesce(p.credentials,a.credentials) AS credentials,a.extra,coalesce(a.proxy_id,p.proxy_id) AS proxy_id FROM accounts a LEFT JOIN accounts p ON p.id=coalesce(nullif(to_jsonb(a)->>'parent_account_id','')::bigint,nullif(a.extra->>'parent_account_id','')::bigint) AND p.deleted_at IS NULL WHERE a.id=$1 AND a.deleted_at IS NULL",
@@ -549,7 +509,7 @@ pub async fn account_models_read(
         )
         .await?
         .ok_or_else(|| Error::new(404, "账号不存在"))?;
-    let data = source_catalog_read(db, cache, &account, Duration::from_secs(8), refresh).await?;
+    let data = source_catalog_read(db, &account).await?;
     let entries = data
         .as_array()
         .or_else(|| data.get("data").and_then(Value::as_array))

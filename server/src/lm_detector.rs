@@ -228,8 +228,9 @@ impl Bank {
         .await
         .map_err(|_| unavailable())?
     }
-    /// Saved state that still names a previous bundled revision moves to the current
-    /// one. Other revisions, cached directories and pinned history are left alone.
+    /// Saved state that names one of the listed superseded revisions moves to the
+    /// current bundled one. Other revisions, cached directories and pinned history
+    /// are left alone.
     pub fn migrate_bundled(&self) -> Result<()> {
         if !self
             .revision()

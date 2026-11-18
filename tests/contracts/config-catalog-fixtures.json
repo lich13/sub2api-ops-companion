@@ -1,22 +1,4 @@
 {
-  "model": {
-    "revision": {
-      "expected": "e6c518b6d7cf455100e841a4100595fe47e40a63255f9c70bb2931d04bf4f6eb",
-      "input": {
-        "fraction": 1.25,
-        "nested": {
-          "a": [
-            "fixture",
-            null
-          ],
-          "z": false
-        },
-        "null": null,
-        "whole": 4,
-        "中文": "思考档位"
-      }
-    }
-  },
   "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
   "settings_priority": {
     "bark_config": {

@@ -1,5 +1,4 @@
-.mobile-sheet-heading,
-.mobile-field-label {
+.mobile-sheet-heading {
   display: none;
 }
 .records-filter-bar {
@@ -633,12 +632,6 @@
 }
 .app.mobile .field {
   flex-wrap: wrap;
-}
-.app.mobile .mobile-field-label {
-  display: inline;
-  color: var(--muted);
-  margin-right: 8px;
-  font-size: 11px;
 }
 .app.mobile .check-account > span {
   min-width: 0;

@@ -1,9 +1,6 @@
-use crate::compat::{py_json, sha256, truthy};
+use crate::compat::truthy;
 use serde_json::{json, Value};
 
-pub fn revision(value: &Value) -> String {
-    sha256(py_json(value, false, true))
-}
 pub fn merge(base: &Value, patch: &Value) -> Value {
     let mut base = base
         .as_object()
@@ -65,9 +62,6 @@ impl<'a> Allowlist<'a> {
             .is_none_or(|patterns| patterns.iter().any(|pattern| pattern.matches(model)))
     }
 }
-pub fn matches(pattern: &str, model: &str) -> bool {
-    ModelPattern::new(pattern).matches(model)
-}
 
 #[cfg(test)]
 mod matching_tests {
@@ -119,7 +113,11 @@ mod matching_tests {
             let batch = Allowlist::new(&value);
             for model in models {
                 let expected = old.is_match(model);
-                assert_eq!(matches(pattern, model), expected, "{pattern:?} / {model:?}");
+                assert_eq!(
+                    ModelPattern::new(pattern).matches(model),
+                    expected,
+                    "{pattern:?} / {model:?}"
+                );
                 assert_eq!(
                     batch.admits(model),
                     expected,
@@ -145,7 +143,7 @@ mod matching_tests {
         for pattern in ["a".repeat(5000), "*".repeat(100_000)] {
             let old = legacy(&pattern);
             assert_eq!(
-                matches(&pattern, &pattern),
+                ModelPattern::new(&pattern).matches(&pattern),
                 old.as_ref().is_some_and(|v| v.is_match(&pattern))
             );
             if pattern.starts_with('*') {

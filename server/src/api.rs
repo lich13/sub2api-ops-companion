@@ -523,9 +523,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
                         let result: Result<Vec<Value>> = async {
                             let models = match crate::model_directory::account_models_read(
                                 &actions.queries.db,
-                                &actions.directory_cache,
                                 account_id,
-                                true,
                             )
                             .await
                             {

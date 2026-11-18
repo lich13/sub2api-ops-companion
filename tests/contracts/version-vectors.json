@@ -30,20 +30,6 @@
         "sort_keys": false
       },
       "source": "app/desktop_api.py#account_dto.value.version"
-    },
-    {
-      "id": "model_rules.revision",
-      "json_dumps": {
-        "allow_nan": false,
-        "default": null,
-        "ensure_ascii": false,
-        "separators": [
-          ",",
-          ":"
-        ],
-        "sort_keys": true
-      },
-      "source": "app/model_rules.py#revision"
     }
   ],
   "purpose": "合成基线向量；供 Rust 端逐项复现 Python 版本、配置和模型目录哈希。",
@@ -324,43 +310,6 @@
       },
       "id": "desktop_account_dto_version_group_order_invariance",
       "source": "app/desktop_api.py#account_dto.value.version"
-    },
-    {
-      "expected_revision": "66bf928a08287d36623c9fa62844a025ac9322f64a0ff86fca11a90431910053",
-      "id": "model_catalog_account_cache_identity",
-      "input": {
-        "credentials": {
-          "model_mapping": {
-            "gpt-*": "别名-六"
-          }
-        },
-        "extra": {
-          "openai_oauth_passthrough": false
-        },
-        "id": 31,
-        "platform": "openai",
-        "type": "oauth"
-      },
-      "source": "server/src/model_directory.rs#source_identity; server/src/model_rules.rs#revision"
-    },
-    {
-      "assertions": [
-        "ensure_ascii=false",
-        "sort_keys=true",
-        "separators=(',', ':')",
-        "allow_nan=false"
-      ],
-      "expected_revision": "8b7f961ccf4dc266b5e523f22e60493290cd4059454420757ede828e36adc964",
-      "id": "model_rules_revision_compact_unicode_null_number",
-      "input": {
-        "priority": 7,
-        "模型": {
-          "name": "星云",
-          "nullable": null,
-          "weight": 1.25
-        }
-      },
-      "source": "app/model_rules.py#revision"
     },
     {
       "assertions": [

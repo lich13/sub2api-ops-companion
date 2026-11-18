@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only release and verified-upstream version consistency checks."""
+"""Read-only release version consistency checks."""
 from __future__ import annotations
 
 import json
@@ -47,7 +47,7 @@ def main() -> int:
         print(error, file=sys.stderr)
     if errors:
         return 1
-    print("release and verified upstream versions are consistent")
+    print("release versions are consistent")
     return 0
 
 

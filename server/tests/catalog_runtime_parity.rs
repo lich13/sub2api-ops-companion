@@ -23,7 +23,6 @@ fn native() -> Value {
 #[derive(Clone, Default)]
 struct Upstream {
     calls: Arc<Mutex<Vec<Value>>>,
-    status: Arc<Mutex<Option<u16>>>,
     pages: Arc<Mutex<BTreeMap<String, Value>>>,
 }
 
@@ -40,13 +39,7 @@ async fn upstream(State(mock): State<Upstream>, request: Request) -> Response {
     mock.calls
         .lock()
         .unwrap()
-        .push(json!({"method":request.method().as_str(),
-        "path":request.uri().to_string(),"authorization":header("authorization"),
-        "x-real-ip":header("x-real-ip"),"x-api-key":header("x-api-key"),
-        "if-none-match":header("if-none-match"),"host":header("host"),
-        "connection":header("connection"),"transfer-encoding":header("transfer-encoding"),
-        "cookie":header("cookie"),"x-unlisted-fixture":header("x-unlisted-fixture"),
-        "user-agent":header("user-agent")}));
+        .push(json!({"path":request.uri().to_string(),"authorization":header("authorization")}));
     let (status, body) = if path.starts_with("/api/v1/admin/") {
         if header("x-api-key") == ADMIN {
             (200, json!({"code":0,"data":[]}))
@@ -54,19 +47,14 @@ async fn upstream(State(mock): State<Upstream>, request: Request) -> Response {
             (401, json!({"code":401}))
         }
     } else {
-        let status = mock.status.lock().unwrap().unwrap_or(200);
         (
-            status,
-            if status == 200 {
-                mock.pages
-                    .lock()
-                    .unwrap()
-                    .get(&request.uri().to_string())
-                    .cloned()
-                    .unwrap_or_else(native)
-            } else {
-                json!({"error":"fixture-revoked"})
-            },
+            200,
+            mock.pages
+                .lock()
+                .unwrap()
+                .get(&request.uri().to_string())
+                .cloned()
+                .unwrap_or_else(native),
         )
     };
     Response::builder()
@@ -109,8 +97,7 @@ impl Harness {
         .execute(&seed.pool)
         .await
         .unwrap();
-        sqlx::raw_sql("INSERT INTO groups (id,name,platform) VALUES (7,'fixture-seven','openai'),(8,'fixture-eight','openai');
-            INSERT INTO api_keys (id,name,group_id,key) VALUES (7,'fixture-seven',7,'fixture-caller-7'),(8,'fixture-eight',8,'fixture-caller-8');")
+        sqlx::raw_sql("INSERT INTO groups (id,name,platform) VALUES (7,'fixture-seven','openai'),(8,'fixture-eight','openai');")
             .execute(&seed.pool).await.unwrap();
         seed.close().await;
         let mock = Upstream::default();
@@ -347,6 +334,8 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
         "/v1/models?client_version=0.146.0",
         "/models?client_version=0.146.0",
         "/backend-api/codex/models",
+        "/api/desktop/v1/model-groups",
+        "/api/desktop/v1/model-groups/7/reasoning",
     ] {
         assert_eq!(
             client
@@ -814,14 +803,9 @@ async fn account_connection_directory_keeps_all_pages_parent_credentials_and_nat
                 json!({"data":[{"id":"fixture-first"},{"id":"fixture-second"}]}),
             )]);
         }
-        let models = sub2ops_server::model_directory::account_models_read(
-            &h.runtime.db,
-            &h.runtime.actions.directory_cache,
-            child,
-            false,
-        )
-        .await
-        .unwrap();
+        let models = sub2ops_server::model_directory::account_models_read(&h.runtime.db, child)
+            .await
+            .unwrap();
         assert_eq!(
             models
                 .iter()
@@ -830,19 +814,6 @@ async fn account_connection_directory_keeps_all_pages_parent_credentials_and_nat
             vec!["fixture-first", "fixture-second"]
         );
         assert!(models.iter().all(|m| m.as_object().unwrap().len() == 3));
-        let calls = h.mock.calls.lock().unwrap().len();
-        assert_eq!(
-            sub2ops_server::model_directory::account_models_read(
-                &h.runtime.db,
-                &h.runtime.actions.directory_cache,
-                child,
-                false,
-            )
-            .await
-            .unwrap(),
-            models
-        );
-        assert_eq!(h.mock.calls.lock().unwrap().len(), calls);
     }
     h.close().await;
 }

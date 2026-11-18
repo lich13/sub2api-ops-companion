@@ -87,18 +87,6 @@ CREATE TABLE proxies (
     deleted_at timestamptz
 );
 
-CREATE TABLE composite_model_routes (
-    id bigint PRIMARY KEY,
-    group_id bigint NOT NULL REFERENCES groups(id),
-    public_model text NOT NULL,
-    match_type text NOT NULL DEFAULT 'exact',
-    target_platform text NOT NULL,
-    upstream_model text NOT NULL,
-    endpoint text NOT NULL DEFAULT '',
-    priority integer NOT NULL DEFAULT 0,
-    enabled boolean NOT NULL DEFAULT true
-);
-
 CREATE TABLE scheduled_test_plans (
     id bigint PRIMARY KEY,
     account_id bigint REFERENCES accounts(id),

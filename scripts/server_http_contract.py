@@ -747,12 +747,7 @@ class ContractSuite:
         config = {"expected_revision": "f" * 64, "changes": {}}
         unknown_section = self.expect_status("PUT", API + "/config/fixture-invalid", (404,), body=config)
         require(response_detail_shape(unknown_section.body), "unknown config section lacks a structured 404")
-        no_client_version = self.expect_status("GET", "/models", (404,))
-        require(response_detail_shape(no_client_version.body), "model alias without client_version lacks its 404")
-        no_v1_client_version = self.expect_status("GET", "/v1/models", (404,))
-        require(response_detail_shape(no_v1_client_version.body), "v1 model alias without client_version lacks its 404")
-        return {"unknown_api_route": 404, "unknown_config_section": 404,
-                "models_without_client_version": 404, "v1_models_without_client_version": 404}
+        return {"unknown_api_route": 404, "unknown_config_section": 404}
 
     def _numeric_paths(self) -> dict[str, object]:
         paths = [
@@ -795,7 +790,10 @@ class ContractSuite:
             self.expect_status("POST", API + "/actions/" + action, (404,))
         self.expect_status("PUT", API + "/config/telegram", (404,),
                            body={"changes": {}, "expected_revision": "a" * 64})
-        return {"requests": 2 * len(paths) + 3, "authority_required": False}
+        for path in ("/model-groups", "/model-groups/4301/reasoning"):
+            for method in ("GET", "POST"):
+                self.expect_status(method, API + path, (404,))
+        return {"requests": 2 * len(paths) + 7, "authority_required": False}
 
     def _route_inventory(self) -> dict[str, object]:
         missing = []
@@ -1013,7 +1011,7 @@ def run_owned(args: argparse.Namespace) -> dict[str, object]:
                 "kind": "runner-owned-temporary-postgresql",
                 "host": "127.0.0.1",
                 "pid": postgres.postgres_pid,
-                "application_tables": ["accounts", "groups", "account_groups", "users", "api_keys", "usage_logs", "ops_error_logs", "settings", "proxies", "composite_model_routes", "scheduled_test_plans"],
+                "application_tables": ["accounts", "groups", "account_groups", "users", "api_keys", "usage_logs", "ops_error_logs", "settings", "proxies", "scheduled_test_plans"],
                 "probe_accounts_used": False,
             }
             with ExternalMocks() as mocks:

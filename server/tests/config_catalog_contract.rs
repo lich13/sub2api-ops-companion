@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 use std::{collections::BTreeMap, fs, path::Path};
 use sub2ops_server::{
     account_templates::{self, Templates},
-    compat, model_rules,
+    compat,
     settings::Settings,
 };
 
@@ -207,17 +207,6 @@ fn account_template_custom_crud_mapping_and_request_validation_match_pinned_pyth
             );
         }
     }
-}
-
-#[test]
-fn model_rules_revision_matches_pinned_python() {
-    let fixture = fixtures();
-    let revision = &fixture["model"]["revision"];
-    assert_eq!(
-        model_rules::revision(&revision["input"]),
-        revision["expected"].as_str().unwrap(),
-        "model rules revision must match legacy JSON canonicalization"
-    );
 }
 
 #[test]
