@@ -1,5 +1,14 @@
 # 升级与回退
 
+## 0.1.97 移除分组模型配置、LM Detector 检测库更新与原生界面修复
+
+Companion 与客户端同步升级（**须先拆网关片段、再切换服务端容器、最后更新客户端**）。业务数据库结构与核心运行状态格式不变，无需数据库迁移；0.1.84 及以后版本可直接升级。
+
+- **彻底移除分组“模型配置”与先拆 Nginx 再换容器**：服务端、macOS 与 Android 客户端彻底移除分组模型目录覆写与思考档位配置（`GET /v1/models`、`GET /models`、`GET /backend-api/codex/models` 及 `/api/desktop/v1/model-groups*` 均已下线并返回 `404`；单账号“模型白名单/映射”、账号模板与 `GET /api/desktop/v1/accounts/{id}/models` 不变）。由于旧网关片段 `sub2ops-models-proxy.conf` 的 `error_page` 仅拦截 `5xx` 回退至 Sub2API、**不拦截 `404`**，若先上 0.1.97 容器会导致带 `client_version` 的 `/v1/models` 直接收到 `404`。升级时须在 0.1.96 容器仍运行时先确认 `data/group-model-config.json` 无活跃规则，从 `/etc/nginx/sites-enabled/*.conf` 移除 `codex-models*.location.conf` 引用并移走 `/etc/nginx/conf.d/sub2ops-models-map.conf` 与 `/etc/nginx/snippets/{codex-models.location.conf,codex-models-raw-ip.location.conf,sub2ops-models-proxy.conf}`，执行 `nginx -t && systemctl reload nginx`（清理后域名入口全部模型路由及裸 IP 入口的 `/v1/models` 直连 Sub2API `:8080`，裸 IP 入口的 `/models` 与 `/backend-api/codex/models` 落入末尾 `404`），验证通过后再切换 0.1.97 容器并清理 `.env` 中的 `GROUP_MODEL_CONFIG_PATH` 及闲置的 `data/group-model-config.json` / `.lock`。
+- **LM Detector 内置检测库**：内置成对参考库、检测器与评分门控更新到上游 `33fb43f26670be0ed7817ab13e5c4c4731ccb76a`（72 个模型，新增 `muse-ember`、`claude-fable-5.2`、`gemini-4-carbon`、`gemini-4-hydrogen`、`gpt-6.2-sol`、`gpt-6.2-astra`，其中 `gpt-6-astra/6.1-sol` 为合并类别，并启用相邻对重复比例门控），分词器库与分析器标识 `lmfpd-0.2.0` 不变。服务启动时，`lm-detector/state.json` 指向历史版本 `fd9b4caf6feafbec64d45a1552432515bf4efa39`、`7663b6580cb6c9123da72e9218e700537544f1db` 或 `f920cfe2ff0bab94989ce01ac061e21425b6e321` 的均自动切换至新内置版本并清除旧更新错误；已在线更新到其他远程版本的不覆盖，旧缓存目录与历史保留。
+- **回退 0.1.96 说明**：回退沿用保留的 `rollback-0.1.96` 镜像与当前数据，无需恢复已拆掉的 Nginx `codex-models` 片段或空的 `group-model-config.json`。若升级时 `lm-detector/state.json` 已切换至 `33fb43f26670be0ed7817ab13e5c4c4731ccb76a`，回退前须先停止服务并将 `lm-detector/state.json` 的 `revision` 改回 `f920cfe2ff0bab94989ce01ac061e21425b6e321`（或本地仍保留完整缓存目录的 `7663b6580cb6c9123da72e9218e700537544f1db`），或在回退启动后于模型测试中点“检查更新”重新下载上游检测库。ModelTrace 不受影响。
+- **macOS 原生客户端修复**：修复账号页“调度参数”标签与数值槽位错位、悬停热区不完整的问题，以及“记录”页默认列过宽的问题（恢复与旧前端一致的紧凑固定列宽与单行数字显示）。
+
 ## 0.1.96 ModelTrace 指纹库更新与 macOS 模型配置修复
 
 Companion 与客户端同步升级（先升级服务端，再更新客户端）。HTTP 接口、JSON 状态格式与业务数据库结构不变，无需数据库迁移；0.1.84 及以后版本可直接升级。回退 0.1.95 沿用保留的旧镜像与当前数据，但须先按下文处理 ModelTrace 指纹库状态文件。
