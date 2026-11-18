@@ -21,38 +21,35 @@ public struct SchedulingParametersView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 3) {
                 Text("优先级")
-                    .font(DS.fontCompact)
+                    .font(DS.fontPriorityMeta)
                     .foregroundStyle(DS.muted)
-                Spacer(minLength: 8)
+                    .lineLimit(1)
+                    .frame(width: 48, alignment: .leading)
                 Text("\(account.priority)")
-                    .font(DS.fontCompactMedium)
+                    .font(DS.fontPriorityMeta)
                     .monospacedDigit()
+                    .lineLimit(1)
                     .foregroundStyle(DS.ink)
+                    .padding(.horizontal, 4)
+                    .frame(maxWidth: .infinity, minHeight: 22, alignment: .trailing)
             }
 
-            HStack {
+            HStack(spacing: 3) {
                 Text("并发")
-                    .font(DS.fontCompact)
+                    .font(DS.fontPriorityMeta)
                     .foregroundStyle(DS.muted)
-                Spacer(minLength: 8)
-                Button {
+                    .lineLimit(1)
+                    .frame(width: 48, alignment: .leading)
+                EditableParameterSlotButton(
+                    text: account.concurrency.map(String.init) ?? "—",
+                    editable: canEdit("concurrency"),
+                    accessibilityLabel: "编辑\(account.name)并发"
+                ) {
                     editingConcurrency = true
-                } label: {
-                    Text(account.concurrency.map(String.init) ?? "—")
-                        .font(DS.fontCompactMedium)
-                        .monospacedDigit()
-                        .foregroundStyle(DS.ink)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(canEdit("concurrency") ? DS.surfaceSubtle : DS.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
-                .buttonStyle(.linearPlain)
-                .disabled(!canEdit("concurrency"))
-                .accessibilityLabel("编辑\(account.name)并发")
                 .popover(isPresented: $editingConcurrency, arrowEdge: .bottom) {
                     NumericParameterPopover(
                         title: "编辑并发",
@@ -67,26 +64,19 @@ public struct SchedulingParametersView: View {
                 }
             }
 
-            HStack {
+            HStack(spacing: 3) {
                 Text("负载因子")
-                    .font(DS.fontCompact)
+                    .font(DS.fontPriorityMeta)
                     .foregroundStyle(DS.muted)
-                Spacer(minLength: 8)
-                Button {
+                    .lineLimit(1)
+                    .frame(width: 48, alignment: .leading)
+                EditableParameterSlotButton(
+                    text: account.load_factor.map(String.init) ?? "自动",
+                    editable: canEdit("load_factor"),
+                    accessibilityLabel: "编辑\(account.name)负载因子"
+                ) {
                     editingLoadFactor = true
-                } label: {
-                    Text(account.load_factor.map(String.init) ?? "自动")
-                        .font(DS.fontCompactMedium)
-                        .monospacedDigit()
-                        .foregroundStyle(DS.ink)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(canEdit("load_factor") ? DS.surfaceSubtle : DS.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
-                .buttonStyle(.linearPlain)
-                .disabled(!canEdit("load_factor"))
-                .accessibilityLabel("编辑\(account.name)负载因子")
                 .popover(isPresented: $editingLoadFactor, arrowEdge: .bottom) {
                     NumericParameterPopover(
                         title: "编辑负载因子",
@@ -101,7 +91,6 @@ public struct SchedulingParametersView: View {
                 }
             }
         }
-        .padding(.trailing, 8)
         .frame(maxWidth: .infinity)
     }
 
@@ -115,6 +104,40 @@ public struct SchedulingParametersView: View {
         if res["verified"]?.boolValue == false {
             throw RustBridgeError("\(action == "concurrency" ? "并发" : "负载因子")写入未确认，请刷新核对")
         }
+    }
+}
+
+private struct EditableParameterSlotButton: View {
+    let text: String
+    let editable: Bool
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    @State private var hovered: Bool = false
+
+    var body: some View {
+        let showHover = editable && hovered
+        Button(action: action) {
+            Text(text)
+                .font(DS.fontPriorityMeta)
+                .monospacedDigit()
+                .lineLimit(1)
+                .foregroundStyle(DS.ink)
+                .padding(.horizontal, 4)
+                .frame(maxWidth: .infinity, minHeight: 22, alignment: .trailing)
+                .background(showHover ? DS.hover : DS.clear)
+                .overlay {
+                    if showHover {
+                        RoundedRectangle(cornerRadius: 5)
+                            .strokeBorder(DS.line, lineWidth: 1)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+        }
+        .buttonStyle(.linearPlain)
+        .disabled(!editable)
+        .onHover { hovered = $0 }
+        .accessibilityLabel(accessibilityLabel)
     }
 }
 

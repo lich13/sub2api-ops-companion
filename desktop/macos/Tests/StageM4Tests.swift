@@ -21,6 +21,13 @@ struct StageM4Tests {
         let lastMonth = BeijingDateLogic.presetRange(.lastMonth, now: ref)
         #expect(lastMonth.start == "2026-09-01" && lastMonth.end == "2026-09-30")
         #expect(!BeijingDateLogic.isValidRange(start: "2026-02-30", end: "2026-03-01"))
+
+        let defaultCols = RecordColumnSpec.normalize(nil)
+        #expect(defaultCols.count == 10)
+        let sumWidths = defaultCols.reduce(CGFloat(0)) { $0 + $1.width } + 88 // time = 88
+        let rightDataMinWidth = sumWidths + CGFloat(defaultCols.count) * 8 + 4 * 2
+        let totalDefaultTableWidth = 110 + 1 + rightDataMinWidth
+        #expect(totalDefaultTableWidth == 1197)
     }
 
     @Test("Render Stage M4 Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")
@@ -69,6 +76,42 @@ struct StageM4Tests {
               "account_rate_multiplier": "0.8",
               "first_token_ms": 1420,
               "duration_ms": 18600,
+              "user_agent": "CodexCLI/0.42",
+              "ip_address": "198.51.100.24"
+            },
+            {
+              "id": 199,
+              "created_at": "2026-11-17T09:09:12Z",
+              "user_id": 12,
+              "user_name": "研发主力组",
+              "api_key_id": 45,
+              "api_key_name": "CI-Pipeline-Key",
+              "account_id": 101,
+              "account_name": "Codex · 主力",
+              "group_id": 1,
+              "group_name": "Codex",
+              "model": "gpt-6-astra",
+              "requested_model": "gpt-6-astra",
+              "upstream_model": "gpt-6-astra",
+              "upstream_response_model": "gpt-6-astra",
+              "upstream_model_mismatch": false,
+              "reasoning_effort": "medium",
+              "requested_reasoning_effort": "high",
+              "request_type": "ws_v2",
+              "native_compaction_v2": true,
+              "input_tokens": 9200,
+              "output_tokens": 1120,
+              "cache_read_tokens": 8000,
+              "cache_creation_tokens": 0,
+              "input_cost": "0.01840",
+              "output_cost": "0.01680",
+              "total_cost": "0.03520",
+              "actual_cost": "0.03520",
+              "account_cost": "0.028160",
+              "rate_multiplier": "1.0",
+              "account_rate_multiplier": "0.8",
+              "first_token_ms": 860,
+              "duration_ms": 9400,
               "user_agent": "CodexCLI/0.42",
               "ip_address": "198.51.100.24"
             }

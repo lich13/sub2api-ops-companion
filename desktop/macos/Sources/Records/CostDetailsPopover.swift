@@ -96,6 +96,7 @@ public struct CostDetailsPopover: View {
                     Text(RecordFormatting.money(row.actual_cost))
                         .font(DS.fontCompactMedium)
                         .monospacedDigit()
+                        .lineLimit(1)
                         .foregroundStyle(DS.good)
                     Image(systemName: "info.circle")
                         .font(DS.iconFont(10))
@@ -104,6 +105,7 @@ public struct CostDetailsPopover: View {
                 Text("A \(RecordFormatting.money(row.account_cost))")
                     .font(DS.fontResetTime)
                     .monospacedDigit()
+                    .lineLimit(1)
                     .foregroundStyle(DS.costOrange)
             }
         }

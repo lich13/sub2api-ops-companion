@@ -124,5 +124,37 @@ struct HitAreaTests {
         }
         #expect(visited == Set(AppPage.allCases))
     }
+
+    @Test("SchedulingParametersView editable value slot responds in left whitespace away from right-aligned digits")
+    @MainActor
+    func schedulingParametersFullRightSlotHitArea() {
+        let store = AppStore()
+        store.ready = true
+        var account = Account(id: 101, name: "Codex", priority: 1, platform: "openai", type: "oauth")
+        account.concurrency = 2
+        account.load_factor = nil
+        account.operation_versions = ["concurrency": "v1", "load_factor": "v1"]
+        store.applyViewState(
+            ViewState(
+                connected: true,
+                online: true,
+                snapshot: Snapshot(observed_at: "2026-11-17T08:00:00Z", accounts: [account])
+            )
+        )
+        let view = VStack(spacing: 0) {
+            SchedulingParametersView(account: account, store: store)
+                .frame(width: 100)
+            Spacer()
+        }
+        let window = SyntheticClick.host(view, size: CGSize(width: 100, height: 120))
+        defer { window.orderOut(nil) }
+
+        let beforeChildren = window.childWindows?.count ?? 0
+        // Row 2 ("并发") spans y ≈ 24...46; x = 58 is in the left empty portion of the right value slot [51...100],
+        // far away from the right-aligned "2" glyph near x ≈ 92.
+        SyntheticClick.click(window, at: CGPoint(x: 58, y: 35))
+        let afterChildren = window.childWindows?.count ?? 0
+        #expect(afterChildren > beforeChildren)
+    }
 }
 }

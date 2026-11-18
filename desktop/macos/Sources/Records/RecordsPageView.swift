@@ -245,21 +245,25 @@ public struct RecordsPageView: View {
         }
     }
 
-    private func rowHeight(for row: UsageRecord, showModel: Bool) -> CGFloat {
-        guard showModel else { return 48 }
+    private func rowHeight(for row: UsageRecord, showModel: Bool, showLatency: Bool) -> CGFloat {
+        let base: CGFloat = showLatency ? 42 : 38
+        guard showModel else { return base }
         let routeCount = max(1, RecordFormatting.modelRoute(row).count) + (row.upstream_model_mismatch ? 1 : 0)
-        return max(48, CGFloat(routeCount) * 14 + 12)
+        return max(base, CGFloat(routeCount) * 14 + 8)
     }
 
     private var recordsTableSurface: some View {
         let cols = shownColumns
         let hasApiKeyCol = cols.contains(.api_key)
         let hasModelCol = cols.contains(.model)
+        let hasLatencyCol = cols.contains(.latency)
         let trailingCols = cols.filter { $0 != .api_key }
         let userColWidth: CGFloat = 110
-        let timeColWidth: CGFloat = 96
-        let colSpacing: CGFloat = 10
-        let hCellPad: CGFloat = 8
+        let userCellPad: CGFloat = 6
+        let timeColWidth: CGFloat = 88
+        let colSpacing: CGFloat = 8
+        let hCellPad: CGFloat = 4
+        let headerHeight: CGFloat = 26
         let colCount = (hasApiKeyCol ? 1 : 0) + 1 + trailingCols.count
         let sumWidths = (hasApiKeyCol ? RecordColumnSpec.api_key.width : 0)
             + timeColWidth
@@ -273,13 +277,13 @@ public struct RecordsPageView: View {
                 Text("用户")
                     .font(DS.fontTableHeader)
                     .foregroundStyle(DS.muted)
-                    .padding(.horizontal, hCellPad)
-                    .frame(width: userColWidth, height: 30, alignment: .leading)
+                    .padding(.horizontal, userCellPad)
+                    .frame(width: userColWidth, height: headerHeight, alignment: .leading)
 
-                Rectangle().fill(DS.line).frame(width: 1, height: 30)
+                Rectangle().fill(DS.line).frame(width: 1, height: headerHeight)
 
                 DS.clear
-                    .frame(maxWidth: .infinity, minHeight: 30, maxHeight: 30)
+                    .frame(maxWidth: .infinity, minHeight: headerHeight, maxHeight: headerHeight)
                     .background(LinearWidthObserver { rightPaneWidth = $0 })
                     .overlay(alignment: .leading) {
                         HStack(spacing: colSpacing) {
@@ -297,12 +301,12 @@ public struct RecordsPageView: View {
                             Spacer(minLength: 0)
                         }
                         .padding(.horizontal, hCellPad)
-                        .frame(width: effectiveDataWidth, height: 30, alignment: .leading)
+                        .frame(width: effectiveDataWidth, height: headerHeight, alignment: .leading)
                         .offset(x: -hScrollOffset)
                     }
                     .clipped()
             }
-            .frame(height: 30)
+            .frame(height: headerHeight)
             .background(DS.surfaceSubtle)
 
             Rectangle().fill(DS.line).frame(height: 1)
@@ -321,7 +325,7 @@ public struct RecordsPageView: View {
                         HStack(alignment: .top, spacing: 0) {
                             VStack(spacing: 0) {
                                 ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, row in
-                                    let rh = rowHeight(for: row, showModel: hasModelCol)
+                                    let rh = rowHeight(for: row, showModel: hasModelCol, showLatency: hasLatencyCol)
                                     Button {
                                         openDetail(id: row.id)
                                     } label: {
@@ -335,7 +339,7 @@ public struct RecordsPageView: View {
                                                 .monospacedDigit()
                                                 .foregroundStyle(DS.muted)
                                         }
-                                        .padding(.horizontal, hCellPad)
+                                        .padding(.horizontal, userCellPad)
                                         .frame(width: userColWidth, height: rh, alignment: .leading)
                                         .background(hoveredRowId == row.id ? DS.rowHover : DS.surface)
                                         .contentShape(Rectangle())
@@ -365,7 +369,7 @@ public struct RecordsPageView: View {
                                     .frame(height: 0)
 
                                     ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, row in
-                                        let rh = rowHeight(for: row, showModel: hasModelCol)
+                                        let rh = rowHeight(for: row, showModel: hasModelCol, showLatency: hasLatencyCol)
                                         HStack(spacing: colSpacing) {
                                             if hasApiKeyCol {
                                                 cellView(.api_key, row: row)
@@ -373,6 +377,7 @@ public struct RecordsPageView: View {
                                             Text(BeijingTime.fullTime(row.created_at))
                                                 .font(DS.fontPriorityMeta)
                                                 .monospacedDigit()
+                                                .lineLimit(1)
                                                 .foregroundStyle(DS.muted)
                                                 .frame(width: timeColWidth, alignment: .leading)
                                             ForEach(trailingCols, id: \.rawValue) { col in
@@ -516,22 +521,20 @@ public struct RecordsPageView: View {
         case .type:
             let rt = RecordFormatting.requestTypeKey(row)
             let tone = requestTypeColors(rt.key)
-            HStack(spacing: 4) {
-                Text(rt.label)
-                    .font(DS.fontResetTimeMedium)
-                    .foregroundStyle(tone.fg)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(tone.bg)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            SwiftUI.Group {
                 if row.native_compaction_v2 == true {
-                    Text("压缩")
-                        .font(DS.fontResetTimeMedium)
-                        .foregroundStyle(DS.recordCompactFg)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(DS.recordCompactBg)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 3) {
+                            typeBadge(rt.label, fg: tone.fg, bg: tone.bg)
+                            typeBadge("压缩", fg: DS.recordCompactFg, bg: DS.recordCompactBg)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            typeBadge(rt.label, fg: tone.fg, bg: tone.bg)
+                            typeBadge("压缩", fg: DS.recordCompactFg, bg: DS.recordCompactBg)
+                        }
+                    }
+                } else {
+                    typeBadge(rt.label, fg: tone.fg, bg: tone.bg)
                 }
             }
             .frame(width: col.width, alignment: .leading)
@@ -596,37 +599,43 @@ public struct RecordsPageView: View {
             let firstTone = latencyColor(RecordFormatting.latencyTone(row.first_token_ms, firstToken: true))
             let totalTone = latencyColor(RecordFormatting.latencyTone(row.duration_ms, firstToken: false))
             let tpsRaw = RecordFormatting.outputRate(row)
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 VStack(spacing: 1) {
                     RoundedRectangle(cornerRadius: 1.5).fill(firstTone).frame(width: 3, height: 15)
                     RoundedRectangle(cornerRadius: 1.5).fill(totalTone).frame(width: 3, height: 18)
                 }
                 VStack(spacing: 1) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 0) {
                         Text("首字")
                             .font(DS.fontResetTime)
+                            .lineLimit(1)
                             .foregroundStyle(DS.muted)
-                        Spacer(minLength: 4)
+                        Spacer(minLength: 3)
                         Text(RecordFormatting.latency(row.first_token_ms))
                             .font(DS.fontPriorityMeta)
+                            .lineLimit(1)
                             .foregroundStyle(firstTone)
                     }
-                    HStack(spacing: 4) {
+                    HStack(spacing: 0) {
                         Text("总耗时")
                             .font(DS.fontResetTime)
+                            .lineLimit(1)
                             .foregroundStyle(DS.muted)
-                        Spacer(minLength: 4)
+                        Spacer(minLength: 3)
                         Text(RecordFormatting.latency(row.duration_ms))
                             .font(DS.fontPriorityMeta)
+                            .lineLimit(1)
                             .foregroundStyle(totalTone)
                     }
-                    HStack(spacing: 4) {
+                    HStack(spacing: 0) {
                         Text("输出 TPS")
                             .font(DS.fontResetTime)
+                            .lineLimit(1)
                             .foregroundStyle(DS.muted)
-                        Spacer(minLength: 4)
+                        Spacer(minLength: 3)
                         Text(tpsRaw)
                             .font(DS.fontResetTime)
+                            .lineLimit(1)
                             .foregroundStyle(DS.ink)
                     }
                 }
@@ -672,6 +681,7 @@ public struct RecordsPageView: View {
             let map = ["token": "Token", "image": "图片", "per_request": "按次"]
             Text(map[row.billing_mode ?? ""] ?? row.billing_mode ?? "—")
                 .font(DS.fontCompact)
+                .lineLimit(1)
                 .foregroundStyle(DS.muted)
                 .frame(width: col.width, alignment: .leading)
 
@@ -689,6 +699,18 @@ public struct RecordsPageView: View {
                 .lineLimit(1)
                 .frame(width: col.width, alignment: .leading)
         }
+    }
+
+    private func typeBadge(_ text: String, fg: Color, bg: Color) -> some View {
+        Text(text)
+            .font(DS.fontResetTimeMedium)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .foregroundStyle(fg)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(bg)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 
     private func requestTypeColors(_ key: String) -> (fg: Color, bg: Color) {
