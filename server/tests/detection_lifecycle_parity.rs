@@ -4697,9 +4697,9 @@ async fn non_degraded_and_empty_automatic_reports_create_no_disposition_notifica
     let automatic_job = harness.wait_job_terminal(&automatic_job_id).await;
     assert_eq!(automatic_job["status"], "completed");
     assert_eq!(automatic_job["automatic"], true);
-    assert_eq!(automatic_job["first_group_prediction"], "gpt-5.4");
+    assert_eq!(automatic_job["first_group_prediction"], "claude-opus-5");
     assert_eq!(automatic_job["first_group_valid"], true);
-    assert_eq!(automatic_job["report"]["prediction"], "gpt-5.4");
+    assert_eq!(automatic_job["report"]["prediction"], "claude-opus-5");
     assert_eq!(automatic_job["report"]["used_outputs"], 3);
     assert!(automatic_job["report"]["probability"].as_f64().unwrap() < 0.99);
     assert_eq!(automatic_job["automatic_disposition"], Value::Null);

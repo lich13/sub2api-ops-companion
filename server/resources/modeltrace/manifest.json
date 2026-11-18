@@ -1,18 +1,21 @@
 {
   "repository": "Hanmo123/ModelTrace",
   "branch": "hanmo",
-  "revision": "a7edbadabec28fdf8b5cd8181764af80136a668a",
+  "revision": "477d59d525c3cd31fe56e4e63958fbc4574ca187",
   "analyzerVersion": 1,
   "files": {
     "bank": {
       "path": "data/unified_bank.json",
-      "sha256": "e514c76928ea38d23bc0f14d3935f23c97b1efb6d96b18a19bdc88ad2d830536",
-      "gitBlob": "7bc72c656fdcdbfc40cd680d91b76afe3b164813"
+      "sha256": "2c5f065333558565cc8b1a01093aef259cac4909b9073f068da6a604730687ad",
+      "gitBlob": "ede2573fb4e1c0f432e035c60caadbb610fc8b0b"
     },
     "core": {
       "path": "static/fingerprint-core.js",
-      "sha256": "83fa5bd611e18f8339122582335123c8ea168ed242298bb31f4e363abeeb6e4a",
-      "gitBlob": "5dbaa1d2d9cc7e3721524ac4937c97f826e88d1e"
+      "sha256": "736be5a58e1d597b657f6a303eca343c04e4765c583bf777e3a2382324e68746",
+      "gitBlob": "7a26a837239c6a7105901ceb7c2df4542f42bf5c",
+      "compatibleGitBlobs": [
+        "5dbaa1d2d9cc7e3721524ac4937c97f826e88d1e"
+      ]
     },
     "challenge": {
       "path": "static/challenge-browser.js",

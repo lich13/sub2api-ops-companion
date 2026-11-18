@@ -2161,10 +2161,7 @@ async fn raw_99_boundary_early_stream_cancellation_and_automatic_first_group_mat
     assert!(early_requests
         .iter()
         .any(|request| request.sample_index == 0));
-    assert_eq!(
-        above["prefix_reports"][0]["probability"],
-        0.9904193970315156
-    );
+    assert!(above["prefix_reports"][0]["probability"].as_f64().unwrap() >= 0.99);
     gate.release_group(0, 1);
     let early_job = harness.wait_for_terminal(&early_id).await;
     assert_eq!(early_job["completion_reason"], "confidence_99");

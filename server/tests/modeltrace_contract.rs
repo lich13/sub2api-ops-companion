@@ -583,12 +583,7 @@ fn fingerprint_bank_cache_is_read_only_and_rejects_lost_or_corrupt_state() {
     let incompatible = tempfile::tempdir().unwrap();
     let incompatible_path = incompatible.path().join("modeltrace-bank-state.json");
     let mut incompatible_state = valid_cache_state();
-    let mut old_bank: Value = serde_json::from_str(BUNDLED_BANK).unwrap();
-    old_bank["built_at"] = "2000-01-01T00:00:00+00:00".into();
-    let old_raw = serde_json::to_string(&old_bank).unwrap();
-    incompatible_state["active"]["raw_bank"] = old_raw.clone().into();
-    incompatible_state["active"]["version"]["built_at"] = old_bank["built_at"].clone();
-    incompatible_state["active"]["version"]["sha256"] = compat::sha256(&old_raw).into();
+    incompatible_state["active"]["version"]["built_at"] = "2000-01-01T00:00:00+00:00".into();
     fs::write(
         &incompatible_path,
         serde_json::to_vec(&incompatible_state).unwrap(),
@@ -600,6 +595,78 @@ fn fingerprint_bank_cache_is_read_only_and_rejects_lost_or_corrupt_state() {
         &expectations["incompatible_cache_error"],
     );
     assert_eq!(fs::read(&incompatible_path).unwrap(), before);
+}
+
+#[test]
+fn fingerprint_bank_cache_older_than_the_bundle_is_replaced_and_compatible_sources_are_kept() {
+    let expectations = fixtures()["fingerprint_bank"]["cache_expectations"].clone();
+    let manifest = modeltrace::manifest();
+    let (_, bundled_version) = modeltrace::bundled().unwrap();
+
+    let older = tempfile::tempdir().unwrap();
+    let older_path = older.path().join("modeltrace-bank-state.json");
+    let mut older_state = valid_cache_state();
+    let mut old_bank: Value = serde_json::from_str(BUNDLED_BANK).unwrap();
+    old_bank["built_at"] = "2000-01-01T00:00:00+00:00".into();
+    let old_raw = serde_json::to_string(&old_bank).unwrap();
+    older_state["active"]["raw_bank"] = old_raw.clone().into();
+    older_state["active"]["version"]["built_at"] = old_bank["built_at"].clone();
+    older_state["active"]["version"]["sha256"] = compat::sha256(&old_raw).into();
+    older_state["last_error"] = json!({"code":"incompatible"});
+    fs::write(&older_path, serde_json::to_vec(&older_state).unwrap()).unwrap();
+    let before = fs::read(&older_path).unwrap();
+    let bank = fingerprint_bank::FingerprintBank::new(settings_at(older.path())).unwrap();
+    let public = bank.public();
+    assert_eq!(public["source"], "bundled");
+    assert_eq!(public["status"], "idle");
+    assert_eq!(bank.snapshot().1["built_at"], bundled_version["built_at"]);
+    assert_eq!(fs::read(&older_path).unwrap(), before);
+    bank.adopt_bundled().unwrap();
+    let saved: Value = serde_json::from_slice(&fs::read(&older_path).unwrap()).unwrap();
+    assert_eq!(saved["active"]["raw_bank"], BUNDLED_BANK);
+    assert_eq!(
+        saved["active"]["version"]["sha256"],
+        bundled_version["sha256"]
+    );
+    assert_eq!(saved["last_error"], Value::Null);
+
+    let current = tempfile::tempdir().unwrap();
+    let current_path = current.path().join("modeltrace-bank-state.json");
+    fs::write(
+        &current_path,
+        serde_json::to_vec(&valid_cache_state()).unwrap(),
+    )
+    .unwrap();
+    let before = fs::read(&current_path).unwrap();
+    fingerprint_bank::FingerprintBank::new(settings_at(current.path()))
+        .unwrap()
+        .adopt_bundled()
+        .unwrap();
+    let kept: Value = serde_json::from_slice(&fs::read(&current_path).unwrap()).unwrap();
+    assert_eq!(kept, serde_json::from_slice::<Value>(&before).unwrap());
+
+    for (blob, accepted) in [
+        (
+            manifest["files"]["core"]["compatibleGitBlobs"][0].clone(),
+            true,
+        ),
+        (json!("0".repeat(40)), false),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut state = valid_cache_state();
+        state["active"]["version"]["core_blob"] = blob;
+        fs::write(
+            directory.path().join("modeltrace-bank-state.json"),
+            serde_json::to_vec(&state).unwrap(),
+        )
+        .unwrap();
+        let result = fingerprint_bank::FingerprintBank::new(settings_at(directory.path()));
+        if accepted {
+            assert_eq!(result.unwrap().public()["source"], "cache");
+        } else {
+            assert_bank_error(result, &expectations["corrupt_cache_error"]);
+        }
+    }
 }
 
 #[test]

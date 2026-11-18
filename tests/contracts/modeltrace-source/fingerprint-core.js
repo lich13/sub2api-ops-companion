@@ -188,6 +188,7 @@ export function analyzeGlobalOutputs(outputs, bank) {
     score: combinedScores[index],
     family: modelEntries[model].family || "models",
     family_name: familyNames[modelEntries[model].family || "models"],
+    ...(modelEntries[model].unreleased ? { unreleased: true } : {}),
   })).sort((left, right) => right.probability - left.probability);
   const familyProbabilities = Object.fromEntries(familyOrder.map((family) => [
     family,

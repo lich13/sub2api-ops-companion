@@ -309,6 +309,7 @@ impl Runtime {
         startup("priority_orders", self.priorities.recover_startup())?;
         startup("model_tests", self.tests.startup())?;
         startup("lm_detector", self.tests.lm_bank.migrate_bundled())?;
+        startup("fingerprints", self.tests.bank.adopt_bundled())?;
         startup(
             "capacity",
             self.detection.capacity.initialize(chrono::Utc::now()),

@@ -205,6 +205,22 @@ pub fn parse_git_refs(raw: &[u8], branch: &str) -> SyncResult<String> {
         Err(Failure::new("invalid-data"))
     }
 }
+/// A scoring source that differs from the pinned one only in ways this analyzer does not
+/// read is listed in the manifest as compatible.
+fn compatible_blob(manifest: &Value, name: &str, blob: &Value) -> bool {
+    let file = &manifest["files"][name];
+    blob == &file["gitBlob"]
+        || file["compatibleGitBlobs"]
+            .as_array()
+            .is_some_and(|known| known.contains(blob))
+}
+fn bundled_state(manifest: &Value, bundled: &(Value, Value)) -> Value {
+    let mut provenance = bundled.1.clone();
+    for name in ["core", "challenge"] {
+        provenance[format!("{name}_blob")] = manifest["files"][name]["gitBlob"].clone();
+    }
+    json!({"version":1,"active":{"raw_bank":include_str!("../resources/modeltrace/unified_bank.json"),"version":provenance},"source":"bundled","checked_at":0,"synced_at":0,"cooldown_until":null,"last_error":null,"result":null})
+}
 fn strip_raw_bank(mut state: Value) -> Value {
     if let Some(active) = state["active"].as_object_mut() {
         active.shift_remove("raw_bank");
@@ -256,14 +272,10 @@ impl FingerprintBank {
         }
         let bundled = modeltrace::bundled()?;
         validate(&bundled.0)?;
-        let mut provenance = bundled.1.clone();
-        for name in ["core", "challenge"] {
-            provenance[format!("{name}_blob")] = manifest["files"][name]["gitBlob"].clone();
-        }
-        let defaults = json!({"version":1,"active":{"raw_bank":include_str!("../resources/modeltrace/unified_bank.json"),"version":provenance},"source":"bundled","checked_at":0,"synced_at":0,"cooldown_until":null,"last_error":null,"result":null});
+        let defaults = bundled_state(&manifest, &bundled);
         let store = Store::new(
             settings.data_dir().join("modeltrace-bank-state.json"),
-            defaults,
+            defaults.clone(),
             valid_policy,
         );
         let cached = store.path().exists();
@@ -279,7 +291,7 @@ impl FingerprintBank {
             || v["analyzer_version"] != manifest["analyzerVersion"]
             || ["core", "challenge"]
                 .iter()
-                .any(|key| v[format!("{key}_blob")] != manifest["files"][key]["gitBlob"])
+                .any(|key| !compatible_blob(&manifest, key, &v[format!("{key}_blob")]))
             || ["checked_at", "synced_at"].iter().any(|key| {
                 !state[key]
                     .as_f64()
@@ -291,20 +303,24 @@ impl FingerprintBank {
         {
             return Err(Error::new(503, "指纹库缓存损坏"));
         }
-        let bank: Value = serde_json::from_str(raw)?;
-        let compiled = Arc::new(modeltrace::CompiledBank::compile(&bank)?);
-        if bank["built_at"] != v["built_at"]
-            || parse_datetime(&bank["built_at"]) < parse_datetime(&bundled.0["built_at"])
-        {
+        let mut bank: Value = serde_json::from_str(raw)?;
+        if bank["built_at"] != v["built_at"] {
             return Err(Error::new(503, "指纹库缓存不兼容"));
         }
+        // A cache older than the bundled bank is superseded by it. The file is replaced
+        // by `adopt_bundled` once the service starts; validation alone writes nothing.
+        if parse_datetime(&bank["built_at"]) < parse_datetime(&bundled.0["built_at"]) {
+            bank = bundled.0;
+            state = defaults;
+        } else if cached {
+            state["source"] = "cache".into();
+        }
+        let compiled = Arc::new(modeltrace::CompiledBank::compile(&bank)?);
+        let v = &state["active"]["version"];
         let snapshot = Arc::new((
             bank,
             crate::compat::pick(v, &["revision", "sha256", "built_at", "analyzer_version"]),
         ));
-        if cached {
-            state["source"] = "cache".into();
-        }
         state = strip_raw_bank(state);
         let code = string(&state["last_error"]["code"]);
         let status = if code.is_empty() {
@@ -329,6 +345,24 @@ impl FingerprintBank {
             settings,
             tasks: Default::default(),
         })
+    }
+    /// Replaces a saved bank that is older than the bundled one, so later state writes
+    /// keep the bank and its recorded version together.
+    pub fn adopt_bundled(&self) -> Result<()> {
+        if !self.store.path().exists() {
+            return Ok(());
+        }
+        let manifest = modeltrace::manifest();
+        let bundled = modeltrace::bundled()?;
+        let built = parse_datetime(&bundled.0["built_at"]);
+        let result = self.store.transaction(|state| {
+            if parse_datetime(&state["active"]["version"]["built_at"]) < built {
+                *state = bundled_state(&manifest, &bundled);
+            }
+            Ok(())
+        });
+        self.store.evict_cache();
+        result
     }
     pub fn snapshot(&self) -> Arc<(Value, Value)> {
         self.active
@@ -509,9 +543,7 @@ impl FingerprintBank {
             let raw = self
                 .pinned(revision, string(&file["path"]), deadline)
                 .await?;
-            if git_blob_digest(&raw) != file["gitBlob"]
-                || crate::compat::sha256(&raw) != file["sha256"]
-            {
+            if !compatible_blob(manifest, name, &json!(git_blob_digest(&raw))) {
                 return Err(Failure::new("incompatible"));
             }
         }
@@ -596,7 +628,7 @@ impl FingerprintBank {
                         }
                         if name == "bank" {
                             expected = Some(string(&entry["sha"]).to_owned());
-                        } else if entry["sha"] != manifest["files"][name]["gitBlob"] {
+                        } else if !compatible_blob(&manifest, name, &entry["sha"]) {
                             return Err(Failure::new("incompatible"));
                         }
                     }

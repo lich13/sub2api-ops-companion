@@ -3,7 +3,7 @@
     "above_99": {
       "display_probability_2dp": 0.99,
       "outputs": [
-        "52, 188, 241, 139, 194, 223, 307, 146, 81, 179, 72, 37, 151, 7, 172, 95, 187, 192, 302, 24, 131, 16, 351, 288, 101, 141, 39, 313, 298, 31, 129, 291, 90, 337, 286, 327, 62, 338, 193, 338, 216, 136, 294, 125, 322, 173, 115, 252, 83, 46, 315, 29, 112, 92, 348, 257, 105, 71, 52, 117, 110, 203, 51, 341, 18, 57, 88, 113, 295, 62, 159, 286, 137, 47, 161, 143, 9, 309, 321, 185, 177, 111, 283, 273, 123, 280, 4, 155, 246, 30, 101, 313, 35, 332, 10, 330, 347, 220, 88, 27, 294, 247, 205, 312, 72, 304, 236, 84, 221, 297, 97, 136, 147, 40, 343, 227, 253, 87, 93, 207, 197, 338, 305, 312, 38, 80, 47, 338, 87, 85, 290, 140, 193, 238, 195, 240, 187, 322, 121, 51, 241, 198, 315, 176, 140, 291, 339, 224, 253, 133, 38, 47, 318, 291, 42, 202, 80, 293, 54, 268, 86, 288, 124, 73, 77, 318, 159, 78, 252, 324, 23, 235, 197, 92, 101, 34, 29, 293, 319, 156, 289, 85, 273, 67, 317, 58, 27, 229, 236, 177, 186, 4, 76, 102, 12, 266, 201, 232, 339, 24, 273, 79, 338, 308, 113, 210, 232, 139, 83, 182, 309, 268, 256, 226, 23, 319, 211, 73, 23, 269, 310, 177, 10, 343, 66, 340, 175, 266, 127, 152, 84, 47, 88, 247, 233, 235, 73, 154, 92, 58, 290, 296, 334, 247, 118, 251, 269, 315, 260, 286, 223, 348, 145, 138, 179, 3, 281, 208, 22, 161, 222, 163, 277, 22, 39, 305, 323, 68, 22, 312, 41, 125, 114, 34, 183, 79, 130, 264, 74, 246, 114, 11, 85, 117, 123, 331, 152, 220, 349, 47, 3, 280, 208, 241, 41, 78, 331, 224, 108, 241",
+        "52, 188, 241, 139, 194, 223, 307, 146, 81, 179, 72, 37, 151, 7, 172, 95, 187, 192, 302, 24, 131, 16, 351, 288, 101, 141, 39, 313, 298, 31, 129, 291, 90, 337, 286, 327, 62, 338, 193, 338, 216, 136, 294, 125, 322, 173, 115, 252, 83, 46, 315, 29, 112, 92, 348, 257, 105, 71, 52, 117, 110, 203, 51, 341, 18, 57, 88, 113, 295, 62, 159, 286, 137, 47, 55, 143, 9, 309, 321, 18, 177, 111, 283, 273, 123, 68, 4, 155, 73, 30, 101, 313, 35, 332, 10, 330, 347, 220, 88, 27, 294, 247, 205, 312, 72, 304, 236, 84, 221, 297, 97, 136, 147, 40, 343, 227, 253, 87, 93, 207, 197, 338, 305, 312, 38, 80, 47, 354, 87, 85, 290, 140, 193, 238, 195, 240, 174, 322, 121, 51, 241, 198, 315, 176, 140, 291, 339, 224, 253, 203, 38, 47, 318, 291, 42, 202, 80, 293, 349, 268, 86, 288, 124, 73, 77, 318, 159, 78, 252, 324, 23, 235, 197, 92, 101, 34, 29, 284, 319, 156, 289, 85, 273, 67, 317, 58, 27, 229, 236, 177, 186, 4, 76, 102, 12, 266, 201, 194, 339, 24, 273, 79, 338, 308, 113, 210, 232, 139, 83, 182, 309, 268, 256, 226, 170, 319, 14, 73, 23, 269, 310, 177, 10, 343, 66, 340, 175, 69, 127, 152, 84, 354, 88, 247, 233, 235, 73, 154, 92, 58, 290, 296, 334, 247, 118, 251, 269, 315, 260, 286, 223, 348, 145, 138, 179, 3, 281, 208, 22, 161, 222, 163, 277, 22, 39, 305, 323, 68, 22, 312, 41, 125, 114, 34, 183, 79, 130, 264, 74, 246, 114, 11, 85, 117, 123, 331, 152, 220, 349, 47, 100, 280, 208, 241, 41, 78, 331, 224, 108, 241",
         "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300",
         "74, 271, 113, 310, 152, 349, 191, 33, 230, 72, 269, 111, 308, 150, 347, 189, 31, 228, 70, 267, 109, 306, 148, 345, 187, 29, 226, 68, 265, 107, 304, 146, 343, 185, 27, 224, 66, 263, 105, 302, 144, 341, 183, 25, 222, 64, 261, 103, 300, 142, 339, 181, 23, 220, 62, 259, 101, 298, 140, 337, 179, 21, 218, 60, 257, 99, 296, 138, 335, 177, 19, 216, 58, 255, 97, 294, 136, 333, 175, 17, 214, 56, 253, 95, 292, 134, 331, 173, 15, 212, 54, 251, 93, 290, 132, 329, 171, 13, 210, 52, 249, 91, 288, 130, 327, 169, 11, 208, 50, 247, 89, 286, 128, 325, 167, 9, 206, 48, 245, 87, 284, 126, 323, 165, 7, 204, 46, 243, 85, 282, 124, 321, 163, 5, 202, 44, 241, 83, 280, 122, 319, 161, 3, 200, 42, 239, 81, 278, 120, 317, 159, 1, 198, 40, 237, 79, 276, 118, 315, 157, 354, 196, 38, 235, 77, 274, 116, 313, 155, 352, 194, 36, 233, 75, 272, 114, 311, 153, 350, 192, 34, 231, 73, 270, 112, 309, 151, 348, 190, 32, 229, 71, 268, 110, 307, 149, 346, 188, 30, 227, 69, 266, 108, 305, 147, 344, 186, 28, 225, 67, 264, 106, 303, 145, 342, 184, 26, 223, 65, 262, 104, 301, 143, 340, 182, 24, 221, 63, 260, 102, 299, 141, 338, 180, 22, 219, 61, 258, 100, 297, 139, 336, 178, 20, 217, 59, 256, 98, 295, 137, 334, 176, 18, 215, 57, 254, 96, 293, 135, 332, 174, 16, 213, 55, 252, 94, 291, 133, 330, 172, 14, 211, 53, 250, 92, 289, 131, 328, 170, 12, 209, 51, 248, 90, 287, 129, 326, 168, 10, 207, 49, 246, 88, 285, 127, 324, 166, 8, 205, 47"
       ],
@@ -11,115 +11,229 @@
         {
           "bank_version": {
             "analyzer_version": 1,
-            "built_at": "2026-09-30T22:05:57.774800+00:00",
-            "revision": "a7edbadabec28fdf8b5cd8181764af80136a668a",
-            "sha256": "e514c76928ea38d23bc0f14d3935f23c97b1efb6d96b18a19bdc88ad2d830536"
+            "built_at": "2026-11-14T16:13:39.799477+00:00",
+            "revision": "477d59d525c3cd31fe56e4e63958fbc4574ca187",
+            "sha256": "2c5f065333558565cc8b1a01093aef259cac4909b9073f068da6a604730687ad"
           },
           "prediction": "claude-sonnet-4-6",
           "prediction_name": "claude-sonnet-4-6",
-          "probability": 0.9904193970315156,
+          "probability": 0.9930928329282571,
           "results": [
             {
               "display_name": "claude-sonnet-4-6",
               "model": "claude-sonnet-4-6",
-              "probability": 0.9904193970315156,
-              "score": 1.7318741520763226
-            },
-            {
-              "display_name": "gpt-6-astra",
-              "model": "gpt-6-astra",
-              "probability": 0.006228413474240716,
-              "score": 1.0305623112249314
-            },
-            {
-              "display_name": "claude-sonnet-5-5",
-              "model": "claude-sonnet-5-5",
-              "probability": 0.0008590111162342157,
-              "score": 0.7564720477767486
+              "probability": 0.9930928329282571,
+              "score": 2.6194115660061748
             },
             {
               "display_name": "claude-opus-4-7",
               "model": "claude-opus-4-7",
-              "probability": 0.0008121391605416978,
-              "score": 0.7487090443050715
+              "probability": 0.002162924753440335,
+              "score": 1.240147667507454
             },
             {
               "display_name": "gpt-5.6-luna",
               "model": "gpt-5.6-luna",
-              "probability": 0.0008069409956924763,
-              "score": 0.7478206587675992
+              "probability": 0.0016887315170181316,
+              "score": 1.184457486523963
             },
             {
-              "display_name": "gpt-5.4",
-              "model": "gpt-5.4",
-              "probability": 0.0007077823259909828,
-              "score": 0.7296806620492163
-            },
-            {
-              "display_name": "gpt-6-sol",
-              "model": "gpt-6-sol",
-              "probability": 0.00011122542749619971,
-              "score": 0.47364787164940125
+              "display_name": "gemini-3.8-flash-high",
+              "model": "gemini-3.8-flash-high",
+              "probability": 0.0010263223396272548,
+              "score": 1.072395654337517
             },
             {
               "display_name": "claude-opus-4-8",
               "model": "claude-opus-4-8",
-              "probability": 4.3558434091429596e-05,
-              "score": 0.34394815285524644
+              "probability": 0.0005248630242719105,
+              "score": 0.9214934870038421
             },
             {
-              "display_name": "gpt-6-luna",
-              "model": "gpt-6-luna",
-              "probability": 8.082227769419663e-06,
-              "score": 0.11090156047772573
+              "display_name": "deepseek-v4.1-flash-1017",
+              "model": "deepseek-v4.1-flash-1017",
+              "probability": 0.00031380153064160824,
+              "score": 0.8057455528265643
             },
             {
-              "display_name": "claude-opus-5-5",
-              "model": "claude-opus-5-5",
-              "probability": 3.370752045154716e-06,
-              "score": -0.01009243978325755
+              "display_name": "gpt-6.2-astra",
+              "model": "gpt-6.2-astra",
+              "probability": 0.0003037643253161049,
+              "score": 0.798430292032847
+            },
+            {
+              "display_name": "deepseek-v4-pro-0813",
+              "model": "deepseek-v4-pro-0813",
+              "probability": 0.0002083493910220622,
+              "score": 0.7135875807970202
+            },
+            {
+              "display_name": "glm-5.3",
+              "model": "glm-5.3",
+              "probability": 0.00015756325600433613,
+              "score": 0.6507177898601275
+            },
+            {
+              "display_name": "deepseek-v4.1-flash",
+              "model": "deepseek-v4.1-flash",
+              "probability": 0.00010285555098117753,
+              "score": 0.5547440276395433
             },
             {
               "display_name": "claude-haiku-4-5-20251001",
               "model": "claude-haiku-4-5-20251001",
-              "probability": 4.6272191167210654e-08,
-              "score": -0.6033981353464891
+              "probability": 9.702195298372009e-05,
+              "score": 0.5416051588375812
+            },
+            {
+              "display_name": "gpt-6-astra",
+              "model": "gpt-6-astra",
+              "probability": 9.076201197475997e-05,
+              "score": 0.5265967474694175
+            },
+            {
+              "display_name": "gpt-5.4",
+              "model": "gpt-5.4",
+              "probability": 7.109142796462645e-05,
+              "score": 0.4716288159422043
+            },
+            {
+              "display_name": "glm-5.3-flash",
+              "model": "glm-5.3-flash",
+              "probability": 5.0022493546901444e-05,
+              "score": 0.39253364905713867
+            },
+            {
+              "display_name": "claude-sonnet-5-5",
+              "model": "claude-sonnet-5-5",
+              "probability": 4.532212545296967e-05,
+              "score": 0.3703286928236448
+            },
+            {
+              "display_name": "kimi-k3.1-pro",
+              "model": "kimi-k3.1-pro",
+              "probability": 2.7840918973992726e-05,
+              "score": 0.26067627946423616
+            },
+            {
+              "display_name": "gpt-6-luna",
+              "model": "gpt-6-luna",
+              "probability": 8.301107662098894e-06,
+              "score": -0.011631294598892061
+            },
+            {
+              "display_name": "gpt-6.1-sol",
+              "model": "gpt-6.1-sol",
+              "probability": 7.359318372795931e-06,
+              "score": -0.03872925415128492
+            },
+            {
+              "display_name": "gemini-4-carbon",
+              "model": "gemini-4-carbon",
+              "probability": 4.702506873046651e-06,
+              "score": -0.1395118496878454
+            },
+            {
+              "display_name": "gpt-6-sol",
+              "model": "gpt-6-sol",
+              "probability": 4.675483348837761e-06,
+              "score": -0.1408087167182106
             },
             {
               "display_name": "claude-sonnet-5",
               "model": "claude-sonnet-5",
-              "probability": 1.4101061365854858e-08,
-              "score": -0.7678016638148054
+              "probability": 4.5727045861487235e-06,
+              "score": -0.1458105205645937
+            },
+            {
+              "display_name": "gpt-6.2-sol",
+              "model": "gpt-6.2-sol",
+              "probability": 1.970292790249552e-06,
+              "score": -0.3352647276795439
+            },
+            {
+              "display_name": "claude-fable-5-1",
+              "model": "claude-fable-5-1",
+              "probability": 1.0873028789606878e-06,
+              "score": -0.4690384198798265
+            },
+            {
+              "display_name": "gemini-4-hydrogen",
+              "model": "gemini-4-hydrogen",
+              "probability": 1.0403333420243196e-06,
+              "score": -0.47897533330618736
+            },
+            {
+              "display_name": "claude-fable-5-2",
+              "model": "claude-fable-5-2",
+              "probability": 6.502318911685107e-07,
+              "score": -0.5847300586103257
             },
             {
               "display_name": "claude-opus-5",
               "model": "claude-opus-5",
-              "probability": 8.606829148950687e-09,
-              "score": -0.8361056776158556
+              "probability": 3.8645635761690087e-07,
+              "score": -0.7018131838405793
             },
             {
-              "display_name": "gpt-5.5",
-              "model": "gpt-5.5",
-              "probability": 4.905049288938605e-09,
-              "score": -0.9139002499238976
+              "display_name": "kimi-k3",
+              "model": "kimi-k3",
+              "probability": 2.623786195287701e-07,
+              "score": -0.7889499532175712
             },
             {
-              "display_name": "gpt-5.6-sol",
-              "model": "gpt-5.6-sol",
-              "probability": 4.420260887763024e-09,
-              "score": -0.928298142228292
+              "display_name": "gpt-6.1-terra",
+              "model": "gpt-6.1-terra",
+              "probability": 2.3559152588059528e-07,
+              "score": -0.8131827617150542
             },
             {
-              "display_name": "claude-opus-4-6",
-              "model": "claude-opus-4-6",
-              "probability": 6.160330141439276e-10,
-              "score": -1.200943777691513
+              "display_name": "claude-haiku-5-5",
+              "model": "claude-haiku-5-5",
+              "probability": 1.723768546537082e-07,
+              "score": -0.8834844650590836
             },
             {
               "display_name": "gpt-5.6-terra",
               "model": "gpt-5.6-terra",
-              "probability": 1.3295741289354315e-10,
-              "score": -1.413076374778153
+              "probability": 1.0062716841709533e-07,
+              "score": -1.004606958449887
+            },
+            {
+              "display_name": "gemini-4-argon",
+              "model": "gemini-4-argon",
+              "probability": 9.958962299732793e-08,
+              "score": -1.0069391947198942
+            },
+            {
+              "display_name": "claude-opus-5-5",
+              "model": "claude-opus-5-5",
+              "probability": 7.833609026605966e-08,
+              "score": -1.0609565034075268
+            },
+            {
+              "display_name": "gpt-5.5",
+              "model": "gpt-5.5",
+              "probability": 7.27873802574169e-08,
+              "score": -1.077488199667628
+            },
+            {
+              "display_name": "claude-fable-5",
+              "model": "claude-fable-5",
+              "probability": 6.411679740398926e-08,
+              "score": -1.1060296019192806
+            },
+            {
+              "display_name": "gpt-5.6-sol",
+              "model": "gpt-5.6-sol",
+              "probability": 5.84904664337722e-08,
+              "score": -1.1266965447274724
+            },
+            {
+              "display_name": "claude-opus-4-6",
+              "model": "claude-opus-4-6",
+              "probability": 4.04198939039444e-08,
+              "score": -1.2098529062085899
             }
           ],
           "used_outputs": 1
@@ -127,115 +241,229 @@
         {
           "bank_version": {
             "analyzer_version": 1,
-            "built_at": "2026-09-30T22:05:57.774800+00:00",
-            "revision": "a7edbadabec28fdf8b5cd8181764af80136a668a",
-            "sha256": "e514c76928ea38d23bc0f14d3935f23c97b1efb6d96b18a19bdc88ad2d830536"
+            "built_at": "2026-11-14T16:13:39.799477+00:00",
+            "revision": "477d59d525c3cd31fe56e4e63958fbc4574ca187",
+            "sha256": "2c5f065333558565cc8b1a01093aef259cac4909b9073f068da6a604730687ad"
           },
-          "prediction": "gpt-5.4",
-          "prediction_name": "gpt-5.4",
-          "probability": 0.9956787817510385,
+          "prediction": "claude-sonnet-4-6",
+          "prediction_name": "claude-sonnet-4-6",
+          "probability": 0.295764498241225,
           "results": [
             {
-              "display_name": "gpt-5.4",
-              "model": "gpt-5.4",
-              "probability": 0.9956787817510385,
-              "score": 1.1973720533027081
-            },
-            {
-              "display_name": "claude-opus-5-5",
-              "model": "claude-opus-5-5",
-              "probability": 0.0025915198557388192,
-              "score": 0.7014403719030237
-            },
-            {
-              "display_name": "gpt-6-astra",
-              "model": "gpt-6-astra",
-              "probability": 0.0010764441361636643,
-              "score": 0.6282252570727905
+              "display_name": "claude-sonnet-4-6",
+              "model": "claude-sonnet-4-6",
+              "probability": 0.295764498241225,
+              "score": 1.068102948600525
             },
             {
               "display_name": "claude-opus-4-7",
               "model": "claude-opus-4-7",
-              "probability": 0.0005031083083070396,
-              "score": 0.5648408445793016
+              "probability": 0.26633731687102563,
+              "score": 1.051700678660553
             },
             {
-              "display_name": "claude-sonnet-4-6",
-              "model": "claude-sonnet-4-6",
-              "probability": 7.909855913181337e-05,
-              "score": 0.4106649435160556
+              "display_name": "gpt-5.4",
+              "model": "gpt-5.4",
+              "probability": 0.23048247279080344,
+              "score": 1.0290710366779947
             },
             {
               "display_name": "claude-opus-4-8",
               "model": "claude-opus-4-8",
-              "probability": 4.355343024990621e-05,
-              "score": 0.3609394274454811
+              "probability": 0.11953778244828096,
+              "score": 0.9263153710382361
             },
             {
-              "display_name": "claude-opus-5",
-              "model": "claude-opus-5",
-              "probability": 2.643599969521529e-05,
-              "score": 0.3193342807869897
+              "display_name": "gpt-6.2-astra",
+              "model": "gpt-6.2-astra",
+              "probability": 0.038683380701031445,
+              "score": 0.749736891048467
             },
             {
-              "display_name": "gpt-5.6-luna",
-              "model": "gpt-5.6-luna",
-              "probability": 4.800773639567398e-07,
-              "score": -0.014710279149398875
-            },
-            {
-              "display_name": "claude-sonnet-5-5",
-              "model": "claude-sonnet-5-5",
-              "probability": 2.6816945866886316e-07,
-              "score": -0.06323762720527693
-            },
-            {
-              "display_name": "gpt-6-sol",
-              "model": "gpt-6-sol",
-              "probability": 1.7019562413100242e-07,
-              "score": -0.10112684249726495
+              "display_name": "kimi-k3.1-pro",
+              "model": "kimi-k3.1-pro",
+              "probability": 0.013990321305514425,
+              "score": 0.5905589354283748
             },
             {
               "display_name": "claude-haiku-4-5-20251001",
               "model": "claude-haiku-4-5-20251001",
-              "probability": 1.237765746402674e-07,
-              "score": -0.12766604105458462
+              "probability": 0.008107521421108571,
+              "score": 0.5051710306848316
             },
             {
-              "display_name": "claude-opus-4-6",
-              "model": "claude-opus-4-6",
-              "probability": 7.754955608614836e-09,
-              "score": -0.35851154526940143
+              "display_name": "claude-opus-5",
+              "model": "claude-opus-5",
+              "probability": 0.006970426261334662,
+              "score": 0.48151984138183174
+            },
+            {
+              "display_name": "deepseek-v4.1-flash",
+              "model": "deepseek-v4.1-flash",
+              "probability": 0.006728029587764176,
+              "score": 0.47598030500508337
+            },
+            {
+              "display_name": "gpt-6-astra",
+              "model": "gpt-6-astra",
+              "probability": 0.0027614457194609873,
+              "score": 0.336603466403385
+            },
+            {
+              "display_name": "kimi-k3",
+              "model": "kimi-k3",
+              "probability": 0.002133919674102032,
+              "score": 0.29625606331291454
+            },
+            {
+              "display_name": "glm-5.3",
+              "model": "glm-5.3",
+              "probability": 0.0018960859317444442,
+              "score": 0.27776142597873654
             },
             {
               "display_name": "claude-sonnet-5",
               "model": "claude-sonnet-5",
-              "probability": 7.366544485707587e-09,
-              "score": -0.36279349012915174
+              "probability": 0.00111202413637383,
+              "score": 0.19424596864092689
+            },
+            {
+              "display_name": "glm-5.3-flash",
+              "model": "glm-5.3-flash",
+              "probability": 0.0010634788344148075,
+              "score": 0.18725990290310218
+            },
+            {
+              "display_name": "gpt-6.2-sol",
+              "model": "gpt-6.2-sol",
+              "probability": 0.0009964202352473555,
+              "score": 0.17706612733416813
+            },
+            {
+              "display_name": "gpt-5.6-luna",
+              "model": "gpt-5.6-luna",
+              "probability": 0.0007824024187768787,
+              "score": 0.13922194466084303
+            },
+            {
+              "display_name": "claude-opus-5-5",
+              "model": "claude-opus-5-5",
+              "probability": 0.0005805146861444969,
+              "score": 0.09251078911593513
+            },
+            {
+              "display_name": "claude-fable-5-2",
+              "model": "claude-fable-5-2",
+              "probability": 0.0004757732250970891,
+              "score": 0.061369334760663696
+            },
+            {
+              "display_name": "gemini-3.8-flash-high",
+              "model": "gemini-3.8-flash-high",
+              "probability": 0.000469895926380205,
+              "score": 0.059423897737977405
+            },
+            {
+              "display_name": "deepseek-v4.1-flash-1017",
+              "model": "deepseek-v4.1-flash-1017",
+              "probability": 0.00032408264407982155,
+              "score": 0.0012783203894716766
+            },
+            {
+              "display_name": "gpt-6.1-sol",
+              "model": "gpt-6.1-sol",
+              "probability": 0.00020002580224737194,
+              "score": -0.07424608870273881
+            },
+            {
+              "display_name": "claude-fable-5-1",
+              "model": "claude-fable-5-1",
+              "probability": 0.00018409813659286625,
+              "score": -0.08723291061109906
+            },
+            {
+              "display_name": "deepseek-v4-pro-0813",
+              "model": "deepseek-v4-pro-0813",
+              "probability": 0.00016842476436723848,
+              "score": -0.10115917266390917
+            },
+            {
+              "display_name": "claude-haiku-5-5",
+              "model": "claude-haiku-5-5",
+              "probability": 0.00012870467816985547,
+              "score": -0.14325555406570278
+            },
+            {
+              "display_name": "claude-sonnet-5-5",
+              "model": "claude-sonnet-5-5",
+              "probability": 3.5871129589202185e-05,
+              "score": -0.34321124187398183
+            },
+            {
+              "display_name": "claude-opus-4-6",
+              "model": "claude-opus-4-6",
+              "probability": 3.267926535680564e-05,
+              "score": -0.3577967526889937
+            },
+            {
+              "display_name": "claude-fable-5",
+              "model": "claude-fable-5",
+              "probability": 1.844247856775856e-05,
+              "score": -0.4473338428021384
+            },
+            {
+              "display_name": "gpt-6-sol",
+              "model": "gpt-6-sol",
+              "probability": 1.787528296788752e-05,
+              "score": -0.45222286642757625
+            },
+            {
+              "display_name": "gpt-6.1-terra",
+              "model": "gpt-6.1-terra",
+              "probability": 4.0082142741887764e-06,
+              "score": -0.6862172712136556
             },
             {
               "display_name": "gpt-6-luna",
               "model": "gpt-6-luna",
-              "probability": 3.5120999683056615e-10,
-              "score": -0.6164034640386746
-            },
-            {
-              "display_name": "gpt-5.6-sol",
-              "model": "gpt-5.6-sol",
-              "probability": 2.547133287891902e-10,
-              "score": -0.6431739318879572
-            },
-            {
-              "display_name": "gpt-5.5",
-              "model": "gpt-5.5",
-              "probability": 7.0597058351272304e-12,
-              "score": -0.9419852091979131
+              "probability": 3.3458280427442003e-06,
+              "score": -0.7144879874043425
             },
             {
               "display_name": "gpt-5.6-terra",
               "model": "gpt-5.6-terra",
-              "probability": 6.170136226227935e-12,
-              "score": -0.9532087481767271
+              "probability": 2.4476215986238354e-06,
+              "score": -0.7634127191645779
+            },
+            {
+              "display_name": "gemini-4-carbon",
+              "model": "gemini-4-carbon",
+              "probability": 2.16838484992013e-06,
+              "score": -0.7823714737821881
+            },
+            {
+              "display_name": "gemini-4-hydrogen",
+              "model": "gemini-4-hydrogen",
+              "probability": 1.9056593387127862e-06,
+              "score": -0.8025854926986649
+            },
+            {
+              "display_name": "gpt-5.6-sol",
+              "model": "gpt-5.6-sol",
+              "probability": 1.1317520795588385e-06,
+              "score": -0.8841369469517667
+            },
+            {
+              "display_name": "gemini-4-argon",
+              "model": "gemini-4-argon",
+              "probability": 8.451622549352181e-07,
+              "score": -0.9298369653726826
+            },
+            {
+              "display_name": "gpt-5.5",
+              "model": "gpt-5.5",
+              "probability": 2.3277979240475762e-07,
+              "score": -1.1316469933400042
             }
           ],
           "used_outputs": 2
@@ -243,115 +471,229 @@
         {
           "bank_version": {
             "analyzer_version": 1,
-            "built_at": "2026-09-30T22:05:57.774800+00:00",
-            "revision": "a7edbadabec28fdf8b5cd8181764af80136a668a",
-            "sha256": "e514c76928ea38d23bc0f14d3935f23c97b1efb6d96b18a19bdc88ad2d830536"
+            "built_at": "2026-11-14T16:13:39.799477+00:00",
+            "revision": "477d59d525c3cd31fe56e4e63958fbc4574ca187",
+            "sha256": "2c5f065333558565cc8b1a01093aef259cac4909b9073f068da6a604730687ad"
           },
           "prediction": "gpt-5.4",
           "prediction_name": "gpt-5.4",
-          "probability": 0.9691546289687443,
+          "probability": 0.802746279409892,
           "results": [
             {
               "display_name": "gpt-5.4",
               "model": "gpt-5.4",
-              "probability": 0.9691546289687443,
-              "score": 1.140213740558347
+              "probability": 0.802746279409892,
+              "score": 1.014181163903775
             },
             {
-              "display_name": "claude-opus-5-5",
-              "model": "claude-opus-5-5",
-              "probability": 0.026704614276039925,
-              "score": 0.8409147567935938
+              "display_name": "kimi-k3",
+              "model": "kimi-k3",
+              "probability": 0.09083391713712596,
+              "score": 0.7383976655548654
+            },
+            {
+              "display_name": "kimi-k3.1-pro",
+              "model": "kimi-k3.1-pro",
+              "probability": 0.03403404186671491,
+              "score": 0.6141534888148024
+            },
+            {
+              "display_name": "deepseek-v4.1-flash",
+              "model": "deepseek-v4.1-flash",
+              "probability": 0.025193939309614142,
+              "score": 0.5760884084954759
+            },
+            {
+              "display_name": "gpt-6.2-astra",
+              "model": "gpt-6.2-astra",
+              "probability": 0.010636765081691995,
+              "score": 0.46695399244609415
             },
             {
               "display_name": "gpt-6-astra",
               "model": "gpt-6-astra",
-              "probability": 0.004116885287050127,
-              "score": 0.6851031325735782
+              "probability": 0.0065333963685905135,
+              "score": 0.40526807752644567
             },
             {
-              "display_name": "claude-sonnet-5-5",
-              "model": "claude-sonnet-5-5",
-              "probability": 1.0941272631563137e-05,
-              "score": 0.19091062927197092
+              "display_name": "claude-fable-5-2",
+              "model": "claude-fable-5-2",
+              "probability": 0.006213224792227525,
+              "score": 0.39890863696057205
             },
             {
-              "display_name": "gpt-5.6-luna",
-              "model": "gpt-5.6-luna",
-              "probability": 7.24949251880297e-06,
-              "score": 0.1566097418124286
+              "display_name": "gemini-3.8-flash-high",
+              "model": "gemini-3.8-flash-high",
+              "probability": 0.005410463568399965,
+              "score": 0.38139911893421824
             },
             {
-              "display_name": "gpt-6-sol",
-              "model": "gpt-6-sol",
-              "probability": 3.5202458919977132e-06,
-              "score": 0.09640968963252994
-            },
-            {
-              "display_name": "claude-sonnet-4-6",
-              "model": "claude-sonnet-4-6",
-              "probability": 7.259594460355557e-07,
-              "score": -0.035156307702809864
+              "display_name": "claude-opus-5-5",
+              "model": "claude-opus-5-5",
+              "probability": 0.005370378580217361,
+              "score": 0.3804579427463181
             },
             {
               "display_name": "claude-haiku-4-5-20251001",
               "model": "claude-haiku-4-5-20251001",
-              "probability": 6.471986670224865e-07,
-              "score": -0.04472637834231551
+              "probability": 0.0033135603384612097,
+              "score": 0.31934337720017825
             },
             {
-              "display_name": "gpt-5.6-sol",
-              "model": "gpt-5.6-sol",
-              "probability": 5.743122617238089e-07,
-              "score": -0.054683048989298357
+              "display_name": "claude-sonnet-4-6",
+              "model": "claude-sonnet-4-6",
+              "probability": 0.003226358684451725,
+              "score": 0.31596803392142014
+            },
+            {
+              "display_name": "glm-5.3-flash",
+              "model": "glm-5.3-flash",
+              "probability": 0.00185696017743763,
+              "score": 0.246052447578901
+            },
+            {
+              "display_name": "gpt-6.2-sol",
+              "model": "gpt-6.2-sol",
+              "probability": 0.001216197625744106,
+              "score": 0.19248914227737116
+            },
+            {
+              "display_name": "gpt-5.6-luna",
+              "model": "gpt-5.6-luna",
+              "probability": 0.00083250213255017,
+              "score": 0.14451524815243222
+            },
+            {
+              "display_name": "deepseek-v4-pro-0813",
+              "model": "deepseek-v4-pro-0813",
+              "probability": 0.0006764754879775684,
+              "score": 0.11824823001645546
+            },
+            {
+              "display_name": "claude-haiku-5-5",
+              "model": "claude-haiku-5-5",
+              "probability": 0.0003595248074336693,
+              "score": 0.038245537042394064
+            },
+            {
+              "display_name": "claude-fable-5-1",
+              "model": "claude-fable-5-1",
+              "probability": 0.00028990614530667456,
+              "score": 0.011005701114254732
             },
             {
               "display_name": "claude-opus-4-7",
               "model": "claude-opus-4-7",
-              "probability": 6.80058109833692e-08,
-              "score": -0.23248139075669982
-            },
-            {
-              "display_name": "claude-opus-4-6",
-              "model": "claude-opus-4-6",
-              "probability": 6.204750540434665e-08,
-              "score": -0.24012246153272535
-            },
-            {
-              "display_name": "claude-opus-5",
-              "model": "claude-opus-5",
-              "probability": 4.0414536109029696e-08,
-              "score": -0.2758483601092739
-            },
-            {
-              "display_name": "gpt-6-luna",
-              "model": "gpt-6-luna",
-              "probability": 1.861834737573271e-08,
-              "score": -0.34043519447203735
+              "probability": 0.0002699313866881849,
+              "score": 0.0019703761300318887
             },
             {
               "display_name": "claude-opus-4-8",
               "model": "claude-opus-4-8",
-              "probability": 1.6652159187331395e-08,
-              "score": -0.34973582977531253
+              "probability": 0.00025148283707308693,
+              "score": -0.006989469682176323
             },
             {
-              "display_name": "gpt-5.6-terra",
-              "model": "gpt-5.6-terra",
-              "probability": 3.0848396686235668e-09,
-              "score": -0.49023918012575957
+              "display_name": "gpt-6.1-sol",
+              "model": "gpt-6.1-sol",
+              "probability": 0.0001977887897937351,
+              "score": -0.037386955450736066
             },
             {
-              "display_name": "gpt-5.5",
-              "model": "gpt-5.5",
-              "probability": 2.273347238842962e-09,
-              "score": -0.5156763788567932
+              "display_name": "claude-sonnet-5-5",
+              "model": "claude-sonnet-5-5",
+              "probability": 0.0001510684384632993,
+              "score": -0.07149172226583256
+            },
+            {
+              "display_name": "glm-5.3",
+              "model": "glm-5.3",
+              "probability": 0.00014892843946968167,
+              "score": -0.07329741586041434
             },
             {
               "display_name": "claude-sonnet-5",
               "model": "claude-sonnet-5",
-              "probability": 1.8902024249604363e-09,
-              "score": -0.531057159979423
+              "probability": 5.451615099107062e-05,
+              "score": -0.20049020436242224
+            },
+            {
+              "display_name": "gpt-6-sol",
+              "model": "gpt-6-sol",
+              "probability": 3.8819953159559454e-05,
+              "score": -0.24346657696296048
+            },
+            {
+              "display_name": "deepseek-v4.1-flash-1017",
+              "model": "deepseek-v4.1-flash-1017",
+              "probability": 3.131196636317586e-05,
+              "score": -0.2706694674061349
+            },
+            {
+              "display_name": "gemini-4-hydrogen",
+              "model": "gemini-4-hydrogen",
+              "probability": 2.084871951006946e-05,
+              "score": -0.32214399474355637
+            },
+            {
+              "display_name": "gpt-5.6-sol",
+              "model": "gpt-5.6-sol",
+              "probability": 1.894385800135949e-05,
+              "score": -0.3342704327998158
+            },
+            {
+              "display_name": "claude-opus-4-6",
+              "model": "claude-opus-4-6",
+              "probability": 1.8118384406588258e-05,
+              "score": -0.3399091872010778
+            },
+            {
+              "display_name": "claude-opus-5",
+              "model": "claude-opus-5",
+              "probability": 1.757880553188589e-05,
+              "score": -0.34373561782343004
+            },
+            {
+              "display_name": "gemini-4-argon",
+              "model": "gemini-4-argon",
+              "probability": 1.740096640948382e-05,
+              "score": -0.34502254487966866
+            },
+            {
+              "display_name": "gpt-5.6-terra",
+              "model": "gpt-5.6-terra",
+              "probability": 6.40799580464398e-06,
+              "score": -0.47145725079139983
+            },
+            {
+              "display_name": "claude-fable-5",
+              "model": "claude-fable-5",
+              "probability": 6.293387471784507e-06,
+              "score": -0.4737413597523437
+            },
+            {
+              "display_name": "gpt-6-luna",
+              "model": "gpt-6-luna",
+              "probability": 3.9546085207829e-06,
+              "score": -0.5325452099761394
+            },
+            {
+              "display_name": "gemini-4-carbon",
+              "model": "gemini-4-carbon",
+              "probability": 1.9960692893774427e-06,
+              "score": -0.6190771687263891
+            },
+            {
+              "display_name": "gpt-6.1-terra",
+              "model": "gpt-6.1-terra",
+              "probability": 4.324255291799781e-07,
+              "score": -0.8126598291043816
+            },
+            {
+              "display_name": "gpt-5.5",
+              "model": "gpt-5.5",
+              "probability": 2.853036860546326e-07,
+              "score": -0.8652921810271262
             }
           ],
           "used_outputs": 3
@@ -366,115 +708,229 @@
         {
           "bank_version": {
             "analyzer_version": 1,
-            "built_at": "2026-09-30T22:05:57.774800+00:00",
-            "revision": "a7edbadabec28fdf8b5cd8181764af80136a668a",
-            "sha256": "e514c76928ea38d23bc0f14d3935f23c97b1efb6d96b18a19bdc88ad2d830536"
+            "built_at": "2026-11-14T16:13:39.799477+00:00",
+            "revision": "477d59d525c3cd31fe56e4e63958fbc4574ca187",
+            "sha256": "2c5f065333558565cc8b1a01093aef259cac4909b9073f068da6a604730687ad"
           },
           "prediction": "gpt-5.6-luna",
           "prediction_name": "gpt-5.6-luna",
-          "probability": 0.9416546262065504,
+          "probability": 0.5439822494352654,
           "results": [
             {
               "display_name": "gpt-5.6-luna",
               "model": "gpt-5.6-luna",
-              "probability": 0.9416546262065504,
-              "score": 1.426780304363569
-            },
-            {
-              "display_name": "gpt-5.4",
-              "model": "gpt-5.4",
-              "probability": 0.02328737081066331,
-              "score": 0.9149122602384441
+              "probability": 0.5439822494352654,
+              "score": 1.6233877739856668
             },
             {
               "display_name": "claude-sonnet-5",
               "model": "claude-sonnet-5",
-              "probability": 0.015784219062389363,
-              "score": 0.8611067392375058
+              "probability": 0.1297656932833364,
+              "score": 1.3008841162589655
             },
             {
-              "display_name": "gpt-6-astra",
-              "model": "gpt-6-astra",
-              "probability": 0.0057179565276791544,
-              "score": 0.7206233125690534
+              "display_name": "gpt-6.2-astra",
+              "model": "gpt-6.2-astra",
+              "probability": 0.08309134663660564,
+              "score": 1.200569950315381
             },
             {
-              "display_name": "gpt-5.6-sol",
-              "model": "gpt-5.6-sol",
-              "probability": 0.005367292927891449,
-              "score": 0.7118672585915783
+              "display_name": "gpt-5.4",
+              "model": "gpt-5.4",
+              "probability": 0.05196984175561551,
+              "score": 1.0949705887192835
+            },
+            {
+              "display_name": "gemini-4-hydrogen",
+              "model": "gemini-4-hydrogen",
+              "probability": 0.04934087481140714,
+              "score": 1.083289339611466
+            },
+            {
+              "display_name": "gpt-6.2-sol",
+              "model": "gpt-6.2-sol",
+              "probability": 0.03673157702534697,
+              "score": 1.0168806568352988
+            },
+            {
+              "display_name": "gemini-4-carbon",
+              "model": "gemini-4-carbon",
+              "probability": 0.024037208175140493,
+              "score": 0.921462166289036
+            },
+            {
+              "display_name": "deepseek-v4-pro-0813",
+              "model": "deepseek-v4-pro-0813",
+              "probability": 0.019947528495498967,
+              "score": 0.8794953940769965
             },
             {
               "display_name": "claude-sonnet-5-5",
               "model": "claude-sonnet-5-5",
-              "probability": 0.004152229173674947,
-              "score": 0.6763550649417105
+              "probability": 0.017315366056810035,
+              "score": 0.8476518033847775
+            },
+            {
+              "display_name": "gpt-6.1-sol",
+              "model": "gpt-6.1-sol",
+              "probability": 0.00833605553927357,
+              "score": 0.6831571083266506
             },
             {
               "display_name": "gpt-5.5",
               "model": "gpt-5.5",
-              "probability": 0.0029247406623465234,
-              "score": 0.6278707372256958
+              "probability": 0.008137767555937005,
+              "score": 0.6777397818446684
+            },
+            {
+              "display_name": "gpt-6-astra",
+              "model": "gpt-6-astra",
+              "probability": 0.007893275111357241,
+              "score": 0.6708754323769086
+            },
+            {
+              "display_name": "gpt-5.6-sol",
+              "model": "gpt-5.6-sol",
+              "probability": 0.007685285268331013,
+              "score": 0.664866426223145
+            },
+            {
+              "display_name": "gemini-3.8-flash-high",
+              "model": "gemini-3.8-flash-high",
+              "probability": 0.004663337350456641,
+              "score": 0.5524489774070647
             },
             {
               "display_name": "gpt-6-sol",
               "model": "gpt-6-sol",
-              "probability": 0.0008148047929480895,
-              "score": 0.4510539869266331
-            },
-            {
-              "display_name": "claude-opus-5-5",
-              "model": "claude-opus-5-5",
-              "probability": 0.00020250590805528625,
-              "score": 0.25844190309809234
+              "probability": 0.003845339278005345,
+              "score": 0.5090483858255057
             },
             {
               "display_name": "gpt-6-luna",
               "model": "gpt-6-luna",
-              "probability": 5.364782092820886e-05,
-              "score": 0.07466383166640927
+              "probability": 0.0007383103138264991,
+              "score": 0.13769913984425386
+            },
+            {
+              "display_name": "claude-fable-5",
+              "model": "claude-fable-5",
+              "probability": 0.0005917325942879145,
+              "score": 0.08789885047470254
             },
             {
               "display_name": "gpt-5.6-terra",
               "model": "gpt-5.6-terra",
-              "probability": 4.0203623318012515e-05,
-              "score": 0.03475126881486618
+              "probability": 0.0005823176602165933,
+              "score": 0.08428972531517594
             },
             {
-              "display_name": "claude-opus-4-6",
-              "model": "claude-opus-4-6",
-              "probability": 1.4926352396605452e-07,
-              "score": -0.7394714752225251
+              "display_name": "claude-opus-5-5",
+              "model": "claude-opus-5-5",
+              "probability": 0.00043121177231946866,
+              "score": 0.016688240127403706
+            },
+            {
+              "display_name": "deepseek-v4.1-flash-1017",
+              "model": "deepseek-v4.1-flash-1017",
+              "probability": 0.00038497404061900914,
+              "score": -0.008834938642297216
+            },
+            {
+              "display_name": "claude-fable-5-2",
+              "model": "claude-fable-5-2",
+              "probability": 0.0001852014151916103,
+              "score": -0.17349340070512442
+            },
+            {
+              "display_name": "claude-haiku-5-5",
+              "model": "claude-haiku-5-5",
+              "probability": 0.0001276449441762834,
+              "score": -0.2572460218424416
+            },
+            {
+              "display_name": "gpt-6.1-terra",
+              "model": "gpt-6.1-terra",
+              "probability": 6.811794497829415e-05,
+              "score": -0.3985648016349264
+            },
+            {
+              "display_name": "deepseek-v4.1-flash",
+              "model": "deepseek-v4.1-flash",
+              "probability": 3.87487390035351e-05,
+              "score": -0.5255113334616744
             },
             {
               "display_name": "claude-sonnet-4-6",
               "model": "claude-sonnet-4-6",
-              "probability": 1.2061057071861036e-07,
-              "score": -0.768960903702728
-            },
-            {
-              "display_name": "claude-haiku-4-5-20251001",
-              "model": "claude-haiku-4-5-20251001",
-              "probability": 9.970231506093223e-08,
-              "score": -0.7953002585189158
+              "probability": 3.339323317557844e-05,
+              "score": -0.5589827600906941
             },
             {
               "display_name": "claude-opus-4-7",
               "model": "claude-opus-4-7",
-              "probability": 3.226054656960037e-08,
-              "score": -0.9514099164789673
+              "probability": 2.1887459739316304e-05,
+              "score": -0.6540424692004894
+            },
+            {
+              "display_name": "claude-opus-4-6",
+              "model": "claude-opus-4-6",
+              "probability": 1.4308778680353693e-05,
+              "score": -0.7496875136542402
+            },
+            {
+              "display_name": "claude-haiku-4-5-20251001",
+              "model": "claude-haiku-4-5-20251001",
+              "probability": 1.4250668320268929e-05,
+              "score": -0.7506032414760412
+            },
+            {
+              "display_name": "gemini-4-argon",
+              "model": "gemini-4-argon",
+              "probability": 1.2032487262144388e-05,
+              "score": -0.788676129634784
+            },
+            {
+              "display_name": "kimi-k3",
+              "model": "kimi-k3",
+              "probability": 4.63935300378106e-06,
+              "score": -1.00313353604146
+            },
+            {
+              "display_name": "claude-fable-5-1",
+              "model": "claude-fable-5-1",
+              "probability": 3.4233584365236507e-06,
+              "score": -1.0715307261837559
+            },
+            {
+              "display_name": "kimi-k3.1-pro",
+              "model": "kimi-k3.1-pro",
+              "probability": 2.443033902146053e-06,
+              "score": -1.1474501976515805
+            },
+            {
+              "display_name": "glm-5.3",
+              "model": "glm-5.3",
+              "probability": 1.2302688540150547e-06,
+              "score": -1.3018195869483378
+            },
+            {
+              "display_name": "glm-5.3-flash",
+              "model": "glm-5.3-flash",
+              "probability": 8.151772127308646e-07,
+              "score": -1.3944362047897851
             },
             {
               "display_name": "claude-opus-5",
               "model": "claude-opus-5",
-              "probability": 6.309887477560686e-10,
-              "score": -1.4957334616253586
+              "probability": 3.395725038518847e-07,
+              "score": -1.5914952343362758
             },
             {
               "display_name": "claude-opus-4-8",
               "model": "claude-opus-4-8",
-              "probability": 1.5610257252416598e-11,
-              "score": -2.0075506521250617
+              "probability": 2.3140590294775024e-07,
+              "score": -1.6777957609484462
             }
           ],
           "used_outputs": 1
@@ -483,14 +939,14 @@
     },
     "bank_version": {
       "analyzer_version": 1,
-      "built_at": "2026-09-30T22:05:57.774800+00:00",
-      "revision": "a7edbadabec28fdf8b5cd8181764af80136a668a",
-      "sha256": "e514c76928ea38d23bc0f14d3935f23c97b1efb6d96b18a19bdc88ad2d830536"
+      "built_at": "2026-11-14T16:13:39.799477+00:00",
+      "revision": "477d59d525c3cd31fe56e4e63958fbc4574ca187",
+      "sha256": "2c5f065333558565cc8b1a01093aef259cac4909b9073f068da6a604730687ad"
     },
     "below_99": {
       "display_probability_2dp": 0.99,
       "outputs": [
-        "194, 10, 337, 347, 10, 315, 186, 7, 71, 282, 241, 217, 339, 302, 37, 51, 249, 6, 6, 254, 183, 124, 339, 119, 183, 102, 3, 289, 18, 170, 14, 57, 177, 214, 9, 344, 234, 76, 123, 234, 127, 283, 215, 80, 355, 101, 235, 109, 205, 346, 122, 275, 350, 324, 12, 309, 249, 60, 333, 159, 209, 143, 60, 7, 54, 218, 307, 15, 267, 11, 319, 306, 301, 169, 132, 95, 12, 65, 70, 55, 243, 102, 130, 137, 122, 311, 88, 123, 333, 234, 173, 122, 297, 200, 138, 205, 28, 47, 184, 93, 304, 93, 347, 17, 18, 227, 249, 10, 317, 156, 200, 8, 34, 159, 338, 35, 284, 239, 162, 57, 299, 153, 322, 284, 89, 78, 286, 345, 12, 199, 214, 344, 118, 302, 127, 265, 328, 136, 226, 329, 27, 279, 104, 297, 254, 352, 60, 292, 44, 53, 62, 4, 41, 54, 81, 53, 106, 256, 13, 220, 240, 328, 333, 351, 189, 227, 30, 267, 20, 137, 221, 122, 128, 314, 318, 346, 239, 354, 84, 115, 66, 298, 18, 347, 42, 46, 33, 91, 276, 157, 38, 289, 290, 203, 247, 61, 279, 57, 67, 314, 76, 265, 273, 217, 247, 195, 22, 167, 334, 44, 299, 343, 110, 299, 172, 315, 329, 238, 26, 329, 317, 22, 83, 230, 65, 6, 164, 154, 97, 321, 154, 189, 336, 75, 51, 232, 15, 270, 159, 113, 173, 280, 193, 194, 62, 12, 134, 310, 139, 248, 317, 116, 64, 62, 273, 85, 297, 338, 313, 264, 220, 135, 21, 156, 31, 137, 238, 30, 96, 340, 269, 240, 28, 164, 59, 141, 40, 35, 49, 26, 349, 292, 65, 48, 288, 109, 206, 16, 174, 57, 223, 135, 302, 246, 273, 49, 59, 103, 325, 181",
+        "194, 10, 337, 347, 10, 315, 186, 7, 71, 282, 241, 217, 339, 302, 37, 51, 249, 6, 6, 254, 183, 124, 339, 119, 183, 102, 3, 289, 18, 170, 14, 57, 177, 214, 9, 344, 234, 76, 123, 234, 127, 283, 215, 80, 355, 101, 235, 109, 205, 346, 122, 275, 350, 324, 12, 309, 249, 60, 333, 159, 209, 143, 60, 7, 54, 218, 307, 15, 267, 11, 319, 306, 301, 169, 132, 95, 12, 65, 70, 55, 243, 102, 130, 137, 122, 191, 88, 123, 333, 234, 173, 122, 297, 200, 138, 205, 28, 47, 184, 93, 304, 93, 347, 17, 18, 227, 249, 10, 317, 156, 200, 8, 34, 159, 338, 35, 284, 239, 162, 57, 299, 153, 322, 284, 89, 78, 286, 345, 12, 199, 214, 344, 118, 302, 127, 265, 328, 136, 226, 329, 27, 279, 104, 297, 254, 352, 60, 292, 44, 53, 62, 4, 41, 54, 81, 53, 106, 256, 13, 220, 240, 328, 333, 351, 189, 227, 30, 267, 20, 137, 221, 122, 128, 314, 318, 346, 239, 354, 84, 115, 66, 298, 18, 347, 42, 46, 33, 91, 276, 157, 38, 289, 290, 203, 247, 61, 279, 57, 67, 314, 76, 265, 273, 217, 247, 195, 22, 167, 334, 44, 299, 343, 110, 299, 172, 315, 329, 238, 26, 329, 116, 22, 83, 230, 65, 6, 164, 154, 97, 321, 154, 189, 336, 75, 51, 232, 15, 270, 159, 113, 173, 280, 193, 194, 62, 12, 134, 310, 139, 248, 317, 116, 64, 62, 273, 85, 297, 338, 313, 264, 220, 135, 224, 156, 31, 137, 238, 30, 96, 340, 269, 240, 28, 164, 59, 141, 40, 35, 49, 26, 349, 292, 65, 48, 288, 109, 206, 16, 174, 57, 223, 135, 302, 246, 273, 49, 59, 103, 325, 181",
         "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300",
         "74, 271, 113, 310, 152, 349, 191, 33, 230, 72, 269, 111, 308, 150, 347, 189, 31, 228, 70, 267, 109, 306, 148, 345, 187, 29, 226, 68, 265, 107, 304, 146, 343, 185, 27, 224, 66, 263, 105, 302, 144, 341, 183, 25, 222, 64, 261, 103, 300, 142, 339, 181, 23, 220, 62, 259, 101, 298, 140, 337, 179, 21, 218, 60, 257, 99, 296, 138, 335, 177, 19, 216, 58, 255, 97, 294, 136, 333, 175, 17, 214, 56, 253, 95, 292, 134, 331, 173, 15, 212, 54, 251, 93, 290, 132, 329, 171, 13, 210, 52, 249, 91, 288, 130, 327, 169, 11, 208, 50, 247, 89, 286, 128, 325, 167, 9, 206, 48, 245, 87, 284, 126, 323, 165, 7, 204, 46, 243, 85, 282, 124, 321, 163, 5, 202, 44, 241, 83, 280, 122, 319, 161, 3, 200, 42, 239, 81, 278, 120, 317, 159, 1, 198, 40, 237, 79, 276, 118, 315, 157, 354, 196, 38, 235, 77, 274, 116, 313, 155, 352, 194, 36, 233, 75, 272, 114, 311, 153, 350, 192, 34, 231, 73, 270, 112, 309, 151, 348, 190, 32, 229, 71, 268, 110, 307, 149, 346, 188, 30, 227, 69, 266, 108, 305, 147, 344, 186, 28, 225, 67, 264, 106, 303, 145, 342, 184, 26, 223, 65, 262, 104, 301, 143, 340, 182, 24, 221, 63, 260, 102, 299, 141, 338, 180, 22, 219, 61, 258, 100, 297, 139, 336, 178, 20, 217, 59, 256, 98, 295, 137, 334, 176, 18, 215, 57, 254, 96, 293, 135, 332, 174, 16, 213, 55, 252, 94, 291, 133, 330, 172, 14, 211, 53, 250, 92, 289, 131, 328, 170, 12, 209, 51, 248, 90, 287, 129, 326, 168, 10, 207, 49, 246, 88, 285, 127, 324, 166, 8, 205, 47"
       ],
@@ -498,115 +954,229 @@
         {
           "bank_version": {
             "analyzer_version": 1,
-            "built_at": "2026-09-30T22:05:57.774800+00:00",
-            "revision": "a7edbadabec28fdf8b5cd8181764af80136a668a",
-            "sha256": "e514c76928ea38d23bc0f14d3935f23c97b1efb6d96b18a19bdc88ad2d830536"
+            "built_at": "2026-11-14T16:13:39.799477+00:00",
+            "revision": "477d59d525c3cd31fe56e4e63958fbc4574ca187",
+            "sha256": "2c5f065333558565cc8b1a01093aef259cac4909b9073f068da6a604730687ad"
           },
           "prediction": "gpt-5.6-luna",
           "prediction_name": "gpt-5.6-luna",
-          "probability": 0.9899825849186799,
+          "probability": 0.9880060046642876,
           "results": [
             {
               "display_name": "gpt-5.6-luna",
               "model": "gpt-5.6-luna",
-              "probability": 0.9899825849186799,
-              "score": 2.206742384489741
+              "probability": 0.9880060046642876,
+              "score": 2.9811772024509815
             },
             {
               "display_name": "gpt-6-luna",
               "model": "gpt-6-luna",
-              "probability": 0.009997679095098976,
-              "score": 1.5709645074593408
+              "probability": 0.009072153045569424,
+              "score": 1.925699040555075
             },
             {
-              "display_name": "claude-sonnet-5-5",
-              "model": "claude-sonnet-5-5",
-              "probability": 6.772692481798619e-06,
-              "score": 0.5613743429890189
+              "display_name": "gpt-6.1-terra",
+              "model": "gpt-6.1-terra",
+              "probability": 0.0024559242035307642,
+              "score": 1.6316565567591104
+            },
+            {
+              "display_name": "deepseek-v4.1-flash",
+              "model": "deepseek-v4.1-flash",
+              "probability": 0.00016503158100146645,
+              "score": 1.024059921769435
+            },
+            {
+              "display_name": "deepseek-v4-pro-0813",
+              "model": "deepseek-v4-pro-0813",
+              "probability": 7.53867789807477e-05,
+              "score": 0.8477512063738191
+            },
+            {
+              "display_name": "gpt-6.2-sol",
+              "model": "gpt-6.2-sol",
+              "probability": 7.061469120611636e-05,
+              "score": 0.8330359457436486
             },
             {
               "display_name": "gpt-5.6-terra",
               "model": "gpt-5.6-terra",
-              "probability": 5.406718693903496e-06,
-              "score": 0.530209474149725
+              "probability": 5.880104400017547e-05,
+              "score": 0.7918385623568893
             },
             {
-              "display_name": "gpt-5.5",
-              "model": "gpt-5.5",
-              "probability": 2.8480496428918604e-06,
-              "score": 0.44152415863584543
+              "display_name": "kimi-k3.1-pro",
+              "model": "kimi-k3.1-pro",
+              "probability": 2.8070148555676326e-05,
+              "score": 0.6254426803974878
+            },
+            {
+              "display_name": "claude-sonnet-5-5",
+              "model": "claude-sonnet-5-5",
+              "probability": 1.6877336454362483e-05,
+              "score": 0.5109642521894014
             },
             {
               "display_name": "claude-opus-5-5",
               "model": "claude-opus-5-5",
-              "probability": 2.5437160575861756e-06,
-              "score": 0.42588911814063357
+              "probability": 1.0872162513864455e-05,
+              "score": 0.4120056051060247
+            },
+            {
+              "display_name": "gpt-5.5",
+              "model": "gpt-5.5",
+              "probability": 8.217524051070658e-06,
+              "score": 0.3490126712722981
+            },
+            {
+              "display_name": "kimi-k3",
+              "model": "kimi-k3",
+              "probability": 6.876722670228851e-06,
+              "score": 0.30892957731257903
+            },
+            {
+              "display_name": "gpt-6.2-astra",
+              "model": "gpt-6.2-astra",
+              "probability": 6.748803556558055e-06,
+              "score": 0.30470428310239783
             },
             {
               "display_name": "gpt-5.4",
               "model": "gpt-5.4",
-              "probability": 1.0722911845276067e-06,
-              "score": 0.30637595011788227
+              "probability": 5.902856377202554e-06,
+              "score": 0.27456685028981387
             },
             {
               "display_name": "claude-opus-4-6",
               "model": "claude-opus-4-6",
-              "probability": 6.291605137607352e-07,
-              "score": 0.23261081141789097
+              "probability": 3.3382432767087632e-06,
+              "score": 0.1463041011528678
             },
             {
-              "display_name": "gpt-5.6-sol",
-              "model": "gpt-5.6-sol",
-              "probability": 2.2718051651120304e-07,
-              "score": 0.09167879919198983
+              "display_name": "claude-fable-5",
+              "model": "claude-fable-5",
+              "probability": 2.1682256716735643e-06,
+              "score": 0.04919753354998573
+            },
+            {
+              "display_name": "gemini-4-carbon",
+              "model": "gemini-4-carbon",
+              "probability": 1.2085127693489928e-06,
+              "score": -0.08233416804448468
             },
             {
               "display_name": "gpt-6-astra",
               "model": "gpt-6-astra",
-              "probability": 2.1946367297797938e-07,
-              "score": 0.08689757052673437
+              "probability": 1.0713082086750585e-06,
+              "score": -0.10945200133996441
             },
             {
-              "display_name": "gpt-6-sol",
-              "model": "gpt-6-sol",
-              "probability": 1.401506279634295e-08,
-              "score": -0.29371875968089567
+              "display_name": "gpt-5.6-sol",
+              "model": "gpt-5.6-sol",
+              "probability": 1.0547950338344472e-06,
+              "score": -0.11294756326041558
+            },
+            {
+              "display_name": "claude-fable-5-1",
+              "model": "claude-fable-5-1",
+              "probability": 9.89438362757852e-07,
+              "score": -0.12734116626023853
+            },
+            {
+              "display_name": "gpt-6.1-sol",
+              "model": "gpt-6.1-sol",
+              "probability": 8.097796437836299e-07,
+              "score": -0.1724307514336593
+            },
+            {
+              "display_name": "claude-fable-5-2",
+              "model": "claude-fable-5-2",
+              "probability": 3.255406270229531e-07,
+              "score": -0.37749098552073024
+            },
+            {
+              "display_name": "gemini-4-argon",
+              "model": "gemini-4-argon",
+              "probability": 3.108974026682264e-07,
+              "score": -0.3878476351265989
+            },
+            {
+              "display_name": "gemini-4-hydrogen",
+              "model": "gemini-4-hydrogen",
+              "probability": 2.8628571792963256e-07,
+              "score": -0.40640609456759086
+            },
+            {
+              "display_name": "deepseek-v4.1-flash-1017",
+              "model": "deepseek-v4.1-flash-1017",
+              "probability": 2.8184958182597424e-07,
+              "score": -0.4099202741542073
             },
             {
               "display_name": "claude-sonnet-5",
               "model": "claude-sonnet-5",
-              "probability": 1.6059650631758379e-09,
-              "score": -0.593447580595467
+              "probability": 2.239117985479241e-07,
+              "score": -0.46170347418103325
+            },
+            {
+              "display_name": "gemini-3.8-flash-high",
+              "model": "gemini-3.8-flash-high",
+              "probability": 1.620325876545506e-07,
+              "score": -0.5344890910908817
+            },
+            {
+              "display_name": "glm-5.3-flash",
+              "model": "glm-5.3-flash",
+              "probability": 9.032308374335118e-08,
+              "score": -0.6659950787356899
             },
             {
               "display_name": "claude-haiku-4-5-20251001",
               "model": "claude-haiku-4-5-20251001",
-              "probability": 5.501965684756496e-10,
-              "score": -0.7416518428653887
+              "probability": 6.656152778909394e-08,
+              "score": -0.734687831620475
             },
             {
-              "display_name": "claude-sonnet-4-6",
-              "model": "claude-sonnet-4-6",
-              "probability": 4.3065826280211785e-10,
-              "score": -0.7755428723206933
+              "display_name": "gpt-6-sol",
+              "model": "gpt-6-sol",
+              "probability": 5.078311984961841e-08,
+              "score": -0.795571389685196
+            },
+            {
+              "display_name": "claude-haiku-5-5",
+              "model": "claude-haiku-5-5",
+              "probability": 3.0930651644784355e-08,
+              "score": -0.9071427922234474
             },
             {
               "display_name": "claude-opus-4-8",
               "model": "claude-opus-4-8",
-              "probability": 7.209454740627441e-11,
-              "score": -1.0228260710452324
+              "probability": 2.2287657299153373e-08,
+              "score": -0.9808869890705412
+            },
+            {
+              "display_name": "claude-sonnet-4-6",
+              "model": "claude-sonnet-4-6",
+              "probability": 1.6122959872864234e-08,
+              "score": -1.0537477558335433
             },
             {
               "display_name": "claude-opus-5",
               "model": "claude-opus-5",
-              "probability": 3.937034272640714e-11,
-              "score": -1.1065248222206905
+              "probability": 8.590695305645024e-09,
+              "score": -1.195415957835945
+            },
+            {
+              "display_name": "glm-5.3",
+              "model": "glm-5.3",
+              "probability": 1.7044178629851323e-09,
+              "score": -1.5593850715169042
             },
             {
               "display_name": "claude-opus-4-7",
               "model": "claude-opus-4-7",
-              "probability": 1.0962264456947423e-13,
-              "score": -1.9205551683904334
+              "probability": 3.124485193918531e-10,
+              "score": -1.9411499188802694
             }
           ],
           "used_outputs": 1
@@ -614,115 +1184,229 @@
         {
           "bank_version": {
             "analyzer_version": 1,
-            "built_at": "2026-09-30T22:05:57.774800+00:00",
-            "revision": "a7edbadabec28fdf8b5cd8181764af80136a668a",
-            "sha256": "e514c76928ea38d23bc0f14d3935f23c97b1efb6d96b18a19bdc88ad2d830536"
+            "built_at": "2026-11-14T16:13:39.799477+00:00",
+            "revision": "477d59d525c3cd31fe56e4e63958fbc4574ca187",
+            "sha256": "2c5f065333558565cc8b1a01093aef259cac4909b9073f068da6a604730687ad"
           },
-          "prediction": "gpt-5.4",
-          "prediction_name": "gpt-5.4",
-          "probability": 0.6707915064159452,
+          "prediction": "gpt-5.6-luna",
+          "prediction_name": "gpt-5.6-luna",
+          "probability": 0.376463792645885,
           "results": [
+            {
+              "display_name": "gpt-5.6-luna",
+              "model": "gpt-5.6-luna",
+              "probability": 0.376463792645885,
+              "score": 1.0375818026243522
+            },
             {
               "display_name": "gpt-5.4",
               "model": "gpt-5.4",
-              "probability": 0.6707915064159452,
-              "score": 0.9857196973370411
+              "probability": 0.18997533438365952,
+              "score": 0.9305400538517996
+            },
+            {
+              "display_name": "kimi-k3",
+              "model": "kimi-k3",
+              "probability": 0.11012320389331377,
+              "score": 0.8451958285779897
             },
             {
               "display_name": "claude-opus-5-5",
               "model": "claude-opus-5-5",
-              "probability": 0.3027767727299376,
-              "score": 0.9194311508649693
+              "probability": 0.09929217597239692,
+              "score": 0.8289918433727108
             },
             {
-              "display_name": "gpt-5.6-luna",
-              "model": "gpt-5.6-luna",
-              "probability": 0.025967065005747594,
-              "score": 0.7147505837116721
+              "display_name": "kimi-k3.1-pro",
+              "model": "kimi-k3.1-pro",
+              "probability": 0.06940405889937824,
+              "score": 0.7729421358950006
+            },
+            {
+              "display_name": "gpt-6.2-sol",
+              "model": "gpt-6.2-sol",
+              "probability": 0.06439434911624875,
+              "score": 0.7612164640457644
+            },
+            {
+              "display_name": "deepseek-v4.1-flash",
+              "model": "deepseek-v4.1-flash",
+              "probability": 0.04661226853424322,
+              "score": 0.7106382520700293
+            },
+            {
+              "display_name": "gpt-6.1-terra",
+              "model": "gpt-6.1-terra",
+              "probability": 0.015292022506406128,
+              "score": 0.5362023880234268
+            },
+            {
+              "display_name": "gpt-6.2-astra",
+              "model": "gpt-6.2-astra",
+              "probability": 0.01235898949212232,
+              "score": 0.5028738865832424
             },
             {
               "display_name": "claude-opus-4-6",
               "model": "claude-opus-4-6",
-              "probability": 0.0003602384849650026,
-              "score": 0.3582657492853006
-            },
-            {
-              "display_name": "claude-opus-5",
-              "model": "claude-opus-5",
-              "probability": 4.457057022288911e-05,
-              "score": 0.1841247084845723
-            },
-            {
-              "display_name": "gpt-6-astra",
-              "model": "gpt-6-astra",
-              "probability": 3.1953825883543666e-05,
-              "score": 0.15639288672369206
+              "probability": 0.003848709486227695,
+              "score": 0.32028175099173517
             },
             {
               "display_name": "gpt-6-luna",
               "model": "gpt-6-luna",
-              "probability": 1.912723799780963e-05,
-              "score": 0.11362800945213292
+              "probability": 0.0025228075469502145,
+              "score": 0.254177180172641
+            },
+            {
+              "display_name": "claude-opus-5",
+              "model": "claude-opus-5",
+              "probability": 0.002227864936193634,
+              "score": 0.23471845438414896
+            },
+            {
+              "display_name": "claude-fable-5-2",
+              "model": "claude-fable-5-2",
+              "probability": 0.0014269177607847347,
+              "score": 0.16498887130546142
             },
             {
               "display_name": "gpt-5.6-terra",
               "model": "gpt-5.6-terra",
-              "probability": 6.103042359960828e-06,
-              "score": 0.018434176287211862
+              "probability": 0.0011766759553039259,
+              "score": 0.1348100412388103
             },
             {
-              "display_name": "gpt-5.6-sol",
-              "model": "gpt-5.6-sol",
-              "probability": 9.894082367782113e-07,
-              "score": -0.13318546117781627
+              "display_name": "claude-fable-5",
+              "model": "claude-fable-5",
+              "probability": 0.0011431043568674566,
+              "score": 0.13027972493249476
             },
             {
-              "display_name": "claude-sonnet-5-5",
-              "model": "claude-sonnet-5-5",
-              "probability": 7.104473220649587e-07,
-              "score": -0.16078647959914177
-            },
-            {
-              "display_name": "claude-haiku-4-5-20251001",
-              "model": "claude-haiku-4-5-20251001",
-              "probability": 4.611935578894275e-07,
-              "score": -0.1967928948140344
-            },
-            {
-              "display_name": "gpt-5.5",
-              "model": "gpt-5.5",
-              "probability": 2.052146488486079e-07,
-              "score": -0.2642730049180416
+              "display_name": "claude-fable-5-1",
+              "model": "claude-fable-5-1",
+              "probability": 0.0008483981888363151,
+              "score": 0.08361571619869491
             },
             {
               "display_name": "claude-sonnet-5",
               "model": "claude-sonnet-5",
-              "probability": 1.7909836421835202e-07,
-              "score": -0.2756164485194825
+              "probability": 0.0006270523178644341,
+              "score": 0.036299491832707115
+            },
+            {
+              "display_name": "gpt-6-astra",
+              "model": "gpt-6-astra",
+              "probability": 0.0005599279252334532,
+              "score": 0.018579091998694022
             },
             {
               "display_name": "claude-opus-4-8",
               "model": "claude-opus-4-8",
-              "probability": 1.021007778710584e-07,
-              "score": -0.32244768450475836
+              "probability": 0.00042418315960749596,
+              "score": -0.02487486699895547
             },
             {
-              "display_name": "gpt-6-sol",
-              "model": "gpt-6-sol",
-              "probability": 1.4550286148202645e-08,
-              "score": -0.4848101581624134
+              "display_name": "deepseek-v4-pro-0813",
+              "model": "deepseek-v4-pro-0813",
+              "probability": 0.0003999611259062106,
+              "score": -0.03407735987550975
+            },
+            {
+              "display_name": "claude-haiku-4-5-20251001",
+              "model": "claude-haiku-4-5-20251001",
+              "probability": 0.00021261273234239334,
+              "score": -0.13297546454419656
+            },
+            {
+              "display_name": "gpt-6.1-sol",
+              "model": "gpt-6.1-sol",
+              "probability": 0.00020186154200284862,
+              "score": -0.141096837343926
+            },
+            {
+              "display_name": "claude-haiku-5-5",
+              "model": "claude-haiku-5-5",
+              "probability": 0.00018460317241440787,
+              "score": -0.15508471764788467
+            },
+            {
+              "display_name": "claude-sonnet-5-5",
+              "model": "claude-sonnet-5-5",
+              "probability": 8.696334688643742e-05,
+              "score": -0.2728934621911035
+            },
+            {
+              "display_name": "glm-5.3-flash",
+              "model": "glm-5.3-flash",
+              "probability": 5.5919440389287874e-05,
+              "score": -0.3420044609933121
+            },
+            {
+              "display_name": "gpt-5.6-sol",
+              "model": "gpt-5.6-sol",
+              "probability": 4.464026598072817e-05,
+              "score": -0.3772624562182383
+            },
+            {
+              "display_name": "gpt-5.5",
+              "model": "gpt-5.5",
+              "probability": 3.4323008737672515e-05,
+              "score": -0.41839655787004115
             },
             {
               "display_name": "claude-opus-4-7",
               "model": "claude-opus-4-7",
-              "probability": 4.760832318040414e-10,
-              "score": -0.7697912617684508
+              "probability": 1.5888083498433896e-05,
+              "score": -0.5389481145333087
+            },
+            {
+              "display_name": "deepseek-v4.1-flash-1017",
+              "model": "deepseek-v4.1-flash-1017",
+              "probability": 1.0315087568993305e-05,
+              "score": -0.6065545931009142
+            },
+            {
+              "display_name": "gemini-4-argon",
+              "model": "gemini-4-argon",
+              "probability": 9.448345845529183e-06,
+              "score": -0.6202911855760349
+            },
+            {
+              "display_name": "gemini-3.8-flash-high",
+              "model": "gemini-3.8-flash-high",
+              "probability": 4.285778549467362e-06,
+              "score": -0.744018474976222
+            },
+            {
+              "display_name": "gemini-4-carbon",
+              "model": "gemini-4-carbon",
+              "probability": 4.026572690586127e-06,
+              "score": -0.7537826329605077
+            },
+            {
+              "display_name": "gemini-4-hydrogen",
+              "model": "gemini-4-hydrogen",
+              "probability": 3.7170565143813914e-06,
+              "score": -0.7663008733293667
             },
             {
               "display_name": "claude-sonnet-4-6",
               "model": "claude-sonnet-4-6",
-              "probability": 1.9766328706586902e-10,
-              "score": -0.8430435686824523
+              "probability": 3.6657387717870893e-06,
+              "score": -0.7684767123193341
+            },
+            {
+              "display_name": "gpt-6-sol",
+              "model": "gpt-6-sol",
+              "probability": 3.4141631540382057e-06,
+              "score": -0.779604202911069
+            },
+            {
+              "display_name": "glm-5.3",
+              "model": "glm-5.3",
+              "probability": 2.5174612234769533e-06,
+              "score": -0.8272900047097793
             }
           ],
           "used_outputs": 2
@@ -730,115 +1414,229 @@
         {
           "bank_version": {
             "analyzer_version": 1,
-            "built_at": "2026-09-30T22:05:57.774800+00:00",
-            "revision": "a7edbadabec28fdf8b5cd8181764af80136a668a",
-            "sha256": "e514c76928ea38d23bc0f14d3935f23c97b1efb6d96b18a19bdc88ad2d830536"
+            "built_at": "2026-11-14T16:13:39.799477+00:00",
+            "revision": "477d59d525c3cd31fe56e4e63958fbc4574ca187",
+            "sha256": "2c5f065333558565cc8b1a01093aef259cac4909b9073f068da6a604730687ad"
           },
-          "prediction": "gpt-5.4",
-          "prediction_name": "gpt-5.4",
-          "probability": 0.5342585134383069,
+          "prediction": "kimi-k3",
+          "prediction_name": "kimi-k3",
+          "probability": 0.6081759387101485,
           "results": [
+            {
+              "display_name": "kimi-k3",
+              "model": "kimi-k3",
+              "probability": 0.6081759387101485,
+              "score": 1.1043575090649156
+            },
             {
               "display_name": "gpt-5.4",
               "model": "gpt-5.4",
-              "probability": 0.5342585134383069,
-              "score": 0.9991121699145692
+              "probability": 0.1774985564538185,
+              "score": 0.9484938420196448
             },
             {
               "display_name": "claude-opus-5-5",
               "model": "claude-opus-5-5",
-              "probability": 0.45780214988223855,
-              "score": 0.9862419427682244
+              "probability": 0.09656252447992963,
+              "score": 0.8714453122508351
             },
             {
               "display_name": "gpt-5.6-luna",
               "model": "gpt-5.6-luna",
-              "probability": 0.007437521004804761,
-              "score": 0.6429169837198092
+              "probability": 0.035116050209978274,
+              "score": 0.743421820128105
+            },
+            {
+              "display_name": "kimi-k3.1-pro",
+              "model": "kimi-k3.1-pro",
+              "probability": 0.03304866572168327,
+              "score": 0.7357422891258864
+            },
+            {
+              "display_name": "deepseek-v4.1-flash",
+              "model": "deepseek-v4.1-flash",
+              "probability": 0.032219666827808094,
+              "score": 0.7325270398721065
+            },
+            {
+              "display_name": "gpt-6.2-sol",
+              "model": "gpt-6.2-sol",
+              "probability": 0.009802427096290544,
+              "score": 0.581922700085102
+            },
+            {
+              "display_name": "claude-fable-5-2",
+              "model": "claude-fable-5-2",
+              "probability": 0.00398452377958631,
+              "score": 0.46798832799043727
+            },
+            {
+              "display_name": "gpt-6.2-astra",
+              "model": "gpt-6.2-astra",
+              "probability": 0.0010767114573734084,
+              "score": 0.30237865613594445
             },
             {
               "display_name": "gpt-6-astra",
               "model": "gpt-6-astra",
-              "probability": 0.0002831191114124468,
-              "score": 0.3705482190075126
+              "probability": 0.0004546098700000124,
+              "score": 0.19325182792331833
             },
             {
-              "display_name": "gpt-5.6-sol",
-              "model": "gpt-5.6-sol",
-              "probability": 0.00010179899657056525,
-              "score": 0.28530926481746227
-            },
-            {
-              "display_name": "claude-opus-4-6",
-              "model": "claude-opus-4-6",
-              "probability": 5.751454586821628e-05,
-              "score": 0.2377290681704093
+              "display_name": "deepseek-v4-pro-0813",
+              "model": "deepseek-v4-pro-0813",
+              "probability": 0.0003578715110232222,
+              "score": 0.16296943854205506
             },
             {
               "display_name": "gpt-5.6-terra",
               "model": "gpt-5.6-terra",
-              "probability": 2.1967460792488386e-05,
-              "score": 0.15752276951686636
+              "probability": 0.0002701026833720837,
+              "score": 0.127357922810859
+            },
+            {
+              "display_name": "claude-fable-5-1",
+              "model": "claude-fable-5-1",
+              "probability": 0.0002649178024223889,
+              "score": 0.12490478565411738
             },
             {
               "display_name": "gpt-6-luna",
               "model": "gpt-6-luna",
-              "probability": 1.9188641657636844e-05,
-              "score": 0.14625245452183436
+              "probability": 0.00024157688662725538,
+              "score": 0.11323156840851623
+            },
+            {
+              "display_name": "claude-opus-4-6",
+              "model": "claude-opus-4-6",
+              "probability": 0.00023950828965624217,
+              "score": 0.11214314858607473
+            },
+            {
+              "display_name": "claude-haiku-5-5",
+              "model": "claude-haiku-5-5",
+              "probability": 0.00012551218360957984,
+              "score": 0.03035942798760614
+            },
+            {
+              "display_name": "gpt-5.6-sol",
+              "model": "gpt-5.6-sol",
+              "probability": 0.00010162964557740119,
+              "score": 0.0036458943558698165
+            },
+            {
+              "display_name": "gpt-6.1-terra",
+              "model": "gpt-6.1-terra",
+              "probability": 0.00010054399343954505,
+              "score": 0.0022866103870066525
             },
             {
               "display_name": "claude-sonnet-5-5",
               "model": "claude-sonnet-5-5",
-              "probability": 1.5026657665649287e-05,
-              "score": 0.12587806100939436
+              "probability": 8.129268223899831e-05,
+              "score": -0.024613202477247003
             },
             {
-              "display_name": "gpt-5.5",
-              "model": "gpt-5.5",
-              "probability": 1.5416760323953468e-06,
-              "score": -0.0638682426702123
+              "display_name": "gpt-6.1-sol",
+              "model": "gpt-6.1-sol",
+              "probability": 5.1676181959095785e-05,
+              "score": -0.08195412121152752
+            },
+            {
+              "display_name": "claude-fable-5",
+              "model": "claude-fable-5",
+              "probability": 4.90072486802984e-05,
+              "score": -0.08866564792925492
             },
             {
               "display_name": "claude-haiku-4-5-20251001",
               "model": "claude-haiku-4-5-20251001",
-              "probability": 1.1157844489526587e-06,
-              "score": -0.09081094751528203
+              "probability": 4.270494241763566e-05,
+              "score": -0.10608761961917385
             },
             {
-              "display_name": "gpt-6-sol",
-              "model": "gpt-6-sol",
-              "probability": 4.900434686197564e-07,
-              "score": -0.15937918747756905
+              "display_name": "glm-5.3-flash",
+              "model": "glm-5.3-flash",
+              "probability": 4.246844810033416e-05,
+              "score": -0.1067904616853752
             },
             {
-              "display_name": "claude-opus-5",
-              "model": "claude-opus-5",
-              "probability": 4.1066284182049334e-08,
-              "score": -0.36598807497755215
+              "display_name": "gemini-4-argon",
+              "model": "gemini-4-argon",
+              "probability": 3.301512647549567e-05,
+              "score": -0.13865869168190356
+            },
+            {
+              "display_name": "gemini-3.8-flash-high",
+              "model": "gemini-3.8-flash-high",
+              "probability": 2.919336673779691e-05,
+              "score": -0.1542291295419147
+            },
+            {
+              "display_name": "gemini-4-hydrogen",
+              "model": "gemini-4-hydrogen",
+              "probability": 9.377828493801226e-06,
+              "score": -0.2979542484973576
             },
             {
               "display_name": "claude-sonnet-5",
               "model": "claude-sonnet-5",
-              "probability": 1.1379059286100495e-08,
-              "score": -0.47293913223964346
+              "probability": 8.81499062024519e-06,
+              "score": -0.3057878555679021
+            },
+            {
+              "display_name": "gpt-5.5",
+              "model": "gpt-5.5",
+              "probability": 4.5390853459045295e-06,
+              "score": -0.3897918907138174
+            },
+            {
+              "display_name": "gpt-6-sol",
+              "model": "gpt-6-sol",
+              "probability": 2.5712820690141106e-06,
+              "score": -0.461720801285289
+            },
+            {
+              "display_name": "claude-opus-5",
+              "model": "claude-opus-5",
+              "probability": 1.780000341175655e-06,
+              "score": -0.5082698758218852
+            },
+            {
+              "display_name": "gemini-4-carbon",
+              "model": "gemini-4-carbon",
+              "probability": 8.621712234184192e-07,
+              "score": -0.6000179415119354
             },
             {
               "display_name": "claude-opus-4-8",
               "model": "claude-opus-4-8",
-              "probability": 2.1079219164444058e-10,
-              "score": -0.8053272377421389
+              "probability": 6.231141669671353e-07,
+              "score": -0.6411162950403041
+            },
+            {
+              "display_name": "deepseek-v4.1-flash-1017",
+              "model": "deepseek-v4.1-flash-1017",
+              "probability": 4.7341219837363574e-07,
+              "score": -0.6758914097330587
+            },
+            {
+              "display_name": "glm-5.3",
+              "model": "glm-5.3",
+              "probability": 1.6408222393154372e-07,
+              "score": -0.8099983696527583
             },
             {
               "display_name": "claude-sonnet-4-6",
               "model": "claude-sonnet-4-6",
-              "probability": 9.589519125733335e-11,
-              "score": -0.8709619825018152
+              "probability": 7.5394663195788e-08,
+              "score": -0.9084184066918192
             },
             {
               "display_name": "claude-opus-4-7",
               "model": "claude-opus-4-7",
-              "probability": 4.701897203045053e-12,
-              "score": -1.122236128321868
+              "probability": 2.303969982811618e-08,
+              "score": -1.058462152665876
             }
           ],
           "used_outputs": 3
@@ -853,7 +1651,7 @@
     },
     "legacy_80_number_vectors": {
       "bank_is_pinned": true,
-      "bank_sha256": "e514c76928ea38d23bc0f14d3935f23c97b1efb6d96b18a19bdc88ad2d830536",
+      "bank_sha256": "2c5f065333558565cc8b1a01093aef259cac4909b9073f068da6a604730687ad",
       "thought_fence": {
         "invalid_mixed_count": 0,
         "invalid_mixed_text": "1, two, 3",
@@ -861,115 +1659,229 @@
         "plain_report": {
           "bank_version": {
             "analyzer_version": 1,
-            "built_at": "2026-09-30T22:05:57.774800+00:00",
-            "revision": "a7edbadabec28fdf8b5cd8181764af80136a668a",
-            "sha256": "e514c76928ea38d23bc0f14d3935f23c97b1efb6d96b18a19bdc88ad2d830536"
+            "built_at": "2026-11-14T16:13:39.799477+00:00",
+            "revision": "477d59d525c3cd31fe56e4e63958fbc4574ca187",
+            "sha256": "2c5f065333558565cc8b1a01093aef259cac4909b9073f068da6a604730687ad"
           },
           "prediction": "claude-opus-5-5",
           "prediction_name": "claude-opus-5-5",
-          "probability": 0.9262297662132194,
+          "probability": 0.7418674752668842,
           "results": [
             {
               "display_name": "claude-opus-5-5",
               "model": "claude-opus-5-5",
-              "probability": 0.9262297662132194,
-              "score": 2.0131144931707046
+              "probability": 0.7418674752668842,
+              "score": 2.094776674732054
             },
             {
               "display_name": "gpt-5.4",
               "model": "gpt-5.4",
-              "probability": 0.07328157821049246,
-              "score": 1.6621390256792683
+              "probability": 0.12237165435144655,
+              "score": 1.689256166326056
+            },
+            {
+              "display_name": "claude-haiku-5-5",
+              "model": "claude-haiku-5-5",
+              "probability": 0.11328819603454136,
+              "score": 1.6719004364201155
+            },
+            {
+              "display_name": "claude-fable-5",
+              "model": "claude-fable-5",
+              "probability": 0.006557925035195889,
+              "score": 1.0307436635945493
+            },
+            {
+              "display_name": "kimi-k3",
+              "model": "kimi-k3",
+              "probability": 0.006170029632052749,
+              "score": 1.0170237126417603
+            },
+            {
+              "display_name": "gpt-6.2-astra",
+              "model": "gpt-6.2-astra",
+              "probability": 0.003447236662973809,
+              "score": 0.8860293689922847
             },
             {
               "display_name": "claude-sonnet-5-5",
               "model": "claude-sonnet-5-5",
-              "probability": 0.0004191746758701878,
-              "score": 0.9477154838546348
+              "probability": 0.0026349314521527203,
+              "score": 0.8255614246149245
             },
             {
-              "display_name": "gpt-5.6-sol",
-              "model": "gpt-5.6-sol",
-              "probability": 6.254418672111031e-05,
-              "score": 0.6845109146168256
+              "display_name": "glm-5.3-flash",
+              "model": "glm-5.3-flash",
+              "probability": 0.0007349527928379312,
+              "score": 0.5382472737951446
             },
             {
-              "display_name": "gpt-6-sol",
-              "model": "gpt-6-sol",
-              "probability": 2.8167040729487193e-06,
-              "score": 0.25557458108119757
+              "display_name": "kimi-k3.1-pro",
+              "model": "kimi-k3.1-pro",
+              "probability": 0.0006544069115440027,
+              "score": 0.5121269877825244
             },
             {
-              "display_name": "gpt-6-astra",
-              "model": "gpt-6-astra",
-              "probability": 1.8790158151581118e-06,
-              "score": 0.19956665404998855
+              "display_name": "claude-fable-5-1",
+              "model": "claude-fable-5-1",
+              "probability": 0.0004440496818374225,
+              "score": 0.4248636362457118
             },
             {
-              "display_name": "gpt-5.5",
-              "model": "gpt-5.5",
-              "probability": 1.478554755675655e-06,
-              "score": 0.16640580791199044
+              "display_name": "claude-fable-5-2",
+              "model": "claude-fable-5-2",
+              "probability": 0.0004189997854380203,
+              "score": 0.41179728636929974
             },
             {
-              "display_name": "gpt-5.6-luna",
-              "model": "gpt-5.6-luna",
-              "probability": 4.169923517116735e-07,
-              "score": -0.008714731053296315
+              "display_name": "gpt-6.1-sol",
+              "model": "gpt-6.1-sol",
+              "probability": 0.0003847232728405892,
+              "score": 0.3925922231422396
             },
             {
               "display_name": "claude-sonnet-5",
               "model": "claude-sonnet-5",
-              "probability": 1.6056209733622167e-07,
-              "score": -0.14075696413254196
+              "probability": 0.0002197819717335429,
+              "score": 0.26660299268520415
             },
             {
-              "display_name": "gpt-5.6-terra",
-              "model": "gpt-5.6-terra",
-              "probability": 1.0767292085034515e-07,
-              "score": -0.196040385407019
+              "display_name": "gpt-6.2-sol",
+              "model": "gpt-6.2-sol",
+              "probability": 0.00020275063523596812,
+              "score": 0.24845260504192979
             },
             {
-              "display_name": "claude-opus-4-6",
-              "model": "claude-opus-4-6",
-              "probability": 5.5015408670769994e-08,
-              "score": -0.28894226301407006
+              "display_name": "glm-5.3",
+              "model": "glm-5.3",
+              "probability": 0.00016009686201920738,
+              "score": 0.19530203808808028
             },
             {
-              "display_name": "claude-opus-5",
-              "model": "claude-opus-5",
-              "probability": 1.324627361890847e-08,
-              "score": -0.4859425582767904
+              "display_name": "deepseek-v4-pro-0813",
+              "model": "deepseek-v4-pro-0813",
+              "probability": 0.00012294819834545503,
+              "score": 0.1358916852490376
+            },
+            {
+              "display_name": "gpt-5.6-sol",
+              "model": "gpt-5.6-sol",
+              "probability": 9.677919177891683e-05,
+              "score": 0.08203604576421372
             },
             {
               "display_name": "claude-opus-4-7",
               "model": "claude-opus-4-7",
-              "probability": 6.198257735497199e-09,
-              "score": -0.5910144027788449
+              "probability": 5.0539144624416506e-05,
+              "score": -0.06415948668397423
             },
             {
-              "display_name": "gpt-6-luna",
-              "model": "gpt-6-luna",
-              "probability": 2.0927926143308224e-09,
-              "score": -0.7412336866498791
+              "display_name": "gemini-3.8-flash-high",
+              "model": "gemini-3.8-flash-high",
+              "probability": 4.958438928307297e-05,
+              "score": -0.06845120419513512
             },
             {
-              "display_name": "claude-haiku-4-5-20251001",
-              "model": "claude-haiku-4-5-20251001",
-              "probability": 4.86381316369012e-10,
-              "score": -0.9431267892559649
+              "display_name": "gpt-6-sol",
+              "model": "gpt-6-sol",
+              "probability": 3.29894538190622e-05,
+              "score": -0.1601464874219808
+            },
+            {
+              "display_name": "gpt-6-astra",
+              "model": "gpt-6-astra",
+              "probability": 1.553370042232484e-05,
+              "score": -0.329630422926939
+            },
+            {
+              "display_name": "deepseek-v4.1-flash-1017",
+              "model": "deepseek-v4.1-flash-1017",
+              "probability": 1.3756648701328421e-05,
+              "score": -0.35696870814124027
+            },
+            {
+              "display_name": "gpt-5.6-luna",
+              "model": "gpt-5.6-luna",
+              "probability": 1.1167195028232277e-05,
+              "score": -0.403895960471986
+            },
+            {
+              "display_name": "deepseek-v4.1-flash",
+              "model": "deepseek-v4.1-flash",
+              "probability": 9.151925926593385e-06,
+              "score": -0.44867969487186155
+            },
+            {
+              "display_name": "claude-opus-5",
+              "model": "claude-opus-5",
+              "probability": 8.401374213476497e-06,
+              "score": -0.4679349270682101
+            },
+            {
+              "display_name": "gemini-4-hydrogen",
+              "model": "gemini-4-hydrogen",
+              "probability": 6.415183295221822e-06,
+              "score": -0.5286305846282061
+            },
+            {
+              "display_name": "gemini-4-argon",
+              "model": "gemini-4-argon",
+              "probability": 6.064567874817584e-06,
+              "score": -0.5412779896881069
+            },
+            {
+              "display_name": "gpt-5.5",
+              "model": "gpt-5.5",
+              "probability": 5.8972871279497686e-06,
+              "score": -0.547572149647287
+            },
+            {
+              "display_name": "gpt-5.6-terra",
+              "model": "gpt-5.6-terra",
+              "probability": 5.521539670755783e-06,
+              "score": -0.5623868689453579
             },
             {
               "display_name": "claude-opus-4-8",
               "model": "claude-opus-4-8",
-              "probability": 1.5868710454931235e-10,
-              "score": -1.0980901475204083
+              "probability": 4.0658177524353395e-06,
+              "score": -0.6312541390198445
+            },
+            {
+              "display_name": "claude-opus-4-6",
+              "model": "claude-opus-4-6",
+              "probability": 2.314694503366959e-06,
+              "score": -0.7580194583123038
+            },
+            {
+              "display_name": "gemini-4-carbon",
+              "model": "gemini-4-carbon",
+              "probability": 9.683695307447964e-07,
+              "score": -0.9541111451046644
+            },
+            {
+              "display_name": "gpt-6.1-terra",
+              "model": "gpt-6.1-terra",
+              "probability": 3.7337393498791823e-07,
+              "score": -1.1685680994413434
+            },
+            {
+              "display_name": "claude-haiku-4-5-20251001",
+              "model": "claude-haiku-4-5-20251001",
+              "probability": 1.6939069893630824e-07,
+              "score": -1.3464222029213442
             },
             {
               "display_name": "claude-sonnet-4-6",
               "model": "claude-sonnet-4-6",
-              "probability": 1.3882002478373212e-11,
-              "score": -1.4351650322757954
+              "probability": 9.579764880497186e-08,
+              "score": -1.4746800174552745
+            },
+            {
+              "display_name": "gpt-6-luna",
+              "model": "gpt-6-luna",
+              "probability": 5.2407084724117476e-08,
+              "score": -1.6104146745400698
             }
           ],
           "used_outputs": 1
@@ -979,115 +1891,229 @@
         "wrapped_report": {
           "bank_version": {
             "analyzer_version": 1,
-            "built_at": "2026-09-30T22:05:57.774800+00:00",
-            "revision": "a7edbadabec28fdf8b5cd8181764af80136a668a",
-            "sha256": "e514c76928ea38d23bc0f14d3935f23c97b1efb6d96b18a19bdc88ad2d830536"
+            "built_at": "2026-11-14T16:13:39.799477+00:00",
+            "revision": "477d59d525c3cd31fe56e4e63958fbc4574ca187",
+            "sha256": "2c5f065333558565cc8b1a01093aef259cac4909b9073f068da6a604730687ad"
           },
           "prediction": "claude-opus-5-5",
           "prediction_name": "claude-opus-5-5",
-          "probability": 0.9262297662132194,
+          "probability": 0.7418674752668842,
           "results": [
             {
               "display_name": "claude-opus-5-5",
               "model": "claude-opus-5-5",
-              "probability": 0.9262297662132194,
-              "score": 2.0131144931707046
+              "probability": 0.7418674752668842,
+              "score": 2.094776674732054
             },
             {
               "display_name": "gpt-5.4",
               "model": "gpt-5.4",
-              "probability": 0.07328157821049246,
-              "score": 1.6621390256792683
+              "probability": 0.12237165435144655,
+              "score": 1.689256166326056
+            },
+            {
+              "display_name": "claude-haiku-5-5",
+              "model": "claude-haiku-5-5",
+              "probability": 0.11328819603454136,
+              "score": 1.6719004364201155
+            },
+            {
+              "display_name": "claude-fable-5",
+              "model": "claude-fable-5",
+              "probability": 0.006557925035195889,
+              "score": 1.0307436635945493
+            },
+            {
+              "display_name": "kimi-k3",
+              "model": "kimi-k3",
+              "probability": 0.006170029632052749,
+              "score": 1.0170237126417603
+            },
+            {
+              "display_name": "gpt-6.2-astra",
+              "model": "gpt-6.2-astra",
+              "probability": 0.003447236662973809,
+              "score": 0.8860293689922847
             },
             {
               "display_name": "claude-sonnet-5-5",
               "model": "claude-sonnet-5-5",
-              "probability": 0.0004191746758701878,
-              "score": 0.9477154838546348
+              "probability": 0.0026349314521527203,
+              "score": 0.8255614246149245
             },
             {
-              "display_name": "gpt-5.6-sol",
-              "model": "gpt-5.6-sol",
-              "probability": 6.254418672111031e-05,
-              "score": 0.6845109146168256
+              "display_name": "glm-5.3-flash",
+              "model": "glm-5.3-flash",
+              "probability": 0.0007349527928379312,
+              "score": 0.5382472737951446
             },
             {
-              "display_name": "gpt-6-sol",
-              "model": "gpt-6-sol",
-              "probability": 2.8167040729487193e-06,
-              "score": 0.25557458108119757
+              "display_name": "kimi-k3.1-pro",
+              "model": "kimi-k3.1-pro",
+              "probability": 0.0006544069115440027,
+              "score": 0.5121269877825244
             },
             {
-              "display_name": "gpt-6-astra",
-              "model": "gpt-6-astra",
-              "probability": 1.8790158151581118e-06,
-              "score": 0.19956665404998855
+              "display_name": "claude-fable-5-1",
+              "model": "claude-fable-5-1",
+              "probability": 0.0004440496818374225,
+              "score": 0.4248636362457118
             },
             {
-              "display_name": "gpt-5.5",
-              "model": "gpt-5.5",
-              "probability": 1.478554755675655e-06,
-              "score": 0.16640580791199044
+              "display_name": "claude-fable-5-2",
+              "model": "claude-fable-5-2",
+              "probability": 0.0004189997854380203,
+              "score": 0.41179728636929974
             },
             {
-              "display_name": "gpt-5.6-luna",
-              "model": "gpt-5.6-luna",
-              "probability": 4.169923517116735e-07,
-              "score": -0.008714731053296315
+              "display_name": "gpt-6.1-sol",
+              "model": "gpt-6.1-sol",
+              "probability": 0.0003847232728405892,
+              "score": 0.3925922231422396
             },
             {
               "display_name": "claude-sonnet-5",
               "model": "claude-sonnet-5",
-              "probability": 1.6056209733622167e-07,
-              "score": -0.14075696413254196
+              "probability": 0.0002197819717335429,
+              "score": 0.26660299268520415
             },
             {
-              "display_name": "gpt-5.6-terra",
-              "model": "gpt-5.6-terra",
-              "probability": 1.0767292085034515e-07,
-              "score": -0.196040385407019
+              "display_name": "gpt-6.2-sol",
+              "model": "gpt-6.2-sol",
+              "probability": 0.00020275063523596812,
+              "score": 0.24845260504192979
             },
             {
-              "display_name": "claude-opus-4-6",
-              "model": "claude-opus-4-6",
-              "probability": 5.5015408670769994e-08,
-              "score": -0.28894226301407006
+              "display_name": "glm-5.3",
+              "model": "glm-5.3",
+              "probability": 0.00016009686201920738,
+              "score": 0.19530203808808028
             },
             {
-              "display_name": "claude-opus-5",
-              "model": "claude-opus-5",
-              "probability": 1.324627361890847e-08,
-              "score": -0.4859425582767904
+              "display_name": "deepseek-v4-pro-0813",
+              "model": "deepseek-v4-pro-0813",
+              "probability": 0.00012294819834545503,
+              "score": 0.1358916852490376
+            },
+            {
+              "display_name": "gpt-5.6-sol",
+              "model": "gpt-5.6-sol",
+              "probability": 9.677919177891683e-05,
+              "score": 0.08203604576421372
             },
             {
               "display_name": "claude-opus-4-7",
               "model": "claude-opus-4-7",
-              "probability": 6.198257735497199e-09,
-              "score": -0.5910144027788449
+              "probability": 5.0539144624416506e-05,
+              "score": -0.06415948668397423
             },
             {
-              "display_name": "gpt-6-luna",
-              "model": "gpt-6-luna",
-              "probability": 2.0927926143308224e-09,
-              "score": -0.7412336866498791
+              "display_name": "gemini-3.8-flash-high",
+              "model": "gemini-3.8-flash-high",
+              "probability": 4.958438928307297e-05,
+              "score": -0.06845120419513512
             },
             {
-              "display_name": "claude-haiku-4-5-20251001",
-              "model": "claude-haiku-4-5-20251001",
-              "probability": 4.86381316369012e-10,
-              "score": -0.9431267892559649
+              "display_name": "gpt-6-sol",
+              "model": "gpt-6-sol",
+              "probability": 3.29894538190622e-05,
+              "score": -0.1601464874219808
+            },
+            {
+              "display_name": "gpt-6-astra",
+              "model": "gpt-6-astra",
+              "probability": 1.553370042232484e-05,
+              "score": -0.329630422926939
+            },
+            {
+              "display_name": "deepseek-v4.1-flash-1017",
+              "model": "deepseek-v4.1-flash-1017",
+              "probability": 1.3756648701328421e-05,
+              "score": -0.35696870814124027
+            },
+            {
+              "display_name": "gpt-5.6-luna",
+              "model": "gpt-5.6-luna",
+              "probability": 1.1167195028232277e-05,
+              "score": -0.403895960471986
+            },
+            {
+              "display_name": "deepseek-v4.1-flash",
+              "model": "deepseek-v4.1-flash",
+              "probability": 9.151925926593385e-06,
+              "score": -0.44867969487186155
+            },
+            {
+              "display_name": "claude-opus-5",
+              "model": "claude-opus-5",
+              "probability": 8.401374213476497e-06,
+              "score": -0.4679349270682101
+            },
+            {
+              "display_name": "gemini-4-hydrogen",
+              "model": "gemini-4-hydrogen",
+              "probability": 6.415183295221822e-06,
+              "score": -0.5286305846282061
+            },
+            {
+              "display_name": "gemini-4-argon",
+              "model": "gemini-4-argon",
+              "probability": 6.064567874817584e-06,
+              "score": -0.5412779896881069
+            },
+            {
+              "display_name": "gpt-5.5",
+              "model": "gpt-5.5",
+              "probability": 5.8972871279497686e-06,
+              "score": -0.547572149647287
+            },
+            {
+              "display_name": "gpt-5.6-terra",
+              "model": "gpt-5.6-terra",
+              "probability": 5.521539670755783e-06,
+              "score": -0.5623868689453579
             },
             {
               "display_name": "claude-opus-4-8",
               "model": "claude-opus-4-8",
-              "probability": 1.5868710454931235e-10,
-              "score": -1.0980901475204083
+              "probability": 4.0658177524353395e-06,
+              "score": -0.6312541390198445
+            },
+            {
+              "display_name": "claude-opus-4-6",
+              "model": "claude-opus-4-6",
+              "probability": 2.314694503366959e-06,
+              "score": -0.7580194583123038
+            },
+            {
+              "display_name": "gemini-4-carbon",
+              "model": "gemini-4-carbon",
+              "probability": 9.683695307447964e-07,
+              "score": -0.9541111451046644
+            },
+            {
+              "display_name": "gpt-6.1-terra",
+              "model": "gpt-6.1-terra",
+              "probability": 3.7337393498791823e-07,
+              "score": -1.1685680994413434
+            },
+            {
+              "display_name": "claude-haiku-4-5-20251001",
+              "model": "claude-haiku-4-5-20251001",
+              "probability": 1.6939069893630824e-07,
+              "score": -1.3464222029213442
             },
             {
               "display_name": "claude-sonnet-4-6",
               "model": "claude-sonnet-4-6",
-              "probability": 1.3882002478373212e-11,
-              "score": -1.4351650322757954
+              "probability": 9.579764880497186e-08,
+              "score": -1.4746800174552745
+            },
+            {
+              "display_name": "gpt-6-luna",
+              "model": "gpt-6-luna",
+              "probability": 5.2407084724117476e-08,
+              "score": -1.6104146745400698
             }
           ],
           "used_outputs": 1
@@ -1099,115 +2125,229 @@
         "report": {
           "bank_version": {
             "analyzer_version": 1,
-            "built_at": "2026-09-30T22:05:57.774800+00:00",
-            "revision": "a7edbadabec28fdf8b5cd8181764af80136a668a",
-            "sha256": "e514c76928ea38d23bc0f14d3935f23c97b1efb6d96b18a19bdc88ad2d830536"
+            "built_at": "2026-11-14T16:13:39.799477+00:00",
+            "revision": "477d59d525c3cd31fe56e4e63958fbc4574ca187",
+            "sha256": "2c5f065333558565cc8b1a01093aef259cac4909b9073f068da6a604730687ad"
           },
-          "prediction": "claude-opus-5-5",
-          "prediction_name": "claude-opus-5-5",
-          "probability": 0.9878447834512232,
+          "prediction": "claude-fable-5",
+          "prediction_name": "claude-fable-5",
+          "probability": 0.44607623843693545,
           "results": [
+            {
+              "display_name": "claude-fable-5",
+              "model": "claude-fable-5",
+              "probability": 0.44607623843693545,
+              "score": 1.7703142835601313
+            },
             {
               "display_name": "claude-opus-5-5",
               "model": "claude-opus-5-5",
-              "probability": 0.9878447834512232,
-              "score": 1.7644281946570135
+              "probability": 0.35469880436992685,
+              "score": 1.718733703018655
+            },
+            {
+              "display_name": "claude-fable-5-1",
+              "model": "claude-fable-5-1",
+              "probability": 0.11242235739182664,
+              "score": 1.460177834175702
+            },
+            {
+              "display_name": "gpt-6.2-astra",
+              "model": "gpt-6.2-astra",
+              "probability": 0.051746402619218,
+              "score": 1.2855786453027434
             },
             {
               "display_name": "gpt-5.4",
               "model": "gpt-5.4",
-              "probability": 0.011602548505760958,
-              "score": 1.1495462507166199
+              "probability": 0.018483084037184357,
+              "score": 1.053914959787454
             },
             {
               "display_name": "claude-haiku-4-5-20251001",
               "model": "claude-haiku-4-5-20251001",
-              "probability": 0.0003203160785461844,
-              "score": 0.652904716496157
+              "probability": 0.003710140905390141,
+              "score": 0.6925718891524922
+            },
+            {
+              "display_name": "kimi-k3.1-pro",
+              "model": "kimi-k3.1-pro",
+              "probability": 0.0031856801283764564,
+              "score": 0.6582770677682335
             },
             {
               "display_name": "claude-opus-4-7",
               "model": "claude-opus-4-7",
-              "probability": 0.00011716489927447981,
-              "score": 0.5137596107892654
+              "probability": 0.0025140688123471617,
+              "score": 0.6049992444258089
             },
             {
               "display_name": "gpt-5.6-sol",
               "model": "gpt-5.6-sol",
-              "probability": 3.3764504338059675e-05,
-              "score": 0.3416247605103917
-            },
-            {
-              "display_name": "gpt-5.5",
-              "model": "gpt-5.5",
-              "probability": 2.826306136285884e-05,
-              "score": 0.3170180892719554
+              "probability": 0.0014387035412368918,
+              "score": 0.4793989021083256
             },
             {
               "display_name": "claude-sonnet-5",
               "model": "claude-sonnet-5",
-              "probability": 2.683848867764598e-05,
-              "score": 0.3098626569830414
+              "probability": 0.0013629474792141766,
+              "score": 0.46722664074883097
+            },
+            {
+              "display_name": "gemini-3.8-flash-high",
+              "model": "gemini-3.8-flash-high",
+              "probability": 0.0011046205143071355,
+              "score": 0.4199380006816349
             },
             {
               "display_name": "claude-opus-4-8",
               "model": "claude-opus-4-8",
-              "probability": 1.560967121113746e-05,
-              "score": 0.23488280586824234
-            },
-            {
-              "display_name": "claude-sonnet-5-5",
-              "model": "claude-sonnet-5-5",
-              "probability": 7.227080575067885e-06,
-              "score": 0.12834338623971703
+              "probability": 0.0010147815791795845,
+              "score": 0.40084942203781543
             },
             {
               "display_name": "claude-sonnet-4-6",
               "model": "claude-sonnet-4-6",
-              "probability": 1.5583485976969435e-06,
-              "score": -0.08391882105864419
+              "probability": 0.0004363725076368532,
+              "score": 0.2109429730521361
+            },
+            {
+              "display_name": "gpt-5.5",
+              "model": "gpt-5.5",
+              "probability": 0.00041678307090581984,
+              "score": 0.20060745879261357
+            },
+            {
+              "display_name": "claude-sonnet-5-5",
+              "model": "claude-sonnet-5-5",
+              "probability": 0.0003063188011483638,
+              "score": 0.13131317463488562
+            },
+            {
+              "display_name": "gpt-6.1-terra",
+              "model": "gpt-6.1-terra",
+              "probability": 0.00020410210526520872,
+              "score": 0.03995140509665038
             },
             {
               "display_name": "claude-opus-5",
               "model": "claude-opus-5",
-              "probability": 9.26457547023938e-07,
-              "score": -0.15586423235541289
+              "probability": 0.00017445505975937012,
+              "score": 0.004632904887571906
+            },
+            {
+              "display_name": "kimi-k3",
+              "model": "kimi-k3",
+              "probability": 0.00015357498558660258,
+              "score": -0.024052965096849843
+            },
+            {
+              "display_name": "gpt-6.2-sol",
+              "model": "gpt-6.2-sol",
+              "probability": 9.574480754440001e-05,
+              "score": -0.13037816394364415
+            },
+            {
+              "display_name": "deepseek-v4.1-flash",
+              "model": "deepseek-v4.1-flash",
+              "probability": 9.186990415151844e-05,
+              "score": -0.13967462789628055
             },
             {
               "display_name": "gpt-6-luna",
               "model": "gpt-6-luna",
-              "probability": 9.170334805279111e-07,
-              "score": -0.15727878588384175
+              "probability": 9.164476728360973e-05,
+              "score": -0.1402267537508794
+            },
+            {
+              "display_name": "gemini-4-hydrogen",
+              "model": "gemini-4-hydrogen",
+              "probability": 9.037854690753561e-05,
+              "score": -0.1433575249000924
             },
             {
               "display_name": "gpt-5.6-terra",
               "model": "gpt-5.6-terra",
-              "probability": 4.382881262494399e-08,
-              "score": -0.5779895820771801
+              "probability": 4.931429281900553e-05,
+              "score": -0.27967648742593315
             },
             {
               "display_name": "claude-opus-4-6",
               "model": "claude-opus-4-6",
-              "probability": 3.091276397683268e-08,
-              "score": -0.6262916610067933
+              "probability": 3.156394414135225e-05,
+              "score": -0.38008259725105253
+            },
+            {
+              "display_name": "deepseek-v4.1-flash-1017",
+              "model": "deepseek-v4.1-flash-1017",
+              "probability": 1.909292141506124e-05,
+              "score": -0.49320250104410607
+            },
+            {
+              "display_name": "deepseek-v4-pro-0813",
+              "model": "deepseek-v4-pro-0813",
+              "probability": 1.8363632567138264e-05,
+              "score": -0.5019662247710203
+            },
+            {
+              "display_name": "claude-haiku-5-5",
+              "model": "claude-haiku-5-5",
+              "probability": 1.7752013101613062e-05,
+              "score": -0.5095885851075853
+            },
+            {
+              "display_name": "gemini-4-argon",
+              "model": "gemini-4-argon",
+              "probability": 1.2510519803350212e-05,
+              "score": -0.5883315998371332
+            },
+            {
+              "display_name": "claude-fable-5-2",
+              "model": "claude-fable-5-2",
+              "probability": 1.2154738941344418e-05,
+              "score": -0.5948237576372575
             },
             {
               "display_name": "gpt-6-sol",
               "model": "gpt-6-sol",
-              "probability": 7.427987198192086e-09,
-              "score": -0.8235710452409293
+              "probability": 9.72602501980008e-06,
+              "score": -0.6449850925658969
+            },
+            {
+              "display_name": "gpt-6.1-sol",
+              "model": "gpt-6.1-sol",
+              "probability": 7.127201093003009e-06,
+              "score": -0.7149425726408043
+            },
+            {
+              "display_name": "glm-5.3-flash",
+              "model": "glm-5.3-flash",
+              "probability": 1.057309473484746e-06,
+              "score": -1.144334544081305
+            },
+            {
+              "display_name": "glm-5.3",
+              "model": "glm-5.3",
+              "probability": 6.69006443438395e-07,
+              "score": -1.247326320908444
+            },
+            {
+              "display_name": "gemini-4-carbon",
+              "model": "gemini-4-carbon",
+              "probability": 6.336193764223377e-07,
+              "score": -1.259555401088494
             },
             {
               "display_name": "gpt-6-astra",
               "model": "gpt-6-astra",
-              "probability": 2.352921274044646e-10,
-              "score": -1.3011905160253472
+              "probability": 6.169788256566552e-07,
+              "score": -1.2655441701529528
             },
             {
               "display_name": "gpt-5.6-luna",
               "model": "gpt-5.6-luna",
-              "probability": 1.4549327043633453e-11,
-              "score": -1.686265827884255
+              "probability": 3.434256471857813e-07,
+              "score": -1.3973786191319535
             }
           ],
           "used_outputs": 1
