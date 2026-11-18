@@ -25,10 +25,9 @@
 - **双重检测引擎**：结合分词器边界探测（LM Detector）与多维推理指纹分析（ModelTrace），识别渠道模型伪装、偷换与降智。
 - **定时与手动巡检**：支持配置全局自动检测模型与定时巡检计划，实时展示接收与分析进度，异常结果自动记录并可联动调度处置。
 
-### 4. 批量账号运维、优先级编排（`schema=2`）、宿主机配置与思考档位补全
+### 4. 批量账号运维、优先级编排（`schema=2`）与宿主机配置管理
 - **高效日常管理与优先级拖拽编排**：提供分组动态、多维账号筛选排序、按平台/分组的优先级拖拽编排（`schema=2` 乐观并发对账）、批量测活、批量重授权、账号配置模板与代理质量体检。
 - **宿主机 `config.yaml` 受保护下发与在线升级**：支持在客户端直接管理 Sub2API 宿主机配置、检查上游版本、单次安全提交在线升级并重启生效。
-- **思考档位补全**：自动为新模型补全 Reasoning Effort（思考档位）映射与模型目录配置，按分组版本安全校验。
 
 ### 5. 原生跨端体验与 Bark 实时推送
 - **macOS & Android 原生客户端**：共用 Rust 核心层；macOS 14+ 采用纯原生 Swift 6 + SwiftUI / AppKit（提供无抢焦点 `NSPanel` 常驻菜单栏快捷面板、置顶、分组概览、实例速切与全功能主窗口），Android 12+ 采用 Tauri v2 适配原生手势与安全存储。
@@ -46,7 +45,6 @@
 | 账号保活机制 | [docs/keepalive.md](docs/keepalive.md) |
 | 自动用卡机制 | [docs/automatic-credit.md](docs/automatic-credit.md) |
 | 账号测试与操作 | [docs/account-operations.md](docs/account-operations.md) |
-| 模型目录与档位 | [docs/model-catalog.md](docs/model-catalog.md) |
 | Sub2API 宿主配置 | [docs/sub2api-config.md](docs/sub2api-config.md) |
 | 升级与回退指南 | [UPGRADING.md](UPGRADING.md) |
 
@@ -73,7 +71,7 @@ docker compose up -d --build
   sub2ops-server serve --host 127.0.0.1 --port 18081
   ```
 - 生产环境建议通过 Nginx 挂载到 Sub2API 同域名的 `/sub2ops/` 路径下，并关闭该路径的 query access log（配置示例见 `deploy/nginx/sub2ops.location.conf`）。
-- 桌面管理路由强制校验管理员 API Key；`connection-status` 保持 HTTP 200 返回脱敏鉴权诊断的契约（不回传地址、密钥或业务数据）；`/healthz` 与模型目录接口分别沿用健康检查和客户端鉴权语义。
+- 桌面管理路由强制校验管理员 API Key；`connection-status` 保持 HTTP 200 返回脱敏鉴权诊断的契约（不回传地址、密钥或业务数据）；`/healthz` 保持免鉴权健康检查语义。
 - 数据库跨主机连接请启用 TLS、配置可信 CA 并验证服务端主机名（`sslmode=verify-full`）；`sslmode=disable` 仅适用于同一受控容器内网。
 
 ---
@@ -85,7 +83,6 @@ docker compose up -d --build
 | `SUB2API_CONFIG_PATH` | 独立连接配置文件，默认 `/data/sub2api-config.json`；JSON 中的 `base_url` / `verify_base_url` 优先于对应环境变量。 |
 | `SUB2API_BASE_URL` | Sub2API 公网根地址。 |
 | `SUB2API_VERIFY_BASE_URL` | 可选的服务端内网校验根地址。 |
-| `GROUP_MODEL_CONFIG_PATH` | 分组思考档位补全文件，默认 `/data/group-model-config.json`（按分组版本校验）。 |
 | `KEEPALIVE_CONFIG_PATH` | 账号保活设置、恢复预算与待核对记录，默认 `/data/keepalive-state.json`（默认全部关闭）。 |
 | `DATABASE_URL` | Sub2API PostgreSQL 连接串。 |
 | `BASE_PATH` | 历史兼容字段，默认 `/sub2ops`；外部前缀由 Nginx 配置并剥离，Rust 服务不据此挂载路由。 |

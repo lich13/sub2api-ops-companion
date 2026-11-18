@@ -1,19 +1,17 @@
 import SwiftUI
 
-/// Matches `SettingsPage(page: "features")` 4-tab container in `desktop/src/main.tsx`.
+/// Matches `SettingsPage(page: "features")` 3-tab container in `desktop/src/main.tsx`.
 public struct FeaturesPageView: View {
     @Bindable public var store: AppStore
 
     public enum Tab: String, CaseIterable, Sendable {
         case recovery
-        case models
         case ip
         case sub2api
 
         public var label: String {
             switch self {
             case .recovery: return "恢复与检测"
-            case .models: return "模型配置"
             case .ip: return "IP 管理"
             case .sub2api: return "Sub2API 配置"
             }
@@ -67,17 +65,6 @@ public struct FeaturesPageView: View {
                     LinearRetainedTabSlot(isActive: selectedTab == .recovery) {
                         scrollableTabBody {
                             RecoveryDetectionTabView(store: store)
-                        }
-                    }
-                }
-                if visitedTabs.contains(.models) {
-                    LinearRetainedTabSlot(isActive: selectedTab == .models) {
-                        scrollableTabBody {
-                            ModelConfigTabView(
-                                store: store,
-                                online: store.state.online,
-                                connectionKey: store.connectionKey
-                            )
                         }
                     }
                 }

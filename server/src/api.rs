@@ -39,9 +39,6 @@ pub fn router(runtime: Arc<Runtime>) -> Router {
     Router::new()
         .route("/healthz", get(health))
         .route("/api/desktop/v1/{*path}", any(desktop))
-        .route("/v1/models", get(catalog))
-        .route("/models", get(catalog))
-        .route("/backend-api/codex/models", get(catalog))
         .fallback(|| async { Error::new(404, "Not Found") })
         .layer(from_fn(desktop_response))
         .with_state(runtime)
@@ -91,35 +88,6 @@ fn params(request: &Request) -> Result<BTreeMap<String, String>> {
         .map(|v| v.0)
         .map_err(|_| Error::invalid())
 }
-async fn catalog(State(runtime): State<Arc<Runtime>>, request: Request) -> Result<Response> {
-    let query = params(&request)?;
-    let path = request.uri().path();
-    if path != "/backend-api/codex/models"
-        && query.get("client_version").is_none_or(|v| v.is_empty())
-    {
-        return Err(Error::new(404, "Not Found"));
-    }
-    let headers = request
-        .headers()
-        .iter()
-        .filter_map(|(k, v)| {
-            v.to_str()
-                .ok()
-                .map(|v| (k.as_str().to_owned(), v.to_owned()))
-        })
-        .collect();
-    let reply = runtime
-        .catalog
-        .proxy(path, request.uri().query().unwrap_or(""), &headers)
-        .await;
-    let mut response = Response::builder().status(reply.status);
-    for (key, value) in reply.headers {
-        response = response.header(key, value);
-    }
-    response
-        .body(Body::from(reply.body))
-        .map_err(|_| Error::internal())
-}
 fn path_id(value: &str) -> Result<i64> {
     validation::coercible_integer(&json!(value), i64::MIN, i64::MAX)
 }
@@ -167,8 +135,7 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         | "usage-record-options"
         | "recoveries"
         | "proxies"
-        | "config"
-        | "model-groups"] => Some(&["GET"]),
+        | "config"] => Some(&["GET"]),
         ["proxy-management"] => Some(&["GET", "POST"]),
         ["proxy-management", "data"] => Some(&["GET", "POST"]),
         ["proxy-management", "batch" | "batch-delete"] => Some(&["POST"]),
@@ -209,8 +176,6 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         ["accounts", _, "key-quota-settings", "access-token"] => Some(&["GET"]),
         ["config", "oauth" | "bark"] => Some(&["PUT"]),
         ["actions", "bark-test"] => Some(&["POST"]),
-        ["model-groups", _, "reasoning"] => Some(&["GET", "PUT", "DELETE"]),
-        ["model-groups", _, "reasoning", "resolve"] => Some(&["POST"]),
         _ => None,
     }
 }
@@ -268,7 +233,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
     // Match FastAPI's parameter validation before entering an authenticated
     // handler. This checks types only; domain reads and writes still need auth.
     match path.as_slice() {
-        ["accounts" | "proxies" | "model-groups", id, ..] | ["errors" | "usage-records", id] => {
+        ["accounts" | "proxies", id, ..] | ["errors" | "usage-records", id] => {
             validation::coercible_integer(&json!(id), i64::MIN, i64::MAX)?;
         }
         _ => {}
@@ -553,11 +518,17 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
                 } else {
                     let identity = runtime.actions.candidate_source(&row, &key).await?;
                     let actions = runtime.actions.clone();
-                    let catalog = runtime.catalog.clone();
                     let key = key.clone();
                     let fetch = async move {
                         let result: Result<Vec<Value>> = async {
-                            let models = match catalog.account_models_read(account_id, true).await {
+                            let models = match crate::model_directory::account_models_read(
+                                &actions.queries.db,
+                                &actions.directory_cache,
+                                account_id,
+                                true,
+                            )
+                            .await
+                            {
                                 Ok(models) => models,
                                 Err(error) if error.status.as_u16() == 422 => {
                                     let data = actions
@@ -705,41 +676,10 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             }
             json!({"message":"Bark 测试消息已发送"})
         }
-        ["model-groups"] => runtime.catalog.list_groups().await?,
-        ["model-groups", id, "reasoning"] if method == Method::GET => {
-            runtime.catalog.read_reasoning(path_id(id)?, &key).await?
-        }
-        ["model-groups", id, "reasoning", "resolve"] => {
-            reasoning_request(&mut payload, "resolve")?;
-            runtime
-                .catalog
-                .resolve_reasoning(path_id(id)?, &key, &payload)
-                .await?
-        }
-        ["model-groups", id, "reasoning"] if method == Method::PUT => {
-            reasoning_request(&mut payload, "save")?;
-            runtime
-                .catalog
-                .save_reasoning(path_id(id)?, &key, &payload)
-                .await?
-        }
-        ["model-groups", id, "reasoning"] => {
-            reasoning_request(&mut payload, "delete")?;
-            runtime
-                .catalog
-                .remove_reasoning(path_id(id)?, &key, &payload)
-                .await?
-        }
         _ => return Err(Error::new(404, "Not Found")),
     };
     if method != Method::GET {
         runtime.invalidate_snapshot();
-    }
-    let mut result = result;
-    if path.first() == Some(&"model-groups") {
-        if let Some(object) = result.as_object_mut() {
-            object.retain(|key, _| !key.starts_with('_'));
-        }
     }
     Ok((status, Json(result)).into_response())
 }
@@ -763,9 +703,6 @@ fn template_request(payload: &mut Value, delete: bool) -> Result<()> {
         )?;
     }
     version(payload, "expected_version")
-}
-fn reasoning_request(payload: &mut Value, kind: &str) -> Result<()> {
-    crate::request_schema::reasoning(payload, kind)
 }
 
 #[cfg(test)]

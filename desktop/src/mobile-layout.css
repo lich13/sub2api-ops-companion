@@ -634,45 +634,11 @@
 .app.mobile .field {
   flex-wrap: wrap;
 }
-.app.mobile .reasoning-toolbar > select {
-  flex-basis: 100%;
-}
-.app.mobile .reasoning-row {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 10px;
-}
-.app.mobile .reasoning-row.reasoning-head {
-  display: none;
-}
-.app.mobile .reasoning-id {
-  overflow: visible;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
 .app.mobile .mobile-field-label {
   display: inline;
   color: var(--muted);
   margin-right: 8px;
   font-size: 11px;
-}
-.app.mobile .reasoning-state {
-  align-self: start;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.app.mobile .reasoning-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.app.mobile .reasoning-choices {
-  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-}
-.app.mobile .reasoning-modal input,
-.app.mobile .reasoning-modal select {
-  min-width: 0;
-  max-width: 100%;
 }
 .app.mobile .check-account > span {
   min-width: 0;
@@ -685,8 +651,7 @@
   overflow: visible;
 }
 .app.mobile .delete-dialog,
-.app.mobile .test-dialog,
-.app.mobile .reasoning-modal {
+.app.mobile .test-dialog {
   overflow-wrap: anywhere;
 }
 .app.mobile .test-dialog header strong,

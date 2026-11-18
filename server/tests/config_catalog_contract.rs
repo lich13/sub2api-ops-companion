@@ -2,9 +2,7 @@ use serde_json::{json, Value};
 use std::{collections::BTreeMap, fs, path::Path};
 use sub2ops_server::{
     account_templates::{self, Templates},
-    compat, model_catalog,
-    model_config::ModelConfig,
-    model_rules,
+    compat, model_rules,
     settings::Settings,
 };
 
@@ -212,111 +210,14 @@ fn account_template_custom_crud_mapping_and_request_validation_match_pinned_pyth
 }
 
 #[test]
-fn model_catalog_reasoning_import_model_rules_revision_and_priority_match_pinned_python() {
+fn model_rules_revision_matches_pinned_python() {
     let fixture = fixtures();
-    let model = &fixture["model"];
-
-    let revision = &model["revision"];
+    let revision = &fixture["model"]["revision"];
     assert_eq!(
         model_rules::revision(&revision["input"]),
         revision["expected"].as_str().unwrap(),
-        "model config revision must match legacy JSON canonicalization"
+        "model rules revision must match legacy JSON canonicalization"
     );
-
-    let transform = &model["transform"];
-    assert_eq!(
-        model_rules::transform(
-            &transform["body"],
-            &transform["overrides"],
-            &transform["allowlist"],
-            &transform["aliases"],
-        )
-        .expect("valid catalog transform"),
-        transform["expected"],
-        "saved override values should take precedence on the matching model"
-    );
-
-    for case in model["field_validation"].as_array().unwrap() {
-        assert_eq!(
-            model_rules::validate_fields(&case["fields"], &case["base"]).is_ok(),
-            case["accepted"].as_bool().unwrap(),
-            "model field request case {}",
-            case["id"]
-        );
-    }
-    for case in model["override_validation"].as_array().unwrap() {
-        assert_eq!(
-            model_rules::validate_overrides(&case["input"], &Value::Null).is_ok(),
-            case["accepted"].as_bool().unwrap(),
-            "model override request case {}",
-            case["id"]
-        );
-    }
-    for case in model["reasoning_import"].as_array().unwrap() {
-        assert_eq!(
-            model_catalog::import_fields(&case["input"]),
-            case["expected"],
-            "model directory reasoning parse case {}",
-            case["id"]
-        );
-    }
-}
-
-#[test]
-fn model_config_revision_and_corrupt_state_match_pinned_python() {
-    let fixture = fixtures();
-    let contract = &fixture["model"]["model_config"];
-    let root = tempfile::tempdir().expect("temporary test root");
-    let raw = serde_json::to_vec(&contract["state"]).expect("model config fixture serializes");
-
-    let writable_path = root.path().join("model-config-writable.json");
-    fs::write(&writable_path, &raw).expect("write model config fixture");
-    let writable = ModelConfig::new(writable_path);
-    assert_eq!(
-        writable.read().expect("valid model config should read"),
-        contract["state"]
-    );
-    assert_eq!(
-        writable
-            .group(contract["group_id"].as_i64().unwrap())
-            .expect("model group should load"),
-        contract["expected_group"],
-        "group revision must match the pinned Python store"
-    );
-
-    assert_eq!(contract["read_unchanged"].as_bool(), Some(true));
-
-    let stale_path = root.path().join("model-config-stale.json");
-    fs::write(&stale_path, &raw).expect("write stale-write fixture");
-    let stale_before = fs::read(&stale_path).expect("stale-write fixture bytes");
-    let stale_store = ModelConfig::new(stale_path.clone());
-    assert!(
-        stale_store
-            .save(
-                contract["group_id"].as_i64().unwrap(),
-                &json!({"fixture-model":{"display_name":"fixture stale attempt"}}),
-                &"0".repeat(64),
-            )
-            .is_err(),
-        "stale model config revision must be rejected"
-    );
-    assert_eq!(fs::read(&stale_path).unwrap(), stale_before);
-
-    let corrupt_path = root.path().join("model-config-corrupt.json");
-    let corrupt_bytes = contract["corrupt_json"].as_str().unwrap().as_bytes();
-    fs::write(&corrupt_path, corrupt_bytes).expect("write invalid-schema model config");
-    let before_corrupt = fs::read(&corrupt_path).expect("invalid model config bytes");
-    let corrupt = ModelConfig::new(corrupt_path.clone());
-    assert!(
-        corrupt.read().is_err(),
-        "invalid model config schema must be rejected"
-    );
-    assert!(corrupt
-        .group(contract["group_id"].as_i64().unwrap())
-        .is_err());
-    assert_eq!(fs::read(&corrupt_path).unwrap(), before_corrupt);
-    assert_eq!(contract["corrupt_rejected"].as_bool(), Some(true));
-    assert_eq!(contract["corrupt_unchanged"].as_bool(), Some(true));
 }
 
 #[test]

@@ -478,7 +478,6 @@ fn settings_at(directory: &Path) -> Arc<Settings> {
         oauth_path: directory.join("oauth.json"),
         bark_path: directory.join("bark.json"),
         connection_path: directory.join("connection.json"),
-        model_path: directory.join("model.json"),
         keepalive_path: directory.join("keepalive-state.json"),
         oauth: json!({}),
         bark: json!({}),

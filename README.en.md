@@ -25,10 +25,9 @@
 - **Dual Detection Engines**: Combines tokenizer boundary probing (**LM Detector**) with behavioral reasoning fingerprint analysis (**ModelTrace**) to detect upstream model spoofing, silent substitution, and quality degradation.
 - **Scheduled & On-Demand Runs**: Configure global detection models and scheduled inspection runs with real-time in-memory progress streaming and automated scheduling actions on anomalies.
 
-### 4. Batch Account Operations, `schema=2` Priority Orchestration, Host Config & Reasoning Catalog
+### 4. Batch Account Operations, `schema=2` Priority Orchestration & Host Config
 - **Streamlined Daily Ops & Priority Drag-and-Drop**: Live group activity feeds, multi-dimensional account filtering/sorting, platform-scoped priority drag-and-drop orchestration (`schema=2` reconciled writes), batch health tests, batch re-authorization, reusable account templates, and proxy health checks.
 - **Protected Host `config.yaml` Delivery & Online Upgrades**: Inspect and update Sub2API host configurations with optimistic concurrency guards, check upstream releases, and trigger one-click online upgrades and service restarts.
-- **Reasoning Effort Completion**: Automatically supplements reasoning effort levels and model catalog entries for new upstream models with group-version concurrency guards.
 
 ### 5. Native Cross-Platform Clients & Bark Push Alerts
 - **macOS & Android Native Apps**: Powered by a shared Rust core; macOS 14+ uses pure native Swift 6 + SwiftUI / AppKit (non-activating `NSPanel` resident menu bar quick panel, pinning, group summaries, instant instance switching, and full main console), while Android 12+ ARM64 uses Tauri v2.
@@ -46,7 +45,6 @@
 | Account Keepalive | [docs/keepalive.md](docs/keepalive.md) |
 | Automatic Credit Reset | [docs/automatic-credit.md](docs/automatic-credit.md) |
 | Account Testing & Operations | [docs/account-operations.md](docs/account-operations.md) |
-| Model Catalog & Reasoning Effort | [docs/model-catalog.md](docs/model-catalog.md) |
 | Sub2API Host Configuration | [docs/sub2api-config.md](docs/sub2api-config.md) |
 | Upgrade & Rollback Guide | [UPGRADING.md](UPGRADING.md) |
 
@@ -73,7 +71,7 @@ docker compose up -d --build
   sub2ops-server serve --host 127.0.0.1 --port 18081
   ```
 - In production, mount Sub2Ops under `/sub2ops/` on the same domain as Sub2API via Nginx and disable query access logs for that location (see `deploy/nginx/sub2ops.location.conf`).
-- Client management routes require a valid administrator API Key. `/connection-status` returns HTTP 200 with redacted authentication diagnostics (never exposing URLs, keys, or business data). `/healthz` and model catalog routes follow health-check and client authentication semantics respectively.
+- Client management routes require a valid administrator API Key. `/connection-status` returns HTTP 200 with redacted authentication diagnostics (never exposing URLs, keys, or business data). `/healthz` retains unauthenticated health-check semantics.
 - Use TLS with a trusted CA and hostname verification (`sslmode=verify-full`) for cross-host PostgreSQL connections; `sslmode=disable` is only appropriate inside an isolated container network.
 
 ---
@@ -85,7 +83,6 @@ docker compose up -d --build
 | `SUB2API_CONFIG_PATH` | Standalone connection config file (default `/data/sub2api-config.json`). JSON `base_url` / `verify_base_url` take precedence over environment variables. |
 | `SUB2API_BASE_URL` | Public base URL of the Sub2API instance. |
 | `SUB2API_VERIFY_BASE_URL` | Optional internal base URL used by the server for upstream verification. |
-| `GROUP_MODEL_CONFIG_PATH` | Group reasoning-effort config file (default `/data/group-model-config.json`), guarded by group version. |
 | `KEEPALIVE_CONFIG_PATH` | Per-account keepalive settings, recovery budgets, and pending checks (default `/data/keepalive-state.json`, disabled by default). |
 | `DATABASE_URL` | Sub2API PostgreSQL connection string. |
 | `BASE_PATH` | Legacy compatibility prefix (default `/sub2ops`); stripped by Nginx externally. |

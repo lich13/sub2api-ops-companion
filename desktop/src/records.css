@@ -704,17 +704,6 @@
   min-width: 20px;
   min-height: 20px;
 }
-.feature-models {
-  padding: 22px 0 0;
-  border-top: 1px solid var(--line);
-}
-.feature-models h2 {
-  font-size: 14px;
-  margin: 0 0 16px;
-}
-.feature-models .reasoning-workspace {
-  width: 100%;
-}
 .features-stack {
   max-width: none;
 }

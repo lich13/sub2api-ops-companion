@@ -564,7 +564,6 @@ impl Harness {
             oauth_path: temp.path().join("oauth-config.json"),
             bark_path: temp.path().join("bark-config.json"),
             connection_path,
-            model_path: temp.path().join("group-models.json"),
             keepalive_path: temp.path().join("keepalive-state.json"),
             oauth,
             bark: json!({"enabled":false,"device_key":"fixture-bark-only","server_url":base_url}),

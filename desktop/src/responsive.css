@@ -140,7 +140,7 @@
 .mobile .model-test-result dl > div { grid-template-columns: 78px minmax(0, 1fr); gap: 8px; }
 .mobile-action-sheet { display: grid; gap: 12px; }
 .mobile-action-sheet .field { margin: 0; }
-.mobile .drawer, .mobile .test-dialog, .mobile .reasoning-modal, .mobile .delete-dialog { position: relative; width: 100%; max-width: none; height: 100dvh; max-height: 100dvh; border-radius: 0; padding: calc(12px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); overflow: auto; } .mobile .test-dialog header > div { min-width: 0; flex: 1; } .mobile .test-dialog header strong { max-width: 100%; }
+.mobile .drawer, .mobile .test-dialog, .mobile .delete-dialog { position: relative; width: 100%; max-width: none; height: 100dvh; max-height: 100dvh; border-radius: 0; padding: calc(12px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); overflow: auto; } .mobile .test-dialog header > div { min-width: 0; flex: 1; } .mobile .test-dialog header strong { max-width: 100%; }
 .mobile .test-controls { grid-template-columns: minmax(0, 1fr); padding: 12px 0; }
 .mobile .test-schedule-time { grid-template-columns: minmax(0, 1fr); }
 .mobile .test-dialog > header, .mobile .test-result { padding-left: 0; padding-right: 0; }
@@ -155,15 +155,6 @@
 .mobile .field { gap: 10px; }
 .mobile .field > input:not([type="checkbox"]), .mobile .field > select { min-width: 0; width: min(54%, 220px); }
 .mobile .check-account { min-height: 48px; }
-.mobile .reasoning-toolbar { flex-wrap: wrap; gap: 8px; }
-.mobile .reasoning-toolbar select { min-width: 0; flex: 1; width: 100%; }
-.mobile .reasoning-head { display: none; }
-.mobile .reasoning-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 14px; }
-.mobile .reasoning-id, .mobile .reasoning-levels { grid-column: 1 / -1; }
-.mobile .reasoning-id { max-width: none; overflow-wrap: anywhere; }
-.mobile .reasoning-row > span { white-space: normal; }
-.mobile .reasoning-actions { flex-wrap: wrap; }
-.mobile .reasoning-choices { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .mobile-groups-surface { position: fixed; inset: 0; z-index: 45; padding: env(safe-area-inset-top) 12px env(safe-area-inset-bottom); background: var(--canvas); display: flex; flex-direction: column; }
 .mobile-groups-surface > header { padding: 6px 0; flex-shrink: 0; }
 .mobile-groups-surface .quick-groups { overflow: auto; min-height: 0; padding-bottom: 12px; }

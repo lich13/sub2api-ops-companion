@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use sub2ops_server::{
-    compat, model_catalog, model_config, model_rules,
+    compat, model_directory, model_rules,
     oauth_state::{self, OAuthState, Update},
     quota, store, usage,
 };
@@ -115,43 +115,7 @@ fn all_version_vectors_match_the_pinned_python_contract() {
             "model_catalog_account_cache_identity" => {
                 let input = python_value(&item["input"]);
                 assert_hash(
-                    model_catalog::source_identity(&input),
-                    &item["expected_revision"],
-                    id,
-                );
-            }
-            "model_catalog_accounts_routes_revision" => {
-                let input = python_value(&item["input"]);
-                let accounts = input[0].as_array().expect("accounts array");
-                let routes = input[1].as_array().expect("routes array");
-                assert_hash(
-                    model_catalog::routes_revision(accounts, routes),
-                    &item["expected_revision"],
-                    id,
-                );
-            }
-            "model_catalog_final_response_etag" => {
-                let input = python_value(&item["input"]);
-                let actual = model_catalog::response_etag(&input);
-                assert_hash(actual.clone(), &item["expected_etag_header"], id);
-                assert_hash(
-                    actual.trim_matches('"').to_owned(),
-                    &item["expected_etag_value"],
-                    &format!("{id}/unquoted"),
-                );
-            }
-            "model_catalog_group_version" => {
-                let input = python_value(&item["input"]);
-                assert_hash(
-                    model_config::group_version(&input),
-                    &item["expected_version"],
-                    id,
-                );
-            }
-            "model_catalog_native_body_revision" => {
-                let input = python_value(&item["input"]);
-                assert_hash(
-                    model_rules::revision(&input),
+                    model_directory::source_identity(&input),
                     &item["expected_revision"],
                     id,
                 );
@@ -215,10 +179,6 @@ fn all_version_vectors_match_the_pinned_python_contract() {
         "config_revision_unicode_null_number_datetime",
         "desktop_account_dto_version_group_order_invariance",
         "model_catalog_account_cache_identity",
-        "model_catalog_accounts_routes_revision",
-        "model_catalog_final_response_etag",
-        "model_catalog_group_version",
-        "model_catalog_native_body_revision",
         "model_rules_revision_compact_unicode_null_number",
         "operation_digest_unicode_null_number_datetime",
         "operation_versions_full_synthetic_account",
@@ -230,7 +190,7 @@ fn all_version_vectors_match_the_pinned_python_contract() {
     .collect();
     assert_eq!(
         tested, expected,
-        "all 14 declared Python/Rust vectors must be mapped"
+        "all 10 declared Python/Rust vectors must be mapped"
     );
 }
 

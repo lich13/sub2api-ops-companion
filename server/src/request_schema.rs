@@ -33,8 +33,6 @@ pub fn has_body(path: &[&str], method: &str) -> bool {
             | ["account-templates", ..]
             | ["model-tests", _, "retry"]
             | ["config", _]
-            | ["model-groups", _, "reasoning"]
-            | ["model-groups", _, "reasoning", "resolve"]
     )
 }
 
@@ -282,73 +280,7 @@ pub fn validate(path: &[&str], method: &str, value: &mut Value) -> Result<()> {
             text(&value["name"], 1, 40)?;
             profile(value)?;
         }
-        ["model-groups", _, "reasoning", "resolve"] => reasoning(value, "resolve")?,
-        ["model-groups", _, "reasoning"] => {
-            reasoning(value, if method == "PUT" { "save" } else { "delete" })?
-        }
         _ => {}
-    }
-    Ok(())
-}
-
-pub fn reasoning(value: &mut Value, kind: &str) -> Result<()> {
-    let (allowed, required): (&[&str], &[&str]) = match kind {
-        "resolve" => (&["model", "efforts", "default_effort"], &["model"]),
-        "save" => (
-            &[
-                "model",
-                "expected_version",
-                "expected_revision",
-                "expected_binding",
-                "efforts",
-                "default_effort",
-                "confirm_allowlist",
-            ],
-            &[
-                "model",
-                "expected_version",
-                "expected_revision",
-                "expected_binding",
-                "efforts",
-                "default_effort",
-            ],
-        ),
-        _ => (
-            &["model", "expected_version", "expected_revision"],
-            &["model", "expected_version", "expected_revision"],
-        ),
-    };
-    fields(value, allowed, required)?;
-    text(&value["model"], 1, 256)?;
-    for key in ["expected_version", "expected_revision", "expected_binding"] {
-        if required.contains(&key) {
-            version(value, key)?;
-        }
-    }
-    let efforts = [
-        "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
-    ];
-    if let Some(items) = value.get("efforts").filter(|v| !v.is_null()) {
-        let items = items.as_array().ok_or_else(Error::invalid)?;
-        if kind == "save" && !(1..=8).contains(&items.len()) {
-            return Err(Error::invalid());
-        }
-        for item in items {
-            choice(item, &efforts)?;
-        }
-    } else if kind == "save" {
-        return Err(Error::invalid());
-    }
-    if kind == "save" {
-        choice(&value["default_effort"], &efforts)?;
-        if let Some(input) = value.get("confirm_allowlist") {
-            value["confirm_allowlist"] = validation::coercible_boolean(input)?.into();
-        }
-    } else if kind == "resolve" {
-        if value.get("default_effort").is_none() {
-            value["default_effort"] = "".into();
-        }
-        text(&value["default_effort"], 0, usize::MAX)?;
     }
     Ok(())
 }

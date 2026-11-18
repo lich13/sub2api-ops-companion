@@ -10,13 +10,10 @@ use std::{
     fs,
     sync::{Arc, Mutex},
 };
-use sub2ops_server::{
-    db::Database, model_config::ModelConfig, runtime::Runtime, settings::Settings,
-};
+use sub2ops_server::{db::Database, runtime::Runtime, settings::Settings};
 use tokio::{net::TcpListener, task::JoinHandle};
 
 const ADMIN: &str = "fixture-catalog-admin";
-const QUERY: &str = "client_version=0.116.0";
 
 fn native() -> Value {
     json!({"models":[{"slug":"fixture-native-model","display_name":"Native","unknown":{"array":[false,0,null]}}],
@@ -135,7 +132,6 @@ impl Harness {
             ("BARK_CONFIG_PATH", "bark.json"),
             ("USAGE_QUERY_STATE_PATH", "state.json"),
             ("SUB2API_CONFIG_PATH", "connection.json"),
-            ("GROUP_MODEL_CONFIG_PATH", "models.json"),
             ("KEEPALIVE_CONFIG_PATH", "keepalive-state.json"),
         ] {
             env.insert(
@@ -154,26 +150,6 @@ impl Harness {
             mock,
             server,
         }
-    }
-    async fn proxy(
-        &self,
-        caller: i64,
-        etag: Option<&str>,
-    ) -> sub2ops_server::model_catalog::HttpReply {
-        let mut headers = BTreeMap::from([
-            (
-                "authorization".into(),
-                format!("Bearer fixture-caller-{caller}"),
-            ),
-            ("x-real-ip".into(), "127.0.0.1".into()),
-        ]);
-        if let Some(etag) = etag {
-            headers.insert("if-none-match".into(), etag.into());
-        }
-        self.runtime
-            .catalog
-            .proxy("/v1/models", QUERY, &headers)
-            .await
     }
     async fn close(self) {
         self.runtime.close().await;
@@ -203,259 +179,6 @@ async fn desktop_status(
     request.send().await.unwrap().status()
 }
 
-#[test]
-fn model_store_atomic_permissions_restart_conflict_and_corruption() {
-    use std::os::unix::fs::PermissionsExt;
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("model.json");
-    let store = ModelConfig::new(path.clone());
-    let initial = store.group(7).unwrap();
-    let saved = store
-        .save(
-            7,
-            &json!({"fixture-model":{"display_name":"测试","future":0}}),
-            initial["revision"].as_str().unwrap(),
-        )
-        .unwrap();
-    assert_eq!(
-        fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-        0o600
-    );
-    assert_eq!(ModelConfig::new(path.clone()).group(7).unwrap(), saved);
-    let names = fs::read_dir(root.path())
-        .unwrap()
-        .map(|p| p.unwrap().file_name().into_string().unwrap())
-        .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(
-        names,
-        ["model.json".to_owned(), "model.json.lock".to_owned()].into()
-    );
-    assert_eq!(
-        store
-            .save(7, &json!({}), initial["revision"].as_str().unwrap())
-            .unwrap_err()
-            .status
-            .as_u16(),
-        409
-    );
-    fs::write(&path, "{").unwrap();
-    assert!(store
-        .save(7, &json!({}), saved["revision"].as_str().unwrap())
-        .is_err());
-    assert_eq!(fs::read(&path).unwrap(), b"{");
-}
-
-#[test]
-fn independent_model_stores_preserve_concurrent_group_changes() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("model.json");
-    let barrier = Arc::new(std::sync::Barrier::new(2));
-    let handles = (7..=8)
-        .map(|id| {
-            let path = path.clone();
-            let barrier = barrier.clone();
-            std::thread::spawn(move || {
-                let store = ModelConfig::new(path);
-                let before = store.group(id).unwrap();
-                barrier.wait();
-                store
-                    .save(
-                        id,
-                        &json!({"fixture-model":{"display_name":format!("group-{id}")}}),
-                        before["revision"].as_str().unwrap(),
-                    )
-                    .unwrap();
-            })
-        })
-        .collect::<Vec<_>>();
-    for handle in handles {
-        handle.join().unwrap();
-    }
-    let store = ModelConfig::new(path);
-    for id in 7..=8 {
-        assert_eq!(
-            store.group(id).unwrap()["overrides"]["fixture-model"]["display_name"],
-            format!("group-{id}")
-        );
-    }
-}
-
-#[tokio::test]
-async fn native_auth_on_every_hit_group_isolation_etag_and_forwarded_identity() {
-    let h = Harness::new().await;
-    let before = h.runtime.catalog.store.group(7).unwrap();
-    h.runtime
-        .catalog
-        .store
-        .save(
-            7,
-            &json!({"fixture-native-model":{"display_name":"Seven"}}),
-            before["revision"].as_str().unwrap(),
-        )
-        .unwrap();
-    let first = h.proxy(7, None).await;
-    assert_eq!(first.status, 200);
-    let body: Value = serde_json::from_slice(&first.body).unwrap();
-    assert_eq!(body["models"][0]["display_name"], "Seven");
-    assert_eq!(
-        body["models"][0]["unknown"],
-        native()["models"][0]["unknown"]
-    );
-    assert_eq!(body["future_envelope"], native()["future_envelope"]);
-    let cached = h.proxy(7, Some(&first.headers["etag"])).await;
-    assert_eq!(cached.status, 304);
-    assert!(cached.body.is_empty());
-    assert_eq!(h.mock.calls.lock().unwrap().len(), 2);
-    let other = h.proxy(8, None).await;
-    assert_eq!(
-        serde_json::from_slice::<Value>(&other.body).unwrap(),
-        native()
-    );
-    *h.mock.status.lock().unwrap() = Some(401);
-    let rejected = h.proxy(7, Some(&first.headers["etag"])).await;
-    assert_eq!(rejected.status, 401);
-    assert_eq!(
-        serde_json::from_slice::<Value>(&rejected.body).unwrap(),
-        json!({"error":"fixture-revoked"})
-    );
-    let calls = h.mock.calls.lock().unwrap().clone();
-    assert_eq!(calls.len(), 4);
-    for (index, call) in calls.iter().enumerate() {
-        assert_eq!(call["method"], "GET");
-        assert_eq!(call["path"], format!("/v1/models?{QUERY}"));
-        assert_eq!(call["x-real-ip"], "127.0.0.1");
-        assert_eq!(call["if-none-match"], "");
-        assert_eq!(
-            call["authorization"],
-            format!("Bearer fixture-caller-{}", if index == 2 { 8 } else { 7 })
-        );
-    }
-    h.close().await;
-}
-
-#[tokio::test]
-async fn corrupt_config_and_database_failure_preserve_native_catalog_and_private_status() {
-    let h = Harness::new().await;
-    fs::write(&h.runtime.settings.model_path, "{fixture-private-invalid").unwrap();
-    let fallback = h.proxy(7, None).await;
-    assert_eq!(fallback.status, 200);
-    assert_eq!(
-        serde_json::from_slice::<Value>(&fallback.body).unwrap(),
-        native()
-    );
-    assert_eq!(fallback.headers["x-sub2ops-catalog"], "fallback");
-    assert_eq!(h.runtime.catalog.status()["state"], "fallback");
-    assert_eq!(
-        fs::read(&h.runtime.settings.model_path).unwrap(),
-        b"{fixture-private-invalid"
-    );
-    h.runtime.db.close().await;
-    let unavailable = h.proxy(7, None).await;
-    assert_eq!(unavailable.status, 200);
-    assert_eq!(
-        serde_json::from_slice::<Value>(&unavailable.body).unwrap(),
-        native()
-    );
-    assert_eq!(unavailable.headers["x-sub2ops-catalog"], "fallback");
-    assert!(!h
-        .runtime
-        .catalog
-        .status()
-        .to_string()
-        .contains("fixture-private"));
-    assert_eq!(h.mock.calls.lock().unwrap().len(), 2);
-    h.close().await;
-}
-
-#[tokio::test]
-async fn composite_does_not_publish_unsaved_alias_or_write_account_state() {
-    let h = Harness::new().await;
-    sqlx::raw_sql("UPDATE groups SET platform='composite' WHERE id=7;
-        INSERT INTO accounts (id,platform,type,schedulable,credentials) VALUES (1,'openai','apikey',true,'{\"model_mapping\":{\"public\":\"fixture-native-model\"}}');
-        INSERT INTO account_groups VALUES (1,7);
-        INSERT INTO composite_model_routes (id,group_id,public_model,match_type,target_platform,upstream_model,endpoint,priority,enabled)
-        VALUES (1,7,'fixture-alias','exact','openai','public','responses',0,true);")
-        .execute(&h.runtime.db.pool).await.unwrap();
-    for enabled in [true, false] {
-        sqlx::query("UPDATE accounts SET schedulable=$1 WHERE id=1")
-            .bind(enabled)
-            .execute(&h.runtime.db.pool)
-            .await
-            .unwrap();
-        let before = h.runtime.monitor.row(1).await.unwrap();
-        let response = h.proxy(7, None).await;
-        assert_eq!(response.status, 200);
-        assert_eq!(
-            serde_json::from_slice::<Value>(&response.body).unwrap(),
-            native()
-        );
-        assert_eq!(h.runtime.monitor.row(1).await.unwrap(), before);
-    }
-    let calls = h.mock.calls.lock().unwrap().clone();
-    assert_eq!(calls.len(), 2);
-    assert!(calls.iter().all(|v| v["method"] == "GET"));
-    assert!(!h.runtime.settings.model_path.exists());
-    h.close().await;
-}
-
-#[tokio::test]
-async fn model_admin_routes_authenticate_and_retired_surfaces_stay_absent() {
-    let h = Harness::new().await;
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    let app = sub2ops_server::api::router(h.runtime.clone());
-    let server = tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
-    });
-    let client = reqwest::Client::builder().no_proxy().build().unwrap();
-    let path = format!("{base}/api/desktop/v1/model-groups");
-    assert_eq!(
-        client.get(&path).send().await.unwrap().status().as_u16(),
-        401
-    );
-    let response = client
-        .get(&path)
-        .header("x-api-key", ADMIN)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status().as_u16(), 200);
-    assert_eq!(
-        response.json::<Value>().await.unwrap()["groups"]
-            .as_array()
-            .unwrap()
-            .len(),
-        2
-    );
-    for path in ["/models", "/docs"] {
-        assert_eq!(
-            client
-                .get(format!("{base}{path}"))
-                .send()
-                .await
-                .unwrap()
-                .status()
-                .as_u16(),
-            404
-        );
-    }
-    assert_eq!(
-        client
-            .post(format!("{base}/api/desktop/v1/model-groups/7/preview"))
-            .header("x-api-key", ADMIN)
-            .json(&json!({"extra":1}))
-            .send()
-            .await
-            .unwrap()
-            .status()
-            .as_u16(),
-        404
-    );
-    server.abort();
-    let _ = server.await;
-    h.close().await;
-}
-
 #[tokio::test]
 async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics() {
     let h = Harness::new().await;
@@ -467,8 +190,6 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
     });
     let client = reqwest::Client::builder().no_proxy().build().unwrap();
     let version = "a".repeat(64);
-    let revision = "b".repeat(64);
-    let binding = "c".repeat(64);
     let request_id = "fixture-request-id-0001".to_owned();
     let client_id = "fixture-client-id-0001".to_owned();
     let hex_request_id = "d".repeat(32);
@@ -494,7 +215,6 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
         case!(GET, "recoveries"),
         case!(GET, "proxies"),
         case!(GET, "config"),
-        case!(GET, "model-groups"),
         case!(GET, "account-operations"),
         case!(
             POST,
@@ -620,35 +340,27 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
             json!({"expected_revision":version.clone(),"changes":{}})
         ),
         case!(POST, "actions/bark-test"),
-        case!(GET, "model-groups/7/reasoning"),
-        case!(
-            PUT,
-            "model-groups/7/reasoning",
-            json!({
-                "model":"fixture-model",
-                "expected_version":version.clone(),
-                "expected_revision":revision.clone(),
-                "expected_binding":binding.clone(),
-                "efforts":["minimal"],
-                "default_effort":"minimal"
-            })
-        ),
-        case!(
-            DELETE,
-            "model-groups/7/reasoning",
-            json!({
-                "model":"fixture-model",
-                "expected_version":version.clone(),
-                "expected_revision":revision.clone()
-            })
-        ),
-        case!(
-            POST,
-            "model-groups/7/reasoning/resolve",
-            json!({"model":"fixture-model","efforts":["minimal"],"default_effort":"minimal"})
-        ),
     ];
-    assert_eq!(cases.len(), 49);
+    assert_eq!(cases.len(), 44);
+
+    for retired in [
+        "/v1/models?client_version=0.146.0",
+        "/models?client_version=0.146.0",
+        "/backend-api/codex/models",
+    ] {
+        assert_eq!(
+            client
+                .get(format!("{base}{retired}"))
+                .header("x-api-key", ADMIN)
+                .send()
+                .await
+                .unwrap()
+                .status()
+                .as_u16(),
+            404,
+            "retired route {retired} must return 404"
+        );
+    }
 
     let mut rejected = Vec::new();
     for (method, route, body) in cases {
@@ -902,39 +614,6 @@ async fn desktop_parameter_and_body_shape_errors_keep_422_before_authentication(
 }
 
 #[tokio::test]
-async fn catalog_proxy_keeps_allowlist_case_insensitive_and_drops_untrusted_headers() {
-    let h = Harness::new().await;
-    let headers = BTreeMap::from([
-        ("aUtHoRiZaTiOn".into(), "Bearer fixture-caller-7".into()),
-        ("X-aPi-KeY".into(), "fixture-caller-7".into()),
-        ("User-Agent".into(), "fixture-catalog-client".into()),
-        ("hOsT".into(), "spoof.example.invalid".into()),
-        ("cOnNeCtIoN".into(), "close".into()),
-        ("tRaNsFeR-EnCoDiNg".into(), "chunked".into()),
-        ("cOoKiE".into(), "session=fixture-cookie".into()),
-        ("X-Unlisted-Fixture".into(), "fixture-unlisted".into()),
-    ]);
-    let reply = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        h.runtime.catalog.proxy("/v1/models", QUERY, &headers),
-    )
-    .await
-    .expect("catalog proxy must finish against the loopback mock");
-    assert_eq!(reply.status, 200);
-    let calls = h.mock.calls.lock().unwrap().clone();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0]["authorization"], "Bearer fixture-caller-7");
-    assert_eq!(calls[0]["x-api-key"], "fixture-caller-7");
-    assert_eq!(calls[0]["user-agent"], "fixture-catalog-client");
-    assert_ne!(calls[0]["host"], "spoof.example.invalid");
-    assert_ne!(calls[0]["connection"], "close");
-    assert_eq!(calls[0]["transfer-encoding"], "");
-    assert_eq!(calls[0]["cookie"], "");
-    assert_eq!(calls[0]["x-unlisted-fixture"], "");
-    h.close().await;
-}
-
-#[tokio::test]
 async fn snapshot_invalidation_never_waits_or_republishes_inflight_cache() {
     use std::time::Duration;
 
@@ -1135,12 +814,14 @@ async fn account_connection_directory_keeps_all_pages_parent_credentials_and_nat
                 json!({"data":[{"id":"fixture-first"},{"id":"fixture-second"}]}),
             )]);
         }
-        let models = h
-            .runtime
-            .catalog
-            .account_models_read(child, false)
-            .await
-            .unwrap();
+        let models = sub2ops_server::model_directory::account_models_read(
+            &h.runtime.db,
+            &h.runtime.actions.directory_cache,
+            child,
+            false,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             models
                 .iter()
@@ -1151,11 +832,14 @@ async fn account_connection_directory_keeps_all_pages_parent_credentials_and_nat
         assert!(models.iter().all(|m| m.as_object().unwrap().len() == 3));
         let calls = h.mock.calls.lock().unwrap().len();
         assert_eq!(
-            h.runtime
-                .catalog
-                .account_models_read(child, false)
-                .await
-                .unwrap(),
+            sub2ops_server::model_directory::account_models_read(
+                &h.runtime.db,
+                &h.runtime.actions.directory_cache,
+                child,
+                false,
+            )
+            .await
+            .unwrap(),
             models
         );
         assert_eq!(h.mock.calls.lock().unwrap().len(), calls);

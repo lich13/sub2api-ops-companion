@@ -517,7 +517,6 @@ impl Harness {
             oauth_path: state_path,
             bark_path: temp.path().join("bark-config.json"),
             connection_path,
-            model_path: temp.path().join("group-models.json"),
             keepalive_path: temp.path().join("keepalive-state.json"),
             oauth: json!({}),
             bark: json!({
@@ -579,7 +578,7 @@ impl Harness {
             queries,
             upstream.clone(),
             AccountLocks::default(),
-            Templates::new(settings.model_path.clone()),
+            Templates::new(settings.data_dir().join("account-templates.json")),
             settings.clone(),
         )
         .expect("construct fixture actions");

@@ -782,7 +782,6 @@ fn settings(root: &Path, database_url: String, base_url: &str) -> Arc<Settings> 
         oauth_path: root.join("oauth-config.json"),
         bark_path: root.join("bark-config.json"),
         connection_path,
-        model_path: root.join("group-model-config.json"),
         keepalive_path: root.join("keepalive-state.json"),
         oauth: json!({
             "oauth_auto_reset_credit_enabled": false,

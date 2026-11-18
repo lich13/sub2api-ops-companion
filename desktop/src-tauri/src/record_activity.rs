@@ -129,7 +129,6 @@ mod tests {
             "/snapshot",
             "/accounts/42/usage",
             "/quota-refresh",
-            "/model-groups/1",
             "/usage-record-options-other",
         ] {
             assert!(!record_path(path));

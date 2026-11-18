@@ -624,9 +624,6 @@ export async function run(
     if (String(args.path).startsWith("/usage-records") || String(args.path).startsWith("/usage-record-options")) {
       return (await import("./recordPreview")).recordPreview(String(args.path), accounts);
     }
-    if (String(args.path).startsWith("/model-")) {
-      return (await import("./modelPreview")).modelPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>);
-    }
     const path = String(args.path),
       body = args.body as {
         changes: Record<string, unknown>;

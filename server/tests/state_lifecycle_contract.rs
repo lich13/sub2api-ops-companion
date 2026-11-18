@@ -117,7 +117,6 @@ fn settings(root: &Path, database_url: String) -> Settings {
         oauth_path: root.join("oauth-config.json"),
         bark_path: root.join("bark-config.json"),
         connection_path: root.join("sub2api-config.json"),
-        model_path: root.join("group-model-config.json"),
         keepalive_path: root.join("keepalive-state.json"),
         oauth: json!({
             "oauth_auto_reset_credit_enabled": false,
@@ -552,7 +551,7 @@ async fn coordinator_drain_closes_aborts_owned_query_and_releases_state_lock() {
         queries,
         upstream,
         AccountLocks::default(),
-        Templates::new(settings.model_path.clone()),
+        Templates::new(settings.data_dir().join("account-templates.json")),
         settings,
     )
     .unwrap();

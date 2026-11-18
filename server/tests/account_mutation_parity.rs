@@ -894,7 +894,6 @@ impl Harness {
             oauth_path: temp.path().join("oauth-state.json"),
             bark_path: temp.path().join("bark-state.json"),
             connection_path,
-            model_path: temp.path().join("group-models.json"),
             keepalive_path: temp.path().join("keepalive-state.json"),
             oauth: {
                 let mut config = json!({

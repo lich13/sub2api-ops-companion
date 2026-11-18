@@ -451,11 +451,6 @@ ROUTE_PROBES = [
     RouteProbe("GET", API + "/config"),
     RouteProbe("PUT", API + "/config/oauth", {}, (401, 422)),
     RouteProbe("POST", API + "/actions/bark-test"),
-    RouteProbe("GET", API + "/model-groups"),
-    RouteProbe("GET", API + "/model-groups/4301/reasoning"),
-    RouteProbe("POST", API + "/model-groups/4301/reasoning/resolve", {}, (401, 422)),
-    RouteProbe("PUT", API + "/model-groups/4301/reasoning", {}, (401, 422)),
-    RouteProbe("DELETE", API + "/model-groups/4301/reasoning", {}, (401, 422)),
 ]
 
 
@@ -523,7 +518,7 @@ class ContractSuite:
         self.case("parameter_and_response_error_semantics", self._errors_semantics)
         self.case("pinned_request_schema_rejections", self._request_schema_rejections)
         self.case("legacy_numeric_path_semantics", self._numeric_paths)
-        self.case("model_catalog_route_aliases", self._model_aliases)
+        self.case("retired_model_alias_routes", self._model_aliases)
         self.case("unknown_route_semantics", self._unknown_route)
         self.case("retired_routes_remain_unavailable", self._retired_routes)
         self.case("all_declared_http_routes_resolve", self._route_inventory)
@@ -712,13 +707,10 @@ class ContractSuite:
         paths = ["/v1/models?client_version=fixture-040", "/models?client_version=fixture-040",
                  "/backend-api/codex/models"]
         for path in paths:
-            response = self.expect_status("GET", path, (200,), headers=headers)
-            require(isinstance(response.body, dict) and isinstance(response.body.get("models"), list),
-                    f"model alias {path.split('?')[0]} lacks a models list")
-            require(any(isinstance(model, dict) and model.get("id") == "fixture-native-model"
-                        for model in response.body["models"]),
-                    f"model alias {path.split('?')[0]} omitted the synthetic native model")
-        return {"aliases": len(paths), "all_returned_models": True}
+            response = self.expect_status("GET", path, (404,), headers=headers)
+            require(response_detail_shape(response.body),
+                    f"retired model alias {path.split('?')[0]} lacks a structured 404")
+        return {"aliases": len(paths), "observed_status": 404}
 
     def _request_schema_rejections(self) -> dict[str, object]:
         fixture = json.loads((ROOT / "tests/contracts/request-fixtures.json").read_text())
@@ -770,7 +762,6 @@ class ContractSuite:
             ("/accounts/{id}/model-tests/latest", 200),
             ("/errors/{id}", 404),
             ("/usage-records/{id}", 422),
-            ("/model-groups/{id}/reasoning", 422),
         ]
         for account_id in ("0", "-1", "0.0"):
             for path, status in paths:
@@ -819,7 +810,7 @@ class ContractSuite:
         require(self.mocks is not None, "command mode has no external mock recorder")
         counts = self.mocks.snapshot()
         require(counts.get("sub2api_auth", 0) >= 1, "no Sub2API authentication call was recorded")
-        require(counts.get("model_directory", 0) == 3, "expected exactly three model-directory alias requests")
+        require(counts.get("model_directory", 0) == 0, "retired model-directory aliases must not call upstream")
         return {"total": sum(counts.values()), "by_category": counts}
 
 
@@ -898,8 +889,6 @@ class ServiceProcess:
             "AUDIT_PATH": str(state / "audit.jsonl"),
             "OAUTH_CONFIG_PATH": str(state / "oauth-config.json"),
             "BARK_CONFIG_PATH": str(state / "bark-config.json"),
-
-            "GROUP_MODEL_CONFIG_PATH": str(state / "group-model-config.json"),
             "KEEPALIVE_CONFIG_PATH": str(state / "keepalive-state.json"),
             "OAUTH_RECOVERY_MONITOR_ENABLED": "false",
             "OAUTH_DAILY_TEST_ENABLED": "false",

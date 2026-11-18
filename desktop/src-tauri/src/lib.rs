@@ -502,22 +502,6 @@ fn allowed_request(method: &str, path: &str) -> bool {
     ) {
         return method == "POST" && !path.contains('?');
     }
-    let group_path = |suffix: &str| {
-        plain
-            .strip_prefix("/model-groups/")
-            .and_then(|s| s.strip_suffix(suffix))
-            .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
-    };
-    if !path.contains('?')
-        && match method {
-            "GET" => plain == "/model-groups" || group_path("/reasoning"),
-            "PUT" | "DELETE" => group_path("/reasoning"),
-            "POST" => group_path("/reasoning/resolve"),
-            _ => false,
-        }
-    {
-        return true;
-    }
     match method {
         "GET" => {
             matches!(
@@ -1850,30 +1834,6 @@ mod tests {
             assert!(!allowed_request(method, "/usage-records/12"));
             assert!(!allowed_request(method, "/usage-record-options"));
         }
-        assert!(allowed_request("GET", "/model-groups"));
-        assert!(allowed_request("GET", "/model-groups/7/reasoning"));
-        assert!(allowed_request("POST", "/model-groups/7/reasoning/resolve"));
-        assert!(allowed_request("PUT", "/model-groups/7/reasoning"));
-        assert!(allowed_request("DELETE", "/model-groups/7/reasoning"));
-        for (method, path) in [
-            ("GET", "/model-catalog"),
-            ("GET", "/model-groups/7"),
-            ("POST", "/model-groups/7/preview"),
-            ("POST", "/model-groups/7/upstream-import"),
-            ("PUT", "/model-groups/7/allowlist"),
-            ("PUT", "/model-groups/7/overrides"),
-        ] {
-            assert!(!allowed_request(method, path));
-        }
-        for path in [
-            "/model-groups/0",
-            "/model-groups/7/credentials",
-            "/model-groups/7?key=secret",
-            "/model-groups/7/../accounts",
-        ] {
-            assert!(!allowed_request("GET", path));
-        }
-        assert!(!allowed_request("DELETE", "/model-groups/7"));
         assert!(allowed_request("GET", "/errors?account_id=7"));
         assert!(allowed_request("GET", "/detection-logs"));
         assert!(allowed_request("GET", "/detection-logs?limit=1"));

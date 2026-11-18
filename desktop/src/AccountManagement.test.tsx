@@ -121,8 +121,6 @@ async function openAutoResetSettings(
     if (method === "GET" && path === "/quota-refresh")
       return { status: "idle", items: [], total: 0, completed: 0 } as never;
     if (method === "GET" && path === "/config") return config as never;
-    if (method === "GET" && path === "/model-groups")
-      return { groups: [] } as never;
     if (method === "PUT" && path === "/config/oauth") {
       const saved = await save(body);
       config.oauth = saved;

@@ -11,7 +11,6 @@ use crate::{
     execution::{DiskLease, TestSlots},
     fingerprint_bank::FingerprintBank,
     keepalive::Keepalive,
-    model_catalog::Catalog,
     model_detection::Detection,
     model_tests::ModelTests,
     oauth_monitor::Monitor,
@@ -60,7 +59,6 @@ pub struct Runtime {
     pub keepalive: Keepalive,
     pub operations: Arc<Operations>,
     pub priorities: Arc<crate::priority_orders::PriorityOrders>,
-    pub catalog: Catalog,
     pub proxies: ProxyDiagnostics,
     pub sub2api_config: crate::sub2api_config::service::Service,
     pub key_quota: crate::key_quota::Service,
@@ -105,7 +103,6 @@ impl Runtime {
             ("oauth_config", settings.oauth_path.clone()),
             ("bark_config", settings.bark_path.clone()),
             ("connection_config", settings.connection_path.clone()),
-            ("model_config", settings.model_path.clone()),
             ("keepalive", settings.keepalive_path.clone()),
             ("audit", settings.audit_path.clone()),
             (
@@ -227,7 +224,6 @@ impl Runtime {
         let keepalive = Keepalive::new(detection.clone(), operations.clone(), budget.clone());
         let priorities =
             crate::priority_orders::PriorityOrders::new(actions.clone(), operations.clone());
-        let catalog = Catalog::new(&settings, db.clone(), upstream.clone())?;
         let proxies = ProxyDiagnostics::new(actions.clone());
         let mut key_quota = startup(
             "key_quota",
@@ -248,7 +244,6 @@ impl Runtime {
             keepalive,
             operations,
             priorities,
-            catalog,
             proxies,
             sub2api_config: Default::default(),
             key_quota,
@@ -292,10 +287,6 @@ impl Runtime {
                 .store
                 .read()
                 .and_then(crate::account_templates::normalize),
-        )?;
-        startup(
-            "model_config",
-            crate::model_config::ModelConfig::new(self.settings.model_path.clone()).read(),
         )?;
         startup("connection_config", self.settings.connection_config())?;
         let accounts = self.actions.queries.accounts().await?;

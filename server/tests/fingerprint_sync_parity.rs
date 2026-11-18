@@ -248,7 +248,6 @@ fn settings_for_data_directory(data: &Path) -> Arc<Settings> {
         oauth_path: data.join("oauth-config.json"),
         bark_path: data.join("bark-config.json"),
         connection_path: data.join("sub2api-config.json"),
-        model_path: data.join("group-models.json"),
         keepalive_path: data.join("keepalive-state.json"),
         oauth: json!({}),
         bark: json!({}),

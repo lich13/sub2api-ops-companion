@@ -184,7 +184,6 @@ impl Harness {
             oauth_path: root.path().join("oauth-config.json"),
             bark_path: root.path().join("bark-config.json"),
             connection_path,
-            model_path: root.path().join("group-models.json"),
             keepalive_path: root.path().join("keepalive-state.json"),
             oauth: json!({
                 "model_detection_model_id":"gpt-6-luna",

@@ -5,10 +5,11 @@ import Testing
 @testable import Sub2OpsMacOS
 
 extension Sub2OpsMacOSTestRoot {
-@Suite("M5 Features (4 Tabs) & Settings Logic + UI Snapshots", .serialized)
+@Suite("M5 Features (3 Tabs) & Settings Logic + UI Snapshots", .serialized)
 struct StageM5Tests {
     @Test("LightYAML parses block/flow structures, rejects duplicate keys, and enforces expected root type")
     func lightYAMLValidationAndFormatting() {
+        #expect(FeaturesPageView.Tab.allCases.map(\.label) == ["恢复与检测", "IP 管理", "Sub2API 配置"])
         let mapRes = LightYAML.parseStructured("host: 127.0.0.1\nport: 8080\nenabled: true # inline comment", expectedType: "object")
         #expect(mapRes.error.isEmpty)
         #expect(mapRes.value?.objectValue?["port"] == .int(8080))
@@ -88,58 +89,6 @@ struct StageM5Tests {
         #expect(report.bank_revision == "deadbeef12345678")
     }
 
-    @Test("Model reasoning responses decode in the shapes the server sends")
-    func modelReasoningDecodesServerShapes() throws {
-        struct Envelope: Decodable { var groups: [ModelReasoningGroup] }
-        // The group list carries no `version`.
-        let list = try JSONDecoder().decode(
-            Envelope.self,
-            from: Data(
-                #"{"groups":[{"id":7,"name":"fixture-seven","platform":"openai"}],"status":{"state":"ready","message":"","updated_at":null}}"#
-                    .utf8
-            )
-        )
-        #expect(list.groups.map(\.id) == [7])
-        #expect(list.groups[0].name == "fixture-seven")
-        #expect(list.groups[0].version == "")
-
-        let version = String(repeating: "a", count: 64)
-        let config = try JSONDecoder().decode(
-            ModelReasoningConfig.self,
-            from: Data(
-                """
-                {"group":{"id":7,"name":"fixture-seven","platform":"openai","version":"\(version)"},
-                 "revision":"\(String(repeating: "b", count: 64))",
-                 "items":[{"model":"fixture-model","efforts":["low","high"],"default_effort":"high",
-                           "state":"draft","reason":"","source":"legacy","updated_at":null,"version":"0.2.22"}],
-                 "status":{"state":"fallback","message":"fixture","updated_at":"2026-11-18T00:00:00Z"}}
-                """.utf8
-            )
-        )
-        #expect(config.group.version == version)
-        #expect(config.items.map(\.model) == ["fixture-model"])
-        #expect(config.items[0].updated_at == nil)
-    }
-
-    @Test("A changed model ID returns the reasoning draft to its unloaded state")
-    func modelReasoningDraftResetsForANewModel() {
-        var draft = ModelReasoningDraft(
-            model: "fixture-a",
-            efforts: ["low", "high"],
-            default_effort: "high",
-            editing: false,
-            loaded: true
-        )
-        draft.model = "fixture-b"
-        draft.resetForModelChange()
-        #expect(
-            draft
-                == ModelReasoningDraft(
-                    model: "fixture-b", efforts: [], default_effort: "", editing: false, loaded: false
-                )
-        )
-    }
-
     @Test("Render Stage M5 Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")
     @MainActor
     func renderM5Snapshots() async throws {
@@ -180,33 +129,6 @@ struct StageM5Tests {
             "enabled": true,
             "device_key_set": true
           }
-        }
-        """
-
-        let modelGroupsJSON = """
-        {
-          "groups": [
-            { "id": 1, "name": "Codex 主力组", "platform": "openai" }
-          ]
-        }
-        """
-
-        let reasoningJSON = """
-        {
-          "group": { "id": 1, "name": "Codex 主力组", "platform": "openai", "version": "v1" },
-          "revision": "rev-1",
-          "items": [
-            {
-              "model": "gpt-5.4",
-              "efforts": ["low", "medium", "high", "xhigh"],
-              "default_effort": "high",
-              "state": "active",
-              "reason": "",
-              "source": "upstream",
-              "updated_at": "2026-11-17T09:00:00Z"
-            }
-          ],
-          "status": { "state": "active", "message": "已同步 1 项思考档位覆盖" }
         }
         """
 
@@ -317,12 +239,6 @@ struct StageM5Tests {
             if payload.contains("/accounts/101/models") {
                 return "{\"models\":[{\"id\":\"gpt-5.4\",\"display_name\":\"GPT-5.4\"}]}"
             }
-            if payload.contains("/model-groups/1/reasoning") {
-                return reasoningJSON
-            }
-            if payload.contains("/model-groups") {
-                return modelGroupsJSON
-            }
             if payload.contains("/proxy-management") {
                 return proxiesJSON
             }
@@ -371,16 +287,6 @@ struct StageM5Tests {
                 size: CGSize(width: 1310, height: 920),
                 dark: dark,
                 outputURL: baseURL.appendingPathComponent("m5_features_recovery_\(suffix).png")
-            )
-            let modelsView = FeaturesPageView(store: featStore, initialTab: .models)
-                .padding(24)
-                .frame(width: 1090, height: 420, alignment: .topLeading)
-                .background(DS.canvas)
-            try await SnapshotRenderUtility.renderPNGAsync(
-                view: modelsView,
-                size: CGSize(width: 1090, height: 420),
-                dark: dark,
-                outputURL: baseURL.appendingPathComponent("m5_features_models_\(suffix).png")
             )
             let ipView = FeaturesPageView(store: featStore, initialTab: .ip)
                 .padding(24)

@@ -33,14 +33,6 @@ def check(root: Path = ROOT) -> list[str]:
     ):
         match = re.search(pattern, (root / file).read_text(), re.MULTILINE)
         same(file, match.group(1) if match else None)
-    source = (root / "server/src/model_reasoning.rs").read_text()
-    declaration = re.search(r'pub const VERIFIED_SUB2API_VERSIONS: &\[&str\] = &\[(.*?)\];', source, re.DOTALL)
-    verified = re.findall(r'"([0-9]+\.[0-9]+\.[0-9]+)"', declaration.group(1)) if declaration else []
-    document = (root / "docs/model-catalog.md").read_text()
-    declared = re.search(r'已核对原版 Sub2API ([0-9. /]+) 的 Responses', document)
-    versions = re.findall(r'[0-9]+\.[0-9]+\.[0-9]+', declared.group(1)) if declared else []
-    if not verified or versions != verified:
-        errors.append("docs/model-catalog.md: verified upstream versions differ from server constant")
 
     return errors
 

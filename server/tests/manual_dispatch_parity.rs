@@ -423,7 +423,6 @@ impl Harness {
             oauth_path: temp.path().join("oauth-config.json"),
             bark_path: temp.path().join("bark-config.json"),
             connection_path,
-            model_path: temp.path().join("group-models.json"),
             keepalive_path: temp.path().join("keepalive-state.json"),
             oauth: json!({
                 "oauth_auto_reset_credit_enabled": false,

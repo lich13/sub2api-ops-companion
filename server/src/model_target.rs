@@ -2,7 +2,7 @@ use crate::{
     actions::Actions,
     compat::{config_revision, integer, pick, string, truthy},
     error::{Error, Result},
-    model_catalog::CLIENT_VERSION,
+    model_directory::CLIENT_VERSION,
     model_test_stream::Target,
 };
 use regex::Regex;

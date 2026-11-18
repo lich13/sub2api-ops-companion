@@ -68,7 +68,6 @@ import ConnectionStatusCard from "./ConnectionStatusCard";
 import AccountStatus from "./AccountStatus";
 import { DeleteAccountsDialog, RecoverSelectedButton, ResetCreditsDialog, resetCreditEligible } from "./AccountManagement";
 import { useQuickHeight } from "./useQuickHeight";
-import ModelConfig from "./ModelConfig";
 import AccountTemplates from "./AccountTemplates";
 import SchedulingParameters from "./SchedulingParameters";
 import AccountSettingsDialog, { type SettingsSection } from "./AccountSettingsDialog";
@@ -1807,9 +1806,9 @@ function SettingsPage({
       {page === "features" ? (
         <>
           <div className="feature-tabs" role="tablist" aria-label="功能分区">
-            {[["recovery", "恢复与检测"], ["models", "模型配置"], ["ip", "IP 管理"], ["sub2api", "Sub2API 配置"]].map(([key, label]) => (
+            {[["recovery", "恢复与检测"], ["ip", "IP 管理"], ["sub2api", "Sub2API 配置"]].map(([key, label]) => (
               <button key={key} id={`feature-tab-${key}`} role="tab" aria-selected={featureTab === key} aria-controls={`feature-panel-${key}`} tabIndex={featureTab === key ? 0 : -1} onClick={() => selectFeatureTab(key)} onKeyDown={e => {
-                const keys = ["recovery", "models", "ip", "sub2api"];
+                const keys = ["recovery", "ip", "sub2api"];
                 const index = keys.indexOf(key);
                 const next = e.key === "ArrowRight" ? keys[(index + 1) % keys.length] : e.key === "ArrowLeft" ? keys[(index + keys.length - 1) % keys.length] : e.key === "Home" ? keys[0] : e.key === "End" ? keys[keys.length - 1] : null;
                 if (next) { e.preventDefault(); selectFeatureTab(next); document.getElementById(`feature-tab-${next}`)?.focus(); }
@@ -1845,9 +1844,6 @@ function SettingsPage({
             )}
           </ConfigForm>
           </div>
-          <section className="feature-models" role="tabpanel" id="feature-panel-models" aria-labelledby="feature-tab-models" hidden={featureTab !== "models"}>
-            {(featureTab === "models" || visitedTabs.models) && <ModelConfig key={connectionKey} online={state.online}/>}
-          </section>
           <div role="tabpanel" id="feature-panel-sub2api" aria-labelledby="feature-tab-sub2api" hidden={featureTab !== "sub2api"}>
             {(featureTab === "sub2api" || visitedTabs.sub2api) && <Suspense fallback={null}><LazySub2ApiConfig key={connectionKey} active={featureTab === "sub2api" && state.foreground !== false} online={state.online}/></Suspense>}
           </div>

@@ -1129,9 +1129,6 @@ pub(crate) async fn http_detailed(
     if method == "DELETE" {
         req = req.timeout(Duration::from_secs(20));
     }
-    if path.starts_with("/model-groups/") {
-        req = req.timeout(Duration::from_secs(65));
-    }
     if model_directory_request(method, path) {
         req = req.timeout(Duration::from_secs(20));
     }

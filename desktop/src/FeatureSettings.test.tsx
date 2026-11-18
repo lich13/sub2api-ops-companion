@@ -52,7 +52,7 @@ beforeEach(() => {
   vi.mocked(api).mockImplementation(async (method, path) => {
     if (method === "GET" && path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
     if (method === "GET" && path === "/config") return config as never;
-    if (method === "GET" && path === "/model-groups") return { groups: [] } as never;
+    if (method === "GET" && path === "/proxy-management") return { items: [], page: 1, page_size: 20, total: 0, pages: 0 } as never;
     if (method === "GET" && path === "/sub2api-config") return { available: false, editable: false, reason: "fixture" } as never;
     throw new Error(`Unexpected fixture request: ${method} ${path}`);
   });
@@ -165,21 +165,22 @@ describe("feature settings drafts", () => {
     await act(async () => saveButton(target).click());
     expect(writes()).toEqual([["PUT", "/config/oauth", { expected_revision: "oauth-r1", changes: { model_detection_platforms: { openai: { engine: "lm_detector", sample_count: 3 } } } }]]);
   });
-  it("keeps unsubmitted recovery fields across all four feature tabs", async () => {
+  it("keeps unsubmitted recovery fields across all three feature tabs", async () => {
     await openFeatures();
     const target=form("恢复、测活与模型检测");
     const model=[...target.querySelectorAll("label.field")].find(n=>n.textContent?.includes("自动检测模型"))!.querySelector("input")!;
     await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!.call(model,"draft-model");model.dispatchEvent(new Event("input",{bubbles:true}));});
-    for(const name of ["models","ip","sub2api","recovery"]) await act(async()=>container.querySelector<HTMLButtonElement>(`#feature-tab-${name}`)!.click());
+    for(const name of ["ip","sub2api","recovery"]) await act(async()=>container.querySelector<HTMLButtonElement>(`#feature-tab-${name}`)!.click());
     expect(model.value).toBe("draft-model");expect(writes()).toEqual([]);
     expect(container.querySelector("#feature-panel-recovery")?.hasAttribute("hidden")).toBe(false);
     expect(container.querySelector("#feature-panel-ip")?.hasAttribute("hidden")).toBe(true);
   });
 
-  it("shows recovery and model settings without retired Key fallback controls", async () => {
+  it("shows recovery settings without retired model-config tab or Key fallback controls", async () => {
     await openFeatures();
     expect(form("恢复、测活与模型检测")).toBeDefined();
-    expect(container.textContent).toContain("模型配置");
+    expect(container.querySelector("#feature-tab-models")).toBeNull();
+    expect(container.textContent).not.toContain("模型配置");
     expect(container.textContent).not.toContain("Key 调度回退");
     expect(container.querySelector(".fallback-account")).toBeNull();
     expect(writes()).toEqual([]);

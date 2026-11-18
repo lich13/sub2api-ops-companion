@@ -72,7 +72,6 @@ fn settings(
         oauth_path: root.join("oauth-config.json"),
         bark_path: root.join("bark-config.json"),
         connection_path: root.join("sub2api-config.json"),
-        model_path: root.join("group-model-config.json"),
         keepalive_path: root.join("keepalive-state.json"),
         oauth: json!({
             "oauth_auto_reset_credit_enabled": false,
@@ -146,10 +145,6 @@ fn runtime_env(root: &Path, bark_path: &Path, base_url: &str) -> BTreeMap<String
     env.insert(
         "SUB2API_CONFIG_PATH".into(),
         root.join("missing-connection.json").display().to_string(),
-    );
-    env.insert(
-        "GROUP_MODEL_CONFIG_PATH".into(),
-        root.join("missing-model.json").display().to_string(),
     );
     env
 }

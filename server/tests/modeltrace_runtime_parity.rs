@@ -43,7 +43,6 @@ fn bank_settings(directory: &std::path::Path) -> Arc<Settings> {
         oauth_path: directory.join("oauth-config.json"),
         bark_path: directory.join("bark-config.json"),
         connection_path: directory.join("sub2api-config.json"),
-        model_path: directory.join("group-models.json"),
         keepalive_path: directory.join("keepalive-state.json"),
         oauth: json!({}),
         bark: json!({}),
@@ -1185,7 +1184,6 @@ impl RuntimeHarness {
             oauth_path: temp.path().join("oauth-config.json"),
             bark_path: temp.path().join("bark-config.json"),
             connection_path,
-            model_path: temp.path().join("group-models.json"),
             keepalive_path: temp.path().join("keepalive-state.json"),
             oauth: json!({
                 "oauth_auto_reset_credit_enabled":false,

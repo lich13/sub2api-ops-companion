@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use sub2ops_server::{
     compat, credit_rules,
     error::Result,
-    error_evidence, model_catalog, model_rules, model_target,
+    error_evidence, model_rules, model_target,
     oauth_state::{self, OAuthState},
     queries, quota, recovery_events, recovery_rules, reset_credit_observation,
 };
@@ -108,32 +108,6 @@ fn execute(name: &str, args: &Value) -> Result<Value> {
             args["recovery_monitor_enabled"].as_bool().unwrap()
         )?),
         "merge" => model_rules::merge(&args["base"], &args["patch"]),
-        "validate_overrides" => {
-            model_rules::validate_overrides(&args["overrides"], &args["bases"])?;
-            Value::Null
-        }
-        "transform" => model_rules::transform(
-            &args["body"],
-            &args["overrides"],
-            &args["allowlist"],
-            &args["aliases"],
-        )?,
-        "admitted" => json!(model_rules::admitted(
-            &args["allowlist"],
-            args["model"].as_str().unwrap()
-        )),
-        "import_fields" => model_catalog::import_fields(&args["entry"]),
-        "targets" => json!(model_rules::targets(
-            &args["group"],
-            args["model"].as_str().unwrap(),
-            args["accounts"].as_array().unwrap(),
-            args["routes"].as_array().unwrap()
-        )),
-        "composite_target" => json!(model_rules::composite_target(
-            args["model"].as_str().unwrap(),
-            args["routes"].as_array().unwrap(),
-            args["accounts"].as_array().unwrap()
-        )),
         "codex_identity" => json!(model_target::identity(&args["values"])),
         "standard_codex_user_agent" => json!(model_target::standard_agent(
             args["version"].as_str().unwrap()
@@ -309,32 +283,6 @@ fn quota_snapshot_passivequotatests_test_stale_incomplete_future_and_expired_sna
 #[test]
 fn quota_snapshot_passivequotatests_test_unknown_and_zero_are_distinct() {
     check("py:tests.test_quota_snapshot:PassiveQuotaTests.test_unknown_and_zero_are_distinct");
-}
-
-#[test]
-fn model_catalog_ruletests_test_composite_exact_endpoint_priority_mapping_and_fixed_accounts() {
-    check("py:tests.test_model_catalog:RuleTests.test_composite_exact_endpoint_priority_mapping_and_fixed_accounts");
-}
-
-#[test]
-fn model_catalog_ruletests_test_recursive_merge_arrays_explicit_null_false_and_identity() {
-    check("py:tests.test_model_catalog:RuleTests.test_recursive_merge_arrays_explicit_null_false_and_identity");
-}
-
-#[test]
-fn model_catalog_ruletests_test_transform_filters_drafts_and_preserves_envelope_and_native_fields()
-{
-    check("py:tests.test_model_catalog:RuleTests.test_transform_filters_drafts_and_preserves_envelope_and_native_fields");
-}
-
-#[test]
-fn model_catalog_ruletests_test_type_context_and_effort_validation() {
-    check("py:tests.test_model_catalog:RuleTests.test_type_context_and_effort_validation");
-}
-
-#[test]
-fn model_catalog_ruletests_test_upstream_import_does_not_infer_capabilities_or_default() {
-    check("py:tests.test_model_catalog:RuleTests.test_upstream_import_does_not_infer_capabilities_or_default");
 }
 
 #[test]
