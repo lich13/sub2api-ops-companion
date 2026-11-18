@@ -88,6 +88,58 @@ struct StageM5Tests {
         #expect(report.bank_revision == "deadbeef12345678")
     }
 
+    @Test("Model reasoning responses decode in the shapes the server sends")
+    func modelReasoningDecodesServerShapes() throws {
+        struct Envelope: Decodable { var groups: [ModelReasoningGroup] }
+        // The group list carries no `version`.
+        let list = try JSONDecoder().decode(
+            Envelope.self,
+            from: Data(
+                #"{"groups":[{"id":7,"name":"fixture-seven","platform":"openai"}],"status":{"state":"ready","message":"","updated_at":null}}"#
+                    .utf8
+            )
+        )
+        #expect(list.groups.map(\.id) == [7])
+        #expect(list.groups[0].name == "fixture-seven")
+        #expect(list.groups[0].version == "")
+
+        let version = String(repeating: "a", count: 64)
+        let config = try JSONDecoder().decode(
+            ModelReasoningConfig.self,
+            from: Data(
+                """
+                {"group":{"id":7,"name":"fixture-seven","platform":"openai","version":"\(version)"},
+                 "revision":"\(String(repeating: "b", count: 64))",
+                 "items":[{"model":"fixture-model","efforts":["low","high"],"default_effort":"high",
+                           "state":"draft","reason":"","source":"legacy","updated_at":null,"version":"0.2.22"}],
+                 "status":{"state":"fallback","message":"fixture","updated_at":"2026-11-18T00:00:00Z"}}
+                """.utf8
+            )
+        )
+        #expect(config.group.version == version)
+        #expect(config.items.map(\.model) == ["fixture-model"])
+        #expect(config.items[0].updated_at == nil)
+    }
+
+    @Test("A changed model ID returns the reasoning draft to its unloaded state")
+    func modelReasoningDraftResetsForANewModel() {
+        var draft = ModelReasoningDraft(
+            model: "fixture-a",
+            efforts: ["low", "high"],
+            default_effort: "high",
+            editing: false,
+            loaded: true
+        )
+        draft.model = "fixture-b"
+        draft.resetForModelChange()
+        #expect(
+            draft
+                == ModelReasoningDraft(
+                    model: "fixture-b", efforts: [], default_effort: "", editing: false, loaded: false
+                )
+        )
+    }
+
     @Test("Render Stage M5 Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")
     @MainActor
     func renderM5Snapshots() async throws {
@@ -134,7 +186,7 @@ struct StageM5Tests {
         let modelGroupsJSON = """
         {
           "groups": [
-            { "id": 1, "name": "Codex 主力组", "platform": "openai", "version": "v1" }
+            { "id": 1, "name": "Codex 主力组", "platform": "openai" }
           ]
         }
         """

@@ -12,6 +12,16 @@ public struct ModelReasoningGroup: Codable, Sendable, Equatable, Identifiable {
         self.platform = platform
         self.version = version
     }
+
+    // `GET /model-groups` lists id, name and platform only. The reasoning and resolve
+    // responses carry `version`, and `expected_version` is always read from those.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        platform = try container.decode(String.self, forKey: .platform)
+        version = try container.decodeIfPresent(String.self, forKey: .version) ?? ""
+    }
 }
 
 public struct ModelReasoningItem: Codable, Sendable, Equatable, Identifiable {
@@ -71,6 +81,14 @@ public struct ModelReasoningDraft: Sendable, Equatable {
 
     public var signature: String {
         "\(model)|\(efforts.sorted().joined(separator: ","))|\(default_effort)"
+    }
+
+    /// A changed model ID starts from an unloaded draft, as in `ModelConfig.tsx`, so the
+    /// next resolve reads that model's own efforts instead of sending the previous ones.
+    public mutating func resetForModelChange() {
+        efforts = []
+        default_effort = ""
+        loaded = false
     }
 }
 
@@ -157,6 +175,9 @@ public struct ModelReasoningEditSheet: View {
                 .onChange(of: draft.model) { _, next in
                     let trimmed = next.trimmingCharacters(in: .whitespaces)
                     if trimmed != next { draft.model = trimmed }
+                    draft.resetForModelChange()
+                    resolution = nil
+                    formError = ""
                     confirmAllowlist = false
                 }
             }
