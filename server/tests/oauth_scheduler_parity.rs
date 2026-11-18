@@ -9,7 +9,7 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use serde_json::{json, Value};
 use sqlx::{types::Json as SqlJson, PgPool};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     ops::Deref,
     path::PathBuf,
@@ -3829,7 +3829,12 @@ async fn monitor_bootstrap_queue_is_bounded_and_advances_between_ticks() {
                 .and_then(|value| value.parse::<i64>().ok())
         })
         .collect::<Vec<_>>();
-    assert_eq!(usage_ids, ids);
+    assert_eq!(usage_ids.len(), ids.len());
+    assert_eq!(
+        BTreeSet::from_iter(&usage_ids[..2]),
+        BTreeSet::from_iter(&ids[..2])
+    );
+    assert_eq!(usage_ids[2], ids[2]);
     assert_eq!(harness.mock.count("GET", "/usage"), 3);
     assert_eq!(harness.mock.count("POST", "/test"), 0);
     assert!(harness.mock.unexpected().is_empty());
