@@ -1,8 +1,8 @@
 # lmfpd (offline Rust subset)
 
-Pinned to `Ikaleio/lm-detector@f920cfe2ff0bab94989ce01ac061e21425b6e321`, SDK 0.2.0, under the MIT license. Source checksums are recorded in the server resource manifest.
+Pinned to `Ikaleio/lm-detector@33fb43f26670be0ed7817ab13e5c4c4731ccb76a`, SDK 0.2.0, under the MIT license. Source checksums are recorded in the server resource manifest.
 
-This vendored subset retains upstream scoring, challenge generation, number parsing and paired-data validation. The 0.2.0 upstream changes concern network request timeouts and sample progress; its scoring, codec, ranking, features and challenge sources are unchanged from the earlier pinned revisions. The SDK sources at this revision are byte-identical to `fd9b4caf6feafbec64d45a1552432515bf4efa39`; only the paired reference bank and detector changed.
+This vendored subset retains upstream scoring, challenge generation, number parsing and paired-data validation. At `33fb43f26670be0ed7817ab13e5c4c4731ccb76a`, `ranker.rs` adds the lag-1..3 nearby-pair share sequence gate alongside the updated paired reference bank and detector; local formatting is applied after recording the upstream raw blob checksum in the resource manifest.
 
 Sub2Ops owns all networking, cancellation, request limits, verified downloads and resource activation. The SDK's network loaders and live sampling modules are deliberately omitted.
 

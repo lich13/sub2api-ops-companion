@@ -17,8 +17,12 @@ use std::{
 };
 
 pub const ENGINE: &str = "lm_detector";
-const REVISION: &str = "f920cfe2ff0bab94989ce01ac061e21425b6e321";
-const PREVIOUS_BUNDLED_REVISION: &str = "fd9b4caf6feafbec64d45a1552432515bf4efa39";
+const REVISION: &str = "33fb43f26670be0ed7817ab13e5c4c4731ccb76a";
+const PREVIOUS_BUNDLED_REVISIONS: &[&str] = &[
+    "fd9b4caf6feafbec64d45a1552432515bf4efa39",
+    "7663b6580cb6c9123da72e9218e700537544f1db",
+    "f920cfe2ff0bab94989ce01ac061e21425b6e321",
+];
 const FILES: [(&str, &[u8], usize); 3] = [
     (
         "unified_bank.json",
@@ -224,14 +228,21 @@ impl Bank {
         .await
         .map_err(|_| unavailable())?
     }
-    /// Saved state that still names the previous bundled revision moves to the current
+    /// Saved state that still names a previous bundled revision moves to the current
     /// one. Other revisions, cached directories and pinned history are left alone.
     pub fn migrate_bundled(&self) -> Result<()> {
-        if self.revision().ok().as_deref() != Some(PREVIOUS_BUNDLED_REVISION) {
+        if !self
+            .revision()
+            .ok()
+            .is_some_and(|rev| PREVIOUS_BUNDLED_REVISIONS.contains(&rev.as_str()))
+        {
             return Ok(());
         }
         self.state.transaction(|state| {
-            if state["revision"] == PREVIOUS_BUNDLED_REVISION {
+            if state["revision"]
+                .as_str()
+                .is_some_and(|rev| PREVIOUS_BUNDLED_REVISIONS.contains(&rev))
+            {
                 state["revision"] = REVISION.into();
                 state["synced_at"] = crate::compat::now().into();
                 state["error"] = "".into();
@@ -629,21 +640,36 @@ mod tests {
         let bank = test_bank(root.path());
         bank.migrate_bundled().unwrap();
         assert!(!bank.root.exists(), "a fresh install writes no state");
-        bank.state
-            .transaction(|state| {
-                state["revision"] = PREVIOUS_BUNDLED_REVISION.into();
-                state["error"] = "上游 SDK 已变化，请升级服务端；当前检测库已保留".into();
-                state["result"] = "failed".into();
-                Ok(())
-            })
-            .unwrap();
-        assert!(bank.public().await.is_err());
-        bank.migrate_bundled().unwrap();
-        let status = bank.public().await.unwrap();
-        assert_eq!(status["version"]["revision"], REVISION);
-        assert_eq!(status["source"], "bundled");
-        assert_eq!(status["error"], "");
-        assert_eq!(status["result"], "updated");
+        for previous in PREVIOUS_BUNDLED_REVISIONS {
+            let (stage, mut meta) = fixture();
+            meta["revision"] = (*previous).into();
+            if *previous == "7663b6580cb6c9123da72e9218e700537544f1db" {
+                bank.activate(stage, meta).await.unwrap();
+            } else {
+                drop((stage, meta));
+                bank.state
+                    .transaction(|state| {
+                        state["revision"] = (*previous).into();
+                        state["error"] = "上游 SDK 已变化，请升级服务端；当前检测库已保留".into();
+                        state["result"] = "failed".into();
+                        Ok(())
+                    })
+                    .unwrap();
+                assert!(bank.public().await.is_err());
+            }
+            bank.migrate_bundled().unwrap();
+            let status = bank.public().await.unwrap();
+            assert_eq!(status["version"]["revision"], REVISION);
+            assert_eq!(status["source"], "bundled");
+            assert_eq!(status["error"], "");
+            assert_eq!(status["result"], "updated");
+        }
+        assert!(
+            bank.root
+                .join("7663b6580cb6c9123da72e9218e700537544f1db")
+                .exists(),
+            "historical cached directories are preserved"
+        );
         let (stage, mut meta) = fixture();
         meta["revision"] = "3".repeat(40).into();
         bank.activate(stage, meta).await.unwrap();
