@@ -209,18 +209,29 @@ public enum RecordColumnSpec: String, CaseIterable, Sendable {
         case .account: return 80
         case .model: return 116
         case .type: return 64
-        case .reasoning: return 46
-        case .tokens: return 116
+        case .reasoning: return 52
+        case .tokens: return 118
         case .cost: return 86
         case .latency: return 114
         case .user_agent: return 108
         case .ip: return 100
-        case .endpoint: return 104
+        case .endpoint: return 112
         case .group: return 76
         case .billing: return 48
         case .request_id: return 122
         case .upstream_id: return 122
         }
+    }
+
+    public static let userColumnWidth: CGFloat = 110
+    public static let timeColumnWidth: CGFloat = 88
+    public static let columnSpacing: CGFloat = 8
+    public static let cellPadding: CGFloat = 4
+
+    /// Minimum width of the horizontally scrolling pane: the time column plus `columns`.
+    public static func dataWidth(columns: [RecordColumnSpec]) -> CGFloat {
+        let widths = timeColumnWidth + columns.reduce(CGFloat(0)) { $0 + $1.width }
+        return widths + CGFloat(columns.count) * columnSpacing + cellPadding * 2
     }
 
     public static let defaultKeys: [String] = [

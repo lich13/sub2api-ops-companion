@@ -24,10 +24,8 @@ struct StageM4Tests {
 
         let defaultCols = RecordColumnSpec.normalize(nil)
         #expect(defaultCols.count == 10)
-        let sumWidths = defaultCols.reduce(CGFloat(0)) { $0 + $1.width } + 88 // time = 88
-        let rightDataMinWidth = sumWidths + CGFloat(defaultCols.count) * 8 + 4 * 2
-        let totalDefaultTableWidth = 110 + 1 + rightDataMinWidth
-        #expect(totalDefaultTableWidth == 1197)
+        // User column, its 1pt divider, then the scrolling pane.
+        #expect(RecordColumnSpec.userColumnWidth + 1 + RecordColumnSpec.dataWidth(columns: defaultCols) == 1205)
     }
 
     @Test("Render Stage M4 Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")

@@ -258,18 +258,13 @@ public struct RecordsPageView: View {
         let hasModelCol = cols.contains(.model)
         let hasLatencyCol = cols.contains(.latency)
         let trailingCols = cols.filter { $0 != .api_key }
-        let userColWidth: CGFloat = 110
+        let userColWidth = RecordColumnSpec.userColumnWidth
         let userCellPad: CGFloat = 6
-        let timeColWidth: CGFloat = 88
-        let colSpacing: CGFloat = 8
-        let hCellPad: CGFloat = 4
+        let timeColWidth = RecordColumnSpec.timeColumnWidth
+        let colSpacing = RecordColumnSpec.columnSpacing
+        let hCellPad = RecordColumnSpec.cellPadding
         let headerHeight: CGFloat = 26
-        let colCount = (hasApiKeyCol ? 1 : 0) + 1 + trailingCols.count
-        let sumWidths = (hasApiKeyCol ? RecordColumnSpec.api_key.width : 0)
-            + timeColWidth
-            + trailingCols.reduce(CGFloat(0)) { $0 + $1.width }
-        let dataMinWidth = sumWidths + CGFloat(max(0, colCount - 1)) * colSpacing + hCellPad * 2
-        let effectiveDataWidth = max(dataMinWidth, rightPaneWidth)
+        let effectiveDataWidth = max(RecordColumnSpec.dataWidth(columns: cols), rightPaneWidth)
 
         return VStack(spacing: 0) {
             // Pinned top header bar (zero-minWidth clipped viewport synchronized horizontally with right ScrollView)
@@ -589,6 +584,8 @@ public struct RecordsPageView: View {
             }
             .font(DS.fontPriorityMeta)
             .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
             .frame(width: col.width, alignment: .trailing)
 
         case .cost:
