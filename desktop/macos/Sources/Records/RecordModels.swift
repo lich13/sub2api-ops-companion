@@ -247,6 +247,21 @@ public enum RecordColumnSpec: String, CaseIterable, Sendable {
     }
 }
 
+/// Scroll-to-load rule of the records table, matching the 200px root margin the web
+/// front end gives its pagination observer.
+public enum RecordPagination {
+    public static let lookahead: CGFloat = 200
+
+    /// `footerMinY` is the top of the pagination row measured from the top of the viewport.
+    public static func footerNear(footerMinY: CGFloat, viewportHeight: CGFloat) -> Bool {
+        footerMinY <= viewportHeight + lookahead
+    }
+
+    public static func autoLoads(footerNear: Bool, active: Bool, detailOpen: Bool) -> Bool {
+        footerNear && active && !detailOpen
+    }
+}
+
 public struct ModelRouteStep: Sendable, Equatable {
     public var model: String
     public var labels: [String]

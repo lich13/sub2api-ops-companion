@@ -28,6 +28,18 @@ struct StageM4Tests {
         #expect(RecordColumnSpec.userColumnWidth + 1 + RecordColumnSpec.dataWidth(columns: defaultCols) == 1205)
     }
 
+    @Test("Records pagination loads the next page 200pt before the footer scrolls into view")
+    func recordsPaginationLookahead() {
+        #expect(RecordPagination.footerNear(footerMinY: 800, viewportHeight: 600))
+        #expect(!RecordPagination.footerNear(footerMinY: 800.5, viewportHeight: 600))
+        #expect(RecordPagination.footerNear(footerMinY: 120, viewportHeight: 600))
+
+        #expect(RecordPagination.autoLoads(footerNear: true, active: true, detailOpen: false))
+        #expect(!RecordPagination.autoLoads(footerNear: false, active: true, detailOpen: false))
+        #expect(!RecordPagination.autoLoads(footerNear: true, active: false, detailOpen: false))
+        #expect(!RecordPagination.autoLoads(footerNear: true, active: true, detailOpen: true))
+    }
+
     @Test("Render Stage M4 Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")
     @MainActor
     func renderM4Snapshots() async throws {

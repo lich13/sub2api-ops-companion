@@ -16,6 +16,7 @@ public struct RecordsPageView: View {
     @State private var hScrollOffset: CGFloat = 0
     @State private var rightPaneWidth: CGFloat = 980
     @State private var hoveredRowId: Int? = nil
+    @State private var footerNear: Bool = false
 
     public init(store: AppStore) {
         self.store = store
@@ -23,6 +24,10 @@ public struct RecordsPageView: View {
 
     private var active: Bool {
         store.state.online && (store.state.foreground != false)
+    }
+
+    private var autoLoadKey: String {
+        "\(footerNear):\(active):\(store.selectedRecordId != nil):\(feed.loading):\(feed.cursor ?? ""):\(feed.items.count)"
     }
 
     private var shownColumns: [RecordColumnSpec] {
@@ -93,6 +98,14 @@ public struct RecordsPageView: View {
         }
         .task(id: "\(store.connectionKey):\(queryString):\(active):\(store.selectedRecordId != nil)") {
             feed.bind(query: queryString, active: active, holding: store.selectedRecordId != nil)
+        }
+        // Re-evaluated on the same changes the web observer re-arms on; `loadMore` itself
+        // ignores calls without a cursor, while loading, or after a page error.
+        .onChange(of: autoLoadKey, initial: true) {
+            guard RecordPagination.autoLoads(
+                footerNear: footerNear, active: active, detailOpen: store.selectedRecordId != nil
+            ) else { return }
+            Task { await feed.loadMore() }
         }
         .onDisappear {
             feed.stop()
@@ -315,80 +328,34 @@ public struct RecordsPageView: View {
                 Spacer(minLength: 0)
             } else {
                 // Vertically scrollable table body keeping left User column sticky & right columns horizontally scrollable
-                ScrollView(.vertical) {
-                    VStack(spacing: 0) {
-                        HStack(alignment: .top, spacing: 0) {
-                            VStack(spacing: 0) {
-                                ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, row in
-                                    let rh = rowHeight(for: row, showModel: hasModelCol, showLatency: hasLatencyCol)
-                                    Button {
-                                        openDetail(id: row.id)
-                                    } label: {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(row.user_name ?? row.user_email ?? "#\(row.user_id)")
-                                                .font(DS.fontCompactSemibold)
-                                                .foregroundStyle(DS.ink)
-                                                .lineLimit(1)
-                                            Text("#\(row.user_id)")
-                                                .font(DS.fontResetTime)
-                                                .monospacedDigit()
-                                                .foregroundStyle(DS.muted)
-                                        }
-                                        .padding(.horizontal, userCellPad)
-                                        .frame(width: userColWidth, height: rh, alignment: .leading)
-                                        .background(hoveredRowId == row.id ? DS.rowHover : DS.surface)
-                                        .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.linearPlain)
-                                    .onHover { hov in
-                                        if hov { hoveredRowId = row.id } else if hoveredRowId == row.id { hoveredRowId = nil }
-                                    }
-
-                                    if idx < feed.items.count - 1 {
-                                        Rectangle().fill(DS.line).frame(height: 1)
-                                    }
-                                }
-                            }
-                            .frame(width: userColWidth)
-
-                            Rectangle().fill(DS.line).frame(width: 1)
-
-                            ScrollView(.horizontal) {
+                GeometryReader { viewport in
+                    ScrollView(.vertical) {
+                        VStack(spacing: 0) {
+                            HStack(alignment: .top, spacing: 0) {
                                 VStack(spacing: 0) {
-                                    GeometryReader { geo in
-                                        DS.clear.preference(
-                                            key: RecordsHScrollOffsetKey.self,
-                                            value: max(0, -geo.frame(in: .named("recordsHScroll")).minX)
-                                        )
-                                    }
-                                    .frame(height: 0)
-
                                     ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, row in
                                         let rh = rowHeight(for: row, showModel: hasModelCol, showLatency: hasLatencyCol)
-                                        HStack(spacing: colSpacing) {
-                                            if hasApiKeyCol {
-                                                cellView(.api_key, row: row)
+                                        Button {
+                                            openDetail(id: row.id)
+                                        } label: {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(row.user_name ?? row.user_email ?? "#\(row.user_id)")
+                                                    .font(DS.fontCompactSemibold)
+                                                    .foregroundStyle(DS.ink)
+                                                    .lineLimit(1)
+                                                Text("#\(row.user_id)")
+                                                    .font(DS.fontResetTime)
+                                                    .monospacedDigit()
+                                                    .foregroundStyle(DS.muted)
                                             }
-                                            Text(BeijingTime.fullTime(row.created_at))
-                                                .font(DS.fontPriorityMeta)
-                                                .monospacedDigit()
-                                                .lineLimit(1)
-                                                .foregroundStyle(DS.muted)
-                                                .frame(width: timeColWidth, alignment: .leading)
-                                            ForEach(trailingCols, id: \.rawValue) { col in
-                                                cellView(col, row: row)
-                                            }
-                                            Spacer(minLength: 0)
+                                            .padding(.horizontal, userCellPad)
+                                            .frame(width: userColWidth, height: rh, alignment: .leading)
+                                            .background(hoveredRowId == row.id ? DS.rowHover : DS.surface)
+                                            .contentShape(Rectangle())
                                         }
-                                        .padding(.horizontal, hCellPad)
-                                        .frame(width: effectiveDataWidth, height: rh, alignment: .leading)
-                                        .background(hoveredRowId == row.id ? DS.rowHover : DS.surface)
-                                        .contentShape(Rectangle())
+                                        .buttonStyle(.linearPlain)
                                         .onHover { hov in
                                             if hov { hoveredRowId = row.id } else if hoveredRowId == row.id { hoveredRowId = nil }
-                                        }
-                                        .onTapGesture {
-                                            openDetail(id: row.id)
                                         }
 
                                         if idx < feed.items.count - 1 {
@@ -396,44 +363,105 @@ public struct RecordsPageView: View {
                                         }
                                     }
                                 }
-                            }
-                            .coordinateSpace(name: "recordsHScroll")
-                            .onPreferenceChange(RecordsHScrollOffsetKey.self) { next in
-                                if abs(next - hScrollOffset) >= 0.5 {
-                                    hScrollOffset = next
-                                }
-                            }
-                        }
+                                .frame(width: userColWidth)
 
-                        if !feed.pageError.isEmpty || feed.cursor != nil || !feed.items.isEmpty {
-                            Rectangle().fill(DS.line).frame(height: 1)
-                            HStack(spacing: 8) {
-                                Spacer()
-                                if !feed.pageError.isEmpty {
-                                    Text(feed.pageError)
-                                        .font(DS.fontCompact)
-                                        .foregroundStyle(DS.bad)
-                                    Button("重试加载") {
-                                        Task { await feed.loadMore(retry: true) }
+                                Rectangle().fill(DS.line).frame(width: 1)
+
+                                ScrollView(.horizontal) {
+                                    VStack(spacing: 0) {
+                                        GeometryReader { geo in
+                                            DS.clear.preference(
+                                                key: RecordsHScrollOffsetKey.self,
+                                                value: max(0, -geo.frame(in: .named("recordsHScroll")).minX)
+                                            )
+                                        }
+                                        .frame(height: 0)
+
+                                        ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, row in
+                                            let rh = rowHeight(for: row, showModel: hasModelCol, showLatency: hasLatencyCol)
+                                            HStack(spacing: colSpacing) {
+                                                if hasApiKeyCol {
+                                                    cellView(.api_key, row: row)
+                                                }
+                                                Text(BeijingTime.fullTime(row.created_at))
+                                                    .font(DS.fontPriorityMeta)
+                                                    .monospacedDigit()
+                                                    .lineLimit(1)
+                                                    .foregroundStyle(DS.muted)
+                                                    .frame(width: timeColWidth, alignment: .leading)
+                                                ForEach(trailingCols, id: \.rawValue) { col in
+                                                    cellView(col, row: row)
+                                                }
+                                                Spacer(minLength: 0)
+                                            }
+                                            .padding(.horizontal, hCellPad)
+                                            .frame(width: effectiveDataWidth, height: rh, alignment: .leading)
+                                            .background(hoveredRowId == row.id ? DS.rowHover : DS.surface)
+                                            .contentShape(Rectangle())
+                                            .onHover { hov in
+                                                if hov { hoveredRowId = row.id } else if hoveredRowId == row.id { hoveredRowId = nil }
+                                            }
+                                            .onTapGesture {
+                                                openDetail(id: row.id)
+                                            }
+
+                                            if idx < feed.items.count - 1 {
+                                                Rectangle().fill(DS.line).frame(height: 1)
+                                            }
+                                        }
                                     }
-                                    .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                                } else if feed.cursor != nil {
-                                    Button(feed.loading ? "正在读取…" : "加载下一页") {
-                                        Task { await feed.loadMore() }
-                                    }
-                                    .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                                    .disabled(!active || feed.loading)
-                                } else if !feed.loading {
-                                    Text("已全部加载")
-                                        .font(DS.fontResetTime)
-                                        .foregroundStyle(DS.muted)
                                 }
-                                Spacer()
+                                .coordinateSpace(name: "recordsHScroll")
+                                .onPreferenceChange(RecordsHScrollOffsetKey.self) { next in
+                                    if abs(next - hScrollOffset) >= 0.5 {
+                                        hScrollOffset = next
+                                    }
+                                }
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 9)
+
+                            if !feed.pageError.isEmpty || feed.cursor != nil || !feed.items.isEmpty {
+                                Rectangle().fill(DS.line).frame(height: 1)
+                                HStack(spacing: 8) {
+                                    Spacer()
+                                    if !feed.pageError.isEmpty {
+                                        Text(feed.pageError)
+                                            .font(DS.fontCompact)
+                                            .foregroundStyle(DS.bad)
+                                        Button("重试加载") {
+                                            Task { await feed.loadMore(retry: true) }
+                                        }
+                                        .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                                    } else if feed.cursor != nil {
+                                        if feed.loading {
+                                            Text("正在读取…")
+                                                .font(DS.fontResetTime)
+                                                .foregroundStyle(DS.muted)
+                                        }
+                                    } else if !feed.loading {
+                                        Text("已全部加载")
+                                            .font(DS.fontResetTime)
+                                            .foregroundStyle(DS.muted)
+                                    }
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 9)
+                                .frame(minHeight: 28)
+                                .background(
+                                    GeometryReader { geo in
+                                        DS.clear.preference(
+                                            key: RecordsFooterNearKey.self,
+                                            value: RecordPagination.footerNear(
+                                                footerMinY: geo.frame(in: .named("recordsVScroll")).minY,
+                                                viewportHeight: viewport.size.height
+                                            )
+                                        )
+                                    }
+                                )
+                            }
                         }
                     }
+                    .coordinateSpace(name: "recordsVScroll")
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
@@ -441,6 +469,13 @@ public struct RecordsPageView: View {
         .background(DS.surface)
         .overlay(RoundedRectangle(cornerRadius: DS.cardRadius).strokeBorder(DS.line, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: DS.cardRadius))
+        // Attached outside the scroll view so the flag resets when the table is replaced
+        // by the empty state.
+        .onPreferenceChange(RecordsFooterNearKey.self) { next in
+            if next != footerNear {
+                footerNear = next
+            }
+        }
     }
 
     private func headerCell(_ title: String, width: CGFloat, trailing: Bool = false) -> some View {
@@ -734,6 +769,13 @@ public struct RecordsPageView: View {
     private func openDetail(id: Int) {
         let seed = feed.items.first(where: { $0.id == id })
         store.openRecordDetail(id: id, seed: seed)
+    }
+}
+
+private struct RecordsFooterNearKey: PreferenceKey {
+    static let defaultValue: Bool = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
     }
 }
 
