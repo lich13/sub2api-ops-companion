@@ -2,9 +2,16 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import AccountSettingsDialog, { type AccountSettings } from "./AccountSettingsDialog";
+import AccountSettingsDialog, {
+  type AccountSettings,
+} from "./AccountSettingsDialog";
 import { api, command } from "./bridge";
-import { followOperation, operationEpoch, submitOperation, type Operation } from "./accountOperations";
+import {
+  followOperation,
+  operationEpoch,
+  submitOperation,
+  type Operation,
+} from "./accountOperations";
 import type { Account } from "./types";
 
 vi.mock("./bridge", () => ({ api: vi.fn(), command: vi.fn() }));
@@ -17,34 +24,41 @@ vi.mock("./accountOperations", () => ({
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const account = (overrides: Partial<Account> = {}) => ({
-  id: 101,
-  name: "Fixture account",
-  priority: 1,
-  concurrency: 4,
-  load_factor: 80,
-  platform: "openai",
-  type: "oauth",
-  status: "active",
-  schedulable: true,
-  available: true,
-  group_ids: [],
-  blockers: [],
-  recoverable: true,
-  version: "account-version",
-  operation_versions: { model_config: "model-version", proxy: "proxy-version", sync_models: "sync-version" },
-  last_success_at: null,
-  last_error_at: null,
-  last_error_id: null,
-  last_error_code: null,
-  last_error_status: null,
-  error_message: "",
-  success_after_error: false,
-  usage_windows: [],
-  ...overrides,
-} as Account);
+const account = (overrides: Partial<Account> = {}) =>
+  ({
+    id: 101,
+    name: "Fixture account",
+    priority: 1,
+    concurrency: 4,
+    load_factor: 80,
+    platform: "openai",
+    type: "oauth",
+    status: "active",
+    schedulable: true,
+    available: true,
+    group_ids: [],
+    blockers: [],
+    recoverable: true,
+    version: "account-version",
+    operation_versions: {
+      model_config: "model-version",
+      proxy: "proxy-version",
+      sync_models: "sync-version",
+    },
+    last_success_at: null,
+    last_error_at: null,
+    last_error_id: null,
+    last_error_code: null,
+    last_error_status: null,
+    error_message: "",
+    success_after_error: false,
+    usage_windows: [],
+    ...overrides,
+  }) as Account;
 
-const settings = (overrides: Partial<AccountSettings> = {}): AccountSettings => ({
+const settings = (
+  overrides: Partial<AccountSettings> = {},
+): AccountSettings => ({
   account_id: 101,
   priority: 1,
   concurrency: 4,
@@ -60,7 +74,11 @@ const settings = (overrides: Partial<AccountSettings> = {}): AccountSettings => 
     proxy: { editable: true, reason: "" },
     sync_models: { editable: true, reason: "" },
   },
-  versions: { model_config: "model-version", proxy: "proxy-version", sync_models: "sync-version" },
+  versions: {
+    model_config: "model-version",
+    proxy: "proxy-version",
+    sync_models: "sync-version",
+  },
   ...overrides,
 });
 
@@ -94,18 +112,33 @@ const click = async (element: Element) => {
 
 const change = async (element: HTMLInputElement, value: string) => {
   await act(async () => {
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
     setter?.call(element, value);
     element.dispatchEvent(new Event("input", { bubbles: true }));
   });
 };
 
 const button = (text: string, scope: ParentNode = container) =>
-  [...scope.querySelectorAll<HTMLButtonElement>("button")].find((node) => node.textContent?.trim() === text)!;
+  [...scope.querySelectorAll<HTMLButtonElement>("button")].find(
+    (node) => node.textContent?.trim() === text,
+  )!;
 
-async function renderDialog(section: "whitelist" | "mappings" | "proxy" = "whitelist", value = account()) {
+async function renderDialog(
+  section: "whitelist" | "mappings" | "proxy" = "whitelist",
+  value = account(),
+) {
   await act(async () => {
-    root.render(<AccountSettingsDialog account={value} initialSection={section} online close={close} />);
+    root.render(
+      <AccountSettingsDialog
+        account={value}
+        initialSection={section}
+        online
+        close={close}
+      />,
+    );
     await Promise.resolve();
   });
   await act(async () => Promise.resolve());
@@ -119,27 +152,51 @@ beforeEach(() => {
   vi.mocked(operationEpoch).mockReturnValue(1);
   vi.mocked(command).mockResolvedValue(undefined as never);
   vi.mocked(api).mockImplementation(async (method, path) => {
-    if (method === "POST" && path === "/proxies/2/test") return {
-      success: true, message: "代理连接正常", latency_ms: 31, ip_address: "203.0.113.7",
-      city: "Taipei", region: "Taiwan", country: "Taiwan", country_code: "TW",
-    } as never;
-    if (method === "POST" && path === "/proxies/2/quality-check") return {
-      score: 88, grade: "yellow", summary: "一个目标需要关注", exit_ip: "203.0.113.8",
-      country: "Taiwan", base_latency_ms: 20, items: [],
-    } as never;
-    if (method !== "GET") throw new Error(`Unexpected fixture write: ${method} ${path}`);
+    if (method === "POST" && path === "/proxies/2/test")
+      return {
+        success: true,
+        message: "代理连接正常",
+        latency_ms: 31,
+        ip_address: "203.0.113.7",
+        city: "Taipei",
+        region: "Taiwan",
+        country: "Taiwan",
+        country_code: "TW",
+      } as never;
+    if (method === "POST" && path === "/proxies/2/quality-check")
+      return {
+        score: 88,
+        grade: "yellow",
+        summary: "一个目标需要关注",
+        exit_ip: "203.0.113.8",
+        country: "Taiwan",
+        base_latency_ms: 20,
+        items: [],
+      } as never;
+    if (method !== "GET")
+      throw new Error(`Unexpected fixture write: ${method} ${path}`);
     if (path === "/proxies") return structuredClone(proxies) as never;
-    if (path.startsWith("/accounts/") && path.endsWith("/settings")) return structuredClone(settings()) as never;
+    if (path.startsWith("/accounts/") && path.endsWith("/settings"))
+      return structuredClone(settings()) as never;
     throw new Error(`Unexpected fixture read: ${path}`);
   });
-  vi.mocked(submitOperation).mockImplementation(async (_account, action, payload) => ({
-    ...operation(action),
-    requested: payload,
-  }));
-  vi.mocked(followOperation).mockImplementation(async (initial: Operation, _onEvent, onUpdate) => {
-    onUpdate?.(initial);
-    return initial.action === "sync_models" ? structuredClone(catalog) as never : { verified: true, field_version: `${initial.action}-next` } as never;
-  });
+  vi.mocked(submitOperation).mockImplementation(
+    async (_account, action, payload) => ({
+      ...operation(action),
+      requested: payload,
+    }),
+  );
+  vi.mocked(followOperation).mockImplementation(
+    async (initial: Operation, _onEvent, onUpdate) => {
+      onUpdate?.(initial);
+      return initial.action === "sync_models"
+        ? (structuredClone(catalog) as never)
+        : ({
+            verified: true,
+            field_version: `${initial.action}-next`,
+          } as never);
+    },
+  );
 });
 
 afterEach(async () => {
@@ -150,13 +207,25 @@ afterEach(async () => {
 describe("account settings dialog", () => {
   it("ignores IME Escape and protects dirty drafts from Escape and the backdrop", async () => {
     await renderDialog("mappings");
-    const input = container.querySelector<HTMLInputElement>('[aria-label="转发模型 1"]')!;
-    const backdrop = container.querySelector('.modal-backdrop')!;
-    await act(async () => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true })); });
+    const input = container.querySelector<HTMLInputElement>(
+      '[aria-label="转发模型 1"]',
+    )!;
+    const backdrop = container.querySelector(".modal-backdrop")!;
+    await act(async () => {
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          isComposing: true,
+          bubbles: true,
+        }),
+      );
+    });
     expect(close).not.toHaveBeenCalled();
     await change(input, "gpt-draft");
     await act(async () => {
-      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
       backdrop.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
       input.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
       backdrop.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
@@ -169,7 +238,9 @@ describe("account settings dialog", () => {
 
   it("confirms an explicit dirty close and lets the user continue editing", async () => {
     await renderDialog("mappings");
-    const input = container.querySelector<HTMLInputElement>('[aria-label="转发模型 1"]')!;
+    const input = container.querySelector<HTMLInputElement>(
+      '[aria-label="转发模型 1"]',
+    )!;
     await change(input, "gpt-draft");
     await click(container.querySelector('[aria-label="关闭账号设置"]')!);
     expect(close).not.toHaveBeenCalled();
@@ -179,36 +250,70 @@ describe("account settings dialog", () => {
     expect(container.querySelector('[role="alertdialog"]')).toBeNull();
     expect(input.value).toBe("gpt-draft");
     await click(container.querySelector('[aria-label="关闭账号设置"]')!);
-    await click(button("放弃修改", container.querySelector('[role="alertdialog"]')!));
+    await click(
+      button("放弃修改", container.querySelector('[role="alertdialog"]')!),
+    );
     expect(close).toHaveBeenCalledTimes(1);
   });
 
   it("keeps a mapping through repeated same-account refresh and offline recovery", async () => {
     await renderDialog("mappings");
-    await change(container.querySelector<HTMLInputElement>('[aria-label="转发模型 1"]')!, "gpt-draft");
+    await change(
+      container.querySelector<HTMLInputElement>('[aria-label="转发模型 1"]')!,
+      "gpt-draft",
+    );
     for (const online of [true, false, false, true, true]) {
-      await act(async () => root.render(<AccountSettingsDialog account={account({ priority: 99 })} initialSection="mappings" online={online} close={close} />));
-      expect(container.querySelector<HTMLInputElement>('[aria-label="转发模型 1"]')?.value).toBe("gpt-draft");
+      await act(async () =>
+        root.render(
+          <AccountSettingsDialog
+            account={account({ priority: 99 })}
+            initialSection="mappings"
+            online={online}
+            close={close}
+          />,
+        ),
+      );
+      expect(
+        container.querySelector<HTMLInputElement>('[aria-label="转发模型 1"]')
+          ?.value,
+      ).toBe("gpt-draft");
       expect(button("保存").disabled).toBe(!online);
     }
     expect(close).not.toHaveBeenCalled();
-    expect(vi.mocked(api).mock.calls.filter(([, path]) => path === "/accounts/101/settings")).toHaveLength(1);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(([, path]) => path === "/accounts/101/settings"),
+    ).toHaveLength(1);
   });
 
   it("retains the draft on a failed or unverified save and closes only after verification", async () => {
     await renderDialog("mappings");
-    await change(container.querySelector<HTMLInputElement>('[aria-label="转发模型 1"]')!, "gpt-draft");
-    vi.mocked(followOperation).mockRejectedValueOnce(new Error("fixture save failed"));
+    await change(
+      container.querySelector<HTMLInputElement>('[aria-label="转发模型 1"]')!,
+      "gpt-draft",
+    );
+    vi.mocked(followOperation).mockRejectedValueOnce(
+      new Error("fixture save failed"),
+    );
     await click(button("保存"));
     expect(container.textContent).toContain("fixture save failed");
     expect(close).not.toHaveBeenCalled();
-    vi.mocked(followOperation).mockResolvedValueOnce({ verified: false } as never);
+    vi.mocked(followOperation).mockResolvedValueOnce({
+      verified: false,
+    } as never);
     await click(button("保存"));
     expect(close).not.toHaveBeenCalled();
-    expect(container.querySelector<HTMLInputElement>('[aria-label="转发模型 1"]')?.value).toBe("gpt-draft");
+    expect(
+      container.querySelector<HTMLInputElement>('[aria-label="转发模型 1"]')
+        ?.value,
+    ).toBe("gpt-draft");
     await click(button("保存"));
     expect(close).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(submitOperation).mock.calls[2][2]).toEqual({ whitelist: ["gpt-fixture"], mappings: [{ source: "alias", target: "gpt-draft" }] });
+    expect(vi.mocked(submitOperation).mock.calls[2][2]).toEqual({
+      whitelist: ["gpt-fixture"],
+      mappings: [{ source: "alias", target: "gpt-draft" }],
+    });
   });
 
   it("loads settings and proxy options through separate reads", async () => {
@@ -224,20 +329,35 @@ describe("account settings dialog", () => {
     await renderDialog("whitelist");
     await click(button("同步上游模型"));
 
-    const candidates = [...container.querySelectorAll<HTMLInputElement>('.settings-model-options input[type="checkbox"]')];
+    const candidates = [
+      ...container.querySelectorAll<HTMLInputElement>(
+        '.settings-model-options input[type="checkbox"]',
+      ),
+    ];
     expect(candidates).toHaveLength(3);
     expect(candidates.every((input) => !input.checked)).toBe(true);
-    expect(vi.mocked(submitOperation).mock.calls.map(([, action]) => action)).toEqual(["sync_models"]);
+    expect(
+      vi.mocked(submitOperation).mock.calls.map(([, action]) => action),
+    ).toEqual(["sync_models"]);
 
-    const newModel = candidates.find((input) => input.parentElement?.textContent?.includes("gpt-new"))!;
+    const newModel = candidates.find((input) =>
+      input.parentElement?.textContent?.includes("gpt-new"),
+    )!;
     await click(newModel);
     expect(newModel.checked).toBe(true);
     await click(button("添加所选"));
-    expect(container.querySelector<HTMLInputElement>('[aria-label="白名单模型 2"]')?.value).toBe("gpt-new");
-    expect(vi.mocked(submitOperation).mock.calls.map(([, action]) => action)).toEqual(["sync_models"]);
+    expect(
+      container.querySelector<HTMLInputElement>('[aria-label="白名单模型 2"]')
+        ?.value,
+    ).toBe("gpt-new");
+    expect(
+      vi.mocked(submitOperation).mock.calls.map(([, action]) => action),
+    ).toEqual(["sync_models"]);
 
     await click(button("保存"));
-    const save = vi.mocked(submitOperation).mock.calls.find(([, action]) => action === "model_config");
+    const save = vi
+      .mocked(submitOperation)
+      .mock.calls.find(([, action]) => action === "model_config");
     expect(save?.[2]).toEqual({
       whitelist: ["gpt-fixture", "gpt-new"],
       mappings: [{ source: "alias", target: "gpt-fixture" }],
@@ -247,28 +367,64 @@ describe("account settings dialog", () => {
   it("does not replace a local draft when the parent refreshes the same account", async () => {
     const current = account();
     await renderDialog("whitelist", current);
-    await change(container.querySelector<HTMLInputElement>('[aria-label="白名单模型 1"]')!, "gpt-draft");
+    await change(
+      container.querySelector<HTMLInputElement>('[aria-label="白名单模型 1"]')!,
+      "gpt-draft",
+    );
     await act(async () => {
-      root.render(<AccountSettingsDialog account={{ ...current, priority: 99 }} initialSection="whitelist" online close={close} />);
+      root.render(
+        <AccountSettingsDialog
+          account={{ ...current, priority: 99 }}
+          initialSection="whitelist"
+          online
+          close={close}
+        />,
+      );
       await Promise.resolve();
     });
 
-    expect(container.querySelector<HTMLInputElement>('[aria-label="白名单模型 1"]')?.value).toBe("gpt-draft");
-    expect(vi.mocked(api).mock.calls.filter(([method, path]) => method === "GET" && path === "/accounts/101/settings")).toHaveLength(1);
+    expect(
+      container.querySelector<HTMLInputElement>('[aria-label="白名单模型 1"]')
+        ?.value,
+    ).toBe("gpt-draft");
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(
+          ([method, path]) =>
+            method === "GET" && path === "/accounts/101/settings",
+        ),
+    ).toHaveLength(1);
   });
 
   it("reports empty mappings and source conflicts without submitting", async () => {
     await renderDialog("mappings");
     await click(button("添加映射"));
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("映射源只允许末尾通配符");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "映射源只允许末尾通配符",
+    );
     await click(button("保存"));
-    expect(vi.mocked(submitOperation).mock.calls.some(([, action]) => action === "model_config")).toBe(false);
+    expect(
+      vi
+        .mocked(submitOperation)
+        .mock.calls.some(([, action]) => action === "model_config"),
+    ).toBe(false);
 
-    await click(container.querySelector<HTMLButtonElement>('[aria-label="移除映射 2"]')!);
+    await click(
+      container.querySelector<HTMLButtonElement>('[aria-label="移除映射 2"]')!,
+    );
     await click(button("添加映射"));
-    await change(container.querySelector<HTMLInputElement>('[aria-label="请求模型 2"]')!, "gpt-fixture");
-    await change(container.querySelector<HTMLInputElement>('[aria-label="转发模型 2"]')!, "target-model");
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("模型条目冲突：gpt-fixture");
+    await change(
+      container.querySelector<HTMLInputElement>('[aria-label="请求模型 2"]')!,
+      "gpt-fixture",
+    );
+    await change(
+      container.querySelector<HTMLInputElement>('[aria-label="转发模型 2"]')!,
+      "target-model",
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "模型条目冲突：gpt-fixture",
+    );
     expect(button("保存").disabled).toBe(true);
   });
 
@@ -281,8 +437,10 @@ describe("account settings dialog", () => {
       },
     });
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/accounts/101/settings") return inherited as never;
-      if (method === "GET" && path === "/proxies") return structuredClone(proxies) as never;
+      if (method === "GET" && path === "/accounts/101/settings")
+        return inherited as never;
+      if (method === "GET" && path === "/proxies")
+        return structuredClone(proxies) as never;
       throw new Error(`Unexpected fixture request: ${method} ${path}`);
     });
     await renderDialog("whitelist");
@@ -295,26 +453,47 @@ describe("account settings dialog", () => {
 
   it("clears a proxy with a minimal payload and never sends credential fields", async () => {
     await renderDialog("proxy");
-    const clear = container.querySelector<HTMLInputElement>('input[type="radio"][value=""]')
-      ?? [...container.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find((input) => input.parentElement?.textContent?.includes("不使用代理"))!;
+    const clear =
+      container.querySelector<HTMLInputElement>(
+        'input[type="radio"][value=""]',
+      ) ??
+      [
+        ...container.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+      ].find((input) =>
+        input.parentElement?.textContent?.includes("不使用代理"),
+      )!;
     await click(clear);
     await click(button("保存"));
 
-    const save = vi.mocked(submitOperation).mock.calls.find(([, action]) => action === "proxy");
+    const save = vi
+      .mocked(submitOperation)
+      .mock.calls.find(([, action]) => action === "proxy");
     expect(close).toHaveBeenCalledOnce();
     expect(save?.[2]).toEqual({ proxy_id: null });
-    expect(JSON.stringify(save?.[2])).not.toMatch(/token|password|username|secret/i);
+    expect(JSON.stringify(save?.[2])).not.toMatch(
+      /token|password|username|secret/i,
+    );
   });
 
   it("runs proxy diagnostics without changing the draft or submitting a save", async () => {
     await renderDialog("proxy");
-    await click(container.querySelector<HTMLButtonElement>('[aria-label="检测代理 2"]')!);
+    await click(
+      container.querySelector<HTMLButtonElement>('[aria-label="检测代理 2"]')!,
+    );
 
     expect(vi.mocked(api)).toHaveBeenCalledWith("POST", "/proxies/2/test");
-    expect(vi.mocked(submitOperation).mock.calls.some(([, action]) => action === "proxy")).toBe(false);
+    expect(
+      vi
+        .mocked(submitOperation)
+        .mock.calls.some(([, action]) => action === "proxy"),
+    ).toBe(false);
     expect(button("保存").disabled).toBe(true);
     expect(container.textContent).toContain("203.0.113.7");
-    expect([...container.querySelectorAll<HTMLInputElement>('input[type="radio"]')].filter((input) => input.checked)).toHaveLength(1);
+    expect(
+      [
+        ...container.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+      ].filter((input) => input.checked),
+    ).toHaveLength(1);
   });
 
   it("keeps diagnostics available for an inherited read-only proxy while blocking selection", async () => {
@@ -326,19 +505,36 @@ describe("account settings dialog", () => {
       },
     });
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "POST" && path === "/proxies/2/test") return {
-        success: true, message: "代理连接正常", latency_ms: 31, ip_address: "203.0.113.7",
-        city: "Taipei", region: "Taiwan", country: "Taiwan", country_code: "TW",
-      } as never;
-      if (method === "GET" && path === "/accounts/101/settings") return inherited as never;
-      if (method === "GET" && path === "/proxies") return structuredClone(proxies) as never;
+      if (method === "POST" && path === "/proxies/2/test")
+        return {
+          success: true,
+          message: "代理连接正常",
+          latency_ms: 31,
+          ip_address: "203.0.113.7",
+          city: "Taipei",
+          region: "Taiwan",
+          country: "Taiwan",
+          country_code: "TW",
+        } as never;
+      if (method === "GET" && path === "/accounts/101/settings")
+        return inherited as never;
+      if (method === "GET" && path === "/proxies")
+        return structuredClone(proxies) as never;
       throw new Error(`Unexpected fixture request: ${method} ${path}`);
     });
     await renderDialog("proxy");
 
-    expect(container.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.disabled).toBe(true);
-    expect(container.querySelector<HTMLButtonElement>('[aria-label="检测代理 2"]')?.disabled).toBe(false);
-    await click(container.querySelector<HTMLButtonElement>('[aria-label="检测代理 2"]')!);
+    expect(
+      container.querySelector<HTMLInputElement>('input[type="radio"]:checked')
+        ?.disabled,
+    ).toBe(true);
+    expect(
+      container.querySelector<HTMLButtonElement>('[aria-label="检测代理 2"]')
+        ?.disabled,
+    ).toBe(false);
+    await click(
+      container.querySelector<HTMLButtonElement>('[aria-label="检测代理 2"]')!,
+    );
     expect(container.textContent).toContain("连接成功");
     expect(vi.mocked(submitOperation).mock.calls).toHaveLength(0);
   });
@@ -346,39 +542,104 @@ describe("account settings dialog", () => {
   it("ignores a late settings response from an older account", async () => {
     let resolveOld!: (value: AccountSettings) => void;
     let resolveNew!: (value: AccountSettings) => void;
-    const old = new Promise<AccountSettings>((resolve) => { resolveOld = resolve; });
-    const fresh = new Promise<AccountSettings>((resolve) => { resolveNew = resolve; });
+    const old = new Promise<AccountSettings>((resolve) => {
+      resolveOld = resolve;
+    });
+    const fresh = new Promise<AccountSettings>((resolve) => {
+      resolveNew = resolve;
+    });
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method !== "GET") throw new Error(`Unexpected fixture write: ${method} ${path}`);
+      if (method !== "GET")
+        throw new Error(`Unexpected fixture write: ${method} ${path}`);
       if (path === "/accounts/101/settings") return old as never;
       if (path === "/accounts/202/settings") return fresh as never;
       throw new Error(`Unexpected fixture read: ${path}`);
     });
     const first = account({ id: 101, name: "Old account" });
     const second = account({ id: 202, name: "New account" });
-    await act(async () => root.render(<AccountSettingsDialog account={first} initialSection="whitelist" online close={close} />));
-    await act(async () => root.render(<AccountSettingsDialog account={second} initialSection="whitelist" online close={close} />));
-    await act(async () => resolveNew(settings({ account_id: 202, model_config: { whitelist: ["new-model"], mappings: [] } })));
-    expect(container.querySelector<HTMLInputElement>('[aria-label="白名单模型 1"]')?.value).toBe("new-model");
+    await act(async () =>
+      root.render(
+        <AccountSettingsDialog
+          account={first}
+          initialSection="whitelist"
+          online
+          close={close}
+        />,
+      ),
+    );
+    await act(async () =>
+      root.render(
+        <AccountSettingsDialog
+          account={second}
+          initialSection="whitelist"
+          online
+          close={close}
+        />,
+      ),
+    );
+    await act(async () =>
+      resolveNew(
+        settings({
+          account_id: 202,
+          model_config: { whitelist: ["new-model"], mappings: [] },
+        }),
+      ),
+    );
+    expect(
+      container.querySelector<HTMLInputElement>('[aria-label="白名单模型 1"]')
+        ?.value,
+    ).toBe("new-model");
 
-    await act(async () => resolveOld(settings({ account_id: 101, model_config: { whitelist: ["old-model"], mappings: [] } })));
-    expect(container.querySelector<HTMLInputElement>('[aria-label="白名单模型 1"]')?.value).toBe("new-model");
+    await act(async () =>
+      resolveOld(
+        settings({
+          account_id: 101,
+          model_config: { whitelist: ["old-model"], mappings: [] },
+        }),
+      ),
+    );
+    expect(
+      container.querySelector<HTMLInputElement>('[aria-label="白名单模型 1"]')
+        ?.value,
+    ).toBe("new-model");
     expect(container.textContent).toContain("New account");
   });
 });
 
-it.each(["failed", "unconfirmed"])("keeps account settings and draft after %s confirmation", async (result) => {
-  if (result === "failed") vi.mocked(followOperation).mockRejectedValue(new Error("fixture failure"));
-  else vi.mocked(followOperation).mockResolvedValue({ verified: false } as never);
-  await renderDialog("proxy");
-  const clear = [...container.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find(input => input.parentElement?.textContent?.includes("不使用代理"))!;
-  await click(clear); await click(button("保存"));
-  expect(close).not.toHaveBeenCalled(); expect(clear.checked).toBe(true);
-  expect(container.querySelector('[role="alert"]')).not.toBeNull();
-});
+it.each(["failed", "unconfirmed"])(
+  "keeps account settings and draft after %s confirmation",
+  async (result) => {
+    if (result === "failed")
+      vi.mocked(followOperation).mockRejectedValue(
+        new Error("fixture failure"),
+      );
+    else
+      vi.mocked(followOperation).mockResolvedValue({
+        verified: false,
+      } as never);
+    await renderDialog("proxy");
+    const clear = [
+      ...container.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+    ].find((input) =>
+      input.parentElement?.textContent?.includes("不使用代理"),
+    )!;
+    await click(clear);
+    await click(button("保存"));
+    expect(close).not.toHaveBeenCalled();
+    expect(clear.checked).toBe(true);
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  },
+);
 it("closes confirmed account settings even if the list refresh fails", async () => {
   vi.mocked(command).mockRejectedValue(new Error("fixture refresh failure"));
   await renderDialog("proxy");
-  await click([...container.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find(input => input.parentElement?.textContent?.includes("不使用代理"))!);
-  await click(button("保存")); expect(close).toHaveBeenCalledOnce();
+  await click(
+    [
+      ...container.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+    ].find((input) =>
+      input.parentElement?.textContent?.includes("不使用代理"),
+    )!,
+  );
+  await click(button("保存"));
+  expect(close).toHaveBeenCalledOnce();
 });

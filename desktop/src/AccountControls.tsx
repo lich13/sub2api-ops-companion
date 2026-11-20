@@ -44,7 +44,6 @@ export function MiniUsage({ account }: { account: Account }) {
   );
 }
 
-
 export function QuotaRefresh({
   online,
   report,
@@ -80,7 +79,11 @@ export function QuotaRefresh({
             timer = setTimeout(() => void poll(), 1000);
           } else if (wasRunning.current) {
             wasRunning.current = false;
-            document.dispatchEvent(new CustomEvent(usageRefreshEvent, { detail: { connectionKey, batch: result } }));
+            document.dispatchEvent(
+              new CustomEvent(usageRefreshEvent, {
+                detail: { connectionKey, batch: result },
+              }),
+            );
             void command("refresh");
           }
         }
@@ -114,7 +117,11 @@ export function QuotaRefresh({
       } else {
         wasRunning.current = false;
         if (result.status !== "idle") {
-          document.dispatchEvent(new CustomEvent(usageRefreshEvent, { detail: { connectionKey, batch: result } }));
+          document.dispatchEvent(
+            new CustomEvent(usageRefreshEvent, {
+              detail: { connectionKey, batch: result },
+            }),
+          );
           void command("refresh");
         }
       }
@@ -192,7 +199,10 @@ export function RecoveryHistory({
   }, [accounts]);
   useEffect(() => {
     if (active && online) void load();
-    return () => { ++generation.current; running.current = false; };
+    return () => {
+      ++generation.current;
+      running.current = false;
+    };
   }, [online, active]);
   const accountNameById = useMemo(
     () => new Map(accounts.map((a) => [a.id, a.name])),
@@ -230,7 +240,10 @@ export function RecoveryHistory({
     } catch (e) {
       if (valid()) report(e);
     } finally {
-      if (valid()) { running.current = false; setBusy(false); }
+      if (valid()) {
+        running.current = false;
+        setBusy(false);
+      }
     }
   }
   return (
@@ -262,34 +275,69 @@ export function RecoveryHistory({
           <tbody>
             {items.map((r) => {
               const scheduled = r.kind === "connection_test";
-              const card = r.kind === "reset_credit" && !r.legacy && r.reset_credit
-                && ["connection", "model"].includes(r.reset_credit.verification_method)
-                && [r.reset_credit.completed_at, r.test_completed_at, r.recovered_at].every((time) => !!time && Number.isFinite(Date.parse(time)))
-                ? r.reset_credit : undefined;
+              const card =
+                r.kind === "reset_credit" &&
+                !r.legacy &&
+                r.reset_credit &&
+                ["connection", "model"].includes(
+                  r.reset_credit.verification_method,
+                ) &&
+                [
+                  r.reset_credit.completed_at,
+                  r.test_completed_at,
+                  r.recovered_at,
+                ].every((time) => !!time && Number.isFinite(Date.parse(time)))
+                  ? r.reset_credit
+                  : undefined;
               return (
-              <tr key={r.id}>
-                <td data-label="账号">
-                  {r.account_name || accountNameById.get(r.account_id)}
-                </td>
-                <td data-label="恢复类型">{scheduled ? "预约测试" : card ? "用卡恢复" : "额度恢复"}</td>
-                <td data-label="验证方式">{scheduled ? "测试连接" : card ? card.verification_method === "model" ? "模型测试" : "测试连接" : "—"}</td>
-                <td data-label="测试模型">{r.model_id || "未知"}</td>
-                <td data-label="尝试次数" className="recovery-attempts">{r.attempt_count ?? "—"}</td>
-                <td data-label="用卡时间"><time>{card ? fullTime(card.completed_at) : "—"}</time></td>
-                <td data-label="测试完成时间">
-                  <time>
-                    {r.test_completed_at
-                      ? fullTime(r.test_completed_at)
-                      : "时间未知"}
-                  </time>
-                </td>
-                <td data-label="结果 / 恢复时间">
-                  <time>
-                    {scheduled ? ({completed: "已完成", failed: "失败", cancelled: "已取消", interrupted: "已中断", needs_confirmation: "需确认"}[r.result_status ?? ""] ?? "已记录") : r.recovered_at ? fullTime(r.recovered_at) : "时间未知"}
-                  </time>
-                </td>
-              </tr>
-            ); })}
+                <tr key={r.id}>
+                  <td data-label="账号">
+                    {r.account_name || accountNameById.get(r.account_id)}
+                  </td>
+                  <td data-label="恢复类型">
+                    {scheduled ? "预约测试" : card ? "用卡恢复" : "额度恢复"}
+                  </td>
+                  <td data-label="验证方式">
+                    {scheduled
+                      ? "测试连接"
+                      : card
+                        ? card.verification_method === "model"
+                          ? "模型测试"
+                          : "测试连接"
+                        : "—"}
+                  </td>
+                  <td data-label="测试模型">{r.model_id || "未知"}</td>
+                  <td data-label="尝试次数" className="recovery-attempts">
+                    {r.attempt_count ?? "—"}
+                  </td>
+                  <td data-label="用卡时间">
+                    <time>{card ? fullTime(card.completed_at) : "—"}</time>
+                  </td>
+                  <td data-label="测试完成时间">
+                    <time>
+                      {r.test_completed_at
+                        ? fullTime(r.test_completed_at)
+                        : "时间未知"}
+                    </time>
+                  </td>
+                  <td data-label="结果 / 恢复时间">
+                    <time>
+                      {scheduled
+                        ? ({
+                            completed: "已完成",
+                            failed: "失败",
+                            cancelled: "已取消",
+                            interrupted: "已中断",
+                            needs_confirmation: "需确认",
+                          }[r.result_status ?? ""] ?? "已记录")
+                        : r.recovered_at
+                          ? fullTime(r.recovered_at)
+                          : "时间未知"}
+                    </time>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         {!items.length && <div className="quiet">暂无恢复记录</div>}

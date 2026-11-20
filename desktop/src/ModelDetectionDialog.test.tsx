@@ -35,7 +35,10 @@ const account: Account = {
 };
 
 type Detection = {
-  schedule_mode: "fixed" | "smart"; min_interval_minutes: number; effective_interval_minutes?: number | null; recent_request_count?: number | null;
+  schedule_mode: "fixed" | "smart";
+  min_interval_minutes: number;
+  effective_interval_minutes?: number | null;
+  recent_request_count?: number | null;
   last_automatic_started_at?: string | null;
   enabled: boolean;
   interval_minutes: number;
@@ -49,12 +52,20 @@ type Detection = {
   next_allowed_at?: string | null;
   disposition?: { marked: boolean; schedule_verified: boolean };
   disposition_notification?: { status: string } | null;
-  recheck_recovery?: { status: string; generation: number; mark_cleared: boolean; reason?: string } | null;
+  recheck_recovery?: {
+    status: string;
+    generation: number;
+    mark_cleared: boolean;
+    reason?: string;
+  } | null;
   recovery_notification?: { status: string } | null;
   status: string;
   reason?: string;
   job_id?: string;
-  last_result?: { status?: string; report?: { prediction_name?: string } } | null;
+  last_result?: {
+    status?: string;
+    report?: { prediction_name?: string };
+  } | null;
 };
 
 const models = [
@@ -96,17 +107,17 @@ afterEach(async () => {
 });
 
 function button(text: string) {
-  const result = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (node) => node.textContent?.includes(text),
-  );
+  const result = [
+    ...container.querySelectorAll<HTMLButtonElement>("button"),
+  ].find((node) => node.textContent?.includes(text));
   if (!result) throw new Error("missing button: " + text);
   return result;
 }
 
 function lastDetectionTime() {
-  return [...container.querySelectorAll(".detection-meta dt")]
-    .find((node) => node.textContent === "上次检测（开始）")
-    ?.nextElementSibling?.textContent;
+  return [...container.querySelectorAll(".detection-meta dt")].find(
+    (node) => node.textContent === "上次检测（开始）",
+  )?.nextElementSibling?.textContent;
 }
 
 async function renderDialog(
@@ -115,18 +126,22 @@ async function renderDialog(
   report = vi.fn(),
 ) {
   vi.mocked(api).mockImplementation(async (method, path) => {
-    if (method === "GET" && path === "/accounts/42/model-detection") return detection as never;
-    if (method === "GET" && path === "/accounts/42/models?purpose=model_test") return candidates as never;
+    if (method === "GET" && path === "/accounts/42/model-detection")
+      return detection as never;
+    if (method === "GET" && path === "/accounts/42/models?purpose=model_test")
+      return candidates as never;
     throw new Error("unexpected " + method + " " + path);
   });
-  await act(async () => root.render(
-    <ModelDetectionDialog
-      account={account}
-      online
-      close={() => {}}
-      report={report}
-    />,
-  ));
+  await act(async () =>
+    root.render(
+      <ModelDetectionDialog
+        account={account}
+        online
+        close={() => {}}
+        report={report}
+      />,
+    ),
+  );
   await act(async () => {
     await Promise.resolve();
     await Promise.resolve();
@@ -142,20 +157,40 @@ async function settle() {
 
 describe("scheduled model detection", () => {
   it("refreshes explicitly while retaining the selection and only revokes the old directory on authentication errors", async () => {
-    const detection = { ...baseDetection, model_override: "gpt-6-luna", model_source: "account", global_model_id: "gpt-6-sol" };
+    const detection = {
+      ...baseDetection,
+      model_override: "gpt-6-luna",
+      model_source: "account",
+      global_model_id: "gpt-6-sol",
+    };
     let error = "";
     let finish: ((value: unknown) => void) | undefined;
     vi.mocked(api).mockImplementation(async (_method, path) => {
       if (path.endsWith("/model-detection")) return detection as never;
       if (path.endsWith("refresh=true")) {
         if (error) throw new Error(error);
-        return new Promise(resolve => { finish = resolve; }) as never;
+        return new Promise((resolve) => {
+          finish = resolve;
+        }) as never;
       }
       return models as never;
     });
-    await act(async () => root.render(<ModelDetectionDialog account={{ ...account, type: "apikey" }} online close={() => {}} report={vi.fn()}/>));
-    const select = container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!;
-    const refresh = container.querySelector<HTMLButtonElement>('[aria-label="刷新模型列表"]')!;
+    await act(async () =>
+      root.render(
+        <ModelDetectionDialog
+          account={{ ...account, type: "apikey" }}
+          online
+          close={() => {}}
+          report={vi.fn()}
+        />,
+      ),
+    );
+    const select = container.querySelector<HTMLSelectElement>(
+      '[aria-label="检测模型"]',
+    )!;
+    const refresh = container.querySelector<HTMLButtonElement>(
+      '[aria-label="刷新模型列表"]',
+    )!;
     await act(async () => refresh.click());
     expect(refresh.disabled).toBe(true);
     expect(select.value).toBe("gpt-6-luna");
@@ -176,13 +211,20 @@ describe("scheduled model detection", () => {
 
   it("shows the last automatic start with the shared full time format", async () => {
     const startedAt = "2026-10-08T00:00:00Z";
-    await renderDialog({ ...baseDetection, last_automatic_started_at: startedAt });
+    await renderDialog({
+      ...baseDetection,
+      last_automatic_started_at: startedAt,
+    });
 
     expect(lastDetectionTime()).toBe(fullTime(startedAt));
   });
 
   it("shows no record when neither a start time nor a result exists", async () => {
-    await renderDialog({ ...baseDetection, last_automatic_started_at: null, last_result: null });
+    await renderDialog({
+      ...baseDetection,
+      last_automatic_started_at: null,
+      last_result: null,
+    });
 
     expect(lastDetectionTime()).toBe("暂无记录");
   });
@@ -199,15 +241,30 @@ describe("scheduled model detection", () => {
 
   it("shows the global model as read-only and saves the schedule without a model override", async () => {
     await renderDialog();
-    expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(false);
-    expect(container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')?.value).toBe("30");
+    expect(
+      container.querySelector<HTMLInputElement>('input[type="checkbox"]')
+        ?.checked,
+    ).toBe(false);
+    expect(
+      container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')
+        ?.value,
+    ).toBe("30");
     expect(container.querySelector('[aria-label="检测模型"]')).toBeNull();
     expect(container.textContent).toContain("等待下次检测");
 
-    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
-    const interval = container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!;
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+        .click(),
+    );
+    const interval = container.querySelector<HTMLInputElement>(
+      '[aria-label="检测间隔"]',
+    )!;
     await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!;
       setter.call(interval, "45");
       interval.dispatchEvent(new Event("input", { bubbles: true }));
     });
@@ -219,14 +276,19 @@ describe("scheduled model detection", () => {
       status: "waiting",
     };
     vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (method === "PUT" && path === "/accounts/42/model-detection") return saved as never;
-      if (method === "GET" && path === "/accounts/42/model-detection") return baseDetection as never;
-      if (method === "GET" && path === "/accounts/42/models?purpose=model_test") return models as never;
+      if (method === "PUT" && path === "/accounts/42/model-detection")
+        return saved as never;
+      if (method === "GET" && path === "/accounts/42/model-detection")
+        return baseDetection as never;
+      if (method === "GET" && path === "/accounts/42/models?purpose=model_test")
+        return models as never;
       throw new Error("unexpected " + method + " " + path);
     });
     await act(async () => button("保存").click());
 
-    expect(vi.mocked(api).mock.calls.find(([method]) => method === "PUT")?.[2]).toEqual({
+    expect(
+      vi.mocked(api).mock.calls.find(([method]) => method === "PUT")?.[2],
+    ).toEqual({
       expected_version: "detection-version-1",
       enabled: true,
       interval_minutes: 45,
@@ -234,11 +296,22 @@ describe("scheduled model detection", () => {
       min_interval_minutes: 5,
     });
     expect(command).toHaveBeenCalledWith("refresh");
-    expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true);
+    expect(
+      container.querySelector<HTMLInputElement>('input[type="checkbox"]')
+        ?.checked,
+    ).toBe(true);
   });
 
   it("shows an unavailable global model and prevents enabling detection", async () => {
-    await renderDialog({ ...baseDetection, enabled: true, model_id: "retired-model", global_model_id: "retired-model" }, [models[0]]);
+    await renderDialog(
+      {
+        ...baseDetection,
+        enabled: true,
+        model_id: "retired-model",
+        global_model_id: "retired-model",
+      },
+      [models[0]],
+    );
     expect(container.querySelector('[aria-label="检测模型"]')).toBeNull();
     expect(container.textContent).toContain("当前账号上游模型目录");
     expect(button("保存").disabled).toBe(true);
@@ -246,15 +319,21 @@ describe("scheduled model detection", () => {
 
   it("allows saving disabled settings when the model directory cannot be read", async () => {
     await renderDialog({ ...baseDetection, enabled: false });
-    const interval = container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!;
+    const interval = container.querySelector<HTMLInputElement>(
+      '[aria-label="检测间隔"]',
+    )!;
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(interval, "45");
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(interval, "45");
       interval.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
     const original = vi.mocked(api).getMockImplementation()!;
     vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (path === "/accounts/42/models?purpose=model_test") throw new Error("目录暂不可用");
+      if (path === "/accounts/42/models?purpose=model_test")
+        throw new Error("目录暂不可用");
       return original(method, path, body);
     });
     await act(async () => button("重新读取").click());
@@ -263,13 +342,18 @@ describe("scheduled model detection", () => {
     expect(button("保存").disabled).toBe(false);
 
     vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (method === "PUT" && path === "/accounts/42/model-detection") return {
-        ...baseDetection, interval_minutes: 45, version: "detection-version-2",
-      } as never;
+      if (method === "PUT" && path === "/accounts/42/model-detection")
+        return {
+          ...baseDetection,
+          interval_minutes: 45,
+          version: "detection-version-2",
+        } as never;
       return original(method, path, body);
     });
     await act(async () => button("保存").click());
-    expect(vi.mocked(api).mock.calls.find(([method]) => method === "PUT")?.[2]).toEqual({
+    expect(
+      vi.mocked(api).mock.calls.find(([method]) => method === "PUT")?.[2],
+    ).toEqual({
       expected_version: "detection-version-1",
       enabled: false,
       interval_minutes: 45,
@@ -280,16 +364,22 @@ describe("scheduled model detection", () => {
 
   it("keeps an edited draft when a directory reread fails", async () => {
     await renderDialog({ ...baseDetection, enabled: true });
-    const interval = container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!;
+    const interval = container.querySelector<HTMLInputElement>(
+      '[aria-label="检测间隔"]',
+    )!;
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(interval, "45");
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(interval, "45");
       interval.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
     let failDirectory = true;
     const original = vi.mocked(api).getMockImplementation()!;
     vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (failDirectory && path === "/accounts/42/models?purpose=model_test") throw new Error("目录暂不可用");
+      if (failDirectory && path === "/accounts/42/models?purpose=model_test")
+        throw new Error("目录暂不可用");
       return original(method, path, body);
     });
     await act(async () => button("重新读取").click());
@@ -308,33 +398,55 @@ describe("scheduled model detection", () => {
   });
 
   it("waits for a candidate reread before marking a saved model unavailable", async () => {
-    const detection = { ...baseDetection, enabled: true, model_id: "retired-model", global_model_id: "retired-model" };
+    const detection = {
+      ...baseDetection,
+      enabled: true,
+      model_id: "retired-model",
+      global_model_id: "retired-model",
+    };
     let resolveModels!: (value: unknown) => void;
-    const pendingModels = new Promise((resolve) => { resolveModels = resolve; });
+    const pendingModels = new Promise((resolve) => {
+      resolveModels = resolve;
+    });
     let reload = false;
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/accounts/42/model-detection") return detection as never;
-      if (method === "GET" && path === "/accounts/42/models?purpose=model_test") {
+      if (method === "GET" && path === "/accounts/42/model-detection")
+        return detection as never;
+      if (
+        method === "GET" &&
+        path === "/accounts/42/models?purpose=model_test"
+      ) {
         return (reload ? pendingModels : [models[0]]) as never;
       }
       throw new Error("unexpected " + method + " " + path);
     });
-    await act(async () => root.render(
-      <ModelDetectionDialog account={account} online close={() => {}} report={() => {}} />,
-    ));
+    await act(async () =>
+      root.render(
+        <ModelDetectionDialog
+          account={account}
+          online
+          close={() => {}}
+          report={() => {}}
+        />,
+      ),
+    );
     await settle();
 
     reload = true;
     await act(async () => button("重新读取").click());
     await settle();
     expect(container.querySelector('[aria-label="检测模型"]')).toBeNull();
-    expect(container.textContent).not.toContain("所选模型不在当前账号上游模型目录中");
+    expect(container.textContent).not.toContain(
+      "所选模型不在当前账号上游模型目录中",
+    );
     expect(button("保存").disabled).toBe(true);
 
     await act(async () => resolveModels([]));
     await settle();
     expect(container.querySelector('[aria-label="检测模型"]')).toBeNull();
-    expect(container.textContent).toContain("所选模型不在当前账号上游模型目录中");
+    expect(container.textContent).toContain(
+      "所选模型不在当前账号上游模型目录中",
+    );
     expect(button("保存").disabled).toBe(true);
   });
 
@@ -348,19 +460,34 @@ describe("scheduled model detection", () => {
       version: "detection-version-server",
     };
     vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (method === "GET" && path === "/accounts/42/model-detection") return (refreshed ? serverDetection : baseDetection) as never;
-      if (method === "GET" && path === "/accounts/42/models?purpose=model_test") return models as never;
-      if (method === "PUT" && path === "/accounts/42/model-detection") return serverDetection as never;
+      if (method === "GET" && path === "/accounts/42/model-detection")
+        return (refreshed ? serverDetection : baseDetection) as never;
+      if (method === "GET" && path === "/accounts/42/models?purpose=model_test")
+        return models as never;
+      if (method === "PUT" && path === "/accounts/42/model-detection")
+        return serverDetection as never;
       throw new Error("unexpected " + method + " " + path);
     });
-    await act(async () => root.render(
-      <ModelDetectionDialog account={account} online close={() => {}} report={() => {}} />,
-    ));
+    await act(async () =>
+      root.render(
+        <ModelDetectionDialog
+          account={account}
+          online
+          close={() => {}}
+          report={() => {}}
+        />,
+      ),
+    );
     await settle();
 
-    const interval = container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!;
+    const interval = container.querySelector<HTMLInputElement>(
+      '[aria-label="检测间隔"]',
+    )!;
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(interval, "45");
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(interval, "45");
       interval.dispatchEvent(new Event("input", { bubbles: true }));
     });
     refreshed = true;
@@ -370,7 +497,9 @@ describe("scheduled model detection", () => {
     expect(interval.value).toBe("60");
     expect(container.querySelector('[aria-label="检测模型"]')).toBeNull();
     await act(async () => button("保存").click());
-    expect(vi.mocked(api).mock.calls.find(([method]) => method === "PUT")?.[2]).toEqual({
+    expect(
+      vi.mocked(api).mock.calls.find(([method]) => method === "PUT")?.[2],
+    ).toEqual({
       expected_version: "detection-version-server",
       enabled: false,
       interval_minutes: 60,
@@ -382,29 +511,66 @@ describe("scheduled model detection", () => {
   it("keeps the draft through an offline reconnect reread", async () => {
     let reconnect = false;
     let resolveReconnect!: (value: Detection) => void;
-    const pendingReconnect = new Promise<Detection>((resolve) => { resolveReconnect = resolve; });
+    const pendingReconnect = new Promise<Detection>((resolve) => {
+      resolveReconnect = resolve;
+    });
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/accounts/42/model-detection") return (reconnect ? pendingReconnect : baseDetection) as never;
-      if (method === "GET" && path === "/accounts/42/models?purpose=model_test") return models as never;
+      if (method === "GET" && path === "/accounts/42/model-detection")
+        return (reconnect ? pendingReconnect : baseDetection) as never;
+      if (method === "GET" && path === "/accounts/42/models?purpose=model_test")
+        return models as never;
       throw new Error("unexpected " + method + " " + path);
     });
-    await act(async () => root.render(
-      <ModelDetectionDialog account={account} online close={() => {}} report={() => {}} />,
-    ));
+    await act(async () =>
+      root.render(
+        <ModelDetectionDialog
+          account={account}
+          online
+          close={() => {}}
+          report={() => {}}
+        />,
+      ),
+    );
     await settle();
-    const interval = container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!;
+    const interval = container.querySelector<HTMLInputElement>(
+      '[aria-label="检测间隔"]',
+    )!;
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(interval, "45");
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(interval, "45");
       interval.dispatchEvent(new Event("input", { bubbles: true }));
     });
     reconnect = true;
-    await act(async () => root.render(
-      <ModelDetectionDialog account={account} online={false} close={() => {}} report={() => {}} />,
-    ));
-    await act(async () => root.render(
-      <ModelDetectionDialog account={account} online close={() => {}} report={() => {}} />,
-    ));
-    await act(async () => resolveReconnect({ ...baseDetection, interval_minutes: 15, model_id: "gpt-6-sol", version: "reconnected-version" }));
+    await act(async () =>
+      root.render(
+        <ModelDetectionDialog
+          account={account}
+          online={false}
+          close={() => {}}
+          report={() => {}}
+        />,
+      ),
+    );
+    await act(async () =>
+      root.render(
+        <ModelDetectionDialog
+          account={account}
+          online
+          close={() => {}}
+          report={() => {}}
+        />,
+      ),
+    );
+    await act(async () =>
+      resolveReconnect({
+        ...baseDetection,
+        interval_minutes: 15,
+        model_id: "gpt-6-sol",
+        version: "reconnected-version",
+      }),
+    );
     await settle();
 
     expect(interval.value).toBe("45");
@@ -412,57 +578,120 @@ describe("scheduled model detection", () => {
   });
 
   it("ignores a late settings response after switching accounts", async () => {
-    const otherAccount = { ...account, id: 43, name: "另一个检测账号", version: "account-version-43" };
+    const otherAccount = {
+      ...account,
+      id: 43,
+      name: "另一个检测账号",
+      version: "account-version-43",
+    };
     let resolveOldDetection!: (value: Detection) => void;
     let resolveOldModels!: (value: unknown) => void;
-    const oldDetection = new Promise<Detection>((resolve) => { resolveOldDetection = resolve; });
-    const oldModels = new Promise((resolve) => { resolveOldModels = resolve; });
-    const freshDetection: Detection = { ...baseDetection, interval_minutes: 55, model_id: "gpt-6-luna", global_model_id: "gpt-6-luna", version: "fresh-version" };
+    const oldDetection = new Promise<Detection>((resolve) => {
+      resolveOldDetection = resolve;
+    });
+    const oldModels = new Promise((resolve) => {
+      resolveOldModels = resolve;
+    });
+    const freshDetection: Detection = {
+      ...baseDetection,
+      interval_minutes: 55,
+      model_id: "gpt-6-luna",
+      global_model_id: "gpt-6-luna",
+      version: "fresh-version",
+    };
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method !== "GET") throw new Error("unexpected " + method + " " + path);
+      if (method !== "GET")
+        throw new Error("unexpected " + method + " " + path);
       if (path === "/accounts/42/model-detection") return oldDetection as never;
-      if (path === "/accounts/42/models?purpose=model_test") return oldModels as never;
-      if (path === "/accounts/43/model-detection") return freshDetection as never;
-      if (path === "/accounts/43/models?purpose=model_test") return [models[1]] as never;
+      if (path === "/accounts/42/models?purpose=model_test")
+        return oldModels as never;
+      if (path === "/accounts/43/model-detection")
+        return freshDetection as never;
+      if (path === "/accounts/43/models?purpose=model_test")
+        return [models[1]] as never;
       throw new Error("unexpected " + path);
     });
-    await act(async () => root.render(
-      <ModelDetectionDialog account={account} online close={() => {}} report={() => {}} />,
-    ));
-    await act(async () => root.render(
-      <ModelDetectionDialog account={otherAccount} online close={() => {}} report={() => {}} />,
-    ));
+    await act(async () =>
+      root.render(
+        <ModelDetectionDialog
+          account={account}
+          online
+          close={() => {}}
+          report={() => {}}
+        />,
+      ),
+    );
+    await act(async () =>
+      root.render(
+        <ModelDetectionDialog
+          account={otherAccount}
+          online
+          close={() => {}}
+          report={() => {}}
+        />,
+      ),
+    );
     await settle();
     expect(container.textContent).toContain("另一个检测账号 #43");
-    expect(container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!.value).toBe("55");
+    expect(
+      container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!
+        .value,
+    ).toBe("55");
     expect(container.querySelector('[aria-label="检测模型"]')).toBeNull();
 
     await act(async () => {
-      resolveOldDetection({ ...baseDetection, interval_minutes: 5, model_id: "gpt-6-sol", version: "stale-version" });
-      resolveOldModels([{ id: "stale-account-model", display_name: "Stale account model" }]);
+      resolveOldDetection({
+        ...baseDetection,
+        interval_minutes: 5,
+        model_id: "gpt-6-sol",
+        version: "stale-version",
+      });
+      resolveOldModels([
+        { id: "stale-account-model", display_name: "Stale account model" },
+      ]);
     });
     await settle();
     expect(container.textContent).toContain("另一个检测账号 #43");
-    expect(container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!.value).toBe("55");
+    expect(
+      container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!
+        .value,
+    ).toBe("55");
     expect(container.querySelector('[aria-label="检测模型"]')).toBeNull();
   });
 
   it("ignores settings responses after the dialog is unmounted", async () => {
     let resolveDetection!: (value: Detection) => void;
     let resolveModels!: (value: unknown) => void;
-    const pendingDetection = new Promise<Detection>((resolve) => { resolveDetection = resolve; });
-    const pendingModels = new Promise((resolve) => { resolveModels = resolve; });
+    const pendingDetection = new Promise<Detection>((resolve) => {
+      resolveDetection = resolve;
+    });
+    const pendingModels = new Promise((resolve) => {
+      resolveModels = resolve;
+    });
     const report = vi.fn();
     const close = vi.fn(() => root.render(null));
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/accounts/42/model-detection") return pendingDetection as never;
-      if (method === "GET" && path === "/accounts/42/models?purpose=model_test") return pendingModels as never;
+      if (method === "GET" && path === "/accounts/42/model-detection")
+        return pendingDetection as never;
+      if (method === "GET" && path === "/accounts/42/models?purpose=model_test")
+        return pendingModels as never;
       throw new Error("unexpected " + method + " " + path);
     });
-    await act(async () => root.render(
-      <ModelDetectionDialog account={account} online close={close} report={report} />,
-    ));
-    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="关闭定时检测"]')!.click());
+    await act(async () =>
+      root.render(
+        <ModelDetectionDialog
+          account={account}
+          online
+          close={close}
+          report={report}
+        />,
+      ),
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="关闭定时检测"]')!
+        .click(),
+    );
     expect(close).toHaveBeenCalledOnce();
     await act(async () => {
       resolveDetection(baseDetection);
@@ -481,19 +710,32 @@ describe("scheduled model detection", () => {
       status: "running",
       job_id: "model-job-42",
     };
-    const done: Detection = { ...running, status: "cancelled", job_id: undefined };
+    const done: Detection = {
+      ...running,
+      status: "cancelled",
+      job_id: undefined,
+    };
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/accounts/42/model-detection") return (cancelled ? done : running) as never;
-      if (method === "GET" && path === "/accounts/42/models?purpose=model_test") return models as never;
+      if (method === "GET" && path === "/accounts/42/model-detection")
+        return (cancelled ? done : running) as never;
+      if (method === "GET" && path === "/accounts/42/models?purpose=model_test")
+        return models as never;
       if (method === "POST" && path === "/model-tests/model-job-42/cancel") {
         cancelled = true;
         return done as never;
       }
       throw new Error("unexpected " + method + " " + path);
     });
-    await act(async () => root.render(
-      <ModelDetectionDialog account={account} online close={() => {}} report={() => {}} />,
-    ));
+    await act(async () =>
+      root.render(
+        <ModelDetectionDialog
+          account={account}
+          online
+          close={() => {}}
+          report={() => {}}
+        />,
+      ),
+    );
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
@@ -501,9 +743,15 @@ describe("scheduled model detection", () => {
     expect(button("取消任务")).toBeTruthy();
     await act(async () => button("取消任务").click());
 
-    expect(vi.mocked(api).mock.calls).toContainEqual(["POST", "/model-tests/model-job-42/cancel", {}]);
+    expect(vi.mocked(api).mock.calls).toContainEqual([
+      "POST",
+      "/model-tests/model-job-42/cancel",
+      {},
+    ]);
     expect(container.textContent).toContain("已取消");
-    expect(container.querySelector("button")?.textContent).not.toContain("取消任务");
+    expect(container.querySelector("button")?.textContent).not.toContain(
+      "取消任务",
+    );
     expect(button("保存").disabled).toBe(false);
   });
 
@@ -518,37 +766,54 @@ describe("scheduled model detection", () => {
       disposition_notification: { status: "queued" },
     };
     await renderDialog(handling);
-    const detail = (label: string) => [...container.querySelectorAll(".detection-meta dt")].find((node) => node.textContent === label)?.nextElementSibling?.textContent;
+    const detail = (label: string) =>
+      [...container.querySelectorAll(".detection-meta dt")].find(
+        (node) => node.textContent === label,
+      )?.nextElementSibling?.textContent;
     expect(detail("状态")).toBe("正在处置");
     expect(detail("冷却至")).toBe("10-08 08:00:01");
     expect(detail("处置")).toBe("标记待保存 · 停调度待确认");
     expect(detail("结果通知")).toBe("待推送");
 
-    const interval = container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!;
+    const interval = container.querySelector<HTMLInputElement>(
+      '[aria-label="检测间隔"]',
+    )!;
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(interval, "45");
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(interval, "45");
       interval.dispatchEvent(new Event("input", { bubbles: true }));
     });
     const original = vi.mocked(api).getMockImplementation()!;
     let notification = "retry";
     vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (method === "GET" && path === "/accounts/42/model-detection") return {
-        ...handling, status: "completed", disposition: { marked: true, schedule_verified: true },
-        disposition_notification: { status: notification },
-      } as never;
+      if (method === "GET" && path === "/accounts/42/model-detection")
+        return {
+          ...handling,
+          status: "completed",
+          disposition: { marked: true, schedule_verified: true },
+          disposition_notification: { status: notification },
+        } as never;
       return original(method, path, body);
     });
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
     expect(detail("冷却至")).toBeUndefined();
     expect(detail("状态")).toBe("已完成");
     expect(detail("处置")).toBe("标记已保存 · 停调度已确认");
     expect(detail("结果通知")).toBe("待重试");
     expect(interval.value).toBe("45");
     notification = "delivered";
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
     expect(detail("结果通知")).toBe("已推送");
     expect(interval.value).toBe("45");
-    expect(vi.mocked(api).mock.calls.every(([method]) => method === "GET")).toBe(true);
+    expect(
+      vi.mocked(api).mock.calls.every(([method]) => method === "GET"),
+    ).toBe(true);
   });
 
   it("shows a suppressed notification as cancelled and omits expired cooldown information", async () => {
@@ -558,8 +823,12 @@ describe("scheduled model detection", () => {
       next_allowed_at: "2026-10-07T23:59:59Z",
       disposition_notification: { status: "suppressed" },
     });
-    expect(container.querySelector(".detection-meta")?.textContent).toContain("结果通知已取消");
-    expect(container.querySelector(".detection-meta")?.textContent).not.toContain("冷却至");
+    expect(container.querySelector(".detection-meta")?.textContent).toContain(
+      "结果通知已取消",
+    );
+    expect(
+      container.querySelector(".detection-meta")?.textContent,
+    ).not.toContain("冷却至");
   });
 
   it("polls same-generation recovery receipt and notification through queued, retry and delivered while preserving a draft", async () => {
@@ -570,28 +839,49 @@ describe("scheduled model detection", () => {
       generation: 4,
       disposition: { marked: true, schedule_verified: true },
       disposition_notification: { status: "queued" },
-      recheck_recovery: { status: "pending", generation: 4, mark_cleared: false, reason: "正在取消降智标记" },
+      recheck_recovery: {
+        status: "pending",
+        generation: 4,
+        mark_cleared: false,
+        reason: "正在取消降智标记",
+      },
       recovery_notification: { status: "queued" },
     };
     let current: Detection = pending;
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/accounts/42/model-detection") return current as never;
-      if (method === "GET" && path === "/accounts/42/models?purpose=model_test") return models as never;
+      if (method === "GET" && path === "/accounts/42/model-detection")
+        return current as never;
+      if (method === "GET" && path === "/accounts/42/models?purpose=model_test")
+        return models as never;
       throw new Error("unexpected " + method + " " + path);
     });
-    await act(async () => root.render(
-      <ModelDetectionDialog account={account} online close={() => {}} report={() => {}} />,
-    ));
+    await act(async () =>
+      root.render(
+        <ModelDetectionDialog
+          account={account}
+          online
+          close={() => {}}
+          report={() => {}}
+        />,
+      ),
+    );
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    const detail = (label: string) => [...container.querySelectorAll(".detection-meta dt")]
-      .find((node) => node.textContent === label)?.nextElementSibling?.textContent;
-    const interval = container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!;
+    const detail = (label: string) =>
+      [...container.querySelectorAll(".detection-meta dt")].find(
+        (node) => node.textContent === label,
+      )?.nextElementSibling?.textContent;
+    const interval = container.querySelector<HTMLInputElement>(
+      '[aria-label="检测间隔"]',
+    )!;
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(interval, "45");
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(interval, "45");
       interval.dispatchEvent(new Event("input", { bubbles: true }));
     });
     expect(detail("复查结果")).toBe("正在取消降智标记");
@@ -601,21 +891,34 @@ describe("scheduled model detection", () => {
       ...pending,
       interval_minutes: 15,
       status: "completed",
-      recheck_recovery: { status: "completed", generation: 4, mark_cleared: true, reason: "检测恢复正常，已取消降智标记" },
+      recheck_recovery: {
+        status: "completed",
+        generation: 4,
+        mark_cleared: true,
+        reason: "检测恢复正常，已取消降智标记",
+      },
       recovery_notification: { status: "retry" },
     };
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
     expect(detail("复查结果")).toBe("已取消降智标记 · 调度保持不变");
     expect(detail("结果通知")).toBe("待重试");
     expect(interval.value).toBe("45");
-    expect(container.querySelector(".detection-meta")?.textContent).not.toContain("停调度已确认");
+    expect(
+      container.querySelector(".detection-meta")?.textContent,
+    ).not.toContain("停调度已确认");
 
     current = { ...current, recovery_notification: { status: "delivered" } };
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
     expect(detail("复查结果")).toBe("已取消降智标记 · 调度保持不变");
     expect(detail("结果通知")).toBe("已推送");
     expect(interval.value).toBe("45");
-    expect(vi.mocked(api).mock.calls.every(([method]) => method === "GET")).toBe(true);
+    expect(
+      vi.mocked(api).mock.calls.every(([method]) => method === "GET"),
+    ).toBe(true);
   });
 
   it("ignores a recovery receipt from an older generation and keeps the prior disposition", async () => {
@@ -624,7 +927,12 @@ describe("scheduled model detection", () => {
       generation: 9,
       disposition: { marked: true, schedule_verified: true },
       disposition_notification: { status: "retry" },
-      recheck_recovery: { status: "completed", generation: 8, mark_cleared: true, reason: "检测恢复正常，已取消降智标记" },
+      recheck_recovery: {
+        status: "completed",
+        generation: 8,
+        mark_cleared: true,
+        reason: "检测恢复正常，已取消降智标记",
+      },
       recovery_notification: { status: "delivered" },
     });
     const meta = container.querySelector(".detection-meta")!;
@@ -636,7 +944,6 @@ describe("scheduled model detection", () => {
   });
 });
 
-
 describe("OpenAI Key detection models", () => {
   it("saves an upstream model override and can return to the global model", async () => {
     let current: Detection = baseDetection;
@@ -644,99 +951,269 @@ describe("OpenAI Key detection models", () => {
       if (path.endsWith("/models?purpose=model_test")) return models as never;
       if (path.endsWith("/model-detection")) {
         if (method === "PUT") {
-          const override = (body as { model_override: string | null }).model_override;
-          current = { ...current, model_override: override, model_id: override ?? "gpt-6-sol", model_source: override ? "account" : "global", version: "saved-version" };
+          const override = (body as { model_override: string | null })
+            .model_override;
+          current = {
+            ...current,
+            model_override: override,
+            model_id: override ?? "gpt-6-sol",
+            model_source: override ? "account" : "global",
+            version: "saved-version",
+          };
         }
         return current as never;
       }
       throw new Error("unexpected " + path);
     });
     const close = vi.fn();
-    const render = async () => act(async () => root.render(<ModelDetectionDialog account={{ ...account, type: "apikey" }} online close={close} report={vi.fn()}/>));
+    const render = async () =>
+      act(async () =>
+        root.render(
+          <ModelDetectionDialog
+            account={{ ...account, type: "apikey" }}
+            online
+            close={close}
+            report={vi.fn()}
+          />,
+        ),
+      );
     await render();
-    let select = container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!;
-    expect([...select.options].map(option => option.value)).toEqual(["", ...models.map(model => model.id)]);
-    await act(async () => { select.value = "gpt-6-luna"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    let select = container.querySelector<HTMLSelectElement>(
+      '[aria-label="检测模型"]',
+    )!;
+    expect([...select.options].map((option) => option.value)).toEqual([
+      "",
+      ...models.map((model) => model.id),
+    ]);
+    await act(async () => {
+      select.value = "gpt-6-luna";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
     expect(button("保存").disabled).toBe(false);
     await act(async () => button("保存").click());
     expect(api).toHaveBeenCalledWith("PUT", "/accounts/42/model-detection", {
-      expected_version: baseDetection.version, enabled: false, interval_minutes: 30, schedule_mode: "fixed", min_interval_minutes: 5, model_override: "gpt-6-luna",
+      expected_version: baseDetection.version,
+      enabled: false,
+      interval_minutes: 30,
+      schedule_mode: "fixed",
+      min_interval_minutes: 5,
+      model_override: "gpt-6-luna",
     });
     expect(close).toHaveBeenCalledTimes(1);
     await act(async () => root.render(null));
     await render();
-    select = container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!;
+    select = container.querySelector<HTMLSelectElement>(
+      '[aria-label="检测模型"]',
+    )!;
     expect(select.value).toBe("gpt-6-luna");
-    await act(async () => { select.value = ""; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    await act(async () => {
+      select.value = "";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
     await act(async () => button("保存").click());
     expect(api).toHaveBeenCalledWith("PUT", "/accounts/42/model-detection", {
-      expected_version: "saved-version", enabled: false, interval_minutes: 30, schedule_mode: "fixed", min_interval_minutes: 5, model_override: null,
+      expected_version: "saved-version",
+      enabled: false,
+      interval_minutes: 30,
+      schedule_mode: "fixed",
+      min_interval_minutes: 5,
+      model_override: null,
     });
     expect(close).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(api).mock.calls.some(([method]) => method === "POST")).toBe(false);
+    expect(
+      vi.mocked(api).mock.calls.some(([method]) => method === "POST"),
+    ).toBe(false);
   });
 
   it("keeps an unavailable custom model and allows disabling it without a model substitution", async () => {
-    const current: Detection = { ...baseDetection, enabled: true, model_id: "retired-model", model_source: "account", model_override: "retired-model", global_model_id: "gpt-6-sol" };
-    vi.mocked(api).mockImplementation(async (_method, path) => path.endsWith("/model-detection") ? current as never : models as never);
-    await act(async () => root.render(<ModelDetectionDialog account={{ ...account, type: "apikey" }} online close={() => {}} report={vi.fn()}/>));
-    const select = container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!;
+    const current: Detection = {
+      ...baseDetection,
+      enabled: true,
+      model_id: "retired-model",
+      model_source: "account",
+      model_override: "retired-model",
+      global_model_id: "gpt-6-sol",
+    };
+    vi.mocked(api).mockImplementation(async (_method, path) =>
+      path.endsWith("/model-detection")
+        ? (current as never)
+        : (models as never),
+    );
+    await act(async () =>
+      root.render(
+        <ModelDetectionDialog
+          account={{ ...account, type: "apikey" }}
+          online
+          close={() => {}}
+          report={vi.fn()}
+        />,
+      ),
+    );
+    const select = container.querySelector<HTMLSelectElement>(
+      '[aria-label="检测模型"]',
+    )!;
     expect(select.value).toBe("retired-model");
     expect(select.textContent).toContain("retired-model（当前不可用）");
     expect(button("保存").disabled).toBe(true);
-    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+        .click(),
+    );
     expect(button("保存").disabled).toBe(false);
     await act(async () => button("保存").click());
     expect(api).toHaveBeenCalledWith("PUT", "/accounts/42/model-detection", {
-      expected_version: baseDetection.version, enabled: false, interval_minutes: 30, schedule_mode: "fixed", min_interval_minutes: 5, model_override: "retired-model",
+      expected_version: baseDetection.version,
+      enabled: false,
+      interval_minutes: 30,
+      schedule_mode: "fixed",
+      min_interval_minutes: 5,
+      model_override: "retired-model",
     });
   });
 });
 
 it("shows smart activity, validates the floor and preserves the fixed interval when switching", async () => {
-  const smart: Detection = { ...baseDetection, enabled: true, schedule_mode: "smart", min_interval_minutes: 5, effective_interval_minutes: 15, recent_request_count: 44 };
+  const smart: Detection = {
+    ...baseDetection,
+    enabled: true,
+    schedule_mode: "smart",
+    min_interval_minutes: 5,
+    effective_interval_minutes: 15,
+    recent_request_count: 44,
+  };
   await renderDialog(smart);
-  expect(container.textContent).toContain("44 次"); expect(container.textContent).toContain("15 分钟");
-  const floor = container.querySelector<HTMLInputElement>('[aria-label="最小间隔"]')!;
-  const set = async (element: HTMLInputElement | HTMLSelectElement, value: string) => act(async () => {
-    Object.getOwnPropertyDescriptor(element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype, "value")!.set!.call(element, value);
-    element.dispatchEvent(new Event("input", { bubbles: true })); element.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  for (const invalid of ['4','31','5.5','']) { await set(floor, invalid); expect(button("保存").disabled).toBe(true); }
-  await set(floor, '17'); expect(button("保存").disabled).toBe(false);
-  const mode = container.querySelector<HTMLSelectElement>('[aria-label="检测模式"]')!;
-  await set(mode, 'fixed');
-  expect(container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!.value).toBe('30');
-  await set(mode, 'smart');
-  expect(container.querySelector<HTMLInputElement>('[aria-label="最小间隔"]')!.value).toBe('17');
-  vi.mocked(api).mockImplementation(async (method, path, body) => method === 'PUT' ? { ...smart, ...(body as object) } as never : smart as never);
-  await act(async () => button('保存').click());
-  expect(api).toHaveBeenCalledWith('PUT','/accounts/42/model-detection',expect.objectContaining({ schedule_mode:'smart', min_interval_minutes:17, interval_minutes:30 }));
+  expect(container.textContent).toContain("44 次");
+  expect(container.textContent).toContain("15 分钟");
+  const floor = container.querySelector<HTMLInputElement>(
+    '[aria-label="最小间隔"]',
+  )!;
+  const set = async (
+    element: HTMLInputElement | HTMLSelectElement,
+    value: string,
+  ) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(
+        element instanceof HTMLSelectElement
+          ? HTMLSelectElement.prototype
+          : HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(element, value);
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  for (const invalid of ["4", "31", "5.5", ""]) {
+    await set(floor, invalid);
+    expect(button("保存").disabled).toBe(true);
+  }
+  await set(floor, "17");
+  expect(button("保存").disabled).toBe(false);
+  const mode = container.querySelector<HTMLSelectElement>(
+    '[aria-label="检测模式"]',
+  )!;
+  await set(mode, "fixed");
+  expect(
+    container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!.value,
+  ).toBe("30");
+  await set(mode, "smart");
+  expect(
+    container.querySelector<HTMLInputElement>('[aria-label="最小间隔"]')!.value,
+  ).toBe("17");
+  vi.mocked(api).mockImplementation(async (method, path, body) =>
+    method === "PUT"
+      ? ({ ...smart, ...(body as object) } as never)
+      : (smart as never),
+  );
+  await act(async () => button("保存").click());
+  expect(api).toHaveBeenCalledWith(
+    "PUT",
+    "/accounts/42/model-detection",
+    expect.objectContaining({
+      schedule_mode: "smart",
+      min_interval_minutes: 17,
+      interval_minutes: 30,
+    }),
+  );
 });
 it("shows idle and failed statistics distinctly", async () => {
-  await renderDialog({ ...baseDetection, schedule_mode:'smart', min_interval_minutes:5, recent_request_count:0, effective_interval_minutes:null, status:'paused', reason:'最近一小时无业务调用，已暂停定时检测' });
-  expect(container.textContent).toContain('无调用，已暂停');
-  vi.mocked(api).mockResolvedValue({ ...baseDetection, schedule_mode:'smart', min_interval_minutes:5, recent_request_count:null, effective_interval_minutes:null, status:'paused', reason:'调用统计暂不可用，等待重新读取' } as never);
+  await renderDialog({
+    ...baseDetection,
+    schedule_mode: "smart",
+    min_interval_minutes: 5,
+    recent_request_count: 0,
+    effective_interval_minutes: null,
+    status: "paused",
+    reason: "最近一小时无业务调用，已暂停定时检测",
+  });
+  expect(container.textContent).toContain("无调用，已暂停");
+  vi.mocked(api).mockResolvedValue({
+    ...baseDetection,
+    schedule_mode: "smart",
+    min_interval_minutes: 5,
+    recent_request_count: null,
+    effective_interval_minutes: null,
+    status: "paused",
+    reason: "调用统计暂不可用，等待重新读取",
+  } as never);
   await act(async () => vi.advanceTimersByTimeAsync(2000));
-  expect(container.textContent).toContain('等待调用统计');
-  expect(container.textContent).toContain('调用统计暂不可用');
+  expect(container.textContent).toContain("等待调用统计");
+  expect(container.textContent).toContain("调用统计暂不可用");
 });
 
-it.each(["anthropic", "grok", "deepseek"])("requires a per-account model only when enabling %s detection", async (platform) => {
-  vi.mocked(api).mockImplementation(async (method, path, body) => {
-    if (path.endsWith("/models?purpose=model_test")) return [{ id: "fixture-model", display_name: "Fixture model" }] as never;
-    if (path.endsWith("/model-detection")) return { ...baseDetection, model_id: "", model_source: "account", global_model_id: "", model_override: null, ...(method === "PUT" ? body as object : {}) } as never;
-    return undefined as never;
-  });
-  await act(async () => root.render(<ModelDetectionDialog account={{ ...account, platform, type: "apikey" }} online close={vi.fn()} report={vi.fn()}/>));
-  expect(button("保存").disabled).toBe(false);
-  expect(container.textContent).toContain("请先选择该账号的检测模型");
-  await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
-  expect(button("保存").disabled).toBe(true);
-  const select = container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!;
-  expect(select.options[0].textContent).toBe("请选择检测模型");
-  await act(async () => { select.value = "fixture-model"; select.dispatchEvent(new Event("change", { bubbles: true })); });
-  expect(button("保存").disabled).toBe(false);
-  await act(async () => button("保存").click());
-  expect(api).toHaveBeenCalledWith("PUT", `/accounts/${account.id}/model-detection`, expect.objectContaining({ enabled: true, model_override: "fixture-model" }));
-});
+it.each(["anthropic", "grok", "deepseek"])(
+  "requires a per-account model only when enabling %s detection",
+  async (platform) => {
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (path.endsWith("/models?purpose=model_test"))
+        return [
+          { id: "fixture-model", display_name: "Fixture model" },
+        ] as never;
+      if (path.endsWith("/model-detection"))
+        return {
+          ...baseDetection,
+          model_id: "",
+          model_source: "account",
+          global_model_id: "",
+          model_override: null,
+          ...(method === "PUT" ? (body as object) : {}),
+        } as never;
+      return undefined as never;
+    });
+    await act(async () =>
+      root.render(
+        <ModelDetectionDialog
+          account={{ ...account, platform, type: "apikey" }}
+          online
+          close={vi.fn()}
+          report={vi.fn()}
+        />,
+      ),
+    );
+    expect(button("保存").disabled).toBe(false);
+    expect(container.textContent).toContain("请先选择该账号的检测模型");
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+        .click(),
+    );
+    expect(button("保存").disabled).toBe(true);
+    const select = container.querySelector<HTMLSelectElement>(
+      '[aria-label="检测模型"]',
+    )!;
+    expect(select.options[0].textContent).toBe("请选择检测模型");
+    await act(async () => {
+      select.value = "fixture-model";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(button("保存").disabled).toBe(false);
+    await act(async () => button("保存").click());
+    expect(api).toHaveBeenCalledWith(
+      "PUT",
+      `/accounts/${account.id}/model-detection`,
+      expect.objectContaining({
+        enabled: true,
+        model_override: "fixture-model",
+      }),
+    );
+  },
+);

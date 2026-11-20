@@ -216,12 +216,23 @@ it.each([
   [quota({ plans: [plan({ remaining: 0 })] }), "剩余 0 USD"],
   [quota({ plans: [], state: "unsupported" }), "不可查询"],
   [quota({ plans: [] }), "余额未知"],
-  [quota({ source: "newapi", plans: [plan({ name: "Key 额度", unlimited: true })] }), "Key 配额无限制"],
-] as const)("keeps the compact balance distinct from zero, unknown and unlimited", async (value, expected) => {
-  await act(async () => root.render(<KeyQuotaSummary quota={value} busy={false}/>));
-  expect(container.textContent).toBe(expected);
-  expect(container.querySelector("button, table, details")).toBeNull();
-});
+  [
+    quota({
+      source: "newapi",
+      plans: [plan({ name: "Key 额度", unlimited: true })],
+    }),
+    "Key 配额无限制",
+  ],
+] as const)(
+  "keeps the compact balance distinct from zero, unknown and unlimited",
+  async (value, expected) => {
+    await act(async () =>
+      root.render(<KeyQuotaSummary quota={value} busy={false} />),
+    );
+    expect(container.textContent).toBe(expected);
+    expect(container.querySelector("button, table, details")).toBeNull();
+  },
+);
 it("refreshes due results only while visible and preserves the last balance through a failed read", async () => {
   let fail = false;
   vi.mocked(api).mockImplementation(async (_method, path) => {
@@ -438,41 +449,134 @@ it("keeps token drafts on failure, omits blank tokens, replaces them and has no 
   expect(close).toHaveBeenCalledTimes(2);
 });
 it("reveals a saved token only on click, copies without saving and hides its temporary value", async () => {
-  const writeText=vi.fn().mockResolvedValue(undefined);
-  Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText}});
-  vi.mocked(api).mockImplementation(async (_method,path) => (path.endsWith("/access-token") ? {account_id:1,access_token:"fixture-saved"} : {account_id:1,has_access_token:true,revision:"a".repeat(64)}) as never);
-  await act(async()=>root.render(<KeyQuotaSettingsDialog account={account()} online close={vi.fn()} saved={vi.fn()}/>));
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+  vi.mocked(api).mockImplementation(
+    async (_method, path) =>
+      (path.endsWith("/access-token")
+        ? { account_id: 1, access_token: "fixture-saved" }
+        : {
+            account_id: 1,
+            has_access_token: true,
+            revision: "a".repeat(64),
+          }) as never,
+  );
+  await act(async () =>
+    root.render(
+      <KeyQuotaSettingsDialog
+        account={account()}
+        online
+        close={vi.fn()}
+        saved={vi.fn()}
+      />,
+    ),
+  );
   expect(api).toHaveBeenCalledTimes(1);
   await click("显示并复制");
   expect(writeText).toHaveBeenCalledWith("fixture-saved");
-  expect(container.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe("fixture-saved");
-  expect(vi.mocked(api).mock.calls.every(([method])=>method==="GET")).toBe(true);
+  expect(
+    container.querySelector<HTMLInputElement>('input[type="text"]')?.value,
+  ).toBe("fixture-saved");
+  expect(vi.mocked(api).mock.calls.every(([method]) => method === "GET")).toBe(
+    true,
+  );
   await click("隐藏");
-  expect(container.querySelector<HTMLInputElement>('input[type="password"]')?.value).toBe("");
+  expect(
+    container.querySelector<HTMLInputElement>('input[type="password"]')?.value,
+  ).toBe("");
   await click("保存");
-  expect(api).toHaveBeenLastCalledWith("PUT","/accounts/1/key-quota-settings",{expected_revision:"a".repeat(64)});
+  expect(api).toHaveBeenLastCalledWith(
+    "PUT",
+    "/accounts/1/key-quota-settings",
+    { expected_revision: "a".repeat(64) },
+  );
 });
 it("copies the edited token without reading the saved secret and preserves it on clipboard failure", async () => {
-  const writeText=vi.fn().mockRejectedValue(new Error("fixture clipboard unavailable"));
-  Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText}});
-  vi.mocked(api).mockResolvedValue({account_id:1,has_access_token:true,revision:"a".repeat(64)} as never);
-  await act(async()=>root.render(<KeyQuotaSettingsDialog account={account()} online close={vi.fn()} saved={vi.fn()}/>));
-  await change(container.querySelector<HTMLInputElement>('input')!,"fixture-edited");
+  const writeText = vi
+    .fn()
+    .mockRejectedValue(new Error("fixture clipboard unavailable"));
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+  vi.mocked(api).mockResolvedValue({
+    account_id: 1,
+    has_access_token: true,
+    revision: "a".repeat(64),
+  } as never);
+  await act(async () =>
+    root.render(
+      <KeyQuotaSettingsDialog
+        account={account()}
+        online
+        close={vi.fn()}
+        saved={vi.fn()}
+      />,
+    ),
+  );
+  await change(
+    container.querySelector<HTMLInputElement>("input")!,
+    "fixture-edited",
+  );
   await click("显示并复制");
   expect(api).toHaveBeenCalledTimes(1);
   expect(writeText).toHaveBeenCalledWith("fixture-edited");
   expect(container.textContent).toContain("复制失败");
-  expect(container.querySelector<HTMLInputElement>('input')?.type).toBe("text");
+  expect(container.querySelector<HTMLInputElement>("input")?.type).toBe("text");
   await click("隐藏");
-  expect(container.querySelector<HTMLInputElement>('input')?.value).toBe("fixture-edited");
-  await act(async()=>root.render(null));
-  await act(async()=>root.render(<KeyQuotaSettingsDialog account={account()} online close={vi.fn()} saved={vi.fn()}/>));
-  expect(container.querySelector<HTMLInputElement>('input')?.value).toBe("");
+  expect(container.querySelector<HTMLInputElement>("input")?.value).toBe(
+    "fixture-edited",
+  );
+  await act(async () => root.render(null));
+  await act(async () =>
+    root.render(
+      <KeyQuotaSettingsDialog
+        account={account()}
+        online
+        close={vi.fn()}
+        saved={vi.fn()}
+      />,
+    ),
+  );
+  expect(container.querySelector<HTMLInputElement>("input")?.value).toBe("");
 });
-it("does not reveal or copy a saved response after the dialog closes", async()=>{
-  let resolve!:(value:unknown)=>void;const writeText=vi.fn();Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText}});
-  vi.mocked(api).mockImplementation(async(_m,path)=>path.endsWith("/access-token")?new Promise(r=>{resolve=r;}) as never:{account_id:1,has_access_token:true,revision:"a".repeat(64)} as never);
-  await act(async()=>root.render(<KeyQuotaSettingsDialog account={account()} online close={vi.fn()} saved={vi.fn()}/>));await click("显示并复制");await act(async()=>root.render(null));await act(async()=>resolve({account_id:1,access_token:"fixture-stale"}));expect(writeText).not.toHaveBeenCalled();
+it("does not reveal or copy a saved response after the dialog closes", async () => {
+  let resolve!: (value: unknown) => void;
+  const writeText = vi.fn();
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+  vi.mocked(api).mockImplementation(async (_m, path) =>
+    path.endsWith("/access-token")
+      ? (new Promise((r) => {
+          resolve = r;
+        }) as never)
+      : ({
+          account_id: 1,
+          has_access_token: true,
+          revision: "a".repeat(64),
+        } as never),
+  );
+  await act(async () =>
+    root.render(
+      <KeyQuotaSettingsDialog
+        account={account()}
+        online
+        close={vi.fn()}
+        saved={vi.fn()}
+      />,
+    ),
+  );
+  await click("显示并复制");
+  await act(async () => root.render(null));
+  await act(async () =>
+    resolve({ account_id: 1, access_token: "fixture-stale" }),
+  );
+  expect(writeText).not.toHaveBeenCalled();
 });
 it("validates refresh intervals before saving and keeps a conflict open", async () => {
   const close = vi.fn();

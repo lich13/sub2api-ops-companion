@@ -86,7 +86,9 @@
   padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: 7px;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 .config-search:hover {
   border-color: var(--line-strong);
@@ -742,5 +744,12 @@
   }
 }
 
-.config-version { flex-shrink: 0; padding: 0 20px 12px; border-bottom: 1px solid var(--line); }
-.config-version p { margin: 6px 0 0; font-size: 12px; }
+.config-version {
+  flex-shrink: 0;
+  padding: 0 20px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.config-version p {
+  margin: 6px 0 0;
+  font-size: 12px;
+}

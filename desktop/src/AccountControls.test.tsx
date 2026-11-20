@@ -62,22 +62,49 @@ afterEach(async () => {
 });
 
 async function render(records: Recovery[]) {
-  await act(async () => root.render(
-    <RecoveryHistory latest={records} accounts={[account]} online={false} report={vi.fn()} />,
-  ));
+  await act(async () =>
+    root.render(
+      <RecoveryHistory
+        latest={records}
+        accounts={[account]}
+        online={false}
+        report={vi.fn()}
+      />,
+    ),
+  );
 }
 
-const cell = (row: Element, label: string) => row.querySelector(`[data-label="${label}"]`)?.textContent;
+const cell = (row: Element, label: string) =>
+  row.querySelector(`[data-label="${label}"]`)?.textContent;
 
 describe("recovery history provenance", () => {
   it("shows actual attempts including zero and leaves unknown history blank", async () => {
-    await render([recovery({ id: 4, attempt_count: 3 }), recovery({ id: 3, attempt_count: 1 }), recovery({ id: 2, attempt_count: 0, kind: "connection_test", result_status: "cancelled" }), recovery({ id: 1, legacy: true })]);
-    expect([...container.querySelectorAll('tbody tr')].map(row => cell(row, "尝试次数"))).toEqual(["3", "1", "0", "—"]);
+    await render([
+      recovery({ id: 4, attempt_count: 3 }),
+      recovery({ id: 3, attempt_count: 1 }),
+      recovery({
+        id: 2,
+        attempt_count: 0,
+        kind: "connection_test",
+        result_status: "cancelled",
+      }),
+      recovery({ id: 1, legacy: true }),
+    ]);
+    expect(
+      [...container.querySelectorAll("tbody tr")].map((row) =>
+        cell(row, "尝试次数"),
+      ),
+    ).toEqual(["3", "1", "0", "—"]);
   });
   it("keeps legacy and ordinary recoveries as quota recovery without inventing card-use evidence", async () => {
     await render([
       recovery({ id: 1 }),
-      recovery({ id: 2, legacy: true, test_completed_at: null, recovered_at: null }),
+      recovery({
+        id: 2,
+        legacy: true,
+        test_completed_at: null,
+        recovered_at: null,
+      }),
     ]);
 
     const rows = [...container.querySelectorAll("tbody tr")];
@@ -96,22 +123,36 @@ describe("recovery history provenance", () => {
   it.each([
     ["connection", "测试连接"],
     ["model", "模型测试"],
-  ] as const)("shows completed %s card recovery with separate card-use and verification times", async (method, label) => {
-    await render([recovery({
-      kind: "reset_credit",
-      reset_credit: { completed_at: completedAt, verification_method: method },
-    })]);
+  ] as const)(
+    "shows completed %s card recovery with separate card-use and verification times",
+    async (method, label) => {
+      await render([
+        recovery({
+          kind: "reset_credit",
+          reset_credit: {
+            completed_at: completedAt,
+            verification_method: method,
+          },
+        }),
+      ]);
 
-    const row = container.querySelector("tbody tr")!;
-    expect(row.textContent).toContain("用卡恢复");
-    expect(cell(row, "用卡时间")).toBe(fullTime(completedAt));
-    expect(cell(row, "验证方式")).toBe(label);
-    expect(cell(row, "测试完成时间")).toBe(fullTime(verifiedAt));
-    expect(cell(row, "结果 / 恢复时间")).toBe(fullTime(recoveredAt));
-  });
+      const row = container.querySelector("tbody tr")!;
+      expect(row.textContent).toContain("用卡恢复");
+      expect(cell(row, "用卡时间")).toBe(fullTime(completedAt));
+      expect(cell(row, "验证方式")).toBe(label);
+      expect(cell(row, "测试完成时间")).toBe(fullTime(verifiedAt));
+      expect(cell(row, "结果 / 恢复时间")).toBe(fullTime(recoveredAt));
+    },
+  );
 
   it("shows scheduled connection tests in recovery history", async () => {
-    await render([recovery({ kind: "connection_test", recovered_at: null, result_status: "completed" })]);
+    await render([
+      recovery({
+        kind: "connection_test",
+        recovered_at: null,
+        result_status: "completed",
+      }),
+    ]);
     const row = container.querySelector("tbody tr")!;
     expect(row.textContent).toContain("预约测试");
     expect(cell(row, "验证方式")).toBe("测试连接");
@@ -123,23 +164,40 @@ describe("recovery history provenance", () => {
     ["missing kind", { kind: undefined }],
     ["missing metadata", { reset_credit: undefined }],
     ["legacy record", { legacy: true }],
-    ["missing card-use time", { reset_credit: { completed_at: "", verification_method: "connection" } }],
+    [
+      "missing card-use time",
+      { reset_credit: { completed_at: "", verification_method: "connection" } },
+    ],
     ["missing verification time", { test_completed_at: null }],
     ["missing recovery confirmation", { recovered_at: null }],
-    ["unknown verification method", { reset_credit: { completed_at: completedAt, verification_method: "unknown" } }],
-  ] as const)("does not label %s as a completed card recovery", async (_reason, overrides) => {
-    const record = {
-      ...recovery(),
-      kind: "reset_credit",
-      reset_credit: { completed_at: completedAt, verification_method: "connection" },
-      ...overrides,
-    } as Recovery;
-    await render([record]);
+    [
+      "unknown verification method",
+      {
+        reset_credit: {
+          completed_at: completedAt,
+          verification_method: "unknown",
+        },
+      },
+    ],
+  ] as const)(
+    "does not label %s as a completed card recovery",
+    async (_reason, overrides) => {
+      const record = {
+        ...recovery(),
+        kind: "reset_credit",
+        reset_credit: {
+          completed_at: completedAt,
+          verification_method: "connection",
+        },
+        ...overrides,
+      } as Recovery;
+      await render([record]);
 
-    const row = container.querySelector("tbody tr")!;
-    expect(row.textContent).toContain("额度恢复");
-    expect(row.textContent).not.toContain("用卡恢复");
-    expect(cell(row, "用卡时间")).not.toContain(fullTime(completedAt));
-    expect(cell(row, "验证方式")).not.toBe("测试连接");
-  });
+      const row = container.querySelector("tbody tr")!;
+      expect(row.textContent).toContain("额度恢复");
+      expect(row.textContent).not.toContain("用卡恢复");
+      expect(cell(row, "用卡时间")).not.toContain(fullTime(completedAt));
+      expect(cell(row, "验证方式")).not.toBe("测试连接");
+    },
+  );
 });

@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -33,7 +39,11 @@ import {
 } from "./records";
 import { useRecordFeed } from "./useRecordFeed";
 import RecordFilter from "./RecordFilter";
-import { priorityPlatformName, sortPriorityPlatforms, preferredPlatforms } from "./priorities";
+import {
+  priorityPlatformName,
+  sortPriorityPlatforms,
+  preferredPlatforms,
+} from "./priorities";
 import RecordDatePicker from "./RecordDatePicker";
 import { presetRange, type RecordDateRange } from "./recordDates";
 import { useDialogFocus } from "./dialogFocus";
@@ -125,7 +135,9 @@ function TypeBadges({ row }: { row: UsageRecord }) {
   const kind = requestType(row);
   return (
     <span className="record-type-badges">
-      <span className={`record-type-badge is-${kind}`}>{requestTypes[kind]}</span>
+      <span className={`record-type-badge is-${kind}`}>
+        {requestTypes[kind]}
+      </span>
       {row.native_compaction_v2 === true && (
         <span className="record-type-badge is-compact">压缩</span>
       )}
@@ -391,10 +403,7 @@ function RecordDetail({
                 {pair("IP", <CopyValue value={row.ip_address} />)}
                 {pair("首字延迟", latency(row.first_token_ms))}
                 {pair("总耗时", latency(row.duration_ms))}
-                {pair(
-                  "输出 TPS",
-                  formatUsageOutputRate(row),
-                )}
+                {pair("输出 TPS", formatUsageOutputRate(row))}
               </dl>
             </section>
             <section className="record-detail-section">
@@ -416,7 +425,10 @@ function RecordDetail({
                 {pair("用户实扣", detailMoney(row.actual_cost))}
                 {pair("账户费用", detailMoney(row.account_cost))}
                 {pair("用户倍率", decimal(row.rate_multiplier, 2))}
-                {pair("账户倍率", decimal(row.account_rate_multiplier ?? "1", 2))}
+                {pair(
+                  "账户倍率",
+                  decimal(row.account_rate_multiplier ?? "1", 2),
+                )}
                 {pair("计费模式", <Cell column="billing" row={row} />)}
                 {!!row.image_count && pair("图片", tokenCount(row.image_count))}
                 {!!row.image_input_tokens &&
@@ -478,8 +490,7 @@ const MobileRecordRow = React.memo(function MobileRecordRow({
       <div className="mobile-record-user">
         <span>用户</span>
         <strong>
-          {row.user_name || row.user_email || "—"}{" "}
-          <small>#{row.user_id}</small>
+          {row.user_name || row.user_email || "—"} <small>#{row.user_id}</small>
         </strong>
       </div>
       <div className="mobile-record-fields">
@@ -525,9 +536,7 @@ const DesktopRecordRow = React.memo(function DesktopRecordRow({
             onOpen(row.id);
           }}
         >
-          <span>
-            {row.user_name || row.user_email || `#${row.user_id}`}
-          </span>
+          <span>{row.user_name || row.user_email || `#${row.user_id}`}</span>
           <small>#{row.user_id}</small>
         </button>
       </td>
@@ -574,7 +583,10 @@ export default function UsageRecords({
   useEffect(() => {
     const model = modelFilter.trim();
     if (model === filters.model) return;
-    const timer = setTimeout(() => setFilters(previous => ({ ...previous, model })), 300);
+    const timer = setTimeout(
+      () => setFilters((previous) => ({ ...previous, model })),
+      300,
+    );
     return () => clearTimeout(timer);
   }, [modelFilter, filters.model]);
   const [range, setRange] = useState<RecordDateRange>(() =>
@@ -584,10 +596,19 @@ export default function UsageRecords({
     [filtersOpen, setFiltersOpen] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
-  const [pickers, setPickers] = useState({ users: false, accounts: false, api_keys: false });
-  const pickerChanged = useCallback((kind: keyof typeof pickers, open: boolean) => {
-    setPickers(previous => previous[kind] === open ? previous : { ...previous, [kind]: open });
-  }, []);
+  const [pickers, setPickers] = useState({
+    users: false,
+    accounts: false,
+    api_keys: false,
+  });
+  const pickerChanged = useCallback(
+    (kind: keyof typeof pickers, open: boolean) => {
+      setPickers((previous) =>
+        previous[kind] === open ? previous : { ...previous, [kind]: open },
+      );
+    },
+    [],
+  );
   const [visible, setVisible] = useState(document.visibilityState !== "hidden");
   const [focused, setFocused] = useState(!desktop);
   const [scrolled, setScrolled] = useState(false),
@@ -601,16 +622,34 @@ export default function UsageRecords({
     sentinel = useRef<HTMLDivElement>(null),
     menu = useRef<HTMLDetailsElement>(null),
     detailEpoch = useRef(0);
-  const platforms = useMemo(() => sortPriorityPlatforms([...new Set([...preferredPlatforms, ...accounts.map(account => account.platform)])].map(platform => ({ platform }))), [accounts]);
+  const platforms = useMemo(
+    () =>
+      sortPriorityPlatforms(
+        [
+          ...new Set([
+            ...preferredPlatforms,
+            ...accounts.map((account) => account.platform),
+          ]),
+        ].map((platform) => ({ platform })),
+      ),
+    [accounts],
+  );
   const accountOptions = useMemo<RecordOption[]>(
-    () => accounts.map((account) => ({
-      id: account.id, name: account.name, status: account.status, platform: account.platform, deleted: false,
-    })),
+    () =>
+      accounts.map((account) => ({
+        id: account.id,
+        name: account.name,
+        status: account.status,
+        platform: account.platform,
+        deleted: false,
+      })),
     [accounts],
   );
   useEffect(() => {
     if (!online) return;
-    const current = new Set(accountOptions.map((account) => String(account.id)));
+    const current = new Set(
+      accountOptions.map((account) => String(account.id)),
+    );
     const clearRemoved = (value: typeof defaultFilters) =>
       value.account && !current.has(value.account)
         ? { ...value, account: "" }
@@ -672,7 +711,12 @@ export default function UsageRecords({
     return p.toString();
   }, [filters, range]);
   const active = online && foreground && visible && focused;
-  const overlayOpen = selected !== null || filtersOpen || columnsOpen || dateOpen || Object.values(pickers).some(Boolean);
+  const overlayOpen =
+    selected !== null ||
+    filtersOpen ||
+    columnsOpen ||
+    dateOpen ||
+    Object.values(pickers).some(Boolean);
   const paginationActive = active && !overlayOpen;
   const feed = useRecordFeed(
     query,
@@ -681,16 +725,39 @@ export default function UsageRecords({
     paginationActive,
   );
   useEffect(() => {
-    const target = sentinel.current, root = scroll.current;
-    if (!paginationActive || !feed.cursor || feed.loading || feed.pageError || !target || !root ||
-        typeof IntersectionObserver === "undefined") return;
+    const target = sentinel.current,
+      root = scroll.current;
+    if (
+      !paginationActive ||
+      !feed.cursor ||
+      feed.loading ||
+      feed.pageError ||
+      !target ||
+      !root ||
+      typeof IntersectionObserver === "undefined"
+    )
+      return;
     let live = true;
-    const observer = new IntersectionObserver(entries => {
-      if (live && entries.some(entry => entry.isIntersecting)) void feed.more();
-    }, { root, rootMargin: "0px 0px 200px 0px" });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (live && entries.some((entry) => entry.isIntersecting))
+          void feed.more();
+      },
+      { root, rootMargin: "0px 0px 200px 0px" },
+    );
     observer.observe(target);
-    return () => { live = false; observer.disconnect(); };
-  }, [paginationActive, feed.cursor, feed.loading, feed.pageError, feed.more, feed.items.length]);
+    return () => {
+      live = false;
+      observer.disconnect();
+    };
+  }, [
+    paginationActive,
+    feed.cursor,
+    feed.loading,
+    feed.pageError,
+    feed.more,
+    feed.items.length,
+  ]);
   useEffect(() => {
     if (!active || !range.preset) return;
     const checkDate = () => {
@@ -711,7 +778,8 @@ export default function UsageRecords({
     const scheduleMidnight = () => {
       const bjOffsetMs = 8 * 3_600_000;
       const dayMs = 86_400_000;
-      const elapsedInDay = (((Date.now() + bjOffsetMs) % dayMs) + dayMs) % dayMs;
+      const elapsedInDay =
+        (((Date.now() + bjOffsetMs) % dayMs) + dayMs) % dayMs;
       const delay = Math.max(1, dayMs - elapsedInDay);
       timer = setTimeout(() => {
         checkDate();
@@ -841,7 +909,10 @@ export default function UsageRecords({
               onSubmit={(e) => {
                 e.preventDefault();
                 setFilterError("");
-                setFilters(previous => ({ ...previous, model: modelFilter.trim() }));
+                setFilters((previous) => ({
+                  ...previous,
+                  model: modelFilter.trim(),
+                }));
               }}
             >
               {mobile && (
@@ -857,28 +928,63 @@ export default function UsageRecords({
                   </button>
                 </header>
               )}
-              <div className="records-platform-select"><select aria-label="记录平台" value={filters.platform} onChange={e => {
-                const platform = e.target.value;
-                setFilters(previous => {
-                  const selected = accounts.find(account => String(account.id) === previous.account);
-                  return { ...previous, platform, account: platform && selected?.platform !== platform ? "" : previous.account };
-                });
-              }}><option value="">全部平台</option>{platforms.map(({ platform }) => <option key={platform} value={platform}>{priorityPlatformName(platform)}</option>)}</select><ChevronDown size={16} aria-hidden="true"/></div>
+              <div className="records-platform-select">
+                <select
+                  aria-label="记录平台"
+                  value={filters.platform}
+                  onChange={(e) => {
+                    const platform = e.target.value;
+                    setFilters((previous) => {
+                      const selected = accounts.find(
+                        (account) => String(account.id) === previous.account,
+                      );
+                      return {
+                        ...previous,
+                        platform,
+                        account:
+                          platform && selected?.platform !== platform
+                            ? ""
+                            : previous.account,
+                      };
+                    });
+                  }}
+                >
+                  <option value="">全部平台</option>
+                  {platforms.map(({ platform }) => (
+                    <option key={platform} value={platform}>
+                      {priorityPlatformName(platform)}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={16} aria-hidden="true" />
+              </div>
               <RecordFilter
                 kind="users"
                 onOpenChange={pickerChanged}
                 active={active}
                 value={filters.user}
-                onChange={(user) => setFilters(previous => ({ ...previous, user, key: null }))}
+                onChange={(user) =>
+                  setFilters((previous) => ({ ...previous, user, key: null }))
+                }
               />
               <RecordFilter
                 kind="accounts"
                 onOpenChange={pickerChanged}
                 active={active}
-                value={accountOptions.find((account) => String(account.id) === filters.account) ?? null}
-                options={accountOptions.filter(option => !filters.platform || option.platform === filters.platform)}
+                value={
+                  accountOptions.find(
+                    (account) => String(account.id) === filters.account,
+                  ) ?? null
+                }
+                options={accountOptions.filter(
+                  (option) =>
+                    !filters.platform || option.platform === filters.platform,
+                )}
                 onChange={(account) =>
-                  setFilters(previous => ({ ...previous, account: account ? String(account.id) : "" }))
+                  setFilters((previous) => ({
+                    ...previous,
+                    account: account ? String(account.id) : "",
+                  }))
                 }
               />
               <RecordFilter
@@ -887,7 +993,9 @@ export default function UsageRecords({
                 active={active}
                 value={filters.key}
                 userId={filters.user?.id}
-                onChange={(key) => setFilters(previous => ({ ...previous, key }))}
+                onChange={(key) =>
+                  setFilters((previous) => ({ ...previous, key }))
+                }
               />
               <input
                 className="records-model-filter"
@@ -896,14 +1004,26 @@ export default function UsageRecords({
                 maxLength={200}
                 value={modelFilter}
                 onChange={(e) => setModelFilter(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); setFilterError(""); setFilters(previous => ({ ...previous, model: modelFilter.trim() })); } }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    setFilterError("");
+                    setFilters((previous) => ({
+                      ...previous,
+                      model: modelFilter.trim(),
+                    }));
+                  }
+                }}
               />
               <label className="records-mismatch-filter">
                 <input
                   type="checkbox"
                   checked={filters.mismatch}
                   onChange={(e) =>
-                    setFilters(previous => ({ ...previous, mismatch: e.target.checked }))
+                    setFilters((previous) => ({
+                      ...previous,
+                      mismatch: e.target.checked,
+                    }))
                   }
                 />
                 返回差异
@@ -1036,13 +1156,21 @@ export default function UsageRecords({
             <thead>
               <tr>
                 <th className="record-user">用户</th>
-                {shown.filter(([key]) => key === "api_key").map(([key, label]) => <th key={key} className={`record-col-${key}`}>{label}</th>)}
+                {shown
+                  .filter(([key]) => key === "api_key")
+                  .map(([key, label]) => (
+                    <th key={key} className={`record-col-${key}`}>
+                      {label}
+                    </th>
+                  ))}
                 <th className="record-time">时间</th>
-                {shown.filter(([key]) => key !== "api_key").map(([key, label]) => (
-                  <th key={key} className={`record-col-${key}`}>
-                    {label}
-                  </th>
-                ))}
+                {shown
+                  .filter(([key]) => key !== "api_key")
+                  .map(([key, label]) => (
+                    <th key={key} className={`record-col-${key}`}>
+                      {label}
+                    </th>
+                  ))}
               </tr>
             </thead>
             <tbody>
@@ -1068,11 +1196,23 @@ export default function UsageRecords({
           </div>
         )}
         <div ref={sentinel} className="records-pagination" aria-live="polite">
-          {feed.pageError ? <>
-            <span role="alert">{feed.pageError}</span>
-            <button disabled={!paginationActive || feed.loading} onClick={() => void feed.retryMore()}>重试加载</button>
-          </> : feed.cursor ? (feed.loading ? "正在读取…" : null)
-            : feed.items.length > 0 && !feed.loading ? "已全部加载" : null}
+          {feed.pageError ? (
+            <>
+              <span role="alert">{feed.pageError}</span>
+              <button
+                disabled={!paginationActive || feed.loading}
+                onClick={() => void feed.retryMore()}
+              >
+                重试加载
+              </button>
+            </>
+          ) : feed.cursor ? (
+            feed.loading ? (
+              "正在读取…"
+            ) : null
+          ) : feed.items.length > 0 && !feed.loading ? (
+            "已全部加载"
+          ) : null}
         </div>
       </div>
       {selected !== null && (

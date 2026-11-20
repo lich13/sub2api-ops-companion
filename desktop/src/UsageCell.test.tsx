@@ -142,38 +142,43 @@ describe("Sub2API usage cell", () => {
         report={vi.fn()}
       />,
     );
-    expect(html).toContain('<details class="auto-reset-status"><summary>等待额度恢复时间</summary>');
+    expect(html).toContain(
+      '<details class="auto-reset-status"><summary>等待额度恢复时间</summary>',
+    );
     expect(html).toContain("下次 10-01 00:05:02");
     expect(html).toContain("已尝试 2 次");
     expect(api).not.toHaveBeenCalled();
   });
 
-  it.each(["recovered", "cancelled"])("does not keep a terminal recovery monitor status visible (%s)", (status) => {
-    const html = renderToStaticMarkup(
-      <UsageCell
-        account={
-          {
-            id: 1,
-            operation_versions: {},
-            usage_windows: [],
-            recovery_monitor: {
-              status,
-              label: "恢复已结束",
-              reason: "",
-              next_at: "2026-09-30T16:05:02Z",
-            },
-          } as unknown as Account
-        }
-        online
-        refresh={async () => {}}
-        report={vi.fn()}
-      />,
-    );
-    expect(html).not.toContain("auto-reset-status");
-    expect(html).not.toContain("恢复已结束");
-    expect(html).not.toContain("下次");
-    expect(api).not.toHaveBeenCalled();
-  });
+  it.each(["recovered", "cancelled"])(
+    "does not keep a terminal recovery monitor status visible (%s)",
+    (status) => {
+      const html = renderToStaticMarkup(
+        <UsageCell
+          account={
+            {
+              id: 1,
+              operation_versions: {},
+              usage_windows: [],
+              recovery_monitor: {
+                status,
+                label: "恢复已结束",
+                reason: "",
+                next_at: "2026-09-30T16:05:02Z",
+              },
+            } as unknown as Account
+          }
+          online
+          refresh={async () => {}}
+          report={vi.fn()}
+        />,
+      );
+      expect(html).not.toContain("auto-reset-status");
+      expect(html).not.toContain("恢复已结束");
+      expect(html).not.toContain("下次");
+      expect(api).not.toHaveBeenCalled();
+    },
+  );
 
   it("keeps failure and retry information in a closed disclosure with Beijing timestamps", () => {
     const html = renderToStaticMarkup(
@@ -216,53 +221,80 @@ describe("Sub2API usage cell", () => {
     ["manual", "已转人工"],
     ["recovered", "已恢复"],
     ["closed", "已关闭"],
-  ])("hides obsolete %s recovery status even when the snapshot retains timestamps and an error", (stage, label) => {
-    const html = renderToStaticMarkup(
+  ])(
+    "hides obsolete %s recovery status even when the snapshot retains timestamps and an error",
+    (stage, label) => {
+      const html = renderToStaticMarkup(
+        <UsageCell
+          account={
+            {
+              id: 1,
+              operation_versions: {},
+              usage_windows: [],
+              auto_reset_credit: {
+                stage,
+                label,
+                error: "旧任务错误",
+                next_at: "2026-09-30T16:00:00Z",
+                attempt_at: "2026-09-30T15:00:00Z",
+                test_completed_at: "2026-09-30T15:00:10Z",
+                recovered_at: "2026-09-30T15:00:20Z",
+              },
+            } as unknown as Account
+          }
+          online={false}
+          refresh={async () => {}}
+          report={vi.fn()}
+        />,
+      );
+      expect(html).not.toContain("auto-reset-status");
+      expect(html).not.toContain(label);
+      expect(html).not.toContain("旧任务错误");
+      expect(html).not.toContain("用卡");
+      expect(html).not.toContain("测活");
+      expect(html).not.toContain("恢复");
+      expect(html).not.toContain('role="status"');
+      expect(html).not.toContain("下次");
+      expect(html).not.toContain("暂无记录");
+      expect(api).not.toHaveBeenCalled();
+    },
+  );
+});
+
+it("shows actual OAuth duration and distinguishes failed statistics from zero usage", () => {
+  const usage = {
+    branch: "openai_oauth",
+    actions: [],
+    today: null,
+    windows: [
+      {
+        key: "codex_7d",
+        label: "30d",
+        window_minutes: 43200,
+        used_percent: 32,
+        reset_at: null,
+        observed_at: null,
+        status: "known",
+        source: "passive",
+        stats: { requests: 0, tokens: 0, cost: 0, user_cost: 0 },
+      },
+    ],
+  };
+  const render = (stats_status?: "ok" | "error") =>
+    renderToStaticMarkup(
       <UsageCell
         account={
           {
             id: 1,
             operation_versions: {},
-            usage_windows: [],
-            auto_reset_credit: {
-              stage,
-              label,
-              error: "旧任务错误",
-              next_at: "2026-09-30T16:00:00Z",
-              attempt_at: "2026-09-30T15:00:00Z",
-              test_completed_at: "2026-09-30T15:00:10Z",
-              recovered_at: "2026-09-30T15:00:20Z",
-            },
+            usage: { ...usage, stats_status },
           } as unknown as Account
         }
-        online={false}
+        online
         refresh={async () => {}}
-        report={vi.fn()}
+        report={() => {}}
       />,
     );
-    expect(html).not.toContain("auto-reset-status");
-    expect(html).not.toContain(label);
-    expect(html).not.toContain("旧任务错误");
-    expect(html).not.toContain("用卡");
-    expect(html).not.toContain("测活");
-    expect(html).not.toContain("恢复");
-    expect(html).not.toContain('role="status"');
-    expect(html).not.toContain("下次");
-    expect(html).not.toContain("暂无记录");
-    expect(api).not.toHaveBeenCalled();
-  });
-});
-
-
-it("shows actual OAuth duration and distinguishes failed statistics from zero usage", () => {
-  const usage = { branch: "openai_oauth", actions: [], today: null, windows: [{
-    key: "codex_7d", label: "30d", window_minutes: 43200, used_percent: 32,
-    reset_at: null, observed_at: null, status: "known", source: "passive",
-    stats: { requests: 0, tokens: 0, cost: 0, user_cost: 0 },
-  }] };
-  const render = (stats_status?: "ok" | "error") => renderToStaticMarkup(<UsageCell
-    account={{ id: 1, operation_versions: {}, usage: { ...usage, stats_status } } as unknown as Account}
-    online refresh={async () => {}} report={() => {}} />);
   expect(render("error")).toContain("统计暂不可用，请重试");
   for (const status of [undefined, "ok"] as const) {
     expect(render(status)).toContain("30d");

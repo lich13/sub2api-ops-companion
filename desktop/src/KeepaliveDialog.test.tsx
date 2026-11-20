@@ -52,46 +52,58 @@ const baseKeepalive: AccountKeepalive = {
 let container: HTMLDivElement;
 let root: Root;
 
-function valueFor(id: number, overrides: Partial<AccountKeepalive> = {}): AccountKeepalive {
+function valueFor(
+  id: number,
+  overrides: Partial<AccountKeepalive> = {},
+): AccountKeepalive {
   return { ...baseKeepalive, account_id: id, ...overrides };
 }
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason: Error) => void;
-  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
   return { promise, resolve, reject };
 }
 
 function button(text: string) {
-  const result = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (node) => node.textContent?.includes(text),
-  );
+  const result = [
+    ...container.querySelectorAll<HTMLButtonElement>("button"),
+  ].find((node) => node.textContent?.includes(text));
   if (!result) throw new Error("missing button: " + text);
   return result;
 }
 
 function detail(label: string) {
-  const term = [...container.querySelectorAll(".detection-meta dt")].find((node) => node.textContent === label);
+  const term = [...container.querySelectorAll(".detection-meta dt")].find(
+    (node) => node.textContent === label,
+  );
   return term?.nextElementSibling?.textContent;
 }
 
-async function mount(options: {
-  online?: boolean;
-  connectionKey?: string;
-  account?: Account;
-  close?: () => void;
-  report?: (error: unknown) => void;
-} = {}) {
-  await act(async () => root.render(
-    <KeepaliveDialog
-      account={options.account ?? account}
-      online={options.online ?? true}
-      connectionKey={options.connectionKey ?? "fixture-connection"}
-      close={options.close ?? (() => {})}
-      report={options.report ?? (() => {})}
-    />,
-  ));
+async function mount(
+  options: {
+    online?: boolean;
+    connectionKey?: string;
+    account?: Account;
+    close?: () => void;
+    report?: (error: unknown) => void;
+  } = {},
+) {
+  await act(async () =>
+    root.render(
+      <KeepaliveDialog
+        account={options.account ?? account}
+        online={options.online ?? true}
+        connectionKey={options.connectionKey ?? "fixture-connection"}
+        close={options.close ?? (() => {})}
+        report={options.report ?? (() => {})}
+      />,
+    ),
+  );
   await act(async () => {
     await Promise.resolve();
     await Promise.resolve();
@@ -103,7 +115,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.mocked(command).mockResolvedValue(undefined as never);
   vi.mocked(api).mockImplementation(async (method, path) => {
-    if (method === "GET" && path === "/accounts/42/keepalive") return baseKeepalive as never;
+    if (method === "GET" && path === "/accounts/42/keepalive")
+      return baseKeepalive as never;
     throw new Error("unexpected " + method + " " + path);
   });
   container = document.createElement("div");
@@ -130,18 +143,27 @@ describe("account keepalive", () => {
     });
     const saved = { ...current, enabled: true, version: "b".repeat(64) };
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/accounts/42/keepalive") return current as never;
-      if (method === "PUT" && path === "/accounts/42/keepalive") return saved as never;
+      if (method === "GET" && path === "/accounts/42/keepalive")
+        return current as never;
+      if (method === "PUT" && path === "/accounts/42/keepalive")
+        return saved as never;
       throw new Error("unexpected " + method + " " + path);
     });
-    const close = vi.fn(), report = vi.fn();
-    vi.mocked(command).mockRejectedValueOnce(new Error("fixture refresh failure"));
-    await mount({close, report});
+    const close = vi.fn(),
+      report = vi.fn();
+    vi.mocked(command).mockRejectedValueOnce(
+      new Error("fixture refresh failure"),
+    );
+    await mount({ close, report });
 
     expect(detail("状态")).toBe("已暂停");
     expect(detail("原因")).toBe("账号暂时不可调度");
     expect(container.textContent).toContain("2/5 次已确认恢复");
-    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+        .click(),
+    );
     await act(async () => button("保存").click());
 
     expect(api).toHaveBeenCalledWith("PUT", "/accounts/42/keepalive", {
@@ -151,7 +173,10 @@ describe("account keepalive", () => {
     expect(command).toHaveBeenCalledWith("refresh");
     expect(close).toHaveBeenCalledOnce();
     expect(report).toHaveBeenCalled();
-    expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true);
+    expect(
+      container.querySelector<HTMLInputElement>('input[type="checkbox"]')
+        ?.checked,
+    ).toBe(true);
   });
 
   it.each([
@@ -181,7 +206,9 @@ describe("account keepalive", () => {
     vi.mocked(api).mockResolvedValueOnce(valueFor(42, overrides) as never);
     await mount();
 
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("保活设置响应无效");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "保活设置响应无效",
+    );
   });
 
   it("does not read or enable controls while offline", async () => {
@@ -206,15 +233,25 @@ describe("account keepalive", () => {
     });
     let reads = 0;
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/accounts/42/keepalive") return (reads++ === 0 ? baseKeepalive : polled) as never;
+      if (method === "GET" && path === "/accounts/42/keepalive")
+        return (reads++ === 0 ? baseKeepalive : polled) as never;
       throw new Error("unexpected " + method + " " + path);
     });
     await mount();
-    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+        .click(),
+    );
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
 
-    expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true);
+    expect(
+      container.querySelector<HTMLInputElement>('input[type="checkbox"]')
+        ?.checked,
+    ).toBe(true);
     expect(detail("状态")).toBe("恢复中");
     expect(detail("原因")).toBe("正在恢复");
     expect(container.textContent).toContain("1/5 次已确认恢复");
@@ -223,41 +260,71 @@ describe("account keepalive", () => {
   it("sends at most one save while the first write is pending", async () => {
     const pending = deferred<AccountKeepalive>();
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/accounts/42/keepalive") return baseKeepalive as never;
-      if (method === "PUT" && path === "/accounts/42/keepalive") return pending.promise as never;
+      if (method === "GET" && path === "/accounts/42/keepalive")
+        return baseKeepalive as never;
+      if (method === "PUT" && path === "/accounts/42/keepalive")
+        return pending.promise as never;
       throw new Error("unexpected " + method + " " + path);
     });
     await mount();
-    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+        .click(),
+    );
     await act(async () => button("保存").click());
     await act(async () => button("保存").click());
 
     expect(button("保存").disabled).toBe(true);
-    expect(vi.mocked(api).mock.calls.filter(([method]) => method === "PUT")).toHaveLength(1);
-    await act(async () => pending.resolve({ ...baseKeepalive, enabled: true, version: "b".repeat(64) }));
+    expect(
+      vi.mocked(api).mock.calls.filter(([method]) => method === "PUT"),
+    ).toHaveLength(1);
+    await act(async () =>
+      pending.resolve({
+        ...baseKeepalive,
+        enabled: true,
+        version: "b".repeat(64),
+      }),
+    );
   });
 
   it("lets a 409 be followed by a fresh read of the server value", async () => {
     const conflict = new Error("HTTP 409 冲突");
-    const refreshed = valueFor(42, { enabled: true, status: "waiting", generation: 2, version: "b".repeat(64) });
-    const report = vi.fn(), close = vi.fn();
+    const refreshed = valueFor(42, {
+      enabled: true,
+      status: "waiting",
+      generation: 2,
+      version: "b".repeat(64),
+    });
+    const report = vi.fn(),
+      close = vi.fn();
     let reads = 0;
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/accounts/42/keepalive") return (reads++ === 0 ? baseKeepalive : refreshed) as never;
+      if (method === "GET" && path === "/accounts/42/keepalive")
+        return (reads++ === 0 ? baseKeepalive : refreshed) as never;
       if (method === "PUT" && path === "/accounts/42/keepalive") throw conflict;
       throw new Error("unexpected " + method + " " + path);
     });
     await mount({ report, close });
-    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+        .click(),
+    );
     await act(async () => button("保存").click());
     expect(close).not.toHaveBeenCalled();
 
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("409");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "409",
+    );
     expect(report).toHaveBeenCalledWith(conflict);
     await act(async () => button("重新读取").click());
 
     expect(reads).toBe(2);
-    expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true);
+    expect(
+      container.querySelector<HTMLInputElement>('input[type="checkbox"]')
+        ?.checked,
+    ).toBe(true);
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
@@ -271,30 +338,66 @@ describe("account keepalive", () => {
 
   it("ignores reads from the previous connection and account", async () => {
     const stale = deferred<AccountKeepalive>();
-    const nextConnection = valueFor(42, { status: "waiting", reason: "新连接数据" });
-    const nextAccount = valueFor(43, { status: "paused", reason: "新账号数据" });
+    const nextConnection = valueFor(42, {
+      status: "waiting",
+      reason: "新连接数据",
+    });
+    const nextAccount = valueFor(43, {
+      status: "paused",
+      reason: "新账号数据",
+    });
     let account42Reads = 0;
     vi.mocked(api).mockImplementation(async (method, path) => {
       if (method === "GET" && path === "/accounts/42/keepalive") {
-        return (account42Reads++ === 0 ? stale.promise : nextConnection) as never;
+        return (
+          account42Reads++ === 0 ? stale.promise : nextConnection
+        ) as never;
       }
-      if (method === "GET" && path === "/accounts/43/keepalive") return nextAccount as never;
+      if (method === "GET" && path === "/accounts/43/keepalive")
+        return nextAccount as never;
       throw new Error("unexpected " + method + " " + path);
     });
-    const close = vi.fn(), report = vi.fn();
+    const close = vi.fn(),
+      report = vi.fn();
     await mount({ connectionKey: "first", close, report });
 
-    await act(async () => root.render(
-      <KeepaliveDialog account={account} online connectionKey="second" close={close} report={report}/>,
-    ));
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-    await act(async () => root.render(
-      <KeepaliveDialog account={{ ...account, id: 43, name: "新账号" }} online connectionKey="second" close={close} report={report}/>,
-    ));
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-    await act(async () => stale.resolve(valueFor(42, { status: "running", reason: "旧连接数据" })));
+    await act(async () =>
+      root.render(
+        <KeepaliveDialog
+          account={account}
+          online
+          connectionKey="second"
+          close={close}
+          report={report}
+        />,
+      ),
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () =>
+      root.render(
+        <KeepaliveDialog
+          account={{ ...account, id: 43, name: "新账号" }}
+          online
+          connectionKey="second"
+          close={close}
+          report={report}
+        />,
+      ),
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () =>
+      stale.resolve(valueFor(42, { status: "running", reason: "旧连接数据" })),
+    );
 
-    expect(container.querySelector('[role="dialog"]')?.textContent).toContain("新账号 #43");
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+      "新账号 #43",
+    );
     expect(detail("状态")).toBe("已暂停");
     expect(detail("原因")).toBe("新账号数据");
     expect(container.textContent).not.toContain("旧连接数据");
@@ -303,19 +406,33 @@ describe("account keepalive", () => {
   it("ignores a save failure that arrives after the dialog closes", async () => {
     const pending = deferred<AccountKeepalive>();
     const failure = new Error("late save failure");
-    const close = vi.fn(), report = vi.fn();
+    const close = vi.fn(),
+      report = vi.fn();
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/accounts/42/keepalive") return baseKeepalive as never;
-      if (method === "PUT" && path === "/accounts/42/keepalive") return pending.promise as never;
+      if (method === "GET" && path === "/accounts/42/keepalive")
+        return baseKeepalive as never;
+      if (method === "PUT" && path === "/accounts/42/keepalive")
+        return pending.promise as never;
       throw new Error("unexpected " + method + " " + path);
     });
     await mount({ close, report });
-    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+        .click(),
+    );
     await act(async () => button("保存").click());
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="关闭账号保活"]')!.click());
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="关闭账号保活"]')!
+        .click(),
+    );
     expect(close).toHaveBeenCalledOnce();
     await act(async () => root.render(null));
-    await act(async () => { pending.reject(failure); await Promise.resolve(); });
+    await act(async () => {
+      pending.reject(failure);
+      await Promise.resolve();
+    });
 
     expect(report).not.toHaveBeenCalled();
     expect(command).not.toHaveBeenCalledWith("refresh");

@@ -1,14 +1,44 @@
-export type DegradationMark = { marked?: boolean; marked_at?: string | null; version?: string; error?: string };
+export type DegradationMark = {
+  marked?: boolean;
+  marked_at?: string | null;
+  version?: string;
+  error?: string;
+};
 export type AccountKeepalive = {
-  account_id: number; enabled: boolean; generation: number; version: string;
-  status: string; reason: string; paused_reason: string;
-  last_restore_at: string | null; restore_count: number; budget_used: number;
+  account_id: number;
+  enabled: boolean;
+  generation: number;
+  version: string;
+  status: string;
+  reason: string;
+  paused_reason: string;
+  last_restore_at: string | null;
+  restore_count: number;
+  budget_used: number;
   next_allowed_at: string | null;
 };
 export type Account = {
   degradation_mark?: DegradationMark;
   recovery_selectable?: boolean;
-  model_detection?: { schedule_mode?: "fixed" | "smart"; min_interval_minutes?: number; effective_interval_minutes?: number | null; recent_request_count?: number | null; last_automatic_started_at?: string | null; enabled: boolean; interval_minutes: number; model_id: string; version: string; next_at?: string | null; status: string; reason?: string; last_result?: { status?: string; report?: { prediction_name?: string }; completed_at?: string } | null };
+  model_detection?: {
+    schedule_mode?: "fixed" | "smart";
+    min_interval_minutes?: number;
+    effective_interval_minutes?: number | null;
+    recent_request_count?: number | null;
+    last_automatic_started_at?: string | null;
+    enabled: boolean;
+    interval_minutes: number;
+    model_id: string;
+    version: string;
+    next_at?: string | null;
+    status: string;
+    reason?: string;
+    last_result?: {
+      status?: string;
+      report?: { prediction_name?: string };
+      completed_at?: string;
+    } | null;
+  };
   id: number;
   parent_account_id?: number | null;
   name: string;
@@ -36,7 +66,14 @@ export type Account = {
   success_after_error: boolean;
   usage_windows: UsageWindow[];
   usage?: UsageSummary;
-  recovery_monitor?: { status: string; label: string; reason: string; next_at?: string | null; attempt_count?: number; next_retry_at?: string | null } | null;
+  recovery_monitor?: {
+    status: string;
+    label: string;
+    reason: string;
+    next_at?: string | null;
+    attempt_count?: number;
+    next_retry_at?: string | null;
+  } | null;
   auto_reset_credit?: {
     trigger_at?: string | null;
     consume_deadline_at?: string | null;
@@ -57,10 +94,7 @@ export type Account = {
   } | null;
 };
 export type UsageAction =
-  | "query_usage"
-  | "query_reset_credits"
-  | "reset_quota"
-  | "probe_quota";
+  "query_usage" | "query_reset_credits" | "reset_quota" | "probe_quota";
 export type UsageStats = {
   requests: number;
   tokens: number;
@@ -68,24 +102,60 @@ export type UsageStats = {
   standard_cost: number;
   user_cost: number;
 };
-export type QuotaPlan = { name: string; remaining: number | null; used: number | null; total: number | null; unit: string; unlimited: boolean; reset_at: string | null };
+export type QuotaPlan = {
+  name: string;
+  remaining: number | null;
+  used: number | null;
+  total: number | null;
+  unit: string;
+  unlimited: boolean;
+  reset_at: string | null;
+};
 export type KeyQuota = {
-  state: "idle" | "loading" | "ok" | "error" | "unsupported"; source: "sub2api" | "newapi" | null;
-  checked_at: number | null; success_at: number | null; retry_at: number | null; next_refresh_at: number | null;
-  stale: boolean; error: string | null; key_status: string | null; plans: QuotaPlan[];
-  subscriptions: { name: string | null; status: string | null; active: boolean | null; expires_at: string | null; plans: QuotaPlan[] }[];
-  expires_at: string | null; expires_at_unix: number | null;
-  today: { requests: number | null; tokens: number | null; cost: number | null } | null;
-  total_usage: { requests: number | null; tokens: number | null; cost: number | null } | null;
+  state: "idle" | "loading" | "ok" | "error" | "unsupported";
+  source: "sub2api" | "newapi" | null;
+  checked_at: number | null;
+  success_at: number | null;
+  retry_at: number | null;
+  next_refresh_at: number | null;
+  stale: boolean;
+  error: string | null;
+  key_status: string | null;
+  plans: QuotaPlan[];
+  subscriptions: {
+    name: string | null;
+    status: string | null;
+    active: boolean | null;
+    expires_at: string | null;
+    plans: QuotaPlan[];
+  }[];
+  expires_at: string | null;
+  expires_at_unix: number | null;
+  today: {
+    requests: number | null;
+    tokens: number | null;
+    cost: number | null;
+  } | null;
+  total_usage: {
+    requests: number | null;
+    tokens: number | null;
+    cost: number | null;
+  } | null;
 };
 export type UsageSummary = {
   stats_status?: "ok" | "error";
   key_quota?: KeyQuota;
-  branch: "none" | "apikey" | "openai_oauth" | "grok_free" | "grok_paid" | "native";
+  branch:
+    "none" | "apikey" | "openai_oauth" | "grok_free" | "grok_paid" | "native";
   native_read?: boolean;
   status?: "known" | "unavailable" | "error" | "authorization_required";
   message?: string;
-  balances?: { currency: string; balance: number; observed_at?: string | null; status?: UsageWindow["status"] }[];
+  balances?: {
+    currency: string;
+    balance: number;
+    observed_at?: string | null;
+    status?: UsageWindow["status"];
+  }[];
   windows: UsageWindow[];
   today: UsageStats | null;
   actions: UsageAction[];
@@ -142,17 +212,31 @@ function callTime(value: string | null): number {
 
 export function currentGroups(groups: Group[], accounts: Account[]): Group[] {
   const members = new Map(accounts.map((account) => [account.id, account]));
-  return groups.map((group) => {
-    const ordered = group.recent_accounts.filter((call) =>
-      members.get(call.account_id)?.group_ids.includes(group.id),
-    ).sort((a, b) => callTime(b.called_at) - callTime(a.called_at) || b.log_id - a.log_id);
-    const distinct = new Map<number, RecentAccount>();
-    for (const call of ordered) {
-      if (!distinct.has(call.account_id)) distinct.set(call.account_id, call);
-    }
-    const recent = [...distinct.values()].slice(0, 3);
-    return { ...group, recent_accounts: recent, called_at: recent[0]?.called_at ?? null };
-  }).sort((a, b) => callTime(b.called_at) - callTime(a.called_at) || a.id - b.id);
+  return groups
+    .map((group) => {
+      const ordered = group.recent_accounts
+        .filter((call) =>
+          members.get(call.account_id)?.group_ids.includes(group.id),
+        )
+        .sort(
+          (a, b) =>
+            callTime(b.called_at) - callTime(a.called_at) ||
+            b.log_id - a.log_id,
+        );
+      const distinct = new Map<number, RecentAccount>();
+      for (const call of ordered) {
+        if (!distinct.has(call.account_id)) distinct.set(call.account_id, call);
+      }
+      const recent = [...distinct.values()].slice(0, 3);
+      return {
+        ...group,
+        recent_accounts: recent,
+        called_at: recent[0]?.called_at ?? null,
+      };
+    })
+    .sort(
+      (a, b) => callTime(b.called_at) - callTime(a.called_at) || a.id - b.id,
+    );
 }
 
 export type OpsError = {
@@ -177,7 +261,13 @@ export type OpsError = {
   disposition_notification?: { status: string };
   content?: string;
   content_limited?: boolean;
-  notification?: { status: string; reason?: string; at?: string; attempts?: number; next_at?: string | null };
+  notification?: {
+    status: string;
+    reason?: string;
+    at?: string;
+    attempts?: number;
+    next_at?: string | null;
+  };
 };
 export type Recovery = {
   id: number;
@@ -190,7 +280,11 @@ export type Recovery = {
   kind?: "quota_recovery" | "reset_credit" | "connection_test";
   result_status?: string;
   attempt_count?: number;
-  reset_credit?: { consumed?: boolean; completed_at: string; verification_method: "connection" | "model" };
+  reset_credit?: {
+    consumed?: boolean;
+    completed_at: string;
+    verification_method: "connection" | "model";
+  };
 };
 export type Snapshot = {
   observed_at: string;
@@ -204,7 +298,10 @@ export type SavedConnection = {
   base_url: string;
 };
 export type Preferences = {
-  model_test_preferences?: Record<string, import("./modelTestTypes").ModelTestPreference>;
+  model_test_preferences?: Record<
+    string,
+    import("./modelTestTypes").ModelTestPreference
+  >;
   base_url: string;
   connections?: SavedConnection[];
   pinned: boolean;
@@ -251,7 +348,14 @@ export type ViewState = {
   connected: boolean;
   online: boolean;
   error: string;
-  upstream_connection?: { state: string; endpoint: string; http_status: number | null; message: string; retryable: boolean; checked_at: string | null } | null;
+  upstream_connection?: {
+    state: string;
+    endpoint: string;
+    http_status: number | null;
+    message: string;
+    retryable: boolean;
+    checked_at: string | null;
+  } | null;
   snapshot: Snapshot | null;
   preferences: Preferences;
 };
@@ -339,19 +443,24 @@ export function filterAccounts(
         (status === "ready"
           ? a.available
           : status === "error"
-              ? !!a.last_error_id
-              : !a.schedulable)),
+            ? !!a.last_error_id
+            : !a.schedulable)),
   );
 }
 
-export function sortRecentCall(accounts: Account[], ascending = false): Account[] {
+export function sortRecentCall(
+  accounts: Account[],
+  ascending = false,
+): Account[] {
   const timestamp = (account: Account) => {
     const recent = callTime(account.last_called_at ?? null);
     return Number.isFinite(recent) ? recent : callTime(account.last_success_at);
   };
   return [...accounts].sort((a, b) => {
-    const left = timestamp(a), right = timestamp(b);
-    if (!Number.isFinite(left)) return !Number.isFinite(right) ? b.id - a.id : 1;
+    const left = timestamp(a),
+      right = timestamp(b);
+    if (!Number.isFinite(left))
+      return !Number.isFinite(right) ? b.id - a.id : 1;
     if (!Number.isFinite(right)) return -1;
     return (ascending ? 1 : -1) * (left - right) || b.id - a.id;
   });

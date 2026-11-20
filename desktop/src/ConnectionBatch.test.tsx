@@ -4,7 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConnectionBatchResults, useConnectionBatch } from "./ConnectionBatch";
 import { api, command } from "./bridge";
-import { bindOperationConnection, setOperations, type Operation, type OperationBatch } from "./accountOperations";
+import {
+  bindOperationConnection,
+  setOperations,
+  type Operation,
+  type OperationBatch,
+} from "./accountOperations";
 import type { Account } from "./types";
 
 vi.mock("./bridge", () => ({ api: vi.fn(), command: vi.fn() }));
@@ -51,7 +56,9 @@ function batch(batchId: string, items: Operation[]): OperationBatch {
   return {
     batch_id: batchId,
     items: items.map((item) => ({ ...item, batch_id: batchId })),
-    pending: items.filter((item) => ["queued", "running", "checking"].includes(item.status)).length,
+    pending: items.filter((item) =>
+      ["queued", "running", "checking"].includes(item.status),
+    ).length,
   };
 }
 
@@ -73,7 +80,9 @@ function completed(id: number, overrides: Partial<Operation> = {}): Operation {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
 
@@ -92,16 +101,29 @@ function Harness({
   online = true,
   active = true,
 }: HarnessProps) {
-  const control = useConnectionBatch({ connectionKey, storageKey, online, active });
-  return <>
-    <button id="connection-batch-start" data-testid="start" onClick={() => void control.start(accounts)}>提交所选账号</button>
-    <output data-testid="batch-id">{control.batch?.batch_id ?? ""}</output>
-    <output data-testid="busy">{String(control.busy)}</output>
-    <output data-testid="starting">{String(control.starting)}</output>
-    <output data-testid="error">{control.error}</output>
-    <div className="account-toolbar" />
-    <ConnectionBatchResults control={control} />
-  </>;
+  const control = useConnectionBatch({
+    connectionKey,
+    storageKey,
+    online,
+    active,
+  });
+  return (
+    <>
+      <button
+        id="connection-batch-start"
+        data-testid="start"
+        onClick={() => void control.start(accounts)}
+      >
+        提交所选账号
+      </button>
+      <output data-testid="batch-id">{control.batch?.batch_id ?? ""}</output>
+      <output data-testid="busy">{String(control.busy)}</output>
+      <output data-testid="starting">{String(control.starting)}</output>
+      <output data-testid="error">{control.error}</output>
+      <div className="account-toolbar" />
+      <ConnectionBatchResults control={control} />
+    </>
+  );
 }
 
 let container: HTMLDivElement;
@@ -117,16 +139,27 @@ function output(name: "batch-id" | "busy" | "starting" | "error") {
 }
 
 function resultRow(name: string): Element {
-  const row = [...container.querySelectorAll("tbody tr, article, [role='row']")]
-    .find((node) => node.textContent?.includes(name));
+  const row = [
+    ...container.querySelectorAll("tbody tr, article, [role='row']"),
+  ].find((node) => node.textContent?.includes(name));
   if (!row) throw new Error(`missing result row: ${name}`);
   return row;
 }
 
-const submissions = () => vi.mocked(api).mock.calls
-  .filter(([method, path]) => method === "POST" && path === "/account-operations/batch");
-const reads = () => vi.mocked(api).mock.calls
-  .filter(([method, path]) => method === "GET" && path.startsWith("/account-operations?batch_id="));
+const submissions = () =>
+  vi
+    .mocked(api)
+    .mock.calls.filter(
+      ([method, path]) =>
+        method === "POST" && path === "/account-operations/batch",
+    );
+const reads = () =>
+  vi
+    .mocked(api)
+    .mock.calls.filter(
+      ([method, path]) =>
+        method === "GET" && path.startsWith("/account-operations?batch_id="),
+    );
 
 async function flush() {
   await act(async () => {
@@ -147,25 +180,42 @@ async function click(name: "start") {
 }
 
 async function clickResultButton(label: string) {
-  const button = [...container.querySelectorAll<HTMLButtonElement>('section[aria-label="批量测试连接"] button')]
-    .find((node) => node.textContent?.trim() === label);
+  const button = [
+    ...container.querySelectorAll<HTMLButtonElement>(
+      'section[aria-label="批量测试连接"] button',
+    ),
+  ].find((node) => node.textContent?.trim() === label);
   if (!button) throw new Error(`missing result button: ${label}`);
   await act(async () => button.click());
   await flush();
 }
 
 function expectHiddenResult() {
-  expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
-  expect(container.querySelector('section[aria-label="批量测试连接摘要"]')).toBeNull();
+  expect(
+    container.querySelector('section[aria-label="批量测试连接"]'),
+  ).toBeNull();
+  expect(
+    container.querySelector('section[aria-label="批量测试连接摘要"]'),
+  ).toBeNull();
 }
 
-type PersistedState = { batchId?: string; request?: { request_id?: string }; visible?: boolean };
+type PersistedState = {
+  batchId?: string;
+  request?: { request_id?: string };
+  visible?: boolean;
+};
 
 function persistedStates() {
   return Object.keys(localStorage).flatMap((key) => {
     try {
-      const value = JSON.parse(localStorage.getItem(key) ?? "{}") as PersistedState;
-      return value && typeof value === "object" && ("batchId" in value || "request" in value) ? [{ key, value }] : [];
+      const value = JSON.parse(
+        localStorage.getItem(key) ?? "{}",
+      ) as PersistedState;
+      return value &&
+        typeof value === "object" &&
+        ("batchId" in value || "request" in value)
+        ? [{ key, value }]
+        : [];
     } catch {
       return [];
     }
@@ -173,7 +223,9 @@ function persistedStates() {
 }
 
 async function advance(ms = 10_000) {
-  await act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
   await flush();
 }
 
@@ -224,9 +276,14 @@ describe("connection batch tests", () => {
       request_id: expect.any(String),
       client_id: expect.any(String),
     });
-    expect(body).toMatchObject({ request_id: expect.stringMatching(/\S/), client_id: expect.stringMatching(/\S/) });
+    expect(body).toMatchObject({
+      request_id: expect.stringMatching(/\S/),
+      client_id: expect.stringMatching(/\S/),
+    });
 
-    await act(async () => response.resolve(batch("batch-submit", [operation(1), operation(2)])));
+    await act(async () =>
+      response.resolve(batch("batch-submit", [operation(1), operation(2)])),
+    );
     expect(output("batch-id")).toBe("batch-submit");
     expect(output("starting")).toBe("false");
     expect(output("busy")).toBe("true");
@@ -236,18 +293,56 @@ describe("connection batch tests", () => {
 
   it("renders each account, requested and actual models, and only explicit successful results as passing", async () => {
     const mixed = batch("batch-results", [
-      completed(1, { result: { ...completed(1).result, requested_model: "alias-model", actual_model: "provider-model" } }),
-      completed(2, { result: { ...completed(2).result, success: false, error: "上游明确返回测试失败" } }),
+      completed(1, {
+        result: {
+          ...completed(1).result,
+          requested_model: "alias-model",
+          actual_model: "provider-model",
+        },
+      }),
+      completed(2, {
+        result: {
+          ...completed(2).result,
+          success: false,
+          error: "上游明确返回测试失败",
+        },
+      }),
       operation(3, {
         status: "needs_confirmation",
         reason: "连接中断，未收到终态",
-        result: { requested_model: "requested-model", actual_model: "", success: false, uncertain: true, error: "未收到终态" },
+        result: {
+          requested_model: "requested-model",
+          actual_model: "",
+          success: false,
+          uncertain: true,
+          error: "未收到终态",
+        },
       }),
-      completed(4, { requested: { model_id: "" }, result: { ...completed(4).result, requested_model: "", actual_model: "grok-fixture-model" } }),
-      completed(5, { result: { requested_model: "requested-model", actual_model: "unconfirmed-model" } }),
+      completed(4, {
+        requested: { model_id: "" },
+        result: {
+          ...completed(4).result,
+          requested_model: "",
+          actual_model: "grok-fixture-model",
+        },
+      }),
+      completed(5, {
+        result: {
+          requested_model: "requested-model",
+          actual_model: "unconfirmed-model",
+        },
+      }),
     ]);
     vi.mocked(api).mockResolvedValue(mixed as never);
-    await renderHarness({ accounts: [account(1), account(2), account(3), account(4, { platform: "grok" }), account(5)] });
+    await renderHarness({
+      accounts: [
+        account(1),
+        account(2),
+        account(3),
+        account(4, { platform: "grok" }),
+        account(5),
+      ],
+    });
     await click("start");
 
     const passed = resultRow(account(1).name).textContent;
@@ -256,12 +351,16 @@ describe("connection batch tests", () => {
     expect(passed).toContain("provider-model");
     expect(passed).toContain("0.12 s");
     expect(resultRow(account(2).name).textContent).toContain("失败");
-    expect(resultRow(account(2).name).textContent).toContain("上游明确返回测试失败");
+    expect(resultRow(account(2).name).textContent).toContain(
+      "上游明确返回测试失败",
+    );
     expect(resultRow(account(2).name).textContent).not.toContain("通过");
     expect(resultRow(account(3).name).textContent).toMatch(/需确认|待核对/);
     expect(resultRow(account(3).name).textContent).not.toContain("通过");
     expect(resultRow(account(4).name).textContent).toContain("原生默认");
-    expect(resultRow(account(4).name).textContent).toContain("grok-fixture-model");
+    expect(resultRow(account(4).name).textContent).toContain(
+      "grok-fixture-model",
+    );
     expect(resultRow(account(5).name).textContent).not.toContain("通过");
     expect(output("busy")).toBe("false");
   });
@@ -270,15 +369,23 @@ describe("connection batch tests", () => {
     const queued = batch("batch-follow", [operation(1), operation(2)]);
     const done = batch("batch-follow", [completed(1), completed(2)]);
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "POST" && path === "/account-operations/batch") return queued as never;
-      if (method === "GET" && path === "/account-operations?batch_id=batch-follow") return done as never;
+      if (method === "POST" && path === "/account-operations/batch")
+        return queued as never;
+      if (
+        method === "GET" &&
+        path === "/account-operations?batch_id=batch-follow"
+      )
+        return done as never;
       throw new Error(`Unexpected fixture request: ${method} ${path}`);
     });
     await renderHarness({ accounts: [account(1), account(2)] });
     await click("start");
     await advance(1000);
 
-    expect(api).toHaveBeenCalledWith("GET", "/account-operations?batch_id=batch-follow");
+    expect(api).toHaveBeenCalledWith(
+      "GET",
+      "/account-operations?batch_id=batch-follow",
+    );
     expect(resultRow(account(1).name).textContent).toContain("通过");
     expect(resultRow(account(2).name).textContent).toContain("通过");
     expect(output("busy")).toBe("false");
@@ -294,7 +401,11 @@ describe("connection batch tests", () => {
         if (++attempts === 1) throw new Error("请求超时，提交结果未知");
         return batch("batch-retried", [completed(1), completed(2)]) as never;
       }
-      if (method === "GET" && path === "/account-operations?batch_id=batch-retried") return batch("batch-retried", [completed(1), completed(2)]) as never;
+      if (
+        method === "GET" &&
+        path === "/account-operations?batch_id=batch-retried"
+      )
+        return batch("batch-retried", [completed(1), completed(2)]) as never;
       throw new Error(`Unexpected fixture request: ${method} ${path}`);
     });
     await renderHarness({ accounts: [account(1), account(2)] });
@@ -314,13 +425,19 @@ describe("connection batch tests", () => {
 
   it("restores an unconfirmed submission visibly without resubmitting automatically", async () => {
     vi.mocked(api).mockRejectedValue(new Error("fixture timeout"));
-    await renderHarness({ accounts: [account(1, { operation_versions: { test: "a".repeat(64) } })] }); await click("start");
+    await renderHarness({
+      accounts: [account(1, { operation_versions: { test: "a".repeat(64) } })],
+    });
+    await click("start");
     const original = submissions()[0]?.[2];
-    await act(async () => root.unmount()); root = createRoot(container);
+    await act(async () => root.unmount());
+    root = createRoot(container);
     await renderHarness();
     expect(container.textContent).toContain("恢复提交结果");
     expect(submissions()).toHaveLength(1);
-    vi.mocked(api).mockResolvedValue(batch("a".repeat(32), [completed(1)]) as never);
+    vi.mocked(api).mockResolvedValue(
+      batch("a".repeat(32), [completed(1)]) as never,
+    );
     await clickResultButton("恢复提交结果");
     expect(submissions()[1]?.[2]).toEqual(original);
   });
@@ -328,34 +445,49 @@ describe("connection batch tests", () => {
   it("restores saved completed batches silently and preserves the opaque storage key", async () => {
     const savedId = "b".repeat(32);
     vi.mocked(api).mockResolvedValue(batch(savedId, [completed(1)]) as never);
-    await renderHarness(); await click("start");
+    await renderHarness();
+    await click("start");
     const saved = persistedStates()[0];
     expect(saved.key).not.toContain("example.invalid");
     localStorage.setItem(saved.key, JSON.stringify({ batchId: savedId }));
-    await act(async () => root.unmount()); root = createRoot(container);
+    await act(async () => root.unmount());
+    root = createRoot(container);
     await renderHarness();
     expectHiddenResult();
     expect(submissions()).toHaveLength(1);
-    expect(api).toHaveBeenCalledWith("GET", `/account-operations?batch_id=${savedId}`);
+    expect(api).toHaveBeenCalledWith(
+      "GET",
+      `/account-operations?batch_id=${savedId}`,
+    );
   });
 
   it("keeps a manually hidden running batch busy without adding a result entry", async () => {
-    vi.mocked(api).mockResolvedValue(batch("c".repeat(32), [operation(1)]) as never);
-    await renderHarness(); await click("start");
+    vi.mocked(api).mockResolvedValue(
+      batch("c".repeat(32), [operation(1)]) as never,
+    );
+    await renderHarness();
+    await click("start");
     await clickResultButton("关闭结果");
     expectHiddenResult();
     expect(output("busy")).toBe("true");
     expect(document.activeElement).toBe(fixtureButton("start"));
     expect(container.querySelector(".account-toolbar button")).toBeNull();
-    await click("start"); expect(submissions()).toHaveLength(1);
+    await click("start");
+    expect(submissions()).toHaveLength(1);
   });
 
   it("pauses batch polling while inactive and resumes it when active again", async () => {
     let finish = false;
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "POST" && path === "/account-operations/batch") return batch("batch-paused", [operation(1)]) as never;
-      if (method === "GET" && path === "/account-operations?batch_id=batch-paused") {
-        return batch("batch-paused", [finish ? completed(1) : operation(1)]) as never;
+      if (method === "POST" && path === "/account-operations/batch")
+        return batch("batch-paused", [operation(1)]) as never;
+      if (
+        method === "GET" &&
+        path === "/account-operations?batch_id=batch-paused"
+      ) {
+        return batch("batch-paused", [
+          finish ? completed(1) : operation(1),
+        ]) as never;
       }
       throw new Error(`Unexpected fixture request: ${method} ${path}`);
     });
@@ -382,7 +514,11 @@ describe("connection batch tests", () => {
         if (++attempt === 1) return oldResponse.promise as never;
         return batch("batch-new-connection", [completed(2)]) as never;
       }
-      if (method === "GET" && path === "/account-operations?batch_id=batch-new-connection") return batch("batch-new-connection", [completed(2)]) as never;
+      if (
+        method === "GET" &&
+        path === "/account-operations?batch_id=batch-new-connection"
+      )
+        return batch("batch-new-connection", [completed(2)]) as never;
       throw new Error(`Unexpected fixture request: ${method} ${path}`);
     });
     await renderHarness();
@@ -395,26 +531,41 @@ describe("connection batch tests", () => {
     await click("start");
     expect(output("batch-id")).toBe("batch-new-connection");
 
-    await act(async () => oldResponse.resolve(batch("batch-old-connection", [operation(1)])));
+    await act(async () =>
+      oldResponse.resolve(batch("batch-old-connection", [operation(1)])),
+    );
     await advance();
     expect(output("batch-id")).toBe("batch-new-connection");
     expect(container.textContent).not.toContain(account(1).name);
-    expect(reads().some(([, path]) => path.includes("batch-old-connection"))).toBe(false);
+    expect(
+      reads().some(([, path]) => path.includes("batch-old-connection")),
+    ).toBe(false);
     expect(output("error")).toBe("");
   });
 
   it("ignores a delayed polling response after switching connection generations", async () => {
     const oldRead = deferred<OperationBatch>();
     const savedBatchId = "b".repeat(32);
-    const confirmedAfterReconnect = batch(savedBatchId, [operation(1, {
-      status: "needs_confirmation",
-      reason: "重连后需人工核对",
-      result: { success: false, uncertain: true, requested_model: "requested-model", actual_model: "" },
-    })]);
+    const confirmedAfterReconnect = batch(savedBatchId, [
+      operation(1, {
+        status: "needs_confirmation",
+        reason: "重连后需人工核对",
+        result: {
+          success: false,
+          uncertain: true,
+          requested_model: "requested-model",
+          actual_model: "",
+        },
+      }),
+    ]);
     let readCount = 0;
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "POST" && path === "/account-operations/batch") return batch(savedBatchId, [operation(1)]) as never;
-      if (method === "GET" && path === `/account-operations?batch_id=${savedBatchId}`) {
+      if (method === "POST" && path === "/account-operations/batch")
+        return batch(savedBatchId, [operation(1)]) as never;
+      if (
+        method === "GET" &&
+        path === `/account-operations?batch_id=${savedBatchId}`
+      ) {
         if (++readCount === 1) return oldRead.promise as never;
         return confirmedAfterReconnect as never;
       }
@@ -427,9 +578,18 @@ describe("connection batch tests", () => {
     await renderHarness({ connectionKey: "connection-a:2" });
     expect(readCount).toBe(2);
     expectHiddenResult();
-    await act(async () => oldRead.resolve(batch(savedBatchId, [completed(1, {
-      result: { ...completed(1).result, actual_model: "stale-response-model" },
-    })])));
+    await act(async () =>
+      oldRead.resolve(
+        batch(savedBatchId, [
+          completed(1, {
+            result: {
+              ...completed(1).result,
+              actual_model: "stale-response-model",
+            },
+          }),
+        ]),
+      ),
+    );
     await flush();
     expect(output("batch-id")).toBe(savedBatchId);
     expect(submissions()).toHaveLength(1);
@@ -438,24 +598,40 @@ describe("connection batch tests", () => {
   });
 
   it("stops not-started work with one batch cancel request and keeps running results visible", async () => {
-    const initial = batch("batch-cancel", [operation(1), operation(2, { status: "running" })]);
-    const stopped = batch("batch-cancel", [operation(1, { status: "cancelled", reason: "批次已停止" }), operation(2, { status: "running" })]);
+    const initial = batch("batch-cancel", [
+      operation(1),
+      operation(2, { status: "running" }),
+    ]);
+    const stopped = batch("batch-cancel", [
+      operation(1, { status: "cancelled", reason: "批次已停止" }),
+      operation(2, { status: "running" }),
+    ]);
     let cancelled = false;
     vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (method === "POST" && path === "/account-operations/batch") return initial as never;
-      if (method === "POST" && path === "/account-operations/batches/batch-cancel/cancel") {
+      if (method === "POST" && path === "/account-operations/batch")
+        return initial as never;
+      if (
+        method === "POST" &&
+        path === "/account-operations/batches/batch-cancel/cancel"
+      ) {
         expect(body).toEqual({});
         cancelled = true;
         return stopped as never;
       }
-      if (method === "GET" && path === "/account-operations?batch_id=batch-cancel") return (cancelled ? stopped : initial) as never;
+      if (
+        method === "GET" &&
+        path === "/account-operations?batch_id=batch-cancel"
+      )
+        return (cancelled ? stopped : initial) as never;
       throw new Error(`Unexpected fixture request: ${method} ${path}`);
     });
     await renderHarness({ accounts: [account(1), account(2)] });
     await click("start");
     await clickResultButton("停止未开始");
 
-    expect(vi.mocked(api).mock.calls.filter(([, path]) => path.endsWith("/cancel"))).toEqual([
+    expect(
+      vi.mocked(api).mock.calls.filter(([, path]) => path.endsWith("/cancel")),
+    ).toEqual([
       ["POST", "/account-operations/batches/batch-cancel/cancel", {}],
     ]);
     expect(resultRow(account(1).name).textContent).toMatch(/已取消|已停止/);
@@ -474,7 +650,9 @@ describe("connection batch tests", () => {
   });
 
   it("keeps the submitted account list visible when later selection or filtering changes", async () => {
-    vi.mocked(api).mockResolvedValue(batch("batch-snapshot", [operation(1), operation(2)]) as never);
+    vi.mocked(api).mockResolvedValue(
+      batch("batch-snapshot", [operation(1), operation(2)]) as never,
+    );
     await renderHarness({ accounts: [account(1), account(2)] });
     await click("start");
     await renderHarness({ accounts: [account(3)] });
@@ -494,16 +672,24 @@ describe("connection batch tests", () => {
   });
 });
 
-it.each(["completed", "failed", "cancelled", "needs_confirmation", "superseded"])("auto-closes a terminal %s batch at its fixed deadline", async status => {
+it.each([
+  "completed",
+  "failed",
+  "cancelled",
+  "needs_confirmation",
+  "superseded",
+])("auto-closes a terminal %s batch at its fixed deadline", async (status) => {
   const result = batch("b".repeat(32), [completed(1, { status })]);
   vi.mocked(api).mockResolvedValue(result as never);
-  await renderHarness(); await click("start");
+  await renderHarness();
+  await click("start");
   await advance(2999);
-  expect(container.querySelector('.connection-batch')).not.toBeNull();
+  expect(container.querySelector(".connection-batch")).not.toBeNull();
   await advance(1);
   expectHiddenResult();
   expect(persistedStates()[0].value.visible).toBe(false);
-  await renderHarness(); await advance(5000);
+  await renderHarness();
+  await advance(5000);
   expectHiddenResult();
   expect(container.querySelector(".account-toolbar button")).toBeNull();
 });
@@ -511,49 +697,74 @@ it.each(["completed", "failed", "cancelled", "needs_confirmation", "superseded"]
 it("keeps unfinished batches open and clears terminal timers when a new batch starts", async () => {
   let result = batch("c".repeat(32), [operation(1)]);
   vi.mocked(api).mockImplementation(async () => result as never);
-  await renderHarness(); await click("start"); await advance(4000);
-  expect(container.querySelector('.connection-batch')).not.toBeNull();
+  await renderHarness();
+  await click("start");
+  await advance(4000);
+  expect(container.querySelector(".connection-batch")).not.toBeNull();
   result = batch("c".repeat(32), [completed(1)]);
-  await advance(1000); await advance(2000);
+  await advance(1000);
+  await advance(2000);
   result = batch("d".repeat(32), [operation(1)]);
-  await click("start"); await advance(1000);
+  await click("start");
+  await advance(1000);
   expect(output("batch-id")).toBe("d".repeat(32));
-  expect(container.querySelector('.connection-batch')).not.toBeNull();
-  await renderHarness({ connectionKey: "connection-b:1", storageKey: "https://connection-b.example.invalid" });
-  await advance(4000); expectHiddenResult();
+  expect(container.querySelector(".connection-batch")).not.toBeNull();
+  await renderHarness({
+    connectionKey: "connection-b:1",
+    storageKey: "https://connection-b.example.invalid",
+  });
+  await advance(4000);
+  expectHiddenResult();
 });
-
 
 it("keeps an unconfirmed new submission visible when the prior batch completion timer expires", async () => {
   let attempted = false;
   const done = batch("e".repeat(32), [completed(1)]);
   vi.mocked(api).mockImplementation(async (method) => {
-    if (method === "POST" && attempted) throw new Error("fixture submission unknown");
+    if (method === "POST" && attempted)
+      throw new Error("fixture submission unknown");
     if (method === "POST") attempted = true;
     return done as never;
   });
-  await renderHarness(); await click("start"); await advance(2000);
-  await click("start"); await advance(5000);
+  await renderHarness();
+  await click("start");
+  await advance(2000);
+  await click("start");
+  await advance(5000);
   expect(output("busy")).toBe("true");
   expect(output("error")).toBe("fixture submission unknown");
-  expect(container.querySelector('.connection-batch')).not.toBeNull();
-  expect(container.querySelector('.connection-batch [role="status"]')?.textContent).toBe("提交结果待确认");
-  expect(container.querySelectorAll('.connection-batch tbody tr')).toHaveLength(0);
+  expect(container.querySelector(".connection-batch")).not.toBeNull();
+  expect(
+    container.querySelector('.connection-batch [role="status"]')?.textContent,
+  ).toBe("提交结果待确认");
+  expect(container.querySelectorAll(".connection-batch tbody tr")).toHaveLength(
+    0,
+  );
 });
 
- it("does not restart the deadline after losing focus or changing pages", async () => {
-  vi.mocked(api).mockResolvedValue(batch("f".repeat(32), [completed(1)]) as never);
-  await renderHarness(); await click("start"); await advance(2000);
-  await renderHarness({ active: false }); await advance(999);
+it("does not restart the deadline after losing focus or changing pages", async () => {
+  vi.mocked(api).mockResolvedValue(
+    batch("f".repeat(32), [completed(1)]) as never,
+  );
+  await renderHarness();
+  await click("start");
+  await advance(2000);
+  await renderHarness({ active: false });
+  await advance(999);
   expect(container.querySelector(".connection-batch")).not.toBeNull();
-  await advance(1); expectHiddenResult();
-  await renderHarness({ active: true }); expectHiddenResult();
- });
+  await advance(1);
+  expectHiddenResult();
+  await renderHarness({ active: true });
+  expectHiddenResult();
+});
 
- it("hides an expired result immediately on resume even when timers were suspended", async () => {
-  vi.mocked(api).mockResolvedValue(batch("f".repeat(32), [completed(1)]) as never);
-  await renderHarness(); await click("start");
+it("hides an expired result immediately on resume even when timers were suspended", async () => {
+  vi.mocked(api).mockResolvedValue(
+    batch("f".repeat(32), [completed(1)]) as never,
+  );
+  await renderHarness();
+  await click("start");
   vi.setSystemTime(Date.now() + 5000);
   await act(async () => window.dispatchEvent(new Event("focus")));
   expectHiddenResult();
- });
+});

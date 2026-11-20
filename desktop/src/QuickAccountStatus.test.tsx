@@ -58,22 +58,49 @@ afterEach(async () => {
 
 describe("quick account status", () => {
   const restrictions: [string, Partial<Account>, string][] = [
-    ["available without a restriction", { available: true, blockers: [], recoverable: false }, ""],
-    ["current blocker labels", { available: true, blockers: [{ code: "cooldown", label: "上游限流" }], recoverable: true }, "上游限流"],
-    ["recoverable state without a blocker", { available: false, blockers: [], recoverable: true }, "存在可恢复的状态限制"],
-    ["unavailable state without a blocker", { available: false, blockers: [], recoverable: false }, "暂不可调度"],
+    [
+      "available without a restriction",
+      { available: true, blockers: [], recoverable: false },
+      "",
+    ],
+    [
+      "current blocker labels",
+      {
+        available: true,
+        blockers: [{ code: "cooldown", label: "上游限流" }],
+        recoverable: true,
+      },
+      "上游限流",
+    ],
+    [
+      "recoverable state without a blocker",
+      { available: false, blockers: [], recoverable: true },
+      "存在可恢复的状态限制",
+    ],
+    [
+      "unavailable state without a blocker",
+      { available: false, blockers: [], recoverable: false },
+      "暂不可调度",
+    ],
   ];
-  it.each(restrictions)("uses %s to describe the current restriction", (_label, overrides, reason) => {
-    const current = account(overrides);
-    expect(accountRestriction(current)).toBe(reason);
-    const icon = document.createElement("div");
-    const iconRoot = createRoot(icon);
-    act(() => iconRoot.render(<QuickRestriction reason={accountRestriction(current)} />));
-    expect(icon.querySelector('[role="img"]')?.getAttribute("aria-label") ?? "").toBe(
-      reason ? `调度受限：${reason}` : "",
-    );
-    act(() => iconRoot.unmount());
-  });
+  it.each(restrictions)(
+    "uses %s to describe the current restriction",
+    (_label, overrides, reason) => {
+      const current = account(overrides);
+      expect(accountRestriction(current)).toBe(reason);
+      const icon = document.createElement("div");
+      const iconRoot = createRoot(icon);
+      act(() =>
+        iconRoot.render(
+          <QuickRestriction reason={accountRestriction(current)} />,
+        ),
+      );
+      expect(
+        icon.querySelector('[role="img"]')?.getAttribute("aria-label") ?? "",
+      ).toBe(reason ? `调度受限：${reason}` : "");
+      act(() => iconRoot.unmount());
+    },
+  );
 
   it("renders no recovery control when there is no action", async () => {
     await render(<QuickRecover account={account()} />);

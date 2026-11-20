@@ -74,16 +74,14 @@ export function KeyQuotaProvider({
   const accountsVersionKey = useMemo(
     () =>
       enabled
-        ? accounts
-            .map(
-              (a) =>
-                `${a.id}:${a.operation_versions.usage}`,
-            )
-            .join("|")
+        ? accounts.map((a) => `${a.id}:${a.operation_versions.usage}`).join("|")
         : "",
     [accounts, enabled],
   );
-  const stableAccounts = useMemo(() => (enabled ? accounts : []), [accountsVersionKey]);
+  const stableAccounts = useMemo(
+    () => (enabled ? accounts : []),
+    [accountsVersionKey],
+  );
   const reload = useCallback(() => setRetry((n) => n + 1), []);
   const saved = useCallback((v: Settings) => {
     setValue(v);
@@ -102,11 +100,7 @@ export function KeyQuotaProvider({
     }),
     [stableAccounts, value, error, visible, active, reload, saved],
   );
-  return (
-    <Context.Provider value={contextValue}>
-      {children}
-    </Context.Provider>
-  );
+  return <Context.Provider value={contextValue}>{children}</Context.Provider>;
 }
 
 export function KeyQuotaRefreshSettings({ online }: { online: boolean }) {
@@ -179,13 +173,19 @@ export function KeyQuotaSettingsDialog({
         }
       }
     } catch (e) {
-      if (alive.current && currentPath.current === path) setError(String(e).replace(/^Error: /, ""));
+      if (alive.current && currentPath.current === path)
+        setError(String(e).replace(/^Error: /, ""));
     }
   }
   useEffect(() => {
     alive.current = true;
-    setValue(null); setBusy(false); guard.current = false;
-    setToken(""); setRevealed(""); setVisible(false); setCopied(false);
+    setValue(null);
+    setBusy(false);
+    guard.current = false;
+    setToken("");
+    setRevealed("");
+    setVisible(false);
+    setCopied(false);
     void read();
     return () => {
       alive.current = false;
@@ -193,20 +193,33 @@ export function KeyQuotaSettingsDialog({
   }, [path]);
   async function revealAndCopy() {
     if (!account || !online || guard.current) return;
-    guard.current = true; setBusy(true); setError(""); setCopied(false);
+    guard.current = true;
+    setBusy(true);
+    setError("");
+    setCopied(false);
     try {
-      const text = token.trim() || (await api<{ account_id: number; access_token: string }>("GET", `${path}/access-token`)).access_token;
+      const text =
+        token.trim() ||
+        (
+          await api<{ account_id: number; access_token: string }>(
+            "GET",
+            `${path}/access-token`,
+          )
+        ).access_token;
       if (!alive.current || currentPath.current !== path) return;
       if (!text) throw new Error("尚未配置账户访问令牌");
-      setRevealed(text); setVisible(true);
+      setRevealed(text);
+      setVisible(true);
       try {
         await navigator.clipboard.writeText(text);
         if (alive.current && currentPath.current === path) setCopied(true);
       } catch {
-        if (alive.current && currentPath.current === path) setError("已显示，复制失败，请手动复制");
+        if (alive.current && currentPath.current === path)
+          setError("已显示，复制失败，请手动复制");
       }
     } catch (e) {
-      if (alive.current && currentPath.current === path) setError(String(e).replace(/^Error: /, ""));
+      if (alive.current && currentPath.current === path)
+        setError(String(e).replace(/^Error: /, ""));
     } finally {
       guard.current = false;
       if (alive.current && currentPath.current === path) setBusy(false);
@@ -227,8 +240,8 @@ export function KeyQuotaSettingsDialog({
         expected_revision: value.revision,
         ...(account
           ? token.trim()
-              ? { access_token: token.trim() }
-              : {}
+            ? { access_token: token.trim() }
+            : {}
           : { seconds: n }),
       });
       if (alive.current && currentPath.current === path) {
@@ -237,7 +250,8 @@ export function KeyQuotaSettingsDialog({
         saved(v);
       }
     } catch (e) {
-      if (alive.current && currentPath.current === path) setError(String(e).replace(/^Error: /, ""));
+      if (alive.current && currentPath.current === path)
+        setError(String(e).replace(/^Error: /, ""));
     } finally {
       guard.current = false;
       if (alive.current && currentPath.current === path) setBusy(false);
@@ -289,25 +303,42 @@ export function KeyQuotaSettingsDialog({
                   disabled={busy || !online}
                   placeholder={
                     value &&
-                          "has_access_token" in value &&
-                          value.has_access_token
-                        ? "已配置，留空保留"
-                        : "可选，用于查询账户余额"
+                    "has_access_token" in value &&
+                    value.has_access_token
+                      ? "已配置，留空保留"
+                      : "可选，用于查询账户余额"
                   }
                   onChange={(e) => {
                     setToken(e.target.value);
-                    setRevealed(""); setCopied(false);
+                    setRevealed("");
+                    setCopied(false);
                   }}
                 />
               </label>
-              <div className="key-quota-token-actions"><button
-                type="button"
-                disabled={busy || !online}
-                onClick={() => void revealAndCopy()}
-              >
-                <Copy size={14}/>{copied ? "已复制" : "显示并复制"}
-              </button>
-              {visible && <button type="button" disabled={busy} onClick={() => { setVisible(false); setRevealed(""); setCopied(false); }}><EyeOff size={14}/>隐藏</button>}</div>
+              <div className="key-quota-token-actions">
+                <button
+                  type="button"
+                  disabled={busy || !online}
+                  onClick={() => void revealAndCopy()}
+                >
+                  <Copy size={14} />
+                  {copied ? "已复制" : "显示并复制"}
+                </button>
+                {visible && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setVisible(false);
+                      setRevealed("");
+                      setCopied(false);
+                    }}
+                  >
+                    <EyeOff size={14} />
+                    隐藏
+                  </button>
+                )}
+              </div>
             </>
           ) : (
             <>

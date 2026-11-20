@@ -85,13 +85,23 @@ describe("account evidence", () => {
   it("sorts recent calls by last_called_at with a last_success_at fallback", () => {
     const data = [
       { id: 4, last_called_at: null, last_success_at: null },
-      { id: 2, last_called_at: "2026-10-07T00:00:00Z", last_success_at: "2026-10-04T00:00:00Z" },
+      {
+        id: 2,
+        last_called_at: "2026-10-07T00:00:00Z",
+        last_success_at: "2026-10-04T00:00:00Z",
+      },
       { id: 1, last_called_at: "2026-10-07T00:00:00Z", last_success_at: null },
       { id: 3, last_called_at: null, last_success_at: "2026-10-05T00:00:00Z" },
-      { id: 5, last_called_at: "invalid", last_success_at: "2026-10-06T00:00:00Z" },
+      {
+        id: 5,
+        last_called_at: "invalid",
+        last_success_at: "2026-10-06T00:00:00Z",
+      },
     ] as Account[];
     expect(sortRecentCall(data).map((a) => a.id)).toEqual([2, 1, 5, 3, 4]);
-    expect(sortRecentCall(data, true).map((a) => a.id)).toEqual([3, 5, 2, 1, 4]);
+    expect(sortRecentCall(data, true).map((a) => a.id)).toEqual([
+      3, 5, 2, 1, 4,
+    ]);
   });
 });
 
@@ -143,7 +153,9 @@ describe("current group activity", () => {
     const sorted = currentGroups(groups, accounts);
 
     expect(sorted.map((item) => item.id)).toEqual([5, 11, 20, 2, 3, 8]);
-    expect(sorted[0].recent_accounts?.map((call) => [call.account_id, call.log_id])).toEqual([
+    expect(
+      sorted[0].recent_accounts?.map((call) => [call.account_id, call.log_id]),
+    ).toEqual([
       [2, 12],
       [1, 11],
     ]);

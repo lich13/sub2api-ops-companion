@@ -54,31 +54,42 @@ import UsageCell from "./UsageCell";
 import { KeyQuotaProvider, KeyQuotaRefreshSettings } from "./KeyQuotaSettings";
 import RecoveryAccounts from "./RecoveryAccounts";
 import { useErrorFeed, type ErrorCategory } from "./useErrorFeed";
-import {
-  MiniUsage,
-  QuotaRefresh,
-  RecoveryHistory,
-} from "./AccountControls";
+import { MiniUsage, QuotaRefresh, RecoveryHistory } from "./AccountControls";
 import TestDialog from "./TestDialog";
 import { useConnectionBatch, ConnectionBatchResults } from "./ConnectionBatch";
-import { accountRestriction, QuickRestriction, QuickRecover } from "./QuickAccountStatus";
+import {
+  accountRestriction,
+  QuickRestriction,
+  QuickRecover,
+} from "./QuickAccountStatus";
 import ModelTestDialog from "./ModelTestDialog";
 import DetectionPlatformSettings from "./DetectionPlatformSettings";
 import FingerprintBankStatus from "./FingerprintBankStatus";
 import ConnectionStatusCard from "./ConnectionStatusCard";
 import AccountStatus from "./AccountStatus";
-import { DeleteAccountsDialog, RecoverSelectedButton, ResetCreditsDialog, resetCreditEligible } from "./AccountManagement";
+import {
+  DeleteAccountsDialog,
+  RecoverSelectedButton,
+  ResetCreditsDialog,
+  resetCreditEligible,
+} from "./AccountManagement";
 import { useQuickHeight } from "./useQuickHeight";
 import AccountTemplates from "./AccountTemplates";
 import SchedulingParameters from "./SchedulingParameters";
-import AccountSettingsDialog, { type SettingsSection } from "./AccountSettingsDialog";
+import AccountSettingsDialog, {
+  type SettingsSection,
+} from "./AccountSettingsDialog";
 import AccountActions, { useAccountActions } from "./AccountActions";
 import ModelDetectionDialog from "./ModelDetectionDialog";
 import AccountModelField from "./AccountModelField";
 import DetectionLogs from "./DetectionLogs";
 import KeepaliveDialog from "./KeepaliveDialog";
 import AccountOperations, { AccountOperationStatus } from "./OperationPanel";
-import { accountOperation, bindOperationConnection, operationEpoch } from "./accountOperations";
+import {
+  accountOperation,
+  bindOperationConnection,
+  operationEpoch,
+} from "./accountOperations";
 import UsageRecords from "./UsageRecords";
 import MobileAccounts from "./MobileAccounts";
 import GroupManager from "./GroupManager";
@@ -92,9 +103,13 @@ import "./mobile-layout.css";
 
 const LazySub2ApiConfig = React.lazy(() => import("./Sub2ApiConfig"));
 const LazyProxyManagement = React.lazy(() => import("./ProxyManagement"));
-const LazyAccountCreationDialog = React.lazy(() => import("./AccountCreationDialog"));
+const LazyAccountCreationDialog = React.lazy(
+  () => import("./AccountCreationDialog"),
+);
 const LazyProxyBatchDialog = React.lazy(() => import("./ProxyBatchDialog"));
-const LazyReauthorizeAccountDialog = React.lazy(() => import("./ReauthorizeAccountDialog"));
+const LazyReauthorizeAccountDialog = React.lazy(
+  () => import("./ReauthorizeAccountDialog"),
+);
 
 function LazyAccountCreationButton({
   accounts,
@@ -129,7 +144,14 @@ function LazyAccountCreationButton({
   );
 }
 
-type Page = "accounts" | "groups" | "priorities" | "records" | "events" | "features" | "settings";
+type Page =
+  | "accounts"
+  | "groups"
+  | "priorities"
+  | "records"
+  | "events"
+  | "features"
+  | "settings";
 const quick = new URLSearchParams(location.search).get("panel") === "quick";
 const pages: { id: Page; label: string; icon: typeof Activity }[] = [
   { id: "accounts", label: "账号", icon: Users },
@@ -177,16 +199,32 @@ export default function App() {
     [ready, setReady] = useState(false),
     [page, setPage] = useState<Page>("accounts"),
     [accountSort, setAccountSort] = useState(readAccountSort),
-    [reauthorizeAccount, setReauthorizeAccount] = useState<{ account: Account; connection: string } | null>(null),
-    [settingsAccount, setSettingsAccount] = useState<{ account: Account; section: SettingsSection; connection: string } | null>(null),
-    [nameExpanded, setNameExpanded] = useState(() => { try { return localStorage.getItem("sub2ops-account-name-expanded") === "true"; } catch { return false; } }),
+    [reauthorizeAccount, setReauthorizeAccount] = useState<{
+      account: Account;
+      connection: string;
+    } | null>(null),
+    [settingsAccount, setSettingsAccount] = useState<{
+      account: Account;
+      section: SettingsSection;
+      connection: string;
+    } | null>(null),
+    [nameExpanded, setNameExpanded] = useState(() => {
+      try {
+        return localStorage.getItem("sub2ops-account-name-expanded") === "true";
+      } catch {
+        return false;
+      }
+    }),
     [testAccount, setTestAccount] = useState<Account | null>(null),
     [modelTestAccount, setModelTestAccount] = useState<Account | null>(null),
-    [modelDetectionAccount, setModelDetectionAccount] = useState<Account | null>(null),
+    [modelDetectionAccount, setModelDetectionAccount] =
+      useState<Account | null>(null),
     [keepaliveAccount, setKeepaliveAccount] = useState<Account | null>(null),
     [templatesOpen, setTemplatesOpen] = useState(false),
     [templateAccount, setTemplateAccount] = useState<Account | null>(null),
-    [templateAccounts, setTemplateAccounts] = useState<Account[] | undefined>(undefined),
+    [templateAccounts, setTemplateAccounts] = useState<Account[] | undefined>(
+      undefined,
+    ),
     [proxyAccounts, setProxyAccounts] = useState<Account[] | null>(null),
     [quickTab, setQuickTab] = useState<"groups" | "errors">("groups"),
     [toast, setToast] = useState(""),
@@ -200,7 +238,9 @@ export default function App() {
     [type, setType] = useState(""),
     [config, setConfig] = useState<Config | null>(null),
     [runtimeVersion, setRuntimeVersion] = useState<string | null>(null),
-    [eventTab, setEventTab] = useState<ErrorCategory | "recoveries" | "logs">("degradation"),
+    [eventTab, setEventTab] = useState<ErrorCategory | "recoveries" | "logs">(
+      "degradation",
+    ),
     [selected, setSelected] = useState<Set<number>>(new Set()),
     [removedIds, setRemovedIds] = useState<Set<number>>(new Set()),
     [deleteAccounts, setDeleteAccounts] = useState<Account[] | null>(null),
@@ -209,21 +249,34 @@ export default function App() {
     [groupsOpen, setGroupsOpen] = useState(false),
     [groupChanges, setGroupChanges] = useState({ count: 0, busy: false }),
     [priorityChanges, setPriorityChanges] = useState(0),
-    [leaveGroups, setLeaveGroups] = useState<((proceed: boolean) => void) | null>(null),
+    [leaveGroups, setLeaveGroups] = useState<
+      ((proceed: boolean) => void) | null
+    >(null),
     [switchingUrl, setSwitchingUrl] = useState<string | null>(null),
-    [connectionModal, setConnectionModal] = useState<{ baseUrl: string; name: string; requireKey?: boolean } | null>(null),
-    [switcherAnchor, setSwitcherAnchor] = useState<"topbar" | "sidebar" | null>(null),
+    [connectionModal, setConnectionModal] = useState<{
+      baseUrl: string;
+      name: string;
+      requireKey?: boolean;
+    } | null>(null),
+    [switcherAnchor, setSwitcherAnchor] = useState<"topbar" | "sidebar" | null>(
+      null,
+    ),
     discardRef = useRef<HTMLElement>(null),
     schedulePending = useRef(false),
     detailGeneration = useRef(0),
     detailAbort = useRef<AbortController | null>(null);
   const switcherOpen = switcherAnchor !== null;
-  const connections = useMemo(() => savedConnections(state.preferences), [state.preferences]);
+  const connections = useMemo(
+    () => savedConnections(state.preferences),
+    [state.preferences],
+  );
   const activeUrl = state.preferences.base_url.trim().replace(/\/+$/, "");
   const activeConnection = useMemo(
     () =>
       connections.find((item) => item.base_url === activeUrl) ??
-      (activeUrl ? { name: defaultConnectionName(activeUrl), base_url: activeUrl } : null),
+      (activeUrl
+        ? { name: defaultConnectionName(activeUrl), base_url: activeUrl }
+        : null),
     [connections, activeUrl],
   );
   const sortBy = accountSort.startsWith("recent:") ? "recent" : "priority";
@@ -241,7 +294,10 @@ export default function App() {
     setDetailBusy(false);
   }
   async function beforeConnectionChange() {
-    if (groupChanges.busy) { setToast("分组正在保存，请等待结果"); return false; }
+    if (groupChanges.busy) {
+      setToast("分组正在保存，请等待结果");
+      return false;
+    }
     if (!groupChanges.count && !priorityChanges) return true;
     return new Promise<boolean>((resolve) => setLeaveGroups(() => resolve));
   }
@@ -250,48 +306,97 @@ export default function App() {
     if (!targetUrl || switchingUrl) return;
     setSwitcherAnchor(null);
     if (state.connected && targetUrl === activeUrl) return;
-    if (!await beforeConnectionChange()) return;
+    if (!(await beforeConnectionChange())) return;
     setSwitchingUrl(targetUrl);
     try {
-      const next = await command<ViewState>("connect", { baseUrl: targetUrl, apiKey: "", name: item.name });
+      const next = await command<ViewState>("connect", {
+        baseUrl: targetUrl,
+        apiKey: "",
+        name: item.name,
+      });
       if (next?.preferences) setState(next);
       setToast(`已切换到 ${item.name}`);
     } catch (error) {
       report(error);
       if (/Key|401|403|未找到|拒绝/.test(String(error))) {
-        setConnectionModal({ baseUrl: targetUrl, name: item.name, requireKey: true });
+        setConnectionModal({
+          baseUrl: targetUrl,
+          name: item.name,
+          requireKey: true,
+        });
       }
     } finally {
       setSwitchingUrl(null);
     }
   }
-  const mobile = state.platform === "android" || (preview && new URLSearchParams(location.search).has("mobile"));
+  const mobile =
+    state.platform === "android" ||
+    (preview && new URLSearchParams(location.search).has("mobile"));
   useDialogFocus(discardRef, !!leaveGroups);
   useBackAction(groupsOpen, () => setGroupsOpen(false));
-  useBackAction(!!leaveGroups, () => { leaveGroups?.(false); setLeaveGroups(null); });
+  useBackAction(!!leaveGroups, () => {
+    leaveGroups?.(false);
+    setLeaveGroups(null);
+  });
   useBackAction(filtersOpen, () => setFiltersOpen(false));
   useBackAction(!!detail || detailBusy, closeDetail);
   useEffect(() => {
     if (!mobile) return;
-    let disposed = false, off = () => {};
+    let disposed = false,
+      off = () => {};
     void listenBack(() => {
       if (page !== "accounts") setPage("accounts");
       else void command("background").catch(() => {});
-    }).then((unsubscribe) => { if (disposed) unsubscribe(); else off = unsubscribe; });
-    return () => { disposed = true; off(); };
+    }).then((unsubscribe) => {
+      if (disposed) unsubscribe();
+      else off = unsubscribe;
+    });
+    return () => {
+      disposed = true;
+      off();
+    };
   }, [mobile, page]);
   const contentRef = useRef<HTMLDivElement>(null);
   const previousPage = useRef(page);
   useEffect(() => {
-    if (previousPage.current !== page && (previousPage.current === "accounts" || page === "accounts")) {
-      setQuery(""); setGroup(""); setPlatform(""); setFilter(""); setType(""); setSelected(new Set());
-      setFiltersOpen(false); setGroupsOpen(false); setDeleteAccounts(null); setResetAccounts(null); setTestAccount(null); setModelTestAccount(null);
-      setModelDetectionAccount(null); setKeepaliveAccount(null); setSettingsAccount(null); setReauthorizeAccount(null); setProxyAccounts(null);
-      setTemplatesOpen(false); setTemplateAccount(null); setTemplateAccounts(undefined); closeDetail();
+    if (
+      previousPage.current !== page &&
+      (previousPage.current === "accounts" || page === "accounts")
+    ) {
+      setQuery("");
+      setGroup("");
+      setPlatform("");
+      setFilter("");
+      setType("");
+      setSelected(new Set());
+      setFiltersOpen(false);
+      setGroupsOpen(false);
+      setDeleteAccounts(null);
+      setResetAccounts(null);
+      setTestAccount(null);
+      setModelTestAccount(null);
+      setModelDetectionAccount(null);
+      setKeepaliveAccount(null);
+      setSettingsAccount(null);
+      setReauthorizeAccount(null);
+      setProxyAccounts(null);
+      setTemplatesOpen(false);
+      setTemplateAccount(null);
+      setTemplateAccounts(undefined);
+      closeDetail();
       if (page === "accounts") {
         setAccountSort(readAccountSort());
-        try { setNameExpanded(localStorage.getItem("sub2ops-account-name-expanded") === "true"); } catch { setNameExpanded(false); }
-        if (contentRef.current) { contentRef.current.scrollTop = 0; contentRef.current.scrollLeft = 0; }
+        try {
+          setNameExpanded(
+            localStorage.getItem("sub2ops-account-name-expanded") === "true",
+          );
+        } catch {
+          setNameExpanded(false);
+        }
+        if (contentRef.current) {
+          contentRef.current.scrollTop = 0;
+          contentRef.current.scrollLeft = 0;
+        }
       }
     }
     previousPage.current = page;
@@ -305,15 +410,13 @@ export default function App() {
   ]);
   const connectionKey = `${state.preferences.base_url}:${state.connected}:${state.connection_revision ?? 0}`;
   useEffect(() => bindOperationConnection(connectionKey), [connectionKey]);
-  const connectionBatch = useConnectionBatch({ connectionKey, storageKey: state.preferences.base_url,
-    online: state.online, active: !quick && page === "accounts" && state.foreground !== false });
-  const filterKey = JSON.stringify([
-    query,
-    group,
-    platform,
-    filter,
-    type,
-  ]);
+  const connectionBatch = useConnectionBatch({
+    connectionKey,
+    storageKey: state.preferences.base_url,
+    online: state.online,
+    active: !quick && page === "accounts" && state.foreground !== false,
+  });
+  const filterKey = JSON.stringify([query, group, platform, filter, type]);
   useEffect(() => {
     setSelected(new Set());
   }, [filterKey, connectionKey]);
@@ -333,11 +436,13 @@ export default function App() {
     setTemplatesOpen(false);
     setTemplateAccount(null);
     setTemplateAccounts(undefined);
-    setSettingsAccount(null); setReauthorizeAccount(null);
+    setSettingsAccount(null);
+    setReauthorizeAccount(null);
     setProxyAccounts(null);
     setConnectionModal(null);
     setSwitcherAnchor(null);
-    schedulePending.current = false; setBusy(null);
+    schedulePending.current = false;
+    setBusy(null);
     setGroupsOpen(false);
     setFiltersOpen(false);
     setConfig(null);
@@ -348,14 +453,28 @@ export default function App() {
       return null;
     });
   }, [connectionKey]);
-  const report = (e: unknown) => { if (!String(e).includes("连接已切换；请求保留在原连接")) setToast(String(e).replace(/^Error: /, "")); };
-  const accountActions = useAccountActions({ online: state.online, connectionKey, report,
-    modelTest: setModelTestAccount, modelDetection: setModelDetectionAccount, test: setTestAccount,
+  const report = (e: unknown) => {
+    if (!String(e).includes("连接已切换；请求保留在原连接"))
+      setToast(String(e).replace(/^Error: /, ""));
+  };
+  const accountActions = useAccountActions({
+    online: state.online,
+    connectionKey,
+    report,
+    modelTest: setModelTestAccount,
+    modelDetection: setModelDetectionAccount,
+    test: setTestAccount,
     keepalive: setKeepaliveAccount,
-    reauthorize: (account) => setReauthorizeAccount({ account, connection: connectionKey }),
-    template: (account) => { setTemplateAccounts(undefined); setTemplateAccount(account); setTemplatesOpen(true); },
+    reauthorize: (account) =>
+      setReauthorizeAccount({ account, connection: connectionKey }),
+    template: (account) => {
+      setTemplateAccounts(undefined);
+      setTemplateAccount(account);
+      setTemplatesOpen(true);
+    },
     remove: (account) => setDeleteAccounts([account]),
-    settings: (account, section) => setSettingsAccount({ account, section, connection: connectionKey }),
+    settings: (account, section) =>
+      setSettingsAccount({ account, section, connection: connectionKey }),
   });
   useEffect(() => {
     let disposed = false;
@@ -392,11 +511,14 @@ export default function App() {
   }, [toast]);
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in window)) return;
-    void getRuntimeVersion().then(setRuntimeVersion).catch(() => {});
+    void getRuntimeVersion()
+      .then(setRuntimeVersion)
+      .catch(() => {});
   }, []);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.isComposing || event.defaultPrevented) return;
+      if (event.key !== "Escape" || event.isComposing || event.defaultPrevented)
+        return;
       if (switcherOpen) setSwitcherAnchor(null);
       else if (connectionModal) setConnectionModal(null);
       else if (testAccount) setTestAccount(null);
@@ -442,11 +564,29 @@ export default function App() {
   useEffect(() => {
     let disposed = false;
     if (state.online && (page === "settings" || page === "features"))
-      void api<Config>("GET", "/config").then((value) => { if (!disposed) setConfig(value); }).catch((error) => { if (!disposed) report(error); });
-    return () => { disposed = true; };
+      void api<Config>("GET", "/config")
+        .then((value) => {
+          if (!disposed) setConfig(value);
+        })
+        .catch((error) => {
+          if (!disposed) report(error);
+        });
+    return () => {
+      disposed = true;
+    };
   }, [page, state.online, connectionKey]);
-  const degradationFeed = useErrorFeed("degradation", !quick && page === "events" && eventTab === "degradation", state.online, connectionKey);
-  const otherFeed = useErrorFeed("other", !quick && page === "events" && eventTab === "other", state.online, connectionKey);
+  const degradationFeed = useErrorFeed(
+    "degradation",
+    !quick && page === "events" && eventTab === "degradation",
+    state.online,
+    connectionKey,
+  );
+  const otherFeed = useErrorFeed(
+    "other",
+    !quick && page === "events" && eventTab === "other",
+    state.online,
+    connectionKey,
+  );
   const eventFeed = eventTab === "other" ? otherFeed : degradationFeed;
   const loadEvents = eventFeed.load;
   const snap = state.snapshot,
@@ -480,7 +620,10 @@ export default function App() {
         .sort((a, b) => b.id - a.id),
     [quick, page, errors, eventFeed.items],
   );
-  const hasApiKey = useMemo(() => accounts.some((a) => a.type === "apikey"), [accounts]);
+  const hasApiKey = useMemo(
+    () => accounts.some((a) => a.type === "apikey"),
+    [accounts],
+  );
   const accountPlatforms = useMemo(
     () => [...new Set(accounts.map((a) => a.platform))],
     [accounts],
@@ -497,8 +640,12 @@ export default function App() {
         launchAtLogin:
           patch.launch_at_login ?? state.preferences.launch_at_login,
         recordColumns: patch.record_columns ?? state.preferences.record_columns,
-        modelTestConcurrency: patch.model_test_concurrency ?? state.preferences.model_test_concurrency,
-        modelTestPreferences: patch.model_test_preferences ?? state.preferences.model_test_preferences,
+        modelTestConcurrency:
+          patch.model_test_concurrency ??
+          state.preferences.model_test_concurrency,
+        modelTestPreferences:
+          patch.model_test_preferences ??
+          state.preferences.model_test_preferences,
       });
     } catch (e) {
       report(e);
@@ -507,19 +654,31 @@ export default function App() {
   async function toggle(a: Account) {
     if (!state.online || schedulePending.current) return;
     const epoch = operationEpoch();
-    schedulePending.current = true; setBusy(a.id);
+    schedulePending.current = true;
+    setBusy(a.id);
     try {
-      const result = await accountOperation<{ verified: boolean }>(a, "schedulable", {
-        schedulable: !a.schedulable,
-      });
-      if (!result.verified) throw new Error("调度写入未确认，请刷新查看实际状态");
+      const result = await accountOperation<{ verified: boolean }>(
+        a,
+        "schedulable",
+        {
+          schedulable: !a.schedulable,
+        },
+      );
+      if (!result.verified)
+        throw new Error("调度写入未确认，请刷新查看实际状态");
       if (operationEpoch() === epoch) {
         setToast(`${a.name}：${a.schedulable ? "已关闭" : "已打开"}调度`);
       }
     } catch (e) {
-      if (operationEpoch() === epoch) { report(e); void command("refresh"); }
+      if (operationEpoch() === epoch) {
+        report(e);
+        void command("refresh");
+      }
     } finally {
-      if (operationEpoch() === epoch) { schedulePending.current = false; setBusy(null); }
+      if (operationEpoch() === epoch) {
+        schedulePending.current = false;
+        setBusy(null);
+      }
     }
   }
   async function openError(id: number, category?: ErrorCategory) {
@@ -529,7 +688,10 @@ export default function App() {
     detailAbort.current = controller;
     setDetailBusy(true);
     try {
-      const value = await api<OpsError>("GET", `/errors/${id}${category ? `?category=${category}` : ""}`);
+      const value = await api<OpsError>(
+        "GET",
+        `/errors/${id}${category ? `?category=${category}` : ""}`,
+      );
       if (generation === detailGeneration.current && !controller.signal.aborted)
         setDetail(value);
     } catch (e) {
@@ -544,7 +706,12 @@ export default function App() {
   }
   function errorState(error: OpsError) {
     const account = accounts.find((item) => item.id === error.account_id);
-    if (account?.last_error_id === error.id && !error.resolved && !account.success_after_error) return "当前";
+    if (
+      account?.last_error_id === error.id &&
+      !error.resolved &&
+      !account.success_after_error
+    )
+      return "当前";
     return error.resolved ? "已解决" : "历史";
   }
   function schedule(a: Account, disabled = false) {
@@ -574,21 +741,46 @@ export default function App() {
         <div className="recent-accounts">
           {recent.map((call) => {
             const a = accounts.find((item) => item.id === call.account_id);
-            const restriction = quick ? accountRestriction(a) : '';
-            const recover = quick && a ? accountActions(a).find(item => item.id === 'recover') : undefined;
+            const restriction = quick ? accountRestriction(a) : "";
+            const recover =
+              quick && a
+                ? accountActions(a).find((item) => item.id === "recover")
+                : undefined;
             return (
               <div className="recent-account" key={call.account_id}>
                 {compact ? (
                   <>
                     <div className="compact-identity">
-                      <strong className={restriction ? 'quick-account-restricted' : undefined} title={[call.account_name, restriction].filter(Boolean).join(' · ')}>
+                      <strong
+                        className={
+                          restriction ? "quick-account-restricted" : undefined
+                        }
+                        title={[call.account_name, restriction]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      >
                         {call.account_name}
-                        <QuickRestriction reason={restriction}/>
-                        {a && <><DegradationBadge account={a} compact /></>}
+                        <QuickRestriction reason={restriction} />
+                        {a && (
+                          <>
+                            <DegradationBadge account={a} compact />
+                          </>
+                        )}
                       </strong>
-                      {a && (quick && a.type === "apikey"
-                        ? <UsageCell account={a} compact online={state.online} active={state.foreground !== false} connectionKey={connectionKey} refresh={() => command("refresh")} report={report}/>
-                        : <MiniUsage account={a} />)}
+                      {a &&
+                        (quick && a.type === "apikey" ? (
+                          <UsageCell
+                            account={a}
+                            compact
+                            online={state.online}
+                            active={state.foreground !== false}
+                            connectionKey={connectionKey}
+                            refresh={() => command("refresh")}
+                            report={report}
+                          />
+                        ) : (
+                          <MiniUsage account={a} />
+                        ))}
                     </div>
                     <div className="compact-times">
                       <div>
@@ -609,7 +801,15 @@ export default function App() {
                         </div>
                       )}
                     </div>
-                    {a && (quick ? <div className="quick-account-controls"><QuickRecover account={a} action={recover}/>{schedule(a)}</div> : schedule(a))}
+                    {a &&
+                      (quick ? (
+                        <div className="quick-account-controls">
+                          <QuickRecover account={a} action={recover} />
+                          {schedule(a)}
+                        </div>
+                      ) : (
+                        schedule(a)
+                      ))}
                   </>
                 ) : (
                   <>
@@ -663,34 +863,74 @@ export default function App() {
   function errorRow(e: OpsError, compact = false, category?: ErrorCategory) {
     const stateLabel = errorState(e);
     const account = accounts.find((item) => item.id === e.account_id);
-    const restriction = compact && quick ? accountRestriction(account) : '';
-    const recover = compact && quick && account ? accountActions(account).find(item => item.id === 'recover') : undefined;
-    const contents = <>
+    const restriction = compact && quick ? accountRestriction(account) : "";
+    const recover =
+      compact && quick && account
+        ? accountActions(account).find((item) => item.id === "recover")
+        : undefined;
+    const contents = (
+      <>
         <span
           className={`code ${e.upstream_status_code === 429 ? "warning" : ""}`}
         >
           {e.upstream_status_code || e.status_code || "ERR"}
         </span>
         <div>
-          <strong className={restriction ? 'quick-account-restricted' : undefined} title={restriction || undefined}>
-            {e.account_name || (e.account_id ? `账号 #${e.account_id}` : "未关联账号")}
-            <QuickRestriction reason={restriction}/>
-            {compact && account && <DegradationBadge account={account} compact />}
+          <strong
+            className={restriction ? "quick-account-restricted" : undefined}
+            title={restriction || undefined}
+          >
+            {e.account_name ||
+              (e.account_id ? `账号 #${e.account_id}` : "未关联账号")}
+            <QuickRestriction reason={restriction} />
+            {compact && account && (
+              <DegradationBadge account={account} compact />
+            )}
           </strong>
           <span>
-            <em className={`error-state ${stateLabel === "当前" ? "active" : ""}`}>
+            <em
+              className={`error-state ${stateLabel === "当前" ? "active" : ""}`}
+            >
               {stateLabel}
             </em>
-            {!compact && <span className="event-model">{e.requested_model || e.model || "未知模型"} · </span>}{e.provider_error_code || e.message || "查看错误详情"}
+            {!compact && (
+              <span className="event-model">
+                {e.requested_model || e.model || "未知模型"} ·{" "}
+              </span>
+            )}
+            {e.provider_error_code || e.message || "查看错误详情"}
           </span>
         </div>
         <Time at={e.created_at} />
-    </>;
-    if (compact && quick) return <div key={e.id} className="error-row quick-error-row">
-      <button type="button" className="quick-error-open" onClick={() => void openError(e.id, category)}>{contents}</button>
-      {account && recover ? <QuickRecover account={account} action={recover}/> : <ChevronRight size={15} aria-hidden="true"/>}
-    </div>;
-    return <button key={e.id} className="error-row" onClick={() => void openError(e.id, category)}>{contents}<ChevronRight size={15}/></button>;
+      </>
+    );
+    if (compact && quick)
+      return (
+        <div key={e.id} className="error-row quick-error-row">
+          <button
+            type="button"
+            className="quick-error-open"
+            onClick={() => void openError(e.id, category)}
+          >
+            {contents}
+          </button>
+          {account && recover ? (
+            <QuickRecover account={account} action={recover} />
+          ) : (
+            <ChevronRight size={15} aria-hidden="true" />
+          )}
+        </div>
+      );
+    return (
+      <button
+        key={e.id}
+        className="error-row"
+        onClick={() => void openError(e.id, category)}
+      >
+        {contents}
+        <ChevronRight size={15} />
+      </button>
+    );
   }
   function renderSwitcherMenu() {
     return (
@@ -721,8 +961,7 @@ export default function App() {
           </div>
           <div className="instance-switcher-list">
             {connections.map((item) => {
-              const isCurrent =
-                state.connected && item.base_url === activeUrl;
+              const isCurrent = state.connected && item.base_url === activeUrl;
               const isSwitching = switchingUrl === item.base_url;
               return (
                 <button
@@ -780,7 +1019,9 @@ export default function App() {
               className="instance-switcher-trigger"
               aria-label="切换 Sub2API 实例"
               aria-expanded={switcherAnchor === "topbar"}
-              onClick={() => setSwitcherAnchor((cur) => (cur === "topbar" ? null : "topbar"))}
+              onClick={() =>
+                setSwitcherAnchor((cur) => (cur === "topbar" ? null : "topbar"))
+              }
             >
               {switchingUrl ? (
                 <LoaderCircle size={13} className="spin" />
@@ -796,7 +1037,8 @@ export default function App() {
     );
   }
   const visibleGroups = useMemo(
-    () => (quick || (mobile && groupsOpen) ? currentGroups(groups, accounts) : []),
+    () =>
+      quick || (mobile && groupsOpen) ? currentGroups(groups, accounts) : [],
     [quick, mobile, groupsOpen, groups, accounts],
   );
   const detailAccount = detail
@@ -819,14 +1061,20 @@ export default function App() {
                 className="sidebar-instance-button"
                 aria-expanded={switcherAnchor === "sidebar"}
                 title={activeConnection?.base_url || "切换或新增 Sub2API 实例"}
-                onClick={() => setSwitcherAnchor((cur) => (cur === "sidebar" ? null : "sidebar"))}
+                onClick={() =>
+                  setSwitcherAnchor((cur) =>
+                    cur === "sidebar" ? null : "sidebar",
+                  )
+                }
               >
                 <span
                   className={`status-dot ${state.online ? "good" : state.connected ? "warning" : "muted"}`}
                 />
                 <div className="sidebar-instance-text">
                   <strong>{activeConnection?.name ?? "未连接实例"}</strong>
-                  <small>{activeConnection?.base_url ?? "点击选择或新增"}</small>
+                  <small>
+                    {activeConnection?.base_url ?? "点击选择或新增"}
+                  </small>
                 </div>
                 <ChevronRight size={14} />
               </button>
@@ -872,7 +1120,20 @@ export default function App() {
           <div className="top-actions">
             {preview && !quick && <span className="preview-label">预览</span>}
             {status()}
-            <AccountOperations accounts={accounts} online={state.online} connectionKey={connectionKey} active={state.foreground !== false} report={report} modelTest={setModelTestAccount} priorities={() => setPage("priorities")} template={(a) => { setTemplateAccounts(undefined); setTemplateAccount(a); setTemplatesOpen(true); }} />
+            <AccountOperations
+              accounts={accounts}
+              online={state.online}
+              connectionKey={connectionKey}
+              active={state.foreground !== false}
+              report={report}
+              modelTest={setModelTestAccount}
+              priorities={() => setPage("priorities")}
+              template={(a) => {
+                setTemplateAccounts(undefined);
+                setTemplateAccount(a);
+                setTemplatesOpen(true);
+              }}
+            />
             {!quick && !preview && !mobile && (
               <button
                 className="icon-button"
@@ -951,19 +1212,34 @@ export default function App() {
                 <h2>等待云端数据</h2>
                 <p>{state.error || "正在连接运维服务"}</p>
                 <button onClick={() => setPage("settings")}>连接设置</button>
-                {page === "settings" && <>
-                  <ConnectionStatusCard connectionKey={connectionKey}/>
-                  <Connection state={state} onState={setState} onError={report} beforeChange={beforeConnectionChange} onSwitchSaved={(item) => void switchConnection(item)} switchingUrl={switchingUrl}/>
-                </>}
+                {page === "settings" && (
+                  <>
+                    <ConnectionStatusCard connectionKey={connectionKey} />
+                    <Connection
+                      state={state}
+                      onState={setState}
+                      onError={report}
+                      beforeChange={beforeConnectionChange}
+                      onSwitchSaved={(item) => void switchConnection(item)}
+                      switchingUrl={switchingUrl}
+                    />
+                  </>
+                )}
               </div>
             ) : quick ? (
               <>
                 {quickTab === "groups" ? (
-                  <KeyQuotaProvider key={connectionKey} accounts={accounts} online={state.online} active={state.foreground !== false} enabled={hasApiKey}>
-                  <div className="quick-groups">
-                    {visibleGroups.map((g) => groupRow(g, true))}
-                    {!groups.length && <Empty text="没有分组记录" />}
-                  </div>
+                  <KeyQuotaProvider
+                    key={connectionKey}
+                    accounts={accounts}
+                    online={state.online}
+                    active={state.foreground !== false}
+                    enabled={hasApiKey}
+                  >
+                    <div className="quick-groups">
+                      {visibleGroups.map((g) => groupRow(g, true))}
+                      {!groups.length && <Empty text="没有分组记录" />}
+                    </div>
                   </KeyQuotaProvider>
                 ) : (
                   <div className="error-list">
@@ -979,330 +1255,796 @@ export default function App() {
               </>
             ) : (
               <>
-                <GroupManager key={connectionKey} connectionKey={connectionKey} active={page === "groups"} accounts={accounts} groups={groups} mobile={mobile} online={state.online} back={() => setPage("accounts")} report={report} accountActions={accountActions} schedule={schedule} changed={(count, saving) => setGroupChanges({ count, busy: saving })}/>
-                <PriorityManager key={`priorities:${connectionKey}`} connectionKey={connectionKey} active={page === "priorities"} accounts={accounts} mobile={mobile} online={state.online} back={() => setPage("accounts")} schedule={schedule} changed={setPriorityChanges}/>
-                <div key={`surface:${page}:${connectionKey}`} className="page-surface" data-page={page} hidden={page === "groups" || page === "priorities"}>
+                <GroupManager
+                  key={connectionKey}
+                  connectionKey={connectionKey}
+                  active={page === "groups"}
+                  accounts={accounts}
+                  groups={groups}
+                  mobile={mobile}
+                  online={state.online}
+                  back={() => setPage("accounts")}
+                  report={report}
+                  accountActions={accountActions}
+                  schedule={schedule}
+                  changed={(count, saving) =>
+                    setGroupChanges({ count, busy: saving })
+                  }
+                />
+                <PriorityManager
+                  key={`priorities:${connectionKey}`}
+                  connectionKey={connectionKey}
+                  active={page === "priorities"}
+                  accounts={accounts}
+                  mobile={mobile}
+                  online={state.online}
+                  back={() => setPage("accounts")}
+                  schedule={schedule}
+                  changed={setPriorityChanges}
+                />
+                <div
+                  key={`surface:${page}:${connectionKey}`}
+                  className="page-surface"
+                  data-page={page}
+                  hidden={page === "groups" || page === "priorities"}
+                >
                   <div className="page-heading">
                     <div>
                       <h1>{pages.find((p) => p.id === page)?.label}</h1>
                     </div>
-                    {page !== "records" && <span className="updated">
-                      <Clock3 size={13} />
-                      更新于 <Time at={snap.observed_at} />
-                    </span>}
+                    {page !== "records" && (
+                      <span className="updated">
+                        <Clock3 size={13} />
+                        更新于 <Time at={snap.observed_at} />
+                      </span>
+                    )}
                   </div>
-                {page === "records" && <UsageRecords key={connectionKey} mobile={mobile} online={state.online} foreground={state.foreground !== false} desktop={state.platform === "macos"} accounts={accounts} columns={state.preferences.record_columns} saveColumns={async (columns) => {
-                  await command("preferences", { ...state.preferences, launchAtLogin: state.preferences.launch_at_login, recordColumns: columns });
-                }}/>}
-                {page === "accounts" && (
-                  <KeyQuotaProvider key={connectionKey} accounts={accounts} online={state.online} active={state.foreground !== false} enabled={hasApiKey}>
-                    {!mobile && <div className="account-toolbar"><LazyAccountCreationButton accounts={accounts} online={state.online} connectionKey={connectionKey} report={report}/>{hasApiKey && <KeyQuotaRefreshSettings online={state.online}/>}<QuotaRefresh key={connectionKey} connectionKey={connectionKey} online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={accountSort} onChange={(e) => updateAccountSort(e.target.value)}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></label><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
-                    {mobile && <div className="mobile-group-entry"><button onClick={() => setPage("groups")}><Layers3 size={18}/>分组管理<ChevronRight size={16}/></button><button onClick={() => setPage("priorities")}><ListOrdered size={18}/>优先级管理<ChevronRight size={16}/></button></div>}
-                    <div className="filters">
-                      <label className="search">
-                        <Search size={15} />
-                        <input
-                          placeholder="搜索名称或账号 ID"
-                          value={query}
-                          onChange={(e) => setQuery(e.target.value)}
-                        />
-                      </label>
-                      {mobile && <button aria-label="筛选账号" onClick={() => setFiltersOpen(true)}><SlidersHorizontal size={18}/>筛选</button>}
-                      {mobile && filtersOpen && <div className="filter-shade" onClick={() => setFiltersOpen(false)}/>}
-                      <div className={`filter-options${filtersOpen ? " open" : ""}`} role={mobile && filtersOpen ? "dialog" : undefined} aria-label={mobile ? "账号筛选" : undefined}>
-                      {mobile && <header><h2>筛选账号</h2><button className="icon-button" aria-label="关闭筛选" onClick={() => setFiltersOpen(false)}><X size={20}/></button></header>}
-                      <select
-                        aria-label="分组筛选"
-                        value={group}
-                        onChange={(e) => setGroup(e.target.value)}
-                      >
-                        <option value="">全部分组</option>
-                        {groups.map((g) => (
-                          <option value={g.id} key={g.id}>
-                            {g.name}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        aria-label="平台筛选"
-                        value={platform}
-                        onChange={(e) => setPlatform(e.target.value)}
-                      >
-                        <option value="">全部平台</option>
-                        {accountPlatforms.map(
-                          (p) => (
-                            <option key={p}>{p}</option>
-                          ),
-                        )}
-                      </select>
-                      <select
-                        aria-label="类型筛选"
-                        value={type}
-                        onChange={(e) => setType(e.target.value)}
-                      >
-                        <option value="">全部类型</option>
-                        {accountTypes.map((p) => (
-                          <option key={p}>{p}</option>
-                        ))}
-                      </select>
-                      <select
-                        aria-label="状态筛选"
-                        value={filter}
-                        onChange={(e) => setFilter(e.target.value)}
-                      >
-                        <option value="">全部状态</option>
-                        <option value="ready">可调度</option>
-                        <option value="off">调度关闭</option>
-                        <option value="error">曾有错误</option>
-                      </select>
-                      {mobile && <button className="primary" onClick={() => setFiltersOpen(false)}>完成</button>}
-                      </div>
-                    </div>
-                    {mobile && <div className="account-toolbar"><LazyAccountCreationButton accounts={accounts} online={state.online} connectionKey={connectionKey} report={report}/>{hasApiKey && <KeyQuotaRefreshSettings online={state.online}/>}<QuotaRefresh key={connectionKey} connectionKey={connectionKey} online={state.online} active={state.foreground !== false} report={report}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
-                    {mobile && <div className="mobile-sort"><label className="mobile-select-all"><input type="checkbox" aria-label="全选当前筛选账号" checked={filteredAccounts.length > 0 && filteredAccounts.every((a) => selected.has(a.id))} disabled={!state.online} onChange={(e) => setSelected(e.target.checked ? new Set(filteredAccounts.map((a) => a.id)) : new Set())}/>全选</label><span>{filteredAccounts.length} 个账号</span><select aria-label="账号排序" value={accountSort} onChange={(e) => updateAccountSort(e.target.value)}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></div>}
-                    <div className="table-wrap">
-                      {selected.size > 0 && <div className="selection-bar">
-                        <div className="selection-summary">
-                        <span>已选 {selected.size} 个账号</span>
-                        </div>
-                        <div className="selection-actions" role="group" aria-label="批量账号操作">
-                        <button id="connection-batch-start" disabled={!state.online || selected.size === 0} aria-disabled={connectionBatch.busy} onClick={() => void connectionBatch.start(accounts.filter(a => selected.has(a.id)))}><Activity size={12}/>测试连接</button>
-                        <RecoverSelectedButton key={connectionKey} accounts={accounts.filter(a => selected.has(a.id))} online={state.online} report={report}/>
-                        <button disabled={!state.online || !accounts.some(a => selected.has(a.id) && resetCreditEligible(a))} onClick={() => setResetAccounts(accounts.filter(a => selected.has(a.id)))}><Ticket size={12}/>使用重置卡</button>
-                        <button disabled={!state.online || selected.size === 0} onClick={() => setProxyAccounts(accounts.filter(a => selected.has(a.id)))}><Network size={12}/>选择代理</button>
-                        <button disabled={!state.online || selected.size === 0} onClick={() => { setTemplateAccount(null); setTemplateAccounts(accounts.filter(a => selected.has(a.id))); setTemplatesOpen(true); }}><LayoutTemplate size={12}/>应用模板</button>
-                        <button
-                          className="danger-text"
-                          disabled={!state.online || selected.size === 0}
-                          onClick={() =>
-                            setDeleteAccounts(
-                              accounts.filter((a) => selected.has(a.id)),
-                            )
-                          }
-                        >
-                          <Trash2 size={12}/>删除所选
-                        </button>
-                        </div>
-                      </div>}
-                      <ConnectionBatchResults control={connectionBatch}/>
-                      {mobile ? <MobileAccounts active={state.foreground !== false} connectionKey={connectionKey} accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} accountActions={accountActions} error={(id) => void openError(id)} report={report}/> : <table className={`accounts-table${nameExpanded ? " name-expanded" : ""}`}>
-                        <colgroup><col className="col-select"/><col className="col-name"/><col className="col-priority"/><col className="col-status"/><col className="col-usage"/><col className="col-error"/><col className="col-schedule"/><col className="col-actions"/></colgroup>
-                        <thead>
-                          <tr>
-                            <th className="select-cell">
-                              <input
-                                type="checkbox"
-                                aria-label="全选当前筛选账号"
-                                checked={
-                                  filteredAccounts.length > 0 &&
-                                  filteredAccounts.every((a) =>
-                                    selected.has(a.id),
-                                  )
-                                }
-                                ref={(element) => {
-                                  if (element)
-                                    element.indeterminate =
-                                      filteredAccounts.some((a) =>
-                                        selected.has(a.id),
-                                      ) &&
-                                      !filteredAccounts.every((a) =>
-                                        selected.has(a.id),
-                                      );
-                                }}
-                                disabled={
-                                  !state.online || !filteredAccounts.length
-                                }
-                                onChange={(e) =>
-                                  setSelected(
-                                    e.target.checked
-                                      ? new Set(
-                                          filteredAccounts.map((a) => a.id),
-                                        )
-                                      : new Set(),
-                                  )
-                                }
-                              />
-                            </th>
-                            <th><button className="account-column-toggle" aria-label={nameExpanded ? "收起账号列" : "展开账号列"} aria-expanded={nameExpanded} onClick={() => { const value = !nameExpanded; setNameExpanded(value); try { localStorage.setItem("sub2ops-account-name-expanded", String(value)); } catch { /* Preference is optional. */ } }}>账号{ nameExpanded ? <ChevronLeft size={13}/> : <ChevronRight size={13}/>}</button></th>
-                            <th
-                              aria-sort={
-                                sortBy === "priority"
-                                  ? ascending
-                                    ? "ascending"
-                                    : "descending"
-                                  : "none"
+                  {page === "records" && (
+                    <UsageRecords
+                      key={connectionKey}
+                      mobile={mobile}
+                      online={state.online}
+                      foreground={state.foreground !== false}
+                      desktop={state.platform === "macos"}
+                      accounts={accounts}
+                      columns={state.preferences.record_columns}
+                      saveColumns={async (columns) => {
+                        await command("preferences", {
+                          ...state.preferences,
+                          launchAtLogin: state.preferences.launch_at_login,
+                          recordColumns: columns,
+                        });
+                      }}
+                    />
+                  )}
+                  {page === "accounts" && (
+                    <KeyQuotaProvider
+                      key={connectionKey}
+                      accounts={accounts}
+                      online={state.online}
+                      active={state.foreground !== false}
+                      enabled={hasApiKey}
+                    >
+                      {!mobile && (
+                        <div className="account-toolbar">
+                          <LazyAccountCreationButton
+                            accounts={accounts}
+                            online={state.online}
+                            connectionKey={connectionKey}
+                            report={report}
+                          />
+                          {hasApiKey && (
+                            <KeyQuotaRefreshSettings online={state.online} />
+                          )}
+                          <QuotaRefresh
+                            key={connectionKey}
+                            connectionKey={connectionKey}
+                            online={state.online}
+                            active={state.foreground !== false}
+                            report={report}
+                          />
+                          <label className="account-sort">
+                            <span>排序</span>
+                            <select
+                              aria-label="账号排序"
+                              value={accountSort}
+                              onChange={(e) =>
+                                updateAccountSort(e.target.value)
                               }
                             >
+                              <option value="recent:desc">最近调用</option>
+                              <option value="recent:asc">最早调用</option>
+                              <option value="priority:asc">优先级 ↑</option>
+                              <option value="priority:desc">优先级 ↓</option>
+                            </select>
+                          </label>
+                          <button
+                            onClick={() => {
+                              setTemplateAccounts(undefined);
+                              setTemplateAccount(null);
+                              setTemplatesOpen(true);
+                            }}
+                          >
+                            账号模板
+                          </button>
+                        </div>
+                      )}
+                      {mobile && (
+                        <div className="mobile-group-entry">
+                          <button onClick={() => setPage("groups")}>
+                            <Layers3 size={18} />
+                            分组管理
+                            <ChevronRight size={16} />
+                          </button>
+                          <button onClick={() => setPage("priorities")}>
+                            <ListOrdered size={18} />
+                            优先级管理
+                            <ChevronRight size={16} />
+                          </button>
+                        </div>
+                      )}
+                      <div className="filters">
+                        <label className="search">
+                          <Search size={15} />
+                          <input
+                            placeholder="搜索名称或账号 ID"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                          />
+                        </label>
+                        {mobile && (
+                          <button
+                            aria-label="筛选账号"
+                            onClick={() => setFiltersOpen(true)}
+                          >
+                            <SlidersHorizontal size={18} />
+                            筛选
+                          </button>
+                        )}
+                        {mobile && filtersOpen && (
+                          <div
+                            className="filter-shade"
+                            onClick={() => setFiltersOpen(false)}
+                          />
+                        )}
+                        <div
+                          className={`filter-options${filtersOpen ? " open" : ""}`}
+                          role={mobile && filtersOpen ? "dialog" : undefined}
+                          aria-label={mobile ? "账号筛选" : undefined}
+                        >
+                          {mobile && (
+                            <header>
+                              <h2>筛选账号</h2>
                               <button
-                                className="sort-button"
+                                className="icon-button"
+                                aria-label="关闭筛选"
+                                onClick={() => setFiltersOpen(false)}
+                              >
+                                <X size={20} />
+                              </button>
+                            </header>
+                          )}
+                          <select
+                            aria-label="分组筛选"
+                            value={group}
+                            onChange={(e) => setGroup(e.target.value)}
+                          >
+                            <option value="">全部分组</option>
+                            {groups.map((g) => (
+                              <option value={g.id} key={g.id}>
+                                {g.name}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            aria-label="平台筛选"
+                            value={platform}
+                            onChange={(e) => setPlatform(e.target.value)}
+                          >
+                            <option value="">全部平台</option>
+                            {accountPlatforms.map((p) => (
+                              <option key={p}>{p}</option>
+                            ))}
+                          </select>
+                          <select
+                            aria-label="类型筛选"
+                            value={type}
+                            onChange={(e) => setType(e.target.value)}
+                          >
+                            <option value="">全部类型</option>
+                            {accountTypes.map((p) => (
+                              <option key={p}>{p}</option>
+                            ))}
+                          </select>
+                          <select
+                            aria-label="状态筛选"
+                            value={filter}
+                            onChange={(e) => setFilter(e.target.value)}
+                          >
+                            <option value="">全部状态</option>
+                            <option value="ready">可调度</option>
+                            <option value="off">调度关闭</option>
+                            <option value="error">曾有错误</option>
+                          </select>
+                          {mobile && (
+                            <button
+                              className="primary"
+                              onClick={() => setFiltersOpen(false)}
+                            >
+                              完成
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {mobile && (
+                        <div className="account-toolbar">
+                          <LazyAccountCreationButton
+                            accounts={accounts}
+                            online={state.online}
+                            connectionKey={connectionKey}
+                            report={report}
+                          />
+                          {hasApiKey && (
+                            <KeyQuotaRefreshSettings online={state.online} />
+                          )}
+                          <QuotaRefresh
+                            key={connectionKey}
+                            connectionKey={connectionKey}
+                            online={state.online}
+                            active={state.foreground !== false}
+                            report={report}
+                          />
+                          <button
+                            onClick={() => {
+                              setTemplateAccounts(undefined);
+                              setTemplateAccount(null);
+                              setTemplatesOpen(true);
+                            }}
+                          >
+                            账号模板
+                          </button>
+                          <button onClick={() => setGroupsOpen(true)}>
+                            <Layers3 size={17} />
+                            分组动态
+                          </button>
+                        </div>
+                      )}
+                      {mobile && (
+                        <div className="mobile-sort">
+                          <label className="mobile-select-all">
+                            <input
+                              type="checkbox"
+                              aria-label="全选当前筛选账号"
+                              checked={
+                                filteredAccounts.length > 0 &&
+                                filteredAccounts.every((a) =>
+                                  selected.has(a.id),
+                                )
+                              }
+                              disabled={!state.online}
+                              onChange={(e) =>
+                                setSelected(
+                                  e.target.checked
+                                    ? new Set(filteredAccounts.map((a) => a.id))
+                                    : new Set(),
+                                )
+                              }
+                            />
+                            全选
+                          </label>
+                          <span>{filteredAccounts.length} 个账号</span>
+                          <select
+                            aria-label="账号排序"
+                            value={accountSort}
+                            onChange={(e) => updateAccountSort(e.target.value)}
+                          >
+                            <option value="recent:desc">最近调用</option>
+                            <option value="recent:asc">最早调用</option>
+                            <option value="priority:asc">优先级 ↑</option>
+                            <option value="priority:desc">优先级 ↓</option>
+                          </select>
+                        </div>
+                      )}
+                      <div className="table-wrap">
+                        {selected.size > 0 && (
+                          <div className="selection-bar">
+                            <div className="selection-summary">
+                              <span>已选 {selected.size} 个账号</span>
+                            </div>
+                            <div
+                              className="selection-actions"
+                              role="group"
+                              aria-label="批量账号操作"
+                            >
+                              <button
+                                id="connection-batch-start"
+                                disabled={!state.online || selected.size === 0}
+                                aria-disabled={connectionBatch.busy}
+                                onClick={() =>
+                                  void connectionBatch.start(
+                                    accounts.filter((a) => selected.has(a.id)),
+                                  )
+                                }
+                              >
+                                <Activity size={12} />
+                                测试连接
+                              </button>
+                              <RecoverSelectedButton
+                                key={connectionKey}
+                                accounts={accounts.filter((a) =>
+                                  selected.has(a.id),
+                                )}
+                                online={state.online}
+                                report={report}
+                              />
+                              <button
+                                disabled={
+                                  !state.online ||
+                                  !accounts.some(
+                                    (a) =>
+                                      selected.has(a.id) &&
+                                      resetCreditEligible(a),
+                                  )
+                                }
+                                onClick={() =>
+                                  setResetAccounts(
+                                    accounts.filter((a) => selected.has(a.id)),
+                                  )
+                                }
+                              >
+                                <Ticket size={12} />
+                                使用重置卡
+                              </button>
+                              <button
+                                disabled={!state.online || selected.size === 0}
+                                onClick={() =>
+                                  setProxyAccounts(
+                                    accounts.filter((a) => selected.has(a.id)),
+                                  )
+                                }
+                              >
+                                <Network size={12} />
+                                选择代理
+                              </button>
+                              <button
+                                disabled={!state.online || selected.size === 0}
                                 onClick={() => {
-                                  updateAccountSort(sortBy === "priority" && ascending
-                                    ? "priority:desc" : "priority:asc");
+                                  setTemplateAccount(null);
+                                  setTemplateAccounts(
+                                    accounts.filter((a) => selected.has(a.id)),
+                                  );
+                                  setTemplatesOpen(true);
                                 }}
                               >
-                                调度参数{" "}
-                                {sortBy === "priority"
-                                  ? ascending
-                                    ? "↑"
-                                    : "↓"
-                                  : ""}
+                                <LayoutTemplate size={12} />
+                                应用模板
                               </button>
-                            </th>
-                            <th>当前状态</th>
-                            <th>用量窗口</th>
-                            <th>最近报错</th>
-                            <th>允许调度</th>
-                            <th>操作</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredAccounts.map((a) => (
-                            <tr key={`${connectionKey}:${a.id}`}>
-                              <td className="select-cell">
-                                <input
-                                  type="checkbox"
-                                  aria-label={`选择 ${a.name}`}
-                                  checked={selected.has(a.id)}
-                                  disabled={!state.online}
-                                  onChange={(e) =>
-                                    setSelected((old) => {
-                                      const next = new Set(old);
-                                      if (e.target.checked) next.add(a.id);
-                                      else next.delete(a.id);
-                                      return next;
-                                    })
-                                  }
-                                />
-                              </td>
-                              <td className="account-name">
-                                <strong title={a.name} tabIndex={0}>{a.name}</strong>
-                                <small className="account-id">#{a.id}</small>
-                                <small className="account-identity">
-                                  {a.platform === "openai"
-                                    ? "OpenAI"
-                                    : a.platform === "grok"
-                                      ? "Grok"
-                                      : a.platform}{" "}
-                                  ·{" "}
-                                  {a.type === "oauth"
-                                    ? "OAuth"
-                                    : a.type === "apikey"
-                                      ? "Key"
-                                      : a.type}
-                                </small>
-                                <DegradationBadge account={a}/><AccountOperationStatus id={a.id}/>
-                              </td>
-                              <td>
-                                <SchedulingParameters
-                                  account={a}
-                                  online={state.online}
-                                  report={report}
-                                />
-                              </td>
-                              <td>
-                                <AccountStatus account={a} onError={(id) => void openError(id)}/>
-                              </td>
-                              <td>
-                                <UsageCell
-                                  active={state.foreground !== false}
-                                  connectionKey={connectionKey}
-                                  account={a}
-                                  online={state.online}
-                                  refresh={() => command("refresh")}
-                                  report={report}
-                                />
-                              </td>
-                              <td>
-                                {a.last_error_id ? (
-                                  <button
-                                    className="error-time"
-                                    onClick={() =>
-                                      void openError(a.last_error_id!)
+                              <button
+                                className="danger-text"
+                                disabled={!state.online || selected.size === 0}
+                                onClick={() =>
+                                  setDeleteAccounts(
+                                    accounts.filter((a) => selected.has(a.id)),
+                                  )
+                                }
+                              >
+                                <Trash2 size={12} />
+                                删除所选
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        <ConnectionBatchResults control={connectionBatch} />
+                        {mobile ? (
+                          <MobileAccounts
+                            active={state.foreground !== false}
+                            connectionKey={connectionKey}
+                            accounts={filteredAccounts}
+                            online={state.online}
+                            selected={selected}
+                            select={(id, checked) =>
+                              setSelected((old) => {
+                                const next = new Set(old);
+                                if (checked) next.add(id);
+                                else next.delete(id);
+                                return next;
+                              })
+                            }
+                            schedule={schedule}
+                            accountActions={accountActions}
+                            error={(id) => void openError(id)}
+                            report={report}
+                          />
+                        ) : (
+                          <table
+                            className={`accounts-table${nameExpanded ? " name-expanded" : ""}`}
+                          >
+                            <colgroup>
+                              <col className="col-select" />
+                              <col className="col-name" />
+                              <col className="col-priority" />
+                              <col className="col-status" />
+                              <col className="col-usage" />
+                              <col className="col-error" />
+                              <col className="col-schedule" />
+                              <col className="col-actions" />
+                            </colgroup>
+                            <thead>
+                              <tr>
+                                <th className="select-cell">
+                                  <input
+                                    type="checkbox"
+                                    aria-label="全选当前筛选账号"
+                                    checked={
+                                      filteredAccounts.length > 0 &&
+                                      filteredAccounts.every((a) =>
+                                        selected.has(a.id),
+                                      )
                                     }
+                                    ref={(element) => {
+                                      if (element)
+                                        element.indeterminate =
+                                          filteredAccounts.some((a) =>
+                                            selected.has(a.id),
+                                          ) &&
+                                          !filteredAccounts.every((a) =>
+                                            selected.has(a.id),
+                                          );
+                                    }}
+                                    disabled={
+                                      !state.online || !filteredAccounts.length
+                                    }
+                                    onChange={(e) =>
+                                      setSelected(
+                                        e.target.checked
+                                          ? new Set(
+                                              filteredAccounts.map((a) => a.id),
+                                            )
+                                          : new Set(),
+                                      )
+                                    }
+                                  />
+                                </th>
+                                <th>
+                                  <button
+                                    className="account-column-toggle"
+                                    aria-label={
+                                      nameExpanded ? "收起账号列" : "展开账号列"
+                                    }
+                                    aria-expanded={nameExpanded}
+                                    onClick={() => {
+                                      const value = !nameExpanded;
+                                      setNameExpanded(value);
+                                      try {
+                                        localStorage.setItem(
+                                          "sub2ops-account-name-expanded",
+                                          String(value),
+                                        );
+                                      } catch {
+                                        /* Preference is optional. */
+                                      }
+                                    }}
                                   >
-                                    <span>
-                                      {a.last_error_code ||
-                                        a.last_error_status ||
-                                        "上游错误"}
-                                    </span>
-                                    <Time at={a.last_error_at} />
-                                    {a.success_after_error && (
-                                      <small className="good-text">
-                                        之后已有成功调用
-                                      </small>
+                                    账号
+                                    {nameExpanded ? (
+                                      <ChevronLeft size={13} />
+                                    ) : (
+                                      <ChevronRight size={13} />
                                     )}
                                   </button>
-                                ) : a.error_message ? (
-                                  <span title={a.error_message}>
-                                    错误时间未知
-                                  </span>
-                                ) : (
-                                  <span className="muted">暂无记录</span>
-                                )}
-                                <div className="account-last-success">
-                                  <span>最后成功</span>
-                                  <time className={a.success_after_error ? "good-text" : undefined}>
-                                    {fullTime(a.last_success_at)}
-                                  </time>
-                                </div>
-                              </td>
-                              <td>{schedule(a)}</td>
-                              <td>
-                                <AccountActions items={accountActions(a)} label={`${a.name}更多操作`} contextKey={connectionKey}/>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>}
+                                </th>
+                                <th
+                                  aria-sort={
+                                    sortBy === "priority"
+                                      ? ascending
+                                        ? "ascending"
+                                        : "descending"
+                                      : "none"
+                                  }
+                                >
+                                  <button
+                                    className="sort-button"
+                                    onClick={() => {
+                                      updateAccountSort(
+                                        sortBy === "priority" && ascending
+                                          ? "priority:desc"
+                                          : "priority:asc",
+                                      );
+                                    }}
+                                  >
+                                    调度参数{" "}
+                                    {sortBy === "priority"
+                                      ? ascending
+                                        ? "↑"
+                                        : "↓"
+                                      : ""}
+                                  </button>
+                                </th>
+                                <th>当前状态</th>
+                                <th>用量窗口</th>
+                                <th>最近报错</th>
+                                <th>允许调度</th>
+                                <th>操作</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredAccounts.map((a) => (
+                                <tr key={`${connectionKey}:${a.id}`}>
+                                  <td className="select-cell">
+                                    <input
+                                      type="checkbox"
+                                      aria-label={`选择 ${a.name}`}
+                                      checked={selected.has(a.id)}
+                                      disabled={!state.online}
+                                      onChange={(e) =>
+                                        setSelected((old) => {
+                                          const next = new Set(old);
+                                          if (e.target.checked) next.add(a.id);
+                                          else next.delete(a.id);
+                                          return next;
+                                        })
+                                      }
+                                    />
+                                  </td>
+                                  <td className="account-name">
+                                    <strong title={a.name} tabIndex={0}>
+                                      {a.name}
+                                    </strong>
+                                    <small className="account-id">
+                                      #{a.id}
+                                    </small>
+                                    <small className="account-identity">
+                                      {a.platform === "openai"
+                                        ? "OpenAI"
+                                        : a.platform === "grok"
+                                          ? "Grok"
+                                          : a.platform}{" "}
+                                      ·{" "}
+                                      {a.type === "oauth"
+                                        ? "OAuth"
+                                        : a.type === "apikey"
+                                          ? "Key"
+                                          : a.type}
+                                    </small>
+                                    <DegradationBadge account={a} />
+                                    <AccountOperationStatus id={a.id} />
+                                  </td>
+                                  <td>
+                                    <SchedulingParameters
+                                      account={a}
+                                      online={state.online}
+                                      report={report}
+                                    />
+                                  </td>
+                                  <td>
+                                    <AccountStatus
+                                      account={a}
+                                      onError={(id) => void openError(id)}
+                                    />
+                                  </td>
+                                  <td>
+                                    <UsageCell
+                                      active={state.foreground !== false}
+                                      connectionKey={connectionKey}
+                                      account={a}
+                                      online={state.online}
+                                      refresh={() => command("refresh")}
+                                      report={report}
+                                    />
+                                  </td>
+                                  <td>
+                                    {a.last_error_id ? (
+                                      <button
+                                        className="error-time"
+                                        onClick={() =>
+                                          void openError(a.last_error_id!)
+                                        }
+                                      >
+                                        <span>
+                                          {a.last_error_code ||
+                                            a.last_error_status ||
+                                            "上游错误"}
+                                        </span>
+                                        <Time at={a.last_error_at} />
+                                        {a.success_after_error && (
+                                          <small className="good-text">
+                                            之后已有成功调用
+                                          </small>
+                                        )}
+                                      </button>
+                                    ) : a.error_message ? (
+                                      <span title={a.error_message}>
+                                        错误时间未知
+                                      </span>
+                                    ) : (
+                                      <span className="muted">暂无记录</span>
+                                    )}
+                                    <div className="account-last-success">
+                                      <span>最后成功</span>
+                                      <time
+                                        className={
+                                          a.success_after_error
+                                            ? "good-text"
+                                            : undefined
+                                        }
+                                      >
+                                        {fullTime(a.last_success_at)}
+                                      </time>
+                                    </div>
+                                  </td>
+                                  <td>{schedule(a)}</td>
+                                  <td>
+                                    <AccountActions
+                                      items={accountActions(a)}
+                                      label={`${a.name}更多操作`}
+                                      contextKey={connectionKey}
+                                    />
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                      {!filteredAccounts.length && (
+                        <Empty text="没有符合条件的账号" />
+                      )}
+                    </KeyQuotaProvider>
+                  )}
+                  {page === "events" && (
+                    <div className="events-view">
+                      <nav
+                        className="event-tabs"
+                        role="tablist"
+                        aria-label="事件类型"
+                      >
+                        {(
+                          [
+                            ["degradation", "降智错误"],
+                            ["other", "其他错误"],
+                            ["recoveries", "恢复历史"],
+                            ["logs", "日志"],
+                          ] as const
+                        ).map(([id, label]) => (
+                          <button
+                            key={id}
+                            role="tab"
+                            id={`${id}-tab`}
+                            aria-selected={eventTab === id}
+                            aria-controls={`${id}-panel`}
+                            onClick={() => setEventTab(id)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </nav>
+                      <div className="event-panels">
+                        {(eventTab === "degradation" ||
+                          eventTab === "other") && (
+                          <section
+                            id={`${eventTab}-panel`}
+                            className="event-panel"
+                            role="tabpanel"
+                            aria-labelledby={`${eventTab}-tab`}
+                          >
+                            <div className="section-heading">
+                              <span>{eventRows.length} 条记录</span>
+                              <button
+                                className="text-button"
+                                disabled={!state.online || eventFeed.loading}
+                                onClick={() => void loadEvents()}
+                              >
+                                刷新记录
+                              </button>
+                            </div>
+                            {eventFeed.error && (
+                              <p className="bad-text" role="alert">
+                                {eventFeed.error}{" "}
+                                <button onClick={() => void loadEvents()}>
+                                  重试
+                                </button>
+                              </p>
+                            )}
+                            <div className="error-list">
+                              {eventRows.map((error) =>
+                                errorRow(error, false, eventTab),
+                              )}
+                              {!eventRows.length && (
+                                <Empty
+                                  text={
+                                    eventFeed.loading
+                                      ? "正在读取"
+                                      : eventFeed.error
+                                        ? "记录暂不可用"
+                                        : "暂无错误记录"
+                                  }
+                                />
+                              )}
+                            </div>
+                            {eventFeed.cursor !== null && (
+                              <button
+                                className="load-more"
+                                disabled={!state.online || eventFeed.loading}
+                                onClick={() => void loadEvents("more")}
+                              >
+                                加载更早记录
+                              </button>
+                            )}
+                          </section>
+                        )}
+                        <section
+                          id="logs-panel"
+                          className="event-panel"
+                          role="tabpanel"
+                          aria-labelledby="logs-tab"
+                          hidden={eventTab !== "logs"}
+                        >
+                          <DetectionLogs
+                            key={connectionKey}
+                            active={page === "events" && eventTab === "logs"}
+                            online={state.online}
+                            connectionKey={connectionKey}
+                          />
+                        </section>
+                        <section
+                          id="recoveries-panel"
+                          className="event-panel"
+                          role="tabpanel"
+                          aria-labelledby="recoveries-tab"
+                          hidden={eventTab !== "recoveries"}
+                        >
+                          <RecoveryHistory
+                            key={connectionKey}
+                            latest={snap.recoveries ?? []}
+                            accounts={accounts}
+                            online={state.online}
+                            active={eventTab === "recoveries"}
+                            report={report}
+                          />
+                        </section>
+                      </div>
                     </div>
-                    {!filteredAccounts.length && <Empty text="没有符合条件的账号" />}
-                  </KeyQuotaProvider>
-                )}
-                {page === "events" && (
-                  <div className="events-view">
-                    <nav className="event-tabs" role="tablist" aria-label="事件类型">
-                      {([['degradation', '降智错误'], ['other', '其他错误'], ['recoveries', '恢复历史'], ['logs', '日志']] as const).map(([id, label]) =>
-                        <button key={id} role="tab" id={`${id}-tab`} aria-selected={eventTab === id} aria-controls={`${id}-panel`} onClick={() => setEventTab(id)}>{label}</button>)}
-                    </nav>
-                    <div className="event-panels">
-                      {(eventTab === "degradation" || eventTab === "other") && <section id={`${eventTab}-panel`} className="event-panel" role="tabpanel" aria-labelledby={`${eventTab}-tab`}>
-                        <div className="section-heading"><span>{eventRows.length} 条记录</span><button className="text-button" disabled={!state.online || eventFeed.loading} onClick={() => void loadEvents()}>刷新记录</button></div>
-                        {eventFeed.error && <p className="bad-text" role="alert">{eventFeed.error} <button onClick={() => void loadEvents()}>重试</button></p>}
-                        <div className="error-list">{eventRows.map(error => errorRow(error, false, eventTab))}{!eventRows.length && <Empty text={eventFeed.loading ? "正在读取" : eventFeed.error ? "记录暂不可用" : "暂无错误记录"}/>}</div>
-                        {eventFeed.cursor !== null && <button className="load-more" disabled={!state.online || eventFeed.loading} onClick={() => void loadEvents("more")}>加载更早记录</button>}
-                      </section>}
-                      <section id="logs-panel" className="event-panel" role="tabpanel" aria-labelledby="logs-tab" hidden={eventTab !== "logs"}><DetectionLogs key={connectionKey} active={page === "events" && eventTab === "logs"} online={state.online} connectionKey={connectionKey}/></section>
-                      <section id="recoveries-panel" className="event-panel" role="tabpanel" aria-labelledby="recoveries-tab" hidden={eventTab !== "recoveries"}>
-                        <RecoveryHistory key={connectionKey} latest={snap.recoveries ?? []} accounts={accounts} online={state.online} active={eventTab === "recoveries"} report={report}/>
+                  )}
+                  {page === "settings" && (
+                    <ConnectionStatusCard connectionKey={connectionKey} />
+                  )}
+                  {(page === "features" || page === "settings") &&
+                    (config ? (
+                      <SettingsPage
+                        page={page}
+                        mobile={mobile}
+                        config={config}
+                        accounts={accounts}
+                        state={state}
+                        runtimeVersion={runtimeVersion}
+                        prefs={prefs}
+                        onState={setState}
+                        onChange={(key, value) =>
+                          setConfig({ ...config, [key]: value })
+                        }
+                        onMessage={setToast}
+                        onError={report}
+                        beforeConnectionChange={beforeConnectionChange}
+                        onSwitchConnection={(item) =>
+                          void switchConnection(item)
+                        }
+                        onOpenConnectionModal={setConnectionModal}
+                        switchingUrl={switchingUrl}
+                      />
+                    ) : page === "settings" ? (
+                      <section className="settings-card">
+                        <Connection
+                          state={state}
+                          onState={setState}
+                          onError={report}
+                          beforeChange={beforeConnectionChange}
+                          onSwitchSaved={(item) => void switchConnection(item)}
+                          switchingUrl={switchingUrl}
+                        />
                       </section>
-                    </div>
-                  </div>
-                )}
-                {page === "settings" && <ConnectionStatusCard connectionKey={connectionKey}/>}
-                {(page === "features" || page === "settings") &&
-                  (config ? (
-                    <SettingsPage
-                      page={page}
-                      mobile={mobile}
-                      config={config}
-                      accounts={accounts}
-                      state={state}
-                      runtimeVersion={runtimeVersion}
-                      prefs={prefs}
-                      onState={setState}
-                      onChange={(key, value) =>
-                        setConfig({ ...config, [key]: value })
-                      }
-                      onMessage={setToast}
-                      onError={report}
-                      beforeConnectionChange={beforeConnectionChange}
-                      onSwitchConnection={(item) => void switchConnection(item)}
-                      onOpenConnectionModal={setConnectionModal}
-                      switchingUrl={switchingUrl}
-                    />
-                  ) : page === "settings" ? (
-                    <section className="settings-card"><Connection state={state} onState={setState} onError={report} beforeChange={beforeConnectionChange} onSwitchSaved={(item) => void switchConnection(item)} switchingUrl={switchingUrl}/></section>
-                  ) : <Empty text="正在读取设置" />)}
+                    ) : (
+                      <Empty text="正在读取设置" />
+                    ))}
                 </div>
               </>
             )}
@@ -1319,10 +2061,81 @@ export default function App() {
           </footer>
         )}
       </main>
-      {mobile && <nav className="bottom-nav" aria-label="主导航">{pages.filter((p) => p.id !== "groups" && p.id !== "priorities").map((p) => { const selected = page === p.id || ["groups", "priorities"].includes(page) && p.id === "accounts"; return <button key={p.id} className={selected ? "active" : ""} aria-current={selected ? "page" : undefined} onClick={() => setPage(p.id)}><p.icon size={21}/><span>{p.label}</span></button>; })}</nav>}
-      {leaveGroups && <div className="modal-backdrop"><section ref={discardRef} className="discard-groups-dialog" role="dialog" aria-modal="true" aria-label={priorityChanges ? "未应用的优先级修改" : "未应用的分组修改"} tabIndex={-1} onKeyDown={(e) => { if (e.key === "Escape" && !e.nativeEvent.isComposing) { e.preventDefault(); e.stopPropagation(); leaveGroups(false); setLeaveGroups(null); } }}><h2>放弃{groupChanges.count ? "分组" : ""}{groupChanges.count && priorityChanges ? "和" : ""}{priorityChanges ? "优先级" : ""}草稿并更换连接？</h2><div><button onClick={() => { leaveGroups(false); setLeaveGroups(null); }}>保留草稿</button><button className="primary" onClick={() => { leaveGroups(true); setLeaveGroups(null); }}>放弃并继续</button></div></section></div>}
+      {mobile && (
+        <nav className="bottom-nav" aria-label="主导航">
+          {pages
+            .filter((p) => p.id !== "groups" && p.id !== "priorities")
+            .map((p) => {
+              const selected =
+                page === p.id ||
+                (["groups", "priorities"].includes(page) &&
+                  p.id === "accounts");
+              return (
+                <button
+                  key={p.id}
+                  className={selected ? "active" : ""}
+                  aria-current={selected ? "page" : undefined}
+                  onClick={() => setPage(p.id)}
+                >
+                  <p.icon size={21} />
+                  <span>{p.label}</span>
+                </button>
+              );
+            })}
+        </nav>
+      )}
+      {leaveGroups && (
+        <div className="modal-backdrop">
+          <section
+            ref={discardRef}
+            className="discard-groups-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={
+              priorityChanges ? "未应用的优先级修改" : "未应用的分组修改"
+            }
+            tabIndex={-1}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                e.stopPropagation();
+                leaveGroups(false);
+                setLeaveGroups(null);
+              }
+            }}
+          >
+            <h2>
+              放弃{groupChanges.count ? "分组" : ""}
+              {groupChanges.count && priorityChanges ? "和" : ""}
+              {priorityChanges ? "优先级" : ""}草稿并更换连接？
+            </h2>
+            <div>
+              <button
+                onClick={() => {
+                  leaveGroups(false);
+                  setLeaveGroups(null);
+                }}
+              >
+                保留草稿
+              </button>
+              <button
+                className="primary"
+                onClick={() => {
+                  leaveGroups(true);
+                  setLeaveGroups(null);
+                }}
+              >
+                放弃并继续
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {connectionModal && (
-        <div className="modal-backdrop" onClick={() => setConnectionModal(null)}>
+        <div
+          className="modal-backdrop"
+          onClick={() => setConnectionModal(null)}
+        >
           <div
             className="connection-modal"
             role="dialog"
@@ -1350,8 +2163,37 @@ export default function App() {
           </div>
         </div>
       )}
-      {mobile && groupsOpen && <div className="mobile-groups-surface" role="dialog" aria-modal="true" aria-label="分组动态"><header><h2>分组动态</h2><button className="icon-button" aria-label="关闭分组动态" onClick={() => setGroupsOpen(false)}><X size={20}/></button></header><div className="quick-groups">{visibleGroups.map((g) => groupRow(g, true))}{!groups.length && <Empty text="没有分组记录"/>}</div></div>}
-      {resetAccounts && <ResetCreditsDialog accounts={resetAccounts} online={state.online} report={report} close={() => setResetAccounts(null)}/>}
+      {mobile && groupsOpen && (
+        <div
+          className="mobile-groups-surface"
+          role="dialog"
+          aria-modal="true"
+          aria-label="分组动态"
+        >
+          <header>
+            <h2>分组动态</h2>
+            <button
+              className="icon-button"
+              aria-label="关闭分组动态"
+              onClick={() => setGroupsOpen(false)}
+            >
+              <X size={20} />
+            </button>
+          </header>
+          <div className="quick-groups">
+            {visibleGroups.map((g) => groupRow(g, true))}
+            {!groups.length && <Empty text="没有分组记录" />}
+          </div>
+        </div>
+      )}
+      {resetAccounts && (
+        <ResetCreditsDialog
+          accounts={resetAccounts}
+          online={state.online}
+          report={report}
+          close={() => setResetAccounts(null)}
+        />
+      )}
       {deleteAccounts && (
         <DeleteAccountsDialog
           accounts={deleteAccounts}
@@ -1439,15 +2281,60 @@ export default function App() {
                         detail.status_code ||
                         "未知"}
                     </dd>
-                    <dt>来源</dt><dd>{detail.error_source || detail.error_owner || "未知"}</dd>
-                    <dt>阶段</dt><dd>{detail.error_phase || "未知"}</dd>
+                    <dt>来源</dt>
+                    <dd>
+                      {detail.error_source || detail.error_owner || "未知"}
+                    </dd>
+                    <dt>阶段</dt>
+                    <dd>{detail.error_phase || "未知"}</dd>
                     <dt>请求 ID</dt>
                     <dd>{detail.request_id || "未知"}</dd>
-                    {detail.notification && <><dt>检测线索</dt><dd>{detail.notification.status === "suppressed" ? detail.notification.reason === "degradation_mark" ? "降智标记静默" : "已抑制" : ({ delivered: "历史预警已推送", retired: "历史预警已停发", clue: "已采集", testing: "检测中", ignored: "已忽略", failed: "检测未完成", confirmed: "已确认降智", unavailable: "状态暂不可读取" } as Record<string, string>)[detail.notification.status] ?? "—"}</dd></>}
+                    {detail.notification && (
+                      <>
+                        <dt>检测线索</dt>
+                        <dd>
+                          {detail.notification.status === "suppressed"
+                            ? detail.notification.reason === "degradation_mark"
+                              ? "降智标记静默"
+                              : "已抑制"
+                            : ((
+                                {
+                                  delivered: "历史预警已推送",
+                                  retired: "历史预警已停发",
+                                  clue: "已采集",
+                                  testing: "检测中",
+                                  ignored: "已忽略",
+                                  failed: "检测未完成",
+                                  confirmed: "已确认降智",
+                                  unavailable: "状态暂不可读取",
+                                } as Record<string, string>
+                              )[detail.notification.status] ?? "—")}
+                        </dd>
+                      </>
+                    )}
                   </dl>
-                  {detail.disposition_notification && <p>处置通知：{({delivered: "已推送", queued: "待推送", retry: "待重试", suppressed: "已取消", failed: "投递失败"} as Record<string, string>)[detail.disposition_notification.status] ?? "—"}</p>}
+                  {detail.disposition_notification && (
+                    <p>
+                      处置通知：
+                      {(
+                        {
+                          delivered: "已推送",
+                          queued: "待推送",
+                          retry: "待重试",
+                          suppressed: "已取消",
+                          failed: "投递失败",
+                        } as Record<string, string>
+                      )[detail.disposition_notification.status] ?? "—"}
+                    </p>
+                  )}
                   <h3>错误内容</h3>
-                  {detailAccount && <DegradationAction account={detailAccount} online={state.online} report={report}/>}
+                  {detailAccount && (
+                    <DegradationAction
+                      account={detailAccount}
+                      online={state.online}
+                      report={report}
+                    />
+                  )}
                   <pre>
                     {detail.content || detail.message || "没有额外错误内容"}
                   </pre>
@@ -1456,8 +2343,8 @@ export default function App() {
                   )}
                   <div className="section-heading">
                     <h3>账号近期错误</h3>
-                      <button
-                        className="text-button"
+                    <button
+                      className="text-button"
                       onClick={() => {
                         setPage("events");
                         setQuickTab("errors");
@@ -1485,22 +2372,104 @@ export default function App() {
       {modelTestAccount && (
         <ModelTestDialog
           key={`${connectionKey}:${modelTestAccount.id}`}
-          account={accounts.find((a) => a.id === modelTestAccount.id) ?? modelTestAccount}
+          account={
+            accounts.find((a) => a.id === modelTestAccount.id) ??
+            modelTestAccount
+          }
           online={state.online}
           report={report}
           close={() => setModelTestAccount(null)}
-          preference={state.preferences.model_test_preferences?.[`${state.preferences.base_url}:${modelTestAccount.id}`]}
-          savePreference={value => void prefs({ model_test_preferences: { ...state.preferences.model_test_preferences, [`${state.preferences.base_url}:${modelTestAccount.id}`]: value } })}
+          preference={
+            state.preferences.model_test_preferences?.[
+              `${state.preferences.base_url}:${modelTestAccount.id}`
+            ]
+          }
+          savePreference={(value) =>
+            void prefs({
+              model_test_preferences: {
+                ...state.preferences.model_test_preferences,
+                [`${state.preferences.base_url}:${modelTestAccount.id}`]: value,
+              },
+            })
+          }
           concurrency={state.preferences.model_test_concurrency ?? 1}
-          saveConcurrency={(value) => void prefs({ model_test_concurrency: value })}
+          saveConcurrency={(value) =>
+            void prefs({ model_test_concurrency: value })
+          }
         />
       )}
-      {templatesOpen && <AccountTemplates key={connectionKey} accounts={accounts} online={state.online} initialAccount={templateAccount} initialAccounts={templateAccounts} close={() => setTemplatesOpen(false)} report={report}/>}
-      {proxyAccounts && <Suspense fallback={null}><LazyProxyBatchDialog key={connectionKey} accounts={proxyAccounts} online={state.online} connectionKey={connectionKey} close={() => setProxyAccounts(null)} report={report}/></Suspense>}
-      {modelDetectionAccount && <ModelDetectionDialog key={`${connectionKey}:${modelDetectionAccount.id}`} account={accounts.find((a) => a.id === modelDetectionAccount.id) ?? modelDetectionAccount} online={state.online} close={() => setModelDetectionAccount(null)} showResult={() => { setModelTestAccount(modelDetectionAccount); setModelDetectionAccount(null); }} report={report}/>}
-      {keepaliveAccount && <KeepaliveDialog key={`${connectionKey}:${keepaliveAccount.id}`} account={accounts.find((a) => a.id === keepaliveAccount.id) ?? keepaliveAccount} online={state.online} connectionKey={connectionKey} close={() => setKeepaliveAccount(null)} report={report}/>}
-      {reauthorizeAccount?.connection === connectionKey && <Suspense fallback={null}><LazyReauthorizeAccountDialog key={`${connectionKey}:${reauthorizeAccount.account.id}`} account={reauthorizeAccount.account} online={state.online} close={() => setReauthorizeAccount(null)} report={report}/></Suspense>}
-      {settingsAccount?.connection === connectionKey && <AccountSettingsDialog key={`${connectionKey}:${settingsAccount.account.id}:${settingsAccount.section}`} account={settingsAccount.account} initialSection={settingsAccount.section} online={state.online} close={() => setSettingsAccount(null)}/>}
+      {templatesOpen && (
+        <AccountTemplates
+          key={connectionKey}
+          accounts={accounts}
+          online={state.online}
+          initialAccount={templateAccount}
+          initialAccounts={templateAccounts}
+          close={() => setTemplatesOpen(false)}
+          report={report}
+        />
+      )}
+      {proxyAccounts && (
+        <Suspense fallback={null}>
+          <LazyProxyBatchDialog
+            key={connectionKey}
+            accounts={proxyAccounts}
+            online={state.online}
+            connectionKey={connectionKey}
+            close={() => setProxyAccounts(null)}
+            report={report}
+          />
+        </Suspense>
+      )}
+      {modelDetectionAccount && (
+        <ModelDetectionDialog
+          key={`${connectionKey}:${modelDetectionAccount.id}`}
+          account={
+            accounts.find((a) => a.id === modelDetectionAccount.id) ??
+            modelDetectionAccount
+          }
+          online={state.online}
+          close={() => setModelDetectionAccount(null)}
+          showResult={() => {
+            setModelTestAccount(modelDetectionAccount);
+            setModelDetectionAccount(null);
+          }}
+          report={report}
+        />
+      )}
+      {keepaliveAccount && (
+        <KeepaliveDialog
+          key={`${connectionKey}:${keepaliveAccount.id}`}
+          account={
+            accounts.find((a) => a.id === keepaliveAccount.id) ??
+            keepaliveAccount
+          }
+          online={state.online}
+          connectionKey={connectionKey}
+          close={() => setKeepaliveAccount(null)}
+          report={report}
+        />
+      )}
+      {reauthorizeAccount?.connection === connectionKey && (
+        <Suspense fallback={null}>
+          <LazyReauthorizeAccountDialog
+            key={`${connectionKey}:${reauthorizeAccount.account.id}`}
+            account={reauthorizeAccount.account}
+            online={state.online}
+            close={() => setReauthorizeAccount(null)}
+            report={report}
+          />
+        </Suspense>
+      )}
+      {settingsAccount?.connection === connectionKey && (
+        <AccountSettingsDialog
+          key={`${connectionKey}:${settingsAccount.account.id}:${settingsAccount.section}`}
+          account={settingsAccount.account}
+          initialSection={settingsAccount.section}
+          online={state.online}
+          close={() => setSettingsAccount(null)}
+        />
+      )}
       {toast && (
         <div className="toast" role="status">
           <span>{toast}</span>
@@ -1547,8 +2516,12 @@ function Connection({
   onSwitchSaved?: (item: SavedConnection) => void;
   switchingUrl?: string | null;
 }) {
-  const saved = useMemo(() => savedConnections(state.preferences), [state.preferences]);
-  const defaultUrl = initialUrl !== undefined ? initialUrl : state.preferences.base_url || "";
+  const saved = useMemo(
+    () => savedConnections(state.preferences),
+    [state.preferences],
+  );
+  const defaultUrl =
+    initialUrl !== undefined ? initialUrl : state.preferences.base_url || "";
   const defaultName =
     initialName !== undefined
       ? initialName
@@ -1566,7 +2539,10 @@ function Connection({
   const normalizedUrl = url.trim().replace(/\/+$/, "");
   const normalizedInitial = (initialUrl ?? "").trim().replace(/\/+$/, "");
   const isEditingSaved = Boolean(
-    showNameField && normalizedInitial && !requireKey && normalizedUrl === normalizedInitial,
+    showNameField &&
+    normalizedInitial &&
+    !requireKey &&
+    normalizedUrl === normalizedInitial,
   );
   return (
     <form
@@ -1588,7 +2564,7 @@ function Connection({
             .finally(() => setBusy(false));
           return;
         }
-        if (!await beforeChange()) return;
+        if (!(await beforeChange())) return;
         setBusy(true);
         const payload: Record<string, unknown> = { baseUrl: url, apiKey: key };
         if (trimmedName) payload.name = trimmedName;
@@ -1625,7 +2601,10 @@ function Connection({
             : "连接你的运维服务"}
       </h2>
       {!state.connected && saved.length > 0 && onSwitchSaved && (
-        <div className="saved-connections-quick" aria-label="已保存实例快捷连接">
+        <div
+          className="saved-connections-quick"
+          aria-label="已保存实例快捷连接"
+        >
           <span className="saved-connections-label">已保存实例</span>
           <div className="saved-connections-chips">
             {saved.map((item) => (
@@ -1678,7 +2657,9 @@ function Connection({
           required={!isEditingSaved}
           value={key}
           onChange={(e) => setKey(e.target.value)}
-          placeholder={isEditingSaved ? "留空则仅保存实例名称" : "粘贴已有的管理员 Key"}
+          placeholder={
+            isEditingSaved ? "留空则仅保存实例名称" : "粘贴已有的管理员 Key"
+          }
           autoComplete="off"
           spellCheck={false}
         />
@@ -1765,18 +2746,27 @@ function SettingsPage({
   onError: (e: unknown) => void;
   beforeConnectionChange: () => Promise<boolean>;
   onSwitchConnection?: (item: SavedConnection) => void;
-  onOpenConnectionModal?: (target: { baseUrl: string; name: string; requireKey?: boolean }) => void;
+  onOpenConnectionModal?: (target: {
+    baseUrl: string;
+    name: string;
+    requireKey?: boolean;
+  }) => void;
   switchingUrl?: string | null;
 }) {
   const [featureTab, setFeatureTab] = useState("recovery");
-  const [visitedTabs, setVisitedTabs] = useState<Record<string, boolean>>({ recovery: true });
+  const [visitedTabs, setVisitedTabs] = useState<Record<string, boolean>>({
+    recovery: true,
+  });
   const [removingUrl, setRemovingUrl] = useState<string | null>(null);
   const selectFeatureTab = (next: string) => {
     setFeatureTab(next);
     setVisitedTabs((old) => (old[next] ? old : { ...old, [next]: true }));
   };
   const connectionKey = `${state.preferences.base_url}:${state.connection_revision ?? 0}`;
-  const connections = useMemo(() => savedConnections(state.preferences), [state.preferences]);
+  const connections = useMemo(
+    () => savedConnections(state.preferences),
+    [state.preferences],
+  );
   const activeUrl = state.preferences.base_url.trim().replace(/\/+$/, "");
   async function action(name: string) {
     try {
@@ -1793,7 +2783,9 @@ function SettingsPage({
     if (removingUrl) return;
     setRemovingUrl(item.base_url);
     try {
-      const next = await command<ViewState>("remove_connection", { baseUrl: item.base_url });
+      const next = await command<ViewState>("remove_connection", {
+        baseUrl: item.base_url,
+      });
       if (next?.preferences) onState?.(next);
       onMessage(`已删除实例 ${item.name}`);
     } catch (e) {
@@ -1803,67 +2795,183 @@ function SettingsPage({
     }
   }
   return (
-    <div className={`settings-stack ${page === "features" ? "features-stack" : ""}`}>
+    <div
+      className={`settings-stack ${page === "features" ? "features-stack" : ""}`}
+    >
       {page === "features" ? (
         <>
           <div className="feature-tabs" role="tablist" aria-label="功能分区">
-            {[["recovery", "恢复与检测"], ["ip", "IP 管理"], ["sub2api", "Sub2API 配置"]].map(([key, label]) => (
-              <button key={key} id={`feature-tab-${key}`} role="tab" aria-selected={featureTab === key} aria-controls={`feature-panel-${key}`} tabIndex={featureTab === key ? 0 : -1} onClick={() => selectFeatureTab(key)} onKeyDown={e => {
-                const keys = ["recovery", "ip", "sub2api"];
-                const index = keys.indexOf(key);
-                const next = e.key === "ArrowRight" ? keys[(index + 1) % keys.length] : e.key === "ArrowLeft" ? keys[(index + keys.length - 1) % keys.length] : e.key === "Home" ? keys[0] : e.key === "End" ? keys[keys.length - 1] : null;
-                if (next) { e.preventDefault(); selectFeatureTab(next); document.getElementById(`feature-tab-${next}`)?.focus(); }
-              }}>{label}</button>
+            {[
+              ["recovery", "恢复与检测"],
+              ["ip", "IP 管理"],
+              ["sub2api", "Sub2API 配置"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                id={`feature-tab-${key}`}
+                role="tab"
+                aria-selected={featureTab === key}
+                aria-controls={`feature-panel-${key}`}
+                tabIndex={featureTab === key ? 0 : -1}
+                onClick={() => selectFeatureTab(key)}
+                onKeyDown={(e) => {
+                  const keys = ["recovery", "ip", "sub2api"];
+                  const index = keys.indexOf(key);
+                  const next =
+                    e.key === "ArrowRight"
+                      ? keys[(index + 1) % keys.length]
+                      : e.key === "ArrowLeft"
+                        ? keys[(index + keys.length - 1) % keys.length]
+                        : e.key === "Home"
+                          ? keys[0]
+                          : e.key === "End"
+                            ? keys[keys.length - 1]
+                            : null;
+                  if (next) {
+                    e.preventDefault();
+                    selectFeatureTab(next);
+                    document.getElementById(`feature-tab-${next}`)?.focus();
+                  }
+                }}
+              >
+                {label}
+              </button>
             ))}
           </div>
-          <div role="tabpanel" id="feature-panel-recovery" aria-labelledby="feature-tab-recovery" hidden={featureTab !== "recovery"}>
-          <ConfigForm
-            section="oauth"
-            title="恢复、测活与模型检测"
-            value={config.oauth}
-            online={state.online}
-            onChange={onChange}
-            onMessage={onMessage}
-            onError={onError}
+          <div
+            role="tabpanel"
+            id="feature-panel-recovery"
+            aria-labelledby="feature-tab-recovery"
+            hidden={featureTab !== "recovery"}
           >
-            {(draft, set) => (
-              <>
-                {Object.entries(oauthLabels).map(([key, label]) => (
-                  key === "oauth_recovery_test_model_id" || key === "model_detection_model_id" ? <AccountModelField key={`${connectionKey}:${key}`} label={label} value={draft[key]} accounts={accounts} online={state.online} set={v => set(key, v)}/> : <Field
-                    key={key}
-                    label={label}
-                    value={draft[key]}
-                    type={key === "oauth_daily_test_time" ? "time" : undefined}
-                    min={key === "oauth_early_reset_interval_seconds" ? 2 : undefined}
-                    disabled={key === "oauth_early_reset_interval_seconds" && draft.oauth_early_reset_enabled !== true}
-                    set={(v) => set(key, v)}
+            <ConfigForm
+              section="oauth"
+              title="恢复、测活与模型检测"
+              value={config.oauth}
+              online={state.online}
+              onChange={onChange}
+              onMessage={onMessage}
+              onError={onError}
+            >
+              {(draft, set) => (
+                <>
+                  {Object.entries(oauthLabels).map(([key, label]) =>
+                    key === "oauth_recovery_test_model_id" ||
+                    key === "model_detection_model_id" ? (
+                      <AccountModelField
+                        key={`${connectionKey}:${key}`}
+                        label={label}
+                        value={draft[key]}
+                        accounts={accounts}
+                        online={state.online}
+                        set={(v) => set(key, v)}
+                      />
+                    ) : (
+                      <Field
+                        key={key}
+                        label={label}
+                        value={draft[key]}
+                        type={
+                          key === "oauth_daily_test_time" ? "time" : undefined
+                        }
+                        min={
+                          key === "oauth_early_reset_interval_seconds"
+                            ? 2
+                            : undefined
+                        }
+                        disabled={
+                          key === "oauth_early_reset_interval_seconds" &&
+                          draft.oauth_early_reset_enabled !== true
+                        }
+                        set={(v) => set(key, v)}
+                      />
+                    ),
+                  )}
+                  <DetectionPlatformSettings
+                    value={draft.model_detection_platforms}
+                    set={(v) => set("model_detection_platforms", v)}
                   />
-                ))}
-                <DetectionPlatformSettings value={draft.model_detection_platforms} set={v => set("model_detection_platforms", v)}/>
-                {featureTab === "recovery" && (["modeltrace", "lm_detector"] as const).map(engine => (
-                  <FingerprintBankStatus key={connectionKey + engine} engine={engine} online={state.online}/>
-                ))}
-                <RecoveryAccounts accounts={accounts} connection={(draft.oauth_recovery_connection_account_ids as number[]) ?? []} models={(draft.oauth_recovery_model_account_ids as number[]) ?? []} change={(connection, models) => { set("oauth_recovery_connection_account_ids", connection); set("oauth_recovery_model_account_ids", models); }}/>
-              </>
+                  {featureTab === "recovery" &&
+                    (["modeltrace", "lm_detector"] as const).map((engine) => (
+                      <FingerprintBankStatus
+                        key={connectionKey + engine}
+                        engine={engine}
+                        online={state.online}
+                      />
+                    ))}
+                  <RecoveryAccounts
+                    accounts={accounts}
+                    connection={
+                      (draft.oauth_recovery_connection_account_ids as number[]) ??
+                      []
+                    }
+                    models={
+                      (draft.oauth_recovery_model_account_ids as number[]) ?? []
+                    }
+                    change={(connection, models) => {
+                      set("oauth_recovery_connection_account_ids", connection);
+                      set("oauth_recovery_model_account_ids", models);
+                    }}
+                  />
+                </>
+              )}
+            </ConfigForm>
+          </div>
+          <div
+            role="tabpanel"
+            id="feature-panel-sub2api"
+            aria-labelledby="feature-tab-sub2api"
+            hidden={featureTab !== "sub2api"}
+          >
+            {(featureTab === "sub2api" || visitedTabs.sub2api) && (
+              <Suspense fallback={null}>
+                <LazySub2ApiConfig
+                  key={connectionKey}
+                  active={
+                    featureTab === "sub2api" && state.foreground !== false
+                  }
+                  online={state.online}
+                />
+              </Suspense>
             )}
-          </ConfigForm>
           </div>
-          <div role="tabpanel" id="feature-panel-sub2api" aria-labelledby="feature-tab-sub2api" hidden={featureTab !== "sub2api"}>
-            {(featureTab === "sub2api" || visitedTabs.sub2api) && <Suspense fallback={null}><LazySub2ApiConfig key={connectionKey} active={featureTab === "sub2api" && state.foreground !== false} online={state.online}/></Suspense>}
-          </div>
-          <div role="tabpanel" id="feature-panel-ip" aria-labelledby="feature-tab-ip" hidden={featureTab !== "ip"}>
-            {(featureTab === "ip" || visitedTabs.ip) && <Suspense fallback={null}><LazyProxyManagement key={connectionKey} connectionKey={connectionKey} active={featureTab === "ip"} online={state.online} mobile={mobile}/></Suspense>}
+          <div
+            role="tabpanel"
+            id="feature-panel-ip"
+            aria-labelledby="feature-tab-ip"
+            hidden={featureTab !== "ip"}
+          >
+            {(featureTab === "ip" || visitedTabs.ip) && (
+              <Suspense fallback={null}>
+                <LazyProxyManagement
+                  key={connectionKey}
+                  connectionKey={connectionKey}
+                  active={featureTab === "ip"}
+                  online={state.online}
+                  mobile={mobile}
+                />
+              </Suspense>
+            )}
           </div>
         </>
       ) : (
         <>
-          <section className="settings-card instance-management-card" aria-label="Sub2API 实例管理">
+          <section
+            className="settings-card instance-management-card"
+            aria-label="Sub2API 实例管理"
+          >
             <div className="settings-heading">
               <h2>Sub2API 实例管理</h2>
               {onOpenConnectionModal && (
                 <button
                   type="button"
-                  onClick={() => onOpenConnectionModal({ baseUrl: "", name: "", requireKey: true })}
+                  onClick={() =>
+                    onOpenConnectionModal({
+                      baseUrl: "",
+                      name: "",
+                      requireKey: true,
+                    })
+                  }
                 >
                   <Plus size={14} />
                   新增实例
@@ -1873,7 +2981,8 @@ function SettingsPage({
             {connections.length > 0 ? (
               <div className="saved-instances-list">
                 {connections.map((item) => {
-                  const isCurrent = state.connected && item.base_url === activeUrl;
+                  const isCurrent =
+                    state.connected && item.base_url === activeUrl;
                   const isSwitching = switchingUrl === item.base_url;
                   const isRemoving = removingUrl === item.base_url;
                   return (
@@ -1887,7 +2996,9 @@ function SettingsPage({
                             className={`status-dot ${isCurrent ? (state.online ? "good" : "warning") : "muted"}`}
                           />
                           <strong>{item.name}</strong>
-                          <span className={`instance-badge ${isCurrent ? "active" : ""}`}>
+                          <span
+                            className={`instance-badge ${isCurrent ? "active" : ""}`}
+                          >
                             {isCurrent ? "当前连接" : "已保存"}
                           </span>
                         </div>
@@ -1925,7 +3036,9 @@ function SettingsPage({
                         <button
                           type="button"
                           className="danger-text"
-                          disabled={isCurrent || switchingUrl !== null || isRemoving}
+                          disabled={
+                            isCurrent || switchingUrl !== null || isRemoving
+                          }
                           title={
                             isCurrent
                               ? "当前实例正在连接或使用中，请先切换到其他实例或断开连接后再删除"
@@ -1947,11 +3060,13 @@ function SettingsPage({
           </section>
           <section className="settings-card">
             <h2>客户端</h2>
-            {state.platform !== "android" && <Field
-              label="开机启动"
-              value={state.preferences.launch_at_login}
-              set={(v) => void prefs({ launch_at_login: Boolean(v) })}
-            />}
+            {state.platform !== "android" && (
+              <Field
+                label="开机启动"
+                value={state.preferences.launch_at_login}
+                set={(v) => void prefs({ launch_at_login: Boolean(v) })}
+              />
+            )}
             <div className="field">
               <span>当前版本</span>
               <button
@@ -1961,7 +3076,9 @@ function SettingsPage({
                     .catch(onError)
                 }
               >
-                {runtimeVersion ?? appVersion} · {state.platform === "android" ? "查看发布页" : "检查更新"} <ExternalLink size={13} />
+                {runtimeVersion ?? appVersion} ·{" "}
+                {state.platform === "android" ? "查看发布页" : "检查更新"}{" "}
+                <ExternalLink size={13} />
               </button>
             </div>
           </section>
@@ -1998,10 +3115,23 @@ function SettingsPage({
             )}
           </ConfigForm>
           <section className="settings-card">
-            <Connection state={state} onState={onState} onError={onError} beforeChange={beforeConnectionChange} onSwitchSaved={onSwitchConnection} switchingUrl={switchingUrl} />
+            <Connection
+              state={state}
+              onState={onState}
+              onError={onError}
+              beforeChange={beforeConnectionChange}
+              onSwitchSaved={onSwitchConnection}
+              switchingUrl={switchingUrl}
+            />
             <button
               className="danger-text"
-              onClick={() => void beforeConnectionChange().then((allowed) => { if (allowed) return command("disconnect"); }).catch(onError)}
+              onClick={() =>
+                void beforeConnectionChange()
+                  .then((allowed) => {
+                    if (allowed) return command("disconnect");
+                  })
+                  .catch(onError)
+              }
             >
               <Unplug size={14} />
               断开连接并删除本机 Key
@@ -2034,14 +3164,21 @@ function Field({
   useEffect(() => {
     if (!numeric || !Number.isFinite(value)) return;
     setRaw((current) =>
-      current.trim() !== "" && Number(current) === value ? current : String(value),
+      current.trim() !== "" && Number(current) === value
+        ? current
+        : String(value),
     );
   }, [numeric, value]);
   return (
     <label className="field">
       <span>{label}</span>
       {typeof value === "boolean" ? (
-        <Switch label={label} on={value} disabled={disabled} onChange={() => set(!value)} />
+        <Switch
+          label={label}
+          on={value}
+          disabled={disabled}
+          onChange={() => set(!value)}
+        />
       ) : (
         <input
           type={type || (numeric ? "number" : "text")}
@@ -2062,7 +3199,11 @@ function Field({
             }
           }}
           onBlur={() => {
-            if (numeric && (raw.trim() === "" || !Number.isFinite(Number(raw))) && Number.isFinite(value)) {
+            if (
+              numeric &&
+              (raw.trim() === "" || !Number.isFinite(Number(raw))) &&
+              Number.isFinite(value)
+            ) {
               setRaw(String(value));
             }
           }}

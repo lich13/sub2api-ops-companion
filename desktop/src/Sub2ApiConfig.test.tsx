@@ -54,8 +54,15 @@ beforeEach(() => {
     configPreview("/sub2api-config", {}) as ConfigDocument,
   );
   vi.mocked(api).mockImplementation(async (_method, path) => {
-    if (path === "/sub2api-system/version") return { version: "0.2.19" } as never;
-    if (path === "/sub2api-system/check-updates?force=true") return { current_version: "0.2.19", latest_version: "0.2.19", has_update: false, build_type: "release" } as never;
+    if (path === "/sub2api-system/version")
+      return { version: "0.2.19" } as never;
+    if (path === "/sub2api-system/check-updates?force=true")
+      return {
+        current_version: "0.2.19",
+        latest_version: "0.2.19",
+        has_update: false,
+        build_type: "release",
+      } as never;
     if (path === "/sub2api-config") return fixture as never;
     if (path.endsWith("/validate")) return { valid: true, errors: [] } as never;
     if (path.endsWith("/apply"))
@@ -477,34 +484,62 @@ it("shows unavailable and empty states with a way back to the fields", async () 
   expect(input("server.host")).not.toBeNull();
 });
 
-it.each([false, true])("refreshes the parent runtime after a version change while protecting existing drafts (%s)", async (hasDraft) => {
-  await act(async () => root.render(<Sub2ApiConfig active online />));
-  expect(api).not.toHaveBeenCalledWith("GET", "/sub2api-system/version");
-  await fill(input("搜索配置字段"), "load_batch_cache_ttl_ms");
-  if (hasDraft) await fill(input("gateway.scheduling.load_batch_cache_ttl_ms"), "300");
-  fixture = { ...fixture, version: "0.2.21", commit: "fixture-new-commit", runtime_revision: "c".repeat(64) };
-  const original = vi.mocked(api).getMockImplementation()!;
-  vi.mocked(api).mockImplementation(async (...args) => args[1].includes("/check-updates")
-    ? { current_version: "0.2.21", latest_version: "0.2.21", has_update: false, cached: false, build_type: "release" } as never
-    : original(...args));
-  await act(async () => button("检查更新").click());
-  expect(vi.mocked(api).mock.calls.filter(([, path]) => path === "/sub2api-config")).toHaveLength(2);
-  expect(container.textContent).toContain("运行 0.2.21");
-  if (hasDraft) {
-    expect(input("gateway.scheduling.load_batch_cache_ttl_ms").value).toBe("300");
-    expect(container.textContent).toContain("文件或运行进程已变更");
-    expect(button("应用并重启").disabled).toBe(true);
-  } else {
-    await fill(input("gateway.scheduling.load_batch_cache_ttl_ms"), "300");
-    await act(async () => button("应用并重启").click());
-    expect(vi.mocked(api).mock.calls.find(([, path]) => path.endsWith("/validate"))?.[2]).toMatchObject({ runtime_revision: "c".repeat(64) });
-  }
-});
+it.each([false, true])(
+  "refreshes the parent runtime after a version change while protecting existing drafts (%s)",
+  async (hasDraft) => {
+    await act(async () => root.render(<Sub2ApiConfig active online />));
+    expect(api).not.toHaveBeenCalledWith("GET", "/sub2api-system/version");
+    await fill(input("搜索配置字段"), "load_batch_cache_ttl_ms");
+    if (hasDraft)
+      await fill(input("gateway.scheduling.load_batch_cache_ttl_ms"), "300");
+    fixture = {
+      ...fixture,
+      version: "0.2.21",
+      commit: "fixture-new-commit",
+      runtime_revision: "c".repeat(64),
+    };
+    const original = vi.mocked(api).getMockImplementation()!;
+    vi.mocked(api).mockImplementation(async (...args) =>
+      args[1].includes("/check-updates")
+        ? ({
+            current_version: "0.2.21",
+            latest_version: "0.2.21",
+            has_update: false,
+            cached: false,
+            build_type: "release",
+          } as never)
+        : original(...args),
+    );
+    await act(async () => button("检查更新").click());
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(([, path]) => path === "/sub2api-config"),
+    ).toHaveLength(2);
+    expect(container.textContent).toContain("运行 0.2.21");
+    if (hasDraft) {
+      expect(input("gateway.scheduling.load_batch_cache_ttl_ms").value).toBe(
+        "300",
+      );
+      expect(container.textContent).toContain("文件或运行进程已变更");
+      expect(button("应用并重启").disabled).toBe(true);
+    } else {
+      await fill(input("gateway.scheduling.load_batch_cache_ttl_ms"), "300");
+      await act(async () => button("应用并重启").click());
+      expect(
+        vi
+          .mocked(api)
+          .mock.calls.find(([, path]) => path.endsWith("/validate"))?.[2],
+      ).toMatchObject({ runtime_revision: "c".repeat(64) });
+    }
+  },
+);
 
 it("keeps the native version panel available when the configuration host fails", async () => {
   const original = vi.mocked(api).getMockImplementation()!;
   vi.mocked(api).mockImplementation(async (...args) => {
-    if (args[1] === "/sub2api-config") throw new Error("fixture host unavailable");
+    if (args[1] === "/sub2api-config")
+      throw new Error("fixture host unavailable");
     return original(...args);
   });
   await act(async () => root.render(<Sub2ApiConfig active online />));

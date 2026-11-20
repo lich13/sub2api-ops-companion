@@ -7,16 +7,40 @@ import App from "./main";
 import type { Account, Config, ConfigSection, ViewState } from "./types";
 
 vi.mock("./bridge", () => ({
-  api: vi.fn(), command: vi.fn(), subscribe: vi.fn(),
-  updates: vi.fn(async () => () => {}), watchWindowFocus: vi.fn(async () => () => {}), preview: true,
+  api: vi.fn(),
+  command: vi.fn(),
+  subscribe: vi.fn(),
+  updates: vi.fn(async () => () => {}),
+  watchWindowFocus: vi.fn(async () => () => {}),
+  preview: true,
 }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const account = (id: number, type: "oauth" | "apikey", platform = "openai"): Account => ({
-  id, name: `Fixture ${id}`, type, platform, priority: id, status: "active", schedulable: true, available: true,
-  group_ids: [], blockers: [], version: "a".repeat(64), operation_versions: {}, last_success_at: null,
-  last_error_at: null, last_error_id: null, last_error_code: null, last_error_status: null,
-  error_message: "", success_after_error: false, usage_windows: [],
+const account = (
+  id: number,
+  type: "oauth" | "apikey",
+  platform = "openai",
+): Account => ({
+  id,
+  name: `Fixture ${id}`,
+  type,
+  platform,
+  priority: id,
+  status: "active",
+  schedulable: true,
+  available: true,
+  group_ids: [],
+  blockers: [],
+  version: "a".repeat(64),
+  operation_versions: {},
+  last_success_at: null,
+  last_error_at: null,
+  last_error_id: null,
+  last_error_code: null,
+  last_error_status: null,
+  error_message: "",
+  success_after_error: false,
+  usage_windows: [],
 });
 
 let container: HTMLDivElement;
@@ -27,33 +51,65 @@ let receive: (value: ViewState) => void;
 
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.mocked(subscribe).mockImplementation(async (callback) => { receive = callback; return () => {}; });
+  vi.mocked(subscribe).mockImplementation(async (callback) => {
+    receive = callback;
+    return () => {};
+  });
   initial = {
-    connected: true, online: true, platform: "macos", foreground: true, error: "",
-    preferences: { base_url: "https://example.invalid", pinned: false, launch_at_login: false },
+    connected: true,
+    online: true,
+    platform: "macos",
+    foreground: true,
+    error: "",
+    preferences: {
+      base_url: "https://example.invalid",
+      pinned: false,
+      launch_at_login: false,
+    },
     snapshot: {
-      observed_at: "2026-10-08T00:00:00Z", accounts: [account(1, "oauth"), account(2, "oauth"), account(11, "apikey"), account(21, "apikey", "grok")],
-      groups: [], errors: [], recoveries: [],
+      observed_at: "2026-10-08T00:00:00Z",
+      accounts: [
+        account(1, "oauth"),
+        account(2, "oauth"),
+        account(11, "apikey"),
+        account(21, "apikey", "grok"),
+      ],
+      groups: [],
+      errors: [],
+      recoveries: [],
     },
   };
   config = {
     oauth: {
-      revision: "oauth-r1", oauth_recovery_monitor_enabled: true, oauth_auto_reset_credit_enabled: false,
-      oauth_early_reset_enabled: false, oauth_early_reset_interval_seconds: 60,
-      oauth_daily_test_enabled: false, oauth_daily_test_time: "09:00", oauth_usage_refresh_concurrency: 3,
-      connection_test_retry_interval_seconds: 10, connection_test_max_retries: 3,
-      oauth_recovery_test_concurrency: 2, oauth_recovery_test_model_id: "fixture-model",
+      revision: "oauth-r1",
+      oauth_recovery_monitor_enabled: true,
+      oauth_auto_reset_credit_enabled: false,
+      oauth_early_reset_enabled: false,
+      oauth_early_reset_interval_seconds: 60,
+      oauth_daily_test_enabled: false,
+      oauth_daily_test_time: "09:00",
+      oauth_usage_refresh_concurrency: 3,
+      connection_test_retry_interval_seconds: 10,
+      connection_test_max_retries: 3,
+      oauth_recovery_test_concurrency: 2,
+      oauth_recovery_test_model_id: "fixture-model",
       model_detection_model_id: "gpt-6-luna",
-      oauth_recovery_connection_account_ids: [1], oauth_recovery_model_account_ids: [2],
+      oauth_recovery_connection_account_ids: [1],
+      oauth_recovery_model_account_ids: [2],
     },
     bark: { revision: "bark-r1", enabled: false },
   };
-  vi.mocked(command).mockImplementation(async (name) => name === "get_state" ? initial as never : undefined as never);
+  vi.mocked(command).mockImplementation(async (name) =>
+    name === "get_state" ? (initial as never) : (undefined as never),
+  );
   vi.mocked(api).mockImplementation(async (method, path) => {
-    if (method === "GET" && path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
+    if (method === "GET" && path === "/quota-refresh")
+      return { status: "idle", items: [], total: 0, completed: 0 } as never;
     if (method === "GET" && path === "/config") return config as never;
-    if (method === "GET" && path === "/proxy-management") return { items: [], page: 1, page_size: 20, total: 0, pages: 0 } as never;
-    if (method === "GET" && path === "/sub2api-config") return { available: false, editable: false, reason: "fixture" } as never;
+    if (method === "GET" && path === "/proxy-management")
+      return { items: [], page: 1, page_size: 20, total: 0, pages: 0 } as never;
+    if (method === "GET" && path === "/sub2api-config")
+      return { available: false, editable: false, reason: "fixture" } as never;
     throw new Error(`Unexpected fixture request: ${method} ${path}`);
   });
   container = document.createElement("div");
@@ -67,20 +123,29 @@ afterEach(async () => {
 });
 
 async function openFeatures() {
-  await act(async () => root.render(<App/>));
-  const nav = [...container.querySelectorAll<HTMLButtonElement>("aside nav button, .bottom-nav button")].find((button) => button.textContent === "功能")!;
+  await act(async () => root.render(<App />));
+  const nav = [
+    ...container.querySelectorAll<HTMLButtonElement>(
+      "aside nav button, .bottom-nav button",
+    ),
+  ].find((button) => button.textContent === "功能")!;
   await act(async () => nav.click());
 }
 
 function form(title: string) {
-  return [...container.querySelectorAll<HTMLFormElement>("form")].find((node) => node.querySelector("h2")?.textContent === title)!;
+  return [...container.querySelectorAll<HTMLFormElement>("form")].find(
+    (node) => node.querySelector("h2")?.textContent === title,
+  )!;
 }
 
 function saveButton(target: HTMLFormElement) {
-  return [...target.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "保存")!;
+  return [...target.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "保存",
+  )!;
 }
 
-const writes = () => vi.mocked(api).mock.calls.filter(([method]) => method !== "GET");
+const writes = () =>
+  vi.mocked(api).mock.calls.filter(([method]) => method !== "GET");
 
 describe("feature settings drafts", () => {
   it("keeps early reset independent, validates its interval and retains a failed save", async () => {
@@ -88,92 +153,213 @@ describe("feature settings drafts", () => {
     initial.platform = "android";
     await openFeatures();
     const target = form("恢复、测活与模型检测");
-    const toggle = target.querySelector<HTMLButtonElement>('[aria-label="提前重置检测"]')!;
-    const input = [...target.querySelectorAll("label.field")].find(node => node.textContent?.includes("检测间隔（秒）"))!.querySelector<HTMLInputElement>("input")!;
+    const toggle = target.querySelector<HTMLButtonElement>(
+      '[aria-label="提前重置检测"]',
+    )!;
+    const input = [...target.querySelectorAll("label.field")]
+      .find((node) => node.textContent?.includes("检测间隔（秒）"))!
+      .querySelector<HTMLInputElement>("input")!;
     expect(toggle.getAttribute("aria-checked")).toBe("false");
     expect(input.value).toBe("60");
     expect(input.disabled).toBe(true);
     expect(input.min).toBe("2");
     await act(async () => toggle.click());
     expect(input.disabled).toBe(false);
-    const fill = async (value: string) => act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    await fill(""); expect(input.value).toBe("");
-    await fill("1"); expect(input.checkValidity()).toBe(false);
-    await fill("2"); expect(input.checkValidity()).toBe(true);
+    const fill = async (value: string) =>
+      act(async () => {
+        Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        )!.set!.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    await fill("");
+    expect(input.value).toBe("");
+    await fill("1");
+    expect(input.checkValidity()).toBe(false);
+    await fill("2");
+    expect(input.checkValidity()).toBe(true);
     const original = vi.mocked(api).getMockImplementation()!;
     vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (method === "PUT" && path === "/config/oauth") throw new Error("fixture save failed");
+      if (method === "PUT" && path === "/config/oauth")
+        throw new Error("fixture save failed");
       return original(method, path, body);
     });
     await act(async () => saveButton(target).click());
     expect(container.textContent).toContain("fixture save failed");
-    expect(input.value).toBe("2"); expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(input.value).toBe("2");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
     expect(saveButton(target).disabled).toBe(false);
-    vi.mocked(api).mockImplementation(async (method, path, body) => method === "PUT" && path === "/config/oauth"
-      ? { ...config.oauth, revision: "oauth-r2", oauth_early_reset_enabled: true, oauth_early_reset_interval_seconds: 2 } as never
-      : original(method, path, body));
+    vi.mocked(api).mockImplementation(async (method, path, body) =>
+      method === "PUT" && path === "/config/oauth"
+        ? ({
+            ...config.oauth,
+            revision: "oauth-r2",
+            oauth_early_reset_enabled: true,
+            oauth_early_reset_interval_seconds: 2,
+          } as never)
+        : original(method, path, body),
+    );
     await act(async () => saveButton(target).click());
-    expect(writes().at(-1)).toEqual(["PUT", "/config/oauth", { expected_revision: "oauth-r1", changes: { oauth_early_reset_enabled: true, oauth_early_reset_interval_seconds: 2 } }]);
+    expect(writes().at(-1)).toEqual([
+      "PUT",
+      "/config/oauth",
+      {
+        expected_revision: "oauth-r1",
+        changes: {
+          oauth_early_reset_enabled: true,
+          oauth_early_reset_interval_seconds: 2,
+        },
+      },
+    ]);
     expect(saveButton(target).disabled).toBe(true);
   });
 
   it("saves shared retry controls including zero without exposing the retired batch cap", async () => {
     await openFeatures();
     const target = form("恢复、测活与模型检测");
-    const field = (label: string) => [...target.querySelectorAll("label.field")].find(node => node.textContent?.includes(label))!.querySelector<HTMLInputElement>("input")!;
+    const field = (label: string) =>
+      [...target.querySelectorAll("label.field")]
+        .find((node) => node.textContent?.includes(label))!
+        .querySelector<HTMLInputElement>("input")!;
     expect(target.textContent).not.toContain("单轮账号上限");
     expect(field("连接测试重试间隔").value).toBe("10");
     expect(field("连接测试最大重试次数").value).toBe("3");
-    for (const [label,value] of [["连接测试重试间隔","7"],["连接测试最大重试次数","0"]]) {
+    for (const [label, value] of [
+      ["连接测试重试间隔", "7"],
+      ["连接测试最大重试次数", "0"],
+    ]) {
       await act(async () => {
         const input = field(label);
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!.call(input,value);
-        input.dispatchEvent(new Event("input",{bubbles:true}));
+        Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        )!.set!.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
       });
     }
     const original = vi.mocked(api).getMockImplementation()!;
-    vi.mocked(api).mockImplementation(async (method,path,body) => method === "PUT" && path === "/config/oauth"
-      ? {...config.oauth,revision:"oauth-r2",connection_test_retry_interval_seconds:7,connection_test_max_retries:0} as never : original(method,path,body));
+    vi.mocked(api).mockImplementation(async (method, path, body) =>
+      method === "PUT" && path === "/config/oauth"
+        ? ({
+            ...config.oauth,
+            revision: "oauth-r2",
+            connection_test_retry_interval_seconds: 7,
+            connection_test_max_retries: 0,
+          } as never)
+        : original(method, path, body),
+    );
     await act(async () => saveButton(target).click());
-    expect(writes()).toEqual([["PUT","/config/oauth",{expected_revision:"oauth-r1",changes:{connection_test_retry_interval_seconds:7,connection_test_max_retries:0}}]]);
+    expect(writes()).toEqual([
+      [
+        "PUT",
+        "/config/oauth",
+        {
+          expected_revision: "oauth-r1",
+          changes: {
+            connection_test_retry_interval_seconds: 7,
+            connection_test_max_retries: 0,
+          },
+        },
+      ],
+    ]);
   });
 
   it("saves the OpenAI engine and sample count together only on submit", async () => {
-    config.oauth.model_detection_platforms = { openai: { engine: "modeltrace", sample_count: 1 } };
+    config.oauth.model_detection_platforms = {
+      openai: { engine: "modeltrace", sample_count: 1 },
+    };
     await openFeatures();
     const target = form("恢复、测活与模型检测");
-    const source = target.querySelector<HTMLSelectElement>('[aria-label="OpenAI 定时检测源"]')!;
+    const source = target.querySelector<HTMLSelectElement>(
+      '[aria-label="OpenAI 定时检测源"]',
+    )!;
     expect(source.value).toBe("modeltrace");
     for (const platform of ["Claude", "Grok", "DeepSeek"]) {
-      const fixed = target.querySelector<HTMLSelectElement>(`[aria-label="${platform} 定时检测源"]`)!;
-      expect(fixed.value).toBe("lm_detector"); expect(fixed.disabled).toBe(true);
-      expect(target.querySelector<HTMLSelectElement>(`[aria-label="${platform} 定时采样组数"]`)!.value).toBe("1");
+      const fixed = target.querySelector<HTMLSelectElement>(
+        `[aria-label="${platform} 定时检测源"]`,
+      )!;
+      expect(fixed.value).toBe("lm_detector");
+      expect(fixed.disabled).toBe(true);
+      expect(
+        target.querySelector<HTMLSelectElement>(
+          `[aria-label="${platform} 定时采样组数"]`,
+        )!.value,
+      ).toBe("1");
     }
-    expect(target.querySelector('[aria-label="OpenAI 定时采样组数"]')).toBeNull();
-    await act(async () => { source.value = "lm_detector"; source.dispatchEvent(new Event("change", { bubbles: true })); });
-    const count = target.querySelector<HTMLSelectElement>('[aria-label="OpenAI 定时采样组数"]')!;
+    expect(
+      target.querySelector('[aria-label="OpenAI 定时采样组数"]'),
+    ).toBeNull();
+    await act(async () => {
+      source.value = "lm_detector";
+      source.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const count = target.querySelector<HTMLSelectElement>(
+      '[aria-label="OpenAI 定时采样组数"]',
+    )!;
     expect(count.value).toBe("1");
-    await act(async () => { count.value = "3"; count.dispatchEvent(new Event("change", { bubbles: true })); });
+    await act(async () => {
+      count.value = "3";
+      count.dispatchEvent(new Event("change", { bubbles: true }));
+    });
     expect(writes()).toEqual([]);
     const original = vi.mocked(api).getMockImplementation()!;
-    vi.mocked(api).mockImplementation(async (method, path, body) => method === "PUT" && path === "/config/oauth"
-      ? { ...config.oauth, revision: "oauth-r2", model_detection_platforms: { openai: { engine: "lm_detector", sample_count: 3 } } } as never
-      : original(method, path, body));
+    vi.mocked(api).mockImplementation(async (method, path, body) =>
+      method === "PUT" && path === "/config/oauth"
+        ? ({
+            ...config.oauth,
+            revision: "oauth-r2",
+            model_detection_platforms: {
+              openai: { engine: "lm_detector", sample_count: 3 },
+            },
+          } as never)
+        : original(method, path, body),
+    );
     await act(async () => saveButton(target).click());
-    expect(writes()).toEqual([["PUT", "/config/oauth", { expected_revision: "oauth-r1", changes: { model_detection_platforms: { openai: { engine: "lm_detector", sample_count: 3 } } } }]]);
+    expect(writes()).toEqual([
+      [
+        "PUT",
+        "/config/oauth",
+        {
+          expected_revision: "oauth-r1",
+          changes: {
+            model_detection_platforms: {
+              openai: { engine: "lm_detector", sample_count: 3 },
+            },
+          },
+        },
+      ],
+    ]);
   });
   it("keeps unsubmitted recovery fields across all three feature tabs", async () => {
     await openFeatures();
-    const target=form("恢复、测活与模型检测");
-    const model=[...target.querySelectorAll("label.field")].find(n=>n.textContent?.includes("自动检测模型"))!.querySelector("input")!;
-    await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!.call(model,"draft-model");model.dispatchEvent(new Event("input",{bubbles:true}));});
-    for(const name of ["ip","sub2api","recovery"]) await act(async()=>container.querySelector<HTMLButtonElement>(`#feature-tab-${name}`)!.click());
-    expect(model.value).toBe("draft-model");expect(writes()).toEqual([]);
-    expect(container.querySelector("#feature-panel-recovery")?.hasAttribute("hidden")).toBe(false);
-    expect(container.querySelector("#feature-panel-ip")?.hasAttribute("hidden")).toBe(true);
+    const target = form("恢复、测活与模型检测");
+    const model = [...target.querySelectorAll("label.field")]
+      .find((n) => n.textContent?.includes("自动检测模型"))!
+      .querySelector("input")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(model, "draft-model");
+      model.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    for (const name of ["ip", "sub2api", "recovery"])
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>(`#feature-tab-${name}`)!
+          .click(),
+      );
+    expect(model.value).toBe("draft-model");
+    expect(writes()).toEqual([]);
+    expect(
+      container
+        .querySelector("#feature-panel-recovery")
+        ?.hasAttribute("hidden"),
+    ).toBe(false);
+    expect(
+      container.querySelector("#feature-panel-ip")?.hasAttribute("hidden"),
+    ).toBe(true);
   });
 
   it("shows recovery settings without retired model-config tab or Key fallback controls", async () => {
@@ -188,9 +374,13 @@ describe("feature settings drafts", () => {
   it("saves mutually exclusive recovery modes together without changing the automatic card-use setting", async () => {
     await openFeatures();
     const target = form("恢复、测活与模型检测");
-    const columns = () => [...target.querySelectorAll(".recovery-columns fieldset")];
-    const input = (column: number, name: string) => [...columns()[column].querySelectorAll("label")]
-      .find((node) => node.textContent?.includes(name))!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    const columns = () => [
+      ...target.querySelectorAll(".recovery-columns fieldset"),
+    ];
+    const input = (column: number, name: string) =>
+      [...columns()[column].querySelectorAll("label")]
+        .find((node) => node.textContent?.includes(name))!
+        .querySelector<HTMLInputElement>('input[type="checkbox"]')!;
     expect(input(0, "Fixture 1").checked).toBe(true);
     expect(input(1, "Fixture 2").checked).toBe(true);
     await act(async () => input(1, "Fixture 1").click());
@@ -202,31 +392,55 @@ describe("feature settings drafts", () => {
     expect(config.oauth.oauth_recovery_model_account_ids).toEqual([2]);
     const original = vi.mocked(api).getMockImplementation()!;
     vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (method === "PUT" && path === "/config/oauth") return {
-        ...config.oauth, revision: "oauth-r2", oauth_recovery_connection_account_ids: [], oauth_recovery_model_account_ids: [2, 1],
-      } as never;
+      if (method === "PUT" && path === "/config/oauth")
+        return {
+          ...config.oauth,
+          revision: "oauth-r2",
+          oauth_recovery_connection_account_ids: [],
+          oauth_recovery_model_account_ids: [2, 1],
+        } as never;
       return original(method, path, body);
     });
     await act(async () => saveButton(target).click());
-    expect(writes()).toEqual([["PUT", "/config/oauth", {
-      expected_revision: "oauth-r1", changes: { oauth_recovery_connection_account_ids: [], oauth_recovery_model_account_ids: [2, 1] },
-    }]]);
-    expect(target.querySelector('[aria-label="7d 100% 且 429 时自动用卡"]')?.getAttribute("aria-checked")).toBe("false");
+    expect(writes()).toEqual([
+      [
+        "PUT",
+        "/config/oauth",
+        {
+          expected_revision: "oauth-r1",
+          changes: {
+            oauth_recovery_connection_account_ids: [],
+            oauth_recovery_model_account_ids: [2, 1],
+          },
+        },
+      ],
+    ]);
+    expect(
+      target
+        .querySelector('[aria-label="7d 100% 且 429 时自动用卡"]')
+        ?.getAttribute("aria-checked"),
+    ).toBe("false");
     expect(saveButton(target).disabled).toBe(true);
   });
 
   it("defaults and saves the global automatic detection model in feature settings", async () => {
     await openFeatures();
     const target = form("恢复、测活与模型检测");
-    const field = [...target.querySelectorAll<HTMLLabelElement>("label.field")]
-      .find((node) => node.textContent?.includes("自动检测模型"))!;
+    const field = [
+      ...target.querySelectorAll<HTMLLabelElement>("label.field"),
+    ].find((node) => node.textContent?.includes("自动检测模型"))!;
     const model = field.querySelector<HTMLInputElement>("input")!;
     expect(field.textContent).toContain("自动检测模型");
-    expect(target.textContent).not.toContain("当前 Companion 连接内统一使用此模型");
+    expect(target.textContent).not.toContain(
+      "当前 Companion 连接内统一使用此模型",
+    );
     expect(model.value).toBe("gpt-6-luna");
 
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(model, "fixture-model");
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(model, "fixture-model");
       model.dispatchEvent(new Event("input", { bubbles: true }));
     });
     expect(writes()).toEqual([]);
@@ -234,16 +448,26 @@ describe("feature settings drafts", () => {
 
     const original = vi.mocked(api).getMockImplementation()!;
     vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (method === "PUT" && path === "/config/oauth") return {
-        ...config.oauth, revision: "oauth-r2", model_detection_model_id: "fixture-model",
-      } as never;
+      if (method === "PUT" && path === "/config/oauth")
+        return {
+          ...config.oauth,
+          revision: "oauth-r2",
+          model_detection_model_id: "fixture-model",
+        } as never;
       return original(method, path, body);
     });
     await act(async () => saveButton(target).click());
 
-    expect(writes()).toEqual([["PUT", "/config/oauth", {
-      expected_revision: "oauth-r1", changes: { model_detection_model_id: "fixture-model" },
-    }]]);
+    expect(writes()).toEqual([
+      [
+        "PUT",
+        "/config/oauth",
+        {
+          expected_revision: "oauth-r1",
+          changes: { model_detection_model_id: "fixture-model" },
+        },
+      ],
+    ]);
     expect(config.oauth.model_detection_model_id).toBe("gpt-6-luna");
     expect(saveButton(target).disabled).toBe(true);
     expect(target.querySelector("fieldset")?.disabled).toBe(false);
@@ -254,34 +478,89 @@ it("selects source models independently, refreshes explicitly and keeps typed ID
   const original = vi.mocked(api).getMockImplementation()!;
   let resolveOld!: (value: unknown) => void;
   vi.mocked(api).mockImplementation(async (method, path, body) => {
-    if (path === "/accounts/1/models?purpose=model_test") return new Promise(resolve => { resolveOld = resolve; }) as never;
-    if (path === "/accounts/2/models?purpose=model_test") return [{ id: "fixture-source-two" }] as never;
-    if (path === "/accounts/2/models?purpose=model_test&refresh=true") return [{ id: "fixture-refreshed" }] as never;
+    if (path === "/accounts/1/models?purpose=model_test")
+      return new Promise((resolve) => {
+        resolveOld = resolve;
+      }) as never;
+    if (path === "/accounts/2/models?purpose=model_test")
+      return [{ id: "fixture-source-two" }] as never;
+    if (path === "/accounts/2/models?purpose=model_test&refresh=true")
+      return [{ id: "fixture-refreshed" }] as never;
     return original(method, path, body);
   });
   await openFeatures();
-  const source = container.querySelector<HTMLSelectElement>('[aria-label="测活模型来源账号"]')!;
-  const select = async (value: string) => { await act(async () => { source.value = value; source.dispatchEvent(new Event("change", { bubbles: true })); }); };
-  await select("1"); await select("2");
+  const source = container.querySelector<HTMLSelectElement>(
+    '[aria-label="测活模型来源账号"]',
+  )!;
+  const select = async (value: string) => {
+    await act(async () => {
+      source.value = value;
+      source.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  };
+  await select("1");
+  await select("2");
   await act(async () => resolveOld([{ id: "fixture-obsolete" }]));
-  expect([...container.querySelectorAll('datalist option')].map(node => node.getAttribute("value"))).toEqual(["fixture-source-two"]);
-  expect(container.querySelector<HTMLInputElement>('[aria-label="测活模型"]')!.value).toBe("fixture-model");
-  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="刷新测活模型列表"]')!.click());
-  expect(container.querySelector('datalist option')?.getAttribute("value")).toBe("fixture-refreshed");
+  expect(
+    [...container.querySelectorAll("datalist option")].map((node) =>
+      node.getAttribute("value"),
+    ),
+  ).toEqual(["fixture-source-two"]);
+  expect(
+    container.querySelector<HTMLInputElement>('[aria-label="测活模型"]')!.value,
+  ).toBe("fixture-model");
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="刷新测活模型列表"]')!
+      .click(),
+  );
+  expect(
+    container.querySelector("datalist option")?.getAttribute("value"),
+  ).toBe("fixture-refreshed");
   expect(writes()).toEqual([]);
   expect(container.textContent).not.toContain("次数不含首次执行");
-  const autoSource = container.querySelector<HTMLSelectElement>('[aria-label="自动检测模型来源账号"]')!;
+  const autoSource = container.querySelector<HTMLSelectElement>(
+    '[aria-label="自动检测模型来源账号"]',
+  )!;
   expect(autoSource.value).toBe("");
-  for (const [label, value] of [["测活模型", "fixture-manual-recovery"], ["自动检测模型", "fixture-manual-detection"]]) {
+  for (const [label, value] of [
+    ["测活模型", "fixture-manual-recovery"],
+    ["自动检测模型", "fixture-manual-detection"],
+  ]) {
     await act(async () => {
-      const input = container.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      const input = container.querySelector<HTMLInputElement>(
+        `[aria-label="${label}"]`,
+      )!;
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, value);
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
   }
   const read = vi.mocked(api).getMockImplementation()!;
-  vi.mocked(api).mockImplementation(async (method, path, body) => method === "PUT" && path === "/config/oauth"
-    ? { ...config.oauth, revision: "oauth-r2", oauth_recovery_test_model_id: "fixture-manual-recovery", model_detection_model_id: "fixture-manual-detection" } as never : read(method, path, body));
+  vi.mocked(api).mockImplementation(async (method, path, body) =>
+    method === "PUT" && path === "/config/oauth"
+      ? ({
+          ...config.oauth,
+          revision: "oauth-r2",
+          oauth_recovery_test_model_id: "fixture-manual-recovery",
+          model_detection_model_id: "fixture-manual-detection",
+        } as never)
+      : read(method, path, body),
+  );
   await act(async () => saveButton(form("恢复、测活与模型检测")).click());
-  expect(writes()).toEqual([["PUT", "/config/oauth", { expected_revision: "oauth-r1", changes: { oauth_recovery_test_model_id: "fixture-manual-recovery", model_detection_model_id: "fixture-manual-detection" } }]]);
+  expect(writes()).toEqual([
+    [
+      "PUT",
+      "/config/oauth",
+      {
+        expected_revision: "oauth-r1",
+        changes: {
+          oauth_recovery_test_model_id: "fixture-manual-recovery",
+          model_detection_model_id: "fixture-manual-detection",
+        },
+      },
+    ],
+  ]);
 });

@@ -45,8 +45,16 @@ const account = (overrides: Partial<Account> = {}): Account => ({
 });
 
 const saved = (verified: boolean) => ({
-  id: "f".repeat(32), account_id: 11, account_name: "OAuth 账号", action: "degradation_mark", status: "completed", requested: {},
-  result: { verified, degradation_mark: { marked: true, version: "mark-version-2" } },
+  id: "f".repeat(32),
+  account_id: 11,
+  account_name: "OAuth 账号",
+  action: "degradation_mark",
+  status: "completed",
+  requested: {},
+  result: {
+    verified,
+    degradation_mark: { marked: true, version: "mark-version-2" },
+  },
 });
 
 beforeEach(() => {
@@ -67,18 +75,31 @@ describe("degradation mark", () => {
     await act(async () =>
       root.render(
         <>
-          <DegradationBadge account={account({ degradation_mark: { marked: true, version: "mark-version" } })} />
-          <DegradationBadge compact account={account({ degradation_mark: { marked: true, version: "mark-version" } })} />
+          <DegradationBadge
+            account={account({
+              degradation_mark: { marked: true, version: "mark-version" },
+            })}
+          />
+          <DegradationBadge
+            compact
+            account={account({
+              degradation_mark: { marked: true, version: "mark-version" },
+            })}
+          />
         </>,
       ),
     );
-    const badges = [...container.querySelectorAll<HTMLElement>(".degradation-badge")];
+    const badges = [
+      ...container.querySelectorAll<HTMLElement>(".degradation-badge"),
+    ];
     expect(badges).toHaveLength(2);
     expect(badges[0].textContent).toContain("降智");
     expect(badges[1].textContent).toBe("");
     expect(badges[1].getAttribute("aria-label")).toBe("降智");
     expect(badges[1].getAttribute("role")).toBe("img");
-    expect(badges[1].querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    expect(badges[1].querySelector("svg")?.getAttribute("aria-hidden")).toBe(
+      "true",
+    );
   });
 
   it("renders only when marked and queues one verified mark operation", async () => {
@@ -87,22 +108,34 @@ describe("degradation mark", () => {
     await act(async () =>
       root.render(
         <>
-          <DegradationBadge account={account({ degradation_mark: { marked: true, version: "mark-version" } })} />
+          <DegradationBadge
+            account={account({
+              degradation_mark: { marked: true, version: "mark-version" },
+            })}
+          />
           <DegradationAction account={account()} online report={onError} />
         </>,
       ),
     );
-    expect(container.querySelector(".degradation-badge")?.textContent).toContain("降智");
-    const button = container.querySelector<HTMLButtonElement>(".degradation-action")!;
+    expect(
+      container.querySelector(".degradation-badge")?.textContent,
+    ).toContain("降智");
+    const button = container.querySelector<HTMLButtonElement>(
+      ".degradation-action",
+    )!;
     expect(button.textContent).toContain("标记降智");
     expect(api).not.toHaveBeenCalled();
 
     await act(async () => button.click());
-    expect(api).toHaveBeenCalledExactlyOnceWith("POST", "/accounts/11/operations", expect.objectContaining({
-      action: "degradation_mark",
-      payload: { marked: true },
-      expected_version: "mark-version",
-    }));
+    expect(api).toHaveBeenCalledExactlyOnceWith(
+      "POST",
+      "/accounts/11/operations",
+      expect.objectContaining({
+        action: "degradation_mark",
+        payload: { marked: true },
+        expected_version: "mark-version",
+      }),
+    );
     expect(command).toHaveBeenCalledWith("refresh");
     expect(onError).not.toHaveBeenCalled();
     expect(button.textContent).toContain("取消标记");
@@ -111,11 +144,22 @@ describe("degradation mark", () => {
   it("reports an unverified write without showing success", async () => {
     const onError = vi.fn();
     vi.mocked(api).mockResolvedValue(saved(false) as never);
-    await act(async () => root.render(<DegradationAction account={account()} online report={onError} />));
-    await act(async () => container.querySelector<HTMLButtonElement>(".degradation-action")!.click());
+    await act(async () =>
+      root.render(
+        <DegradationAction account={account()} online report={onError} />,
+      ),
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>(".degradation-action")!
+        .click(),
+    );
     expect(onError).toHaveBeenCalledOnce();
     expect(String(onError.mock.calls[0][0])).toContain("降智标记保存未确认");
-    expect(container.querySelector<HTMLButtonElement>(".degradation-action")?.textContent).toContain("标记降智");
+    expect(
+      container.querySelector<HTMLButtonElement>(".degradation-action")
+        ?.textContent,
+    ).toContain("标记降智");
   });
 
   it("disables unreadable marks and supports Key while excluding Grok", async () => {
@@ -123,13 +167,27 @@ describe("degradation mark", () => {
     await act(async () =>
       root.render(
         <>
-          <DegradationAction account={account({ degradation_mark: { error: "读取失败" } })} online report={onError} />
-          <DegradationAction account={account({ platform: "grok" })} online report={onError} />
-          <DegradationAction account={account({ type: "apikey" })} online report={onError} />
+          <DegradationAction
+            account={account({ degradation_mark: { error: "读取失败" } })}
+            online
+            report={onError}
+          />
+          <DegradationAction
+            account={account({ platform: "grok" })}
+            online
+            report={onError}
+          />
+          <DegradationAction
+            account={account({ type: "apikey" })}
+            online
+            report={onError}
+          />
         </>,
       ),
     );
-    const buttons = [...container.querySelectorAll<HTMLButtonElement>(".degradation-action")];
+    const buttons = [
+      ...container.querySelectorAll<HTMLButtonElement>(".degradation-action"),
+    ];
     expect(buttons).toHaveLength(2);
     expect(buttons[1].textContent).toContain("标记降智");
     expect(buttons[0].disabled).toBe(true);

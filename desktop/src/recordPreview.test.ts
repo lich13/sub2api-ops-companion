@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { UsageRecord } from "./records";
 import { presetRange } from "./recordDates";
 
-type Preview = typeof import("./recordPreview")["recordPreview"];
+type Preview = (typeof import("./recordPreview"))["recordPreview"];
 type PreviewPage = { items: UsageRecord[]; next_cursor: string | null };
 
 const scenarios = [
@@ -121,7 +121,11 @@ describe("record preview date filtering across Beijing midnight", () => {
       const recentFirst = readPage(recordPreview, recent);
       expect(recentFirst.items).toHaveLength(50);
       expect(recentFirst.next_cursor).toBe("151");
-      const recentSecond = readPage(recordPreview, recent, recentFirst.next_cursor!);
+      const recentSecond = readPage(
+        recordPreview,
+        recent,
+        recentFirst.next_cursor!,
+      );
       expect(recentSecond.items).toHaveLength(25);
       expect(recentSecond.next_cursor).toBeNull();
       const recentRows = [...recentFirst.items, ...recentSecond.items];

@@ -98,8 +98,15 @@
   gap: 8px;
   margin-top: 16px;
 }
-.key-quota-token-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.key-quota-token-actions button { min-height: 34px; }
+.key-quota-token-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.key-quota-token-actions button {
+  min-height: 34px;
+}
 .mobile .key-quota .usage-action {
   min-width: 48px;
   min-height: 48px;
@@ -112,5 +119,12 @@
 .mobile .key-quota .key-quota-plans td {
   font-size: 11px;
 }
-.key-quota-compact > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.key-quota-compact.warning { color: var(--warn); }
+.key-quota-compact > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.key-quota-compact.warning {
+  color: var(--warn);
+}

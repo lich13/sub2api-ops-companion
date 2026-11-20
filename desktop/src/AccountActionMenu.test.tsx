@@ -21,12 +21,16 @@ const popup = () =>
 
 async function renderMenu(
   children: ReactNode,
-  props: Partial<Omit<ComponentProps<typeof AccountActionMenu>, "label" | "children">> = {},
+  props: Partial<
+    Omit<ComponentProps<typeof AccountActionMenu>, "label" | "children">
+  > = {},
 ) {
   await act(async () =>
     root.render(
       <div className="clipped-table" style={{ height: 24, overflow: "hidden" }}>
-        <AccountActionMenu label={label} {...props}>{children}</AccountActionMenu>
+        <AccountActionMenu label={label} {...props}>
+          {children}
+        </AccountActionMenu>
         <button type="button" data-outside>
           外部
         </button>
@@ -93,7 +97,9 @@ describe("account action menu", () => {
     );
     await click(trigger());
 
-    const edit = popup()!.querySelector<HTMLButtonElement>("button:not(:disabled)")!;
+    const edit = popup()!.querySelector<HTMLButtonElement>(
+      "button:not(:disabled)",
+    )!;
     expect(document.activeElement).toBe(edit);
     const event = await press(edit, "Escape");
 
@@ -118,7 +124,9 @@ describe("account action menu", () => {
     expect(popup()).toBeNull();
 
     await click(trigger());
-    await click(popup()!.querySelector<HTMLButtonElement>("[data-action=delete]")!);
+    await click(
+      popup()!.querySelector<HTMLButtonElement>("[data-action=delete]")!,
+    );
 
     expect(popup()).toBeNull();
     expect(trigger().getAttribute("aria-expanded")).toBe("false");
@@ -181,18 +189,34 @@ describe("account action menu", () => {
   });
 
   it("keeps only one portal open when another account trigger is activated", async () => {
-    await act(async () => root.render(<>
-      <AccountActionMenu label="第一个账号操作"><button type="button">查看第一个</button></AccountActionMenu>
-      <AccountActionMenu label="第二个账号操作"><button type="button">查看第二个</button></AccountActionMenu>
-    </>));
-    const triggers = [...container.querySelectorAll<HTMLButtonElement>(".account-more-trigger")];
+    await act(async () =>
+      root.render(
+        <>
+          <AccountActionMenu label="第一个账号操作">
+            <button type="button">查看第一个</button>
+          </AccountActionMenu>
+          <AccountActionMenu label="第二个账号操作">
+            <button type="button">查看第二个</button>
+          </AccountActionMenu>
+        </>,
+      ),
+    );
+    const triggers = [
+      ...container.querySelectorAll<HTMLButtonElement>(".account-more-trigger"),
+    ];
     await click(triggers[0]);
-    expect(document.body.querySelectorAll(".account-action-popup")).toHaveLength(1);
+    expect(
+      document.body.querySelectorAll(".account-action-popup"),
+    ).toHaveLength(1);
 
     await click(triggers[1]);
 
-    expect(document.body.querySelectorAll(".account-action-popup")).toHaveLength(1);
-    expect(document.body.querySelector(".account-action-popup")?.textContent).toBe("查看第二个");
+    expect(
+      document.body.querySelectorAll(".account-action-popup"),
+    ).toHaveLength(1);
+    expect(
+      document.body.querySelector(".account-action-popup")?.textContent,
+    ).toBe("查看第二个");
     expect(triggers[0].getAttribute("aria-expanded")).toBe("false");
     expect(triggers[1].getAttribute("aria-expanded")).toBe("true");
   });
@@ -214,18 +238,29 @@ describe("account action menu", () => {
     await renderMenu(<button type="button">查看</button>);
     await click(trigger());
 
-    await act(async () => container.querySelector<HTMLButtonElement>("[data-outside]")!.focus());
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("[data-outside]")!.focus(),
+    );
 
     expect(popup()).toBeNull();
   });
 
   it("closes on deactivation and context changes without reopening on return", async () => {
     const action = <button type="button">查看</button>;
-    await renderMenu(action, { active: true, contextKey: "connection-1:openai" });
+    await renderMenu(action, {
+      active: true,
+      contextKey: "connection-1:openai",
+    });
     await click(trigger());
-    await renderMenu(action, { active: false, contextKey: "connection-1:openai" });
+    await renderMenu(action, {
+      active: false,
+      contextKey: "connection-1:openai",
+    });
     expect(popup()).toBeNull();
-    await renderMenu(action, { active: true, contextKey: "connection-1:openai" });
+    await renderMenu(action, {
+      active: true,
+      contextKey: "connection-1:openai",
+    });
     expect(popup()).toBeNull();
 
     await click(trigger());
@@ -240,13 +275,17 @@ describe("account action menu", () => {
     const destinationClick = vi.fn();
     const destinationKey = vi.fn();
     const action = vi.fn();
-    await act(async () => root.render(
-      <section onClick={destinationClick} onKeyDown={destinationKey}>
-        <AccountActionMenu label={label} iconOnly>
-          <button type="button" onClick={action}>测试连接</button>
-        </AccountActionMenu>
-      </section>,
-    ));
+    await act(async () =>
+      root.render(
+        <section onClick={destinationClick} onKeyDown={destinationKey}>
+          <AccountActionMenu label={label} iconOnly>
+            <button type="button" onClick={action}>
+              测试连接
+            </button>
+          </AccountActionMenu>
+        </section>,
+      ),
+    );
     await press(trigger(), "Enter");
     await click(trigger());
     const option = popup()!.querySelector<HTMLButtonElement>("button")!;
@@ -273,10 +312,14 @@ describe("account action menu", () => {
     expect(popup()).toBeNull();
     for (const type of ["pointerdown", "scroll", "keydown"])
       expect(
-        removeDocumentListener.mock.calls.some(([removedType]) => removedType === type),
+        removeDocumentListener.mock.calls.some(
+          ([removedType]) => removedType === type,
+        ),
       ).toBe(true);
     expect(
-      removeWindowListener.mock.calls.some(([removedType]) => removedType === "resize"),
+      removeWindowListener.mock.calls.some(
+        ([removedType]) => removedType === "resize",
+      ),
     ).toBe(true);
   });
 });

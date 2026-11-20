@@ -87,16 +87,22 @@ const nav = (label: string) =>
   )!;
 
 const eventTab = (label: string) =>
-  [...container.querySelectorAll<HTMLButtonElement>('.events-view [role="tab"]')].find(
-    (button) => button.textContent === label,
-  )!;
+  [
+    ...container.querySelectorAll<HTMLButtonElement>(
+      '.events-view [role="tab"]',
+    ),
+  ].find((button) => button.textContent === label)!;
 
 const eventNames = () =>
-  [...container.querySelectorAll(".error-row strong")].map((node) => node.textContent);
+  [...container.querySelectorAll(".error-row strong")].map(
+    (node) => node.textContent,
+  );
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
 
@@ -123,9 +129,16 @@ beforeEach(() => {
   });
   vi.mocked(api).mockImplementation(async (_method, path) => {
     if (path.startsWith("/usage-records")) return recordPage() as never;
-    if (path.startsWith("/errors?category=") || path === "/recoveries") return { items: [], next_cursor: null } as never;
-    if (path === "/account-priorities?schema=2") return { platforms: [], active_task: null, legacy_last_task: null } as never;
-    if (path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
+    if (path.startsWith("/errors?category=") || path === "/recoveries")
+      return { items: [], next_cursor: null } as never;
+    if (path === "/account-priorities?schema=2")
+      return {
+        platforms: [],
+        active_task: null,
+        legacy_last_task: null,
+      } as never;
+    if (path === "/quota-refresh")
+      return { status: "idle", items: [], total: 0, completed: 0 } as never;
     throw new Error(`Unexpected fixture request: ${path}`);
   });
 });
@@ -139,54 +152,106 @@ afterEach(async () => {
 describe("main page surface ownership", () => {
   it.each([
     ["success after error", "2026-10-01T04:05:06Z", 10, true, "10-01 12:05:06"],
-    ["success before error", "2026-10-01T02:00:00Z", 10, false, "10-01 10:00:00"],
-    ["success at error time", "2026-10-01T03:00:00Z", 10, false, "10-01 11:00:00"],
+    [
+      "success before error",
+      "2026-10-01T02:00:00Z",
+      10,
+      false,
+      "10-01 10:00:00",
+    ],
+    [
+      "success at error time",
+      "2026-10-01T03:00:00Z",
+      10,
+      false,
+      "10-01 11:00:00",
+    ],
     ["no error", "2026-10-01T04:05:06Z", null, false, "10-01 12:05:06"],
     ["no successful call", null, 10, false, "暂无记录"],
     ["empty history", null, null, false, "暂无记录"],
     ["invalid success time", "invalid", 10, false, "时间未知"],
-  ] as const)("shows the last successful call for %s", async (_label, success, errorId, recovered, expected) => {
-    const initial = state();
-    initial.snapshot!.accounts = [{ ...account(1, errorId), last_success_at: success, success_after_error: recovered }];
-    vi.mocked(command).mockImplementation(async (name) => name === "get_state" ? initial as never : undefined as never);
-    await act(async () => root.render(<App />));
+  ] as const)(
+    "shows the last successful call for %s",
+    async (_label, success, errorId, recovered, expected) => {
+      const initial = state();
+      initial.snapshot!.accounts = [
+        {
+          ...account(1, errorId),
+          last_success_at: success,
+          success_after_error: recovered,
+        },
+      ];
+      vi.mocked(command).mockImplementation(async (name) =>
+        name === "get_state" ? (initial as never) : (undefined as never),
+      );
+      await act(async () => root.render(<App />));
 
-    const summary = container.querySelector<HTMLElement>(".accounts-table .account-last-success")!;
-    expect(summary.textContent).toBe(`最后成功${expected}`);
-    expect(summary.querySelector("time")!.classList.contains("good-text")).toBe(recovered);
-    const errorButton = container.querySelector(".accounts-table .error-time");
-    expect(!!errorButton).toBe(errorId !== null);
-    expect(errorButton?.textContent?.includes("之后已有成功调用") ?? false).toBe(recovered);
-  });
+      const summary = container.querySelector<HTMLElement>(
+        ".accounts-table .account-last-success",
+      )!;
+      expect(summary.textContent).toBe(`最后成功${expected}`);
+      expect(
+        summary.querySelector("time")!.classList.contains("good-text"),
+      ).toBe(recovered);
+      const errorButton = container.querySelector(
+        ".accounts-table .error-time",
+      );
+      expect(!!errorButton).toBe(errorId !== null);
+      expect(
+        errorButton?.textContent?.includes("之后已有成功调用") ?? false,
+      ).toBe(recovered);
+    },
+  );
 
   it("keeps the error detail action separate from the last successful call", async () => {
     const original = vi.mocked(api).getMockImplementation()!;
-    vi.mocked(api).mockImplementation(async (method, path, body) => path === "/errors/10"
-      ? error(10, "Fixture account") as never : original(method, path, body));
+    vi.mocked(api).mockImplementation(async (method, path, body) =>
+      path === "/errors/10"
+        ? (error(10, "Fixture account") as never)
+        : original(method, path, body),
+    );
     await act(async () => root.render(<App />));
-    await act(async () => container.querySelector<HTMLButtonElement>(".accounts-table .error-time")!.click());
-    expect(vi.mocked(api).mock.calls.some(([method, path]) => method === "GET" && path === "/errors/10")).toBe(true);
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>(".accounts-table .error-time")!
+        .click(),
+    );
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.some(
+          ([method, path]) => method === "GET" && path === "/errors/10",
+        ),
+    ).toBe(true);
     expect(container.querySelector(".drawer")).not.toBeNull();
     expect(container.querySelector(".account-last-success button")).toBeNull();
   });
 
   it("adds a desktop priority page while keeping five mobile navigation items", async () => {
     await act(async () => root.render(<App />));
-    expect([...container.querySelectorAll<HTMLButtonElement>("aside nav button")].map((button) => button.textContent?.trim())).toEqual([
-      "账号", "分组", "优先级", "记录", "事件", "功能", "设置",
-    ]);
+    expect(
+      [
+        ...container.querySelectorAll<HTMLButtonElement>("aside nav button"),
+      ].map((button) => button.textContent?.trim()),
+    ).toEqual(["账号", "分组", "优先级", "记录", "事件", "功能", "设置"]);
     await act(async () => nav("优先级").click());
-    expect(container.querySelectorAll('[data-page="priorities"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-page="priorities"]')).toHaveLength(
+      1,
+    );
 
     await act(async () => root.unmount());
     root = createRoot(container);
     const mobileState = state();
     mobileState.platform = "android";
-    vi.mocked(command).mockImplementation(async (name) => name === "get_state" ? mobileState as never : undefined as never);
+    vi.mocked(command).mockImplementation(async (name) =>
+      name === "get_state" ? (mobileState as never) : (undefined as never),
+    );
     await act(async () => root.render(<App />));
-    expect([...container.querySelectorAll<HTMLButtonElement>(".bottom-nav button")].map((button) => button.textContent?.trim())).toEqual([
-      "账号", "记录", "事件", "功能", "设置",
-    ]);
+    expect(
+      [
+        ...container.querySelectorAll<HTMLButtonElement>(".bottom-nav button"),
+      ].map((button) => button.textContent?.trim()),
+    ).toEqual(["账号", "记录", "事件", "功能", "设置"]);
   });
 
   it("unmounts records and events surfaces across repeated navigation", async () => {
@@ -216,7 +281,8 @@ describe("main page surface ownership", () => {
     let errorsCalls = 0;
     vi.mocked(api).mockImplementation(async (_method, path) => {
       if (path.startsWith("/usage-records")) return recordPage() as never;
-      if (path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
+      if (path === "/quota-refresh")
+        return { status: "idle", items: [], total: 0, completed: 0 } as never;
       if (path === "/errors?category=degradation") {
         errorsCalls += 1;
         return new Promise((resolve) => {
@@ -232,10 +298,14 @@ describe("main page surface ownership", () => {
     await act(async () => nav("账号").click());
     await act(async () => nav("事件").click());
 
-    await act(async () => firstResolve({ items: [error(11, "旧响应")], next_cursor: null }));
+    await act(async () =>
+      firstResolve({ items: [error(11, "旧响应")], next_cursor: null }),
+    );
     expect(container.textContent).not.toContain("旧响应");
 
-    await act(async () => secondResolve({ items: [error(12, "新响应")], next_cursor: null }));
+    await act(async () =>
+      secondResolve({ items: [error(12, "新响应")], next_cursor: null }),
+    );
     expect(container.textContent).toContain("新响应");
     expect(container.textContent).not.toContain("旧响应");
   });
@@ -244,15 +314,22 @@ describe("main page surface ownership", () => {
     let resolveDetail!: (value: unknown) => void;
     vi.mocked(api).mockImplementation(async (_method, path) => {
       if (path.startsWith("/usage-records")) return recordPage() as never;
-      if (path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
-      if (path === "/errors?category=degradation") return { items: [error(21, "详情账号")], next_cursor: null } as never;
-      if (path === "/errors/21?category=degradation") return new Promise((resolve) => { resolveDetail = resolve; });
+      if (path === "/quota-refresh")
+        return { status: "idle", items: [], total: 0, completed: 0 } as never;
+      if (path === "/errors?category=degradation")
+        return { items: [error(21, "详情账号")], next_cursor: null } as never;
+      if (path === "/errors/21?category=degradation")
+        return new Promise((resolve) => {
+          resolveDetail = resolve;
+        });
       throw new Error(`Unexpected fixture request: ${path}`);
     });
 
     await act(async () => root.render(<App />));
     await act(async () => nav("事件").click());
-    await act(async () => container.querySelector<HTMLButtonElement>(".error-row")!.click());
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>(".error-row")!.click(),
+    );
     await act(async () => nav("账号").click());
     await act(async () => resolveDetail(error(21, "旧详情")));
     expect(container.querySelector(".drawer")).toBeNull();
@@ -263,8 +340,10 @@ describe("main page surface ownership", () => {
     const resolved = { ...error(30, "历史错误账号"), resolved: true };
     vi.mocked(api).mockImplementation(async (_method, path) => {
       if (path.startsWith("/usage-records")) return recordPage() as never;
-      if (path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
-      if (path === "/errors?category=degradation") return { items: [resolved, current], next_cursor: null } as never;
+      if (path === "/quota-refresh")
+        return { status: "idle", items: [], total: 0, completed: 0 } as never;
+      if (path === "/errors?category=degradation")
+        return { items: [resolved, current], next_cursor: null } as never;
       throw new Error(`Unexpected fixture request: ${path}`);
     });
     const initial = state();
@@ -277,10 +356,11 @@ describe("main page surface ownership", () => {
     });
     await act(async () => nav("事件").click());
     expect(container.querySelectorAll(".error-row")).toHaveLength(2);
-    expect([...container.querySelectorAll(".error-state")].map((node) => node.textContent)).toEqual([
-      "当前",
-      "已解决",
-    ]);
+    expect(
+      [...container.querySelectorAll(".error-state")].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(["当前", "已解决"]);
   });
 });
 
@@ -288,78 +368,163 @@ describe("categorized event history", () => {
   it("switches all four tabs and paginates each error category without duplicate IDs or snapshot rows", async () => {
     const initial = state();
     initial.snapshot!.errors = [error(999, "仅快照错误")];
-    vi.mocked(command).mockImplementation(async (name) => name === "get_state" ? initial as never : undefined as never);
+    vi.mocked(command).mockImplementation(async (name) =>
+      name === "get_state" ? (initial as never) : (undefined as never),
+    );
     const original = vi.mocked(api).getMockImplementation()!;
-    const pages: Record<string, { items: OpsError[]; next_cursor: number | null }> = {
-      "/errors?category=degradation": { items: [error(12, "降智最新"), error(11, "降智分页边界")], next_cursor: 11 },
-      "/errors?category=degradation&before_id=11": { items: [error(11, "降智边界更新"), error(10, "降智更早")], next_cursor: null },
-      "/errors?category=other": { items: [error(12, "其他最新"), error(8, "其他分页边界")], next_cursor: 8 },
-      "/errors?category=other&before_id=8": { items: [error(8, "其他边界更新"), error(7, "其他更早")], next_cursor: null },
+    const pages: Record<
+      string,
+      { items: OpsError[]; next_cursor: number | null }
+    > = {
+      "/errors?category=degradation": {
+        items: [error(12, "降智最新"), error(11, "降智分页边界")],
+        next_cursor: 11,
+      },
+      "/errors?category=degradation&before_id=11": {
+        items: [error(11, "降智边界更新"), error(10, "降智更早")],
+        next_cursor: null,
+      },
+      "/errors?category=other": {
+        items: [error(12, "其他最新"), error(8, "其他分页边界")],
+        next_cursor: 8,
+      },
+      "/errors?category=other&before_id=8": {
+        items: [error(8, "其他边界更新"), error(7, "其他更早")],
+        next_cursor: null,
+      },
     };
     vi.mocked(api).mockImplementation(async (method, path, body) => {
       if (pages[path]) return pages[path] as never;
-      if (path === "/detection-logs?limit=50") return { items: [], next_cursor: null } as never;
-      if (path === "/recoveries") return {
-        items: [{ id: 1, account_id: 1, account_name: "恢复记录账号", model_id: "fixture-model", test_completed_at: null, recovered_at: null, legacy: true }],
-        next_cursor: null,
-      } as never;
+      if (path === "/detection-logs?limit=50")
+        return { items: [], next_cursor: null } as never;
+      if (path === "/recoveries")
+        return {
+          items: [
+            {
+              id: 1,
+              account_id: 1,
+              account_name: "恢复记录账号",
+              model_id: "fixture-model",
+              test_completed_at: null,
+              recovered_at: null,
+              legacy: true,
+            },
+          ],
+          next_cursor: null,
+        } as never;
       return original(method, path, body);
     });
     await act(async () => root.render(<App />));
     await act(async () => nav("事件").click());
-    expect([...container.querySelectorAll('.events-view [role="tab"]')].map((node) => node.textContent)).toEqual(["降智错误", "其他错误", "恢复历史", "日志"]);
+    expect(
+      [...container.querySelectorAll('.events-view [role="tab"]')].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(["降智错误", "其他错误", "恢复历史", "日志"]);
     expect(eventNames()).toEqual(["降智最新", "降智分页边界"]);
     expect(container.textContent).not.toContain("仅快照错误");
-    expect(vi.mocked(api).mock.calls.filter(([, path]) => path.startsWith("/errors?")).map(([, path]) => path)).toEqual(["/errors?category=degradation"]);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(([, path]) => path.startsWith("/errors?"))
+        .map(([, path]) => path),
+    ).toEqual(["/errors?category=degradation"]);
 
-    await act(async () => container.querySelector<HTMLButtonElement>("#degradation-panel .load-more")!.click());
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>("#degradation-panel .load-more")!
+        .click(),
+    );
     expect(eventNames()).toEqual(["降智最新", "降智边界更新", "降智更早"]);
     expect(container.querySelector("#degradation-panel .load-more")).toBeNull();
     await act(async () => eventTab("其他错误").click());
     expect(eventTab("其他错误").getAttribute("aria-selected")).toBe("true");
     expect(eventNames()).toEqual(["其他最新", "其他分页边界"]);
-    await act(async () => container.querySelector<HTMLButtonElement>("#other-panel .load-more")!.click());
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>("#other-panel .load-more")!
+        .click(),
+    );
     expect(eventNames()).toEqual(["其他最新", "其他边界更新", "其他更早"]);
 
     await act(async () => eventTab("恢复历史").click());
-    expect(container.querySelector("#recoveries-panel")?.hasAttribute("hidden")).toBe(false);
-    expect(container.querySelector("#recoveries-panel")?.textContent).toContain("恢复记录账号");
+    expect(
+      container.querySelector("#recoveries-panel")?.hasAttribute("hidden"),
+    ).toBe(false);
+    expect(container.querySelector("#recoveries-panel")?.textContent).toContain(
+      "恢复记录账号",
+    );
     expect(eventNames()).toEqual([]);
-    expect(vi.mocked(api).mock.calls.filter(([, path]) => path.startsWith("/errors?")).map(([, path]) => path)).toEqual([
-      "/errors?category=degradation", "/errors?category=degradation&before_id=11",
-      "/errors?category=other", "/errors?category=other&before_id=8",
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(([, path]) => path.startsWith("/errors?"))
+        .map(([, path]) => path),
+    ).toEqual([
+      "/errors?category=degradation",
+      "/errors?category=degradation&before_id=11",
+      "/errors?category=other",
+      "/errors?category=other&before_id=8",
     ]);
     await act(async () => eventTab("日志").click());
-    expect(container.querySelector("#logs-panel")?.hasAttribute("hidden")).toBe(false);
-    expect(container.querySelector("#logs-panel")?.textContent).toContain("暂无自动检测记录");
-    expect(vi.mocked(api).mock.calls).toContainEqual(["GET", "/detection-logs?limit=50"]);
+    expect(container.querySelector("#logs-panel")?.hasAttribute("hidden")).toBe(
+      false,
+    );
+    expect(container.querySelector("#logs-panel")?.textContent).toContain(
+      "暂无自动检测记录",
+    );
+    expect(vi.mocked(api).mock.calls).toContainEqual([
+      "GET",
+      "/detection-logs?limit=50",
+    ]);
     await act(async () => eventTab("降智错误").click());
     expect(eventNames()).toEqual(["降智最新", "降智分页边界"]);
-    expect(container.querySelector("#recoveries-panel")?.hasAttribute("hidden")).toBe(true);
+    expect(
+      container.querySelector("#recoveries-panel")?.hasAttribute("hidden"),
+    ).toBe(true);
   });
 
   it("discards a late category response and a late detail after switching tabs", async () => {
-    const oldPage = deferred<{ items: OpsError[]; next_cursor: number | null }>();
+    const oldPage = deferred<{
+      items: OpsError[];
+      next_cursor: number | null;
+    }>();
     const oldDetail = deferred<OpsError>();
     let degradationReads = 0;
     const original = vi.mocked(api).getMockImplementation()!;
     vi.mocked(api).mockImplementation(async (method, path, body) => {
       if (path === "/errors?category=degradation") {
         degradationReads += 1;
-        return (degradationReads === 1 ? oldPage.promise : { items: [error(61, "降智新代次")], next_cursor: null }) as never;
+        return (
+          degradationReads === 1
+            ? oldPage.promise
+            : { items: [error(61, "降智新代次")], next_cursor: null }
+        ) as never;
       }
-      if (path === "/errors?category=other") return { items: [error(61, "其他分类同 ID")], next_cursor: null } as never;
-      if (path === "/errors/61?category=other") return oldDetail.promise as never;
+      if (path === "/errors?category=other")
+        return {
+          items: [error(61, "其他分类同 ID")],
+          next_cursor: null,
+        } as never;
+      if (path === "/errors/61?category=other")
+        return oldDetail.promise as never;
       return original(method, path, body);
     });
     await act(async () => root.render(<App />));
     await act(async () => nav("事件").click());
     await act(async () => eventTab("其他错误").click());
     expect(eventNames()).toEqual(["其他分类同 ID"]);
-    await act(async () => oldPage.resolve({ items: [error(61, "迟到降智旧页")], next_cursor: 60 }));
+    await act(async () =>
+      oldPage.resolve({ items: [error(61, "迟到降智旧页")], next_cursor: 60 }),
+    );
     expect(eventNames()).toEqual(["其他分类同 ID"]);
-    await act(async () => container.querySelector<HTMLButtonElement>(".error-row")!.click());
-    expect(vi.mocked(api).mock.calls).toContainEqual(["GET", "/errors/61?category=other"]);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>(".error-row")!.click(),
+    );
+    expect(vi.mocked(api).mock.calls).toContainEqual([
+      "GET",
+      "/errors/61?category=other",
+    ]);
     await act(async () => eventTab("降智错误").click());
     await act(async () => oldDetail.resolve(error(61, "迟到其他详情")));
     expect(eventNames()).toEqual(["降智新代次"]);
@@ -371,15 +536,31 @@ describe("categorized event history", () => {
   it("clears both categories on connection changes and ignores an old connection's pagination response", async () => {
     const initial = state();
     let receive!: (value: ViewState) => void;
-    vi.mocked(subscribe).mockImplementation(async (callback) => { receive = callback; return () => {}; });
-    const oldMore = deferred<{ items: OpsError[]; next_cursor: number | null }>();
+    vi.mocked(subscribe).mockImplementation(async (callback) => {
+      receive = callback;
+      return () => {};
+    });
+    const oldMore = deferred<{
+      items: OpsError[];
+      next_cursor: number | null;
+    }>();
     const fresh = deferred<{ items: OpsError[]; next_cursor: number | null }>();
     let connection = 0;
     const original = vi.mocked(api).getMockImplementation()!;
     vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (path === "/errors?category=degradation") return (connection ? fresh.promise : { items: [error(31, "旧连接降智")], next_cursor: 31 }) as never;
-      if (path === "/errors?category=degradation&before_id=31") return oldMore.promise as never;
-      if (path === "/errors?category=other") return { items: [error(31, connection ? "新连接其他" : "旧连接其他")], next_cursor: null } as never;
+      if (path === "/errors?category=degradation")
+        return (
+          connection
+            ? fresh.promise
+            : { items: [error(31, "旧连接降智")], next_cursor: 31 }
+        ) as never;
+      if (path === "/errors?category=degradation&before_id=31")
+        return oldMore.promise as never;
+      if (path === "/errors?category=other")
+        return {
+          items: [error(31, connection ? "新连接其他" : "旧连接其他")],
+          next_cursor: null,
+        } as never;
       return original(method, path, body);
     });
     await act(async () => root.render(<App />));
@@ -387,13 +568,27 @@ describe("categorized event history", () => {
     await act(async () => eventTab("其他错误").click());
     expect(eventNames()).toEqual(["旧连接其他"]);
     await act(async () => eventTab("降智错误").click());
-    await act(async () => container.querySelector<HTMLButtonElement>("#degradation-panel .load-more")!.click());
-    await act(async () => { connection = 1; receive({ ...initial, connection_revision: 1 }); });
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>("#degradation-panel .load-more")!
+        .click(),
+    );
+    await act(async () => {
+      connection = 1;
+      receive({ ...initial, connection_revision: 1 });
+    });
     expect(eventNames()).toEqual([]);
     expect(container.querySelector("#degradation-panel .load-more")).toBeNull();
-    await act(async () => oldMore.resolve({ items: [error(30, "迟到旧连接分页")], next_cursor: 29 }));
+    await act(async () =>
+      oldMore.resolve({
+        items: [error(30, "迟到旧连接分页")],
+        next_cursor: 29,
+      }),
+    );
     expect(eventNames()).toEqual([]);
-    await act(async () => fresh.resolve({ items: [error(31, "新连接降智")], next_cursor: null }));
+    await act(async () =>
+      fresh.resolve({ items: [error(31, "新连接降智")], next_cursor: null }),
+    );
     expect(eventNames()).toEqual(["新连接降智"]);
     await act(async () => eventTab("其他错误").click());
     expect(eventNames()).toEqual(["新连接其他"]);
@@ -407,7 +602,10 @@ describe("account sorting and Android connection settings", () => {
     initial.platform = "android";
     localStorage.setItem("sub2ops-account-sort", "invalid-sort");
     initial.snapshot!.accounts = [
-      Object.assign(account(1), { last_called_at: null, last_success_at: "2026-10-06T00:00:00Z" }),
+      Object.assign(account(1), {
+        last_called_at: null,
+        last_success_at: "2026-10-06T00:00:00Z",
+      }),
       Object.assign(account(2), { last_called_at: "2026-10-07T00:00:00Z" }),
       Object.assign(account(3), { last_called_at: "2026-10-05T00:00:00Z" }),
     ];
@@ -416,14 +614,28 @@ describe("account sorting and Android connection settings", () => {
     );
     await act(async () => root.render(<App />));
     const names = () =>
-      [...container.querySelectorAll<HTMLElement>(".mobile-account .mobile-identity strong")].map((node) => node.textContent);
+      [
+        ...container.querySelectorAll<HTMLElement>(
+          ".mobile-account .mobile-identity strong",
+        ),
+      ].map((node) => node.textContent);
     expect(names()).toEqual(["账号 2", "账号 1", "账号 3"]);
-    const sort = container.querySelector<HTMLSelectElement>('select[aria-label="账号排序"]')!;
+    const sort = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="账号排序"]',
+    )!;
     expect(sort.value).toBe("recent:desc");
     expect([...sort.options].map((option) => option.value)).toEqual([
-      "recent:desc", "recent:asc", "priority:asc", "priority:desc",
+      "recent:desc",
+      "recent:asc",
+      "priority:asc",
+      "priority:desc",
     ]);
-    for (const value of ["recent:desc", "recent:asc", "priority:asc", "priority:desc"]) {
+    for (const value of [
+      "recent:desc",
+      "recent:asc",
+      "priority:asc",
+      "priority:desc",
+    ]) {
       await act(async () => {
         sort.value = value;
         sort.dispatchEvent(new Event("change", { bubbles: true }));
@@ -466,7 +678,9 @@ describe("account sorting and Android connection settings", () => {
       name === "get_state" ? (initial as never) : (undefined as never),
     );
     await act(async () => root.render(<App />));
-    const desktopSort = container.querySelector<HTMLSelectElement>('select[aria-label="账号排序"]')!;
+    const desktopSort = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="账号排序"]',
+    )!;
     expect(desktopSort.value).toBe("recent:desc");
     await act(async () =>
       container.querySelector<HTMLButtonElement>(".sort-button")!.click(),
@@ -481,17 +695,32 @@ describe("account sorting and Android connection settings", () => {
     expect(localStorage.getItem("sub2ops-account-sort")).toBe("priority:desc");
     await act(async () => nav("记录").click());
     await act(async () => nav("账号").click());
-    expect(container.querySelector<HTMLSelectElement>('select[aria-label="账号排序"]')?.value).toBe("priority:desc");
+    expect(
+      container.querySelector<HTMLSelectElement>(
+        'select[aria-label="账号排序"]',
+      )?.value,
+    ).toBe("priority:desc");
     await act(async () => receive({ ...initial, connection_revision: 1 }));
-    expect(container.querySelector<HTMLSelectElement>('select[aria-label="账号排序"]')?.value).toBe("priority:desc");
+    expect(
+      container.querySelector<HTMLSelectElement>(
+        'select[aria-label="账号排序"]',
+      )?.value,
+    ).toBe("priority:desc");
 
-    for (const value of ["recent:desc", "recent:asc", "priority:asc", "priority:desc"] as const) {
+    for (const value of [
+      "recent:desc",
+      "recent:asc",
+      "priority:asc",
+      "priority:desc",
+    ] as const) {
       await act(async () => root.unmount());
       root = createRoot(container);
       initial.platform = "android";
       localStorage.setItem("sub2ops-account-sort", value);
       await act(async () => root.render(<App />));
-      const mobileSort = container.querySelector<HTMLSelectElement>('select[aria-label="账号排序"]')!;
+      const mobileSort = container.querySelector<HTMLSelectElement>(
+        'select[aria-label="账号排序"]',
+      )!;
       expect(mobileSort.value).toBe(value);
       expect(localStorage.getItem("sub2ops-account-sort")).toBe(value);
     }
@@ -503,11 +732,17 @@ describe("account sorting and Android connection settings", () => {
     vi.mocked(command).mockImplementation(async (name) =>
       name === "get_state" ? (initial as never) : (undefined as never),
     );
-    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("storage unavailable");
-    });
+    const getItem = vi
+      .spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => {
+        throw new Error("storage unavailable");
+      });
     await act(async () => root.render(<App />));
-    expect(container.querySelector<HTMLSelectElement>('select[aria-label="账号排序"]')?.value).toBe("recent:desc");
+    expect(
+      container.querySelector<HTMLSelectElement>(
+        'select[aria-label="账号排序"]',
+      )?.value,
+    ).toBe("recent:desc");
     getItem.mockRestore();
   });
 
@@ -518,18 +753,26 @@ describe("account sorting and Android connection settings", () => {
       name === "get_state" ? (initial as never) : (undefined as never),
     );
     const originalSetItem = Storage.prototype.setItem;
-    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation((key, value) => {
-      if (key === "sub2ops-account-sort") throw new Error("storage unavailable");
-      return originalSetItem.call(localStorage, key, value);
-    });
+    const setItem = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation((key, value) => {
+        if (key === "sub2ops-account-sort")
+          throw new Error("storage unavailable");
+        return originalSetItem.call(localStorage, key, value);
+      });
     await act(async () => root.render(<App />));
-    const sort = container.querySelector<HTMLSelectElement>('select[aria-label="账号排序"]')!;
+    const sort = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="账号排序"]',
+    )!;
     await act(async () => {
       sort.value = "priority:asc";
       sort.dispatchEvent(new Event("change", { bubbles: true }));
     });
     expect(sort.value).toBe("priority:asc");
-    expect(setItem).toHaveBeenCalledWith("sub2ops-account-sort", "priority:asc");
+    expect(setItem).toHaveBeenCalledWith(
+      "sub2ops-account-sort",
+      "priority:asc",
+    );
     setItem.mockRestore();
   });
 
@@ -537,70 +780,175 @@ describe("account sorting and Android connection settings", () => {
     const initial = state();
     initial.platform = "android";
     const diagnostics = [
-      { state: "network_unreachable", endpoint: "verify", http_status: null, message: "无法连接 Sub2API 上游", retryable: true, checked_at: "2026-10-07T00:00:00Z" },
-      { state: "route_not_found", endpoint: "verify", http_status: 404, message: "Sub2API 管理接口路径不存在", retryable: true, checked_at: "2026-10-07T00:01:00Z" },
-      { state: "auth_rejected", endpoint: "verify", http_status: 403, message: "管理员 API Key 被上游拒绝，请重新连接", retryable: false, checked_at: "2026-10-07T00:02:00Z" },
+      {
+        state: "network_unreachable",
+        endpoint: "verify",
+        http_status: null,
+        message: "无法连接 Sub2API 上游",
+        retryable: true,
+        checked_at: "2026-10-07T00:00:00Z",
+      },
+      {
+        state: "route_not_found",
+        endpoint: "verify",
+        http_status: 404,
+        message: "Sub2API 管理接口路径不存在",
+        retryable: true,
+        checked_at: "2026-10-07T00:01:00Z",
+      },
+      {
+        state: "auth_rejected",
+        endpoint: "verify",
+        http_status: 403,
+        message: "管理员 API Key 被上游拒绝，请重新连接",
+        retryable: false,
+        checked_at: "2026-10-07T00:02:00Z",
+      },
     ];
     let statusReads = 0;
     vi.mocked(command).mockImplementation(async (name) =>
       name === "get_state" ? (initial as never) : (undefined as never),
     );
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/connection-status") return diagnostics[Math.min(statusReads++, diagnostics.length - 1)] as never;
-      if (path === "/config") return { bark: { revision: "fixture", enabled: false, device_key_set: false } } as never;
+      if (path === "/connection-status")
+        return diagnostics[
+          Math.min(statusReads++, diagnostics.length - 1)
+        ] as never;
+      if (path === "/config")
+        return {
+          bark: { revision: "fixture", enabled: false, device_key_set: false },
+        } as never;
       if (path === "/account-operations") return { items: [] } as never;
-      if (path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
-      if (path.startsWith("/errors?category=")) return { items: [], next_cursor: null } as never;
+      if (path === "/quota-refresh")
+        return { status: "idle", items: [], total: 0, completed: 0 } as never;
+      if (path.startsWith("/errors?category="))
+        return { items: [], next_cursor: null } as never;
       throw new Error(`Unexpected fixture request: ${path}`);
     });
     await act(async () => root.render(<App />));
-    const settings = [...container.querySelectorAll<HTMLButtonElement>(".bottom-nav button")].find((button) => button.textContent?.includes("设置"))!;
+    const settings = [
+      ...container.querySelectorAll<HTMLButtonElement>(".bottom-nav button"),
+    ].find((button) => button.textContent?.includes("设置"))!;
     await act(async () => settings.click());
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
     expect(container.textContent).toContain("查看发布页");
     expect(container.textContent).toContain(diagnostics[0].message);
 
-    const retry = () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-      /重试|重新检查|检查连接/.test(`${button.textContent} ${button.getAttribute("aria-label")} ${button.title}`),
-    );
+    const retry = () =>
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) =>
+          /重试|重新检查|检查连接/.test(
+            `${button.textContent} ${button.getAttribute("aria-label")} ${button.title}`,
+          ),
+      );
     for (const diagnostic of diagnostics.slice(1)) {
       const button = retry();
       expect(button).toBeTruthy();
       await act(async () => button!.click());
-      await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
       expect(container.textContent).toContain(diagnostic.message);
     }
     expect(statusReads).toBe(3);
-    const accounts = [...container.querySelectorAll<HTMLButtonElement>(".bottom-nav button")].find((button) => button.textContent?.includes("账号"))!;
+    const accounts = [
+      ...container.querySelectorAll<HTMLButtonElement>(".bottom-nav button"),
+    ].find((button) => button.textContent?.includes("账号"))!;
     await act(async () => accounts.click());
-    expect(container.querySelector(".mobile-account")?.textContent).toContain("账号 1");
+    expect(container.querySelector(".mobile-account")?.textContent).toContain(
+      "账号 1",
+    );
   });
 });
 
 it("returns to initial account filters, selection, disclosures and scroll while retaining saved display preferences", async () => {
-  const initial=state();
-  initial.snapshot!.accounts=[{...account(1),group_ids:[7]},account(2)];
-  initial.snapshot!.groups=[{id:7,name:"Fixture group",platform:"openai",status:"active"} as never];
-  vi.mocked(command).mockImplementation(async name=>name==="get_state" ? initial as never : undefined as never);
-  await act(async()=>root.render(<App/>));
-  const select=async(label:string,value:string)=>act(async()=>{const input=container.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;input.value=value;input.dispatchEvent(new Event("change",{bubbles:true}));});
-  const search=container.querySelector<HTMLInputElement>('.filters input[placeholder="搜索名称或账号 ID"]')!;
-  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!.call(search,"账号 1");search.dispatchEvent(new Event("input",{bubbles:true}));});
-  for(const [label,value] of [["分组筛选","7"],["平台筛选","openai"],["类型筛选","oauth"],["状态筛选","ready"],["账号排序","priority:desc"]]) await select(label,value);
-  await act(async()=>container.querySelector<HTMLInputElement>('[aria-label="全选当前筛选账号"]')!.click());
-  const detail=container.querySelector<HTMLDetailsElement>(".accounts-table details"); if(detail) detail.open=true;
-  const content=container.querySelector<HTMLElement>(".content")!;content.scrollTop=240;content.scrollLeft=60;
+  const initial = state();
+  initial.snapshot!.accounts = [{ ...account(1), group_ids: [7] }, account(2)];
+  initial.snapshot!.groups = [
+    {
+      id: 7,
+      name: "Fixture group",
+      platform: "openai",
+      status: "active",
+    } as never,
+  ];
+  vi.mocked(command).mockImplementation(async (name) =>
+    name === "get_state" ? (initial as never) : (undefined as never),
+  );
+  await act(async () => root.render(<App />));
+  const select = async (label: string, value: string) =>
+    act(async () => {
+      const input = container.querySelector<HTMLSelectElement>(
+        `select[aria-label="${label}"]`,
+      )!;
+      input.value = value;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  const search = container.querySelector<HTMLInputElement>(
+    '.filters input[placeholder="搜索名称或账号 ID"]',
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(search, "账号 1");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  for (const [label, value] of [
+    ["分组筛选", "7"],
+    ["平台筛选", "openai"],
+    ["类型筛选", "oauth"],
+    ["状态筛选", "ready"],
+    ["账号排序", "priority:desc"],
+  ])
+    await select(label, value);
+  await act(async () =>
+    container
+      .querySelector<HTMLInputElement>('[aria-label="全选当前筛选账号"]')!
+      .click(),
+  );
+  const detail = container.querySelector<HTMLDetailsElement>(
+    ".accounts-table details",
+  );
+  if (detail) detail.open = true;
+  const content = container.querySelector<HTMLElement>(".content")!;
+  content.scrollTop = 240;
+  content.scrollLeft = 60;
   expect(search.value).toBe("账号 1");
-  await act(async()=>nav("记录").click());
-  expect(container.querySelector(".breadcrumb strong")?.textContent).toBe("记录");
-  expect(container.querySelector('.filters input[placeholder="搜索名称或账号 ID"]')).toBeNull();
-  await act(async()=>nav("账号").click());
-  expect(container.querySelector<HTMLInputElement>('.filters input[placeholder="搜索名称或账号 ID"]')?.value).toBe("");
-  for(const label of ["分组筛选","平台筛选","类型筛选","状态筛选"]) expect(container.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)?.value).toBe("");
-  expect(container.querySelector<HTMLInputElement>('[aria-label="全选当前筛选账号"]')?.checked).toBe(false);
+  await act(async () => nav("记录").click());
+  expect(container.querySelector(".breadcrumb strong")?.textContent).toBe(
+    "记录",
+  );
+  expect(
+    container.querySelector('.filters input[placeholder="搜索名称或账号 ID"]'),
+  ).toBeNull();
+  await act(async () => nav("账号").click());
+  expect(
+    container.querySelector<HTMLInputElement>(
+      '.filters input[placeholder="搜索名称或账号 ID"]',
+    )?.value,
+  ).toBe("");
+  for (const label of ["分组筛选", "平台筛选", "类型筛选", "状态筛选"])
+    expect(
+      container.querySelector<HTMLSelectElement>(
+        `select[aria-label="${label}"]`,
+      )?.value,
+    ).toBe("");
+  expect(
+    container.querySelector<HTMLInputElement>('[aria-label="全选当前筛选账号"]')
+      ?.checked,
+  ).toBe(false);
   expect(container.querySelector(".accounts-table details[open]")).toBeNull();
-  expect(container.querySelector<HTMLSelectElement>('[aria-label="账号排序"]')?.value).toBe("priority:desc");
-  expect(content.scrollTop).toBe(0); expect(content.scrollLeft).toBe(0);
+  expect(
+    container.querySelector<HTMLSelectElement>('[aria-label="账号排序"]')
+      ?.value,
+  ).toBe("priority:desc");
+  expect(content.scrollTop).toBe(0);
+  expect(content.scrollLeft).toBe(0);
 });
 
 it("switches saved Sub2API instances, opens prefilled modal when credentials are missing, and guards active instance deletion", async () => {
@@ -613,8 +961,15 @@ it("switches saved Sub2API instances, opens prefilled modal when credentials are
   vi.mocked(command).mockImplementation(async (name, args) => {
     if (name === "get_state") return initial as never;
     if (name === "connect") {
-      const payload = args as { baseUrl: string; apiKey: string; name?: string };
-      if (payload.baseUrl === "https://missing-key.example.invalid" && !payload.apiKey) {
+      const payload = args as {
+        baseUrl: string;
+        apiKey: string;
+        name?: string;
+      };
+      if (
+        payload.baseUrl === "https://missing-key.example.invalid" &&
+        !payload.apiKey
+      ) {
         throw new Error("未找到该实例已保存的 API Key，请重新输入");
       }
       initial.preferences.base_url = payload.baseUrl;
@@ -631,77 +986,132 @@ it("switches saved Sub2API instances, opens prefilled modal when credentials are
   });
   vi.mocked(api).mockImplementation(async (_method, path) => {
     if (path === "/connection-status") {
-      return { state: "ok", endpoint: "verify", http_status: 200, message: "连接正常", retryable: false, checked_at: "2026-10-07T00:00:00Z" } as never;
+      return {
+        state: "ok",
+        endpoint: "verify",
+        http_status: 200,
+        message: "连接正常",
+        retryable: false,
+        checked_at: "2026-10-07T00:00:00Z",
+      } as never;
     }
-    if (path === "/config") return { bark: { revision: "fixture", enabled: false, device_key_set: false } } as never;
+    if (path === "/config")
+      return {
+        bark: { revision: "fixture", enabled: false, device_key_set: false },
+      } as never;
     if (path === "/account-operations") return { items: [] } as never;
-    if (path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
-    if (path.startsWith("/errors?category=")) return { items: [], next_cursor: null } as never;
+    if (path === "/quota-refresh")
+      return { status: "idle", items: [], total: 0, completed: 0 } as never;
+    if (path.startsWith("/errors?category="))
+      return { items: [], next_cursor: null } as never;
     return {} as never;
   });
 
   await act(async () => root.render(<App />));
 
-  const switcher = container.querySelector<HTMLButtonElement>(".instance-switcher-trigger")!;
+  const switcher = container.querySelector<HTMLButtonElement>(
+    ".instance-switcher-trigger",
+  )!;
   expect(switcher.textContent).toContain("主力节点");
   await act(async () => switcher.click());
 
-  const standbyOption = [...container.querySelectorAll<HTMLButtonElement>(".instance-switcher-item")].find(
-    (btn) => btn.textContent?.includes("备用节点"),
-  )!;
+  const standbyOption = [
+    ...container.querySelectorAll<HTMLButtonElement>(".instance-switcher-item"),
+  ].find((btn) => btn.textContent?.includes("备用节点"))!;
   await act(async () => standbyOption.click());
   expect(command).toHaveBeenCalledWith("connect", {
     baseUrl: "https://standby.example.invalid",
     apiKey: "",
     name: "备用节点",
   });
-  expect(container.querySelector(".instance-switcher-trigger")?.textContent).toContain("备用节点");
+  expect(
+    container.querySelector(".instance-switcher-trigger")?.textContent,
+  ).toContain("备用节点");
 
-  await act(async () => container.querySelector<HTMLButtonElement>(".sidebar-instance-button")!.click());
-  expect(container.querySelector('.sidebar-instance-button[aria-expanded="true"]')).not.toBeNull();
-  expect(container.querySelector(".sidebar-instance .instance-switcher-menu")).not.toBeNull();
-  const missingKeyOption = [...container.querySelectorAll<HTMLButtonElement>(".instance-switcher-item")].find(
-    (btn) => btn.textContent?.includes("缺少凭据节点"),
-  )!;
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>(".sidebar-instance-button")!
+      .click(),
+  );
+  expect(
+    container.querySelector('.sidebar-instance-button[aria-expanded="true"]'),
+  ).not.toBeNull();
+  expect(
+    container.querySelector(".sidebar-instance .instance-switcher-menu"),
+  ).not.toBeNull();
+  const missingKeyOption = [
+    ...container.querySelectorAll<HTMLButtonElement>(".instance-switcher-item"),
+  ].find((btn) => btn.textContent?.includes("缺少凭据节点"))!;
   await act(async () => missingKeyOption.click());
 
   const modal = container.querySelector(".connection-modal");
   expect(modal).not.toBeNull();
   const modalInputs = [...modal!.querySelectorAll<HTMLInputElement>("input")];
-  expect(modalInputs.some((input) => input.value === "https://missing-key.example.invalid")).toBe(true);
-  expect(modal!.querySelector<HTMLInputElement>('input[type="password"]')?.required).toBe(true);
-  expect(modal!.querySelector<HTMLButtonElement>("button.primary")?.textContent).toContain("验证并连接");
-  const closeModal = modal!.querySelector<HTMLButtonElement>('button[aria-label="关闭连接窗口"]')!;
+  expect(
+    modalInputs.some(
+      (input) => input.value === "https://missing-key.example.invalid",
+    ),
+  ).toBe(true);
+  expect(
+    modal!.querySelector<HTMLInputElement>('input[type="password"]')?.required,
+  ).toBe(true);
+  expect(
+    modal!.querySelector<HTMLButtonElement>("button.primary")?.textContent,
+  ).toContain("验证并连接");
+  const closeModal = modal!.querySelector<HTMLButtonElement>(
+    'button[aria-label="关闭连接窗口"]',
+  )!;
   await act(async () => closeModal.click());
 
   await act(async () => nav("设置").click());
-  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-  expect(container.querySelector(".instance-management-card > .settings-heading")).not.toBeNull();
-  expect(container.querySelector(".instance-management-card > .section-heading")).toBeNull();
-  const rows = [...container.querySelectorAll<HTMLElement>(".saved-instance-row")];
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(
+    container.querySelector(".instance-management-card > .settings-heading"),
+  ).not.toBeNull();
+  expect(
+    container.querySelector(".instance-management-card > .section-heading"),
+  ).toBeNull();
+  const rows = [
+    ...container.querySelectorAll<HTMLElement>(".saved-instance-row"),
+  ];
   expect(rows.length).toBe(3);
   const activeRow = rows.find((row) => row.textContent?.includes("备用节点"))!;
-  const renameBtn = [...activeRow.querySelectorAll<HTMLButtonElement>("button")].find(
-    (btn) => btn.textContent?.includes("更新 Key / 重命名"),
-  )!;
+  const renameBtn = [
+    ...activeRow.querySelectorAll<HTMLButtonElement>("button"),
+  ].find((btn) => btn.textContent?.includes("更新 Key / 重命名"))!;
   await act(async () => renameBtn.click());
   const editModal = container.querySelector(".connection-modal")!;
-  expect(editModal.querySelector<HTMLInputElement>('input[type="password"]')?.required).toBe(false);
-  expect(editModal.querySelector<HTMLButtonElement>("button.primary")?.textContent).toContain("保存实例名称");
-  await act(async () => editModal.querySelector<HTMLButtonElement>('button[aria-label="关闭连接窗口"]')!.click());
+  expect(
+    editModal.querySelector<HTMLInputElement>('input[type="password"]')
+      ?.required,
+  ).toBe(false);
+  expect(
+    editModal.querySelector<HTMLButtonElement>("button.primary")?.textContent,
+  ).toContain("保存实例名称");
+  await act(async () =>
+    editModal
+      .querySelector<HTMLButtonElement>('button[aria-label="关闭连接窗口"]')!
+      .click(),
+  );
 
-  const activeDeleteBtn = [...activeRow.querySelectorAll<HTMLButtonElement>("button")].find(
-    (btn) => btn.textContent?.includes("删除实例"),
-  )!;
+  const activeDeleteBtn = [
+    ...activeRow.querySelectorAll<HTMLButtonElement>("button"),
+  ].find((btn) => btn.textContent?.includes("删除实例"))!;
   expect(activeDeleteBtn.disabled).toBe(true);
 
-  const inactiveRow = rows.find((row) => row.textContent?.includes("主力节点"))!;
-  const inactiveDeleteBtn = [...inactiveRow.querySelectorAll<HTMLButtonElement>("button")].find(
-    (btn) => btn.textContent?.includes("删除实例"),
+  const inactiveRow = rows.find((row) =>
+    row.textContent?.includes("主力节点"),
   )!;
+  const inactiveDeleteBtn = [
+    ...inactiveRow.querySelectorAll<HTMLButtonElement>("button"),
+  ].find((btn) => btn.textContent?.includes("删除实例"))!;
   expect(inactiveDeleteBtn.disabled).toBe(false);
   await act(async () => inactiveDeleteBtn.click());
-  expect(command).toHaveBeenCalledWith("remove_connection", { baseUrl: "https://fixture.invalid" });
+  expect(command).toHaveBeenCalledWith("remove_connection", {
+    baseUrl: "https://fixture.invalid",
+  });
   expect(container.querySelectorAll(".saved-instance-row").length).toBe(2);
 });
-

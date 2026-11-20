@@ -31,7 +31,15 @@ const quality = {
   exit_ip: "203.0.113.8",
   country: "Taiwan",
   base_latency_ms: 20,
-  items: [{ target: "example.invalid", status: "warn", http_status: 403, latency_ms: 42, message: "返回挑战页" }],
+  items: [
+    {
+      target: "example.invalid",
+      status: "warn",
+      http_status: 403,
+      latency_ms: 42,
+      message: "返回挑战页",
+    },
+  ],
 };
 
 let container: HTMLDivElement;
@@ -39,9 +47,12 @@ let root: Root;
 const click = async (element: Element) => {
   await act(async () => (element as HTMLElement).click());
 };
-const diagnosticButton = (name: string) => container.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!;
-const clearProxyLabel = () => [...container.querySelectorAll(".proxy-options label")]
-  .find((label) => label.textContent?.includes("不使用代理"))!;
+const diagnosticButton = (name: string) =>
+  container.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!;
+const clearProxyLabel = () =>
+  [...container.querySelectorAll(".proxy-options label")].find((label) =>
+    label.textContent?.includes("不使用代理"),
+  )!;
 
 async function flush() {
   await act(async () => {
@@ -50,10 +61,23 @@ async function flush() {
   });
 }
 
-function render(value: number | null = 2, onChange = vi.fn(), online = true, connectionKey = "fixture-connection") {
-  return act(async () => root.render(
-    <ProxyOptions proxies={proxies} value={value} onChange={onChange} online={online} connectionKey={connectionKey}/>,
-  ));
+function render(
+  value: number | null = 2,
+  onChange = vi.fn(),
+  online = true,
+  connectionKey = "fixture-connection",
+) {
+  return act(async () =>
+    root.render(
+      <ProxyOptions
+        proxies={proxies}
+        value={value}
+        onChange={onChange}
+        online={online}
+        connectionKey={connectionKey}
+      />,
+    ),
+  );
 }
 
 beforeEach(() => {
@@ -63,7 +87,8 @@ beforeEach(() => {
   root = createRoot(container);
   vi.mocked(api).mockImplementation(async (_method, path) => {
     if (path.endsWith("/test")) return structuredClone(connection) as never;
-    if (path.endsWith("/quality-check")) return structuredClone(quality) as never;
+    if (path.endsWith("/quality-check"))
+      return structuredClone(quality) as never;
     throw new Error(`Unexpected fixture request: ${path}`);
   });
 });
@@ -83,14 +108,20 @@ describe("shared proxy options", () => {
 
     expect(api).toHaveBeenCalledWith("POST", "/proxies/4/test");
     expect(onChange).not.toHaveBeenCalled();
-    expect([...container.querySelectorAll<HTMLInputElement>('input[type="radio"]')].filter((input) => input.checked)).toHaveLength(1);
+    expect(
+      [
+        ...container.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+      ].filter((input) => input.checked),
+    ).toHaveLength(1);
     expect(container.textContent).toContain("203.0.113.7");
     expect(container.textContent).toContain("31 ms");
   });
 
   it("runs quality checks once and renders the safe per-target result", async () => {
     let resolveQuality!: (value: typeof quality) => void;
-    const pendingQuality = new Promise<typeof quality>((resolve) => { resolveQuality = resolve; });
+    const pendingQuality = new Promise<typeof quality>((resolve) => {
+      resolveQuality = resolve;
+    });
     vi.mocked(api).mockImplementation(async (_method, path) => {
       if (path.endsWith("/quality-check")) return pendingQuality as never;
       if (path.endsWith("/test")) return structuredClone(connection) as never;
@@ -123,13 +154,21 @@ describe("shared proxy options", () => {
 
   it("drops a late diagnostic result after the connection changes", async () => {
     let resolveOld!: (value: typeof connection) => void;
-    const oldResponse = new Promise<typeof connection>((resolve) => { resolveOld = resolve; });
+    const oldResponse = new Promise<typeof connection>((resolve) => {
+      resolveOld = resolve;
+    });
     vi.mocked(api).mockReturnValueOnce(oldResponse as never);
     await render();
     await click(diagnosticButton("检测代理 2"));
 
     await render(2, vi.fn(), true, "new-fixture-connection");
-    await act(async () => resolveOld({ ...connection, ip_address: "198.51.100.99", message: "late fixture result" }));
+    await act(async () =>
+      resolveOld({
+        ...connection,
+        ip_address: "198.51.100.99",
+        message: "late fixture result",
+      }),
+    );
     await flush();
 
     expect(container.textContent).not.toContain("198.51.100.99");
@@ -137,12 +176,16 @@ describe("shared proxy options", () => {
   });
 
   it("shows an explicit unsupported-interface response without retrying", async () => {
-    vi.mocked(api).mockRejectedValueOnce(new Error("Sub2API 不支持此代理检测接口"));
+    vi.mocked(api).mockRejectedValueOnce(
+      new Error("Sub2API 不支持此代理检测接口"),
+    );
     await render();
     await click(diagnosticButton("检测代理 2"));
     await flush();
 
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("不支持");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "不支持",
+    );
     expect(api).toHaveBeenCalledTimes(1);
   });
 });

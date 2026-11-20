@@ -31,9 +31,12 @@ describe("precise detail numbers", () => {
     [null, "—"],
     [undefined, "—"],
     ["", "—"],
-  ] as const)("formats %s without losing its decimal precision", (value, expected) => {
-    expect(money(value, 8)).toBe(expected);
-  });
+  ] as const)(
+    "formats %s without losing its decimal precision",
+    (value, expected) => {
+      expect(money(value, 8)).toBe(expected);
+    },
+  );
   it("keeps missing, zero and rounded multipliers distinct", () => {
     expect(decimal(null, 2)).toBe("—");
     expect(decimal("0e0", 2)).toBe("0.00");
@@ -181,12 +184,12 @@ describe("record performance metrics", () => {
   );
 
   it("uses the native request type when the legacy projection would be misleading", () => {
-    expect(outputRate({ request_type: "sync", native_request_type: "cyber" })).toBe(
-      "16.7 tok/s",
-    );
-    expect(outputRate({ request_type: "sync", native_request_type: "live" })).toBe(
-      "—",
-    );
+    expect(
+      outputRate({ request_type: "sync", native_request_type: "cyber" }),
+    ).toBe("16.7 tok/s");
+    expect(
+      outputRate({ request_type: "sync", native_request_type: "live" }),
+    ).toBe("—");
   });
 
   it("uses total duration and never subtracts first-token timing", () => {
@@ -259,7 +262,10 @@ describe("record request type", () => {
     [{ native_request_type: "invalid", request_type: "stream" }, "stream"],
     [{ native_request_type: "invalid", request_type: "unknown" }, "unknown"],
     [{ request_type: "invalid", openai_ws_mode: true }, "ws_v2"],
-    [{ request_type: "invalid", openai_ws_mode: false, stream: true }, "stream"],
+    [
+      { request_type: "invalid", openai_ws_mode: false, stream: true },
+      "stream",
+    ],
     [{ request_type: "invalid", openai_ws_mode: false, stream: false }, "sync"],
     [{}, "sync"],
   ] as const)("resolves %o to %s", (fields, expected) => {

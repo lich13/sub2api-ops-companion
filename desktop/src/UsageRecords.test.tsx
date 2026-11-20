@@ -290,7 +290,13 @@ async function setInput(label: string, value: string) {
   });
 }
 async function submitModel() {
-  await act(async () => container.querySelector<HTMLInputElement>('[aria-label="模型筛选"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  await act(async () =>
+    container
+      .querySelector<HTMLInputElement>('[aria-label="模型筛选"]')!
+      .dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      ),
+  );
 }
 async function escape(selector: string) {
   await act(async () =>
@@ -674,9 +680,9 @@ describe("record view", () => {
     });
     expect(params(paths().at(-1)!).get("cursor")).toBe(cursor);
     expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
-    expect(container.querySelector(".records-pagination")?.textContent).toContain(
-      "已全部加载",
-    );
+    expect(
+      container.querySelector(".records-pagination")?.textContent,
+    ).toContain("已全部加载");
   });
 
   it("shows a cursor-scoped pagination error and retries that cursor from the bottom", async () => {
@@ -699,14 +705,14 @@ describe("record view", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(container.querySelector(".records-pagination")?.textContent).toContain(
-      "history page unavailable",
-    );
+    expect(
+      container.querySelector(".records-pagination")?.textContent,
+    ).toContain("history page unavailable");
     expect(button("重试加载")).toBeDefined();
     expect(summary()?.textContent).toBe("$12.345679");
-    expect(container.querySelector<HTMLDivElement>(".records-scroll")?.scrollTop).toBe(
-      240,
-    );
+    expect(
+      container.querySelector<HTMLDivElement>(".records-scroll")?.scrollTop,
+    ).toBe(240);
     const beforeRetry = paths().length;
     observer.trigger(true);
     expect(paths()).toHaveLength(beforeRetry);
@@ -714,12 +720,12 @@ describe("record view", () => {
     expect(params(paths().at(-1)!).get("cursor")).toBe(cursor);
     expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
     expect(summary()?.textContent).toBe("$12.345679");
-    expect(container.querySelector<HTMLDivElement>(".records-scroll")?.scrollTop).toBe(
-      240,
-    );
-    expect(container.querySelector(".records-pagination")?.textContent).toContain(
-      "已全部加载",
-    );
+    expect(
+      container.querySelector<HTMLDivElement>(".records-scroll")?.scrollTop,
+    ).toBe(240);
+    expect(
+      container.querySelector(".records-pagination")?.textContent,
+    ).toContain("已全部加载");
   });
 
   it.each([
@@ -756,7 +762,8 @@ describe("record view", () => {
     if (holding === "date") await click("时间范围");
     if (holding === "columns")
       await act(async () =>
-        container.querySelector<HTMLDetailsElement>(".records-column-menu")!
+        container
+          .querySelector<HTMLDetailsElement>(".records-column-menu")!
           .querySelector("summary")!
           .click(),
       );
@@ -1113,9 +1120,9 @@ describe("record view", () => {
     expect(card.querySelector(".record-type-badge.is-cyber")?.textContent).toBe(
       "安全策略",
     );
-    expect(card.querySelector(".record-type-badge.is-compact")?.textContent).toBe(
-      "压缩",
-    );
+    expect(
+      card.querySelector(".record-type-badge.is-compact")?.textContent,
+    ).toBe("压缩");
     expect(card.querySelectorAll(".record-type-badge")).toHaveLength(2);
     expect(saveColumns).not.toHaveBeenCalled();
     await click("查看记录 #100");
@@ -1213,7 +1220,9 @@ describe("record view", () => {
 
       expect(params(paths().at(-1)!).get("model")).toBe("committed-model");
       expect(params(paths().at(-1)!).get("include_summary")).toBe("true");
-      expect(container.querySelector('.records-toolbar[role="dialog"]')).not.toBeNull();
+      expect(
+        container.querySelector('.records-toolbar[role="dialog"]'),
+      ).not.toBeNull();
       await advance(300);
       expect(api).toHaveBeenCalledTimes(3);
     },
@@ -1421,25 +1430,24 @@ describe("record view", () => {
   );
 
   it("clears a removed account when the online snapshot changes", async () => {
-      const accounts = [account(22, "Current East")];
-      await renderView({ accounts });
-      await click("账户筛选");
-      await click("Current East#22");
-      expect(params(paths().at(-1)!).get("account_id")).toBe("22");
-      await renderView({ accounts: [account(33, "Current West")] });
-      expect(button("账户筛选").textContent).toBe("全部账户");
+    const accounts = [account(22, "Current East")];
+    await renderView({ accounts });
+    await click("账户筛选");
+    await click("Current East#22");
+    expect(params(paths().at(-1)!).get("account_id")).toBe("22");
+    await renderView({ accounts: [account(33, "Current West")] });
+    expect(button("账户筛选").textContent).toBe("全部账户");
 
-      await click("刷新记录");
-      expect(params(paths().at(-1)!).has("account_id")).toBe(false);
-      await click("账户筛选");
-      expect(
-        container.querySelector('[role="listbox"]')?.textContent,
-      ).toContain("Current West#33");
-      expect(
-        container.querySelector('[role="listbox"]')?.textContent,
-      ).not.toContain("Current East");
-    },
-  );
+    await click("刷新记录");
+    expect(params(paths().at(-1)!).has("account_id")).toBe(false);
+    await click("账户筛选");
+    expect(container.querySelector('[role="listbox"]')?.textContent).toContain(
+      "Current West#33",
+    );
+    expect(
+      container.querySelector('[role="listbox"]')?.textContent,
+    ).not.toContain("Current East");
+  });
 
   it("preserves an applied account while offline and clears it when a fresh online snapshot removes it", async () => {
     await renderView({ accounts: [account(22, "Current East")] });
@@ -1877,9 +1885,9 @@ describe("record view", () => {
     const row = record(100, { request_type: undefined });
     serve((path) => (path === "/usage-records/100" ? row : page([row])));
     await renderView({ columns: ["type"] });
-    expect(container.querySelector(".record-type-badge.is-sync")?.textContent).toBe(
-      "同步",
-    );
+    expect(
+      container.querySelector(".record-type-badge.is-sync")?.textContent,
+    ).toBe("同步");
     await act(async () =>
       container
         .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
@@ -1892,9 +1900,9 @@ describe("record view", () => {
     const row = record(100, { request_type: "unknown" as never });
     serve((path) => (path === "/usage-records/100" ? row : page([row])));
     await renderView({ columns: ["type"] });
-    expect(container.querySelector(".record-type-badge.is-unknown")?.textContent).toBe(
-      "未知",
-    );
+    expect(
+      container.querySelector(".record-type-badge.is-unknown")?.textContent,
+    ).toBe("未知");
   });
 
   it("keeps compact and type badges beside unchanged cost and TPS values", async () => {
@@ -1908,16 +1916,18 @@ describe("record view", () => {
     serve((path) => (path === "/usage-records/100" ? row : page([row])));
     await renderView({ columns: ["type", "cost", "latency"] });
     const cell = container.querySelector("tbody .record-col-type")!;
-    expect(cell.querySelector(".record-type-badge.is-stream")?.textContent).toBe(
-      "流式",
-    );
-    expect(cell.querySelector(".record-type-badge.is-compact")?.textContent).toBe(
-      "压缩",
-    );
+    expect(
+      cell.querySelector(".record-type-badge.is-stream")?.textContent,
+    ).toBe("流式");
+    expect(
+      cell.querySelector(".record-type-badge.is-compact")?.textContent,
+    ).toBe("压缩");
     expect(container.querySelector('[title="用户实扣"]')?.textContent).toBe(
       "$9007199254740993.123457",
     );
-    expect(container.querySelector(".record-tps")?.textContent).toBe("1.7 tok/s");
+    expect(container.querySelector(".record-tps")?.textContent).toBe(
+      "1.7 tok/s",
+    );
   });
 
   it("blocks overlapping column writes until the pending preference save settles", async () => {
@@ -2080,36 +2090,81 @@ describe("record view", () => {
 
 it("applies platform to the record feed and clears an incompatible account", async () => {
   serve(() => page([record(1)]));
-  await renderView({ accounts: [account(9, "Codex fixture"), { ...account(10, "Claude fixture"), platform: "anthropic" }] });
+  await renderView({
+    accounts: [
+      account(9, "Codex fixture"),
+      { ...account(10, "Claude fixture"), platform: "anthropic" },
+    ],
+  });
   await click("账户筛选");
   await click("Codex fixture#9");
 
   expect(params(paths().at(-1)!).get("account_id")).toBe("9");
-  const platform = container.querySelector<HTMLSelectElement>('[aria-label="记录平台"]')!;
-  expect([...platform.options].map(option => option.textContent)).toEqual(expect.arrayContaining(["全部平台", "Codex", "Claude", "Gemini", "DeepSeek"]));
-  const before = paths().filter(path => path.startsWith("/usage-records?")).length;
-  await act(async () => { platform.value = "anthropic"; platform.dispatchEvent(new Event("change", { bubbles: true })); });
-  expect(paths().filter(path => path.startsWith("/usage-records?"))).toHaveLength(before + 1);
+  const platform = container.querySelector<HTMLSelectElement>(
+    '[aria-label="记录平台"]',
+  )!;
+  expect([...platform.options].map((option) => option.textContent)).toEqual(
+    expect.arrayContaining([
+      "全部平台",
+      "Codex",
+      "Claude",
+      "Gemini",
+      "DeepSeek",
+    ]),
+  );
+  const before = paths().filter((path) =>
+    path.startsWith("/usage-records?"),
+  ).length;
+  await act(async () => {
+    platform.value = "anthropic";
+    platform.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(
+    paths().filter((path) => path.startsWith("/usage-records?")),
+  ).toHaveLength(before + 1);
 
   expect(button("账户筛选").textContent).toBe("全部账户");
   expect(params(paths().at(-1)!).has("account_id")).toBe(false);
-  expect(paths().filter(path => path.startsWith("/usage-records?")).at(-1)).toContain("platform=anthropic");
+  expect(
+    paths()
+      .filter((path) => path.startsWith("/usage-records?"))
+      .at(-1),
+  ).toContain("platform=anthropic");
   await advance(10_000);
-  expect(paths().filter(path => path.startsWith("/usage-records?")).every(path => !params(path).has("after_id") || params(path).get("platform") === "anthropic")).toBe(true);
+  expect(
+    paths()
+      .filter((path) => path.startsWith("/usage-records?"))
+      .every(
+        (path) =>
+          !params(path).has("after_id") ||
+          params(path).get("platform") === "anthropic",
+      ),
+  ).toBe(true);
 });
 
 it("debounces model text for 300ms, submits Enter immediately, and applies mismatch without a filter button", async () => {
   await renderView();
-  expect(container.querySelector('.records-toolbar button[type="submit"]')).toBeNull();
+  expect(
+    container.querySelector('.records-toolbar button[type="submit"]'),
+  ).toBeNull();
   const before = paths().length;
-  await setInput("模型筛选", "fixture-first"); await advance(200);
-  await setInput("模型筛选", "fixture-second"); await advance(299);
+  await setInput("模型筛选", "fixture-first");
+  await advance(200);
+  await setInput("模型筛选", "fixture-second");
+  await advance(299);
   expect(paths()).toHaveLength(before);
-  await advance(1); expect(paths()).toHaveLength(before + 1);
+  await advance(1);
+  expect(paths()).toHaveLength(before + 1);
   expect(params(paths().at(-1)!).get("model")).toBe("fixture-second");
-  await setInput("模型筛选", "fixture-enter"); await submitModel();
+  await setInput("模型筛选", "fixture-enter");
+  await submitModel();
   expect(params(paths().at(-1)!).get("model")).toBe("fixture-enter");
-  await advance(300); expect(paths()).toHaveLength(before + 2);
-  await act(async () => container.querySelector<HTMLInputElement>('.records-mismatch-filter input')!.click());
+  await advance(300);
+  expect(paths()).toHaveLength(before + 2);
+  await act(async () =>
+    container
+      .querySelector<HTMLInputElement>(".records-mismatch-filter input")!
+      .click(),
+  );
   expect(params(paths().at(-1)!).get("mismatch_only")).toBe("true");
 });

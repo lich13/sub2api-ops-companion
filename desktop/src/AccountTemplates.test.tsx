@@ -3,7 +3,12 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AccountTemplates from "./AccountTemplates";
-import { bindOperationConnection, getOperations, setOperations, type Operation } from "./accountOperations";
+import {
+  bindOperationConnection,
+  getOperations,
+  setOperations,
+  type Operation,
+} from "./accountOperations";
 import { api, command } from "./bridge";
 import type { Account } from "./types";
 
@@ -12,7 +17,10 @@ vi.mock("./mobile", () => ({ useBackAction: vi.fn() }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-type Profile = { whitelist: string[]; mappings: { source: string; target: string }[] };
+type Profile = {
+  whitelist: string[];
+  mappings: { source: string; target: string }[];
+};
 type TemplateConfig = {
   version: string;
   configured: boolean;
@@ -75,17 +83,33 @@ const account: Account = {
   success_after_error: false,
   usage_windows: [],
 };
-const secondAccount: Account = { ...account, id: 2, name: "OpenAI OAuth 2", version: "account-version-2" };
-const thirdAccount: Account = { ...account, id: 3, name: "OpenAI OAuth 3", version: "account-version-3" };
+const secondAccount: Account = {
+  ...account,
+  id: 2,
+  name: "OpenAI OAuth 2",
+  version: "account-version-2",
+};
+const thirdAccount: Account = {
+  ...account,
+  id: 3,
+  name: "OpenAI OAuth 3",
+  version: "account-version-3",
+};
 
 function configFor(entries: [string, string, Profile][]): TemplateConfig {
   return {
     version: "config-v1",
     configured: entries.length > 0,
-    templates: Object.fromEntries(entries.map(([id, , profile]) => [id, profile])),
-    template_meta: Object.fromEntries(entries.map(([id, name]) => [id, { name, builtin: false as const }])),
+    templates: Object.fromEntries(
+      entries.map(([id, , profile]) => [id, profile]),
+    ),
+    template_meta: Object.fromEntries(
+      entries.map(([id, name]) => [id, { name, builtin: false as const }]),
+    ),
     template_order: entries.map(([id]) => id),
-    template_versions: Object.fromEntries(entries.map(([id]) => [id, "template-" + id + "-v1"])),
+    template_versions: Object.fromEntries(
+      entries.map(([id]) => [id, "template-" + id + "-v1"]),
+    ),
   };
 }
 
@@ -123,7 +147,9 @@ const close = vi.fn();
 let operationConnectionSequence = 0;
 
 function resetOperationStore() {
-  bindOperationConnection("account-template-test-" + ++operationConnectionSequence);
+  bindOperationConnection(
+    "account-template-test-" + ++operationConnectionSequence,
+  );
   setOperations([]);
 }
 
@@ -143,27 +169,33 @@ afterEach(async () => {
 });
 
 function buttonByLabel(label: string) {
-  const result = container.querySelector<HTMLButtonElement>('button[aria-label="' + label + '"]');
+  const result = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="' + label + '"]',
+  );
   if (!result) throw new Error("missing button: " + label);
   return result;
 }
 
 function buttonByText(text: string) {
-  const result = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (node) => node.textContent?.includes(text),
-  );
+  const result = [
+    ...container.querySelectorAll<HTMLButtonElement>("button"),
+  ].find((node) => node.textContent?.includes(text));
   if (!result) throw new Error("missing button: " + text);
   return result;
 }
 
 function inputByLabel(label: string) {
-  const result = container.querySelector<HTMLInputElement>('input[aria-label="' + label + '"]');
+  const result = container.querySelector<HTMLInputElement>(
+    'input[aria-label="' + label + '"]',
+  );
   if (!result) throw new Error("missing input: " + label);
   return result;
 }
 
 function selectByLabel(label: string) {
-  const result = container.querySelector<HTMLSelectElement>('select[aria-label="' + label + '"]');
+  const result = container.querySelector<HTMLSelectElement>(
+    'select[aria-label="' + label + '"]',
+  );
   if (!result) throw new Error("missing select: " + label);
   return result;
 }
@@ -178,7 +210,10 @@ async function flush() {
 
 async function setInput(node: HTMLInputElement, value: string) {
   await act(async () => {
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!;
     setter.call(node, value);
     node.dispatchEvent(new Event("input", { bubbles: true }));
   });
@@ -229,29 +264,40 @@ function installApi(options: ApiOptions = {}) {
     }
 
     if (method === "POST" && path === "/account-templates/apply") {
-      return clone(options.batchResponse ?? {
-        batch_id: "batch-default",
-        items: [],
-        pending: 0,
-      }) as never;
+      return clone(
+        options.batchResponse ?? {
+          batch_id: "batch-default",
+          items: [],
+          pending: 0,
+        },
+      ) as never;
     }
 
     if (method === "GET" && path.startsWith("/account-operations?batch_id=")) {
-      return clone(options.operationsResponse ?? {
-        batch_id: "batch-default",
-        items: [],
-        pending: 0,
-      }) as never;
+      return clone(
+        options.operationsResponse ?? {
+          batch_id: "batch-default",
+          items: [],
+          pending: 0,
+        },
+      ) as never;
     }
 
     if (method === "POST" && path === "/account-templates") {
-      const input = body as { name?: string; whitelist?: string[]; mappings?: Profile["mappings"] };
+      const input = body as {
+        name?: string;
+        whitelist?: string[];
+        mappings?: Profile["mappings"];
+      };
       current = clone(current);
       current.templates[createdId] = {
         whitelist: input.whitelist ?? [],
         mappings: input.mappings ?? [],
       };
-      current.template_meta[createdId] = { name: input.name ?? createdId, builtin: false };
+      current.template_meta[createdId] = {
+        name: input.name ?? createdId,
+        builtin: false,
+      };
       current.template_order.push(createdId);
       current.template_versions[createdId] = "template-" + createdId + "-v1";
       current.version = "config-v" + ++revision;
@@ -261,8 +307,13 @@ function installApi(options: ApiOptions = {}) {
 
     if (method === "PUT" && path.startsWith("/account-templates/")) {
       const id = path.slice("/account-templates/".length);
-      const input = body as { name?: string; whitelist?: string[]; mappings?: Profile["mappings"] };
-      if (!current.templates[id]) throw new Error("missing template fixture " + id);
+      const input = body as {
+        name?: string;
+        whitelist?: string[];
+        mappings?: Profile["mappings"];
+      };
+      if (!current.templates[id])
+        throw new Error("missing template fixture " + id);
       current = clone(current);
       current.templates[id] = {
         whitelist: input.whitelist ?? current.templates[id].whitelist,
@@ -283,7 +334,9 @@ function installApi(options: ApiOptions = {}) {
       delete current.templates[id];
       delete current.template_meta[id];
       delete current.template_versions[id];
-      current.template_order = current.template_order.filter((entry) => entry !== id);
+      current.template_order = current.template_order.filter(
+        (entry) => entry !== id,
+      );
       current.version = "config-v" + ++revision;
       current.configured = current.template_order.length > 0;
       return clone(current) as never;
@@ -299,12 +352,14 @@ function installApi(options: ApiOptions = {}) {
   };
 }
 
-async function renderTemplates(options: {
-  accounts?: Account[];
-  initialAccount?: Account | null;
-  initialAccounts?: Account[];
-  online?: boolean;
-} = {}) {
+async function renderTemplates(
+  options: {
+    accounts?: Account[];
+    initialAccount?: Account | null;
+    initialAccounts?: Account[];
+    online?: boolean;
+  } = {},
+) {
   const accounts = options.accounts ?? [account];
   await act(async () => {
     root.render(
@@ -327,13 +382,19 @@ describe("unified account templates", () => {
     await renderTemplates();
 
     expect(
-      [...container.querySelectorAll<HTMLInputElement>('input[aria-label^="模板名称 "]')].map((input) => input.value),
+      [
+        ...container.querySelectorAll<HTMLInputElement>(
+          'input[aria-label^="模板名称 "]',
+        ),
+      ].map((input) => input.value),
     ).toEqual(["Beta", "Alpha"]);
     expect(inputByLabel("模板名称 beta").value).toBe("Beta");
     expect(inputByLabel("模板名称 alpha").value).toBe("Alpha");
     expect(container.textContent).not.toContain("Legacy only");
     expect(
-      [...selectByLabel("选择账号模板").options].map((option) => option.textContent),
+      [...selectByLabel("选择账号模板").options].map(
+        (option) => option.textContent,
+      ),
     ).toEqual(["Beta", "Alpha"]);
   });
 
@@ -346,9 +407,12 @@ describe("unified account templates", () => {
     await act(async () => buttonByLabel("保存Alpha renamed模板").click());
     await flush();
 
-    const update = vi.mocked(api).mock.calls.find(
-      ([method, path]) => method === "PUT" && path === "/account-templates/alpha",
-    );
+    const update = vi
+      .mocked(api)
+      .mock.calls.find(
+        ([method, path]) =>
+          method === "PUT" && path === "/account-templates/alpha",
+      );
     expect(update?.[2]).toMatchObject({
       expected_version: "config-v1",
       name: "Alpha renamed",
@@ -366,50 +430,76 @@ describe("unified account templates", () => {
     "renames and deletes legacy template id %s through the unified endpoints",
     async (id) => {
       installApi({
-        config: configFor([[id, id, { whitelist: [id + "-model"], mappings: [] }]]),
+        config: configFor([
+          [id, id, { whitelist: [id + "-model"], mappings: [] }],
+        ]),
       });
       await renderTemplates();
 
       await setInput(inputByLabel("模板名称 " + id), "Renamed " + id);
-      await act(async () => buttonByLabel("保存Renamed " + id + "模板").click());
+      await act(async () =>
+        buttonByLabel("保存Renamed " + id + "模板").click(),
+      );
       await flush();
 
-      const put = vi.mocked(api).mock.calls.find(
-        ([method, path]) => method === "PUT" && path === "/account-templates/" + id,
-      );
+      const put = vi
+        .mocked(api)
+        .mock.calls.find(
+          ([method, path]) =>
+            method === "PUT" && path === "/account-templates/" + id,
+        );
       expect(put?.[2]).toMatchObject({
         expected_version: "config-v1",
         name: "Renamed " + id,
       });
 
-      await act(async () => buttonByLabel("删除Renamed " + id + "模板").click());
-      expect(vi.mocked(api).mock.calls.some(
-        ([method, path]) => method === "DELETE" && path === "/account-templates/" + id,
-      )).toBe(false);
+      await act(async () =>
+        buttonByLabel("删除Renamed " + id + "模板").click(),
+      );
+      expect(
+        vi
+          .mocked(api)
+          .mock.calls.some(
+            ([method, path]) =>
+              method === "DELETE" && path === "/account-templates/" + id,
+          ),
+      ).toBe(false);
       await act(async () => buttonByText("确认删除").click());
       await flush();
 
-      const deletion = vi.mocked(api).mock.calls.find(
-        ([method, path]) => method === "DELETE" && path === "/account-templates/" + id,
-      );
+      const deletion = vi
+        .mocked(api)
+        .mock.calls.find(
+          ([method, path]) =>
+            method === "DELETE" && path === "/account-templates/" + id,
+        );
       expect(deletion?.[2]).toMatchObject({ expected_version: "config-v2" });
-      expect(container.querySelector('input[aria-label="模板名称 ' + id + '"]')).toBeNull();
+      expect(
+        container.querySelector('input[aria-label="模板名称 ' + id + '"]'),
+      ).toBeNull();
     },
   );
 
   it("creates into an empty collection and leaves it empty after deleting the last template", async () => {
-    const server = installApi({ config: configFor([]), createdId: "created-last" });
+    const server = installApi({
+      config: configFor([]),
+      createdId: "created-last",
+    });
     await renderTemplates();
 
-    expect(container.querySelectorAll('input[aria-label^="模板名称 "]')).toHaveLength(0);
+    expect(
+      container.querySelectorAll('input[aria-label^="模板名称 "]'),
+    ).toHaveLength(0);
     await act(async () => buttonByText("新增模板").click());
     await setInput(inputByLabel("新模板名称"), "First template");
     await act(async () => buttonByLabel("保存新模板").click());
     await flush();
 
-    const creation = vi.mocked(api).mock.calls.find(
-      ([method, path]) => method === "POST" && path === "/account-templates",
-    );
+    const creation = vi
+      .mocked(api)
+      .mock.calls.find(
+        ([method, path]) => method === "POST" && path === "/account-templates",
+      );
     expect(creation?.[2]).toMatchObject({
       expected_version: "config-v1",
       name: "First template",
@@ -422,10 +512,17 @@ describe("unified account templates", () => {
     await act(async () => buttonByText("确认删除").click());
     await flush();
 
-    expect(vi.mocked(api).mock.calls.some(
-      ([method, path]) => method === "DELETE" && path === "/account-templates/created-last",
-    )).toBe(true);
-    expect(container.querySelectorAll('input[aria-label^="模板名称 "]')).toHaveLength(0);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.some(
+          ([method, path]) =>
+            method === "DELETE" && path === "/account-templates/created-last",
+        ),
+    ).toBe(true);
+    expect(
+      container.querySelectorAll('input[aria-label^="模板名称 "]'),
+    ).toHaveLength(0);
     expect(server.current.template_order).toEqual([]);
   });
 
@@ -433,7 +530,9 @@ describe("unified account templates", () => {
     installApi({ failTemplateReads: 1 });
     await renderTemplates();
 
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("temporary template read failure");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "temporary template read failure",
+    );
     await act(async () => buttonByText("重新读取").click());
     await flush();
 
@@ -445,14 +544,27 @@ describe("unified account templates", () => {
     const batchResponse: BatchResult = {
       batch_id: "batch-42",
       items: [
-        { id: "operation-1", batch_id: "batch-42", account_id: 1, status: "queued" },
-        { id: "operation-2", batch_id: "batch-42", account_id: 2, status: "queued" },
+        {
+          id: "operation-1",
+          batch_id: "batch-42",
+          account_id: 1,
+          status: "queued",
+        },
+        {
+          id: "operation-2",
+          batch_id: "batch-42",
+          account_id: 2,
+          status: "queued",
+        },
       ],
       pending: 2,
     };
     const operationsResponse: BatchResult = {
       ...batchResponse,
-      items: batchResponse.items.map((item) => ({ ...item, status: "completed" })),
+      items: batchResponse.items.map((item) => ({
+        ...item,
+        status: "completed",
+      })),
       pending: 0,
     };
     installApi({
@@ -463,14 +575,24 @@ describe("unified account templates", () => {
         2: accountConfigFor(secondAccount),
       },
     });
-    await renderTemplates({ accounts: [account, secondAccount], initialAccounts: [account, secondAccount] });
+    await renderTemplates({
+      accounts: [account, secondAccount],
+      initialAccounts: [account, secondAccount],
+    });
     expect(selectByLabel("选择应用账号").disabled).toBe(true);
 
-    const reads = vi.mocked(api).mock.calls
-      .filter(([method, path]) => method === "GET" && path.startsWith("/account-templates?account_id="))
+    const reads = vi
+      .mocked(api)
+      .mock.calls.filter(
+        ([method, path]) =>
+          method === "GET" && path.startsWith("/account-templates?account_id="),
+      )
       .map(([, path]) => path)
       .sort();
-    expect(reads).toEqual(["/account-templates?account_id=1", "/account-templates?account_id=2"]);
+    expect(reads).toEqual([
+      "/account-templates?account_id=1",
+      "/account-templates?account_id=2",
+    ]);
 
     await setSelect(selectByLabel("选择账号模板"), "alpha");
     expect(container.textContent).toContain("current-1");
@@ -487,9 +609,12 @@ describe("unified account templates", () => {
     await act(async () => buttonByText("应用模板").click());
     await flush();
 
-    const apply = vi.mocked(api).mock.calls.find(
-      ([method, path]) => method === "POST" && path === "/account-templates/apply",
-    );
+    const apply = vi
+      .mocked(api)
+      .mock.calls.find(
+        ([method, path]) =>
+          method === "POST" && path === "/account-templates/apply",
+      );
     expect(apply?.[2]).toMatchObject({
       template_id: "alpha",
       template_version: "alpha-v7",
@@ -503,9 +628,15 @@ describe("unified account templates", () => {
     expect(String(request?.request_id).length).toBeGreaterThan(0);
     expect(typeof request?.client_id).toBe("string");
     expect(String(request?.client_id).length).toBeGreaterThan(0);
-    expect(vi.mocked(api).mock.calls.some(
-      ([method, path]) => method === "GET" && path === "/account-operations?batch_id=batch-42",
-    )).toBe(true);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.some(
+          ([method, path]) =>
+            method === "GET" &&
+            path === "/account-operations?batch_id=batch-42",
+        ),
+    ).toBe(true);
     expect(container.textContent).toContain("已完成");
     expect(close).toHaveBeenCalledOnce();
   });
@@ -515,7 +646,12 @@ describe("unified account templates", () => {
     const acceptedBatch: BatchResult = {
       batch_id: "batch-late",
       items: [
-        { id: "operation-late", batch_id: "batch-late", account_id: 1, status: "queued" },
+        {
+          id: "operation-late",
+          batch_id: "batch-late",
+          account_id: 1,
+          status: "queued",
+        },
       ],
       pending: 1,
     };
@@ -533,16 +669,24 @@ describe("unified account templates", () => {
     bindOperationConnection("connection-before-late-response");
     setOperations([]);
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/account-templates") return clone(baseConfig) as never;
+      if (method === "GET" && path === "/account-templates")
+        return clone(baseConfig) as never;
       if (method === "GET" && path === "/account-templates?account_id=1") {
         return accountConfigFor(account) as never;
       }
       if (method === "POST" && path === "/account-templates/apply") {
-        serverBatches.get(serverConnection)?.set(acceptedBatch.batch_id, clone(acceptedBatch));
+        serverBatches
+          .get(serverConnection)
+          ?.set(acceptedBatch.batch_id, clone(acceptedBatch));
         return latePost.promise as never;
       }
-      if (method === "GET" && path === "/account-operations?batch_id=batch-late") {
-        const batch = serverBatches.get(serverConnection)?.get(acceptedBatch.batch_id);
+      if (
+        method === "GET" &&
+        path === "/account-operations?batch_id=batch-late"
+      ) {
+        const batch = serverBatches
+          .get(serverConnection)
+          ?.get(acceptedBatch.batch_id);
         if (!batch) throw new Error("batch not found on " + serverConnection);
         return clone(batch) as never;
       }
@@ -553,9 +697,14 @@ describe("unified account templates", () => {
     await setSelect(selectByLabel("选择账号模板"), "alpha");
     await act(async () => buttonByText("应用模板").click());
     await flush();
-    expect(vi.mocked(api).mock.calls.some(
-      ([method, path]) => method === "POST" && path === "/account-templates/apply",
-    )).toBe(true);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.some(
+          ([method, path]) =>
+            method === "POST" && path === "/account-templates/apply",
+        ),
+    ).toBe(true);
 
     serverConnection = "connection-after-late-response";
     bindOperationConnection(serverConnection);
@@ -566,13 +715,25 @@ describe("unified account templates", () => {
     });
     await flush();
 
-    expect(vi.mocked(api).mock.calls.some(
-      ([method, path]) => method === "GET" && path === "/account-operations?batch_id=batch-late",
-    )).toBe(false);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.some(
+          ([method, path]) =>
+            method === "GET" &&
+            path === "/account-operations?batch_id=batch-late",
+        ),
+    ).toBe(false);
     expect(container.textContent).not.toContain("已完成");
-    expect(vi.mocked(api).mock.calls.some(
-      ([method, path]) => method === "POST" && path === "/account-operations/operation-late/cancel",
-    )).toBe(false);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.some(
+          ([method, path]) =>
+            method === "POST" &&
+            path === "/account-operations/operation-late/cancel",
+        ),
+    ).toBe(false);
     expect(getOperations()).toEqual([currentConnectionOperation]);
 
     serverConnection = "connection-before-late-response";
@@ -580,21 +741,38 @@ describe("unified account templates", () => {
     setOperations([]);
     let restored: BatchResult | undefined;
     await act(async () => {
-      restored = await api<BatchResult>("GET", "/account-operations?batch_id=batch-late");
+      restored = await api<BatchResult>(
+        "GET",
+        "/account-operations?batch_id=batch-late",
+      );
     });
     expect(restored).toEqual(acceptedBatch);
-    expect(vi.mocked(api).mock.calls.filter(
-      ([method, path]) => method === "GET" && path === "/account-operations?batch_id=batch-late",
-    )).toHaveLength(1);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(
+          ([method, path]) =>
+            method === "GET" &&
+            path === "/account-operations?batch_id=batch-late",
+        ),
+    ).toHaveLength(1);
   });
 
   it("keeps initialAccount as a single-account entry point", async () => {
     installApi();
-    await renderTemplates({ accounts: [account, secondAccount], initialAccount: secondAccount });
+    await renderTemplates({
+      accounts: [account, secondAccount],
+      initialAccount: secondAccount,
+    });
 
-    expect(vi.mocked(api).mock.calls.some(
-      ([method, path]) => method === "GET" && path === "/account-templates?account_id=2",
-    )).toBe(true);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.some(
+          ([method, path]) =>
+            method === "GET" && path === "/account-templates?account_id=2",
+        ),
+    ).toBe(true);
     const accountSelect = selectByLabel("选择应用账号");
     expect(accountSelect.value).toBe("2");
     expect(accountSelect.disabled).toBe(true);
@@ -602,9 +780,12 @@ describe("unified account templates", () => {
     await setSelect(selectByLabel("选择账号模板"), "alpha");
     await act(async () => buttonByText("应用模板").click());
     await flush();
-    const apply = vi.mocked(api).mock.calls.find(
-      ([method, path]) => method === "POST" && path === "/account-templates/apply",
-    );
+    const apply = vi
+      .mocked(api)
+      .mock.calls.find(
+        ([method, path]) =>
+          method === "POST" && path === "/account-templates/apply",
+      );
     expect(apply?.[2]).toMatchObject({
       template_id: "alpha",
       accounts: [{ account_id: 2, expected_version: "account-version-2" }],
@@ -621,9 +802,12 @@ describe("unified account templates", () => {
     await act(async () => buttonByText("应用模板").click());
     await flush();
 
-    const apply = vi.mocked(api).mock.calls.find(
-      ([method, path]) => method === "POST" && path === "/account-templates/apply",
-    );
+    const apply = vi
+      .mocked(api)
+      .mock.calls.find(
+        ([method, path]) =>
+          method === "POST" && path === "/account-templates/apply",
+      );
     expect(apply?.[2]).toMatchObject({
       template_id: "alpha",
       template_version: "config-v1",
@@ -635,8 +819,18 @@ describe("unified account templates", () => {
     const batchResponse: BatchResult = {
       batch_id: "batch-mixed",
       items: [
-        { id: "operation-1", batch_id: "batch-mixed", account_id: 1, status: "queued" },
-        { id: "operation-2", batch_id: "batch-mixed", account_id: 2, status: "failed" },
+        {
+          id: "operation-1",
+          batch_id: "batch-mixed",
+          account_id: 1,
+          status: "queued",
+        },
+        {
+          id: "operation-2",
+          batch_id: "batch-mixed",
+          account_id: 2,
+          status: "failed",
+        },
       ],
       pending: 1,
     };
@@ -651,31 +845,46 @@ describe("unified account templates", () => {
         }),
       },
     });
-    await renderTemplates({ accounts: [account, secondAccount], initialAccounts: [account, secondAccount] });
+    await renderTemplates({
+      accounts: [account, secondAccount],
+      initialAccounts: [account, secondAccount],
+    });
 
     expect(container.textContent).toContain("账号策略不允许独立模板");
     expect(buttonByText("应用模板").disabled).toBe(false);
     await act(async () => buttonByText("应用模板").click());
     await flush();
 
-    const apply = vi.mocked(api).mock.calls.find(
-      ([method, path]) => method === "POST" && path === "/account-templates/apply",
-    );
+    const apply = vi
+      .mocked(api)
+      .mock.calls.find(
+        ([method, path]) =>
+          method === "POST" && path === "/account-templates/apply",
+      );
     expect(apply?.[2]).toMatchObject({
       accounts: [
         { account_id: 1, expected_version: "account-version-1" },
         { account_id: 2, expected_version: "account-version-2" },
       ],
     });
-    expect(vi.mocked(api).mock.calls.some(
-      ([method, path]) => method === "GET" && path === "/account-operations?batch_id=batch-mixed",
-    )).toBe(true);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.some(
+          ([method, path]) =>
+            method === "GET" &&
+            path === "/account-operations?batch_id=batch-mixed",
+        ),
+    ).toBe(true);
   });
 
   it("disables batch apply only when every selected account is ineligible", async () => {
     installApi({
       accountConfigs: {
-        1: accountConfigFor(account, { eligible: false, reason: "账号 1 不适用" }),
+        1: accountConfigFor(account, {
+          eligible: false,
+          reason: "账号 1 不适用",
+        }),
         2: accountConfigFor(secondAccount, {
           eligible: true,
           passthrough: true,
@@ -683,15 +892,23 @@ describe("unified account templates", () => {
         }),
       },
     });
-    await renderTemplates({ accounts: [account, secondAccount], initialAccounts: [account, secondAccount] });
+    await renderTemplates({
+      accounts: [account, secondAccount],
+      initialAccounts: [account, secondAccount],
+    });
 
     expect(container.textContent).toContain("账号 1 不适用");
     expect(container.textContent).toContain("账号 2 是透传模式");
     expect(buttonByText("应用模板").disabled).toBe(true);
     await act(async () => buttonByText("应用模板").click());
-    expect(vi.mocked(api).mock.calls.some(
-      ([method, path]) => method === "POST" && path === "/account-templates/apply",
-    )).toBe(false);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.some(
+          ([method, path]) =>
+            method === "POST" && path === "/account-templates/apply",
+        ),
+    ).toBe(false);
   });
 
   it("keeps an empty eligible-account candidate list unselected", async () => {
@@ -702,31 +919,45 @@ describe("unified account templates", () => {
     expect(selectByLabel("选择应用账号").value).toBe("0");
     expect(selectByLabel("选择应用账号").options).toHaveLength(1);
     expect(buttonByText("应用模板").disabled).toBe(true);
-    expect(vi.mocked(api).mock.calls.some(
-      ([method, path]) => method === "GET" && path.startsWith("/account-templates?account_id="),
-    )).toBe(false);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.some(
+          ([method, path]) =>
+            method === "GET" &&
+            path.startsWith("/account-templates?account_id="),
+        ),
+    ).toBe(false);
   });
 
   it("shows a read error when the initial single account no longer exists", async () => {
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/account-templates") return clone(baseConfig) as never;
+      if (method === "GET" && path === "/account-templates")
+        return clone(baseConfig) as never;
       if (method === "GET" && path === "/account-templates?account_id=99") {
         throw new Error("404 account not found");
       }
       throw new Error("unexpected " + method + " " + path);
     });
     const missingAccount = { ...account, id: 99, name: "Removed account" };
-    await renderTemplates({ accounts: [account], initialAccount: missingAccount });
+    await renderTemplates({
+      accounts: [account],
+      initialAccount: missingAccount,
+    });
 
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("404 account not found");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "404 account not found",
+    );
     expect(buttonByText("应用模板").disabled).toBe(true);
   });
 
   it("discards an account response that arrives after the selected account changes", async () => {
     const stale = deferred<AccountConfig>();
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/account-templates") return clone(baseConfig) as never;
-      if (method === "GET" && path === "/account-templates?account_id=1") return stale.promise as never;
+      if (method === "GET" && path === "/account-templates")
+        return clone(baseConfig) as never;
+      if (method === "GET" && path === "/account-templates?account_id=1")
+        return stale.promise as never;
       if (method === "GET" && path === "/account-templates?account_id=2") {
         return accountConfigFor(secondAccount) as never;
       }
@@ -749,15 +980,22 @@ describe("unified account templates", () => {
   it("drops a template response from a connection that went offline", async () => {
     const stale = deferred<TemplateConfig>();
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/account-templates") return stale.promise as never;
-      if (method === "GET" && path === "/account-templates?account_id=1") return accountConfigFor(account) as never;
+      if (method === "GET" && path === "/account-templates")
+        return stale.promise as never;
+      if (method === "GET" && path === "/account-templates?account_id=1")
+        return accountConfigFor(account) as never;
       throw new Error("unexpected " + method + " " + path);
     });
 
     await renderTemplates({ online: true });
     await act(async () => {
       root.render(
-        <AccountTemplates accounts={[account]} online={false} close={close} report={() => {}} />,
+        <AccountTemplates
+          accounts={[account]}
+          online={false}
+          close={close}
+          report={() => {}}
+        />,
       );
     });
     await flush();
@@ -766,25 +1004,46 @@ describe("unified account templates", () => {
       await stale.promise;
     });
 
-    expect(container.querySelector('input[aria-label="模板名称 alpha"]')).toBeNull();
+    expect(
+      container.querySelector('input[aria-label="模板名称 alpha"]'),
+    ).toBeNull();
   });
 });
 
 it("preserves template edits after a failed save", async () => {
-  installApi(); await renderTemplates();
+  installApi();
+  await renderTemplates();
   await setInput(inputByLabel("模板名称 alpha"), "Fixture draft");
   vi.mocked(api).mockRejectedValueOnce(new Error("fixture save failure"));
   await act(async () => buttonByLabel("保存Fixture draft模板").click());
-  await flush(); expect(close).not.toHaveBeenCalled();
+  await flush();
+  expect(close).not.toHaveBeenCalled();
   expect(inputByLabel("模板名称 alpha").value).toBe("Fixture draft");
 });
 
 it("protects unsaved template drafts from IME Escape and backdrop dismissal", async () => {
-  installApi(); await renderTemplates();
+  installApi();
+  await renderTemplates();
   await setInput(inputByLabel("模板名称 alpha"), "Alpha draft");
-  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true })));
-  await act(async () => container.querySelector(".modal-backdrop")!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
-  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  await act(async () =>
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Escape",
+        isComposing: true,
+        bubbles: true,
+      }),
+    ),
+  );
+  await act(async () =>
+    container
+      .querySelector(".modal-backdrop")!
+      .dispatchEvent(new MouseEvent("mousedown", { bubbles: true })),
+  );
+  await act(async () =>
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    ),
+  );
   expect(close).not.toHaveBeenCalled();
   await act(async () => buttonByLabel("关闭账号模板").click());
   expect(container.querySelector('[role="alertdialog"]')).toBeTruthy();

@@ -2,7 +2,9 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import FingerprintBankStatus, { type BankVersion } from "./FingerprintBankStatus";
+import FingerprintBankStatus, {
+  type BankVersion,
+} from "./FingerprintBankStatus";
 import { api } from "./bridge";
 
 vi.mock("./bridge", () => ({ api: vi.fn() }));
@@ -59,9 +61,9 @@ async function flush() {
 describe("fingerprint bank status", () => {
   it("renders the current bank details and the task's fixed version", async () => {
     vi.mocked(api).mockResolvedValue(bank() as never);
-    await act(async () => root.render(
-      <FingerprintBankStatus online taskVersion={taskVersion} />,
-    ));
+    await act(async () =>
+      root.render(<FingerprintBankStatus online taskVersion={taskVersion} />),
+    );
     await flush();
 
     expect(container.textContent).toContain("ModelTrace 指纹库 current-");
@@ -70,21 +72,37 @@ describe("fingerprint bank status", () => {
     expect(container.textContent).toContain("task-rev");
     expect(container.textContent).toContain("分析器 7");
     expect(container.textContent).toContain("task-sha256");
-    expect(vi.mocked(api).mock.calls[0]).toEqual(["GET", "/modeltrace/fingerprint-bank"]);
+    expect(vi.mocked(api).mock.calls[0]).toEqual([
+      "GET",
+      "/modeltrace/fingerprint-bank",
+    ]);
   });
 
   it("follows an automatic LM Detector check until failure and re-enables manual checking", async () => {
     vi.useFakeTimers();
-    vi.mocked(api).mockResolvedValueOnce(bank({ status: "syncing" }) as never)
-      .mockResolvedValueOnce(bank({ status: "idle", result: "failed", error: "检测库连接失败" }) as never);
-    await act(async () => root.render(<FingerprintBankStatus online engine="lm_detector" />));
+    vi.mocked(api)
+      .mockResolvedValueOnce(bank({ status: "syncing" }) as never)
+      .mockResolvedValueOnce(
+        bank({
+          status: "idle",
+          result: "failed",
+          error: "检测库连接失败",
+        }) as never,
+      );
+    await act(async () =>
+      root.render(<FingerprintBankStatus online engine="lm_detector" />),
+    );
     const button = container.querySelector("button")!;
     expect(container.textContent).toContain("LM Detector 检测库");
     expect(button.disabled).toBe(true);
-    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
     expect(container.textContent).toContain("检测库连接失败");
     expect(button.disabled).toBe(false);
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
     expect(vi.mocked(api).mock.calls).toEqual([
       ["GET", "/lm-detector/fingerprint-bank"],
       ["GET", "/lm-detector/fingerprint-bank"],
@@ -98,20 +116,28 @@ describe("fingerprint bank status", () => {
       if (method === "GET" && path === "/modeltrace/fingerprint-bank") {
         reads += 1;
         if (reads === 1) return bank() as never;
-        if (reads === 2) return bank({ status: "checking", result: "" }) as never;
+        if (reads === 2)
+          return bank({ status: "checking", result: "" }) as never;
         return bank({
           version: { ...currentVersion, revision: "updated-revision-9999" },
           result: "updated",
         }) as never;
       }
-      if (method === "POST" && path === "/modeltrace/fingerprint-bank/sync") return {} as never;
+      if (method === "POST" && path === "/modeltrace/fingerprint-bank/sync")
+        return {} as never;
       throw new Error("unexpected " + method + " " + path);
     });
     await act(async () => root.render(<FingerprintBankStatus online />));
     await flush();
-    await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("button")!.click(),
+    );
     expect(container.textContent).toContain("检查中");
-    expect(vi.mocked(api).mock.calls).toContainEqual(["POST", "/modeltrace/fingerprint-bank/sync", {}]);
+    expect(vi.mocked(api).mock.calls).toContainEqual([
+      "POST",
+      "/modeltrace/fingerprint-bank/sync",
+      {},
+    ]);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);

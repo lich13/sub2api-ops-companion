@@ -667,7 +667,16 @@
   }
 }
 
-.app.mobile .records-filter-sheet > .records-platform-select { flex: 0 0 auto; width: 100%; min-width: 0; max-width: none; }
+.app.mobile .records-filter-sheet > .records-platform-select {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
 
-.app.mobile .records-platform-select > svg { right: 12px; }
-.app.mobile .records-filter-sheet > .records-platform-select select { padding-right: 36px; }
+.app.mobile .records-platform-select > svg {
+  right: 12px;
+}
+.app.mobile .records-filter-sheet > .records-platform-select select {
+  padding-right: 36px;
+}

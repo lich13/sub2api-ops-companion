@@ -3,7 +3,13 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, command, subscribe } from "./bridge";
-import type { Account, Group, OpsError, UsageSummary, ViewState } from "./types";
+import type {
+  Account,
+  Group,
+  OpsError,
+  UsageSummary,
+  ViewState,
+} from "./types";
 
 vi.mock("./bridge", () => ({
   api: vi.fn(),
@@ -80,7 +86,10 @@ const account: Account = {
   group_ids: [5, 8, 11, 20],
   blockers: [],
   version: "account-73-version",
-  operation_versions: { recover: "recover-73-version", schedulable: "schedulable-73-version" },
+  operation_versions: {
+    recover: "recover-73-version",
+    schedulable: "schedulable-73-version",
+  },
   last_success_at: null,
   last_error_at: "2026-09-29T23:00:00Z",
   last_error_id: 880,
@@ -93,7 +102,13 @@ const account: Account = {
 };
 
 const finished = (action: string) => ({
-  id: "f".repeat(32), account_id: 73, account_name: "目标账号", action, status: "completed", requested: {}, result: { verified: true },
+  id: "f".repeat(32),
+  account_id: 73,
+  account_name: "目标账号",
+  action,
+  status: "completed",
+  requested: {},
+  result: { verified: true },
 });
 
 const errorDetail: OpsError = {
@@ -116,7 +131,11 @@ const errorDetail: OpsError = {
   content_limited: false,
 };
 
-function quickAccount(id: number, name: string, overrides: Partial<Account> = {}): Account {
+function quickAccount(
+  id: number,
+  name: string,
+  overrides: Partial<Account> = {},
+): Account {
   return {
     ...account,
     id,
@@ -142,7 +161,11 @@ function quickAccount(id: number, name: string, overrides: Partial<Account> = {}
 
 function quickGroup(id: number, name: string, value: Account): Group {
   const calledAt = "2026-10-14T00:00:00Z";
-  const call = { ...activity(id, calledAt), account_id: value.id, account_name: value.name };
+  const call = {
+    ...activity(id, calledAt),
+    account_id: value.id,
+    account_name: value.name,
+  };
   return {
     ...group(id, name, calledAt, [call]),
     account_id: value.id,
@@ -151,7 +174,12 @@ function quickGroup(id: number, name: string, value: Account): Group {
   };
 }
 
-function quickState(accounts: Account[], groups: Group[], errors: OpsError[], overrides: Partial<ViewState> = {}): ViewState {
+function quickState(
+  accounts: Account[],
+  groups: Group[],
+  errors: OpsError[],
+  overrides: Partial<ViewState> = {},
+): ViewState {
   return {
     connected: true,
     online: true,
@@ -185,25 +213,37 @@ async function renderQuickState(value: ViewState) {
   );
   const { default: App } = await import("./main");
   await act(async () => root.render(<App />));
-  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
   return {
     deliver: async (next: ViewState) => {
       await act(async () => deliver(next));
-      await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
     },
   };
 }
 
 function quickGroupRow(name: string): Element {
-  const row = [...container.querySelectorAll<HTMLElement>(".quick-groups .group-row")]
-    .find((node) => node.querySelector(".group-heading strong")?.textContent === name);
+  const row = [
+    ...container.querySelectorAll<HTMLElement>(".quick-groups .group-row"),
+  ].find(
+    (node) => node.querySelector(".group-heading strong")?.textContent === name,
+  );
   if (!row) throw new Error(`missing quick group: ${name}`);
   return row;
 }
 
 function quickErrorRow(name: string): Element {
-  const row = [...container.querySelectorAll<HTMLElement>(".error-list .quick-error-row")]
-    .find((node) => node.querySelector(".quick-error-open")?.textContent?.includes(name));
+  const row = [
+    ...container.querySelectorAll<HTMLElement>(".error-list .quick-error-row"),
+  ].find((node) =>
+    node.querySelector(".quick-error-open")?.textContent?.includes(name),
+  );
   if (!row) throw new Error(`missing quick error: ${name}`);
   return row;
 }
@@ -212,25 +252,64 @@ describe("quick group activity", () => {
   it("shows one compact balance per group and shares visible refreshes while retaining failures", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2030-01-02T01:30:00Z"));
-    const usage: UsageSummary = { branch: "apikey", native_read: true, windows: [], today: null, reset_credits: null, actions: ["query_usage"] };
-    const row = quickAccount(73, "Fixture balance", { group_ids: [23, 24], usage });
-    const state = quickState([row], [quickGroup(23, "First", row), quickGroup(24, "Second", row)], []);
+    const usage: UsageSummary = {
+      branch: "apikey",
+      native_read: true,
+      windows: [],
+      today: null,
+      reset_credits: null,
+      actions: ["query_usage"],
+    };
+    const row = quickAccount(73, "Fixture balance", {
+      group_ids: [23, 24],
+      usage,
+    });
+    const state = quickState(
+      [row],
+      [quickGroup(23, "First", row), quickGroup(24, "Second", row)],
+      [],
+    );
     let fail = false;
     let rejectRead!: (error: Error) => void;
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/config/key-quota") return { seconds: 10, revision: "a".repeat(64) } as never;
+      if (path === "/config/key-quota")
+        return { seconds: 10, revision: "a".repeat(64) } as never;
       if (path !== "/accounts/73/usage") throw new Error(path);
-      if (fail) return new Promise((_resolve, reject) => { rejectRead = reject; });
-      return { ...usage, key_quota: { state: "ok", source: "sub2api", checked_at: Date.now() / 1000, success_at: Date.now() / 1000,
-        stale: false, plans: [{ name: "钱包余额", remaining: 6, unit: "USD", unlimited: false }], subscriptions: [] } } as never;
+      if (fail)
+        return new Promise((_resolve, reject) => {
+          rejectRead = reject;
+        });
+      return {
+        ...usage,
+        key_quota: {
+          state: "ok",
+          source: "sub2api",
+          checked_at: Date.now() / 1000,
+          success_at: Date.now() / 1000,
+          stale: false,
+          plans: [
+            { name: "钱包余额", remaining: 6, unit: "USD", unlimited: false },
+          ],
+          subscriptions: [],
+        },
+      } as never;
     });
     const { deliver } = await renderQuickState(state);
-    const reads = () => vi.mocked(api).mock.calls.filter(([, path]) => path === "/accounts/73/usage");
+    const reads = () =>
+      vi
+        .mocked(api)
+        .mock.calls.filter(([, path]) => path === "/accounts/73/usage");
     expect(reads()).toHaveLength(1);
     expect(container.querySelectorAll(".key-quota-compact")).toHaveLength(2);
     expect(quickGroupRow("First").textContent).toContain("剩余 6 USD");
-    expect(quickGroupRow("First").querySelector(".key-quota-compact")?.getAttribute("title")).toContain("Sub2API");
-    expect(container.querySelector(".key-quota-plans, .usage-stats")).toBeNull();
+    expect(
+      quickGroupRow("First")
+        .querySelector(".key-quota-compact")
+        ?.getAttribute("title"),
+    ).toContain("Sub2API");
+    expect(
+      container.querySelector(".key-quota-plans, .usage-stats"),
+    ).toBeNull();
     fail = true;
     await act(async () => vi.advanceTimersByTimeAsync(10_000));
     expect(reads()).toHaveLength(2);
@@ -348,14 +427,22 @@ describe("quick group activity", () => {
         .querySelector<HTMLButtonElement>('[aria-label="目标账号调度"]')!
         .click(),
     );
-    expect(api).toHaveBeenCalledWith("POST", "/accounts/73/operations", expect.objectContaining({
-      action: "schedulable",
-      payload: { schedulable: true },
-      expected_version: "schedulable-73-version",
-    }));
+    expect(api).toHaveBeenCalledWith(
+      "POST",
+      "/accounts/73/operations",
+      expect.objectContaining({
+        action: "schedulable",
+        payload: { schedulable: true },
+        expected_version: "schedulable-73-version",
+      }),
+    );
 
     await act(async () => {
-      [...container.querySelectorAll<HTMLButtonElement>(".compact-times button")]
+      [
+        ...container.querySelectorAll<HTMLButtonElement>(
+          ".compact-times button",
+        ),
+      ]
         .find((button) => button.textContent?.includes("上次错误"))!
         .click();
     });
@@ -369,7 +456,10 @@ describe("quick group activity", () => {
       [
         "POST",
         "/accounts/73/operations",
-        expect.objectContaining({ action: "schedulable", payload: { schedulable: true } }),
+        expect.objectContaining({
+          action: "schedulable",
+          payload: { schedulable: true },
+        }),
       ],
     ]);
   });
@@ -419,37 +509,65 @@ describe("quick group activity", () => {
       group_id: 24,
       group_name: "历史账号组",
     };
-    await renderQuickState(quickState(
-      [recoverable, history, blocked, recoverableOnly, unavailableOnly],
-      [
-        quickGroup(23, "受限账号组", recoverable),
-        quickGroup(24, "历史账号组", history),
-        quickGroup(25, "阻塞账号组", blocked),
-        quickGroup(26, "可恢复账号组", recoverableOnly),
-        quickGroup(27, "不可用账号组", unavailableOnly),
-      ],
-      [currentError, historicError],
-    ));
+    await renderQuickState(
+      quickState(
+        [recoverable, history, blocked, recoverableOnly, unavailableOnly],
+        [
+          quickGroup(23, "受限账号组", recoverable),
+          quickGroup(24, "历史账号组", history),
+          quickGroup(25, "阻塞账号组", blocked),
+          quickGroup(26, "可恢复账号组", recoverableOnly),
+          quickGroup(27, "不可用账号组", unavailableOnly),
+        ],
+        [currentError, historicError],
+      ),
+    );
 
     const restrictedGroup = quickGroupRow("受限账号组");
-    const unavailableName = restrictedGroup.querySelector(".quick-account-restricted");
+    const unavailableName = restrictedGroup.querySelector(
+      ".quick-account-restricted",
+    );
     expect(unavailableName).toBeTruthy();
-    expect(unavailableName?.querySelector('[role="img"][aria-label="调度受限：存在可恢复的状态限制"]')).toBeTruthy();
-    expect(quickGroupRow("阻塞账号组").querySelector(
-      '.quick-account-restricted [role="img"][aria-label="调度受限：冷却限制"]',
-    )).toBeTruthy();
-    expect(quickGroupRow("可恢复账号组").querySelector(".quick-account-restricted")).toBeTruthy();
-    expect(quickGroupRow("不可用账号组").querySelector(
-      '.quick-account-restricted [role="img"][aria-label="调度受限：暂不可调度"]',
-    )).toBeTruthy();
-    expect(quickGroupRow("历史账号组").querySelector(".quick-account-restricted")).toBeNull();
+    expect(
+      unavailableName?.querySelector(
+        '[role="img"][aria-label="调度受限：存在可恢复的状态限制"]',
+      ),
+    ).toBeTruthy();
+    expect(
+      quickGroupRow("阻塞账号组").querySelector(
+        '.quick-account-restricted [role="img"][aria-label="调度受限：冷却限制"]',
+      ),
+    ).toBeTruthy();
+    expect(
+      quickGroupRow("可恢复账号组").querySelector(".quick-account-restricted"),
+    ).toBeTruthy();
+    expect(
+      quickGroupRow("不可用账号组").querySelector(
+        '.quick-account-restricted [role="img"][aria-label="调度受限：暂不可调度"]',
+      ),
+    ).toBeTruthy();
+    expect(
+      quickGroupRow("历史账号组").querySelector(".quick-account-restricted"),
+    ).toBeNull();
 
     const controls = restrictedGroup.querySelector(".quick-account-controls");
-    expect(controls?.querySelector('button.quick-recover[aria-label="恢复状态：受限恢复账号"]')).toBeTruthy();
-    expect(controls?.querySelector('[role="switch"][aria-label="受限恢复账号调度"]')).toBeTruthy();
-    expect(quickGroupRow("不可用账号组").querySelector(".quick-recover")).toBeNull();
-    expect(quickGroupRow("阻塞账号组").querySelector(".quick-recover")).toBeNull();
-    expect(quickGroupRow("历史账号组").querySelector(".quick-recover")).toBeNull();
+    expect(
+      controls?.querySelector(
+        'button.quick-recover[aria-label="恢复状态：受限恢复账号"]',
+      ),
+    ).toBeTruthy();
+    expect(
+      controls?.querySelector('[role="switch"][aria-label="受限恢复账号调度"]'),
+    ).toBeTruthy();
+    expect(
+      quickGroupRow("不可用账号组").querySelector(".quick-recover"),
+    ).toBeNull();
+    expect(
+      quickGroupRow("阻塞账号组").querySelector(".quick-recover"),
+    ).toBeNull();
+    expect(
+      quickGroupRow("历史账号组").querySelector(".quick-recover"),
+    ).toBeNull();
 
     await act(async () =>
       [...container.querySelectorAll<HTMLButtonElement>(".quick-tabs button")]
@@ -457,7 +575,8 @@ describe("quick group activity", () => {
         .click(),
     );
     const recoverError = quickErrorRow(recoverable.name);
-    const openError = recoverError.querySelector<HTMLButtonElement>(".quick-error-open");
+    const openError =
+      recoverError.querySelector<HTMLButtonElement>(".quick-error-open");
     const recoverButton = recoverError.querySelector<HTMLButtonElement>(
       'button.quick-recover[aria-label="恢复状态：受限恢复账号"]',
     );
@@ -465,9 +584,11 @@ describe("quick group activity", () => {
     expect(recoverButton).toBeTruthy();
     expect(openError?.parentElement).toBe(recoverButton?.parentElement);
     expect(openError?.contains(recoverButton ?? null)).toBe(false);
-    expect(recoverError.querySelector(
-      '.quick-account-restricted [role="img"][aria-label="调度受限：存在可恢复的状态限制"]',
-    )).toBeTruthy();
+    expect(
+      recoverError.querySelector(
+        '.quick-account-restricted [role="img"][aria-label="调度受限：存在可恢复的状态限制"]',
+      ),
+    ).toBeTruthy();
 
     const historyError = quickErrorRow(history.name);
     expect(historyError.querySelector(".quick-account-restricted")).toBeNull();
@@ -481,16 +602,24 @@ describe("quick group activity", () => {
       group_ids: [23],
       last_error_id: 880,
     });
-    const currentError = { ...errorDetail, account_id: recoverable.id, account_name: recoverable.name, group_id: 23 };
+    const currentError = {
+      ...errorDetail,
+      account_id: recoverable.id,
+      account_name: recoverable.name,
+      group_id: 23,
+    };
     const initial = quickState(
       [recoverable],
       [quickGroup(23, "受限账号组", recoverable)],
       [currentError],
     );
     let finishRecovery!: (value: unknown) => void;
-    const pending = new Promise<unknown>((resolve) => { finishRecovery = resolve; });
+    const pending = new Promise<unknown>((resolve) => {
+      finishRecovery = resolve;
+    });
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "POST" && path === "/accounts/73/operations") return pending as never;
+      if (method === "POST" && path === "/accounts/73/operations")
+        return pending as never;
       throw new Error(`Unexpected mocked API request: ${method} ${path}`);
     });
     const { deliver } = await renderQuickState(initial);
@@ -498,21 +627,33 @@ describe("quick group activity", () => {
     const recoverButton = container.querySelector<HTMLButtonElement>(
       '.quick-groups .quick-account-controls button.quick-recover[aria-label="恢复状态：受限恢复账号"]',
     )!;
-    expect(quickGroupRow("受限账号组").querySelector(".quick-account-restricted")).toBeTruthy();
+    expect(
+      quickGroupRow("受限账号组").querySelector(".quick-account-restricted"),
+    ).toBeTruthy();
     await act(async () => {
       recoverButton.click();
       recoverButton.click();
     });
-    const writes = () => vi.mocked(api).mock.calls.filter(([method]) => method !== "GET");
-    expect(writes()).toEqual([[
-      "POST",
-      "/accounts/73/operations",
-      expect.objectContaining({ action: "recover", payload: {}, expected_version: "recover-73-version" }),
-    ]]);
+    const writes = () =>
+      vi.mocked(api).mock.calls.filter(([method]) => method !== "GET");
+    expect(writes()).toEqual([
+      [
+        "POST",
+        "/accounts/73/operations",
+        expect.objectContaining({
+          action: "recover",
+          payload: {},
+          expected_version: "recover-73-version",
+        }),
+      ],
+    ]);
     expect(recoverButton.disabled).toBe(true);
 
     await act(async () => finishRecovery(finished("recover")));
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
     expect(command).toHaveBeenCalledWith("refresh");
 
     const restored = {
@@ -522,13 +663,19 @@ describe("quick group activity", () => {
       blockers: [],
       version: "account-73-version-after-recovery",
     };
-    await deliver(quickState(
-      [restored],
-      [quickGroup(23, "受限账号组", restored)],
-      [currentError],
-    ));
-    expect(quickGroupRow("受限账号组").querySelector(".quick-account-restricted")).toBeNull();
-    expect(quickGroupRow("受限账号组").querySelector(".quick-recover")).toBeNull();
+    await deliver(
+      quickState(
+        [restored],
+        [quickGroup(23, "受限账号组", restored)],
+        [currentError],
+      ),
+    );
+    expect(
+      quickGroupRow("受限账号组").querySelector(".quick-account-restricted"),
+    ).toBeNull();
+    expect(
+      quickGroupRow("受限账号组").querySelector(".quick-recover"),
+    ).toBeNull();
 
     await act(async () =>
       [...container.querySelectorAll<HTMLButtonElement>(".quick-tabs button")]
@@ -536,7 +683,9 @@ describe("quick group activity", () => {
         .click(),
     );
     const refreshedError = quickErrorRow(restored.name);
-    expect(refreshedError.querySelector(".quick-account-restricted")).toBeNull();
+    expect(
+      refreshedError.querySelector(".quick-account-restricted"),
+    ).toBeNull();
     expect(refreshedError.querySelector(".quick-recover")).toBeNull();
     expect(writes()).toHaveLength(1);
   });
@@ -569,9 +718,12 @@ describe("quick group activity", () => {
       [],
     );
     let finishRecovery!: (value: unknown) => void;
-    const pending = new Promise<unknown>((resolve) => { finishRecovery = resolve; });
+    const pending = new Promise<unknown>((resolve) => {
+      finishRecovery = resolve;
+    });
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "POST" && path === "/accounts/73/operations") return pending as never;
+      if (method === "POST" && path === "/accounts/73/operations")
+        return pending as never;
       throw new Error(`Unexpected mocked API request: ${method} ${path}`);
     });
     const { deliver } = await renderQuickState(pendingState);
@@ -580,20 +732,32 @@ describe("quick group activity", () => {
     )!;
     await act(async () => button.click());
     const newConnection = quickState([], [], [], {
-      preferences: { ...pendingState.preferences, base_url: "https://other-connection.invalid" },
+      preferences: {
+        ...pendingState.preferences,
+        base_url: "https://other-connection.invalid",
+      },
       connection_revision: 1,
     });
     await deliver(newConnection);
-    const refreshCountBeforeCompletion = vi.mocked(command).mock.calls
-      .filter(([name]) => name === "refresh").length;
+    const refreshCountBeforeCompletion = vi
+      .mocked(command)
+      .mock.calls.filter(([name]) => name === "refresh").length;
     await act(async () => finishRecovery(finished("recover")));
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
-    expect(vi.mocked(command).mock.calls.filter(([name]) => name === "refresh"))
-      .toHaveLength(refreshCountBeforeCompletion);
+    expect(
+      vi.mocked(command).mock.calls.filter(([name]) => name === "refresh"),
+    ).toHaveLength(refreshCountBeforeCompletion);
     expect(container.textContent).not.toContain("受限恢复账号：状态已恢复");
-    expect(vi.mocked(api).mock.calls.filter((call) =>
-      call[0] === "POST" && call[1] === "/accounts/73/operations",
-    )).toHaveLength(1);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(
+          (call) => call[0] === "POST" && call[1] === "/accounts/73/operations",
+        ),
+    ).toHaveLength(1);
   });
 });

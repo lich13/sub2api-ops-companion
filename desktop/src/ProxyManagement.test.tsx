@@ -199,10 +199,16 @@ describe("IP administration", () => {
 });
 
 it("closes batch add only after every proxy is confirmed", async () => {
-  const saved=vi.fn();
-  vi.mocked(api).mockResolvedValue({created:1,skipped:0} as never);
-  await act(async()=>root.render(<ProxyBatchAdd online close={vi.fn()} saved={saved}/>));
-  await change(container.querySelector("textarea")!, "socks5://[::1]:1080\nhttp://127.0.0.1:8080");
+  const saved = vi.fn();
+  vi.mocked(api).mockResolvedValue({ created: 1, skipped: 0 } as never);
+  await act(async () =>
+    root.render(<ProxyBatchAdd online close={vi.fn()} saved={saved} />),
+  );
+  await change(
+    container.querySelector("textarea")!,
+    "socks5://[::1]:1080\nhttp://127.0.0.1:8080",
+  );
   await click(button("添加 2 个"));
-  expect(saved).toHaveBeenCalledOnce(); expect(api).toHaveBeenCalledTimes(2);
+  expect(saved).toHaveBeenCalledOnce();
+  expect(api).toHaveBeenCalledTimes(2);
 });

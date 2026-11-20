@@ -88,7 +88,13 @@ const accounts: Account[] = [
     schedulable: true,
     available: false,
     group_ids: [2],
-    blockers: [{ code: "rate_limit_reset_at", label: "限流中", until: new Date(Date.now() + (11 * 24 + 19) * 3600_000).toISOString() }],
+    blockers: [
+      {
+        code: "rate_limit_reset_at",
+        label: "限流中",
+        until: new Date(Date.now() + (11 * 24 + 19) * 3600_000).toISOString(),
+      },
+    ],
     version: "c".repeat(64),
     operation_versions: {},
     last_success_at: before,
@@ -156,9 +162,34 @@ const stats = {
   user_cost: 76.8,
 };
 for (const account of accounts) {
-  account.concurrency = 2; account.load_factor = null;
-  account.operation_versions = Object.fromEntries(['priority', 'concurrency', 'load_factor', 'model_config', 'proxy', 'sync_models', 'groups', 'recover', 'usage', 'reset_quota', 'delete', 'test', 'schedulable', 'model_test'].map((key) => [key, account.version]));
-  if (account.platform === 'openai' && ['oauth', 'apikey'].includes(account.type)) account.degradation_mark = { marked: account.id === 102, version: 'f'.repeat(64) };
+  account.concurrency = 2;
+  account.load_factor = null;
+  account.operation_versions = Object.fromEntries(
+    [
+      "priority",
+      "concurrency",
+      "load_factor",
+      "model_config",
+      "proxy",
+      "sync_models",
+      "groups",
+      "recover",
+      "usage",
+      "reset_quota",
+      "delete",
+      "test",
+      "schedulable",
+      "model_test",
+    ].map((key) => [key, account.version]),
+  );
+  if (
+    account.platform === "openai" &&
+    ["oauth", "apikey"].includes(account.type)
+  )
+    account.degradation_mark = {
+      marked: account.id === 102,
+      version: "f".repeat(64),
+    };
 
   account.usage = {
     branch:
@@ -254,30 +285,132 @@ accounts.push({
   },
 });
 if (new URLSearchParams(location.search).get("scenario") === "native-usage") {
-  accounts.push({ ...accounts[3], id: 392, name: "Claude · Key", platform: "anthropic", type: "apikey",
-    usage: { branch: "apikey", windows: [], today: stats, actions: [], reset_credits: null } });
-  accounts.push({ ...accounts[3], id: 393, name: "Gemini · 配额", platform: "gemini", type: "service_account",
-    usage: { branch: "native", native_read: true, status: "known", windows: [{ key: "gemini_shared_daily", label: "共享 1d", used_percent: 0, observed_at: now, reset_at: new Date(Date.now()+3600000).toISOString(), status: "known", source: "local_estimate", estimated: true }], today: stats, actions: ["query_usage"], reset_credits: null } });
-  accounts.push({ ...accounts[3], id: 394, name: "DeepSeek · 余额", platform: "deepseek", type: "apikey",
-    usage: { branch: "apikey", native_read: true, status: "known", windows: [], today: stats, balances: [{ currency: "USD", balance: 0, status: "known", observed_at: now }, { currency: "CNY", balance: 42, status: "known", observed_at: now }], actions: ["query_usage"], reset_credits: null } });
+  accounts.push({
+    ...accounts[3],
+    id: 392,
+    name: "Claude · Key",
+    platform: "anthropic",
+    type: "apikey",
+    usage: {
+      branch: "apikey",
+      windows: [],
+      today: stats,
+      actions: [],
+      reset_credits: null,
+    },
+  });
+  accounts.push({
+    ...accounts[3],
+    id: 393,
+    name: "Gemini · 配额",
+    platform: "gemini",
+    type: "service_account",
+    usage: {
+      branch: "native",
+      native_read: true,
+      status: "known",
+      windows: [
+        {
+          key: "gemini_shared_daily",
+          label: "共享 1d",
+          used_percent: 0,
+          observed_at: now,
+          reset_at: new Date(Date.now() + 3600000).toISOString(),
+          status: "known",
+          source: "local_estimate",
+          estimated: true,
+        },
+      ],
+      today: stats,
+      actions: ["query_usage"],
+      reset_credits: null,
+    },
+  });
+  accounts.push({
+    ...accounts[3],
+    id: 394,
+    name: "DeepSeek · 余额",
+    platform: "deepseek",
+    type: "apikey",
+    usage: {
+      branch: "apikey",
+      native_read: true,
+      status: "known",
+      windows: [],
+      today: stats,
+      balances: [
+        { currency: "USD", balance: 0, status: "known", observed_at: now },
+        { currency: "CNY", balance: 42, status: "known", observed_at: now },
+      ],
+      actions: ["query_usage"],
+      reset_credits: null,
+    },
+  });
 }
-for (const account of accounts.filter(a => a.type === "apikey")) {
+for (const account of accounts.filter((a) => a.type === "apikey")) {
   if (!account.usage) continue;
   account.usage.native_read = true;
-  if (!account.usage.actions.includes("query_usage")) account.usage.actions.unshift("query_usage");
+  if (!account.usage.actions.includes("query_usage"))
+    account.usage.actions.unshift("query_usage");
   account.usage.key_quota = {
-    state: "ok", source: "sub2api", checked_at: Date.now()/1000, success_at: Date.now()/1000,
-    retry_at: null, next_refresh_at: null, stale: false, error: null, key_status: null,
-    plans: [{name:"钱包余额",remaining:12.5,used:null,total:null,unit:"USD",unlimited:false,reset_at:null}],
-    subscriptions: [{name:"标准套餐",status:"active",active:true,expires_at:new Date(Date.now()+86400000*30).toISOString(),plans:[
-      {name:"每日",remaining:15,used:5,total:20,unit:"USD",unlimited:false,reset_at:new Date(Date.now()+3600000).toISOString()},
-      {name:"每周",remaining:80,used:20,total:100,unit:"USD",unlimited:false,reset_at:null},
-    ]}], expires_at:null, expires_at_unix:null,
-    today:{requests:25,tokens:16000,cost:1.2},total_usage:{requests:180,tokens:128000,cost:8.4},
+    state: "ok",
+    source: "sub2api",
+    checked_at: Date.now() / 1000,
+    success_at: Date.now() / 1000,
+    retry_at: null,
+    next_refresh_at: null,
+    stale: false,
+    error: null,
+    key_status: null,
+    plans: [
+      {
+        name: "钱包余额",
+        remaining: 12.5,
+        used: null,
+        total: null,
+        unit: "USD",
+        unlimited: false,
+        reset_at: null,
+      },
+    ],
+    subscriptions: [
+      {
+        name: "标准套餐",
+        status: "active",
+        active: true,
+        expires_at: new Date(Date.now() + 86400000 * 30).toISOString(),
+        plans: [
+          {
+            name: "每日",
+            remaining: 15,
+            used: 5,
+            total: 20,
+            unit: "USD",
+            unlimited: false,
+            reset_at: new Date(Date.now() + 3600000).toISOString(),
+          },
+          {
+            name: "每周",
+            remaining: 80,
+            used: 20,
+            total: 100,
+            unit: "USD",
+            unlimited: false,
+            reset_at: null,
+          },
+        ],
+      },
+    ],
+    expires_at: null,
+    expires_at_unix: null,
+    today: { requests: 25, tokens: 16000, cost: 1.2 },
+    total_usage: { requests: 180, tokens: 128000, cost: 8.4 },
   };
 }
 let state: ViewState = {
-  platform: new URLSearchParams(location.search).has("mobile") ? "android" : "macos",
+  platform: new URLSearchParams(location.search).has("mobile")
+    ? "android"
+    : "macos",
   foreground: true,
   connected: true,
   online: true,
@@ -386,7 +519,11 @@ let state: ViewState = {
         legacy: false,
         kind: "reset_credit",
         attempt_count: 3,
-        reset_credit: { consumed: true, completed_at: before, verification_method: "model" },
+        reset_credit: {
+          consumed: true,
+          completed_at: before,
+          verification_method: "model",
+        },
       },
       {
         id: 1,
@@ -419,7 +556,9 @@ const config: Config = {
     oauth_early_reset_enabled: false,
     oauth_early_reset_interval_seconds: 60,
     oauth_auto_reset_credit_enabled: false,
-    oauth_recovery_connection_account_ids: accounts.filter(a => a.platform === "openai" && a.type === "oauth").map(a => a.id),
+    oauth_recovery_connection_account_ids: accounts
+      .filter((a) => a.platform === "openai" && a.type === "oauth")
+      .map((a) => a.id),
     oauth_recovery_model_account_ids: [],
     oauth_daily_test_enabled: true,
     oauth_daily_test_time: "05:00",
@@ -429,7 +568,9 @@ const config: Config = {
     connection_test_max_retries: 3,
     oauth_recovery_test_model_id: "gpt-5.6-luna",
     model_detection_model_id: "gpt-6-luna",
-    model_detection_platforms: { openai: { engine: "modeltrace", sample_count: 1 } },
+    model_detection_platforms: {
+      openai: { engine: "modeltrace", sample_count: 1 },
+    },
   },
   bark: { revision: "2".repeat(64), enabled: true, device_key_set: true },
 };
@@ -437,9 +578,21 @@ const listeners = new Set<(s: ViewState) => void>();
 const scenario = new URLSearchParams(location.search).get("scenario");
 if (state.snapshot && scenario?.startsWith("lm-")) {
   accounts[0].name = "模型检测与分词器验证 · 跨区域共享账号 · 长名称排版预览";
-  state.preferences.model_test_preferences = { [`${state.preferences.base_url}:101`]: { engine: "lm_detector", sample_count: 3 } };
+  state.preferences.model_test_preferences = {
+    [`${state.preferences.base_url}:101`]: {
+      engine: "lm_detector",
+      sample_count: 3,
+    },
+  };
 } else if (state.snapshot && scenario === "priority-platforms") {
-  state.snapshot.accounts.push({ ...structuredClone(accounts[0]), id: 601, name: "Claude · 长名称预览账号", platform: "anthropic", priority: 7, group_ids: [] });
+  state.snapshot.accounts.push({
+    ...structuredClone(accounts[0]),
+    id: 601,
+    name: "Claude · 长名称预览账号",
+    platform: "anthropic",
+    priority: 7,
+    group_ids: [],
+  });
 } else if (state.snapshot && scenario === "group-manager") {
   const empty = state.snapshot.groups[2];
   state.snapshot.groups = [
@@ -448,34 +601,71 @@ if (state.snapshot && scenario?.startsWith("lm-")) {
     { ...empty, id: 2, name: "grok爽用", platform: "grok", sort_order: 0 },
     { ...empty, id: 4, name: "grok羊毛", platform: "grok", sort_order: 1 },
   ];
-  accounts[0].group_ids = [1]; accounts[1].group_ids = [1, 3];
-  accounts.push({ ...accounts[0], id: 104, name: "研发共享账号 · 長名称-跨区域验证-long-name@example.com", group_ids: [3], version: "d".repeat(64) });
-  accounts.push({ ...accounts[0], id: 105, name: "Codex 待分组", group_ids: [], version: "e".repeat(64) });
+  accounts[0].group_ids = [1];
+  accounts[1].group_ids = [1, 3];
+  accounts.push({
+    ...accounts[0],
+    id: 104,
+    name: "研发共享账号 · 長名称-跨区域验证-long-name@example.com",
+    group_ids: [3],
+    version: "d".repeat(64),
+  });
+  accounts.push({
+    ...accounts[0],
+    id: 105,
+    name: "Codex 待分组",
+    group_ids: [],
+    version: "e".repeat(64),
+  });
   accounts[2].group_ids = [2, 4];
-  for (const account of accounts) if (account.platform === "openai" && account.type === "oauth") account.degradation_mark = { marked: account.id === 102, marked_at: account.id === 102 ? before : null, version: "f".repeat(64) };
+  for (const account of accounts)
+    if (account.platform === "openai" && account.type === "oauth")
+      account.degradation_mark = {
+        marked: account.id === 102,
+        marked_at: account.id === 102 ? before : null,
+        version: "f".repeat(64),
+      };
 } else if (state.snapshot && scenario === "group-membership") {
   const [codex, grok, empty] = state.snapshot.groups;
   accounts[0].group_ids = [1, 4];
   accounts[1].group_ids = [1, 2];
   const outside = { ...grok.recent_accounts[0], log_id: 999 };
   codex.called_at = now;
-  codex.recent_accounts = [outside, ...codex.recent_accounts.map((call) => ({ ...call, called_at: before }))];
+  codex.recent_accounts = [
+    outside,
+    ...codex.recent_accounts.map((call) => ({ ...call, called_at: before })),
+  ];
   grok.recent_accounts.push({ ...codex.recent_accounts[2], log_id: 80 });
   state.snapshot.groups = [
     { ...empty, id: 5, name: "从未调用" },
-    { ...codex, id: 4, name: "同时调用", recent_accounts: [codex.recent_accounts[1]] },
-    { ...empty, account_id: outside.account_id, account_name: outside.account_name, called_at: now, recent_accounts: [outside] },
+    {
+      ...codex,
+      id: 4,
+      name: "同时调用",
+      recent_accounts: [codex.recent_accounts[1]],
+    },
+    {
+      ...empty,
+      account_id: outside.account_id,
+      account_name: outside.account_name,
+      called_at: now,
+      recent_accounts: [outside],
+    },
     codex,
     grok,
   ];
 } else if (state.snapshot && scenario === "record-filters") {
-  accounts[0].name = "研发团队共享账户 · 跨区域项目与模型验证专用 · 长名称换行验收";
+  accounts[0].name =
+    "研发团队共享账户 · 跨区域项目与模型验证专用 · 长名称换行验收";
 } else if (state.snapshot && scenario === "auto-reset") {
   accounts[0].schedulable = false;
   accounts[0].available = false;
   accounts[0].auto_reset_credit = {
-    stage: "retry", label: "等待重试测活", error: "测活失败",
-    attempt_at: before, test_completed_at: now,
+    stage: "retry",
+    label: "等待重试测活",
+    error: "测活失败",
+    attempt_at: before,
+    test_completed_at: now,
     next_at: new Date(Date.now() + 60e3).toISOString(),
   };
 } else if (state.snapshot && scenario === "empty") {
@@ -492,9 +682,11 @@ if (state.snapshot && scenario?.startsWith("lm-")) {
     name: `分组 ${i + 1}`,
   }));
   for (const account of accounts) {
-    account.group_ids = state.snapshot.groups.filter((group) =>
-      group.recent_accounts.some((call) => call.account_id === account.id),
-    ).map((group) => group.id);
+    account.group_ids = state.snapshot.groups
+      .filter((group) =>
+        group.recent_accounts.some((call) => call.account_id === account.id),
+      )
+      .map((group) => group.id);
   }
 } else if (state.snapshot && scenario === "two-groups") {
   state.snapshot.groups = state.snapshot.groups.slice(0, 2);
@@ -521,49 +713,74 @@ export async function run(
   }
   if (name === "preferences") {
     state.preferences = { ...state.preferences, ...args };
-    if (args.recordColumns) state.preferences.record_columns = args.recordColumns as string[];
-    if (args.modelTestPreferences) state.preferences.model_test_preferences = structuredClone(args.modelTestPreferences) as Preferences["model_test_preferences"];
-    if (args.modelTestConcurrency) state.preferences.model_test_concurrency = Number(args.modelTestConcurrency);
+    if (args.recordColumns)
+      state.preferences.record_columns = args.recordColumns as string[];
+    if (args.modelTestPreferences)
+      state.preferences.model_test_preferences = structuredClone(
+        args.modelTestPreferences,
+      ) as Preferences["model_test_preferences"];
+    if (args.modelTestConcurrency)
+      state.preferences.model_test_concurrency = Number(
+        args.modelTestConcurrency,
+      );
     emit();
     return;
   }
   if (name === "connect") {
-    const baseUrl = String(args.baseUrl ?? "").trim().replace(/\/+$/, "");
+    const baseUrl = String(args.baseUrl ?? "")
+      .trim()
+      .replace(/\/+$/, "");
     const existing = state.preferences.connections ?? [];
     const customName = typeof args.name === "string" ? args.name.trim() : "";
     const nextConnections = existing.some((item) => item.base_url === baseUrl)
       ? existing.map((item) =>
-          item.base_url === baseUrl && customName ? { ...item, name: customName } : item,
+          item.base_url === baseUrl && customName
+            ? { ...item, name: customName }
+            : item,
         )
       : [...existing, { name: customName || baseUrl, base_url: baseUrl }];
     state.connected = true;
     state.online = true;
     state.connection_revision = (state.connection_revision ?? 0) + 1;
-    state.preferences = { ...state.preferences, base_url: baseUrl, connections: nextConnections };
+    state.preferences = {
+      ...state.preferences,
+      base_url: baseUrl,
+      connections: nextConnections,
+    };
     emit();
     return;
   }
   if (name === "save_connection_profile") {
-    const baseUrl = String(args.baseUrl ?? "").trim().replace(/\/+$/, "");
+    const baseUrl = String(args.baseUrl ?? "")
+      .trim()
+      .replace(/\/+$/, "");
     const customName = String(args.name ?? "").trim() || baseUrl;
     const existing = state.preferences.connections ?? [];
     state.preferences = {
       ...state.preferences,
       connections: existing.some((item) => item.base_url === baseUrl)
-        ? existing.map((item) => (item.base_url === baseUrl ? { ...item, name: customName } : item))
+        ? existing.map((item) =>
+            item.base_url === baseUrl ? { ...item, name: customName } : item,
+          )
         : [...existing, { name: customName, base_url: baseUrl }],
     };
     emit();
     return;
   }
   if (name === "remove_connection") {
-    const baseUrl = String(args.baseUrl ?? "").trim().replace(/\/+$/, "");
+    const baseUrl = String(args.baseUrl ?? "")
+      .trim()
+      .replace(/\/+$/, "");
     if (state.connected && state.preferences.base_url === baseUrl) {
-      throw new Error("当前实例正在连接或使用中，请先切换到其他实例或断开连接后再删除");
+      throw new Error(
+        "当前实例正在连接或使用中，请先切换到其他实例或断开连接后再删除",
+      );
     }
     state.preferences = {
       ...state.preferences,
-      connections: (state.preferences.connections ?? []).filter((item) => item.base_url !== baseUrl),
+      connections: (state.preferences.connections ?? []).filter(
+        (item) => item.base_url !== baseUrl,
+      ),
     };
     emit();
     return;
@@ -575,54 +792,208 @@ export async function run(
   }
   if (["show_main", "resize_quick", "show_quick", "hide_quick"].includes(name))
     return;
-  if ((name === "open_authorization_url" || name === "open_sub2api_release")) return;
+  if (name === "open_authorization_url" || name === "open_sub2api_release")
+    return;
   if (name === "check_updates") return `预览模式 · 当前版本 ${appVersion}`;
   if (name === "api_request") {
-    if (String(args.path).startsWith("/sub2api-system/")) return (await import("./sub2apiConfigPreview")).systemPreview(String(args.path));
-    if (String(args.path).startsWith("/sub2api-config")) return (await import("./sub2apiConfigPreview")).configPreview(String(args.path), (args.body || {}) as Record<string,unknown>);
+    if (String(args.path).startsWith("/sub2api-system/"))
+      return (await import("./sub2apiConfigPreview")).systemPreview(
+        String(args.path),
+      );
+    if (String(args.path).startsWith("/sub2api-config"))
+      return (await import("./sub2apiConfigPreview")).configPreview(
+        String(args.path),
+        (args.body || {}) as Record<string, unknown>,
+      );
     if (args.path === "/config/key-quota") {
-      if (args.method === "PUT") previewQuotaSeconds = Number((args.body as {seconds:number}).seconds);
-      return {seconds:previewQuotaSeconds,revision:"a".repeat(64)};
+      if (args.method === "PUT")
+        previewQuotaSeconds = Number(
+          (args.body as { seconds: number }).seconds,
+        );
+      return { seconds: previewQuotaSeconds, revision: "a".repeat(64) };
     }
     if (/^\/accounts\/\d+\/key-quota-settings$/.test(String(args.path))) {
       const id = Number(String(args.path).split("/")[2]);
-      if (args.method === "PUT" && Object.prototype.hasOwnProperty.call((args.body || {}) as object, "access_token")) previewQuotaTokens.set(id, (args.body as {access_token:string}).access_token);
-      return {account_id:id,has_access_token:!!previewQuotaTokens.get(id),revision:"b".repeat(64)};
+      if (
+        args.method === "PUT" &&
+        Object.prototype.hasOwnProperty.call(
+          (args.body || {}) as object,
+          "access_token",
+        )
+      )
+        previewQuotaTokens.set(
+          id,
+          (args.body as { access_token: string }).access_token,
+        );
+      return {
+        account_id: id,
+        has_access_token: !!previewQuotaTokens.get(id),
+        revision: "b".repeat(64),
+      };
     }
 
-    if (/^\/accounts\/\d+\/key-quota-settings\/access-token$/.test(String(args.path))) {
-      const id=Number(String(args.path).split("/")[2]), token=previewQuotaTokens.get(id);
-      if(!token) throw new Error("尚未配置账户访问令牌 [404]");
-      return {account_id:id,access_token:token};
+    if (
+      /^\/accounts\/\d+\/key-quota-settings\/access-token$/.test(
+        String(args.path),
+      )
+    ) {
+      const id = Number(String(args.path).split("/")[2]),
+        token = previewQuotaTokens.get(id);
+      if (!token) throw new Error("尚未配置账户访问令牌 [404]");
+      return { account_id: id, access_token: token };
     }
-    if (/^\/accounts\/\d+\/apply-oauth-credentials$/.test(String(args.path))) return { account_id: Number(String(args.path).split("/")[2]), verified: true, status: "active" };
-    if (String(args.path).startsWith("/account-creation")) return (await import("./accountCreationPreview")).creationPreview(String(args.path),(args.body||{}) as Record<string,unknown>,state.snapshot?.accounts??[],emit);
-    if (String(args.path).split("?")[0] === "/account-priorities" || String(args.path).startsWith("/account-priority-orders")) return (await import("./priorityPreview")).priorityPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? [], emit);
-    if (String(args.path).startsWith("/detection-logs")) return (await import("./detectionLogPreview")).detectionLogPreview(String(args.path));
-    if (args.method === "POST" && typeof args.path === "string" && /^\/proxies\/[1-9]\d*\/(test|quality-check)$/.test(args.path)) {
-      if (args.path.endsWith("/test")) return { success: true, message: "连接成功", latency_ms: 85, ip_address: "192.0.2.1", city: "", region: "", country: "示例地区", country_code: "" };
-      return { score: 90, grade: "A", summary: "原生质量检测通过", exit_ip: "192.0.2.1", country: "示例地区", country_code: "", base_latency_ms: 85, passed_count: 1, warn_count: 0, failed_count: 0, challenge_count: 0, checked_at: Math.floor(Date.now() / 1000), items: [{ target: "OpenAI", status: "pass", http_status: 200, latency_ms: 90, message: "通过" }] };
+    if (/^\/accounts\/\d+\/apply-oauth-credentials$/.test(String(args.path)))
+      return {
+        account_id: Number(String(args.path).split("/")[2]),
+        verified: true,
+        status: "active",
+      };
+    if (String(args.path).startsWith("/account-creation"))
+      return (await import("./accountCreationPreview")).creationPreview(
+        String(args.path),
+        (args.body || {}) as Record<string, unknown>,
+        state.snapshot?.accounts ?? [],
+        emit,
+      );
+    if (
+      String(args.path).split("?")[0] === "/account-priorities" ||
+      String(args.path).startsWith("/account-priority-orders")
+    )
+      return (await import("./priorityPreview")).priorityPreview(
+        String(args.method),
+        String(args.path),
+        (args.body || {}) as Record<string, unknown>,
+        state.snapshot?.accounts ?? [],
+        emit,
+      );
+    if (String(args.path).startsWith("/detection-logs"))
+      return (await import("./detectionLogPreview")).detectionLogPreview(
+        String(args.path),
+      );
+    if (
+      args.method === "POST" &&
+      typeof args.path === "string" &&
+      /^\/proxies\/[1-9]\d*\/(test|quality-check)$/.test(args.path)
+    ) {
+      if (args.path.endsWith("/test"))
+        return {
+          success: true,
+          message: "连接成功",
+          latency_ms: 85,
+          ip_address: "192.0.2.1",
+          city: "",
+          region: "",
+          country: "示例地区",
+          country_code: "",
+        };
+      return {
+        score: 90,
+        grade: "A",
+        summary: "原生质量检测通过",
+        exit_ip: "192.0.2.1",
+        country: "示例地区",
+        country_code: "",
+        base_latency_ms: 85,
+        passed_count: 1,
+        warn_count: 0,
+        failed_count: 0,
+        challenge_count: 0,
+        checked_at: Math.floor(Date.now() / 1000),
+        items: [
+          {
+            target: "OpenAI",
+            status: "pass",
+            http_status: 200,
+            latency_ms: 90,
+            message: "通过",
+          },
+        ],
+      };
     }
-    if (String(args.path).startsWith("/proxy-management")) return (await import("./proxyPreview")).proxyPreview(String(args.method),String(args.path),(args.body || {}) as Record<string,unknown>);
-    if (args.path === "/proxies") return structuredClone((await import('./settingsPreview')).previewProxies);
+    if (String(args.path).startsWith("/proxy-management"))
+      return (await import("./proxyPreview")).proxyPreview(
+        String(args.method),
+        String(args.path),
+        (args.body || {}) as Record<string, unknown>,
+      );
+    if (args.path === "/proxies")
+      return structuredClone(
+        (await import("./settingsPreview")).previewProxies,
+      );
     if (/^\/accounts\/\d+\/settings$/.test(String(args.path))) {
-      const account = state.snapshot?.accounts.find(a => a.id === Number(String(args.path).split('/')[2]));
-      if (!account) throw new Error('账号不存在');
-      return (await import('./settingsPreview')).settingsPreview(account);
+      const account = state.snapshot?.accounts.find(
+        (a) => a.id === Number(String(args.path).split("/")[2]),
+      );
+      if (!account) throw new Error("账号不存在");
+      return (await import("./settingsPreview")).settingsPreview(account);
     }
-    if (args.path === "/connection-status") return { state: "ok", endpoint: "verify", http_status: 200, message: "Sub2API 管理权限已验证", retryable: false, checked_at: new Date().toISOString() };
-    if (/^\/accounts\/[1-9]\d*\/keepalive$/.test(String(args.path))) return (await import('./keepalivePreview')).keepalivePreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? []);
-    if (String(args.path).startsWith('/account-templates') || String(args.path).startsWith('/modeltrace/fingerprint-bank') || String(args.path).startsWith('/lm-detector/fingerprint-bank') || /^\/accounts\/\d+\/model-detection$/.test(String(args.path))) return (await import('./detectionPreview')).detectionPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? [], String(config.oauth.model_detection_model_id), config.oauth.model_detection_platforms);
-    if (String(args.path).startsWith('/account-operations') || /^\/accounts\/\d+\/operations$/.test(String(args.path))) return (await import('./operationPreview')).operationPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? [], emit);
-    if (/^\/accounts\/\d+\/model-tests(?:\/latest)?$/.test(String(args.path)) || String(args.path).startsWith("/model-tests/")) {
-      const result = (await import("./modelTestPreview")).modelTestPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? []);
+    if (args.path === "/connection-status")
+      return {
+        state: "ok",
+        endpoint: "verify",
+        http_status: 200,
+        message: "Sub2API 管理权限已验证",
+        retryable: false,
+        checked_at: new Date().toISOString(),
+      };
+    if (/^\/accounts\/[1-9]\d*\/keepalive$/.test(String(args.path)))
+      return (await import("./keepalivePreview")).keepalivePreview(
+        String(args.method),
+        String(args.path),
+        (args.body || {}) as Record<string, unknown>,
+        state.snapshot?.accounts ?? [],
+      );
+    if (
+      String(args.path).startsWith("/account-templates") ||
+      String(args.path).startsWith("/modeltrace/fingerprint-bank") ||
+      String(args.path).startsWith("/lm-detector/fingerprint-bank") ||
+      /^\/accounts\/\d+\/model-detection$/.test(String(args.path))
+    )
+      return (await import("./detectionPreview")).detectionPreview(
+        String(args.method),
+        String(args.path),
+        (args.body || {}) as Record<string, unknown>,
+        state.snapshot?.accounts ?? [],
+        String(config.oauth.model_detection_model_id),
+        config.oauth.model_detection_platforms,
+      );
+    if (
+      String(args.path).startsWith("/account-operations") ||
+      /^\/accounts\/\d+\/operations$/.test(String(args.path))
+    )
+      return (await import("./operationPreview")).operationPreview(
+        String(args.method),
+        String(args.path),
+        (args.body || {}) as Record<string, unknown>,
+        state.snapshot?.accounts ?? [],
+        emit,
+      );
+    if (
+      /^\/accounts\/\d+\/model-tests(?:\/latest)?$/.test(String(args.path)) ||
+      String(args.path).startsWith("/model-tests/")
+    ) {
+      const result = (await import("./modelTestPreview")).modelTestPreview(
+        String(args.method),
+        String(args.path),
+        (args.body || {}) as Record<string, unknown>,
+        state.snapshot?.accounts ?? [],
+      );
       if (scenario === "lm-offline" && String(args.path).endsWith("/latest")) {
-        setTimeout(() => { state.online = false; emit(); }, 100);
+        setTimeout(() => {
+          state.online = false;
+          emit();
+        }, 100);
       }
       return result;
     }
-    if (String(args.path).startsWith("/usage-records") || String(args.path).startsWith("/usage-record-options")) {
-      return (await import("./recordPreview")).recordPreview(String(args.path), accounts);
+    if (
+      String(args.path).startsWith("/usage-records") ||
+      String(args.path).startsWith("/usage-record-options")
+    ) {
+      return (await import("./recordPreview")).recordPreview(
+        String(args.path),
+        accounts,
+      );
     }
     const path = String(args.path),
       body = args.body as {
@@ -631,7 +1002,8 @@ export async function run(
       } | null;
     if (path === "/config") return structuredClone(config);
     if (path.startsWith("/config/")) {
-      if (scenario === "config-save-failure" && args.method === "PUT") throw new Error("设置保存失败，请重试");
+      if (scenario === "config-save-failure" && args.method === "PUT")
+        throw new Error("设置保存失败，请重试");
       const section = path.split("/")[2];
       if (body?.expected_revision !== config[section].revision)
         throw new Error("设置已变化");
@@ -646,16 +1018,34 @@ export async function run(
       const params = new URLSearchParams(path.split("?")[1]);
       const category = params.get("category");
       const before = Number(params.get("before_id")) || Infinity;
-      const items = (state.snapshot?.errors ?? []).filter(e => {
-        const account = state.snapshot?.accounts.find(a => a.id === e.account_id);
-        const degradation = account?.platform === "openai" && ["oauth", "apikey"].includes(account.type)
-          && ["Our servers are currently overloaded. Please try again later.", "Selected model is at capacity. Please try a different model.", "stream disconnected before completion: Concurrency limit exceeded for account, please retry later"].includes(e.message);
-        return e.id < before && (!category || (category === "degradation" ? degradation : !degradation));
+      const items = (state.snapshot?.errors ?? []).filter((e) => {
+        const account = state.snapshot?.accounts.find(
+          (a) => a.id === e.account_id,
+        );
+        const degradation =
+          account?.platform === "openai" &&
+          ["oauth", "apikey"].includes(account.type) &&
+          [
+            "Our servers are currently overloaded. Please try again later.",
+            "Selected model is at capacity. Please try a different model.",
+            "stream disconnected before completion: Concurrency limit exceeded for account, please retry later",
+          ].includes(e.message);
+        return (
+          e.id < before &&
+          (!category ||
+            (category === "degradation" ? degradation : !degradation))
+        );
       });
       return { items, next_cursor: null };
     }
     if (path.startsWith("/recoveries"))
-      return { items: [...(await import("./operationPreview")).scheduledTestHistory(), ...(state.snapshot?.recoveries ?? [])], next_cursor: null };
+      return {
+        items: [
+          ...(await import("./operationPreview")).scheduledTestHistory(),
+          ...(state.snapshot?.recoveries ?? []),
+        ],
+        next_cursor: null,
+      };
     if (path === "/quota-refresh")
       return args.method === "POST"
         ? {
@@ -670,8 +1060,14 @@ export async function run(
         : { status: "idle", total: 0, completed: 0, items: [] };
     if (path.split("?", 1)[0].endsWith("/models")) {
       const query = new URLSearchParams(path.split("?")[1]);
-      if (scenario === "model-directory-error" && query.get("refresh") === "true") throw new Error("模型目录暂不可用，请重试");
-      const account = state.snapshot?.accounts.find((item) => item.id === Number(path.split("/")[2]));
+      if (
+        scenario === "model-directory-error" &&
+        query.get("refresh") === "true"
+      )
+        throw new Error("模型目录暂不可用，请重试");
+      const account = state.snapshot?.accounts.find(
+        (item) => item.id === Number(path.split("/")[2]),
+      );
       if (!account) throw new Error("账号不存在");
       return (await import("./modelTestPreview")).modelTestCandidates(account);
     }
@@ -689,7 +1085,8 @@ export async function run(
         content_limited: true,
       };
     }
-    if (/^\/accounts\/\d+\/usage$/.test(path)) return accounts.find(a => a.id === Number(path.split("/")[2]))?.usage;
+    if (/^\/accounts\/\d+\/usage$/.test(path))
+      return accounts.find((a) => a.id === Number(path.split("/")[2]))?.usage;
     if (path.startsWith("/actions/"))
       return { message: "预览：测试请求已完成", pairing_code: "DEMO-NEW1" };
   }

@@ -76,24 +76,26 @@ const recordPage = () => ({
 const finishedBatch: OperationBatch = {
   batch_id: "a".repeat(32),
   pending: 0,
-  items: [{
-    id: "batch-041-operation-1",
-    batch_id: "a".repeat(32),
-    account_id: 1,
-    account_name: account(1).name,
-    action: "test",
-    requested: { confirmed: true, model_id: "fixture-model" },
-    status: "completed",
-    result: {
-      requested_model: "fixture-model",
-      actual_model: "fixture-model",
-      success: true,
-      duration_ms: 10,
-      completed_at: "2026-10-14T00:00:01Z",
-      error: "",
-      uncertain: false,
+  items: [
+    {
+      id: "batch-041-operation-1",
+      batch_id: "a".repeat(32),
+      account_id: 1,
+      account_name: account(1).name,
+      action: "test",
+      requested: { confirmed: true, model_id: "fixture-model" },
+      status: "completed",
+      result: {
+        requested_model: "fixture-model",
+        actual_model: "fixture-model",
+        success: true,
+        duration_ms: 10,
+        completed_at: "2026-10-14T00:00:01Z",
+        error: "",
+        uncertain: false,
+      },
     },
-  }],
+  ],
 };
 
 beforeEach(() => {
@@ -108,11 +110,18 @@ beforeEach(() => {
     name === "get_state" ? (initialState as never) : (undefined as never),
   );
   vi.mocked(api).mockImplementation(async (method, path) => {
-    if (method === "POST" && path === "/account-operations/batch") return finishedBatch as never;
-    if (method === "GET" && path === `/account-operations?batch_id=${finishedBatch.batch_id}`) return finishedBatch as never;
+    if (method === "POST" && path === "/account-operations/batch")
+      return finishedBatch as never;
+    if (
+      method === "GET" &&
+      path === `/account-operations?batch_id=${finishedBatch.batch_id}`
+    )
+      return finishedBatch as never;
     if (path.startsWith("/usage-records")) return recordPage() as never;
-    if (path.startsWith("/errors?category=") || path === "/recoveries") return { items: [], next_cursor: null } as never;
-    if (path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
+    if (path.startsWith("/errors?category=") || path === "/recoveries")
+      return { items: [], next_cursor: null } as never;
+    if (path === "/quota-refresh")
+      return { status: "idle", items: [], total: 0, completed: 0 } as never;
     throw new Error(`Unexpected fixture request: ${method} ${path}`);
   });
 });
@@ -125,26 +134,61 @@ afterEach(async () => {
 
 async function renderApp() {
   await act(async () => root.render(<App />));
-  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
 }
 
-const selectionBar = () => container.querySelector<HTMLElement>(".selection-bar");
+const selectionBar = () =>
+  container.querySelector<HTMLElement>(".selection-bar");
 
 describe("main account selection surface", () => {
   it("returns focus to the busy test button when running results are closed", async () => {
-    const original=vi.mocked(api).getMockImplementation()!;
-    const running={...finishedBatch, pending:1, items:finishedBatch.items.map(j=>({...j,status:"running",result:undefined}))};
-    vi.mocked(api).mockImplementation(async (method,path,...rest) => path.startsWith("/account-operations") ? running as never : original(method,path,...rest));
+    const original = vi.mocked(api).getMockImplementation()!;
+    const running = {
+      ...finishedBatch,
+      pending: 1,
+      items: finishedBatch.items.map((j) => ({
+        ...j,
+        status: "running",
+        result: undefined,
+      })),
+    };
+    vi.mocked(api).mockImplementation(async (method, path, ...rest) =>
+      path.startsWith("/account-operations")
+        ? (running as never)
+        : original(method, path, ...rest),
+    );
     await renderApp();
-    await act(async () => container.querySelector<HTMLInputElement>(`[aria-label="选择 ${account(1).name}"]`)!.click());
-    const start=container.querySelector<HTMLButtonElement>("#connection-batch-start")!;
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>(
+          `[aria-label="选择 ${account(1).name}"]`,
+        )!
+        .click(),
+    );
+    const start = container.querySelector<HTMLButtonElement>(
+      "#connection-batch-start",
+    )!;
     await act(async () => start.click());
-    const close=[...container.querySelectorAll<HTMLButtonElement>(".connection-batch button")].find(b=>b.textContent?.includes("关闭结果"))!;
+    const close = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        ".connection-batch button",
+      ),
+    ].find((b) => b.textContent?.includes("关闭结果"))!;
     await act(async () => close.click());
     expect(document.activeElement).toBe(start);
     expect(start.getAttribute("aria-disabled")).toBe("true");
     await act(async () => start.click());
-    expect(vi.mocked(api).mock.calls.filter(([method,path])=>method==="POST"&&path==="/account-operations/batch")).toHaveLength(1);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(
+          ([method, path]) =>
+            method === "POST" && path === "/account-operations/batch",
+        ),
+    ).toHaveLength(1);
   });
   it("closes batch results and restores focus to the test button without a separate entry", async () => {
     await renderApp();
@@ -157,19 +201,40 @@ describe("main account selection surface", () => {
     expect(selectionBar()?.textContent).toContain("已选 1 个账号");
 
     await act(async () =>
-      [...container.querySelectorAll<HTMLButtonElement>(".selection-actions button")]
+      [
+        ...container.querySelectorAll<HTMLButtonElement>(
+          ".selection-actions button",
+        ),
+      ]
         .find((button) => button.textContent?.includes("测试连接"))!
         .click(),
     );
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
     const resultsSelector = 'section[aria-label="批量测试连接"]';
-    expect(container.querySelector(resultsSelector)?.textContent).toContain("通过");
-    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')).toBeNull();
+    expect(container.querySelector(resultsSelector)?.textContent).toContain(
+      "通过",
+    );
+    expect(
+      container.querySelector('section[aria-label="批量测试连接摘要"]'),
+    ).toBeNull();
 
-    await act(async () => container.querySelector<HTMLButtonElement>(`${resultsSelector} button`)!.click());
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>(`${resultsSelector} button`)!
+        .click(),
+    );
     expect(container.querySelector(resultsSelector)).toBeNull();
-    expect(container.querySelector('.account-toolbar button[aria-label="查看测活结果"]')).toBeNull();
-    expect(document.activeElement).toBe(container.querySelector("#connection-batch-start"));
+    expect(
+      container.querySelector(
+        '.account-toolbar button[aria-label="查看测活结果"]',
+      ),
+    ).toBeNull();
+    expect(document.activeElement).toBe(
+      container.querySelector("#connection-batch-start"),
+    );
     await act(async () => accountCheckbox.click());
     expect(selectionBar()).toBeNull();
     expect(container.querySelector(resultsSelector)).toBeNull();
@@ -188,7 +253,9 @@ describe("main account selection surface", () => {
 
     await act(async () => selectAll.click());
     expect(selectionBar()?.textContent).toContain("已选 2 个账号");
-    expect(selectionBar()?.querySelector('input[aria-label="全选当前筛选账号"]')).toBeNull();
+    expect(
+      selectionBar()?.querySelector('input[aria-label="全选当前筛选账号"]'),
+    ).toBeNull();
     expect(selectAll.closest(".mobile-sort")).toBe(mobileSort);
 
     await act(async () => selectAll.click());

@@ -3,7 +3,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { api, command, subscribe } from "./bridge";
-import { DeleteAccountsDialog, RecoverSelectedButton, ResetCreditsDialog } from "./AccountManagement";
+import {
+  DeleteAccountsDialog,
+  RecoverSelectedButton,
+  ResetCreditsDialog,
+} from "./AccountManagement";
 import { bindOperationConnection } from "./accountOperations";
 import { RecoveryHistory } from "./AccountControls";
 import App from "./main";
@@ -61,14 +65,30 @@ const account = (id: number): Account => ({
   success_after_error: false,
   usage_windows: [],
 });
-const cardAccount = (id: number, available: number, actions: UsageAction[] = ["query_reset_credits", "reset_quota"]): Account => ({
+const cardAccount = (
+  id: number,
+  available: number,
+  actions: UsageAction[] = ["query_reset_credits", "reset_quota"],
+): Account => ({
   ...account(id),
   platform: "openai",
   type: "oauth",
   operation_versions: { reset_quota: `reset-${id}` },
   usage: {
-    branch: "openai_oauth", today: null, actions,
-    windows: [{ key: "codex_7d", label: "7d", used_percent: 100, reset_at: null, observed_at: null, status: "known", source: "fixture" }],
+    branch: "openai_oauth",
+    today: null,
+    actions,
+    windows: [
+      {
+        key: "codex_7d",
+        label: "7d",
+        used_percent: 100,
+        reset_at: null,
+        observed_at: null,
+        status: "known",
+        source: "fixture",
+      },
+    ],
     reset_credits: { available, expires_at: [], observed_at: null },
   },
 });
@@ -239,7 +259,10 @@ it("preserves the automatic card-use draft after a failed save and retries witho
 });
 
 it("submits one confirmed deletion batch, reports individual results, and removes affected children", async () => {
-  const selected = [1, 2, 3, 4, 5].map((id) => ({ ...account(id), operation_versions: { delete: `delete-version-${id}` } }));
+  const selected = [1, 2, 3, 4, 5].map((id) => ({
+    ...account(id),
+    operation_versions: { delete: `delete-version-${id}` },
+  }));
   const batchId = "d".repeat(32);
   const items = selected.map((a, index) => ({
     id: `job-${a.id}`,
@@ -252,8 +275,13 @@ it("submits one confirmed deletion batch, reports individual results, and remove
     requested: {},
     ...(index === 1 ? {} : { result: { deleted: true, verified: true } }),
   }));
-  vi.mocked(api).mockResolvedValue({ batch_id: batchId, items, pending: 0 } as never);
-  const removed = vi.fn(), finished = vi.fn();
+  vi.mocked(api).mockResolvedValue({
+    batch_id: batchId,
+    items,
+    pending: 0,
+  } as never);
+  const removed = vi.fn(),
+    finished = vi.fn();
   const child = { ...account(6), parent_account_id: 1 };
   await act(async () =>
     root.render(
@@ -272,17 +300,21 @@ it("submits one confirmed deletion batch, reports individual results, and remove
   expect(container.textContent).toContain("母账号关联的 1 个账号也会被删除");
   expect(api).not.toHaveBeenCalled();
   await act(async () => button("确认删除").click());
-  expect(api).toHaveBeenCalledExactlyOnceWith("POST", "/account-operations/batch", {
-    action: "delete",
-    payload: { confirmed: true },
-    accounts: selected.map((a) => ({
-      account_id: a.id,
-      expected_version: `delete-version-${a.id}`,
-      payload: {},
-    })),
-    request_id: expect.any(String),
-    client_id: expect.any(String),
-  });
+  expect(api).toHaveBeenCalledExactlyOnceWith(
+    "POST",
+    "/account-operations/batch",
+    {
+      action: "delete",
+      payload: { confirmed: true },
+      accounts: selected.map((a) => ({
+        account_id: a.id,
+        expected_version: `delete-version-${a.id}`,
+        payload: {},
+      })),
+      request_id: expect.any(String),
+      client_id: expect.any(String),
+    },
+  );
   expect(removed.mock.calls.flat()).toEqual([1, 6, 3, 4, 5]);
   expect(
     finished.mock.calls[0][0]
@@ -297,12 +329,18 @@ it("submits one confirmed deletion batch, reports individual results, and remove
 it("does not poll a deletion batch after the dialog is removed", async () => {
   let resolveBatch!: (value: unknown) => void;
   vi.mocked(api).mockImplementation(
-    () => new Promise((resolve) => { resolveBatch = resolve; }),
+    () =>
+      new Promise((resolve) => {
+        resolveBatch = resolve;
+      }),
   );
   await act(async () =>
     root.render(
       <DeleteAccountsDialog
-        accounts={[1, 2, 3, 4].map((id) => ({ ...account(id), operation_versions: { delete: `delete-version-${id}` } }))}
+        accounts={[1, 2, 3, 4].map((id) => ({
+          ...account(id),
+          operation_versions: { delete: `delete-version-${id}` },
+        }))}
         online
         removed={vi.fn()}
         finished={vi.fn()}
@@ -311,15 +349,24 @@ it("does not poll a deletion batch after the dialog is removed", async () => {
     ),
   );
   await act(async () => button("确认删除").click());
-  expect(api).toHaveBeenCalledExactlyOnceWith("POST", "/account-operations/batch", expect.objectContaining({ action: "delete" }));
+  expect(api).toHaveBeenCalledExactlyOnceWith(
+    "POST",
+    "/account-operations/batch",
+    expect.objectContaining({ action: "delete" }),
+  );
   await act(async () => root.render(<div />));
-  await act(async () => resolveBatch({ batch_id: "e".repeat(32), items: [], pending: 0 }));
+  await act(async () =>
+    resolveBatch({ batch_id: "e".repeat(32), items: [], pending: 0 }),
+  );
   expect(api).toHaveBeenCalledTimes(1);
 });
 
 it("shows the server reason for queued, checking, and running batch jobs", async () => {
   vi.useFakeTimers();
-  const selected = [1, 2, 3].map((id) => ({ ...account(id), operation_versions: { delete: `delete-version-${id}` } }));
+  const selected = [1, 2, 3].map((id) => ({
+    ...account(id),
+    operation_versions: { delete: `delete-version-${id}` },
+  }));
   const batchId = "h".repeat(32);
   vi.mocked(api).mockResolvedValue({
     batch_id: batchId,
@@ -355,17 +402,15 @@ it("shows the server reason for queued, checking, and running batch jobs", async
 });
 
 it("filters already loaded recoveries again after deletion and a late page response", async () => {
-  const records = [1, 2, 3].map(
-    (id): Recovery => ({
-      id,
-      account_id: id,
-      account_name: `History ${id}`,
-      model_id: "model",
-      test_completed_at: null,
-      recovered_at: null,
-      legacy: true,
-    }),
-  );
+  const records = [1, 2, 3].map((id): Recovery => ({
+    id,
+    account_id: id,
+    account_name: `History ${id}`,
+    model_id: "model",
+    test_completed_at: null,
+    recovered_at: null,
+    legacy: true,
+  }));
   vi.mocked(api).mockResolvedValue({ items: records.slice(1), next_cursor: 2 });
   const render = (ids: number[]) =>
     root.render(
@@ -456,10 +501,14 @@ it("selects current filters, preserves live selections on polling and clears on 
   expect(container.querySelector("#degradation-panel")).not.toBeNull();
   await act(async () => button("恢复历史").click());
   expect(container.querySelector("#degradation-panel")).toBeNull();
-  expect(container.querySelector("#recoveries-panel")?.hasAttribute("hidden")).toBe(false);
+  expect(
+    container.querySelector("#recoveries-panel")?.hasAttribute("hidden"),
+  ).toBe(false);
   await act(async () => button("降智错误").click());
   expect(container.querySelector("#degradation-panel")).not.toBeNull();
-  expect(container.querySelector("#recoveries-panel")?.hasAttribute("hidden")).toBe(true);
+  expect(
+    container.querySelector("#recoveries-panel")?.hasAttribute("hidden"),
+  ).toBe(true);
 });
 
 it("keeps batch actions adjacent and requires confirmation before deleting selected accounts", async () => {
@@ -503,8 +552,10 @@ it("keeps batch actions adjacent and requires confirmation before deleting selec
   );
 
   const selectionBar = container.querySelector<HTMLElement>(".selection-bar")!;
-  const summary = selectionBar.querySelector<HTMLElement>(".selection-summary")!;
-  const actions = selectionBar.querySelector<HTMLElement>(".selection-actions")!;
+  const summary =
+    selectionBar.querySelector<HTMLElement>(".selection-summary")!;
+  const actions =
+    selectionBar.querySelector<HTMLElement>(".selection-actions")!;
   const actionButtons = Array.from(
     actions.querySelectorAll<HTMLButtonElement>("button"),
   );
@@ -529,7 +580,9 @@ it("keeps batch actions adjacent and requires confirmation before deleting selec
   ]);
   expect(button("使用重置卡").disabled).toBe(true);
   expect(summary.textContent).toContain("已选 1 个账号");
-  expect(summary.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  expect(
+    summary.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
   expect(actions.contains(applyTemplate)).toBe(true);
   expect(actions.contains(deleteSelected)).toBe(true);
   expect(selectProxy.nextElementSibling).toBe(applyTemplate);
@@ -546,8 +599,7 @@ it("keeps batch actions adjacent and requires confirmation before deleting selec
   const accountCheckbox = container.querySelector<HTMLInputElement>(
     '[aria-label="选择 Account 1"]',
   )!;
-  if (!accountCheckbox.checked)
-    await act(async () => accountCheckbox.click());
+  if (!accountCheckbox.checked) await act(async () => accountCheckbox.click());
   expect(summary.textContent).toContain("已选 1 个账号");
   expect(selectProxy.disabled).toBe(false);
   expect(deleteSelected.disabled).toBe(false);
@@ -558,78 +610,207 @@ it("keeps batch actions adjacent and requires confirmation before deleting selec
   )!;
   expect(dialog.textContent).toContain("删除 1 个账号？");
   expect(dialog.textContent).toContain("Account 1");
-  expect(vi.mocked(api).mock.calls.filter(([method]) => method === "DELETE")).toHaveLength(0);
+  expect(
+    vi.mocked(api).mock.calls.filter(([method]) => method === "DELETE"),
+  ).toHaveLength(0);
 
   await act(async () => button("取消").click());
-  expect(container.querySelector('[aria-labelledby="delete-title"]')).toBeNull();
-  expect(vi.mocked(api).mock.calls.filter(([method]) => method === "DELETE")).toHaveLength(0);
+  expect(
+    container.querySelector('[aria-labelledby="delete-title"]'),
+  ).toBeNull();
+  expect(
+    vi.mocked(api).mock.calls.filter(([method]) => method === "DELETE"),
+  ).toHaveLength(0);
 });
 
 it("recovers only eligible selected accounts, guards repeated clicks, and reports partial outcomes", async () => {
   bindOperationConnection("recover-selected-fixture");
   let resolve!: (value: unknown) => void;
-  vi.mocked(api).mockReturnValue(new Promise(done => { resolve = done; }));
+  vi.mocked(api).mockReturnValue(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
   const report = vi.fn();
-  const accounts = [1, 2, 3, 4, 5].map(id => ({ ...account(id), recoverable: id !== 5, operation_versions: { recover: `recover-${id}` } }));
-  await act(async () => root.render(<RecoverSelectedButton accounts={accounts} online report={report}/>));
-  await act(async () => { button("恢复状态").click(); button("恢复状态").click(); });
-  expect(button("恢复状态").disabled).toBe(true);
-  expect(api).toHaveBeenCalledExactlyOnceWith("POST", "/account-operations/batch", expect.objectContaining({
-    action: "recover", payload: {}, accounts: [1, 2, 3, 4].map(id => ({ account_id: id, expected_version: `recover-${id}` })),
+  const accounts = [1, 2, 3, 4, 5].map((id) => ({
+    ...account(id),
+    recoverable: id !== 5,
+    operation_versions: { recover: `recover-${id}` },
   }));
-  await act(async () => resolve({ batch_id: "b".repeat(32), pending: 1, items: [
-    { id: "1", account_id: 1, status: "completed", result: { verified: true } },
-    { id: "2", account_id: 2, status: "completed", result: { verified: true, unchanged: true } },
-    { id: "3", account_id: 3, status: "failed" },
-    { id: "4", account_id: 4, status: "needs_confirmation" },
-  ] }));
-  expect(report).toHaveBeenCalledExactlyOnceWith("已恢复 1 个 · 无需恢复 2 个 · 失败 1 个 · 待核对 1 个");
-  expect(button("恢复状态").disabled).toBe(false);
-  await act(async () => root.render(<RecoverSelectedButton accounts={[accounts[4]]} online report={report}/>));
+  await act(async () =>
+    root.render(
+      <RecoverSelectedButton accounts={accounts} online report={report} />,
+    ),
+  );
+  await act(async () => {
+    button("恢复状态").click();
+    button("恢复状态").click();
+  });
   expect(button("恢复状态").disabled).toBe(true);
-  await act(async () => root.render(<RecoverSelectedButton accounts={accounts} online={false} report={report}/>));
+  expect(api).toHaveBeenCalledExactlyOnceWith(
+    "POST",
+    "/account-operations/batch",
+    expect.objectContaining({
+      action: "recover",
+      payload: {},
+      accounts: [1, 2, 3, 4].map((id) => ({
+        account_id: id,
+        expected_version: `recover-${id}`,
+      })),
+    }),
+  );
+  await act(async () =>
+    resolve({
+      batch_id: "b".repeat(32),
+      pending: 1,
+      items: [
+        {
+          id: "1",
+          account_id: 1,
+          status: "completed",
+          result: { verified: true },
+        },
+        {
+          id: "2",
+          account_id: 2,
+          status: "completed",
+          result: { verified: true, unchanged: true },
+        },
+        { id: "3", account_id: 3, status: "failed" },
+        { id: "4", account_id: 4, status: "needs_confirmation" },
+      ],
+    }),
+  );
+  expect(report).toHaveBeenCalledExactlyOnceWith(
+    "已恢复 1 个 · 无需恢复 2 个 · 失败 1 个 · 待核对 1 个",
+  );
+  expect(button("恢复状态").disabled).toBe(false);
+  await act(async () =>
+    root.render(
+      <RecoverSelectedButton accounts={[accounts[4]]} online report={report} />,
+    ),
+  );
+  expect(button("恢复状态").disabled).toBe(true);
+  await act(async () =>
+    root.render(
+      <RecoverSelectedButton
+        accounts={accounts}
+        online={false}
+        report={report}
+      />,
+    ),
+  );
   expect(button("恢复状态").disabled).toBe(true);
 });
 
 it("ignores late recovery results after changing connections", async () => {
   bindOperationConnection("recover-old-connection");
   let resolve!: (value: unknown) => void;
-  vi.mocked(api).mockReturnValue(new Promise(done => { resolve = done; }));
-  const report = vi.fn(), accounts = [{ ...account(1), recoverable: true, operation_versions: { recover: "fixture-version" } }];
-  await act(async () => root.render(<RecoverSelectedButton key="old" accounts={accounts} online report={report}/>));
+  vi.mocked(api).mockReturnValue(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const report = vi.fn(),
+    accounts = [
+      {
+        ...account(1),
+        recoverable: true,
+        operation_versions: { recover: "fixture-version" },
+      },
+    ];
+  await act(async () =>
+    root.render(
+      <RecoverSelectedButton
+        key="old"
+        accounts={accounts}
+        online
+        report={report}
+      />,
+    ),
+  );
   await act(async () => button("恢复状态").click());
   bindOperationConnection("recover-new-connection");
-  await act(async () => root.render(<RecoverSelectedButton key="new" accounts={accounts} online report={report}/>));
-  await act(async () => resolve({ batch_id: "c".repeat(32), pending: 0, items: [{ id: "1", account_id: 1, status: "completed", result: { verified: true } }] }));
+  await act(async () =>
+    root.render(
+      <RecoverSelectedButton
+        key="new"
+        accounts={accounts}
+        online
+        report={report}
+      />,
+    ),
+  );
+  await act(async () =>
+    resolve({
+      batch_id: "c".repeat(32),
+      pending: 0,
+      items: [
+        {
+          id: "1",
+          account_id: 1,
+          status: "completed",
+          result: { verified: true },
+        },
+      ],
+    }),
+  );
   expect(report).not.toHaveBeenCalled();
   expect(button("恢复状态").disabled).toBe(false);
 });
 
 it("offers batch reset cards only for a selection holding one and spends nothing before confirmation", async () => {
   const state: ViewState = {
-    platform: "macos", connected: true, online: true, error: "",
-    preferences: { base_url: "https://qa.invalid", pinned: false, launch_at_login: false },
-    snapshot: { observed_at: "2026-09-26T00:00:00Z", accounts: [cardAccount(1, 1), account(2)], groups: [], errors: [], recoveries: [] },
+    platform: "macos",
+    connected: true,
+    online: true,
+    error: "",
+    preferences: {
+      base_url: "https://qa.invalid",
+      pinned: false,
+      launch_at_login: false,
+    },
+    snapshot: {
+      observed_at: "2026-09-26T00:00:00Z",
+      accounts: [cardAccount(1, 1), account(2)],
+      groups: [],
+      errors: [],
+      recoveries: [],
+    },
   };
   vi.mocked(subscribe).mockImplementation(async () => () => {});
   vi.mocked(command).mockResolvedValue(state);
-  vi.mocked(api).mockResolvedValue({ status: "idle", items: [], next_cursor: null });
+  vi.mocked(api).mockResolvedValue({
+    status: "idle",
+    items: [],
+    next_cursor: null,
+  });
   await act(async () => root.render(<App />));
-  const select = (name: string) => act(async () => container.querySelector<HTMLInputElement>(`[aria-label="选择 ${name}"]`)!.click());
-  const posts = () => vi.mocked(api).mock.calls.filter(([method]) => method === "POST");
+  const select = (name: string) =>
+    act(async () =>
+      container
+        .querySelector<HTMLInputElement>(`[aria-label="选择 ${name}"]`)!
+        .click(),
+    );
+  const posts = () =>
+    vi.mocked(api).mock.calls.filter(([method]) => method === "POST");
 
   await select("Account 2");
   expect(button("使用重置卡").disabled).toBe(true);
   await select("Account 1");
   expect(button("使用重置卡").disabled).toBe(false);
   await act(async () => button("使用重置卡").click());
-  const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-labelledby="reset-credits-title"]')!;
+  const dialog = container.querySelector<HTMLElement>(
+    '[role="dialog"][aria-labelledby="reset-credits-title"]',
+  )!;
   expect(dialog.textContent).toContain("对 1 个账号使用重置卡？");
   expect(dialog.textContent).toContain("已跳过 1 个没有可用重置卡的账号");
   expect(posts()).toHaveLength(0);
 
   await act(async () => button("取消").click());
-  expect(container.querySelector('[aria-labelledby="reset-credits-title"]')).toBeNull();
+  expect(
+    container.querySelector('[aria-labelledby="reset-credits-title"]'),
+  ).toBeNull();
   expect(posts()).toHaveLength(0);
 });
 
@@ -638,38 +819,103 @@ it("uses reset cards one account at a time after confirmation and reports each o
   vi.mocked(command).mockResolvedValue(undefined as never);
   let finishFirst!: (job: unknown) => void;
   vi.mocked(api).mockImplementation(async (_method, path) => {
-    if (path === "/accounts/1/operations") return new Promise(done => { finishFirst = done; }) as never;
+    if (path === "/accounts/1/operations")
+      return new Promise((done) => {
+        finishFirst = done;
+      }) as never;
     if (path === "/accounts/2/operations")
-      return { id: "job-2", account_id: 2, action: "reset_quota", status: "needs_confirmation", reason: "已派发请求的结果未确认，未重复执行" } as never;
+      return {
+        id: "job-2",
+        account_id: 2,
+        action: "reset_quota",
+        status: "needs_confirmation",
+        reason: "已派发请求的结果未确认，未重复执行",
+      } as never;
     throw new Error("账号已变化，请刷新后重试");
   });
   const report = vi.fn();
-  const accounts = [cardAccount(1, 1), cardAccount(2, 2), cardAccount(3, 1), cardAccount(4, 0), cardAccount(5, 1, ["query_reset_credits"])];
-  await act(async () => root.render(<ResetCreditsDialog accounts={accounts} online report={report} close={vi.fn()}/>));
-  const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-labelledby="reset-credits-title"]')!;
+  const accounts = [
+    cardAccount(1, 1),
+    cardAccount(2, 2),
+    cardAccount(3, 1),
+    cardAccount(4, 0),
+    cardAccount(5, 1, ["query_reset_credits"]),
+  ];
+  await act(async () =>
+    root.render(
+      <ResetCreditsDialog
+        accounts={accounts}
+        online
+        report={report}
+        close={vi.fn()}
+      />,
+    ),
+  );
+  const dialog = container.querySelector<HTMLElement>(
+    '[role="dialog"][aria-labelledby="reset-credits-title"]',
+  )!;
   expect(dialog.textContent).toContain("对 3 个账号使用重置卡？");
   expect(dialog.textContent).toContain("已跳过 2 个没有可用重置卡的账号");
-  expect([...dialog.querySelectorAll(".delete-list strong")].map(item => item.textContent)).toEqual(["Account 1", "Account 2", "Account 3"]);
+  expect(
+    [...dialog.querySelectorAll(".delete-list strong")].map(
+      (item) => item.textContent,
+    ),
+  ).toEqual(["Account 1", "Account 2", "Account 3"]);
   expect(dialog.textContent).toContain("#2 · 7d 100% · 可用 2 张");
   expect(api).not.toHaveBeenCalled();
 
-  await act(async () => { button("确认使用").click(); button("确认使用").click(); });
-  expect(api).toHaveBeenCalledExactlyOnceWith("POST", "/accounts/1/operations", expect.objectContaining({
-    action: "reset_quota", payload: { action: "reset_quota", confirmed: true }, expected_version: "reset-1",
-  }));
+  await act(async () => {
+    button("确认使用").click();
+    button("确认使用").click();
+  });
+  expect(api).toHaveBeenCalledExactlyOnceWith(
+    "POST",
+    "/accounts/1/operations",
+    expect.objectContaining({
+      action: "reset_quota",
+      payload: { action: "reset_quota", confirmed: true },
+      expected_version: "reset-1",
+    }),
+  );
   expect(report).not.toHaveBeenCalled();
 
-  await act(async () => finishFirst({ id: "job-1", account_id: 1, action: "reset_quota", status: "completed", result: { message: "重置已执行" } }));
-  expect(vi.mocked(api).mock.calls.map(([method, path]) => `${method} ${path}`)).toEqual([
-    "POST /accounts/1/operations", "POST /accounts/2/operations", "POST /accounts/3/operations",
+  await act(async () =>
+    finishFirst({
+      id: "job-1",
+      account_id: 1,
+      action: "reset_quota",
+      status: "completed",
+      result: { message: "重置已执行" },
+    }),
+  );
+  expect(
+    vi.mocked(api).mock.calls.map(([method, path]) => `${method} ${path}`),
+  ).toEqual([
+    "POST /accounts/1/operations",
+    "POST /accounts/2/operations",
+    "POST /accounts/3/operations",
   ]);
-  expect(vi.mocked(api).mock.calls.map(([, , body]) => (body as { expected_version: string }).expected_version)).toEqual(["reset-1", "reset-2", "reset-3"]);
-  expect([...dialog.querySelectorAll(".delete-list li > span")].map(item => item.textContent)).toEqual([
-    "重置已执行", "待核对：已派发请求的结果未确认，未重复执行", "账号已变化，请刷新后重试",
+  expect(
+    vi
+      .mocked(api)
+      .mock.calls.map(
+        ([, , body]) => (body as { expected_version: string }).expected_version,
+      ),
+  ).toEqual(["reset-1", "reset-2", "reset-3"]);
+  expect(
+    [...dialog.querySelectorAll(".delete-list li > span")].map(
+      (item) => item.textContent,
+    ),
+  ).toEqual([
+    "重置已执行",
+    "待核对：已派发请求的结果未确认，未重复执行",
+    "账号已变化，请刷新后重试",
   ]);
   expect(dialog.textContent).toContain("用卡结果");
   expect(dialog.textContent).toContain("1 个已重置，1 个失败，1 个待核对");
-  expect(report).toHaveBeenCalledExactlyOnceWith("已使用 1 张重置卡 · 失败 1 个 · 待核对 1 个 · 跳过 2 个");
+  expect(report).toHaveBeenCalledExactlyOnceWith(
+    "已使用 1 张重置卡 · 失败 1 个 · 待核对 1 个 · 跳过 2 个",
+  );
   expect(command).toHaveBeenCalledWith("refresh");
   expect(button("确认使用")).toBeUndefined();
 });
@@ -678,12 +924,36 @@ it("stops before the next account once the reset dialog is closed", async () => 
   bindOperationConnection("reset-cards-close-fixture");
   vi.mocked(command).mockResolvedValue(undefined as never);
   let finishFirst!: (job: unknown) => void;
-  vi.mocked(api).mockImplementation(() => new Promise(done => { finishFirst = done; }) as never);
+  vi.mocked(api).mockImplementation(
+    () =>
+      new Promise((done) => {
+        finishFirst = done;
+      }) as never,
+  );
   const report = vi.fn();
-  await act(async () => root.render(<ResetCreditsDialog accounts={[cardAccount(1, 1), cardAccount(2, 1)]} online report={report} close={vi.fn()}/>));
+  await act(async () =>
+    root.render(
+      <ResetCreditsDialog
+        accounts={[cardAccount(1, 1), cardAccount(2, 1)]}
+        online
+        report={report}
+        close={vi.fn()}
+      />,
+    ),
+  );
   await act(async () => button("确认使用").click());
   await act(async () => root.render(<></>));
-  await act(async () => finishFirst({ id: "job-1", account_id: 1, action: "reset_quota", status: "completed", result: { message: "重置已执行" } }));
+  await act(async () =>
+    finishFirst({
+      id: "job-1",
+      account_id: 1,
+      action: "reset_quota",
+      status: "completed",
+      result: { message: "重置已执行" },
+    }),
+  );
   expect(api).toHaveBeenCalledTimes(1);
-  expect(report).toHaveBeenCalledExactlyOnceWith("已使用 1 张重置卡 · 失败 0 个 · 待核对 0 个 · 跳过 0 个 · 未执行 1 个");
+  expect(report).toHaveBeenCalledExactlyOnceWith(
+    "已使用 1 张重置卡 · 失败 0 个 · 待核对 0 个 · 跳过 0 个 · 未执行 1 个",
+  );
 });

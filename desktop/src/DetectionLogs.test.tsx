@@ -18,7 +18,11 @@ type LogOverrides = Omit<Partial<DetectionLog>, "summary"> & {
   summary?: Partial<DetectionLog["summary"]>;
 };
 
-function log(jobId: string, name: string, overrides: LogOverrides = {}): DetectionLog {
+function log(
+  jobId: string,
+  name: string,
+  overrides: LogOverrides = {},
+): DetectionLog {
   const base: DetectionLog = {
     job_id: jobId,
     account_id: 17,
@@ -56,11 +60,17 @@ function log(jobId: string, name: string, overrides: LogOverrides = {}): Detecti
     ...base,
     ...overrides,
     summary: { ...base.summary, ...overrides.summary },
-    notification: overrides.notification === undefined ? base.notification : overrides.notification,
+    notification:
+      overrides.notification === undefined
+        ? base.notification
+        : overrides.notification,
   };
 }
 
-function receipt(status: string, overrides: Partial<NonNullable<DetectionLog["summary"]["recovery"]>> = {}) {
+function receipt(
+  status: string,
+  overrides: Partial<NonNullable<DetectionLog["summary"]["recovery"]>> = {},
+) {
   return {
     status,
     marked: null,
@@ -78,7 +88,9 @@ function page(items: DetectionLog[], next_cursor: string | null = null) {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
 
@@ -95,7 +107,15 @@ async function render({
   online = true,
   connectionKey = "fixture-connection",
 }: { active?: boolean; online?: boolean; connectionKey?: string } = {}) {
-  await act(async () => root.render(<DetectionLogs active={active} online={online} connectionKey={connectionKey} />));
+  await act(async () =>
+    root.render(
+      <DetectionLogs
+        active={active}
+        online={online}
+        connectionKey={connectionKey}
+      />,
+    ),
+  );
   await settle();
 }
 
@@ -104,29 +124,47 @@ async function rerender({
   online = true,
   connectionKey = "fixture-connection",
 }: { active?: boolean; online?: boolean; connectionKey?: string } = {}) {
-  await act(async () => root.render(<DetectionLogs active={active} online={online} connectionKey={connectionKey} />));
+  await act(async () =>
+    root.render(
+      <DetectionLogs
+        active={active}
+        online={online}
+        connectionKey={connectionKey}
+      />,
+    ),
+  );
   await settle();
 }
 
 function rowNames() {
-  return [...container.querySelectorAll(".detection-log-row")].map((node) => node.querySelector("td:nth-child(2) button span")?.textContent || node.querySelector("td:nth-child(2)")?.textContent || "");
+  return [...container.querySelectorAll(".detection-log-row")].map(
+    (node) =>
+      node.querySelector("td:nth-child(2) button span")?.textContent ||
+      node.querySelector("td:nth-child(2)")?.textContent ||
+      "",
+  );
 }
 
 function row(name: string) {
-  const match = [...container.querySelectorAll<HTMLTableRowElement>(".detection-log-row")]
-    .find((node) => node.textContent?.includes(name));
+  const match = [
+    ...container.querySelectorAll<HTMLTableRowElement>(".detection-log-row"),
+  ].find((node) => node.textContent?.includes(name));
   if (!match) throw new Error(`missing log row: ${name}`);
   return match;
 }
 
 function rowButton(name: string) {
-  const button = row(name).querySelector<HTMLButtonElement>("td:nth-child(2) button");
+  const button = row(name).querySelector<HTMLButtonElement>(
+    "td:nth-child(2) button",
+  );
   if (!button) throw new Error(`missing log account button: ${name}`);
   return button;
 }
 
 function fact(label: string, scope: ParentNode = container) {
-  const term = [...scope.querySelectorAll(".detection-meta dt")].find((node) => node.textContent === label);
+  const term = [...scope.querySelectorAll(".detection-meta dt")].find(
+    (node) => node.textContent === label,
+  );
   return term?.nextElementSibling?.textContent ?? null;
 }
 
@@ -137,7 +175,8 @@ beforeEach(() => {
   root = createRoot(container);
   vi.mocked(api).mockImplementation(async (_method, path) => {
     if (path === "/detection-logs?limit=50") return page([]) as never;
-    if (path.startsWith("/model-tests/")) return { id: path.slice("/model-tests/".length), groups: [] } as never;
+    if (path.startsWith("/model-tests/"))
+      return { id: path.slice("/model-tests/".length), groups: [] } as never;
     throw new Error(`Unexpected fixture request: ${path}`);
   });
 });
@@ -156,14 +195,28 @@ describe("automatic detection log feed", () => {
     });
     vi.mocked(api).mockImplementation(async (_method, path) => {
       if (path === "/detection-logs?limit=50") return page([item]) as never;
-      if (path === `/model-tests/${jobId}`) return { id: jobId, groups: [] } as never;
+      if (path === `/model-tests/${jobId}`)
+        return { id: jobId, groups: [] } as never;
       throw new Error(`Unexpected fixture request: ${path}`);
     });
 
     await render();
     const table = container.querySelector("table")!;
-    const headers = [...table.querySelectorAll("thead th")].map((cell) => cell.textContent?.trim());
-    expect(headers).toEqual(["结果时间", "账号", "模型", "触发", "执行", "结论", "预测", "匹配度", "处置／恢复", "通知"]);
+    const headers = [...table.querySelectorAll("thead th")].map((cell) =>
+      cell.textContent?.trim(),
+    );
+    expect(headers).toEqual([
+      "结果时间",
+      "账号",
+      "模型",
+      "触发",
+      "执行",
+      "结论",
+      "预测",
+      "匹配度",
+      "处置／恢复",
+      "通知",
+    ]);
     const resultRow = row("表格账号");
     expect(resultRow.tagName).toBe("TR");
     expect(resultRow.parentElement?.tagName).toBe("TBODY");
@@ -185,57 +238,104 @@ describe("automatic detection log feed", () => {
   });
 
   it.each([
-    { status: "completed", statusLabel: "已完成", noticeStatus: "delivered", noticeLabel: "已推送" },
-    { status: "failed", statusLabel: "失败", noticeStatus: "failed", noticeLabel: "投递失败" },
-    { status: "cancelled", statusLabel: "已取消", noticeStatus: "suppressed", noticeLabel: "已取消", merged: true },
-    { status: "interrupted", statusLabel: "已中断", noticeStatus: "retry", noticeLabel: "待重试" },
-    { status: "needs_confirmation", statusLabel: "待确认", noticeStatus: "pending", noticeLabel: "待推送" },
-  ])("keeps $status status, result, receipts, and notification distinct", async ({ status, statusLabel, noticeStatus, noticeLabel, merged }) => {
-    const row = log(`job-${status}`, `账号 ${status}`, {
-      status,
-      triggers: ["recheck", "recovery"],
-      summary: {
-        outcome: "normal",
-        recovery: receipt("completed", { mark_cleared: true }),
-        verification: receipt("passed"),
-        restoration: receipt("restored"),
-      },
-      notification: {
-        status: noticeStatus,
-        merged: merged ?? false,
-        delivered_at: "2026-10-20T12:01:00Z",
-        reason: "fixture notification reason",
-      },
-    });
-    vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/detection-logs?limit=50") return page([row]) as never;
-      if (path === `/model-tests/${row.job_id}`) return { id: row.job_id, groups: [] } as never;
-      throw new Error(`Unexpected fixture request: ${path}`);
-    });
+    {
+      status: "completed",
+      statusLabel: "已完成",
+      noticeStatus: "delivered",
+      noticeLabel: "已推送",
+    },
+    {
+      status: "failed",
+      statusLabel: "失败",
+      noticeStatus: "failed",
+      noticeLabel: "投递失败",
+    },
+    {
+      status: "cancelled",
+      statusLabel: "已取消",
+      noticeStatus: "suppressed",
+      noticeLabel: "已取消",
+      merged: true,
+    },
+    {
+      status: "interrupted",
+      statusLabel: "已中断",
+      noticeStatus: "retry",
+      noticeLabel: "待重试",
+    },
+    {
+      status: "needs_confirmation",
+      statusLabel: "待确认",
+      noticeStatus: "pending",
+      noticeLabel: "待推送",
+    },
+  ])(
+    "keeps $status status, result, receipts, and notification distinct",
+    async ({ status, statusLabel, noticeStatus, noticeLabel, merged }) => {
+      const row = log(`job-${status}`, `账号 ${status}`, {
+        status,
+        triggers: ["recheck", "recovery"],
+        summary: {
+          outcome: "normal",
+          recovery: receipt("completed", { mark_cleared: true }),
+          verification: receipt("passed"),
+          restoration: receipt("restored"),
+        },
+        notification: {
+          status: noticeStatus,
+          merged: merged ?? false,
+          delivered_at: "2026-10-20T12:01:00Z",
+          reason: "fixture notification reason",
+        },
+      });
+      vi.mocked(api).mockImplementation(async (_method, path) => {
+        if (path === "/detection-logs?limit=50") return page([row]) as never;
+        if (path === `/model-tests/${row.job_id}`)
+          return { id: row.job_id, groups: [] } as never;
+        throw new Error(`Unexpected fixture request: ${path}`);
+      });
 
-    await render();
-    expect(rowButton(`账号 ${status}`).closest("tr")?.querySelector("td:nth-child(6)")?.textContent).toContain("未确认降智");
-    await act(async () => rowButton(`账号 ${status}`).click());
-    await settle();
+      await render();
+      expect(
+        rowButton(`账号 ${status}`)
+          .closest("tr")
+          ?.querySelector("td:nth-child(6)")?.textContent,
+      ).toContain("未确认降智");
+      await act(async () => rowButton(`账号 ${status}`).click());
+      await settle();
 
-    const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="自动检测日志详情"]')!;
-    expect(fact("执行状态", dialog)).toBe(statusLabel);
-    expect(fact("检测结论", dialog)).toBe("未确认降智");
-    expect(fact("复查恢复", dialog)).toBe("已取消降智标记");
-    expect(fact("恢复验证", dialog)).toBe("模型验证通过");
-    expect(fact("调度恢复", dialog)).toContain("已恢复调度");
-    expect(fact("通知", dialog)).toContain(noticeLabel);
-    expect(fact("通知", dialog)).toContain(merged ? "合并用卡通知" : "");
-    expect(fact("推送时间", dialog)).not.toBeNull();
-  });
+      const dialog = container.querySelector<HTMLElement>(
+        '[role="dialog"][aria-label="自动检测日志详情"]',
+      )!;
+      expect(fact("执行状态", dialog)).toBe(statusLabel);
+      expect(fact("检测结论", dialog)).toBe("未确认降智");
+      expect(fact("复查恢复", dialog)).toBe("已取消降智标记");
+      expect(fact("恢复验证", dialog)).toBe("模型验证通过");
+      expect(fact("调度恢复", dialog)).toContain("已恢复调度");
+      expect(fact("通知", dialog)).toContain(noticeLabel);
+      expect(fact("通知", dialog)).toContain(merged ? "合并用卡通知" : "");
+      expect(fact("推送时间", dialog)).not.toBeNull();
+    },
+  );
 
   it("shows LM source, null confidence and the exact lower-family group", async () => {
-    const row = log("lm-evidence", "LM 账号", { summary: {
-      engine: "lm_detector", sample_count: 3, probability: null, first_probability: null,
-      decision: "scored", outcome: "degraded", bank_version: { revision: "a".repeat(40) },
-      classification: { basis: "sample_family", group_indexes: [2] },
-      group_predictions: [{ index: 1, prediction: "gpt-6-sol" }, { index: 2, prediction: "grok-4.5" }, { index: 3, prediction: "gpt-6-sol" }],
-    } });
+    const row = log("lm-evidence", "LM 账号", {
+      summary: {
+        engine: "lm_detector",
+        sample_count: 3,
+        probability: null,
+        first_probability: null,
+        decision: "scored",
+        outcome: "degraded",
+        bank_version: { revision: "a".repeat(40) },
+        classification: { basis: "sample_family", group_indexes: [2] },
+        group_predictions: [
+          { index: 1, prediction: "gpt-6-sol" },
+          { index: 2, prediction: "grok-4.5" },
+          { index: 3, prediction: "gpt-6-sol" },
+        ],
+      },
+    });
     vi.mocked(api).mockImplementation(async (_method, path) => {
       if (path === "/detection-logs?limit=50") return page([row]) as never;
       return { id: row.job_id, groups: [] } as never;
@@ -243,7 +343,9 @@ describe("automatic detection log feed", () => {
     await render();
     await act(async () => rowButton("LM 账号").click());
     await settle();
-    const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="自动检测日志详情"]')!;
+    const dialog = container.querySelector<HTMLElement>(
+      '[role="dialog"][aria-label="自动检测日志详情"]',
+    )!;
     expect(fact("检测源", dialog)).toBe("LM Detector · 3 组");
     expect(fact("处置依据", dialog)).toBe("第 2 组跨家族证据");
     expect(fact("第 2 组", dialog)).toBe("grok-4.5");
@@ -263,14 +365,17 @@ describe("automatic detection log feed", () => {
     });
     vi.mocked(api).mockImplementation(async (_method, path) => {
       if (path === "/detection-logs?limit=50") return page([row]) as never;
-      if (path === `/model-tests/${row.job_id}`) return { id: row.job_id, groups: [] } as never;
+      if (path === `/model-tests/${row.job_id}`)
+        return { id: row.job_id, groups: [] } as never;
       throw new Error(`Unexpected fixture request: ${path}`);
     });
 
     await render();
     await act(async () => rowButton("正常结论账号").click());
     await settle();
-    const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="自动检测日志详情"]')!;
+    const dialog = container.querySelector<HTMLElement>(
+      '[role="dialog"][aria-label="自动检测日志详情"]',
+    )!;
     expect(fact("检测结论", dialog)).toBe("未确认降智");
     expect(fact("复查恢复", dialog)).toBe("已取消降智标记");
     expect(fact("恢复验证", dialog)).toBe("验证回执不可用");
@@ -295,8 +400,12 @@ describe("automatic detection log feed", () => {
     await settle();
 
     expect(api).toHaveBeenCalledWith("GET", `/model-tests/${jobId}`);
-    expect(container.querySelector('[role="status"]')?.textContent).toContain("任务详情暂不可用，已保留结果摘要");
-    const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="自动检测日志详情"]')!;
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      "任务详情暂不可用，已保留结果摘要",
+    );
+    const dialog = container.querySelector<HTMLElement>(
+      '[role="dialog"][aria-label="自动检测日志详情"]',
+    )!;
     expect(fact("汇总预测", dialog)).toBe("保留的汇总预测");
     expect(fact("检测结论", dialog)).toBe("未确认降智");
   });
@@ -312,31 +421,48 @@ describe("automatic detection log feed", () => {
       log("job-c", "记录 C", { created_at: "2026-10-20T10:00:00Z" }),
     ];
     vi.mocked(api).mockImplementation(async (_method, path) => {
-      if (path === "/detection-logs?limit=50") return page(first, overlappingCursor) as never;
-      if (path === `/detection-logs?limit=50&before=${encodeURIComponent(overlappingCursor)}`) return page(second) as never;
+      if (path === "/detection-logs?limit=50")
+        return page(first, overlappingCursor) as never;
+      if (
+        path ===
+        `/detection-logs?limit=50&before=${encodeURIComponent(overlappingCursor)}`
+      )
+        return page(second) as never;
       throw new Error(`Unexpected fixture request: ${path}`);
     });
 
     await render();
     expect(rowNames()).toEqual(["记录 A 原版", "记录 B"]);
-    await act(async () => container.querySelector<HTMLButtonElement>(".load-more")!.click());
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>(".load-more")!.click(),
+    );
     await settle();
 
-    expect(api).toHaveBeenCalledWith("GET", `/detection-logs?limit=50&before=${encodeURIComponent(overlappingCursor)}`);
+    expect(api).toHaveBeenCalledWith(
+      "GET",
+      `/detection-logs?limit=50&before=${encodeURIComponent(overlappingCursor)}`,
+    );
     expect(rowNames()).toEqual(["记录 A 后版", "记录 B", "记录 C"]);
     expect(container.querySelectorAll(".detection-log-row")).toHaveLength(3);
     expect(container.querySelector(".load-more")).toBeNull();
   });
 
   it("loads a switched connection before the old request settles and ignores stale results", async () => {
-    const oldPage = deferred<{ items: DetectionLog[]; next_cursor: string | null }>();
-    const offlinePage = deferred<{ items: DetectionLog[]; next_cursor: string | null }>();
+    const oldPage = deferred<{
+      items: DetectionLog[];
+      next_cursor: string | null;
+    }>();
+    const offlinePage = deferred<{
+      items: DetectionLog[];
+      next_cursor: string | null;
+    }>();
     let pageReads = 0;
     vi.mocked(api).mockImplementation(async (_method, path) => {
       if (path.startsWith("/detection-logs?limit=50")) {
         pageReads += 1;
         if (pageReads === 1) return oldPage.promise as never;
-        if (pageReads === 2) return page([log("job-new", "新连接记录")]) as never;
+        if (pageReads === 2)
+          return page([log("job-new", "新连接记录")]) as never;
         return offlinePage.promise as never;
       }
       throw new Error(`Unexpected fixture request: ${path}`);
@@ -348,16 +474,24 @@ describe("automatic detection log feed", () => {
     expect(pageReads).toBe(2);
     expect(rowNames()).toEqual(["新连接记录"]);
 
-    await act(async () => oldPage.resolve(page([log("job-old", "旧连接记录")])));
+    await act(async () =>
+      oldPage.resolve(page([log("job-old", "旧连接记录")])),
+    );
     await settle();
     expect(pageReads).toBe(2);
     expect(rowNames()).toEqual(["新连接记录"]);
 
-    await act(async () => container.querySelector<HTMLButtonElement>(".section-heading button")!.click());
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>(".section-heading button")!
+        .click(),
+    );
     await settle();
     expect(pageReads).toBe(3);
     await rerender({ online: false, connectionKey: "connection-new" });
-    await act(async () => offlinePage.resolve(page([log("job-late", "离线迟到记录")])));
+    await act(async () =>
+      offlinePage.resolve(page([log("job-late", "离线迟到记录")])),
+    );
     await settle();
     expect(rowNames()).toEqual(["新连接记录"]);
     expect(container.textContent).not.toContain("离线迟到记录");
@@ -365,14 +499,22 @@ describe("automatic detection log feed", () => {
 
   it("ignores exact-job detail responses after close and after going offline", async () => {
     const row = log("fixture-job-detail", "任务详情账号");
-    const closedDetail = deferred<{ id: string; groups: { index: number; status: string }[] }>();
-    const offlineDetail = deferred<{ id: string; groups: { index: number; status: string }[] }>();
+    const closedDetail = deferred<{
+      id: string;
+      groups: { index: number; status: string }[];
+    }>();
+    const offlineDetail = deferred<{
+      id: string;
+      groups: { index: number; status: string }[];
+    }>();
     let detailReads = 0;
     vi.mocked(api).mockImplementation(async (_method, path) => {
       if (path === "/detection-logs?limit=50") return page([row]) as never;
       if (path === `/model-tests/${row.job_id}`) {
         detailReads += 1;
-        return (detailReads === 1 ? closedDetail.promise : offlineDetail.promise) as never;
+        return (
+          detailReads === 1 ? closedDetail.promise : offlineDetail.promise
+        ) as never;
       }
       throw new Error(`Unexpected fixture request: ${path}`);
     });
@@ -381,21 +523,39 @@ describe("automatic detection log feed", () => {
     await act(async () => rowButton("任务详情账号").click());
     await settle();
     expect(api).toHaveBeenCalledWith("GET", `/model-tests/${row.job_id}`);
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="关闭日志详情"]')!.click());
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="关闭日志详情"]')!
+        .click(),
+    );
     await settle();
-    await act(async () => closedDetail.resolve({ id: row.job_id, groups: [{ index: 71, status: "completed" }] }));
+    await act(async () =>
+      closedDetail.resolve({
+        id: row.job_id,
+        groups: [{ index: 71, status: "completed" }],
+      }),
+    );
     await settle();
-    expect(container.querySelector('[role="dialog"][aria-label="自动检测日志详情"]')).toBeNull();
+    expect(
+      container.querySelector('[role="dialog"][aria-label="自动检测日志详情"]'),
+    ).toBeNull();
     expect(container.textContent).not.toContain("第 71 组");
 
     await act(async () => rowButton("任务详情账号").click());
     await settle();
     expect(detailReads).toBe(2);
     await rerender({ online: false });
-    await act(async () => offlineDetail.resolve({ id: row.job_id, groups: [{ index: 88, status: "completed" }] }));
+    await act(async () =>
+      offlineDetail.resolve({
+        id: row.job_id,
+        groups: [{ index: 88, status: "completed" }],
+      }),
+    );
     await settle();
 
-    expect(container.querySelector('[role="dialog"][aria-label="自动检测日志详情"]')).not.toBeNull();
+    expect(
+      container.querySelector('[role="dialog"][aria-label="自动检测日志详情"]'),
+    ).not.toBeNull();
     expect(container.textContent).not.toContain("第 88 组");
   });
 
@@ -404,7 +564,10 @@ describe("automatic detection log feed", () => {
     const newJobId = "job-new-connection";
     const oldRow = log(oldJobId, "旧连接账号");
     const newRow = log(newJobId, "新连接账号");
-    const pendingOldDetail = deferred<{ id: string; groups: { index: number; status: string }[] }>();
+    const pendingOldDetail = deferred<{
+      id: string;
+      groups: { index: number; status: string }[];
+    }>();
     let pageReads = 0;
     let oldDetailReads = 0;
     let newDetailReads = 0;
@@ -419,7 +582,10 @@ describe("automatic detection log feed", () => {
       }
       if (path === `/model-tests/${newJobId}`) {
         newDetailReads += 1;
-        return { id: newJobId, groups: [{ index: 2, status: "completed" }] } as never;
+        return {
+          id: newJobId,
+          groups: [{ index: 2, status: "completed" }],
+        } as never;
       }
       throw new Error(`Unexpected fixture request: ${path}`);
     });
@@ -432,10 +598,17 @@ describe("automatic detection log feed", () => {
 
     await rerender({ connectionKey: "connection-new" });
     expect(rowNames()).toEqual(["新连接账号"]);
-    expect(container.querySelector('[role="dialog"][aria-label="自动检测日志详情"]')).toBeNull();
+    expect(
+      container.querySelector('[role="dialog"][aria-label="自动检测日志详情"]'),
+    ).toBeNull();
     expect(oldDetailReads).toBe(1);
 
-    await act(async () => pendingOldDetail.resolve({ id: oldJobId, groups: [{ index: 71, status: "completed" }] }));
+    await act(async () =>
+      pendingOldDetail.resolve({
+        id: oldJobId,
+        groups: [{ index: 71, status: "completed" }],
+      }),
+    );
     await settle();
     expect(rowNames()).toEqual(["新连接账号"]);
     expect(container.textContent).not.toContain("第 71 组");
@@ -444,7 +617,9 @@ describe("automatic detection log feed", () => {
     await settle();
     expect(newDetailReads).toBe(1);
     expect(api).toHaveBeenCalledWith("GET", `/model-tests/${newJobId}`);
-    const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="自动检测日志详情"]')!;
+    const dialog = container.querySelector<HTMLElement>(
+      '[role="dialog"][aria-label="自动检测日志详情"]',
+    )!;
     expect(dialog.textContent).toContain("新连接账号");
     expect(dialog.textContent).toContain("第 2 组：已完成");
   });

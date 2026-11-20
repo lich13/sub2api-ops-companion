@@ -11,7 +11,10 @@ export function useBackAction(open: boolean, action: () => void) {
     if (!open) return;
     const entry = { action: () => current.current() };
     backActions.push(entry);
-    return () => { const i = backActions.indexOf(entry); if (i >= 0) backActions.splice(i, 1); };
+    return () => {
+      const i = backActions.indexOf(entry);
+      if (i >= 0) backActions.splice(i, 1);
+    };
   }, [open]);
 }
 
@@ -24,5 +27,7 @@ export function handleBack(fallback: () => void) {
 export async function listenBack(fallback: () => void) {
   if (!("__TAURI_INTERNALS__" in window)) return () => {};
   const listener = await onBackButtonPress(() => handleBack(fallback));
-  return () => { void listener.unregister(); };
+  return () => {
+    void listener.unregister();
+  };
 }

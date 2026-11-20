@@ -38,7 +38,9 @@ let container: HTMLDivElement;
 let root: Root;
 
 async function render(value: Account, onError = vi.fn()) {
-  await act(async () => root.render(<AccountStatus account={value} onError={onError} />));
+  await act(async () =>
+    root.render(<AccountStatus account={value} onError={onError} />),
+  );
   return onError;
 }
 
@@ -65,12 +67,8 @@ describe("remaining restriction", () => {
     expect(remainingRestriction("2026-10-16T05:27:00.000Z", now)).toBe(
       "5小时27分钟",
     );
-    expect(remainingRestriction("2026-10-16T00:02:30.000Z", now)).toBe(
-      "2分钟",
-    );
-    expect(remainingRestriction("2026-10-16T00:00:30.000Z", now)).toBe(
-      "30秒",
-    );
+    expect(remainingRestriction("2026-10-16T00:02:30.000Z", now)).toBe("2分钟");
+    expect(remainingRestriction("2026-10-16T00:00:30.000Z", now)).toBe("30秒");
   });
 
   it("distinguishes an expired deadline from a missing or invalid one", () => {
@@ -103,32 +101,66 @@ describe("account status display", () => {
   });
 
   it("updates at day and minute boundaries without losing the final seconds", async () => {
-    const value = account({ blockers: [{ code: "rate_limit_reset_at", label: "上游限流", until: "2026-10-17T00:00:00.000Z" }] });
+    const value = account({
+      blockers: [
+        {
+          code: "rate_limit_reset_at",
+          label: "上游限流",
+          until: "2026-10-17T00:00:00.000Z",
+        },
+      ],
+    });
     await render(value);
     expect(container.textContent).toContain("1天0小时后自动解除");
-    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
     expect(container.textContent).toContain("23小时59分钟后自动解除");
-    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
     expect(container.textContent).toContain("23小时58分钟后自动解除");
   });
 
   it("stops when hidden or expired and recalibrates after focus or clock rollback", async () => {
-    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    await render(account({ blockers: [{ code: "rate_limit_reset_at", label: "上游限流", until: "2026-10-16T00:00:02.000Z" }] }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("visible");
+    await render(
+      account({
+        blockers: [
+          {
+            code: "rate_limit_reset_at",
+            label: "上游限流",
+            until: "2026-10-16T00:00:02.000Z",
+          },
+        ],
+      }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
     expect(container.textContent).toContain("等待状态刷新");
     expect(vi.getTimerCount()).toBe(0);
     vi.setSystemTime(now);
-    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
     expect(container.textContent).toContain("2秒后自动解除");
     visibility.mockReturnValue("hidden");
-    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
     expect(vi.getTimerCount()).toBe(0);
     vi.setSystemTime(now + 1000);
     visibility.mockReturnValue("visible");
-    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
     expect(container.textContent).toContain("1秒后自动解除");
-    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
     expect(container.textContent).toContain("等待状态刷新");
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -148,9 +180,9 @@ describe("account status display", () => {
       onError,
     );
 
-    expect(container.querySelector(".account-status.pill.warning")?.textContent).toBe(
-      "上游限流",
-    );
+    expect(
+      container.querySelector(".account-status.pill.warning")?.textContent,
+    ).toBe("上游限流");
     expect(container.querySelector(".limit-until")?.textContent).toBe(
       "1分钟后自动解除",
     );
@@ -158,8 +190,7 @@ describe("account status display", () => {
       "预计解除 10-16 08:01:05",
     );
     expect(
-      container
-        .querySelector('[aria-label="查看最近上游错误 HTTP 429"]')
+      container.querySelector('[aria-label="查看最近上游错误 HTTP 429"]')
         ?.textContent,
     ).toContain("429");
     expect(
@@ -176,9 +207,11 @@ describe("account status display", () => {
     );
 
     await act(async () => {
-      container.querySelector<HTMLButtonElement>(
-        '[aria-label="查看最近上游错误 HTTP 429"]',
-      )!.click();
+      container
+        .querySelector<HTMLButtonElement>(
+          '[aria-label="查看最近上游错误 HTTP 429"]',
+        )!
+        .click();
     });
     expect(onError).toHaveBeenCalledExactlyOnceWith(71);
   });
@@ -194,7 +227,9 @@ describe("account status display", () => {
     );
 
     expect(container.querySelector(".limit-until")?.textContent).toBe(expected);
-    expect(container.querySelector(".account-status")?.textContent).toBe("上游限流");
+    expect(container.querySelector(".account-status")?.textContent).toBe(
+      "上游限流",
+    );
     expect(container.textContent).not.toContain("已解除");
     expect(container.textContent).not.toContain("已恢复");
     expect(container.textContent).not.toContain("可调度");
@@ -210,7 +245,9 @@ describe("account status display", () => {
       }),
     );
 
-    expect(container.querySelector(".account-status")?.textContent).toBe("可调度");
+    expect(container.querySelector(".account-status")?.textContent).toBe(
+      "可调度",
+    );
     expect(container.querySelector(".account-status.warning")).toBeNull();
     expect(
       container.querySelector('[aria-label="最近上游错误 HTTP 429"]'),

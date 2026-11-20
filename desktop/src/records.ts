@@ -132,7 +132,8 @@ export function requestType(record: {
   stream?: boolean | null;
 }): RequestType {
   for (const kind of [record.native_request_type, record.request_type]) {
-    if (kind && Object.prototype.hasOwnProperty.call(requestTypes, kind)) return kind as RequestType;
+    if (kind && Object.prototype.hasOwnProperty.call(requestTypes, kind))
+      return kind as RequestType;
   }
   return record.openai_ws_mode ? "ws_v2" : record.stream ? "stream" : "sync";
 }
@@ -163,8 +164,15 @@ export function decimal(value: string | null | undefined, digits: number) {
   const match = value.match(/^([+-]?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/);
   if (!match) return "—";
   const end = match[2].length + Number(match[4] || 0) + digits;
-  const coefficient = (match[2] + (match[3] || "")).padEnd(Math.max(0, end + 1), "0");
-  const rounded = end < 0 ? 0n : BigInt(coefficient.slice(0, end) || "0") + (coefficient[end] >= "5" ? 1n : 0n);
+  const coefficient = (match[2] + (match[3] || "")).padEnd(
+    Math.max(0, end + 1),
+    "0",
+  );
+  const rounded =
+    end < 0
+      ? 0n
+      : BigInt(coefficient.slice(0, end) || "0") +
+        (coefficient[end] >= "5" ? 1n : 0n);
   const scale = 10n ** BigInt(digits);
   return `${match[1] === "-" && rounded !== 0n ? "-" : ""}${rounded / scale}.${(rounded % scale).toString().padStart(digits, "0")}`;
 }
@@ -207,15 +215,29 @@ export function latencyTone(
 // frontend/src/utils/latencyHealth.ts (formatUsageOutputRate).
 // Use the full duration: output_tokens can include reasoning tokens.
 export function formatUsageOutputRate(
-  row: Pick<UsageRecord, "output_tokens" | "duration_ms" | "image_count" |
-    "image_output_tokens" | "billing_mode"> & { request_type?: string | null; native_request_type?: string },
+  row: Pick<
+    UsageRecord,
+    | "output_tokens"
+    | "duration_ms"
+    | "image_count"
+    | "image_output_tokens"
+    | "billing_mode"
+  > & { request_type?: string | null; native_request_type?: string },
 ): string {
   const { output_tokens: output, duration_ms: total } = row;
   const kind = row.native_request_type ?? row.request_type;
-  if ((row.image_count ?? 0) > 0 || (row.image_output_tokens ?? 0) > 0 ||
-      row.billing_mode === "image" ||
-      (kind && !["sync", "stream", "ws_v2", "cyber"].includes(kind)) ||
-      output == null || !Number.isFinite(output) || output <= 0 ||
-      total == null || !Number.isFinite(total) || total <= 0) return "—";
-  return `${(output * 1000 / total).toFixed(1)} tok/s`;
+  if (
+    (row.image_count ?? 0) > 0 ||
+    (row.image_output_tokens ?? 0) > 0 ||
+    row.billing_mode === "image" ||
+    (kind && !["sync", "stream", "ws_v2", "cyber"].includes(kind)) ||
+    output == null ||
+    !Number.isFinite(output) ||
+    output <= 0 ||
+    total == null ||
+    !Number.isFinite(total) ||
+    total <= 0
+  )
+    return "—";
+  return `${((output * 1000) / total).toFixed(1)} tok/s`;
 }

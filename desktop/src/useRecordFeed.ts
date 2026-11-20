@@ -50,92 +50,140 @@ export function useRecordFeed(
     current.current = { ...current.current, ...patch };
     setFeed(current.current);
   }, []);
-  const serial = useCallback(<T,>(fn: () => Promise<T>) => {
+  const serial = useCallback(<T>(fn: () => Promise<T>) => {
     const next = queue.current.then(fn, fn);
     queue.current = next.catch(() => {});
     return next;
   }, []);
-  const request = useCallback((mode: "head" | "more" | "poll", generation = epoch.current, retry = false) => {
-    const cursor = mode === "more" ? current.current.cursor : null;
-    const revision = pageRevision.current;
-    const identity = `${generation}:${revision}:${cursor}`;
-    if (mode === "more") {
-      if (!enabled.current || !canPage.current || !cursor || current.current.loading ||
-          (current.current.pageError && !retry) || pendingPages.current.has(identity)) return Promise.resolve(false);
-      pendingPages.current.add(identity);
-      update({ loading: true, pageError: "" });
-    }
-    return serial(async () => {
-      const valid = () => epoch.current === generation && enabled.current && liveQuery.current === query;
-      if (!valid()) return false;
-      if (mode === "more" && (!canPage.current || revision !== pageRevision.current || cursor !== current.current.cursor)) {
-        update({ loading: false });
-        return false;
+  const request = useCallback(
+    (
+      mode: "head" | "more" | "poll",
+      generation = epoch.current,
+      retry = false,
+    ) => {
+      const cursor = mode === "more" ? current.current.cursor : null;
+      const revision = pageRevision.current;
+      const identity = `${generation}:${revision}:${cursor}`;
+      if (mode === "more") {
+        if (
+          !enabled.current ||
+          !canPage.current ||
+          !cursor ||
+          current.current.loading ||
+          (current.current.pageError && !retry) ||
+          pendingPages.current.has(identity)
+        )
+          return Promise.resolve(false);
+        pendingPages.current.add(identity);
+        update({ loading: true, pageError: "" });
       }
-      if (mode !== "poll") update({ loading: true });
-      try {
-        if (mode === "poll" && current.current.latest !== null) {
-          const check = await api<{ new_count: number }>(
+      return serial(async () => {
+        const valid = () =>
+          epoch.current === generation &&
+          enabled.current &&
+          liveQuery.current === query;
+        if (!valid()) return false;
+        if (
+          mode === "more" &&
+          (!canPage.current ||
+            revision !== pageRevision.current ||
+            cursor !== current.current.cursor)
+        ) {
+          update({ loading: false });
+          return false;
+        }
+        if (mode !== "poll") update({ loading: true });
+        try {
+          if (mode === "poll" && current.current.latest !== null) {
+            const check = await api<{ new_count: number }>(
+              "GET",
+              `/usage-records?${query}&after_id=${current.current.latest}`,
+            );
+            if (!valid()) return false;
+            update({ newCount: check.new_count, error: "" });
+            if (
+              !check.new_count ||
+              reading.current ||
+              current.current.pageError ||
+              current.current.items.length > 50
+            )
+              return true;
+          }
+          const page = await api<RecordPage>(
             "GET",
-            `/usage-records?${query}&after_id=${current.current.latest}`,
+            `/usage-records?${query}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : "&include_summary=true"}`,
           );
           if (!valid()) return false;
-          update({ newCount: check.new_count, error: "" });
+          // A user can start reading while the automatic refresh is in flight.
           if (
-            !check.new_count ||
-            reading.current ||
-            current.current.pageError ||
-            current.current.items.length > 50
+            mode === "poll" &&
+            (reading.current ||
+              current.current.pageError ||
+              current.current.items.length > 50)
           )
             return true;
-        }
-        const page = await api<RecordPage>(
-          "GET",
-          `/usage-records?${query}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : "&include_summary=true"}`,
-        );
-        if (!valid()) return false;
-        // A user can start reading while the automatic refresh is in flight.
-        if (
-          mode === "poll" &&
-          (reading.current || current.current.pageError || current.current.items.length > 50)
-        )
-          return true;
-        const items = mode === "more"
-          ? [...new Map([...current.current.items, ...page.items].map(row => [row.id, row])).values()]
-          : page.items;
-        const stalled = mode === "more" && !!page.next_cursor &&
-          (page.next_cursor === cursor || consumedPages.current.has(`${revision}:${page.next_cursor}`) ||
-            items.length === current.current.items.length);
-        if (mode !== "more") {
-          ++pageRevision.current;
-          consumedPages.current.clear();
-        } else if (!stalled) consumedPages.current.add(`${revision}:${cursor}`);
-        update({
-          items,
-          cursor: stalled ? cursor : page.next_cursor,
-          latest: mode === "more" ? current.current.latest : page.latest_id,
-          pageError: stalled ? "分页未返回后续记录，请重试" : "",
-          observed:
-            mode === "more" ? current.current.observed : page.observed_at,
-          totalCost:
+          const items =
             mode === "more"
-              ? current.current.totalCost
-              : (page.summary?.actual_cost ?? null),
-          newCount: mode === "more" ? current.current.newCount : 0,
-          error: "",
-        });
-        return true;
-      } catch (error) {
-        if (valid())
-          update(mode === "more"
-            ? { pageError: String(error instanceof Error ? error.message : error) }
-            : { error: String(error instanceof Error ? error.message : error) });
-        return false;
-      } finally {
-        if (valid()) update({ loading: false });
-      }
-    }).finally(() => { pendingPages.current.delete(identity); });
-  }, [query, serial, update]);
+              ? [
+                  ...new Map(
+                    [...current.current.items, ...page.items].map((row) => [
+                      row.id,
+                      row,
+                    ]),
+                  ).values(),
+                ]
+              : page.items;
+          const stalled =
+            mode === "more" &&
+            !!page.next_cursor &&
+            (page.next_cursor === cursor ||
+              consumedPages.current.has(`${revision}:${page.next_cursor}`) ||
+              items.length === current.current.items.length);
+          if (mode !== "more") {
+            ++pageRevision.current;
+            consumedPages.current.clear();
+          } else if (!stalled)
+            consumedPages.current.add(`${revision}:${cursor}`);
+          update({
+            items,
+            cursor: stalled ? cursor : page.next_cursor,
+            latest: mode === "more" ? current.current.latest : page.latest_id,
+            pageError: stalled ? "分页未返回后续记录，请重试" : "",
+            observed:
+              mode === "more" ? current.current.observed : page.observed_at,
+            totalCost:
+              mode === "more"
+                ? current.current.totalCost
+                : (page.summary?.actual_cost ?? null),
+            newCount: mode === "more" ? current.current.newCount : 0,
+            error: "",
+          });
+          return true;
+        } catch (error) {
+          if (valid())
+            update(
+              mode === "more"
+                ? {
+                    pageError: String(
+                      error instanceof Error ? error.message : error,
+                    ),
+                  }
+                : {
+                    error: String(
+                      error instanceof Error ? error.message : error,
+                    ),
+                  },
+            );
+          return false;
+        } finally {
+          if (valid()) update({ loading: false });
+        }
+      }).finally(() => {
+        pendingPages.current.delete(identity);
+      });
+    },
+    [query, serial, update],
+  );
   const more = useCallback(() => request("more"), [request]);
   useEffect(() => {
     const generation = ++epoch.current;

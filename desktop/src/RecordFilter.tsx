@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Search, X } from "lucide-react";
 import { api } from "./bridge";
 import type { RecordOption, RecordOptionPage } from "./records";
@@ -25,7 +19,10 @@ export default function RecordFilter({
   userId?: number;
   options?: RecordOption[];
   onChange: (value: RecordOption | null) => void;
-  onOpenChange?: (kind: "users" | "api_keys" | "accounts", open: boolean) => void;
+  onOpenChange?: (
+    kind: "users" | "api_keys" | "accounts",
+    open: boolean,
+  ) => void;
 }) {
   const label = { users: "用户", api_keys: "API 密钥", accounts: "账户" }[kind];
   const [open, setOpen] = useState(false);
@@ -86,7 +83,11 @@ export default function RecordFilter({
           if (!valid()) return;
           setItems((old) =>
             (page
-              ? [...new Map([...old, ...result.items].map((item) => [item.id, item])).values()]
+              ? [
+                  ...new Map(
+                    [...old, ...result.items].map((item) => [item.id, item]),
+                  ).values(),
+                ]
               : result.items
             ).filter((item) => !item.deleted),
           );
@@ -174,9 +175,12 @@ export default function RecordFilter({
   const needle = query.trim().toLowerCase();
   const visibleItems =
     kind === "accounts"
-      ? (options ?? []).filter((item) =>
-          !item.deleted && (!needle || item.name?.toLowerCase().includes(needle) ||
-            (Number.isSafeInteger(id) && item.id === id)),
+      ? (options ?? []).filter(
+          (item) =>
+            !item.deleted &&
+            (!needle ||
+              item.name?.toLowerCase().includes(needle) ||
+              (Number.isSafeInteger(id) && item.id === id)),
         )
       : items;
   const choices: (RecordOption | null)[] = [null, ...visibleItems];
@@ -228,7 +232,17 @@ export default function RecordFilter({
             }
           }}
         >
-          <header className="mobile-sheet-heading"><strong>选择{label}</strong><button type="button" className="icon-button" aria-label={`关闭${label}选择`} onClick={close}><X size={20}/></button></header>
+          <header className="mobile-sheet-heading">
+            <strong>选择{label}</strong>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={`关闭${label}选择`}
+              onClick={close}
+            >
+              <X size={20} />
+            </button>
+          </header>
           <div className="record-filter-search">
             <Search size={14} />
             <input

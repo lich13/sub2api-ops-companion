@@ -29,7 +29,9 @@ let container: HTMLDivElement;
 let root: Root;
 
 async function render(connectionKey: string) {
-  await act(async () => root.render(<ConnectionStatusCard connectionKey={connectionKey} />));
+  await act(async () =>
+    root.render(<ConnectionStatusCard connectionKey={connectionKey} />),
+  );
 }
 
 async function settle() {
@@ -40,9 +42,9 @@ async function settle() {
 }
 
 async function click(label: string) {
-  const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (item) => item.textContent?.includes(label),
-  );
+  const button = [
+    ...container.querySelectorAll<HTMLButtonElement>("button"),
+  ].find((item) => item.textContent?.includes(label));
   if (!button) throw new Error(`Missing button: ${label}`);
   await act(async () => button.click());
 }
@@ -64,8 +66,9 @@ describe("connection status card", () => {
     const previous = deferred<ConnectionStatus>();
     const current = deferred<ConnectionStatus>();
     let request = 0;
-    vi.mocked(api).mockImplementation(async () =>
-      (request++ === 0 ? previous.promise : current.promise) as never,
+    vi.mocked(api).mockImplementation(
+      async () =>
+        (request++ === 0 ? previous.promise : current.promise) as never,
     );
 
     await render("connection-old");

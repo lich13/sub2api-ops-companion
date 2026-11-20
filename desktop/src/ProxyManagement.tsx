@@ -89,10 +89,15 @@ export default function ProxyManagement({
   mobile?: boolean;
 }) {
   const [narrow, setNarrow] = useState(
-    () => typeof window !== "undefined" && Boolean(window.matchMedia?.("(max-width: 760px)").matches),
+    () =>
+      typeof window !== "undefined" &&
+      Boolean(window.matchMedia?.("(max-width: 760px)").matches),
   );
   useEffect(() => {
-    const media = typeof window !== "undefined" ? window.matchMedia?.("(max-width: 760px)") : undefined;
+    const media =
+      typeof window !== "undefined"
+        ? window.matchMedia?.("(max-width: 760px)")
+        : undefined;
     if (!media) return;
     const sync = () => setNarrow(media.matches);
     sync();
@@ -861,7 +866,8 @@ export default function ProxyManagement({
                     type="checkbox"
                     aria-label="全选 IP"
                     checked={
-                      data.items.length > 0 && selected.size === data.items.length
+                      data.items.length > 0 &&
+                      selected.size === data.items.length
                     }
                     onChange={(e) =>
                       setSelected(
@@ -937,7 +943,9 @@ export default function ProxyManagement({
                   <td>{quality(row)}</td>
                   <td>
                     <time
-                      className={row.status === "expired" ? "bad-text" : "muted"}
+                      className={
+                        row.status === "expired" ? "bad-text" : "muted"
+                      }
                     >
                       {row.expires_at ? fullTime(row.expires_at) : "长期有效"}
                     </time>

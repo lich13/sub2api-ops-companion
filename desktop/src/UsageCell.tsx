@@ -3,7 +3,10 @@ import { accountOperation } from "./accountOperations";
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, RefreshCw, RotateCw } from "lucide-react";
 import KeyQuotaView, { KeyQuotaSummary } from "./KeyQuota";
-import { useKeyQuotaSettings, KeyQuotaSettingsDialog } from "./KeyQuotaSettings";
+import {
+  useKeyQuotaSettings,
+  KeyQuotaSettingsDialog,
+} from "./KeyQuotaSettings";
 import { readNativeUsage } from "./nativeUsage";
 import { useBackAction } from "./mobile";
 import {
@@ -67,87 +70,230 @@ export default function UsageCell({
   compact?: boolean;
 }) {
   const quotaSettings = useKeyQuotaSettings();
-  const [quotaDialog, setQuotaDialog] = useState(false), [quotaBusy, setQuotaBusy] = useState(false);
+  const [quotaDialog, setQuotaDialog] = useState(false),
+    [quotaBusy, setQuotaBusy] = useState(false);
   const [busy, setBusy] = useState<UsageAction | null>(null);
   const running = useRef(false);
   const [confirm, setConfirm] = useState<{ action: UsageAction } | null>(null);
   useBackAction(!!confirm, () => setConfirm(null));
-  const [native, setNative] = useState<{ identity: string; value: UsageSummary } | null>(null);
+  const [native, setNative] = useState<{
+    identity: string;
+    value: UsageSummary;
+  } | null>(null);
   const lastRead = useRef({ identity: "", at: 0 });
   const request = useRef(0);
-  const parent = account.type === "apikey" && account.parent_account_id ? quotaSettings.accounts.find(a => a.id === account.parent_account_id) : undefined;
+  const parent =
+    account.type === "apikey" && account.parent_account_id
+      ? quotaSettings.accounts.find((a) => a.id === account.parent_account_id)
+      : undefined;
   const identity = `${connectionKey}:${account.id}:${account.operation_versions.usage}:${parent?.operation_versions.usage ?? ""}`;
-  const usage = native?.identity === identity ? { ...native.value,
-    today: account.usage?.stats_status === "error" ? null : account.usage?.today ?? native.value.today,
-    stats_status: native.value.stats_status === "error" ? "error" : account.usage?.stats_status ?? native.value.stats_status,
-  } : account.usage;
-  const latestUsage = useRef(usage); latestUsage.current = usage;
-  const acceptNative = (value: UsageSummary) => setNative(previous => {
-    if (previous?.identity === identity && (value.status === "error" || value.status === "authorization_required")) {
-      value = { ...value,
-        windows: value.windows.some(w => w.source !== "configured_quota") ? value.windows : [...value.windows, ...previous.value.windows.filter(w => w.source !== "configured_quota").map(w => ({ ...w, status: "error" as const }))],
-        balances: value.balances?.length ? value.balances : previous.value.balances?.map(b => ({ ...b, status: "error" as const })),
-      };
-    }
-    latestUsage.current = value;
-    return { identity, value };
-  });
-  useEffect(() => () => { ++request.current; lastRead.current = { identity: "", at: 0 }; }, [identity, online, active]);
+  const usage =
+    native?.identity === identity
+      ? {
+          ...native.value,
+          today:
+            account.usage?.stats_status === "error"
+              ? null
+              : (account.usage?.today ?? native.value.today),
+          stats_status:
+            native.value.stats_status === "error"
+              ? "error"
+              : (account.usage?.stats_status ?? native.value.stats_status),
+        }
+      : account.usage;
+  const latestUsage = useRef(usage);
+  latestUsage.current = usage;
+  const acceptNative = (value: UsageSummary) =>
+    setNative((previous) => {
+      if (
+        previous?.identity === identity &&
+        (value.status === "error" || value.status === "authorization_required")
+      ) {
+        value = {
+          ...value,
+          windows: value.windows.some((w) => w.source !== "configured_quota")
+            ? value.windows
+            : [
+                ...value.windows,
+                ...previous.value.windows
+                  .filter((w) => w.source !== "configured_quota")
+                  .map((w) => ({ ...w, status: "error" as const })),
+              ],
+          balances: value.balances?.length
+            ? value.balances
+            : previous.value.balances?.map((b) => ({
+                ...b,
+                status: "error" as const,
+              })),
+        };
+      }
+      latestUsage.current = value;
+      return { identity, value };
+    });
+  useEffect(
+    () => () => {
+      ++request.current;
+      lastRead.current = { identity: "", at: 0 };
+    },
+    [identity, online, active],
+  );
   useEffect(() => {
     const refreshed = (event: Event) => {
-      const { connectionKey: scope, batch } = (event as CustomEvent<{ connectionKey: string; batch: QuotaBatch }>).detail;
+      const { connectionKey: scope, batch } = (
+        event as CustomEvent<{ connectionKey: string; batch: QuotaBatch }>
+      ).detail;
       if (scope !== connectionKey) return;
-      const value = batch.items.find(item => item.account_id === account.id)?.usage;
-      if (value) { ++request.current; lastRead.current = { identity, at: Date.now() }; acceptNative(value); }
+      const value = batch.items.find(
+        (item) => item.account_id === account.id,
+      )?.usage;
+      if (value) {
+        ++request.current;
+        lastRead.current = { identity, at: Date.now() };
+        acceptNative(value);
+      }
     };
     document.addEventListener(usageRefreshEvent, refreshed);
     return () => document.removeEventListener(usageRefreshEvent, refreshed);
   }, [identity, connectionKey, account.id]);
   useEffect(() => {
-    if (account.type === "apikey" || !online || !active || !account.usage?.native_read || running.current) return;
-    if (lastRead.current.identity === identity && Date.now() - lastRead.current.at < 60_000) return;
+    if (
+      account.type === "apikey" ||
+      !online ||
+      !active ||
+      !account.usage?.native_read ||
+      running.current
+    )
+      return;
+    if (
+      lastRead.current.identity === identity &&
+      Date.now() - lastRead.current.at < 60_000
+    )
+      return;
     lastRead.current = { identity, at: Date.now() };
     const token = ++request.current;
-    void readNativeUsage(identity, account.id, () => request.current === token).then(value => {
-      if (request.current === token) acceptNative(value);
-    }).catch(() => {
-      if (request.current === token) acceptNative({ ...account.usage!, status: "error", message: "用量读取失败，请重新查询", windows: account.usage!.windows.map(w => w.source === "configured_quota" ? w : ({ ...w, status: "error" })) });
-    });
+    void readNativeUsage(identity, account.id, () => request.current === token)
+      .then((value) => {
+        if (request.current === token) acceptNative(value);
+      })
+      .catch(() => {
+        if (request.current === token)
+          acceptNative({
+            ...account.usage!,
+            status: "error",
+            message: "用量读取失败，请重新查询",
+            windows: account.usage!.windows.map((w) =>
+              w.source === "configured_quota" ? w : { ...w, status: "error" },
+            ),
+          });
+      });
   }, [identity, account.usage, account.id, online, active]);
   useEffect(() => {
-    if (account.type !== "apikey" || !account.usage?.native_read || !online || !active || !quotaSettings.visible || !quotaSettings.ready || quotaSettings.seconds === 0) return;
-    let alive = true, timer: ReturnType<typeof setTimeout>;
+    if (
+      account.type !== "apikey" ||
+      !account.usage?.native_read ||
+      !online ||
+      !active ||
+      !quotaSettings.visible ||
+      !quotaSettings.ready ||
+      quotaSettings.seconds === 0
+    )
+      return;
+    let alive = true,
+      timer: ReturnType<typeof setTimeout>;
     const interval = quotaSettings.seconds;
     const tick = async () => {
       const quota = latestUsage.current?.key_quota;
-      const next = Math.max(quota?.checked_at ? quota.checked_at + interval : 0, quota?.retry_at ?? 0);
+      const next = Math.max(
+        quota?.checked_at ? quota.checked_at + interval : 0,
+        quota?.retry_at ?? 0,
+      );
       if (next > Date.now() / 1000 || running.current) {
-        timer = setTimeout(() => void tick(), Math.min(2_147_483_647, Math.max(1000, (next - Date.now() / 1000) * 1000))); return;
+        timer = setTimeout(
+          () => void tick(),
+          Math.min(
+            2_147_483_647,
+            Math.max(1000, (next - Date.now() / 1000) * 1000),
+          ),
+        );
+        return;
       }
       const token = ++request.current;
       setQuotaBusy(true);
       try {
-        const value = await readNativeUsage(identity, account.id, () => alive && request.current === token);
+        const value = await readNativeUsage(
+          identity,
+          account.id,
+          () => alive && request.current === token,
+        );
         if (alive && request.current === token) acceptNative(value);
       } catch {
         if (alive && request.current === token && latestUsage.current) {
           const previous = latestUsage.current;
-          acceptNative({ ...previous, key_quota: {
-            plans: [], subscriptions: [], source: null, success_at: null, retry_at: null, next_refresh_at: null, key_status: null, expires_at: null, expires_at_unix: null, today: null, total_usage: null,
-            ...previous.key_quota, state: "error", stale: !!previous.key_quota?.success_at, error: "余额读取失败，请重新查询", checked_at: Date.now() / 1000,
-          } });
+          acceptNative({
+            ...previous,
+            key_quota: {
+              plans: [],
+              subscriptions: [],
+              source: null,
+              success_at: null,
+              retry_at: null,
+              next_refresh_at: null,
+              key_status: null,
+              expires_at: null,
+              expires_at_unix: null,
+              today: null,
+              total_usage: null,
+              ...previous.key_quota,
+              state: "error",
+              stale: !!previous.key_quota?.success_at,
+              error: "余额读取失败，请重新查询",
+              checked_at: Date.now() / 1000,
+            },
+          });
         }
       } finally {
         if (alive) {
           setQuotaBusy(false);
           const q = latestUsage.current?.key_quota;
-          timer = setTimeout(() => void tick(), Math.min(2_147_483_647, Math.max(1000, (Math.max(q?.checked_at ? q.checked_at + interval : Date.now()/1000 + interval, q?.retry_at ?? 0) - Date.now()/1000)*1000)));
+          timer = setTimeout(
+            () => void tick(),
+            Math.min(
+              2_147_483_647,
+              Math.max(
+                1000,
+                (Math.max(
+                  q?.checked_at
+                    ? q.checked_at + interval
+                    : Date.now() / 1000 + interval,
+                  q?.retry_at ?? 0,
+                ) -
+                  Date.now() / 1000) *
+                  1000,
+              ),
+            ),
+          );
         }
       }
     };
     void tick();
-    return () => { alive = false; clearTimeout(timer); ++request.current; setQuotaBusy(false); };
-  }, [identity, account.id, account.type, account.usage?.native_read, online, active, quotaSettings.visible, quotaSettings.ready, quotaSettings.seconds, quotaSettings.revision]);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      ++request.current;
+      setQuotaBusy(false);
+    };
+  }, [
+    identity,
+    account.id,
+    account.type,
+    account.usage?.native_read,
+    online,
+    active,
+    quotaSettings.visible,
+    quotaSettings.ready,
+    quotaSettings.seconds,
+    quotaSettings.revision,
+  ]);
   const windows = usage?.windows ?? account.usage_windows ?? [];
   async function run(action: UsageAction, confirmed = false) {
     if (running.current || !online) return;
@@ -160,13 +306,23 @@ export default function UsageCell({
     setConfirm(null);
     try {
       const token = ++request.current;
-      const result = await accountOperation<{ message: string; account?: Account }>(account, action === "reset_quota" ? "reset_quota" : "usage", { action, confirmed });
+      const result = await accountOperation<{
+        message: string;
+        account?: Account;
+      }>(account, action === "reset_quota" ? "reset_quota" : "usage", {
+        action,
+        confirmed,
+      });
       if (request.current !== token) return;
       if (account.type === "apikey" && action === "query_usage") {
-        const value = await api<UsageSummary>("GET", `/accounts/${account.id}/usage`);
+        const value = await api<UsageSummary>(
+          "GET",
+          `/accounts/${account.id}/usage`,
+        );
         if (request.current !== token) return;
         acceptNative(value);
-      } else if (result.account?.usage?.native_read) acceptNative(result.account.usage);
+      } else if (result.account?.usage?.native_read)
+        acceptNative(result.account.usage);
       report(result.message);
     } catch (error) {
       report(error);
@@ -177,13 +333,37 @@ export default function UsageCell({
       setBusy(null);
     }
   }
-  if (compact) return <KeyQuotaSummary quota={usage?.key_quota} busy={quotaBusy}/>;
+  if (compact)
+    return <KeyQuotaSummary quota={usage?.key_quota} busy={quotaBusy} />;
   return (
     <div className="usage-cell">
-      {account.type === "apikey" && <KeyQuotaView quota={usage?.key_quota} busy={quotaBusy || busy !== null} online={online} refresh={() => void run("query_usage")} settings={() => setQuotaDialog(true)}/>}
-      {quotaDialog && <KeyQuotaSettingsDialog account={account} online={online} close={() => setQuotaDialog(false)} saved={() => { ++request.current; latestUsage.current = account.usage; setNative(null); void run("query_usage"); }}/>}
-      {usage?.stats_status === "error" && <span className="usage-unknown">统计暂不可用，请重试</span>}
-      {usage?.stats_status !== "error" && (usage?.branch === "apikey" || usage?.today) &&
+      {account.type === "apikey" && (
+        <KeyQuotaView
+          quota={usage?.key_quota}
+          busy={quotaBusy || busy !== null}
+          online={online}
+          refresh={() => void run("query_usage")}
+          settings={() => setQuotaDialog(true)}
+        />
+      )}
+      {quotaDialog && (
+        <KeyQuotaSettingsDialog
+          account={account}
+          online={online}
+          close={() => setQuotaDialog(false)}
+          saved={() => {
+            ++request.current;
+            latestUsage.current = account.usage;
+            setNative(null);
+            void run("query_usage");
+          }}
+        />
+      )}
+      {usage?.stats_status === "error" && (
+        <span className="usage-unknown">统计暂不可用，请重试</span>
+      )}
+      {usage?.stats_status !== "error" &&
+        (usage?.branch === "apikey" || usage?.today) &&
         (usage.today ? (
           <Stats stats={usage.today} />
         ) : (
@@ -220,7 +400,8 @@ export default function UsageCell({
               <span
                 className={`usage-badge ${w.color ?? (w.label === "7d" ? "emerald" : "indigo")}`}
               >
-                {w.label}{w.estimated && "（估算）"}
+                {w.label}
+                {w.estimated && "（估算）"}
               </span>
               <div
                 className="usage-track"
@@ -266,37 +447,62 @@ export default function UsageCell({
           / ${usage!.monthly_limit!.toFixed(2)}
         </span>
       )}
-      {usage?.balances?.map((entry, i) => <span className="usage-money" key={`${entry.currency}:${i}`} title={`采集 ${fullTime(entry.observed_at)}`}>余额 {entry.currency || "币种未提供"} {entry.balance.toFixed(2)}{entry.status && entry.status !== "known" && ` · ${{ stale: "历史", error: "异常", unknown: "采集时间未知" }[entry.status]}`}</span>)}
-      {usage?.message && <span className="usage-unknown" role={usage.status === "error" ? "status" : undefined}>{usage.message}</span>}
-      {!windows.length && !usage?.message && !usage?.today && !usage?.balances?.length &&
+      {usage?.balances?.map((entry, i) => (
+        <span
+          className="usage-money"
+          key={`${entry.currency}:${i}`}
+          title={`采集 ${fullTime(entry.observed_at)}`}
+        >
+          余额 {entry.currency || "币种未提供"} {entry.balance.toFixed(2)}
+          {entry.status &&
+            entry.status !== "known" &&
+            ` · ${{ stale: "历史", error: "异常", unknown: "采集时间未知" }[entry.status]}`}
+        </span>
+      ))}
+      {usage?.message && (
+        <span
+          className="usage-unknown"
+          role={usage.status === "error" ? "status" : undefined}
+        >
+          {usage.message}
+        </span>
+      )}
+      {!windows.length &&
+        !usage?.message &&
+        !usage?.today &&
+        !usage?.balances?.length &&
         usage?.branch !== "apikey" &&
         !usage?.prepaid_balance && <span className="usage-unknown">未知</span>}
       {!!usage?.actions.length && (
         <div className="usage-actions">
-          {usage.actions.filter(action => account.type !== "apikey" || action !== "query_usage").map((action) => (
-            <button
-              key={action}
-              className={`usage-action ${action}`}
-              disabled={
-                !online ||
-                busy !== null ||
-                (action === "reset_quota" && !usage.reset_credits?.available)
-              }
-              onClick={() => void run(action)}
-            >
-              {busy === action ? (
-                <LoaderCircle className="spin" size={11} />
-              ) : action === "reset_quota" ? (
-                <RotateCw size={11} />
-              ) : (
-                <RefreshCw size={11} />
-              )}
-              {labels[action]}
-              {action === "query_reset_credits"
-                ? ` ${usage.reset_credits?.available ?? "—"}`
-                : ""}
-            </button>
-          ))}
+          {usage.actions
+            .filter(
+              (action) => account.type !== "apikey" || action !== "query_usage",
+            )
+            .map((action) => (
+              <button
+                key={action}
+                className={`usage-action ${action}`}
+                disabled={
+                  !online ||
+                  busy !== null ||
+                  (action === "reset_quota" && !usage.reset_credits?.available)
+                }
+                onClick={() => void run(action)}
+              >
+                {busy === action ? (
+                  <LoaderCircle className="spin" size={11} />
+                ) : action === "reset_quota" ? (
+                  <RotateCw size={11} />
+                ) : (
+                  <RefreshCw size={11} />
+                )}
+                {labels[action]}
+                {action === "query_reset_credits"
+                  ? ` ${usage.reset_credits?.available ?? "—"}`
+                  : ""}
+              </button>
+            ))}
         </div>
       )}
       {!!usage?.reset_credits?.expires_at.length && (
@@ -309,26 +515,80 @@ export default function UsageCell({
           ))}
         </div>
       )}
-      {account.recovery_monitor && !["cancelled", "recovered"].includes(account.recovery_monitor.status) && (!account.auto_reset_credit || !!account.auto_reset_credit.outcome) && (
-        <details className="auto-reset-status">
-          <summary>{account.recovery_monitor.label}</summary>
-          {account.recovery_monitor.attempt_count != null && <span>已尝试 {account.recovery_monitor.attempt_count} 次</span>}
-          {account.recovery_monitor.next_at && <time>下次 {fullTime(account.recovery_monitor.next_at)}</time>}
-        </details>
-      )}
-      {account.auto_reset_credit && (!["manual", "recovered", "closed"].includes(account.auto_reset_credit.stage) || !!account.auto_reset_credit.outcome) && (
-        <details className="auto-reset-status">
-          <summary>{account.auto_reset_credit.outcome ? "最近用卡结果" : account.auto_reset_credit.label}</summary>
-          {account.auto_reset_credit.outcome && <span>{account.auto_reset_credit.label}</span>}
-          {!account.auto_reset_credit.outcome && (account.auto_reset_credit.verification_deadline_at || account.auto_reset_credit.consume_deadline_at) && <time>截止 {fullTime(account.auto_reset_credit.verification_deadline_at || account.auto_reset_credit.consume_deadline_at || "")}</time>}
-          {account.auto_reset_credit.notification_status && <span>{{ pending: "结果通知待发送", delivered: "结果通知已发送", failed: "通知发送失败", suppressed: "Bark 已关闭" }[account.auto_reset_credit.notification_status] || ""}</span>}
-          {account.auto_reset_credit.evidence_source && <span>依据：{account.auto_reset_credit.evidence_source === "account_rate_limit" ? "账号限流状态" : "上游 429 记录"}</span>}
-          {account.auto_reset_credit.error && <span role="status">{account.auto_reset_credit.error}</span>}
-          {account.auto_reset_credit.next_at && <time>下次 {fullTime(account.auto_reset_credit.next_at)}</time>}
-          {account.auto_reset_credit.attempt_at && <time>用卡 {fullTime(account.auto_reset_credit.attempt_at)}</time>}
-          {account.auto_reset_credit.test_completed_at && <time>测活 {fullTime(account.auto_reset_credit.test_completed_at)}</time>}
-        </details>
-      )}
+      {account.recovery_monitor &&
+        !["cancelled", "recovered"].includes(account.recovery_monitor.status) &&
+        (!account.auto_reset_credit || !!account.auto_reset_credit.outcome) && (
+          <details className="auto-reset-status">
+            <summary>{account.recovery_monitor.label}</summary>
+            {account.recovery_monitor.attempt_count != null && (
+              <span>已尝试 {account.recovery_monitor.attempt_count} 次</span>
+            )}
+            {account.recovery_monitor.next_at && (
+              <time>下次 {fullTime(account.recovery_monitor.next_at)}</time>
+            )}
+          </details>
+        )}
+      {account.auto_reset_credit &&
+        (!["manual", "recovered", "closed"].includes(
+          account.auto_reset_credit.stage,
+        ) ||
+          !!account.auto_reset_credit.outcome) && (
+          <details className="auto-reset-status">
+            <summary>
+              {account.auto_reset_credit.outcome
+                ? "最近用卡结果"
+                : account.auto_reset_credit.label}
+            </summary>
+            {account.auto_reset_credit.outcome && (
+              <span>{account.auto_reset_credit.label}</span>
+            )}
+            {!account.auto_reset_credit.outcome &&
+              (account.auto_reset_credit.verification_deadline_at ||
+                account.auto_reset_credit.consume_deadline_at) && (
+                <time>
+                  截止{" "}
+                  {fullTime(
+                    account.auto_reset_credit.verification_deadline_at ||
+                      account.auto_reset_credit.consume_deadline_at ||
+                      "",
+                  )}
+                </time>
+              )}
+            {account.auto_reset_credit.notification_status && (
+              <span>
+                {{
+                  pending: "结果通知待发送",
+                  delivered: "结果通知已发送",
+                  failed: "通知发送失败",
+                  suppressed: "Bark 已关闭",
+                }[account.auto_reset_credit.notification_status] || ""}
+              </span>
+            )}
+            {account.auto_reset_credit.evidence_source && (
+              <span>
+                依据：
+                {account.auto_reset_credit.evidence_source ===
+                "account_rate_limit"
+                  ? "账号限流状态"
+                  : "上游 429 记录"}
+              </span>
+            )}
+            {account.auto_reset_credit.error && (
+              <span role="status">{account.auto_reset_credit.error}</span>
+            )}
+            {account.auto_reset_credit.next_at && (
+              <time>下次 {fullTime(account.auto_reset_credit.next_at)}</time>
+            )}
+            {account.auto_reset_credit.attempt_at && (
+              <time>用卡 {fullTime(account.auto_reset_credit.attempt_at)}</time>
+            )}
+            {account.auto_reset_credit.test_completed_at && (
+              <time>
+                测活 {fullTime(account.auto_reset_credit.test_completed_at)}
+              </time>
+            )}
+          </details>
+        )}
       {confirm && (
         <div
           className="modal-backdrop"

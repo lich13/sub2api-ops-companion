@@ -73,7 +73,9 @@
 .app:not(.mobile) .records-toolbar button,
 .app:not(.mobile) .records-toolbar .record-filter-trigger,
 .app:not(.mobile) .records-mismatch-filter,
-.app:not(.mobile) .records-date-trigger { font-size: 13px; }
+.app:not(.mobile) .records-date-trigger {
+  font-size: 13px;
+}
 .app:not(.mobile) .records-date-trigger,
 .app:not(.mobile) .records-toolbar > button[type="submit"] {
   min-height: 28px;
@@ -100,9 +102,21 @@
 .records-toolbar button {
   padding: 6px 12px;
 }
-.records-toolbar > .record-filter { flex: 1 1 108px; max-width: 160px; min-width: 68px; }
-.records-toolbar > .records-platform-select { flex: 0.75 1 90px; width: 0; max-width: 110px; min-width: 76px; }
-.records-toolbar > button[type="submit"], .records-mismatch-filter { flex-shrink: 0; }
+.records-toolbar > .record-filter {
+  flex: 1 1 108px;
+  max-width: 160px;
+  min-width: 68px;
+}
+.records-toolbar > .records-platform-select {
+  flex: 0.75 1 90px;
+  width: 0;
+  max-width: 110px;
+  min-width: 76px;
+}
+.records-toolbar > button[type="submit"],
+.records-mismatch-filter {
+  flex-shrink: 0;
+}
 .record-filter {
   position: relative;
   min-width: 0;
@@ -443,13 +457,34 @@
   line-height: 1.4;
   white-space: nowrap;
 }
-.record-type-badge.is-sync { background: #f3f4f6; color: #1f2937; }
-.record-type-badge.is-stream { background: #dbeafe; color: #1e40af; }
-.record-type-badge.is-ws_v2 { background: #ede9fe; color: #5b21b6; }
-.record-type-badge.is-cyber { background: #fee2e2; color: #991b1b; }
-.record-type-badge.is-live { background: #d1fae5; color: #065f46; }
-.record-type-badge.is-unknown { background: #fef3c7; color: #92400e; }
-.record-type-badge.is-compact { background: #ccfbf1; color: #115e59; }
+.record-type-badge.is-sync {
+  background: #f3f4f6;
+  color: #1f2937;
+}
+.record-type-badge.is-stream {
+  background: #dbeafe;
+  color: #1e40af;
+}
+.record-type-badge.is-ws_v2 {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+.record-type-badge.is-cyber {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.record-type-badge.is-live {
+  background: #d1fae5;
+  color: #065f46;
+}
+.record-type-badge.is-unknown {
+  background: #fef3c7;
+  color: #92400e;
+}
+.record-type-badge.is-compact {
+  background: #ccfbf1;
+  color: #115e59;
+}
 .record-route {
   display: flex;
   flex-direction: column;
@@ -743,13 +778,34 @@
   --record-output: #8854d8;
 }
 @media (prefers-color-scheme: dark) {
-  .record-type-badge.is-sync { background: #374151; color: #e5e7eb; }
-  .record-type-badge.is-stream { background: #1e3a8a; color: #bfdbfe; }
-  .record-type-badge.is-ws_v2 { background: #4c1d95; color: #ddd6fe; }
-  .record-type-badge.is-cyber { background: #7f1d1d; color: #fecaca; }
-  .record-type-badge.is-live { background: #064e3b; color: #a7f3d0; }
-  .record-type-badge.is-unknown { background: #78350f; color: #fde68a; }
-  .record-type-badge.is-compact { background: #134e4a; color: #99f6e4; }
+  .record-type-badge.is-sync {
+    background: #374151;
+    color: #e5e7eb;
+  }
+  .record-type-badge.is-stream {
+    background: #1e3a8a;
+    color: #bfdbfe;
+  }
+  .record-type-badge.is-ws_v2 {
+    background: #4c1d95;
+    color: #ddd6fe;
+  }
+  .record-type-badge.is-cyber {
+    background: #7f1d1d;
+    color: #fecaca;
+  }
+  .record-type-badge.is-live {
+    background: #064e3b;
+    color: #a7f3d0;
+  }
+  .record-type-badge.is-unknown {
+    background: #78350f;
+    color: #fde68a;
+  }
+  .record-type-badge.is-compact {
+    background: #134e4a;
+    color: #99f6e4;
+  }
   .records-view,
   .record-detail {
     --record-good: #34d3a3;
@@ -763,58 +819,202 @@
 }
 
 /* Desktop table density. Cards and detail typography keep their own sizing. */
-.app:not(.mobile) .records-table th { height: 26px; padding: 3px 4px; }
-.app:not(.mobile) .records-table td { height: 32px; padding: 3px 4px; }
-.app:not(.mobile) .records-table .record-user { width: 110px; min-width: 110px; max-width: 110px; }
-.app:not(.mobile) .records-table .record-user button { width: 96px; }
-.app:not(.mobile) .records-table .record-ellipsis { width: 100%; max-width: 100px; }
+.app:not(.mobile) .records-table th {
+  height: 26px;
+  padding: 3px 4px;
+}
+.app:not(.mobile) .records-table td {
+  height: 32px;
+  padding: 3px 4px;
+}
+.app:not(.mobile) .records-table .record-user {
+  width: 110px;
+  min-width: 110px;
+  max-width: 110px;
+}
+.app:not(.mobile) .records-table .record-user button {
+  width: 96px;
+}
+.app:not(.mobile) .records-table .record-ellipsis {
+  width: 100%;
+  max-width: 100px;
+}
 .app:not(.mobile) .records-table .record-col-account,
-.app:not(.mobile) .records-table .record-col-api_key { min-width: 88px; }
+.app:not(.mobile) .records-table .record-col-api_key {
+  min-width: 88px;
+}
 .app:not(.mobile) .records-table .record-col-account .record-ellipsis,
-.app:not(.mobile) .records-table .record-key { width: 80px; }
-.app:not(.mobile) .records-table .record-col-model { min-width: 124px; }
-.app:not(.mobile) .records-table .record-route { width: 116px; }
-.app:not(.mobile) .records-table .record-route > div { min-width: 0; }
-.app:not(.mobile) .records-table .record-route > div > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.app:not(.mobile) .records-table .record-route small { flex-shrink: 0; }
-.app:not(.mobile) .records-table .record-col-type { min-width: 72px; }
-.app:not(.mobile) .records-table .record-type-badges { max-width: 92px; }
-.app:not(.mobile) .records-table .record-type-badge { font-size: 10px; padding: 0 5px; }
-.app:not(.mobile) .records-table .record-tokens { min-width: 118px; font-size: 11px; }
-.app:not(.mobile) .records-table .record-money { min-width: 80px; white-space: nowrap; }
-.app:not(.mobile) .records-table .record-latency { min-width: 104px; }
-.app:not(.mobile) .records-table .record-col-user_agent { min-width: 120px; }
-.app:not(.mobile) .records-table .record-col-ip { min-width: 108px; }
+.app:not(.mobile) .records-table .record-key {
+  width: 80px;
+}
+.app:not(.mobile) .records-table .record-col-model {
+  min-width: 124px;
+}
+.app:not(.mobile) .records-table .record-route {
+  width: 116px;
+}
+.app:not(.mobile) .records-table .record-route > div {
+  min-width: 0;
+}
+.app:not(.mobile) .records-table .record-route > div > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.app:not(.mobile) .records-table .record-route small {
+  flex-shrink: 0;
+}
+.app:not(.mobile) .records-table .record-col-type {
+  min-width: 72px;
+}
+.app:not(.mobile) .records-table .record-type-badges {
+  max-width: 92px;
+}
+.app:not(.mobile) .records-table .record-type-badge {
+  font-size: 10px;
+  padding: 0 5px;
+}
+.app:not(.mobile) .records-table .record-tokens {
+  min-width: 118px;
+  font-size: 11px;
+}
+.app:not(.mobile) .records-table .record-money {
+  min-width: 80px;
+  white-space: nowrap;
+}
+.app:not(.mobile) .records-table .record-latency {
+  min-width: 104px;
+}
+.app:not(.mobile) .records-table .record-col-user_agent {
+  min-width: 120px;
+}
+.app:not(.mobile) .records-table .record-col-ip {
+  min-width: 108px;
+}
 .app:not(.mobile) .records-table .record-col-request_id,
-.app:not(.mobile) .records-table .record-col-upstream_id { min-width: 130px; }
-.record-cost-trigger { min-height: 0; border: 0; background: transparent; padding: 0; text-align: left; font: inherit; cursor: help; box-shadow: none; }
-.record-cost-trigger > span { display: inline-flex; align-items: center; gap: 4px; }
-.record-cost-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.record-cost-tooltip { position: fixed; z-index: 1000; width: max-content; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; padding: 12px 14px; border: 1px solid #495265; border-radius: 10px; background: #111827; color: #f9fafb; box-shadow: 0 12px 35px #0005; font-size: 12px; pointer-events: auto; }
-.record-cost-tooltip dl { margin: 8px 0 0; }
-.record-cost-tooltip dl > div { display: flex; justify-content: space-between; gap: 20px; padding: 3px 0; }
-.record-cost-tooltip > strong { color: #d1d5db; font-weight: 600; }
-.record-cost-tooltip dt { color: #9ca3af; font-weight: 400; }
-.record-cost-tooltip dd { margin: 0; color: #fff; font-weight: 500; font-variant-numeric: tabular-nums; }
-.record-cost-tooltip .cost-input-price { color: #7dd3fc; }
-.record-cost-tooltip .cost-output-price { color: #c4b5fd; }
-.record-cost-tooltip .cost-tier { color: #67e8f9; }
-.record-cost-tooltip .cost-multiplier { color: #60a5fa; }
-.record-cost-tooltip .cost-charged { color: #4ade80; }
-.record-cost-tooltip .cost-section { border-top: 1px solid #374151; margin-top: 6px; padding-top: 9px; }
+.app:not(.mobile) .records-table .record-col-upstream_id {
+  min-width: 130px;
+}
+.record-cost-trigger {
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  cursor: help;
+  box-shadow: none;
+}
+.record-cost-trigger > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.record-cost-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.record-cost-tooltip {
+  position: fixed;
+  z-index: 1000;
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid #495265;
+  border-radius: 10px;
+  background: #111827;
+  color: #f9fafb;
+  box-shadow: 0 12px 35px #0005;
+  font-size: 12px;
+  pointer-events: auto;
+}
+.record-cost-tooltip dl {
+  margin: 8px 0 0;
+}
+.record-cost-tooltip dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 3px 0;
+}
+.record-cost-tooltip > strong {
+  color: #d1d5db;
+  font-weight: 600;
+}
+.record-cost-tooltip dt {
+  color: #9ca3af;
+  font-weight: 400;
+}
+.record-cost-tooltip dd {
+  margin: 0;
+  color: #fff;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.record-cost-tooltip .cost-input-price {
+  color: #7dd3fc;
+}
+.record-cost-tooltip .cost-output-price {
+  color: #c4b5fd;
+}
+.record-cost-tooltip .cost-tier {
+  color: #67e8f9;
+}
+.record-cost-tooltip .cost-multiplier {
+  color: #60a5fa;
+}
+.record-cost-tooltip .cost-charged {
+  color: #4ade80;
+}
+.record-cost-tooltip .cost-section {
+  border-top: 1px solid #374151;
+  margin-top: 6px;
+  padding-top: 9px;
+}
 
-.records-platform-select { position: relative; display: flex; align-items: center; min-width: 0; }
-.records-platform-select select { -webkit-appearance: none; appearance: none; background-image: none; width: 100%; max-width: none; padding-right: 28px; text-overflow: ellipsis; }
-.records-platform-select > svg { position: absolute; right: 6px; color: var(--muted); pointer-events: none; }
+.records-platform-select {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.records-platform-select select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: none;
+  width: 100%;
+  max-width: none;
+  padding-right: 28px;
+  text-overflow: ellipsis;
+}
+.records-platform-select > svg {
+  position: absolute;
+  right: 6px;
+  color: var(--muted);
+  pointer-events: none;
+}
 .app:not(.mobile) .records-date-trigger,
 .app:not(.mobile) .records-toolbar .record-filter-trigger,
 .app:not(.mobile) .records-toolbar .records-platform-select select,
 .app:not(.mobile) .records-toolbar .records-model-filter,
 .app:not(.mobile) .records-toolbar > button[type="submit"] {
-  box-sizing: border-box; height: 28px; min-height: 28px; font-family: inherit; font-size: 13px; line-height: 20px; padding: 3px 8px;
+  box-sizing: border-box;
+  height: 28px;
+  min-height: 28px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  padding: 3px 8px;
 }
-.app:not(.mobile) .records-toolbar .records-platform-select select { padding-right: 28px; }
+.app:not(.mobile) .records-toolbar .records-platform-select select {
+  padding-right: 28px;
+}
 .records-date-trigger:focus-visible,
 .records-toolbar .record-filter-trigger:focus-visible,
 .records-toolbar .records-platform-select select:focus-visible,
-.records-toolbar .records-model-filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.records-toolbar .records-model-filter:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

@@ -11,7 +11,11 @@ import {
   type PriorityAccount,
 } from "./priorities";
 
-const account = (id: number, platform: string, priority: number): PriorityAccount => ({
+const account = (
+  id: number,
+  platform: string,
+  priority: number,
+): PriorityAccount => ({
   id,
   name: `${platform}-${id}`,
   platform,
@@ -41,18 +45,42 @@ describe("priority data helpers", () => {
   });
 
   it("keeps preferred platform order and groups accounts without sharing input arrays", () => {
-    const rows = [account(5, "other", 1), account(2, "grok", 2), account(1, "openai", 1), account(3, "grok", 1)];
+    const rows = [
+      account(5, "other", 1),
+      account(2, "grok", 2),
+      account(1, "openai", 1),
+      account(3, "grok", 1),
+    ];
     const grouped = groupPriorityAccounts(rows, "fixture-version");
-    expect(grouped.map(group => group.platform)).toEqual(["openai", "grok", "other"]);
-    expect(grouped.find(group => group.platform === "grok")?.items.map(item => item.id)).toEqual([2, 3]);
-    expect(grouped.every(group => group.version === "fixture-version" && group.last_task === null)).toBe(true);
-    expect(rows.map(item => item.id)).toEqual([5, 2, 1, 3]);
+    expect(grouped.map((group) => group.platform)).toEqual([
+      "openai",
+      "grok",
+      "other",
+    ]);
+    expect(
+      grouped
+        .find((group) => group.platform === "grok")
+        ?.items.map((item) => item.id),
+    ).toEqual([2, 3]);
+    expect(
+      grouped.every(
+        (group) =>
+          group.version === "fixture-version" && group.last_task === null,
+      ),
+    ).toBe(true);
+    expect(rows.map((item) => item.id)).toEqual([5, 2, 1, 3]);
   });
 
   it("sorts unknown platforms alphabetically after preferred platforms and maps labels", () => {
-    expect(sortPriorityPlatforms([{ platform: "zeta" }, { platform: "anthropic" }, { platform: "alpha" }, { platform: "openai" }, { platform: "grok" }]).map(item => item.platform)).toEqual([
-      "openai", "grok", "anthropic", "alpha", "zeta",
-    ]);
+    expect(
+      sortPriorityPlatforms([
+        { platform: "zeta" },
+        { platform: "anthropic" },
+        { platform: "alpha" },
+        { platform: "openai" },
+        { platform: "grok" },
+      ]).map((item) => item.platform),
+    ).toEqual(["openai", "grok", "anthropic", "alpha", "zeta"]);
     expect(priorityPlatformName("openai")).toBe("Codex");
     expect(priorityPlatformName("grok")).toBe("Grok");
     expect(priorityPlatformName("custom")).toBe("custom");
@@ -68,20 +96,46 @@ describe("priority data helpers", () => {
 });
 
 it("reserves slots for every priority, moves only the selected account and adds a new empty lane", () => {
-  const slots = prioritySlots([account(1, "openai", 1), account(2, "openai", 3)], 3);
-  expect(slots.map(s => [s.priority, s.id])).toEqual([[1,1],[1,null],[1,null],[3,2],[3,null],[3,null],[4,null],[4,null],[4,null]]);
+  const slots = prioritySlots(
+    [account(1, "openai", 1), account(2, "openai", 3)],
+    3,
+  );
+  expect(slots.map((s) => [s.priority, s.id])).toEqual([
+    [1, 1],
+    [1, null],
+    [1, null],
+    [3, 2],
+    [3, null],
+    [3, null],
+    [4, null],
+    [4, null],
+    [4, null],
+  ]);
   const moved = movePrioritySlot(slots, 2, 1, 3);
-  expect(moved.filter(s => s.id !== null)).toEqual([{ priority: 1, id: 1 }, { priority: 1, id: 2 }]);
+  expect(moved.filter((s) => s.id !== null)).toEqual([
+    { priority: 1, id: 1 },
+    { priority: 1, id: 2 },
+  ]);
   expect(moved[3]).toEqual({ priority: 3, id: null });
   const last = movePrioritySlot(slots, 1, 6, 3);
-  expect(last.slice(-3)).toEqual(Array.from({length:3}, () => ({ priority: 5, id: null })));
+  expect(last.slice(-3)).toEqual(
+    Array.from({ length: 3 }, () => ({ priority: 5, id: null })),
+  );
   expect(slots[0].id).toBe(1);
 });
 
 it("preserves account order and overfull parallel lanes without changing the input", () => {
-  const rows = Array.from({ length: 40 }, (_, index) => account(40 - index, "openai", 2));
+  const rows = Array.from({ length: 40 }, (_, index) =>
+    account(40 - index, "openai", 2),
+  );
   const slots = prioritySlots(rows, 3);
-  expect(slots.filter(slot => slot.id !== null)).toEqual(Array.from({ length: 40 }, (_, index) => ({ priority: 2, id: index + 1 })));
-  expect(slots.slice(-3)).toEqual(Array.from({ length: 3 }, () => ({ priority: 3, id: null })));
-  expect(rows.map(row => row.id)).toEqual(Array.from({ length: 40 }, (_, index) => 40 - index));
+  expect(slots.filter((slot) => slot.id !== null)).toEqual(
+    Array.from({ length: 40 }, (_, index) => ({ priority: 2, id: index + 1 })),
+  );
+  expect(slots.slice(-3)).toEqual(
+    Array.from({ length: 3 }, () => ({ priority: 3, id: null })),
+  );
+  expect(rows.map((row) => row.id)).toEqual(
+    Array.from({ length: 40 }, (_, index) => 40 - index),
+  );
 });

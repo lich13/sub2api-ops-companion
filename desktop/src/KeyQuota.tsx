@@ -26,22 +26,54 @@ function quotaHeadline(quota: KeyQuota | undefined, busy: boolean) {
   const keyOnly = quota?.source === "newapi" && first?.name === "Key 额度";
   return first
     ? keyOnly
-      ? first.unlimited ? "Key 配额无限制" : `Key 剩余 ${amount(first)}`
+      ? first.unlimited
+        ? "Key 配额无限制"
+        : `Key 剩余 ${amount(first)}`
       : `${first.unlimited ? "" : "剩余 "}${amount(first)}`
-    : quota?.key_status || (quota?.state === "unsupported" ? "不可查询" : quota?.state === "error" ? "查询失败" : busy ? "查询中…" : quota?.state === "ok" ? "余额未知" : "未查询");
+    : quota?.key_status ||
+        (quota?.state === "unsupported"
+          ? "不可查询"
+          : quota?.state === "error"
+            ? "查询失败"
+            : busy
+              ? "查询中…"
+              : quota?.state === "ok"
+                ? "余额未知"
+                : "未查询");
 }
-export function KeyQuotaSummary({ quota, busy }: { quota?: KeyQuota; busy: boolean }) {
+export function KeyQuotaSummary({
+  quota,
+  busy,
+}: {
+  quota?: KeyQuota;
+  busy: boolean;
+}) {
   const warning = quota?.stale || !!quota?.error;
   const detail = [
-    quota?.source === "sub2api" ? "Sub2API" : quota?.source === "newapi" ? "New API" : "",
-    ...(quota?.plans ?? []).map(plan => `${plan.name}：${amount(plan)}`),
+    quota?.source === "sub2api"
+      ? "Sub2API"
+      : quota?.source === "newapi"
+        ? "New API"
+        : "",
+    ...(quota?.plans ?? []).map((plan) => `${plan.name}：${amount(plan)}`),
     quota?.success_at != null ? `更新 ${time(quota.success_at)}` : "",
     quota?.error,
     quota?.retry_at ? `可重试 ${time(quota.retry_at)}` : "",
-  ].filter(Boolean).join(" · ");
-  return <div className={`mini-usage key-quota-compact${warning ? " warning" : ""}`} aria-label="上游余额" title={detail}>
-    <span>{quotaHeadline(quota, busy)}{warning && " · 异常"}</span>
-  </div>;
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <div
+      className={`mini-usage key-quota-compact${warning ? " warning" : ""}`}
+      aria-label="上游余额"
+      title={detail}
+    >
+      <span>
+        {quotaHeadline(quota, busy)}
+        {warning && " · 异常"}
+      </span>
+    </div>
+  );
 }
 const samePlan = (a: QuotaPlan, b: QuotaPlan) =>
   a.name === b.name &&
@@ -101,7 +133,10 @@ export default function KeyQuotaView({
   useEffect(() => {
     const remaining = (quota?.retry_at ?? 0) * 1000 - Date.now();
     if (remaining <= 0) return;
-    const timer = setTimeout(() => rerender((n) => n + 1), Math.min(remaining, 2_147_483_647));
+    const timer = setTimeout(
+      () => rerender((n) => n + 1),
+      Math.min(remaining, 2_147_483_647),
+    );
     return () => clearTimeout(timer);
   }, [quota?.retry_at, clock]);
   const keyOnly =

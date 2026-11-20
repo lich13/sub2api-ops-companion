@@ -429,13 +429,15 @@ export function ProxyBatchAdd({
     setBusy(true);
     let next = 0,
       succeeded = 0;
-    const slots: (typeof results[number] | undefined)[] = new Array(
+    const slots: ((typeof results)[number] | undefined)[] = new Array(
       parsed.proxies.length,
     );
     const flushSlots = () => {
       if (alive.current)
         setResults(
-          slots.filter((item): item is NonNullable<typeof item> => item !== undefined),
+          slots.filter(
+            (item): item is NonNullable<typeof item> => item !== undefined,
+          ),
         );
     };
     await Promise.all(
