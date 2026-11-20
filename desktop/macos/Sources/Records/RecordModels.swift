@@ -205,16 +205,16 @@ public enum RecordColumnSpec: String, CaseIterable, Sendable {
 
     public var width: CGFloat {
         switch self {
-        case .api_key: return 80
-        case .account: return 80
+        case .api_key: return 74
+        case .account: return 70
         case .model: return 116
         case .type: return 64
-        case .reasoning: return 52
-        case .tokens: return 118
+        case .reasoning: return 56
+        case .tokens: return 112
         case .cost: return 86
         case .latency: return 114
-        case .user_agent: return 108
-        case .ip: return 100
+        case .user_agent: return 104
+        case .ip: return 98
         case .endpoint: return 112
         case .group: return 76
         case .billing: return 48
@@ -223,9 +223,9 @@ public enum RecordColumnSpec: String, CaseIterable, Sendable {
         }
     }
 
-    public static let userColumnWidth: CGFloat = 110
+    public static let userColumnWidth: CGFloat = 82
     public static let timeColumnWidth: CGFloat = 88
-    public static let columnSpacing: CGFloat = 8
+    public static let columnSpacing: CGFloat = 5
     public static let cellPadding: CGFloat = 4
 
     /// Minimum width of the horizontally scrolling pane: the time column plus `columns`.
@@ -268,6 +268,15 @@ public struct ModelRouteStep: Sendable, Equatable {
 }
 
 public enum RecordFormatting {
+    public static func billingMode(_ raw: String?) -> String {
+        switch raw {
+        case "token": return "Token"
+        case "image": return "图片"
+        case "per_request": return "按次"
+        default: return raw ?? "—"
+        }
+    }
+
     public static func requestTypeKey(_ row: UsageRecord) -> (key: String, label: String) {
         let map: [String: String] = [
             "sync": "同步", "stream": "流式", "ws_v2": "WebSocket",
@@ -316,14 +325,8 @@ public enum RecordFormatting {
         var input = dec
         var rounded = Decimal()
         NSDecimalRound(&rounded, &input, digits, .plain)
-        let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.numberStyle = .decimal
-        formatter.usesGroupingSeparator = false
-        formatter.minimumIntegerDigits = 1
-        formatter.minimumFractionDigits = digits
-        formatter.maximumFractionDigits = digits
-        return formatter.string(from: rounded as NSDecimalNumber) ?? "—"
+        return rounded.formatted(.number.locale(Locale(identifier: "en_US_POSIX"))
+            .grouping(.never).precision(.fractionLength(digits)))
     }
 
     public static func money(_ raw: String?, digits: Int = 6) -> String {

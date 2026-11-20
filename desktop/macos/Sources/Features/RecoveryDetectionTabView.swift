@@ -10,7 +10,10 @@ public struct RecoveryDetectionTabView: View {
     @State private var conflict: Bool = false
     @State private var seededRevision: String = ""
 
-    public init(store: AppStore) {
+    public var isActive: Bool
+
+    public init(store: AppStore, isActive: Bool = true) {
+        self.isActive = isActive
         self.store = store
     }
 
@@ -91,7 +94,7 @@ public struct RecoveryDetectionTabView: View {
 
                     DetectionPlatformSettingsView(
                         value: draft["model_detection_platforms"],
-                        online: store.state.online,
+                        online: store.state.online && isActive,
                         connectionKey: store.connectionKey
                     ) { nextVal in
                         setField("model_detection_platforms", nextVal)

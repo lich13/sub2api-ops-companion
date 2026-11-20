@@ -17,6 +17,7 @@ use std::{
 };
 use tokio::sync::Mutex;
 
+pub(crate) const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const MAX_BYTES: usize = 8 * 1024 * 1024;
 #[derive(Clone, Debug)]
 pub struct Failure {
@@ -692,11 +693,6 @@ impl FingerprintBank {
             let now = self.now();
             let code = string(&active.state["last_error"]["code"]);
             let last = active.state["checked_at"].as_f64().unwrap_or(0.0);
-            let interval = if matches!(code, "network" | "timeout" | "rate-limit" | "cache") {
-                300.0
-            } else {
-                3600.0
-            };
             if active.state["rate_limit_until"]
                 .as_f64()
                 .is_some_and(|at| now < at)
@@ -704,7 +700,9 @@ impl FingerprintBank {
                     .as_f64()
                     .is_some_and(|at| now < at)
                     && (!force || code == "rate-limit")
-                || !force && last > 0.0 && (0.0..interval).contains(&(now - last))
+                || !force
+                    && last > 0.0
+                    && (0.0..CHECK_INTERVAL.as_secs_f64()).contains(&(now - last))
             {
                 return;
             }

@@ -7,27 +7,6 @@ public struct FingerprintBankStatusView: View {
     public var engines: [ModelTestEngine]
     public var taskVersion: FingerprintBankVersion?
 
-    private static let errorLabels: [String: String] = [
-        "network": "网络失败",
-        "timeout": "网络超时",
-        "rate-limit": "限流等待",
-        "cache": "缓存保存失败",
-        "incompatible": "需要升级应用",
-        "invalid-data": "指纹库校验失败",
-    ]
-
-    private static let sourceLabels: [String: String] = [
-        "bundled": "内置库",
-        "cache": "有效缓存",
-        "remote": "官方远程库",
-    ]
-
-    @State private var statuses: [ModelTestEngine: FingerprintBankStatusInfo] = [:]
-    @State private var loading: Set<ModelTestEngine> = []
-    @State private var syncing: Set<ModelTestEngine> = []
-    @State private var expanded: Set<ModelTestEngine> = []
-    @State private var errors: [ModelTestEngine: String] = [:]
-
     public init(
         online: Bool,
         connectionKey: String,
@@ -43,32 +22,49 @@ public struct FingerprintBankStatusView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(engines, id: \.rawValue) { engine in
-                bankBlock(engine)
-            }
-        }
-        .task(id: "\(connectionKey):\(online)") {
-            guard online else { return }
-            for engine in engines {
-                await loadBank(engine, follow: false)
+                FingerprintBankRow(engine: engine, online: online, taskVersion: taskVersion)
+                    .id("\(connectionKey):\(engine.rawValue):\(online)")
             }
         }
     }
+}
 
-    private func bankBlock(_ engine: ModelTestEngine) -> some View {
-        let info = statuses[engine]
-        let err = errors[engine]
-        let isBusy = loading.contains(engine) || syncing.contains(engine) || ["checking", "syncing"].contains(info?.status ?? "")
-        let isOpen = expanded.contains(engine)
+private struct FingerprintBankRow: View {
+    let engine: ModelTestEngine
+    let online: Bool
+    let taskVersion: FingerprintBankVersion?
+    @State private var info: FingerprintBankStatusInfo?
+    @State private var busy = false
+    @State private var isOpen = false
+    @State private var error = ""
+    @State private var manualCheck: Task<Void, Never>?
+
+    private static let errorLabels: [String: String] = [
+        "network": "网络失败",
+        "timeout": "网络超时",
+        "rate-limit": "限流等待",
+        "cache": "缓存保存失败",
+        "incompatible": "需要升级应用",
+        "invalid-data": "指纹库校验失败",
+    ]
+
+    private static let sourceLabels: [String: String] = [
+        "bundled": "内置库",
+        "cache": "有效缓存",
+        "remote": "官方远程库",
+    ]
+
+    var body: some View {
         let revShort: String = {
             if let r = info?.version?.revision, !r.isEmpty {
                 return String(r.prefix(8))
             }
             return "—"
         }()
-        let titlePrefix = (engine == .lm_detector) ? "LM Detector 检测库" : "指纹库"
+        let titlePrefix = (engine == .lm_detector) ? "LM Detector 检测库" : "ModelTrace 指纹库"
         let statusResult: (text: String, isBad: Bool) = {
-            if let err, !err.isEmpty { return (err, true) }
-            if isBusy { return ("检查中", false) }
+            if !error.isEmpty { return (error, true) }
+            if busy { return ("检查中", false) }
             if let srvErr = info?.error, !srvErr.isEmpty {
                 let mapped = Self.errorLabels[srvErr] ?? (engine == .lm_detector ? srvErr : "检查失败")
                 return (mapped, true)
@@ -84,7 +80,7 @@ public struct FingerprintBankStatusView: View {
 
             HStack(spacing: 10) {
                 Button {
-                    if isOpen { expanded.remove(engine) } else { expanded.insert(engine) }
+                    isOpen.toggle()
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: isOpen ? "arrowtriangle.down.fill" : "arrowtriangle.right.fill")
@@ -102,7 +98,7 @@ public struct FingerprintBankStatusView: View {
                 Spacer()
 
                 Button {
-                    Task { await syncBank(engine) }
+                    manualCheck = Task { await check(manual: true) }
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.clockwise")
@@ -113,12 +109,12 @@ public struct FingerprintBankStatusView: View {
                     .foregroundStyle(DS.muted)
                 }
                 .buttonStyle(.linearPlain)
-                .disabled(!online || isBusy)
+                .disabled(!online || busy)
             }
 
             if !statusResult.text.isEmpty {
                 Text(statusResult.text)
-                    .font(DS.fontResetTime)
+                    .font(DS.fontCompact)
                     .foregroundStyle(statusResult.isBad ? DS.bad : DS.muted)
             }
 
@@ -142,16 +138,18 @@ public struct FingerprintBankStatusView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             }
         }
+        .task { if online { await check(manual: false) } }
+        .onDisappear { manualCheck?.cancel() }
     }
 
     private func detailRow(_ key: String, _ value: String, mono: Bool = false) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(key)
-                .font(DS.fontResetTime)
+                .font(DS.fontCompact)
                 .foregroundStyle(DS.muted)
                 .frame(width: 68, alignment: .leading)
             Text(verbatim: value)
-                .font(mono ? DS.fontMono11 : DS.fontResetTime)
+                .font(mono ? DS.fontMono12 : DS.fontCompact)
                 .monospacedDigit()
                 .foregroundStyle(DS.ink)
                 .lineLimit(1)
@@ -167,48 +165,26 @@ public struct FingerprintBankStatusView: View {
         }
     }
 
-    private func loadBank(_ engine: ModelTestEngine, follow: Bool) async {
-        loading.insert(engine)
-        defer { loading.remove(engine) }
+    private func check(manual: Bool) async {
+        busy = true
+        error = ""
+        defer { busy = false }
+        let path = endpointPrefix(for: engine)
         do {
-            let info: FingerprintBankStatusInfo = try await RustBridge.shared.api("GET", endpointPrefix(for: engine))
-            statuses[engine] = info
-            errors[engine] = nil
-            var cur = info
-            var attempts = 0
-            while !Task.isCancelled && online && attempts < 15 && (follow && attempts == 0 || ["checking", "syncing"].contains(cur.status ?? "")) {
-                attempts += 1
-                try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled, online else { break }
-                if let next: FingerprintBankStatusInfo = try? await RustBridge.shared.api("GET", endpointPrefix(for: engine)) {
-                    statuses[engine] = next
-                    cur = next
-                    if !["checking", "syncing"].contains(next.status ?? "") {
-                        break
-                    }
-                } else {
-                    break
-                }
+            if manual {
+                let _: JSONValue = try await RustBridge.shared.api("POST", "\(path)/sync", body: .object([:]))
+            }
+            var followStart = manual
+            while !Task.isCancelled {
+                let current: FingerprintBankStatusInfo = try await RustBridge.shared.api("GET", path)
+                try Task.checkCancellation()
+                info = current
+                guard followStart || ["checking", "syncing"].contains(current.status ?? "") else { return }
+                followStart = false
+                try await Task.sleep(for: .seconds(1))
             }
         } catch {
-            errors[engine] = error.localizedDescription
-        }
-    }
-
-    private func syncBank(_ engine: ModelTestEngine) async {
-        guard online, !syncing.contains(engine) else { return }
-        syncing.insert(engine)
-        errors[engine] = nil
-        defer { syncing.remove(engine) }
-        do {
-            let _: JSONValue = try await RustBridge.shared.api(
-                "POST",
-                "\(endpointPrefix(for: engine))/sync",
-                body: .object([:])
-            )
-            await loadBank(engine, follow: true)
-        } catch {
-            errors[engine] = error.localizedDescription
+            if !Task.isCancelled { self.error = error.localizedDescription }
         }
     }
 }

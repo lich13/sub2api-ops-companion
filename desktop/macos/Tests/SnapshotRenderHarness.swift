@@ -67,6 +67,7 @@ enum SnapshotRenderUtility {
         view: V,
         size: CGSize,
         dark: Bool,
+        alwaysShowScrollers: Bool = false,
         outputURL: URL
     ) async throws {
         ensureAppKit()
@@ -96,6 +97,17 @@ enum SnapshotRenderUtility {
         hosting.layoutSubtreeIfNeeded()
         try? await Task.sleep(for: .milliseconds(60))
         hosting.layoutSubtreeIfNeeded()
+        if alwaysShowScrollers {
+            func showScrollers(in view: NSView) {
+                if let scroll = view as? NSScrollView {
+                    scroll.scrollerStyle = .legacy
+                    scroll.autohidesScrollers = false
+                }
+                view.subviews.forEach(showScrollers)
+            }
+            showScrollers(in: hosting)
+            hosting.layoutSubtreeIfNeeded()
+        }
 
         guard let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
             return

@@ -20,14 +20,13 @@ public struct RecordOptionPickerView: View {
     public let selected: RecordOption?
     public var userId: Int? = nil
     public var localOptions: [RecordOption]? = nil
+    public var onOpenChange: (Bool) -> Void
     public let onSelect: (RecordOption?) -> Void
 
     @State private var isOpen: Bool = false
     @State private var query: String = ""
-    @State private var items: [RecordOption] = []
-    @State private var cursor: String? = nil
-    @State private var loading: Bool = false
-    @State private var error: String = ""
+    @State private var directory = RecordOptionDirectory()
+    @State private var contentHeight: CGFloat = 240
 
     public init(
         kind: Kind,
@@ -35,6 +34,7 @@ public struct RecordOptionPickerView: View {
         selected: RecordOption?,
         userId: Int? = nil,
         localOptions: [RecordOption]? = nil,
+        onOpenChange: @escaping (Bool) -> Void = { _ in },
         onSelect: @escaping (RecordOption?) -> Void
     ) {
         self.kind = kind
@@ -42,6 +42,7 @@ public struct RecordOptionPickerView: View {
         self.selected = selected
         self.userId = userId
         self.localOptions = localOptions
+        self.onOpenChange = onOpenChange
         self.onSelect = onSelect
     }
 
@@ -72,7 +73,7 @@ public struct RecordOptionPickerView: View {
                 return (opt.name ?? "").lowercased().contains(needle)
             }
         }
-        return items
+        return directory.items
     }
 
     public var body: some View {
@@ -124,55 +125,61 @@ public struct RecordOptionPickerView: View {
                 .background(DS.surface)
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(DS.line, lineWidth: 1))
 
-                LinearBoundedScrollView(maxHeight: 240) {
+                ScrollView {
                     VStack(alignment: .leading, spacing: 2) {
                         optionButton(nil)
                         ForEach(displayedItems) { opt in
                             optionButton(opt)
                         }
-                        if loading {
+                        if directory.loading {
                             Text("正在读取…")
-                                .font(DS.fontResetTime)
+                                .font(DS.fontCompact)
                                 .foregroundStyle(DS.muted)
                                 .padding(6)
-                        } else if displayedItems.isEmpty && error.isEmpty {
+                        } else if displayedItems.isEmpty && directory.error.isEmpty {
                             Text("无匹配项")
-                                .font(DS.fontResetTime)
+                                .font(DS.fontCompact)
                                 .foregroundStyle(DS.muted)
                                 .padding(6)
                         }
-                        if !error.isEmpty {
+                        if !directory.error.isEmpty {
                             HStack {
-                                Text(error)
-                                    .font(DS.fontResetTime)
+                                Text(directory.error)
+                                    .font(DS.fontCompact)
                                     .foregroundStyle(DS.bad)
                                 Button("重试") {
-                                    Task { await fetchPage(cursor: cursor) }
+                                    directory.loadMoreOrRetry()
                                 }
                                 .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
                             }
                             .padding(6)
                         }
-                        if let next = cursor, !loading && error.isEmpty {
+                        if directory.cursor != nil, !directory.loading && directory.error.isEmpty {
                             Button("加载更多") {
-                                Task { await fetchPage(cursor: next) }
+                                directory.loadMoreOrRetry()
                             }
                             .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
                             .padding(.top, 4)
                         }
                     }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
                 }
+                .frame(height: min(contentHeight, 240))
             }
             .padding(10)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(width: 328)
             .background(DS.surface)
-            .task(id: "\(isOpen):\(query):\(userId ?? -1)") {
-                guard isOpen, active, kind != .accounts else { return }
-                if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    try? await Task.sleep(for: .milliseconds(250))
-                    guard !Task.isCancelled else { return }
-                }
-                await fetchPage(cursor: nil)
+            .onAppear {
+                onOpenChange(true)
+                search()
+            }
+            .onChange(of: query) { search() }
+            .onChange(of: userId) { search() }
+            .onDisappear {
+                directory.stop()
+                onOpenChange(false)
             }
             .onExitCommand { isOpen = false }
         }
@@ -198,12 +205,12 @@ public struct RecordOptionPickerView: View {
                         }
                         if let uid = item.user_id {
                             Text("\(item.user_name ?? item.user_email ?? "用户") #\(uid)")
-                                .font(DS.fontResetTime)
+                                .font(DS.fontCompact)
                                 .foregroundStyle(DS.muted)
                                 .lineLimit(1)
                         } else if let email = item.email, !email.isEmpty {
                             Text(verbatim: email)
-                                .font(DS.fontResetTime)
+                                .font(DS.fontCompact)
                                 .foregroundStyle(DS.muted)
                                 .lineLimit(1)
                         }
@@ -216,7 +223,7 @@ public struct RecordOptionPickerView: View {
                 Spacer()
                 if let status = item?.status, !status.isEmpty, status != "active" {
                     Text(status == "error" ? "异常" : "停用")
-                        .font(DS.fontUsageStat)
+                        .font(DS.fontCompact)
                         .foregroundStyle(status == "error" ? DS.bad : DS.muted)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
@@ -237,44 +244,65 @@ public struct RecordOptionPickerView: View {
         .buttonStyle(.linearPlain)
     }
 
-    private func fetchPage(cursor pageCursor: String?) async {
-        guard kind != .accounts else { return }
+    private func search() {
+        if active, kind != .accounts {
+            directory.search(kind: kind, query: query, userId: userId)
+        }
+    }
+}
+
+@MainActor
+@Observable
+final class RecordOptionDirectory {
+    private(set) var items: [RecordOption] = []
+    private(set) var cursor: String?
+    private(set) var loading = false
+    private(set) var error = ""
+    private var filters: [URLQueryItem] = []
+    private var request: Task<Void, Never>?
+
+    func stop() {
+        request?.cancel()
+        request = nil
+        loading = false
+    }
+
+    func search(kind: RecordOptionPickerView.Kind, query: String, userId: Int?) {
+        stop()
+        items = []
+        cursor = nil
+        filters = [.init(name: "kind", value: kind.rawValue), .init(name: "limit", value: "50")]
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !q.isEmpty { filters.append(.init(name: "q", value: q)) }
+        if kind == .api_keys, let userId { filters.append(.init(name: "user_id", value: String(userId))) }
+        load(debounce: !q.isEmpty)
+    }
+
+    func loadMoreOrRetry() {
+        guard !loading, cursor != nil || !error.isEmpty else { return }
+        load(debounce: false)
+    }
+
+    private func load(debounce: Bool) {
+        let next = cursor
+        var url = URLComponents()
+        url.queryItems = filters + (next.map { [.init(name: "cursor", value: $0)] } ?? [])
+        let path = "/usage-record-options?\(url.percentEncodedQuery ?? "")"
         loading = true
         error = ""
-        defer { loading = false }
-        var comps = URLComponents()
-        var queryItems: [URLQueryItem] = [
-            URLQueryItem(name: "kind", value: kind.rawValue),
-            URLQueryItem(name: "limit", value: "50"),
-        ]
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !q.isEmpty { queryItems.append(URLQueryItem(name: "q", value: q)) }
-        if kind == .api_keys, let userId {
-            queryItems.append(URLQueryItem(name: "user_id", value: String(userId)))
-        }
-        if let pageCursor {
-            queryItems.append(URLQueryItem(name: "cursor", value: pageCursor))
-        }
-        comps.queryItems = queryItems
-        let qs = comps.percentEncodedQuery ?? ""
-        do {
-            let res: RecordOptionPage = try await RustBridge.shared.api("GET", "/usage-record-options?\(qs)")
-            if pageCursor != nil {
-                var order: [Int] = []
-                var byId: [Int: RecordOption] = [:]
-                for row in items + res.items {
-                    if byId[row.id] == nil {
-                        order.append(row.id)
-                    }
-                    byId[row.id] = row
-                }
-                items = order.compactMap { byId[$0] }.filter { !$0.deleted }
-            } else {
-                items = res.items.filter { !$0.deleted }
+        request = Task {
+            do {
+                if debounce { try await Task.sleep(for: .milliseconds(250)) }
+                let page: RecordOptionPage = try await RustBridge.shared.api("GET", path)
+                try Task.checkCancellation()
+                var seen = Set(items.map(\.id))
+                items.append(contentsOf: page.items.filter { !$0.deleted && seen.insert($0.id).inserted })
+                cursor = page.next_cursor
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.error = error.localizedDescription
             }
-            cursor = res.next_cursor
-        } catch {
-            self.error = error.localizedDescription
+            loading = false
         }
     }
 }

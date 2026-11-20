@@ -16,6 +16,10 @@ public struct RecordsPageView: View {
     @State private var hScrollOffset: CGFloat = 0
     @State private var rightPaneWidth: CGFloat = 980
     @State private var hoveredRowId: Int? = nil
+    @State private var scrolled = false
+    @State private var openFilters = Set<String>()
+    @State private var datePending = false
+    @State private var scrollReset = 0
     @State private var footerNear: Bool = false
 
     public init(store: AppStore) {
@@ -26,8 +30,14 @@ public struct RecordsPageView: View {
         store.state.online && (store.state.foreground != false)
     }
 
+    private var overlayOpen: Bool { store.selectedRecordId != nil || !openFilters.isEmpty }
+    private var holding: Bool { scrolled || overlayOpen || datePending }
+    private func filterOpened(_ key: String, _ open: Bool) {
+        if open { openFilters.insert(key) } else { openFilters.remove(key) }
+    }
+
     private var autoLoadKey: String {
-        "\(footerNear):\(active):\(store.selectedRecordId != nil):\(feed.loading):\(feed.cursor ?? ""):\(feed.items.count)"
+        "\(footerNear):\(active):\(overlayOpen):\(feed.loading):\(feed.cursor ?? ""):\(feed.items.count)"
     }
 
     private var shownColumns: [RecordColumnSpec] {
@@ -72,7 +82,7 @@ public struct RecordsPageView: View {
                         .font(DS.fontCompact)
                         .foregroundStyle(DS.bad)
                     Button("重试") {
-                        Task { await feed.refresh() }
+                        Task { await refreshRecords() }
                     }
                     .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
                     .disabled(!active || feed.loading)
@@ -96,14 +106,32 @@ public struct RecordsPageView: View {
             guard !Task.isCancelled else { return }
             appliedModel = trimmed
         }
-        .task(id: "\(store.connectionKey):\(queryString):\(active):\(store.selectedRecordId != nil)") {
-            feed.bind(query: queryString, active: active, holding: store.selectedRecordId != nil)
+        .task(id: "\(store.connectionKey):\(queryString):\(active)") {
+            feed.holding = holding
+            feed.bind(query: queryString, active: active)
+        }
+        .onChange(of: holding) { feed.holding = holding }
+        .onChange(of: queryString) {
+            scrolled = false
+            scrollReset += 1
+        }
+        .task(id: "\(active):\(range.preset?.rawValue ?? "")") {
+            guard active, range.preset != nil else { return }
+            while !Task.isCancelled {
+                let now = Date()
+                datePending = range.refreshPreset(at: now, holding: holding || LinearMenuTracking.isTracking)
+                var calendar = Calendar(identifier: .gregorian)
+                calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+                guard let midnight = calendar.dateInterval(of: .day, for: now)?.end else { return }
+                do { try await Task.sleep(for: .seconds(midnight.timeIntervalSince(now))) }
+                catch { return }
+            }
         }
         // Re-evaluated on the same changes the web observer re-arms on; `loadMore` itself
         // ignores calls without a cursor, while loading, or after a page error.
         .onChange(of: autoLoadKey, initial: true) {
             guard RecordPagination.autoLoads(
-                footerNear: footerNear, active: active, detailOpen: store.selectedRecordId != nil
+                footerNear: footerNear, active: active, detailOpen: overlayOpen || LinearMenuTracking.isTracking
             ) else { return }
             Task { await feed.loadMore() }
         }
@@ -115,9 +143,10 @@ public struct RecordsPageView: View {
     private var filterToolbar: some View {
         let platforms = PlatformMeta.sortPlatforms(PlatformMeta.preferredOrder + store.accounts.map(\.platform))
         return HStack(spacing: 6) {
-            RecordDatePickerView(value: range, disabled: !active || feed.loading) { next in
+            RecordDatePickerView(value: range, disabled: !active || feed.loading, onOpenChange: { filterOpened("date", $0) }) { next in
+                datePending = false
                 if next.start == range.start && next.end == range.end {
-                    Task { await feed.refresh() }
+                    Task { await refreshRecords() }
                 }
                 range = next
             }
@@ -148,16 +177,16 @@ public struct RecordsPageView: View {
             )
             .fixedSize(horizontal: true, vertical: false)
 
-            RecordOptionPickerView(kind: .users, active: active, selected: userFilter) { next in
+            RecordOptionPickerView(kind: .users, active: active, selected: userFilter, onOpenChange: { filterOpened("users", $0) }) { next in
                 userFilter = next
                 keyFilter = nil
             }
 
-            RecordOptionPickerView(kind: .accounts, active: active, selected: accountFilter, localOptions: accountOptions) { next in
+            RecordOptionPickerView(kind: .accounts, active: active, selected: accountFilter, localOptions: accountOptions, onOpenChange: { filterOpened("accounts", $0) }) { next in
                 accountFilter = next
             }
 
-            RecordOptionPickerView(kind: .api_keys, active: active, selected: keyFilter, userId: userFilter?.id) { next in
+            RecordOptionPickerView(kind: .api_keys, active: active, selected: keyFilter, userId: userFilter?.id, onOpenChange: { filterOpened("keys", $0) }) { next in
                 keyFilter = next
             }
 
@@ -179,6 +208,16 @@ public struct RecordsPageView: View {
                 mismatchOnly.toggle()
             }
             .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    private func refreshRecords() async {
+        if datePending, let preset = range.preset {
+            datePending = false
+            range = BeijingDateLogic.presetRange(preset)
+        } else if await feed.refresh() {
+            scrolled = false
+            scrollReset += 1
         }
     }
 
@@ -216,9 +255,9 @@ public struct RecordsPageView: View {
                     .foregroundStyle(DS.muted)
             }
 
-            if feed.newCount > 0 {
-                Button("\(feed.newCount) 条新记录") {
-                    Task { await feed.refresh() }
+            if feed.newCount > 0 || datePending {
+                Button(datePending ? "日期已更新 · 刷新" : "\(feed.newCount) 条新记录") {
+                    Task { await refreshRecords() }
                 }
                 .buttonStyle(LinearButtonStyle(variant: .selectedGhost, compact: true))
                 .disabled(!active || feed.loading)
@@ -232,7 +271,7 @@ public struct RecordsPageView: View {
                 bordered: true,
                 disabled: !active || feed.loading
             ) {
-                Task { await feed.refresh() }
+                Task { await refreshRecords() }
             }
 
             LinearSelect(
@@ -256,13 +295,6 @@ public struct RecordsPageView: View {
                 }
             )
         }
-    }
-
-    private func rowHeight(for row: UsageRecord, showModel: Bool, showLatency: Bool) -> CGFloat {
-        let base: CGFloat = showLatency ? 42 : 38
-        guard showModel else { return base }
-        let routeCount = max(1, RecordFormatting.modelRoute(row).count) + (row.upstream_model_mismatch ? 1 : 0)
-        return max(base, CGFloat(routeCount) * 14 + 8)
     }
 
     private var recordsTableSurface: some View {
@@ -333,8 +365,9 @@ public struct RecordsPageView: View {
                         VStack(spacing: 0) {
                             HStack(alignment: .top, spacing: 0) {
                                 VStack(spacing: 0) {
-                                    ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, row in
-                                        let rh = rowHeight(for: row, showModel: hasModelCol, showLatency: hasLatencyCol)
+                                    ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, item in
+                                        let row = item.record
+                                        let rh = item.height(model: hasModelCol, latency: hasLatencyCol)
                                         Button {
                                             openDetail(id: row.id)
                                         } label: {
@@ -354,6 +387,7 @@ public struct RecordsPageView: View {
                                             .contentShape(Rectangle())
                                         }
                                         .buttonStyle(.linearPlain)
+                                        .help("\(row.user_name ?? row.user_email ?? "用户") #\(row.user_id)")
                                         .onHover { hov in
                                             if hov { hoveredRowId = row.id } else if hoveredRowId == row.id { hoveredRowId = nil }
                                         }
@@ -377,11 +411,12 @@ public struct RecordsPageView: View {
                                         }
                                         .frame(height: 0)
 
-                                        ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, row in
-                                            let rh = rowHeight(for: row, showModel: hasModelCol, showLatency: hasLatencyCol)
+                                        ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, item in
+                                            let row = item.record
+                                            let rh = item.height(model: hasModelCol, latency: hasLatencyCol)
                                             HStack(spacing: colSpacing) {
                                                 if hasApiKeyCol {
-                                                    cellView(.api_key, row: row)
+                                                    cellView(.api_key, row: row, route: item.route)
                                                 }
                                                 Text(BeijingTime.fullTime(row.created_at))
                                                     .font(DS.fontPriorityMeta)
@@ -390,7 +425,7 @@ public struct RecordsPageView: View {
                                                     .foregroundStyle(DS.muted)
                                                     .frame(width: timeColWidth, alignment: .leading)
                                                 ForEach(trailingCols, id: \.rawValue) { col in
-                                                    cellView(col, row: row)
+                                                    cellView(col, row: row, route: item.route)
                                                 }
                                                 Spacer(minLength: 0)
                                             }
@@ -460,8 +495,10 @@ public struct RecordsPageView: View {
                                 )
                             }
                         }
+                        .onGeometryChange(for: Bool.self) { $0.frame(in: .named("recordsVScroll")).minY < -8 } action: { scrolled = $0 }
                     }
                     .coordinateSpace(name: "recordsVScroll")
+                    .id(scrollReset)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
@@ -486,7 +523,7 @@ public struct RecordsPageView: View {
     }
 
     @ViewBuilder
-    private func cellView(_ col: RecordColumnSpec, row: UsageRecord) -> some View {
+    private func cellView(_ col: RecordColumnSpec, row: UsageRecord, route steps: [ModelRouteStep]) -> some View {
         switch col {
         case .api_key:
             VStack(alignment: .leading, spacing: 2) {
@@ -499,6 +536,7 @@ public struct RecordsPageView: View {
                     .foregroundStyle(DS.muted)
             }
             .frame(width: col.width, alignment: .leading)
+            .help("\(row.api_key_name ?? "API 密钥") #\(row.api_key_id)")
 
         case .account:
             Text(row.account_name ?? "#\(row.account_id)")
@@ -506,9 +544,9 @@ public struct RecordsPageView: View {
                 .foregroundStyle(DS.ink)
                 .lineLimit(1)
                 .frame(width: col.width, alignment: .leading)
+                .help("\(row.account_name ?? "账户") #\(row.account_id)")
 
         case .model:
-            let steps = RecordFormatting.modelRoute(row)
             VStack(alignment: .leading, spacing: 2) {
                 if steps.isEmpty {
                     Text("—")
@@ -549,24 +587,7 @@ public struct RecordsPageView: View {
             .frame(width: col.width, alignment: .leading)
 
         case .type:
-            let rt = RecordFormatting.requestTypeKey(row)
-            let tone = requestTypeColors(rt.key)
-            SwiftUI.Group {
-                if row.native_compaction_v2 == true {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 3) {
-                            typeBadge(rt.label, fg: tone.fg, bg: tone.bg)
-                            typeBadge("压缩", fg: DS.recordCompactFg, bg: DS.recordCompactBg)
-                        }
-                        VStack(alignment: .leading, spacing: 2) {
-                            typeBadge(rt.label, fg: tone.fg, bg: tone.bg)
-                            typeBadge("压缩", fg: DS.recordCompactFg, bg: DS.recordCompactBg)
-                        }
-                    }
-                } else {
-                    typeBadge(rt.label, fg: tone.fg, bg: tone.bg)
-                }
-            }
+            RecordTypeBadges(row: row)
             .frame(width: col.width, alignment: .leading)
 
         case .reasoning:
@@ -681,6 +702,7 @@ public struct RecordsPageView: View {
                 .foregroundStyle(DS.muted)
                 .lineLimit(1)
                 .frame(width: col.width, alignment: .leading)
+                .help(row.user_agent ?? "—")
 
         case .ip:
             Text(verbatim: row.ip_address ?? "—")
@@ -688,6 +710,7 @@ public struct RecordsPageView: View {
                 .foregroundStyle(DS.muted)
                 .lineLimit(1)
                 .frame(width: col.width, alignment: .leading)
+                .help(row.ip_address ?? "—")
 
         case .endpoint:
             VStack(alignment: .leading, spacing: 2) {
@@ -710,8 +733,7 @@ public struct RecordsPageView: View {
                 .frame(width: col.width, alignment: .leading)
 
         case .billing:
-            let map = ["token": "Token", "image": "图片", "per_request": "按次"]
-            Text(map[row.billing_mode ?? ""] ?? row.billing_mode ?? "—")
+            Text(RecordFormatting.billingMode(row.billing_mode))
                 .font(DS.fontCompact)
                 .lineLimit(1)
                 .foregroundStyle(DS.muted)
@@ -730,6 +752,59 @@ public struct RecordsPageView: View {
                 .foregroundStyle(DS.muted)
                 .lineLimit(1)
                 .frame(width: col.width, alignment: .leading)
+        }
+    }
+
+    private func latencyColor(_ level: RecordFormatting.LatencyLevel) -> Color {
+        switch level {
+        case .good: return DS.good
+        case .warn: return DS.warn
+        case .slow: return DS.latencySlow
+        case .critical: return DS.bad
+        case .unknown: return DS.muted
+        }
+    }
+
+    private func openDetail(id: Int) {
+        let seed = feed.items.first(where: { $0.id == id })
+        store.openRecordDetail(id: id, seed: seed?.record)
+    }
+}
+
+private struct RecordsFooterNearKey: PreferenceKey {
+    static let defaultValue: Bool = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
+
+private struct RecordsHScrollOffsetKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct RecordTypeBadges: View {
+    let row: UsageRecord
+    var body: some View {
+        let rt = RecordFormatting.requestTypeKey(row)
+        let tone = requestTypeColors(rt.key)
+        SwiftUI.Group {
+            if row.native_compaction_v2 == true {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 3) {
+                        typeBadge(rt.label, fg: tone.fg, bg: tone.bg)
+                        typeBadge("压缩", fg: DS.recordCompactFg, bg: DS.recordCompactBg)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        typeBadge(rt.label, fg: tone.fg, bg: tone.bg)
+                        typeBadge("压缩", fg: DS.recordCompactFg, bg: DS.recordCompactBg)
+                    }
+                }
+            } else {
+                typeBadge(rt.label, fg: tone.fg, bg: tone.bg)
+            }
         }
     }
 
@@ -754,35 +829,6 @@ public struct RecordsPageView: View {
         case "unknown": return (DS.warn, DS.warnBg)
         default: return (DS.recordSyncFg, DS.recordSyncBg)
         }
-    }
-
-    private func latencyColor(_ level: RecordFormatting.LatencyLevel) -> Color {
-        switch level {
-        case .good: return DS.good
-        case .warn: return DS.warn
-        case .slow: return DS.latencySlow
-        case .critical: return DS.bad
-        case .unknown: return DS.muted
-        }
-    }
-
-    private func openDetail(id: Int) {
-        let seed = feed.items.first(where: { $0.id == id })
-        store.openRecordDetail(id: id, seed: seed)
-    }
-}
-
-private struct RecordsFooterNearKey: PreferenceKey {
-    static let defaultValue: Bool = false
-    static func reduce(value: inout Bool, nextValue: () -> Bool) {
-        value = value || nextValue()
-    }
-}
-
-private struct RecordsHScrollOffsetKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
     }
 }
 
@@ -839,6 +885,9 @@ public struct RecordDetailDrawerView: View {
                                 }
                                 pair("转发", row.upstream_model ?? row.requested_model ?? row.model ?? "—", copyable: true)
                                 pair("返回", row.upstream_response_model ?? "—", copyable: true)
+                                if row.upstream_model_mismatch {
+                                    Label("返回差异", systemImage: "exclamationmark.circle").font(DS.fontCompactMedium).foregroundStyle(DS.warn)
+                                }
                                 pair("请求强度", row.requested_reasoning_effort ?? "—")
                                 pair("实际强度", row.reasoning_effort ?? "—")
                             }
@@ -846,10 +895,14 @@ public struct RecordDetailDrawerView: View {
                                 pair("用户", "\(row.user_name ?? row.user_email ?? "用户") #\(row.user_id)")
                                 pair("API 密钥", "\(row.api_key_name ?? "密钥") #\(row.api_key_id)")
                                 pair("账户", "\(row.account_name ?? "账户") #\(row.account_id)")
+                                pair("分组", row.group_name ?? row.group_id.map { "#\($0)" } ?? "—")
+                                field("类型") { RecordTypeBadges(row: row) }
+                                pair("服务等级", row.service_tier ?? "—")
                                 pair("入站端点", row.inbound_endpoint ?? "—", copyable: true)
                                 pair("上游端点", row.upstream_endpoint ?? "—", copyable: true)
                                 pair("请求 ID", row.request_id ?? "—", copyable: true)
                                 pair("上游 ID", row.upstream_request_id ?? "—", copyable: true)
+                                pair("User-Agent", row.user_agent ?? "—", copyable: true)
                                 pair("IP", row.ip_address ?? "—", copyable: true)
                                 pair("首字延迟", RecordFormatting.latency(row.first_token_ms))
                                 pair("总耗时", RecordFormatting.latency(row.duration_ms))
@@ -860,11 +913,31 @@ public struct RecordDetailDrawerView: View {
                                 pair("输出 Token", RecordFormatting.tokenCount(row.output_tokens))
                                 pair("缓存读取", RecordFormatting.tokenCount(row.cache_read_tokens))
                                 pair("缓存写入", RecordFormatting.tokenCount(row.cache_creation_tokens))
+                                if let tokens = row.cache_creation_5m_tokens, tokens > 0 { pair("5m 缓存", String(tokens)) }
+                                if let tokens = row.cache_creation_1h_tokens, tokens > 0 { pair("1h 缓存", String(tokens)) }
+                                pair("输入费用", RecordFormatting.money(row.input_cost, digits: 8))
+                                pair("输出费用", RecordFormatting.money(row.output_cost, digits: 8))
+                                pair("缓存读取费用", RecordFormatting.money(row.cache_read_cost, digits: 8))
+                                pair("缓存写入费用", RecordFormatting.money(row.cache_creation_cost, digits: 8))
                                 pair("标准费用", RecordFormatting.money(row.total_cost, digits: 8))
                                 pair("用户实扣", RecordFormatting.money(row.actual_cost, digits: 8))
                                 pair("账户费用", RecordFormatting.money(row.account_cost, digits: 8))
                                 pair("用户倍率", RecordFormatting.decimal(row.rate_multiplier, digits: 2))
                                 pair("账户倍率", RecordFormatting.decimal(row.account_rate_multiplier ?? "1", digits: 2))
+                                pair("计费模式", RecordFormatting.billingMode(row.billing_mode))
+                                if let count = row.image_count, count > 0 { pair("图片", String(count)) }
+                                if let tokens = row.image_input_tokens, tokens > 0 { pair("图片输入 Token", String(tokens)) }
+                                if let tokens = row.image_output_tokens, tokens > 0 { pair("图片输出 Token", String(tokens)) }
+                                if let cost = row.image_input_cost, Decimal(string: cost).map({ $0 != 0 }) == true {
+                                    pair("图片输入费用", RecordFormatting.money(cost, digits: 8))
+                                }
+                                if let cost = row.image_output_cost, Decimal(string: cost).map({ $0 != 0 }) == true {
+                                    pair("图片输出费用", RecordFormatting.money(cost, digits: 8))
+                                }
+                                if let count = row.video_count, count > 0 {
+                                    let duration = row.video_duration_seconds.map { $0.formatted(.number.grouping(.never)) } ?? "—"
+                                    pair("视频", "\(count) · \(row.video_resolution ?? "—") · \(duration)s")
+                                }
                             }
                         }
                         .padding(18)
@@ -898,28 +971,38 @@ public struct RecordDetailDrawerView: View {
         }
     }
 
-    private func pair(_ key: String, _ val: String, copyable: Bool = false) -> some View {
-        HStack {
+    private func field<C: View>(_ key: String, @ViewBuilder value: () -> C) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(key)
                 .font(DS.fontCompact)
                 .foregroundStyle(DS.muted)
                 .frame(width: 84, alignment: .leading)
-            Text(verbatim: val)
-                .font(copyable ? DS.fontMono11 : DS.fontCompactMedium)
-                .monospacedDigit()
-                .foregroundStyle(DS.ink)
-                .lineLimit(1)
-            Spacer()
-            if copyable && val != "—" {
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(val, forType: .string)
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .font(DS.iconFont(10))
-                        .foregroundStyle(DS.muted)
+            value().frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func pair(_ key: String, _ val: String, copyable: Bool = false) -> some View {
+        field(key) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(verbatim: val)
+                    .font(copyable ? DS.fontMono12 : DS.fontCompactMedium)
+                    .monospacedDigit()
+                    .foregroundStyle(DS.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if copyable && val != "—" {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(val, forType: .string)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(DS.iconFont(10))
+                            .foregroundStyle(DS.muted)
+                    }
+                    .buttonStyle(.linearPlain)
+                    .accessibilityLabel("复制\(key)")
                 }
-                .buttonStyle(.linearPlain)
             }
         }
     }

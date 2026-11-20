@@ -1,3 +1,6 @@
+#[path = "support/fingerprint_cache.rs"]
+mod fingerprint_cache;
+
 use axum::{
     body::Body,
     extract::Request,
@@ -16,7 +19,7 @@ use std::{
         atomic::{AtomicI64, AtomicUsize, Ordering},
         Arc,
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 use sub2ops_server::{
     account_templates::Templates,
@@ -30,7 +33,6 @@ use sub2ops_server::{
     queries::Queries,
     runtime::Runtime,
     settings::Settings,
-    store::{valid_object, Store},
     supervision::Supervisor,
 };
 use tokio::{
@@ -119,37 +121,7 @@ fn fixture_settings(
         base_url: upstream_url,
         verify_url: String::new(),
     };
-    let (bank, mut version) = sub2ops_server::modeltrace::bundled().unwrap();
-    let manifest = sub2ops_server::modeltrace::manifest();
-    version["core_blob"] = manifest["files"]["core"]["gitBlob"].clone();
-    version["challenge_blob"] = manifest["files"]["challenge"]["gitBlob"].clone();
-    let raw = serde_json::to_string(&bank).unwrap();
-    version["sha256"] = sub2ops_server::compat::sha256(&raw).into();
-    let checked_at = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs_f64();
-    let state = json!({
-        "version":1,
-        "active":{"raw_bank":raw,"version":version},
-        "source":"bundled",
-        "checked_at":checked_at,
-        "synced_at":checked_at,
-        "cooldown_until":null,
-        "rate_limit_until":null,
-        "last_error":null,
-        "result":"up-to-date"
-    });
-    Store::new(
-        directory.join("modeltrace-bank-state.json"),
-        json!({}),
-        valid_object,
-    )
-    .transaction(|value| {
-        *value = state;
-        Ok(())
-    })
-    .unwrap();
+    fingerprint_cache::seed(directory);
     settings
 }
 

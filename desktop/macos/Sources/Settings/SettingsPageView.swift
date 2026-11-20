@@ -26,7 +26,7 @@ public struct SettingsPageView: View {
     }
 
     private var clientVersionString: String {
-        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.1.98"
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.1.99"
     }
 
     public var body: some View {

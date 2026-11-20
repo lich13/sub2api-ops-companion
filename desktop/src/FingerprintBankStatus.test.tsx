@@ -64,13 +64,31 @@ describe("fingerprint bank status", () => {
     ));
     await flush();
 
-    expect(container.textContent).toContain("指纹库 current-");
+    expect(container.textContent).toContain("ModelTrace 指纹库 current-");
     expect(container.textContent).toContain("内置库");
     expect(container.textContent).toContain("本轮使用");
     expect(container.textContent).toContain("task-rev");
     expect(container.textContent).toContain("分析器 7");
     expect(container.textContent).toContain("task-sha256");
     expect(vi.mocked(api).mock.calls[0]).toEqual(["GET", "/modeltrace/fingerprint-bank"]);
+  });
+
+  it("follows an automatic LM Detector check until failure and re-enables manual checking", async () => {
+    vi.useFakeTimers();
+    vi.mocked(api).mockResolvedValueOnce(bank({ status: "syncing" }) as never)
+      .mockResolvedValueOnce(bank({ status: "idle", result: "failed", error: "检测库连接失败" }) as never);
+    await act(async () => root.render(<FingerprintBankStatus online engine="lm_detector" />));
+    const button = container.querySelector("button")!;
+    expect(container.textContent).toContain("LM Detector 检测库");
+    expect(button.disabled).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(container.textContent).toContain("检测库连接失败");
+    expect(button.disabled).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(vi.mocked(api).mock.calls).toEqual([
+      ["GET", "/lm-detector/fingerprint-bank"],
+      ["GET", "/lm-detector/fingerprint-bank"],
+    ]);
   });
 
   it("checks for an update, follows the checking state, and reports the updated bank", async () => {

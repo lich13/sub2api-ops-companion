@@ -29,6 +29,15 @@ public struct RecordDateRange: Sendable, Equatable {
     public var start: String
     public var end: String
 
+    mutating func refreshPreset(at now: Date, holding: Bool) -> Bool {
+        guard let preset else { return false }
+        let current = BeijingDateLogic.presetRange(preset, now: now)
+        guard current != self else { return false }
+        if holding { return true }
+        self = current
+        return false
+    }
+
     public init(preset: DatePresetKey?, start: String, end: String) {
         self.preset = preset
         self.start = start

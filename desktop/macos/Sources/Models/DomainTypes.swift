@@ -10,13 +10,8 @@ public enum BeijingTime {
             return nil
         }
         let iso = raw.contains("T") ? raw : raw.replacingOccurrences(of: " ", with: "T", options: [], range: raw.range(of: " "))
-        let f1 = ISO8601DateFormatter()
-        f1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = f1.date(from: iso) { return date }
-        let f2 = ISO8601DateFormatter()
-        f2.formatOptions = [.withInternetDateTime]
-        if let date = f2.date(from: iso) { return date }
-        return nil
+        return (try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(iso))
+            ?? (try? Date.ISO8601FormatStyle().parse(iso))
     }
 
     public static func fullTime(_ raw: String?) -> String {

@@ -98,7 +98,7 @@ def command_result(command: list[str], *, timeout: float = 20, cwd: Path | None 
 
 
 def seed_fingerprint_cache(state_dir: Path) -> None:
-    """Keep the hourly ModelTrace sync on bundled fixture data."""
+    """Keep both daily bank checks on bundled fixture data."""
     data_dir = ROOT / "server" / "resources" / "modeltrace"
     manifest = json.loads((data_dir / "manifest.json").read_text(encoding="utf-8"))
     raw = (data_dir / "unified_bank.json").read_bytes()
@@ -124,6 +124,10 @@ def seed_fingerprint_cache(state_dir: Path) -> None:
         "last_error": None,
         "result": "fixture-cached",
     }
+    lm_root = state_dir / "lm-detector"
+    lm_root.mkdir(exist_ok=True)
+    lm_revision = json.loads((ROOT / "server/resources/lm-detector/manifest.json").read_text())["revision"]
+    (lm_root / "state.json").write_text(json.dumps({"revision": lm_revision, "checked_at": now, "error": ""}))
     (state_dir / "modeltrace-bank-state.json").write_text(
         json.dumps(state, ensure_ascii=False), encoding="utf-8"
     )

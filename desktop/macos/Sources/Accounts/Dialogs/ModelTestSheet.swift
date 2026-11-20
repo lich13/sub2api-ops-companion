@@ -274,7 +274,7 @@ public struct ModelTestSheet: View {
                         online: store.state.online,
                         connectionKey: store.connectionKey,
                         engines: [engine],
-                        taskVersion: job?.bank_version
+                        taskVersion: (job?.engine ?? "modeltrace") == engine.rawValue ? job?.bank_version : nil
                     )
 
                     if !error.isEmpty {

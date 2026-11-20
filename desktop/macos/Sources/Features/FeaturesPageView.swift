@@ -64,7 +64,7 @@ public struct FeaturesPageView: View {
                 if visitedTabs.contains(.recovery) {
                     LinearRetainedTabSlot(isActive: selectedTab == .recovery) {
                         scrollableTabBody {
-                            RecoveryDetectionTabView(store: store)
+                            RecoveryDetectionTabView(store: store, isActive: selectedTab == .recovery)
                         }
                     }
                 }

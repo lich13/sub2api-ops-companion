@@ -3,15 +3,17 @@ import SwiftUI
 public struct RecordDatePickerView: View {
     public let value: RecordDateRange
     public let disabled: Bool
+    public let onOpenChange: (Bool) -> Void
     public let onChange: (RecordDateRange) -> Void
 
     @State private var isOpen: Bool = false
     @State private var draft: RecordDateRange
     @State private var error: String = ""
 
-    public init(value: RecordDateRange, disabled: Bool, onChange: @escaping (RecordDateRange) -> Void) {
+    public init(value: RecordDateRange, disabled: Bool, onOpenChange: @escaping (Bool) -> Void = { _ in }, onChange: @escaping (RecordDateRange) -> Void) {
         self.value = value
         self.disabled = disabled
+        self.onOpenChange = onOpenChange
         self.onChange = onChange
         self._draft = State(initialValue: value)
     }
@@ -44,6 +46,7 @@ public struct RecordDatePickerView: View {
         .buttonStyle(.linearPlain)
         .disabled(disabled)
         .accessibilityLabel("时间范围")
+        .onChange(of: isOpen) { onOpenChange(isOpen) }
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {

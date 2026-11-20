@@ -235,6 +235,7 @@ impl ModelTests {
             lm_bank: crate::lm_detector::Bank::new(
                 actions.settings.clone(),
                 actions.supervisor.clone(),
+                store.clone(),
             ),
             actions,
             store,

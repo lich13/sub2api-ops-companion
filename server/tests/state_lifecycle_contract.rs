@@ -1,3 +1,6 @@
+#[path = "support/fingerprint_cache.rs"]
+mod fingerprint_cache;
+
 use axum::{extract::State, http::StatusCode, routing::get, Router};
 use serde_json::{json, Value};
 use std::{
@@ -7,7 +10,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex as StdMutex,
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 use sub2ops_server::{
     account_locks::AccountLocks,
@@ -664,40 +667,11 @@ async fn coordinator_drain_closes_aborts_owned_query_and_releases_state_lock() {
     database.close().await;
 }
 
-fn seed_fingerprint_cache(root: &Path) {
-    let raw = include_str!("../resources/modeltrace/unified_bank.json");
-    let (bank, mut version) = sub2ops_server::modeltrace::bundled().unwrap();
-    assert_eq!(serde_json::from_str::<Value>(raw).unwrap(), bank);
-    let manifest = sub2ops_server::modeltrace::manifest();
-    for key in ["core", "challenge"] {
-        version[format!("{key}_blob")] = manifest["files"][key]["gitBlob"].clone();
-    }
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs_f64();
-    let state = json!({
-        "version": 1,
-        "active": {"raw_bank": raw, "version": version},
-        "source": "bundled",
-        "checked_at": now,
-        "synced_at": now,
-        "cooldown_until": null,
-        "last_error": null,
-        "result": "fixture-cached"
-    });
-    fs::write(
-        root.join("modeltrace-bank-state.json"),
-        serde_json::to_vec(&state).unwrap(),
-    )
-    .expect("seed a valid recent bundled bank to keep startup offline");
-}
-
 #[tokio::test]
 async fn runtime_new_directory_startup_creates_valid_state_without_missing_intents() {
     let root = contract_dir().join("runtime-new-directory");
     fs::create_dir_all(&root).expect("create runner-owned fresh runtime directory");
-    seed_fingerprint_cache(&root);
+    fingerprint_cache::seed(&root);
     let runtime = Runtime::new(settings(&root, database_url()))
         .await
         .expect("construct Runtime in fresh writable directory");
@@ -722,7 +696,7 @@ async fn runtime_new_directory_startup_creates_valid_state_without_missing_inten
 async fn runtime_start_preserves_retired_files_and_initializes_current_detection() {
     let root = contract_dir().join("runtime-migration");
     fs::create_dir_all(&root).unwrap();
-    seed_fingerprint_cache(&root);
+    fingerprint_cache::seed(&root);
     let retired = root.join("account-model-profiles.json");
     fs::write(&retired, b"fixture-retired-file-not-read").unwrap();
     let guard = root.join("guard-state.json");

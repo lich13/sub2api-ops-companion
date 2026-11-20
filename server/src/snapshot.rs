@@ -9,7 +9,7 @@ use crate::{
 use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,
-    sync::{atomic::Ordering, Arc, LazyLock},
+    sync::{atomic::Ordering, LazyLock},
     time::{Duration, Instant},
 };
 
@@ -21,7 +21,6 @@ pub(crate) struct Cache {
     epoch: u64,
     stats_epoch: u64,
     observed: Option<Instant>,
-    snapshot: Arc<Value>,
     snapshot_bytes: axum::body::Bytes,
     stats_at: Option<Instant>,
     stats_signature: Value,
@@ -38,19 +37,9 @@ impl Runtime {
         self.cache_epoch.fetch_add(1, Ordering::AcqRel);
     }
     pub async fn snapshot(&self) -> Result<Value> {
-        self.shared_snapshot().await.map(|value| (*value).clone())
+        Ok(serde_json::from_slice(&self.snapshot_bytes().await?)?)
     }
     pub async fn snapshot_bytes(&self) -> Result<axum::body::Bytes> {
-        self.shared_snapshot_with_bytes()
-            .await
-            .map(|(_, bytes)| bytes)
-    }
-    async fn shared_snapshot(&self) -> Result<Arc<Value>> {
-        self.shared_snapshot_with_bytes()
-            .await
-            .map(|(value, _)| value)
-    }
-    async fn shared_snapshot_with_bytes(&self) -> Result<(Arc<Value>, axum::body::Bytes)> {
         let mut cache = self.snapshot.lock().await;
         let epoch = self.cache_epoch.load(Ordering::Acquire);
         let stats_epoch = self.stats_epoch.load(Ordering::Acquire);
@@ -60,7 +49,7 @@ impl Runtime {
                 .observed
                 .is_some_and(|at| at.elapsed() < Duration::from_millis(1500))
         {
-            return Ok((cache.snapshot.clone(), cache.snapshot_bytes.clone()));
+            return Ok(cache.snapshot_bytes.clone());
         }
         let now = chrono::Utc::now();
         let state = self.actions.queries.oauth.shared_snapshot()?;
@@ -115,7 +104,7 @@ impl Runtime {
             .detection
             .store
             .read_shared()
-            .and_then(|state| self.config.current().map(|config| (state, config)));
+            .and_then(|state| self.config.current_shared().map(|config| (state, config)));
         for account in &mut accounts {
             let id = integer(&account["id"]).unwrap();
             usage::attach_stats(id, &mut account["usage"], &cache.stats, 500_000);
@@ -150,21 +139,18 @@ impl Runtime {
             .actions
             .queries
             .recoveries_with_names(None, 20, &live_names)?;
-        let result = Arc::new(
-            json!({"schema_version":1,"observed_at":datetime(now),"accounts":accounts,"groups":groups,
-            "errors":errors["items"],"recoveries":recoveries["items"]}),
-        );
+        let result = json!({"schema_version":1,"observed_at":datetime(now),"accounts":accounts,"groups":groups,
+            "errors":errors["items"],"recoveries":recoveries["items"]});
         let bytes =
-            axum::body::Bytes::from(serde_json::to_vec(&*result).map_err(|_| Error::internal())?);
+            axum::body::Bytes::from(serde_json::to_vec(&result).map_err(|_| Error::internal())?);
         if self.cache_epoch.load(Ordering::Acquire) == epoch {
             cache.epoch = epoch;
             cache.observed = Some(Instant::now());
-            cache.snapshot = result.clone();
             cache.snapshot_bytes = bytes.clone();
         } else {
             cache.stats_at = None;
         }
-        Ok((result, bytes))
+        Ok(bytes)
     }
     pub async fn account_snapshot_from_row(
         &self,
@@ -196,7 +182,7 @@ impl Runtime {
                         .store
                         .read_shared()
                         .and_then(|state| {
-                            self.config.current().and_then(|config| {
+                            self.config.current_shared().and_then(|config| {
                                 crate::model_detection::Detection::project_account(
                                     row, &state, &config,
                                 )

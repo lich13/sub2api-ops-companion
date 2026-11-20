@@ -1,3 +1,6 @@
+#[path = "support/fingerprint_cache.rs"]
+mod fingerprint_cache;
+
 use axum::{
     body::to_bytes,
     extract::{Request, State},
@@ -255,23 +258,7 @@ impl Harness {
             .append_pair("application_name", "priority_order_runtime");
 
         let temp = tempfile::tempdir().expect("create priority-order state directory");
-        let (_, mut bank_version) = sub2ops_server::modeltrace::bundled().unwrap();
-        let manifest = sub2ops_server::modeltrace::manifest();
-        for name in ["core", "challenge"] {
-            bank_version[format!("{name}_blob")] = manifest["files"][name]["gitBlob"].clone();
-        }
-        fs::write(
-            temp.path().join("modeltrace-bank-state.json"),
-            serde_json::to_vec(&json!({
-                "version":1,
-                "active":{"raw_bank":include_str!("../resources/modeltrace/unified_bank.json"),"version":bank_version},
-                "source":"bundled","checked_at":chrono::Utc::now().timestamp(),
-                "synced_at":0,"cooldown_until":null,"last_error":null,"result":null
-            }))
-            .unwrap(),
-        )
-        .expect("write modeltrace fixture state");
-
+        fingerprint_cache::seed(temp.path());
         let upstream_listener = TcpListener::bind(("127.0.0.1", 0))
             .await
             .expect("bind priority-order upstream fixture");

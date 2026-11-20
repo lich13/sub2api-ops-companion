@@ -156,6 +156,7 @@ struct Snapshots {
 #[derive(Clone)]
 pub struct Bank {
     state: Store,
+    jobs: Store,
     root: PathBuf,
     snapshots: Arc<Mutex<Snapshots>>,
     sync_lock: Arc<tokio::sync::Mutex<()>>,
@@ -163,7 +164,11 @@ pub struct Bank {
     tasks: crate::tasks::Tasks,
 }
 impl Bank {
-    pub fn new(settings: Arc<Settings>, supervisor: crate::supervision::Supervisor) -> Self {
+    pub fn new(
+        settings: Arc<Settings>,
+        supervisor: crate::supervision::Supervisor,
+        jobs: Store,
+    ) -> Self {
         let root = settings.data_dir().join("lm-detector");
         Self {
             state: Store::new(
@@ -172,6 +177,7 @@ impl Bank {
                 valid_object,
             ),
             root,
+            jobs,
             snapshots: Arc::new(Mutex::new(Snapshots::default())),
             sync_lock: Arc::new(tokio::sync::Mutex::new(())),
             sync_error: Arc::new(Mutex::new(None)),
@@ -269,11 +275,26 @@ impl Bank {
         )
     }
     pub async fn request_sync(&self) -> Result<Value> {
-        let lock = self
-            .sync_lock
-            .clone()
-            .try_lock_owned()
-            .map_err(|_| Error::new(409, "检测库正在更新"))?;
+        self.start_sync(true)?;
+        self.public().await
+    }
+
+    pub fn sync_if_due(&self) -> Result<()> {
+        self.start_sync(false)
+    }
+
+    fn start_sync(&self, manual: bool) -> Result<()> {
+        let lock = match self.sync_lock.clone().try_lock_owned() {
+            Ok(lock) => lock,
+            Err(_) if !manual => return Ok(()),
+            Err(_) => return Err(Error::new(409, "检测库正在更新")),
+        };
+        if !manual {
+            let state = self.state.read_shared()?;
+            if !check_due(&state["checked_at"], chrono::Utc::now()) {
+                return Ok(());
+            }
+        }
         let this = self.clone();
         *self.sync_error.lock().unwrap_or_else(|e| e.into_inner()) = None;
         self.tasks.spawn(async move {
@@ -303,8 +324,7 @@ impl Bank {
                     Some("检测库更新状态无法保存，请检查服务端存储后重试".into());
             }
             drop(lock);
-        })?;
-        self.public().await
+        })
     }
     pub async fn close(&self, seconds: u64) {
         self.tasks.close(seconds).await;
@@ -445,23 +465,100 @@ impl Bank {
             std::fs::rename(stage.path(), &dest)?;
             loaded
         };
-        self.state.transaction(|state| {
+        let previous = self.state.transaction(|state| {
+            let previous = string(&state["revision"]).to_owned();
             state["revision"] = revision.into();
             state["synced_at"] = crate::compat::now().into();
-            Ok(())
+            Ok(previous)
         })?;
-        let mut cache = self.snapshots.lock().unwrap_or_else(|e| e.into_inner());
-        let snapshot = Arc::new(snapshot);
-        cache
-            .history
-            .insert(revision.into(), Arc::downgrade(&snapshot));
-        cache.active = Some(snapshot);
-        cache
-            .history
-            .retain(|_, snapshot| snapshot.strong_count() > 0);
+        let mut keep: BTreeSet<String> = {
+            let mut cache = self.snapshots.lock().unwrap_or_else(|e| e.into_inner());
+            let snapshot = Arc::new(snapshot);
+            cache
+                .history
+                .insert(revision.into(), Arc::downgrade(&snapshot));
+            cache.active = Some(snapshot);
+            cache
+                .history
+                .retain(|_, snapshot| snapshot.strong_count() > 0);
+            cache.history.keys().cloned().collect()
+        };
+        keep.insert(previous);
+        keep.insert(revision.into());
+        let bank = self.clone();
+        let cleanup = tokio::task::spawn_blocking(move || bank.prune_revisions(keep));
+        if !matches!(crate::supervision::join(cleanup).await, Ok(Ok(()))) {
+            eprintln!("LM Detector 旧库清理失败");
+        }
+        Ok(())
+    }
+
+    fn prune_revisions(&self, mut keep: BTreeSet<String>) -> Result<()> {
+        let jobs = self.jobs.read_shared()?;
+        for source in ["jobs", "accounts"] {
+            for job in jobs[source]
+                .as_object()
+                .into_iter()
+                .flat_map(|map| map.values())
+            {
+                if job["engine"] == ENGINE
+                    && (crate::model_tests::ACTIVE.contains(&string(&job["status"]))
+                        || job["status"] == "needs_confirmation"
+                        || job["can_retry"] == true)
+                {
+                    let rev = string(&job["resource_revision"]);
+                    if !valid_revision(rev) {
+                        return Err(unavailable());
+                    }
+                    keep.insert(rev.to_owned());
+                }
+            }
+        }
+        for entry in std::fs::read_dir(&self.root)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let Some(rev) = name.to_str() else { continue };
+            if !entry.file_type()?.is_dir() || !valid_revision(rev) || keep.contains(rev) {
+                continue;
+            }
+            let path = entry.path();
+            let manifest = path.join("manifest.json");
+            if !manifest.is_file() {
+                continue;
+            }
+            let meta: Value = serde_json::from_slice(&std::fs::read(&manifest)?)?;
+            if meta["revision"] != rev {
+                continue;
+            }
+            let mut files = Vec::new();
+            for file in std::fs::read_dir(&path)? {
+                let file = file?;
+                let name = file.file_name();
+                if !file.file_type()?.is_file()
+                    || !(name == "manifest.json"
+                        || FILES.iter().any(|(known, _, _)| name == *known))
+                {
+                    files.clear();
+                    break;
+                }
+                files.push(file.path());
+            }
+            if files.len() == FILES.len() + 1 {
+                for file in files {
+                    std::fs::remove_file(file)?;
+                }
+                std::fs::remove_dir(path)?;
+            }
+        }
         Ok(())
     }
 }
+fn check_due(checked_at: &Value, now: chrono::DateTime<chrono::Utc>) -> bool {
+    crate::compat::parse_datetime(checked_at)
+        .and_then(|last| (now - last).to_std().ok())
+        .is_none_or(|age| age >= crate::fingerprint_bank::CHECK_INTERVAL)
+}
+
 fn tree_entry(tree: &Value, path: &str, kind: &str) -> Result<String> {
     tree["tree"]
         .as_array()
@@ -633,8 +730,113 @@ mod tests {
         Bank::new(
             Arc::new(Settings::from_env(&env).unwrap()),
             crate::supervision::Supervisor::default(),
+            Store::new(
+                root.join("jobs.json"),
+                json!({"jobs": {},"accounts": {}}),
+                valid_object,
+            ),
         )
     }
+    #[test]
+    fn daily_deadline_includes_a_missed_or_first_run() {
+        let checked = json!("2026-11-19T10:00:00Z");
+        let start = crate::compat::parse_datetime(&checked).unwrap();
+        assert!(check_due(&Value::Null, start));
+        assert!(!check_due(
+            &checked,
+            start + chrono::Duration::seconds(86_399)
+        ));
+        assert!(check_due(&checked, start + chrono::Duration::days(1)));
+        assert!(check_due(&checked, start + chrono::Duration::days(3)));
+    }
+
+    #[tokio::test]
+    async fn automatic_checks_share_the_manual_update_and_skip_a_recent_check() {
+        let root = tempfile::tempdir().unwrap();
+        let bank = test_bank(root.path());
+        bank.sync_if_due().unwrap();
+        assert!(bank.sync_lock.try_lock().is_err());
+        bank.sync_if_due().unwrap();
+        assert_eq!(bank.start_sync(true).unwrap_err().status.as_u16(), 409);
+
+        let other_root = tempfile::tempdir().unwrap();
+        let recent = test_bank(other_root.path());
+        recent
+            .state
+            .transaction(|state| {
+                state["checked_at"] = crate::compat::now().into();
+                Ok(())
+            })
+            .unwrap();
+        recent.sync_if_due().unwrap();
+        assert!(recent.sync_lock.try_lock().is_ok());
+        recent.start_sync(true).unwrap();
+        assert!(recent.sync_lock.try_lock().is_err());
+    }
+
+    #[tokio::test]
+    async fn activation_reclaims_only_unreferenced_versions_and_keeps_job_results() {
+        let root = tempfile::tempdir().unwrap();
+        let bank = test_bank(root.path());
+        let install = |n: char| {
+            let bank = &bank;
+            async move {
+                let (stage, mut meta) = fixture();
+                meta["revision"] = n.to_string().repeat(40).into();
+                bank.activate(stage, meta).await.unwrap();
+            }
+        };
+        let path = |n: char| bank.root.join(n.to_string().repeat(40));
+        let mut jobs = json!({});
+        for (id, status, retry) in [
+            ('1', "queued", false),
+            ('2', "running", false),
+            ('3', "needs_confirmation", false),
+            ('4', "failed", true),
+            ('5', "completed", false),
+        ] {
+            jobs[id.to_string()] = json!({"engine":ENGINE,"status":status,"can_retry":retry,
+                "resource_revision":id.to_string().repeat(40),"report":{"result":"saved"}});
+        }
+        bank.jobs
+            .transaction(|state| {
+                state["jobs"] = jobs;
+                Ok(())
+            })
+            .unwrap();
+        for n in ['1', '2', '3', '4', '5', '6'] {
+            install(n).await;
+        }
+        let pinned = bank.load("6".repeat(40)).await.unwrap();
+        let (unknown, meta) = fixture();
+        let mut meta = meta;
+        meta["revision"] = "a".repeat(40).into();
+        std::fs::write(
+            unknown.path().join("manifest.json"),
+            serde_json::to_vec(&meta).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(unknown.path().join("operator-note"), b"retain").unwrap();
+        std::fs::rename(unknown.path(), path('a')).unwrap();
+        install('7').await;
+        assert!(!path('5').exists());
+        install('8').await;
+        for n in ['1', '2', '3', '4', '6', '7', '8', 'a'] {
+            assert!(path(n).is_dir(), "{n}");
+        }
+        assert_eq!(
+            bank.jobs.read_shared().unwrap()["jobs"]["5"]["report"]["result"],
+            "saved"
+        );
+        assert_eq!(pinned.version["revision"], "6".repeat(40));
+        drop(pinned);
+        install('9').await;
+        assert!(!path('6').exists());
+        assert!(!path('7').exists());
+        assert!(path('8').is_dir());
+        assert!(path('9').is_dir());
+    }
+
     #[tokio::test]
     async fn previous_bundled_pointer_migrates_and_other_revisions_are_left_alone() {
         let root = tempfile::tempdir().unwrap();

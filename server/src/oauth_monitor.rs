@@ -276,7 +276,7 @@ impl Monitor {
         if self.is_closed() {
             return Ok(());
         }
-        let config = self.config.current()?;
+        let config = self.config.current_shared()?;
         let now = self.now();
         // Record the due batch even while another tick owns the execution lock.
         // It may be dispatched after the due minute ends.

@@ -1,10 +1,28 @@
 import Foundation
 import Observation
 
+public struct RecordTableRow: Identifiable, Sendable {
+    public let record: UsageRecord
+    public let route: [ModelRouteStep]
+    private let modelHeight: CGFloat
+    public var id: Int { record.id }
+
+    init(_ record: UsageRecord) {
+        self.record = record
+        route = RecordFormatting.modelRoute(record)
+        let lines = max(1, route.count) + (record.upstream_model_mismatch ? 1 : 0)
+        modelHeight = CGFloat(lines) * 14 + 8
+    }
+
+    func height(model: Bool, latency: Bool) -> CGFloat {
+        max(latency ? 42 : 38, model ? modelHeight : 0)
+    }
+}
+
 @MainActor
 @Observable
 public final class RecordFeedStore {
-    public private(set) var items: [UsageRecord] = []
+    public private(set) var items: [RecordTableRow] = []
     public private(set) var cursor: String? = nil
     public private(set) var latestId: Int? = nil
     public private(set) var newCount: Int = 0
@@ -14,6 +32,8 @@ public final class RecordFeedStore {
     public private(set) var error: String = ""
     public private(set) var pageError: String = ""
 
+    public var holding = false
+    private var autoRefreshAllowed: Bool { !holding && !LinearMenuTracking.isTracking }
     private var activeQuery: String = ""
     private var epoch: UInt64 = 0
     private var pageRevision: UInt64 = 0
@@ -22,7 +42,7 @@ public final class RecordFeedStore {
 
     public init() {}
 
-    public func bind(query: String, active: Bool, holding: Bool) {
+    public func bind(query: String, active: Bool) {
         if activeQuery != query {
             activeQuery = query
             epoch &+= 1
@@ -49,7 +69,7 @@ public final class RecordFeedStore {
                 if self.latestId == nil {
                     ok = await self.loadHead(capturedEpoch: capturedEpoch, query: capturedQuery)
                 } else {
-                    ok = await self.pollNewRecords(capturedEpoch: capturedEpoch, query: capturedQuery, holding: holding)
+                    ok = await self.pollNewRecords(capturedEpoch: capturedEpoch, query: capturedQuery)
                 }
                 failures = ok ? 0 : (failures + 1)
                 let delaySeconds = min(60, 10 * (1 << min(failures, 3)))
@@ -91,7 +111,7 @@ public final class RecordFeedStore {
             var seen = Set(items.map(\.id))
             var merged = items
             for row in page.items where seen.insert(row.id).inserted {
-                merged.append(row)
+                merged.append(RecordTableRow(row))
             }
             let stalled = page.next_cursor != nil && (
                 page.next_cursor == nextCursor
@@ -120,7 +140,7 @@ public final class RecordFeedStore {
         return row
     }
 
-    private func loadHead(capturedEpoch: UInt64, query: String) async -> Bool {
+    private func loadHead(capturedEpoch: UInt64, query: String, automatic: Bool = false) async -> Bool {
         loading = true
         defer {
             if epoch == capturedEpoch { loading = false }
@@ -130,10 +150,11 @@ public final class RecordFeedStore {
                 "GET",
                 "/usage-records?\(query)&include_summary=true"
             )
-            guard epoch == capturedEpoch && activeQuery == query else { return false }
+            guard !Task.isCancelled, epoch == capturedEpoch && activeQuery == query else { return false }
+            if automatic && !autoRefreshAllowed { return true }
             pageRevision &+= 1
             consumedCursors.removeAll()
-            items = page.items
+            items = page.items.map(RecordTableRow.init)
             cursor = page.next_cursor
             latestId = page.latest_id
             observedAt = page.observed_at
@@ -143,29 +164,29 @@ public final class RecordFeedStore {
             pageError = ""
             return true
         } catch {
-            if epoch == capturedEpoch {
+            if !Task.isCancelled && epoch == capturedEpoch {
                 self.error = error.localizedDescription
             }
             return false
         }
     }
 
-    private func pollNewRecords(capturedEpoch: UInt64, query: String, holding: Bool) async -> Bool {
+    private func pollNewRecords(capturedEpoch: UInt64, query: String) async -> Bool {
         guard let latest = latestId else { return false }
         do {
             let check: RecordNewCountEnvelope = try await RustBridge.shared.api(
                 "GET",
                 "/usage-records?\(query)&after_id=\(latest)"
             )
-            guard epoch == capturedEpoch && activeQuery == query else { return false }
+            guard !Task.isCancelled, epoch == capturedEpoch && activeQuery == query else { return false }
             newCount = check.new_count
             error = ""
-            if check.new_count > 0 && !holding && pageError.isEmpty && items.count <= 50 {
-                return await loadHead(capturedEpoch: capturedEpoch, query: query)
+            if check.new_count > 0 && autoRefreshAllowed && pageError.isEmpty {
+                return await loadHead(capturedEpoch: capturedEpoch, query: query, automatic: true)
             }
             return true
         } catch {
-            if epoch == capturedEpoch {
+            if !Task.isCancelled && epoch == capturedEpoch {
                 self.error = error.localizedDescription
             }
             return false

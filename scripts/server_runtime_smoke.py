@@ -7,7 +7,6 @@ fixture mount. It never reads the repository's .env or data directory.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -21,7 +20,7 @@ import threading
 import time
 import uuid
 
-from server_http_contract import CheckFailure, ROOT, TemporaryPostgres, require
+from server_http_contract import CheckFailure, ROOT, TemporaryPostgres, require, seed_fingerprint_cache
 
 
 SERVICE = "sub2api-ops-companion"
@@ -150,36 +149,9 @@ def service_environment(database_url: str) -> dict[str, str]:
     }
 
 
-def seed_modeltrace_cache(destination: Path) -> Path:
-    resource_dir = ROOT / "server" / "resources" / "modeltrace"
-    manifest = json.loads((resource_dir / "manifest.json").read_text(encoding="utf-8"))
-    raw = (resource_dir / "unified_bank.json").read_bytes()
-    require(hashlib.sha256(raw).hexdigest() == manifest["files"]["bank"]["sha256"],
-            "bundled ModelTrace bank checksum differs")
-    bank = json.loads(raw)
-    version = {
-        "revision": manifest["revision"],
-        "sha256": manifest["files"]["bank"]["sha256"],
-        "built_at": bank["built_at"],
-        "analyzer_version": manifest["analyzerVersion"],
-        "core_blob": manifest["files"]["core"]["gitBlob"],
-        "challenge_blob": manifest["files"]["challenge"]["gitBlob"],
-    }
-    now = time.time()
-    state = {
-        "version": 1,
-        "active": {"raw_bank": raw.decode("utf-8"), "version": version},
-        "source": "bundled",
-        "checked_at": now,
-        "synced_at": now,
-        "cooldown_until": None,
-        "last_error": None,
-        "result": "fixture-cached",
-    }
-    path = destination / "modeltrace-bank-state.json"
-    path.write_text(json.dumps(state, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    path.chmod(0o644)
-    return path
+def copy_bank_cache(source: Path, container: str) -> None:
+    for name in ("modeltrace-bank-state.json", "lm-detector"):
+        docker("cp", str(source / name), f"{container}:/data/{name}")
 
 
 def wait_healthy(name: str, timeout: float = 45) -> dict:
@@ -264,7 +236,12 @@ def run(args: argparse.Namespace) -> None:
         scratch = Path(directory)
         restart, _, healthcheck = compose_contract(args.image, scratch)
         postgres = TemporaryPostgres(scratch, args.postgres_bin_dir)
-        cache_seed = seed_modeltrace_cache(scratch)
+        cache_seed = scratch / "bank-seed"
+        cache_seed.mkdir()
+        seed_fingerprint_cache(cache_seed)
+        (cache_seed / "modeltrace-bank-state.json").chmod(0o644)
+        (cache_seed / "lm-detector").chmod(0o755)
+        (cache_seed / "lm-detector/state.json").chmod(0o644)
         containers = []
         events_process = None
         try:
@@ -274,7 +251,7 @@ def run(args: argparse.Namespace) -> None:
             healthy_name = "sub2ops-runtime-healthy-" + uuid.uuid4().hex[:12]
             containers.append(healthy_name)
             docker(*create_args(healthy_name, restart, healthcheck, env, args.image, user))
-            docker("cp", str(cache_seed), f"{healthy_name}:/data/modeltrace-bank-state.json")
+            copy_bank_cache(cache_seed, healthy_name)
             docker("start", healthy_name)
             info = wait_healthy(healthy_name)
             require(info["Config"].get("User") == user, "running service user differs from Compose")
@@ -293,7 +270,7 @@ def run(args: argparse.Namespace) -> None:
             failed_name = "sub2ops-runtime-failure-" + uuid.uuid4().hex[:12]
             containers.append(failed_name)
             docker(*create_args(failed_name, restart, healthcheck, env, args.image, user, fixture))
-            docker("cp", str(cache_seed), f"{failed_name}:/data/modeltrace-bank-state.json")
+            copy_bank_cache(cache_seed, failed_name)
             events_process, events = die_events(failed_name)
             docker("start", failed_name)
             exit_code = first_exit_code(events)

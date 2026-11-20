@@ -64,6 +64,7 @@ import { useConnectionBatch, ConnectionBatchResults } from "./ConnectionBatch";
 import { accountRestriction, QuickRestriction, QuickRecover } from "./QuickAccountStatus";
 import ModelTestDialog from "./ModelTestDialog";
 import DetectionPlatformSettings from "./DetectionPlatformSettings";
+import FingerprintBankStatus from "./FingerprintBankStatus";
 import ConnectionStatusCard from "./ConnectionStatusCard";
 import AccountStatus from "./AccountStatus";
 import { DeleteAccountsDialog, RecoverSelectedButton, ResetCreditsDialog, resetCreditEligible } from "./AccountManagement";
@@ -1839,6 +1840,9 @@ function SettingsPage({
                   />
                 ))}
                 <DetectionPlatformSettings value={draft.model_detection_platforms} set={v => set("model_detection_platforms", v)}/>
+                {featureTab === "recovery" && (["modeltrace", "lm_detector"] as const).map(engine => (
+                  <FingerprintBankStatus key={connectionKey + engine} engine={engine} online={state.online}/>
+                ))}
                 <RecoveryAccounts accounts={accounts} connection={(draft.oauth_recovery_connection_account_ids as number[]) ?? []} models={(draft.oauth_recovery_model_account_ids as number[]) ?? []} change={(connection, models) => { set("oauth_recovery_connection_account_ids", connection); set("oauth_recovery_model_account_ids", models); }}/>
               </>
             )}

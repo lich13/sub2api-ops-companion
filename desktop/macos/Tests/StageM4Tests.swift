@@ -1,4 +1,5 @@
 import AppKit
+import os
 import Foundation
 import SwiftUI
 import Testing
@@ -22,10 +23,23 @@ struct StageM4Tests {
         #expect(lastMonth.start == "2026-09-01" && lastMonth.end == "2026-09-30")
         #expect(!BeijingDateLogic.isValidRange(start: "2026-02-30", end: "2026-03-01"))
 
+        let midnight = BeijingTime.parseISO("2026-10-01T16:00:00Z")!
+        var range = today
+        let deferred = range.refreshPreset(at: midnight, holding: true)
+        #expect(deferred)
+        #expect(range == today)
+        let applied = range.refreshPreset(at: midnight, holding: false)
+        #expect(!applied)
+        #expect(range.start == "2026-10-02")
+        var custom = RecordDateRange(preset: nil, start: today.start, end: today.end)
+        let customPending = custom.refreshPreset(at: midnight, holding: false)
+        #expect(!customPending)
+        #expect(custom.start == today.start && custom.end == today.end)
+
         let defaultCols = RecordColumnSpec.normalize(nil)
         #expect(defaultCols.count == 10)
-        // User column, its 1pt divider, then the scrolling pane.
-        #expect(RecordColumnSpec.userColumnWidth + 1 + RecordColumnSpec.dataWidth(columns: defaultCols) == 1205)
+        // Default 1310pt window minus the sidebar, margins and always-visible scroller.
+        #expect(RecordColumnSpec.userColumnWidth + 1 + RecordColumnSpec.dataWidth(columns: defaultCols) <= 1124)
     }
 
     @Test("Records pagination loads the next page 200pt before the footer scrolls into view")
@@ -38,6 +52,150 @@ struct StageM4Tests {
         #expect(!RecordPagination.autoLoads(footerNear: false, active: true, detailOpen: false))
         #expect(!RecordPagination.autoLoads(footerNear: true, active: false, detailOpen: false))
         #expect(!RecordPagination.autoLoads(footerNear: true, active: true, detailOpen: true))
+    }
+
+    @MainActor
+    private func waitFor(_ condition: () -> Bool) async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(3)
+        while !condition() && ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return condition()
+    }
+
+    @Test("Changing the search discards an already-dispatched option page")
+    @MainActor
+    func searchWhilePaging() async throws {
+        for kind in [RecordOptionPickerView.Kind.users, .api_keys] {
+            let latePage = OSAllocatedUnfairLock<CheckedContinuation<String, Never>?>(initialState: nil)
+            let directory = RecordOptionDirectory()
+            RustBridge.shared.setMockHandler { _, payload in
+                if payload.contains("cursor=more") {
+                    return await withCheckedContinuation { reply in latePage.withLock { $0 = reply } }
+                }
+                if payload.contains("q=recent"), kind == .users || payload.contains("user_id=23") {
+                    return #"{"items":[{"id":7,"email":"recent@example.invalid","deleted":false}],"next_cursor":null}"#
+                }
+                return #"{"items":[{"id":1,"deleted":false}],"next_cursor":"more"}"#
+            }
+            defer { directory.stop(); RustBridge.shared.setMockHandler(nil) }
+            directory.search(kind: kind, query: "", userId: 4)
+            #expect(await waitFor { directory.cursor == "more" })
+            directory.loadMoreOrRetry()
+            #expect(await waitFor { latePage.withLock { $0 != nil } })
+            directory.search(kind: kind, query: "recent", userId: 23)
+            #expect(await waitFor { directory.items.map(\.id) == [7] })
+            latePage.withLock { $0 }?.resume(returning: #"{"items":[{"id":2,"deleted":false}],"next_cursor":"obsolete"}"#)
+            try await Task.sleep(for: .milliseconds(30))
+            #expect(directory.items.map(\.id) == [7] && directory.cursor == nil && !directory.loading)
+        }
+    }
+
+    @Test("New records wait during reading and refresh the head on return to the top")
+    @MainActor
+    func recordReadingPosition() async {
+        let heads = OSAllocatedUnfairLock(initialState: 9)
+        RustBridge.shared.setMockHandler { _, payload in
+            if payload.contains("after_id=") { return #"{"new_count":1}"# }
+            let page = payload.contains("cursor=more")
+            let id = page ? 8 : heads.withLock { $0 += 1; return $0 }
+            let cursor = page ? "null" : #""more""#
+            return #"{"items":[{"id":\#(id)}],"next_cursor":\#(cursor),"latest_id":\#(id),"observed_at":"2026-11-20T00:01:00Z"}"#
+        }
+        let feed = RecordFeedStore()
+        defer { feed.stop(); RustBridge.shared.setMockHandler(nil) }
+        feed.bind(query: "limit=50", active: true)
+        #expect(await waitFor { feed.items.map(\.id) == [10] })
+        feed.holding = true
+        await feed.loadMore()
+        feed.bind(query: "limit=50", active: true)
+        #expect(await waitFor { feed.newCount == 1 })
+        #expect(feed.items.map(\.id) == [10, 8])
+        feed.holding = false
+        feed.bind(query: "limit=50", active: true)
+        #expect(await waitFor { feed.items.map(\.id) == [11] && feed.newCount == 0 })
+    }
+
+    @Test("Render native short and scrollable record dropdowns when snapshot output is enabled")
+    @MainActor
+    func renderRecordPopovers() async throws {
+        guard let dir = ProcessInfo.processInfo.environment["SUB2OPS_SNAPSHOT_DIR"] else { return }
+        for (count, dark) in [(1, true), (30, false)] {
+            let options = (1...count).map { id in
+                #"{"id":\#(id),"name":"用户 \#(id)","email":"user\#(id)@example.invalid","deleted":false}"#
+            }.joined(separator: ",")
+            RustBridge.shared.setMockHandler { _, _ in #"{"items":[\#(options)],"next_cursor":null}"# }
+            let view = RecordOptionPickerView(kind: .users, active: true, selected: nil) { _ in }
+                .environment(\.colorScheme, dark ? .dark : .light)
+            let window = SyntheticClick.host(view, size: CGSize(width: 250, height: 100))
+            defer { window.close(); RustBridge.shared.setMockHandler(nil) }
+            window.setFrameOrigin(CGPoint(x: 200, y: 450))
+            window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            let original = Set(NSApp.windows.filter(\.isVisible).map(ObjectIdentifier.init))
+            SyntheticClick.click(window, at: CGPoint(x: 125, y: 50))
+            try await Task.sleep(for: .milliseconds(400))
+            let popover = try #require(NSApp.windows.first { $0.isVisible && !original.contains(ObjectIdentifier($0)) && $0.frame.width > 320 })
+            let content = try #require(popover.contentView)
+            content.layoutSubtreeIfNeeded()
+            #expect(count == 1 ? (105..<200).contains(content.bounds.height) : (275..<360).contains(content.bounds.height))
+            let rep = try #require(content.bitmapImageRepForCachingDisplay(in: content.bounds))
+            content.cacheDisplay(in: content.bounds, to: rep)
+            let png = try #require(rep.representation(using: .png, properties: [:]))
+            try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("m4_picker_\(count).png"))
+            popover.orderOut(nil)
+        }
+    }
+
+    @Test("An open bank follows a slow update and stops following the previous source or connection")
+    @MainActor
+    func renderBankTracking() async throws {
+        guard let dir = ProcessInfo.processInfo.environment["SUB2OPS_SNAPSHOT_DIR"] else { return }
+        let counts = OSAllocatedUnfairLock(initialState: [String: Int]())
+        RustBridge.shared.setMockHandler { _, payload in
+            guard payload.contains("/fingerprint-bank") else { return "null" }
+            let lm = payload.contains("/lm-detector/")
+            let name = lm ? "lm" : "trace"
+            let count = counts.withLock { $0[name, default: 0] += 1; return $0[name]! }
+            let status = lm && count > 16 ? "idle" : "syncing"
+            return #"{"version":{"revision":"\#(lm ? "bbbbbbbb" : "aaaaaaaa")"},"status":"\#(status)","source":"remote","result":"updated"}"#
+        }
+        defer { RustBridge.shared.setMockHandler(nil) }
+        func panel(_ engine: ModelTestEngine, _ connection: String, online: Bool = true) -> some View {
+            FingerprintBankStatusView(online: online, connectionKey: connection, engines: [engine])
+                .padding(16).frame(width: 418, height: 120).background(DS.surface)
+        }
+        SnapshotRenderUtility.ensureAppKit()
+        let view = NSHostingView(rootView: panel(.modeltrace, "first"))
+        let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 418, height: 120),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        window.orderFrontRegardless()
+        defer { window.close() }
+        #expect(await waitFor { counts.withLock { $0["trace", default: 0] >= 1 } })
+        view.rootView = panel(.lm_detector, "first")
+        #expect(await waitFor { counts.withLock { $0["lm", default: 0] >= 1 } })
+        let traceReads = counts.withLock { $0["trace"] }
+        let end = ContinuousClock.now + .seconds(21)
+        while counts.withLock({ $0["lm", default: 0] < 17 }) && ContinuousClock.now < end {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        let finished = counts.withLock { $0 }
+        #expect(finished["lm"] == 17)
+        #expect(finished["trace"] == traceReads)
+        try await Task.sleep(for: .milliseconds(1100))
+        #expect(counts.withLock { $0["lm"] } == 17)
+        view.layoutSubtreeIfNeeded()
+        let rep = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: rep)
+        try #require(rep.representation(using: .png, properties: [:])).write(
+            to: URL(fileURLWithPath: dir).appendingPathComponent("m4_bank_updated.png"))
+        view.rootView = panel(.modeltrace, "second")
+        #expect(await waitFor { counts.withLock { $0["trace"] != traceReads } })
+        view.rootView = panel(.modeltrace, "second", online: false)
+        let beforeClose = counts.withLock { $0 }
+        try await Task.sleep(for: .milliseconds(1150))
+        #expect(counts.withLock { $0 } == beforeClose)
     }
 
     @Test("Render Stage M4 Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")
@@ -254,7 +412,28 @@ struct StageM4Tests {
         eventsStore.page = .events
         eventsStore.applyViewState(recStore.state)
 
+        var detail = try #require(JSONDecoder().decode(RecordPageEnvelope.self, from: Data(recordsJSON.utf8)).items.first)
+        detail.upstream_model_mismatch = true
+        detail.user_agent = "FixtureDesktop/1.0 (Macintosh; arm64) " + String(repeating: "LongUserAgent/", count: 8)
+        detail.request_id = "client:" + String(repeating: "123456789abcdef", count: 5)
+        detail.upstream_endpoint = "/v1/" + String(repeating: "long-path/", count: 7) + "responses"
+        detail.service_tier = "priority"
+        detail.billing_mode = "token"
+        detail.cache_creation_5m_tokens = 900
+        detail.cache_creation_1h_tokens = 300
+        detail.image_count = 1
+        detail.video_count = 1
+        try await SnapshotRenderUtility.renderPNGAsync(
+            view: MainShellView(store: recStore), size: CGSize(width: 980, height: 680), dark: false,
+            outputURL: baseURL.appendingPathComponent("m4_records_narrow.png")
+        )
         for dark in [false, true] {
+            try await SnapshotRenderUtility.renderPNGAsync(
+                view: RecordDetailDrawerView(row: detail, loading: false, error: "", onClose: {}),
+                size: CGSize(width: 460, height: 1360), dark: dark,
+                outputURL: baseURL.appendingPathComponent(dark ? "m4_detail_dark.png" : "m4_detail_light.png")
+            )
+
             let suffix = dark ? "dark" : "light"
             try await SnapshotRenderUtility.renderPNGAsync(
                 view: MainShellView(store: recStore),
@@ -324,7 +503,9 @@ struct StageM4Tests {
               "rate_multiplier": "1.0",
               "account_rate_multiplier": "0.8",
               "first_token_ms": 1420,
-              "duration_ms": 18600
+              "duration_ms": 18600,
+              "user_agent": "Fixture Desktop/1.0",
+              "ip_address": "198.51.100.254"
             }
             """
         }.joined(separator: ",")
@@ -346,6 +527,7 @@ struct StageM4Tests {
             view: MainShellView(store: scrollRecStore),
             size: CGSize(width: 1310, height: 860),
             dark: false,
+            alwaysShowScrollers: true,
             outputURL: baseURL.appendingPathComponent("m4_records_25rows_light.png")
         )
         scrollRecStore.page = .settings

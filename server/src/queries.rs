@@ -443,18 +443,29 @@ impl Queries {
         limit: usize,
         names: &BTreeMap<i64, Value>,
     ) -> Result<Value> {
-        let mut rows: Vec<&Value> = state["recovery_history"]
+        // Keep the newest page plus its lookahead while scanning the saved history.
+        let mut rows = Vec::with_capacity(limit + 1);
+        for row in state["recovery_history"]
             .as_object()
             .into_iter()
             .flat_map(|v| v.values())
-            .filter(|v| before.is_none_or(|b| integer(&v["id"]).unwrap_or(0) < b))
-            .collect();
-        rows.sort_by_key(|v| std::cmp::Reverse(integer(&v["id"]).unwrap_or(0)));
-        rows.retain(|v| integer(&v["account_id"]).is_some_and(|id| names.contains_key(&id)));
+        {
+            let id = integer(&row["id"]).unwrap_or(0);
+            if before.is_some_and(|cursor| id >= cursor)
+                || !integer(&row["account_id"]).is_some_and(|aid| names.contains_key(&aid))
+            {
+                continue;
+            }
+            let index = rows.partition_point(|(existing, _)| *existing >= id);
+            if index <= limit {
+                rows.insert(index, (id, row));
+                rows.truncate(limit + 1);
+            }
+        }
         let items: Vec<_> = rows
             .iter()
             .take(limit)
-            .map(|row| {
+            .map(|(_, row)| {
                 let mut value = pick(
                     row,
                     &[

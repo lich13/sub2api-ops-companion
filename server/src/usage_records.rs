@@ -430,16 +430,21 @@ impl UsageRecords {
             clauses.push(sql::USAGE_MISMATCH.to_owned());
         }
         let mut tx = self.begin(true).await?;
-        let live_watermark: i64 = sqlx::query_scalar("SELECT coalesce(max(id),0) FROM usage_logs")
-            .fetch_one(&mut *tx)
-            .await?;
-        let watermark = saved
-            .as_ref()
-            .and_then(|s| integer(&s["watermark"]))
-            .unwrap_or(live_watermark);
+        let watermark = match saved.as_ref().and_then(|s| integer(&s["watermark"])) {
+            Some(pinned) => pinned,
+            None => {
+                sqlx::query_scalar::<_, i64>("SELECT coalesce(max(id),0) FROM usage_logs")
+                    .fetch_one(&mut *tx)
+                    .await?
+            }
+        };
         params.push(watermark.into());
         clauses.push(format!("u.id <= ${}", params.len()));
         if let Some(after) = f.after_id {
+            if after >= watermark {
+                tx.commit().await?;
+                return Ok(json!({"new_count":0,"latest_id":watermark}));
+            }
             params.push(after.into());
             clauses.push(format!("u.id > ${}", params.len()));
             let row = bind(
@@ -453,7 +458,7 @@ impl UsageRecords {
             .await?;
             let count = row_value(row)?["count"].clone();
             tx.commit().await?;
-            return Ok(json!({"new_count":count,"latest_id":live_watermark}));
+            return Ok(json!({"new_count":count,"latest_id":watermark}));
         }
         let summary = if f.include_summary && saved.is_none() {
             let row=bind(&format!("SELECT coalesce(sum(u.actual_cost),0) AS actual_cost FROM usage_logs u WHERE {}",clauses.join(" AND ")),&params).fetch_one(&mut *tx).await?;

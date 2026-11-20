@@ -336,7 +336,7 @@ impl Runtime {
                         "operations" => runtime.operations.tick().await,
                         "priority_orders" => runtime.priorities.tick().await,
                         "oauth" => runtime.monitor.tick().await,
-                        "daily" => runtime.config.current().and_then(|config| {
+                        "daily" => runtime.config.current_shared().and_then(|config| {
                             runtime
                                 .monitor
                                 .schedule
@@ -361,8 +361,9 @@ impl Runtime {
                             Ok(())
                         }
                         "bank" => {
+                            let lm = runtime.tests.lm_bank.sync_if_due();
                             runtime.tests.bank.sync(false).await;
-                            Ok(())
+                            lm
                         }
                         _ => unreachable!(),
                     };

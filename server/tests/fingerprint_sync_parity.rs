@@ -478,7 +478,7 @@ fn pinned_public_source_hashes_match_the_manifest_and_fixed_commit() {
 }
 
 #[tokio::test]
-async fn remote_update_public_contract_hourly_gate_and_restart_cache_match_pinned_behavior() {
+async fn remote_update_public_contract_daily_gate_and_restart_cache_match_pinned_behavior() {
     let directory = tempfile::tempdir().unwrap();
     let clock = Clock::new(1000.0);
     let revision = "b".repeat(40);
@@ -527,9 +527,9 @@ async fn remote_update_public_contract_hourly_gate_and_restart_cache_match_pinne
     public_copy["version"]["revision"] = "fixture-public-mutation".into();
     assert_eq!(bank.public()["version"]["revision"], revision);
 
-    clock.advance(3599.0);
+    clock.advance(86_399.0);
     bank.sync(false).await;
-    assert_eq!(transport.count(), 3, "the hourly check remains gated");
+    assert_eq!(transport.count(), 3, "the daily check remains gated");
     clock.advance(1.0);
     bank.sync(false).await;
     assert_eq!(transport.count(), 4);
@@ -541,7 +541,7 @@ async fn remote_update_public_contract_hourly_gate_and_restart_cache_match_pinne
         "same revision only refreshes the commit head"
     );
     assert_eq!(bank.public()["result"], "up-to-date");
-    assert_eq!(bank.public()["checked_at"], 4600.0);
+    assert_eq!(bank.public()["checked_at"], 87_400.0);
 
     let restarted_transport = QueueTransport::new([]);
     let restarted = new_bank(directory.path(), restarted_transport.clone(), &clock);
@@ -613,6 +613,12 @@ async fn network_and_timeout_retry_once_then_apply_five_minute_cooldown() {
         transport.append([commit_plan(&current_revision())]);
         clock.set(1300.0);
         bank.sync(false).await;
+        assert_eq!(
+            transport.count(),
+            4,
+            "automatic checks wait until the next day"
+        );
+        bank.sync(true).await;
         assert_eq!(transport.count(), 5);
         assert_eq!(bank.public()["result"], "up-to-date");
         assert_eq!(bank.public()["cooldown_until"], Value::Null);
