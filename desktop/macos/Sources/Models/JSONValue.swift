@@ -100,7 +100,7 @@ public enum JSONValue: Sendable, Equatable, Codable {
         case .bool(let b): return b ? "开启" : "关闭"
         case .int(let i): return String(i)
         case .double(let d):
-            if d.rounded() == d { return String(Int64(d)) }
+            if let integer = Int64(exactly: d) { return String(integer) }
             return String(d)
         case .string(let s): return s
         case .array(let arr): return arr.map(\.displayText).joined(separator: "、")

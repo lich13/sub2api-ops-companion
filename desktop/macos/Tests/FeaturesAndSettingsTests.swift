@@ -5,8 +5,8 @@ import Testing
 @testable import Sub2OpsMacOS
 
 extension Sub2OpsMacOSTestRoot {
-@Suite("M5 Features (3 Tabs) & Settings Logic + UI Snapshots", .serialized)
-struct StageM5Tests {
+@Suite("Features (3 Tabs) & Settings Logic + UI Snapshots", .serialized)
+struct FeaturesAndSettingsTests {
     @Test("LightYAML parses block/flow structures, rejects duplicate keys, and enforces expected root type")
     func lightYAMLValidationAndFormatting() {
         #expect(FeaturesPageView.Tab.allCases.map(\.label) == ["恢复与检测", "IP 管理", "Sub2API 配置"])
@@ -89,7 +89,7 @@ struct StageM5Tests {
         #expect(report.bank_revision == "deadbeef12345678")
     }
 
-    @Test("Render Stage M5 Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")
+    @Test("Render FeaturesAndSettings Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")
     @MainActor
     func renderM5Snapshots() async throws {
         guard let dirPath = ProcessInfo.processInfo.environment["SUB2OPS_SNAPSHOT_DIR"],

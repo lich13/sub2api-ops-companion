@@ -152,19 +152,7 @@ public struct AccountCreationCatalog: Codable, Sendable {
     }
 
     public static let shared: AccountCreationCatalog = {
-        let data: Data
-        #if SWIFT_PACKAGE
-        let url = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("server/src/account_creation_fields.json")
-        data = (try? Data(contentsOf: url)) ?? Data("{}".utf8)
-        #else
-        data = Data(AccountCreationCatalogGenerated.json.utf8)
-        #endif
+        let data = Data(AccountCreationCatalogGenerated.json.utf8)
         if let decoded = try? JSONDecoder().decode(AccountCreationCatalog.self, from: data) {
             return decoded
         }

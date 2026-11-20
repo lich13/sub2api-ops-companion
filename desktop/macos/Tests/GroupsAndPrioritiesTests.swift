@@ -5,8 +5,8 @@ import Testing
 @testable import Sub2OpsMacOS
 
 extension Sub2OpsMacOSTestRoot {
-@Suite("M3 Groups & Priorities Logic + UI Snapshots", .serialized)
-struct StageM3Tests {
+@Suite("Groups & Priorities Logic + UI Snapshots", .serialized)
+struct GroupsAndPrioritiesTests {
     @Test("GroupDraftLogic moves accounts across left, both, right, none and clears when restored")
     func groupDraftMovesAndClearsWhenRestored() {
         var acc = Account(id: 101, name: "Codex-01", platform: "openai", group_ids: [1, 9], version: "v1")
@@ -56,7 +56,7 @@ struct StageM3Tests {
         #expect(!PriorityDraftLogic.shouldUseMultiColumn(platforms: twoPlatforms, availableWidth: 800))
     }
 
-    @Test("Render Stage M3 Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")
+    @Test("Render GroupsAndPriorities Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")
     @MainActor
     func renderM3Snapshots() async throws {
         guard let dirPath = ProcessInfo.processInfo.environment["SUB2OPS_SNAPSHOT_DIR"],
@@ -88,8 +88,7 @@ struct StageM3Tests {
               ]
             }
           ],
-          "active_task": null,
-          "legacy_last_task": null
+          "active_task": null
         }
         """
         RustBridge.shared.setMockHandler { _, payload in

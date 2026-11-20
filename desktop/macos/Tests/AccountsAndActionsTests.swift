@@ -17,8 +17,8 @@ private struct AccountCreationFieldsPreview: View {
 }
 
 extension Sub2OpsMacOSTestRoot {
-@Suite("M2 Accounts, Catalog, Actions & UI Snapshots", .serialized)
-struct StageM2Tests {
+@Suite("Accounts, Catalog, Actions & UI Snapshots", .serialized)
+struct AccountsAndActionsTests {
     @Test("AccountCreationCatalog loads all 13 upstream platforms and defaults")
     func catalogLoadsAllPlatformsAndSeedsDefaults() throws {
         let catalog = AccountCreationCatalog.shared
@@ -219,7 +219,7 @@ struct StageM2Tests {
         #expect(!controller.isPanelOrAttachedWindowActive())
     }
 
-    @Test("Render Stage M2 Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")
+    @Test("Render AccountsAndActions Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")
     @MainActor
     func renderM2Snapshots() async throws {
         guard let dirPath = ProcessInfo.processInfo.environment["SUB2OPS_SNAPSHOT_DIR"],

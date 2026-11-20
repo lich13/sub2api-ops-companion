@@ -148,6 +148,7 @@ jobs:
         working-directory: desktop
       - run: pnpm test && pnpm build
         working-directory: desktop
+      - run: swift test --package-path desktop/macos
       - run: cargo test --locked && cargo clippy --locked --all-targets -- -D warnings
         working-directory: desktop/src-tauri
       - run: pnpm bundle

@@ -6,8 +6,8 @@ import Testing
 @testable import Sub2OpsMacOS
 
 extension Sub2OpsMacOSTestRoot {
-@Suite("M4 Records & Events Logic + UI Snapshots", .serialized)
-struct StageM4Tests {
+@Suite("Records & Events Logic + UI Snapshots", .serialized)
+struct RecordsAndEventsTests {
     @Test("RecordFormatting handles scientific notation decimals, output TPS, and Beijing date presets")
     func recordFormattingAndBeijingDatePresets() {
         #expect(RecordFormatting.money("1.25e-5", digits: 8) == "$0.00001250")
@@ -198,7 +198,7 @@ struct StageM4Tests {
         #expect(counts.withLock { $0 } == beforeClose)
     }
 
-    @Test("Render Stage M4 Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")
+    @Test("Render RecordsAndEvents Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")
     @MainActor
     func renderM4Snapshots() async throws {
         guard let dirPath = ProcessInfo.processInfo.environment["SUB2OPS_SNAPSHOT_DIR"],
