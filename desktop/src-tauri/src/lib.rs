@@ -833,15 +833,16 @@ fn silent_launch(args: &[String]) -> bool {
 #[cfg(mobile)]
 #[tauri::command]
 async fn background(app: tauri::AppHandle) -> Result<(), HttpFailure> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let result = tauri::async_runtime::spawn_blocking(move || {
         app.state::<credentials::SecureStore>()
             .0
             .run_mobile_plugin::<Value>("background", serde_json::json!({}))
-            .map(|_| ())
-            .map_err(|_| "无法返回后台".to_string())
     })
-    .await
-    .map_err(|_| "无法返回后台".to_string())?
+    .await;
+    match result {
+        Ok(Ok(_)) => Ok(()),
+        _ => Err("无法返回后台".into()),
+    }
 }
 
 #[cfg(any(desktop, test))]

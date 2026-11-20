@@ -472,16 +472,20 @@ it("keeps secret values hidden in the editor and confirmation until explicitly r
 });
 
 it("shows unavailable and empty states with a way back to the fields", async () => {
-  fixture = {
-    ...fixture,
-    available: false,
-    editable: false,
-    reason: "运行版本无法确认",
-  };
+  const read = vi.mocked(api).getMockImplementation()!;
+  vi.mocked(api).mockImplementation(async (...args) =>
+    args[1] === "/sub2api-config"
+      ? ({
+          available: false,
+          editable: false,
+          reason: "运行版本无法确认",
+        } as never)
+      : read(...args),
+  );
   await act(async () => root.render(<Sub2ApiConfig active online />));
   expect(container.textContent).toContain("运行版本无法确认");
   expect(container.querySelectorAll(".config-field")).toHaveLength(0);
-  fixture = { ...fixture, available: true, editable: true, reason: "" };
+  vi.mocked(api).mockImplementation(read);
   await act(async () => button("刷新").click());
   await fill(input("搜索配置字段"), "fixture-no-match");
   expect(container.textContent).toContain("没有匹配的配置字段");

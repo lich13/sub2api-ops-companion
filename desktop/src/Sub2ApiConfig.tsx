@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Eye, EyeOff, RefreshCw, Search, X } from "lucide-react";
 import { parseDocument, stringify } from "yaml";
 import { api } from "./bridge";
+import type { HostConfigHeader } from "./protocol";
 import Sub2ApiVersion from "./Sub2ApiVersion";
 import { ProxyDialog } from "./ProxyDialogs";
 import "./sub2api-config.css";
@@ -33,10 +34,8 @@ type FieldValue = {
   environment: string | null;
   editable: boolean;
 };
-export type ConfigDocument = {
-  available: boolean;
-  editable: boolean;
-  reason: string;
+export type ConfigDocument = HostConfigHeader & {
+  available: true;
   version: string;
   commit: string;
   healthy: boolean;
@@ -51,6 +50,7 @@ export type ConfigDocument = {
   values: Record<string, FieldValue>;
   unknown: { path: string; message: string }[];
 };
+type ConfigRead = ConfigDocument | (HostConfigHeader & { available: false });
 type Change = { path: string; remove: boolean; value?: unknown };
 type Issue = { path: string; message: string };
 type Operation = { status: string; message?: string };
@@ -437,8 +437,9 @@ export default function Sub2ApiConfig({
   active: boolean;
   online: boolean;
 }) {
-  const [document, setDocument] = useState<ConfigDocument | null>(null),
+  const [response, setResponse] = useState<ConfigRead | null>(null),
     [draft, setDraft] = useState<Record<string, Change>>({});
+  const document = response?.available ? response : null;
   const [query, setQuery] = useState(""),
     [filter, setFilter] = useState("all"),
     [group, setGroup] = useState("server"),
@@ -473,20 +474,20 @@ export default function Sub2ApiConfig({
     setBusy(true);
     setError("");
     try {
-      const next = await api<ConfigDocument>("GET", "/sub2api-config");
+      const next = await api<ConfigRead>("GET", "/sub2api-config");
       if (alive.current && seq === loadSeq.current) {
         const currentDoc = documentRef.current;
         if (reset || !Object.keys(draftRef.current).length)
           conflicted.current = false;
         else if (
           protectDraft &&
-          currentDoc?.available &&
+          currentDoc &&
           next.available &&
           (currentDoc.revision !== next.revision ||
             currentDoc.runtime_revision !== next.runtime_revision)
         )
           conflicted.current = true;
-        setDocument(
+        setResponse(
           conflicted.current
             ? {
                 ...next,
@@ -504,7 +505,7 @@ export default function Sub2ApiConfig({
     } catch (e) {
       if (alive.current && seq === loadSeq.current) {
         setError(errorText(e));
-        setDocument((old) =>
+        setResponse((old) =>
           old ? { ...old, editable: false, reason: errorText(e) } : old,
         );
       }
@@ -666,7 +667,7 @@ export default function Sub2ApiConfig({
     }
   }
   const childrenByPath = useMemo(() => {
-    const fields = document?.catalog?.fields ?? [];
+    const fields = document?.catalog.fields ?? [];
     return new Map(
       fields
         .filter((f) => !f.internal)
@@ -688,7 +689,7 @@ export default function Sub2ApiConfig({
     [needle],
   );
   const fields = useMemo(() => {
-    if (!document?.available) return [];
+    if (!document) return [];
     return document.catalog.fields.filter((field) => {
       const value = document.values[field.path];
       return (
@@ -714,7 +715,7 @@ export default function Sub2ApiConfig({
   }, [fields]);
   const groups = useMemo(
     () =>
-      document?.available
+      document
         ? document.catalog.groups.filter(
             (g) => (groupCounts.get(g.id) ?? 0) > 0,
           )
@@ -804,7 +805,7 @@ export default function Sub2ApiConfig({
         <header className="config-heading">
           <div className="config-heading-main">
             <h2>Sub2API 配置</h2>
-            {document?.available && (
+            {document && (
               <div className="config-runtime">
                 <code>{document.commit.slice(0, 8)}</code>
                 <span className={document.healthy ? "good-text" : "bad-text"}>
@@ -830,7 +831,7 @@ export default function Sub2ApiConfig({
           knownVersion={document?.version}
           onRuntimeChanged={() => void load(false, true)}
         />
-        {document?.available ? (
+        {document ? (
           <>
             <div className="config-filters">
               <label className="config-search">
@@ -1067,9 +1068,9 @@ export default function Sub2ApiConfig({
           </>
         ) : (
           <div className="config-empty">
-            {error || document?.reason ? (
+            {error || response?.reason ? (
               <p role="alert" className="bad-text">
-                {error || document?.reason}
+                {error || response?.reason}
               </p>
             ) : (
               <p>{busy ? "正在读取配置…" : "连接后读取配置"}</p>
@@ -1080,7 +1081,7 @@ export default function Sub2ApiConfig({
           </div>
         )}
       </div>
-      {document?.available && (
+      {document && (
         <footer className="config-footer">
           <div className="config-footer-state">
             {changes.length ? (
