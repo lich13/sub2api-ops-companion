@@ -1,0 +1,44 @@
+{
+  "valid": [
+    {
+      "type": "array",
+      "text": "[\"true\", \"123\", \"null\", \"[x]\"]",
+      "value": [
+        "true",
+        "123",
+        "null",
+        "[x]"
+      ]
+    },
+    {
+      "type": "object",
+      "text": "{\"k\": 1e-05, \"key: #\\n\\\"\": [\"quote \\\"\\\\\\n\\t\", null, false]}",
+      "value": {
+        "k": 0.00001,
+        "key: #\n\"": [
+          "quote \"\\\n\t",
+          null,
+          false
+        ]
+      }
+    },
+    {
+      "type": "array",
+      "text": "- nested:\n    - 3\n    - \"001\"\n    - true",
+      "value": [
+        {
+          "nested": [
+            3,
+            "001",
+            true
+          ]
+        }
+      ]
+    }
+  ],
+  "invalid": [
+    "[{\"a\":1,\"a\":2}]",
+    "- nested: {a: 1, \"a\": 2}",
+    "- a: 1\n  a: 2"
+  ]
+}

@@ -166,7 +166,7 @@ pub fn finish_parameter_change(store: &OAuthState, row: &Value, task: &Value) ->
     save(store, id, task, json!({"signature":signature(row)}))?;
     Ok(())
 }
-pub fn cancel(store: &OAuthState, id: i64) -> Result<()> {
+pub fn cancel(store: &OAuthState, id: i64, at: chrono::DateTime<chrono::Utc>) -> Result<()> {
     let state = store.shared_snapshot()?;
     let task = &state["scheduler"][id.to_string()]["auto_reset_credit"];
     if truthy(task) && string(&task["stage"]) != "recovered" {
@@ -174,7 +174,7 @@ pub fn cancel(store: &OAuthState, id: i64) -> Result<()> {
             store,
             id,
             task,
-            json!({"stage":"manual","owns_pause":false,"next_at":null,"error_code":"","manual_at":crate::compat::now()}),
+            json!({"stage":"manual","owns_pause":false,"next_at":null,"error_code":"","manual_at":crate::compat::datetime(at)}),
         )?;
     }
     Ok(())

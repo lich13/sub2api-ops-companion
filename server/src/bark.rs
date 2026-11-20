@@ -140,7 +140,7 @@ pub fn beijing_time(value: &Value) -> String {
     if value.is_null() || value == "" {
         "-".into()
     } else if let Some(at) = parse_datetime(value) {
-        at.with_timezone(&chrono_tz::Asia::Shanghai)
+        at.with_timezone(&crate::settings::BUSINESS_TZ)
             .format("%Y-%m-%d %H:%M")
             .to_string()
     } else {

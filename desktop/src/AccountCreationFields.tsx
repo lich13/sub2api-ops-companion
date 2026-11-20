@@ -50,7 +50,7 @@ function Pairs({
       setRows(entries(value));
       invalid("");
     }
-  }, [value]);
+  }, [value, invalid]);
   function update(next: [string, string][]) {
     setRows(next);
     const out = Object.fromEntries(next);

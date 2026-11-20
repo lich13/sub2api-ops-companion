@@ -132,7 +132,7 @@ pub(crate) async fn fetch(
                 })?;
             let status = response.status().as_u16();
             if !(200..300).contains(&status) {
-                let error = Error::new(502, format!("上游模型目录请求失败 [http_{status}]"));
+                let error = directory_error(status, 502);
                 return Err(if status == 429 || status >= 500 {
                     Failure::temporary(error)
                 } else {
@@ -195,6 +195,21 @@ async fn read_http_timeout(
 
 pub async fn source_catalog_read(db: &Database, account: &Value) -> Result<Value> {
     let timeout = Duration::from_secs(8);
+    let (url, headers) = catalog_request(db, account).await?;
+    let client = catalog_client(db, account, timeout).await?;
+    let mut data = catalog_pages(
+        &client,
+        &url,
+        &headers,
+        timeout,
+        string(&account["platform"]),
+    )
+    .await?;
+    redact_catalog(&mut data, &account["credentials"]);
+    Ok(data)
+}
+
+async fn catalog_request(db: &Database, account: &Value) -> Result<(reqwest::Url, Headers)> {
     let credentials = &account["credentials"];
     let platform = string(&account["platform"]);
     let kind = string(&account["type"]);
@@ -353,6 +368,14 @@ pub async fn source_catalog_read(db: &Database, account: &Value) -> Result<Value
     {
         return Err(Error::new(422, "上游目录地址无效"));
     }
+    Ok((parsed, headers))
+}
+
+async fn catalog_client(
+    db: &Database,
+    account: &Value,
+    timeout: Duration,
+) -> Result<reqwest::Client> {
     let client = if let Some(id) = integer(&account["proxy_id"]).filter(|v| *v != 0) {
         let proxy = db
             .one(
@@ -406,15 +429,36 @@ pub async fn source_catalog_read(db: &Database, account: &Value) -> Result<Value
                 .build()?,
         }
     };
-    let (status, body) = read_http_timeout(&client, &url, &headers, timeout).await?;
+    Ok(client)
+}
+
+pub(crate) const DIRECTORY_REVOKED: &str = "model_directory_revoked";
+
+pub(crate) fn directory_error(upstream: u16, status: u16) -> Error {
+    let message = format!("上游模型目录请求失败 [http_{upstream}]");
+    if matches!(upstream, 401 | 403) {
+        Error::new(status, json!({"code":DIRECTORY_REVOKED,"message":message}))
+    } else {
+        Error::new(status, message)
+    }
+}
+
+async fn catalog_pages(
+    client: &reqwest::Client,
+    parsed: &reqwest::Url,
+    headers: &Headers,
+    timeout: Duration,
+    platform: &str,
+) -> Result<Value> {
+    let (status, body) = read_http_timeout(client, parsed.as_str(), headers, timeout).await?;
     if status != 200 {
-        return Err(Error::new(
+        return Err(directory_error(
+            status,
             if matches!(status, 401 | 403) {
                 status
             } else {
                 502
             },
-            format!("上游模型目录请求失败 [http_{status}]"),
         ));
     }
     let mut data: Value = serde_json::from_slice(&body)?;
@@ -449,12 +493,12 @@ pub async fn source_catalog_read(db: &Database, account: &Value) -> Result<Value
         page_url.query_pairs_mut().append_pair(key, &cursor);
         let (reply_status, reply_body) = tokio::time::timeout_at(
             deadline,
-            read_http_timeout(&client, page_url.as_str(), &headers, timeout),
+            read_http_timeout(client, page_url.as_str(), headers, timeout),
         )
         .await
         .map_err(|_| Error::new(504, "上游模型目录读取超时"))??;
         if reply_status != 200 {
-            return Err(Error::new(502, "上游目录暂不可用"));
+            return Err(directory_error(reply_status, 502));
         }
         let page: Value = serde_json::from_slice(&reply_body)?;
         let entries = page[field]
@@ -472,6 +516,9 @@ pub async fn source_catalog_read(db: &Database, account: &Value) -> Result<Value
         }
     }
 
+    Ok(data)
+}
+fn redact_catalog(data: &mut Value, credentials: &Value) {
     let secrets: Vec<&str> = ["api_key", "access_token", "refresh_token", "id_token"]
         .into_iter()
         .filter_map(|k| credentials[k].as_str())
@@ -497,8 +544,7 @@ pub async fn source_catalog_read(db: &Database, account: &Value) -> Result<Value
             _ => (),
         }
     }
-    scrub(&mut data, &secrets);
-    Ok(data)
+    scrub(data, &secrets);
 }
 
 pub async fn account_models_read(db: &Database, id: i64) -> Result<Vec<Value>> {

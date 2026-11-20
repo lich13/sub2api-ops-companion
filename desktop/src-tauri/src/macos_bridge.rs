@@ -74,7 +74,6 @@ static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 static MAIN_VISIBLE: AtomicBool = AtomicBool::new(false);
 static MAIN_MINIMIZED: AtomicBool = AtomicBool::new(false);
 static QUICK_VISIBLE: AtomicBool = AtomicBool::new(false);
-static APP_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 pub(crate) fn init(app: tauri::AppHandle) {
     let _ = APP_HANDLE.set(app);
@@ -84,6 +83,7 @@ pub(crate) fn init(app: tauri::AppHandle) {
         panel_trace: host_panel_trace,
         quit: host_quit,
     };
+    // SAFETY: All callbacks have the declared C ABI and live for the process lifetime.
     unsafe {
         sub2ops_macos_init(
             callbacks.invoke,
@@ -95,8 +95,8 @@ pub(crate) fn init(app: tauri::AppHandle) {
 }
 
 pub(crate) fn application_active() -> bool {
-    catch_unwind(|| unsafe { sub2ops_macos_app_active() })
-        .unwrap_or_else(|_| APP_ACTIVE.load(Ordering::Acquire))
+    // SAFETY: The Swift entry point accepts no arguments and synchronously returns a Bool.
+    unsafe { sub2ops_macos_app_active() }
 }
 
 pub(crate) fn window_visibility() -> (bool, bool, bool) {
@@ -111,15 +111,23 @@ pub(crate) fn any_window_visible() -> bool {
     MAIN_VISIBLE.load(Ordering::Acquire) || QUICK_VISIBLE.load(Ordering::Acquire)
 }
 
-fn borrow_utf8<'a>(ptr: *const u8, len: usize) -> Result<&'a str, String> {
+unsafe fn copy_utf8(ptr: *const u8, len: usize) -> Result<String, String> {
     if len == 0 {
-        return Ok("");
+        return Ok(String::new());
     }
     if ptr.is_null() {
         return Err("参数指针无效".into());
     }
+    // SAFETY: Swift owns these len bytes for the duration of this callback; copy before returning.
     let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
-    std::str::from_utf8(slice).map_err(|_| "UTF-8 参数编码无效".into())
+    std::str::from_utf8(slice)
+        .map(str::to_owned)
+        .map_err(|_| "UTF-8 参数编码无效".into())
+}
+
+fn send_failure(request_id: u64, error: &crate::HttpFailure) {
+    let json = serde_json::to_string(error).expect("bridge failure is serializable");
+    send_response(request_id, false, &json);
 }
 
 fn send_response(request_id: u64, ok: bool, body: &str) {
@@ -129,9 +137,10 @@ fn send_response(request_id: u64, ok: bool, body: &str) {
     } else {
         bytes.as_ptr()
     };
-    let _ = catch_unwind(|| unsafe {
+    // SAFETY: Swift consumes the buffer synchronously while bytes remains borrowed.
+    unsafe {
         sub2ops_macos_on_response(request_id, ok, ptr, bytes.len());
-    });
+    }
 }
 
 pub(crate) fn send_event(kind: u32, payload: &str) {
@@ -141,9 +150,10 @@ pub(crate) fn send_event(kind: u32, payload: &str) {
     } else {
         bytes.as_ptr()
     };
-    let _ = catch_unwind(|| unsafe {
+    // SAFETY: Swift consumes the buffer synchronously while bytes remains borrowed.
+    unsafe {
         sub2ops_macos_on_event(kind, ptr, bytes.len());
-    });
+    }
 }
 
 pub(crate) fn publish_state(value: &ViewState) {
@@ -254,7 +264,7 @@ async fn dispatch_command(
     app: tauri::AppHandle,
     cmd: String,
     payload: String,
-) -> Result<String, String> {
+) -> Result<String, crate::HttpFailure> {
     match cmd.as_str() {
         "get_state" => {
             let value = crate::get_state(app.state::<Arc<Runtime>>()).await?;
@@ -300,7 +310,6 @@ async fn dispatch_command(
         "api_request" => {
             let args: ApiRequestArgs = parse_args(&payload)?;
             let value = crate::api_request(
-                app.clone(),
                 app.state::<Arc<Runtime>>(),
                 args.method,
                 args.path,
@@ -350,39 +359,41 @@ extern "C" fn host_invoke(
     payload_len: usize,
 ) {
     let outcome = catch_unwind(AssertUnwindSafe(|| {
-        let cmd = match borrow_utf8(cmd_ptr, cmd_len) {
-            Ok(s) => s.to_owned(),
+        // SAFETY: The Swift caller lends this buffer until host_invoke returns.
+        let cmd = match unsafe { copy_utf8(cmd_ptr, cmd_len) } {
+            Ok(s) => s,
             Err(err) => {
-                send_response(request_id, false, &err);
+                send_failure(request_id, &err.into());
                 return;
             }
         };
-        let payload = match borrow_utf8(payload_ptr, payload_len) {
-            Ok(s) => s.to_owned(),
+        // SAFETY: The Swift caller lends this buffer until host_invoke returns.
+        let payload = match unsafe { copy_utf8(payload_ptr, payload_len) } {
+            Ok(s) => s,
             Err(err) => {
-                send_response(request_id, false, &err);
+                send_failure(request_id, &err.into());
                 return;
             }
         };
         let Some(app) = APP_HANDLE.get().cloned() else {
-            send_response(request_id, false, "宿主尚未完成初始化");
+            send_failure(request_id, &"宿主尚未完成初始化".into());
             return;
         };
         tauri::async_runtime::spawn(async move {
             let inner = tauri::async_runtime::spawn(dispatch_command(app, cmd, payload));
             match inner.await {
                 Ok(Ok(json)) => send_response(request_id, true, &json),
-                Ok(Err(error)) => send_response(request_id, false, &error),
+                Ok(Err(error)) => send_failure(request_id, &error),
                 Err(_) => {
                     trace_safe("bridge_panic", "async_command");
-                    send_response(request_id, false, "内部运行异常");
+                    send_failure(request_id, &"内部运行异常".into());
                 }
             }
         });
     }));
     if outcome.is_err() {
         trace_safe("bridge_panic", "sync_invoke");
-        send_response(request_id, false, "内部运行异常");
+        send_failure(request_id, &"内部运行异常".into());
     }
 }
 
@@ -396,7 +407,6 @@ extern "C" fn host_set_visibility(
         let was_main = MAIN_VISIBLE.swap(main_visible, Ordering::Release);
         MAIN_MINIMIZED.store(main_minimized, Ordering::Release);
         let was_quick = QUICK_VISIBLE.swap(quick_visible, Ordering::Release);
-        APP_ACTIVE.store(app_active, Ordering::Release);
 
         let Some(app) = APP_HANDLE.get().cloned() else {
             return;
@@ -430,13 +440,15 @@ extern "C" fn host_panel_trace(
     detail_len: usize,
 ) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
-        let Ok(stage) = borrow_utf8(stage_ptr, stage_len) else {
+        // SAFETY: The Swift caller lends this buffer for this synchronous callback.
+        let Ok(stage) = (unsafe { copy_utf8(stage_ptr, stage_len) }) else {
             return;
         };
-        let Ok(detail) = borrow_utf8(detail_ptr, detail_len) else {
+        // SAFETY: The Swift caller lends this buffer for this synchronous callback.
+        let Ok(detail) = (unsafe { copy_utf8(detail_ptr, detail_len) }) else {
             return;
         };
-        trace_safe(stage, detail);
+        trace_safe(&stage, &detail);
     }));
 }
 
@@ -454,9 +466,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn zero_length_slice_borrows_safely_even_with_null_pointer() {
-        assert_eq!(borrow_utf8(std::ptr::null(), 0).unwrap(), "");
-        assert!(borrow_utf8(std::ptr::null(), 4).is_err());
+    fn zero_length_slice_copies_safely_even_with_null_pointer() {
+        assert_eq!(unsafe { copy_utf8(std::ptr::null(), 0) }.unwrap(), "");
+        assert!(unsafe { copy_utf8(std::ptr::null(), 4) }.is_err());
     }
 
     #[test]

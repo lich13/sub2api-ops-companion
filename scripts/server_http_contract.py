@@ -94,7 +94,8 @@ def safe_failure(exc: BaseException) -> str:
 
 
 def command_result(command: list[str], *, timeout: float = 20, cwd: Path | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run(command, cwd=cwd or ROOT, capture_output=True, timeout=timeout, check=False)
+    return subprocess.run(command, cwd=cwd or ROOT, env={**os.environ, "LC_ALL": "C"},
+                          capture_output=True, timeout=timeout, check=False)
 
 
 def seed_fingerprint_cache(state_dir: Path) -> None:
@@ -556,8 +557,7 @@ class ContractSuite:
         require(response.body.get("implementation") == "rust", "capabilities implementation differs")
         require(response.body.get("platforms") == ["macos", "android"],
                 "capabilities must advertise both supported clients")
-        require(response.body.get("features", {}).get("detection_logs") is True,
-                "capabilities must advertise detection logs")
+        require("features" not in response.body, "capabilities still exposes retired feature flags")
         return {"status": response.status, "api_version": 1}
 
     def _snapshot(self) -> dict[str, object]:

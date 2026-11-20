@@ -1697,6 +1697,7 @@ async fn connection_test_http_capacity_is_global_across_recovery_workers() {
 
     gate.release.notify_one();
     wait_for_recovered(&harness, active_id).await;
+    harness.set_now(now + Duration::seconds(3));
     harness.runtime.monitor.tick().await.unwrap();
     let waiting_gate = if waiting_id == first_id {
         &first_gate
@@ -2241,7 +2242,8 @@ async fn continuous_appointment_uses_real_runtime_quota_refresh_and_stops_indepe
     );
     assert_eq!(harness.mock.count_for(id, "GET", "/usage"), 1);
     assert_eq!(harness.mock.count_for(id, "POST", "/test"), 0);
-    let at = harness.now();
+    let at = harness.now() + Duration::seconds(1);
+    harness.set_now(at);
     sqlx::query(
         "UPDATE accounts SET extra=$2,rate_limited_at=$3,rate_limit_reset_at=$4 WHERE id=$1",
     )

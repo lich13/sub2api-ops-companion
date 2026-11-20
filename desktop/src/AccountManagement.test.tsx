@@ -133,10 +133,12 @@ async function openAutoResetSettings(
     receive = callback;
     return () => {};
   });
-  vi.mocked(command).mockImplementation(async (name) => {
-    if (name !== "get_state") throw new Error(`Unexpected command: ${name}`);
-    return state as never;
-  });
+  vi.mocked(command).mockImplementation(
+    async (...[name]: Parameters<typeof command>) => {
+      if (name !== "get_state") throw new Error(`Unexpected command: ${name}`);
+      return state as never;
+    },
+  );
   vi.mocked(api).mockImplementation(async (method, path, body) => {
     if (method === "GET" && path === "/quota-refresh")
       return { status: "idle", items: [], total: 0, completed: 0 } as never;

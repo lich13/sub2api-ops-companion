@@ -550,12 +550,17 @@ fn quota_update_inner(
     (update, runnable, depleted)
 }
 impl OAuthState {
-    pub fn mark_delivered(&self, events: &[Value], suppressed: bool) -> Result<()> {
+    pub fn mark_delivered(
+        &self,
+        events: &[Value],
+        suppressed: bool,
+        at: DateTime<Utc>,
+    ) -> Result<()> {
         if events.is_empty() {
             return Ok(());
         }
         self.transaction(|state| {
-            let at = crate::compat::now();
+            let at = crate::compat::datetime(at);
             for event in events {
                 let key = string(&event["dedupe_key"]).trim();
                 let id = integer(&event["account_id"]).unwrap_or(0);

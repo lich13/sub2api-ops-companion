@@ -2,7 +2,7 @@
 //! never replayed, and legacy priority operations share the same admission gate.
 use crate::{
     actions::Actions,
-    compat::{digest, integer, now, parse_datetime, priority_version, string},
+    compat::{digest, integer, parse_datetime, priority_version, string},
     error::{Error, Result},
     operations::{self, Operations, PENDING},
     queries::settings_capabilities,
@@ -93,7 +93,7 @@ fn validate_store(data: &Value) -> Result<()> {
             return Err(invalid_state());
         }
     }
-    for (id, job) in data["jobs"].as_object().unwrap() {
+    for (id, job) in data["jobs"].as_object().ok_or_else(invalid_state)? {
         if !id_valid(id)
             || job["id"] != *id
             || !job["status"].as_str().is_some_and(|s| {
@@ -212,7 +212,7 @@ fn validate_store(data: &Value) -> Result<()> {
             return Err(invalid_state());
         }
     }
-    for (request, id) in data["requests"].as_object().unwrap() {
+    for (request, id) in data["requests"].as_object().ok_or_else(invalid_state)? {
         if !id
             .as_str()
             .is_some_and(|id| data["jobs"][id]["request_id"] == *request)
@@ -225,30 +225,42 @@ fn validate_store(data: &Value) -> Result<()> {
 
 #[derive(Clone)]
 pub struct PriorityGate {
-    pub store: Store,
+    pub store: Store<crate::state_files::PriorityFile>,
+    pub(crate) clock: crate::compat::WallClock,
     admission: Arc<RwLock<()>>,
 }
 impl PriorityGate {
     pub fn new(settings: &Settings) -> Self {
+        let path = settings
+            .usage_path
+            .with_file_name("account-priority-orders-v2.json");
+        let lock = path.with_extension("lock");
         Self {
-            store: Store::new(
-                settings
-                    .usage_path
-                    .with_file_name("account-priority-orders-v2.json"),
+            store: Store::typed(
+                path,
+                lock,
                 json!({"version":2,"active_id":null,"last_id":null,"jobs":{},"requests":{},"parallelism":{}}),
                 validate_store,
+                |_| Ok(false),
+                |raw| serde::Deserialize::deserialize(raw).map_err(|_| invalid_state()),
             ),
+            clock: Arc::new(chrono::Utc::now),
             admission: Arc::new(RwLock::new(())),
         }
     }
     pub async fn enter(&self) -> Result<OwnedRwLockReadGuard<()>> {
         let guard = self.admission.clone().read_owned().await;
-        let data = self.store.read_shared()?;
-        if let Some(id) = active(&data) {
+        let data = self.store.read_state()?;
+        if let Some(id) = data.active_id.as_deref() {
             if !ORDER.try_with(|owner| owner == id).unwrap_or(false) {
                 return Err(busy());
             }
-            if data["jobs"][id]["cancel_requested"] == true {
+            if data
+                .jobs
+                .get(id)
+                .ok_or_else(invalid_state)?
+                .cancel_requested
+            {
                 return Err(Error::new(409, "已停止剩余优先级修改"));
             }
         } else if ORDER.try_with(|_| ()).is_ok() {
@@ -298,12 +310,12 @@ impl PriorityGate {
                 return Err(Error::new(409, "排序请求已变化，未重复派发"));
             }
             item["status"] = "dispatched".into();
-            item["started_at"] = now().into();
+            item["started_at"] = crate::compat::datetime((self.clock)()).into();
             job["status"] = "running".into();
             job["reason"] = "正在保存".into();
             job["waiting_reason"] = "".into();
             job["waiting_account_ids"] = json!([]);
-            job["updated_at"] = now().into();
+            job["updated_at"] = crate::compat::datetime((self.clock)()).into();
             Ok(())
         })
     }
@@ -311,12 +323,18 @@ impl PriorityGate {
         let Ok(owner) = ORDER.try_with(Clone::clone) else {
             return Ok(());
         };
-        record_verified(&self.store, &owner, account_id, row)
+        record_verified(
+            &self.store,
+            &owner,
+            account_id,
+            row,
+            crate::compat::datetime((self.clock)()),
+        )
     }
 }
 
 pub struct PriorityOrders {
-    pub store: Store,
+    pub store: Store<crate::state_files::PriorityFile>,
     actions: Actions,
     operations: Arc<Operations>,
     running: Arc<AtomicBool>,
@@ -378,28 +396,33 @@ fn public_job(job: &Value, details: bool) -> Value {
     result["waiting_account_ids"] = job["waiting_account_ids"].clone();
     result
 }
-fn record_verified(store: &Store, id: &str, account_id: i64, row: &Value) -> Result<()> {
-    store.transaction(|data| {
-        if active(data) != Some(id) {
+fn record_verified(
+    store: &Store<crate::state_files::PriorityFile>,
+    id: &str,
+    account_id: i64,
+    row: &Value,
+    stamp: String,
+) -> Result<()> {
+    store.edit_state(|data| {
+        if data.active_id.as_deref() != Some(id) {
             return Err(Error::new(409, "排序任务已结束"));
         }
-        let job = &mut data["jobs"][id];
-        let item = job["items"]
-            .as_array_mut()
-            .ok_or_else(invalid_state)?
+        let job = data.jobs.get_mut(id).ok_or_else(invalid_state)?;
+        let item = job
+            .items
             .iter_mut()
-            .find(|item| item["account_id"] == account_id)
+            .find(|item| item.account_id == account_id)
             .ok_or_else(invalid_state)?;
-        if item["status"] != "dispatched"
-            || row["priority"] != item["target_priority"]
-            || identity(row) != item["identity"]
+        if item.status != "dispatched"
+            || row["priority"].as_i64() != Some(item.target_priority)
+            || identity(row) != item.identity
         {
             return Err(Error::new(409, "已派发账号身份或优先级尚未确认"));
         }
-        item["status"] = "verified".into();
-        item["verified_version"] = version(row);
-        item["observed_priority"] = row["priority"].clone();
-        job["updated_at"] = now().into();
+        item.status = "verified".into();
+        item.fields.insert("verified_version".into(), version(row));
+        item.observed_priority = Some(item.target_priority);
+        job.updated_at = stamp;
         Ok(())
     })
 }
@@ -436,13 +459,13 @@ pub fn validate_request(request: &Value) -> Result<()> {
         .ok_or_else(Error::invalid)?;
     let mut seen = BTreeSet::new();
     for id in ids {
-        let id = validation::integer(id, 1, 9_007_199_254_740_991)?;
+        let id = validation::integer_in_range(id, 1, 9_007_199_254_740_991)?;
         if !seen.insert(id) {
             return Err(Error::new(422, "账号编号不能重复"));
         }
     }
     if let Some(parallelism) = request.get("parallelism") {
-        validation::integer(parallelism, 1, 8)?;
+        validation::integer_in_range(parallelism, 1, 8)?;
     }
     if let Some(targets) = request.get("target_priorities") {
         let targets = targets
@@ -450,7 +473,7 @@ pub fn validate_request(request: &Value) -> Result<()> {
             .filter(|targets| targets.len() == ids.len())
             .ok_or_else(Error::invalid)?;
         for target in targets {
-            validation::integer(target, 0, i32::MAX as i64)?;
+            validation::integer_in_range(target, 0, i32::MAX as i64)?;
         }
     }
     Ok(())
@@ -465,7 +488,7 @@ pub fn validate_parallelism_request(request: &Value) -> Result<()> {
     if !platform_valid(&request["platform"]) {
         return Err(Error::invalid());
     }
-    validation::integer(&request["parallelism"], 1, 8)?;
+    validation::integer_in_range(&request["parallelism"], 1, 8)?;
     validation::hex(&request["expected_version"], 64).map(|_| ())
 }
 impl PriorityOrders {
@@ -492,7 +515,8 @@ impl PriorityOrders {
                 .push(item.clone());
         }
         // Keep a deleted platform's last task reachable for reconciliation.
-        for job in data["jobs"].as_object().unwrap().values() {
+        let jobs = data["jobs"].as_object().ok_or_else(invalid_state)?;
+        for job in jobs.values() {
             groups.entry(string(&job["platform"])).or_default();
         }
         let mut raw: BTreeMap<&str, Vec<Value>> = BTreeMap::new();
@@ -503,14 +527,12 @@ impl PriorityOrders {
         }
         let platforms: Vec<_> = groups.into_iter().map(|(platform, items)| {
             let width = parallelism(&data, platform);
-            let last = data["jobs"].as_object().unwrap().values().filter(|job| job["platform"] == platform)
+            let last = jobs.values().filter(|job| job["platform"] == platform)
                 .max_by_key(|job| (string(&job["created_at"]), string(&job["id"])));
             json!({"platform":platform,"items":items,"parallelism":width,"version":list_version(raw.get(platform).map(Vec::as_slice).unwrap_or_default(), width),"last_task":last.map(|job|public_job(job,false))})
         }).collect();
-        // Clients from 0.1.84 to 0.1.92 require the `legacy_last_task` key.
         Ok(json!({"platforms":platforms,
-            "active_task":active(&data).map(|id|public_job(&data["jobs"][id],false)),
-            "legacy_last_task":null}))
+            "active_task":active(&data).map(|id|public_job(&data["jobs"][id],false))}))
     }
     pub fn get(&self, id: &str, details: bool) -> Result<Value> {
         let missing = || Error::new(404, "优先级排序任务不存在");
@@ -525,6 +547,10 @@ impl PriorityOrders {
     }
     pub async fn submit(&self, request: &Value) -> Result<Value> {
         validate_request(request)?;
+        self.submit_validated(request).await
+    }
+
+    pub(crate) async fn submit_validated(&self, request: &Value) -> Result<Value> {
         let _submit = self.operations.submit_lock.lock().await;
         let _gate = self.actions.priorities.admission.write().await;
         let data = self.store.read_shared()?;
@@ -607,7 +633,7 @@ impl PriorityOrders {
             return Err(Error::new(422, "并列槽位数量超过平台设置"));
         }
         let id = operations::id();
-        let created = now();
+        let created = self.actions.timestamp();
         let job = json!({"id":id,"platform":platform,"base":1,"parallelism":width,"waiting_reason":"","waiting_account_ids":[],"status":"queued","reason":"等待执行","cancel_requested":false,"items":items,
             "request_id":rid,"client_id":request["client_id"],"request_hash":signature,"created_at":created,"updated_at":created,"completed_at":null});
         self.store.transaction(|data| {
@@ -624,6 +650,10 @@ impl PriorityOrders {
     }
     pub async fn set_parallelism(&self, request: &Value) -> Result<Value> {
         validate_parallelism_request(request)?;
+        self.set_parallelism_validated(request).await
+    }
+
+    pub(crate) async fn set_parallelism_validated(&self, request: &Value) -> Result<Value> {
         let _gate = self.actions.priorities.admission.write().await;
         let data = self.store.read_shared()?;
         if active(&data).is_some() {
@@ -656,8 +686,8 @@ impl PriorityOrders {
             let job = &mut data["jobs"][id];
             job["status"] = status.into();
             job["reason"] = reason.into();
-            job["updated_at"] = now().into();
-            job["completed_at"] = now().into();
+            job["updated_at"] = self.actions.timestamp().into();
+            job["completed_at"] = self.actions.timestamp().into();
             job["waiting_reason"] = "".into();
             job["waiting_account_ids"] = json!([]);
             data["active_id"] = Value::Null;
@@ -670,7 +700,7 @@ impl PriorityOrders {
             if active(data) == Some(id) {
                 data["jobs"][id]["cancel_requested"] = true.into();
                 data["jobs"][id]["reason"] = "正在停止，已派发项仍需核对".into();
-                data["jobs"][id]["updated_at"] = now().into();
+                data["jobs"][id]["updated_at"] = self.actions.timestamp().into();
             }
             Ok(())
         })?;
@@ -703,7 +733,7 @@ impl PriorityOrders {
                 }
                 .into();
                 data["jobs"][id]["waiting_account_ids"] = value.clone();
-                data["jobs"][id]["updated_at"] = now().into();
+                data["jobs"][id]["updated_at"] = self.actions.timestamp().into();
             }
             Ok(())
         })
@@ -784,7 +814,7 @@ impl PriorityOrders {
                         "已派发写入未确认，未重复执行；请重新核对",
                     );
                 }
-                record_verified(&self.store, id, aid, row)?;
+                record_verified(&self.store, id, aid, row, self.actions.timestamp())?;
                 continue;
             }
             if job["cancel_requested"] == true {

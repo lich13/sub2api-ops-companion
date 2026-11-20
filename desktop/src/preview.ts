@@ -1,4 +1,5 @@
 // Development-only, deterministic fixtures. The native build never uses this transport.
+import type { ConfigHeader } from "./protocol";
 import type { ViewState, Account, Config, Preferences } from "./types";
 import { version as appVersion } from "../package.json";
 const now = new Date().toISOString(),
@@ -573,7 +574,7 @@ const config: Config = {
     },
   },
   bark: { revision: "2".repeat(64), enabled: true, device_key_set: true },
-};
+} satisfies ConfigHeader;
 const listeners = new Set<(s: ViewState) => void>();
 const scenario = new URLSearchParams(location.search).get("scenario");
 if (state.snapshot && scenario?.startsWith("lm-")) {
@@ -703,10 +704,11 @@ export function subscribe(cb: (s: ViewState) => void) {
   };
 }
 export async function run(
-  name: string,
+  name: import("./bridge").CommandName,
   args: Record<string, unknown>,
 ): Promise<unknown> {
   if (name === "get_state") return structuredClone(state);
+  if (name === "background") return;
   if (name === "refresh") {
     emit();
     return;
@@ -790,8 +792,6 @@ export async function run(
     emit();
     return;
   }
-  if (["show_main", "resize_quick", "show_quick", "hide_quick"].includes(name))
-    return;
   if (name === "open_authorization_url" || name === "open_sub2api_release")
     return;
   if (name === "check_updates") return `预览模式 · 当前版本 ${appVersion}`;

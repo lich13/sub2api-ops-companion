@@ -95,7 +95,7 @@ fn fixture_settings(
         serde_json::to_vec(&json!({"base_url":upstream_url,"verify_base_url":""})).unwrap(),
     )
     .unwrap();
-    let settings = Settings {
+    Settings {
         database_url,
         bind: "127.0.0.1:0".into(),
         base_path: "/".into(),
@@ -120,9 +120,7 @@ fn fixture_settings(
         bark_valid: true,
         base_url: upstream_url,
         verify_url: String::new(),
-    };
-    fingerprint_cache::seed(directory);
-    settings
+    }
 }
 
 async fn runtime_fixture(
@@ -139,6 +137,7 @@ async fn runtime_fixture(
     });
     let directory_endpoint = format!("{upstream_url}/fixture-models");
     let settings = fixture_settings(directory, database_url, upstream_url, daily_enabled);
+    fingerprint_cache::seed(directory, clock());
     let runtime = Runtime::new_with_clock(settings, clock).await.unwrap();
     runtime
         .actions

@@ -23,12 +23,6 @@ public struct AccountModelItem: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-private struct AccountModelsEnvelope: Decodable, Sendable {
-    var models: [AccountModelItem]?
-    var items: [AccountModelItem]?
-    var candidates: [AccountModelItem]?
-}
-
 @MainActor
 @Observable
 public final class ModelDirectoryStore {
@@ -46,8 +40,8 @@ public final class ModelDirectoryStore {
     }
 
     public static func isRevoked(_ error: Error) -> Bool {
-        let msg = error.localizedDescription
-        return msg.contains("401") || msg.contains("403") || msg.contains("认证") || msg.contains("失效")
+        guard let code = (error as? RustBridgeError)?.failure.code else { return false }
+        return code == "auth_rejected" || code == "model_directory_revoked"
     }
 
     public func readModels(accountId: Int, refresh: Bool = false) async throws -> [AccountModelItem] {
@@ -57,16 +51,8 @@ public final class ModelDirectoryStore {
         }
         // The client allowlist and the server only serve the model-test directory.
         let suffix = refresh ? "&refresh=true" : ""
-        let raw: JSONValue = try await RustBridge.shared.api("GET", "/accounts/\(accountId)/models?purpose=model_test\(suffix)")
-        let data = try JSONEncoder().encode(raw)
-        let list: [AccountModelItem]
-        if let direct = try? JSONDecoder().decode([AccountModelItem].self, from: data) {
-            list = direct
-        } else if let env = try? JSONDecoder().decode(AccountModelsEnvelope.self, from: data) {
-            list = env.models ?? env.items ?? env.candidates ?? []
-        } else {
-            list = []
-        }
+        let records: [ModelOption] = try await RustBridge.shared.api("GET", "/accounts/\(accountId)/models?purpose=model_test\(suffix)")
+        let list = records.map { AccountModelItem(id: $0.id, display_name: $0.display_name) }
         if connectionKey == capturedKey {
             cache[accountId] = list
         }

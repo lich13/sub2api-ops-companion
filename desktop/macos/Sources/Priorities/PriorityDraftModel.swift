@@ -123,12 +123,10 @@ public struct PriorityPlatformGroup: Codable, Sendable, Equatable, Identifiable 
 public struct PriorityViewEnvelope: Codable, Sendable, Equatable {
     public var platforms: [PriorityPlatformGroup]
     public var active_task: PriorityTask?
-    public var legacy_last_task: PriorityTask?
 
-    public init(platforms: [PriorityPlatformGroup], active_task: PriorityTask? = nil, legacy_last_task: PriorityTask? = nil) {
+    public init(platforms: [PriorityPlatformGroup], active_task: PriorityTask? = nil) {
         self.platforms = platforms
         self.active_task = active_task
-        self.legacy_last_task = legacy_last_task
     }
 }
 

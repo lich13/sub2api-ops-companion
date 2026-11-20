@@ -667,7 +667,7 @@ impl Harness {
         )
         .await
         .expect("construct real Runtime over temporary PostgreSQL and injected clock");
-        runtime.detection.capacity.initialize(Utc::now()).unwrap();
+        runtime.detection.capacity.initialize(wall_origin).unwrap();
         runtime
             .tests
             .set_test_endpoint(&format!("{base_url}/v1/responses"))
@@ -769,7 +769,7 @@ impl Harness {
     }
 
     async fn insert_slow_usage_window(&self, account_id: i64, first_usage_id: i64) {
-        let newest_sample_at = Utc::now() - Duration::milliseconds(1);
+        let newest_sample_at = self.now() - Duration::milliseconds(1);
         for index in 0..10_i64 {
             let first_token_ms = if index < 8 { 11_001_i64 } else { 9_000_i64 };
             let duration_ms = if index < 8 { 12_001_i64 } else { 12_000_i64 };
@@ -2151,7 +2151,7 @@ async fn capacity_provider_and_slow_evidence_survive_bark_config_and_initializat
         .poll()
         .await
         .expect("initialize capacity cursor before inserting synthetic evidence");
-    tokio::time::sleep(StdDuration::from_millis(20)).await;
+    harness.advance(1);
 
     let provider_error_id = id * 100;
     let first_usage_id = id * 1_000;
@@ -2159,7 +2159,7 @@ async fn capacity_provider_and_slow_evidence_survive_bark_config_and_initializat
         .insert_capacity_error(
             provider_error_id,
             id,
-            Utc::now() - Duration::milliseconds(1),
+            harness.now() - Duration::milliseconds(1),
         )
         .await;
     harness.insert_slow_usage_window(id, first_usage_id).await;
@@ -2226,11 +2226,7 @@ async fn capacity_provider_and_slow_evidence_survive_bark_config_and_initializat
     );
     let disabled_error_id = provider_error_id + 1;
     harness
-        .insert_capacity_error(
-            disabled_error_id,
-            id,
-            Utc::now() + Duration::milliseconds(1),
-        )
+        .insert_capacity_error(disabled_error_id, id, harness.now())
         .await;
     harness
         .runtime()
@@ -2282,7 +2278,7 @@ async fn capacity_provider_and_slow_evidence_survive_bark_config_and_initializat
     );
     let second_error_id = provider_error_id + 2;
     harness
-        .insert_capacity_error(second_error_id, id, Utc::now() + Duration::milliseconds(1))
+        .insert_capacity_error(second_error_id, id, harness.now())
         .await;
     harness
         .runtime()
@@ -2358,7 +2354,7 @@ async fn capacity_provider_and_slow_evidence_survive_bark_config_and_initializat
         .runtime()
         .detection
         .capacity
-        .initialize(Utc::now())
+        .initialize(harness.now())
         .unwrap();
     assert_eq!(
         harness

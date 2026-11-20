@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { BridgeError } from "./bridgeError";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
@@ -734,10 +735,10 @@ it("keeps the selected connection model during refresh and failure, then drops r
   )!;
   await change(select, models[0].id);
   const original = vi.mocked(api).getMockImplementation()!;
-  let error = "目录暂不可用";
+  let error: Error = new Error("目录暂不可用");
   vi.mocked(api).mockImplementation((method, path, body) =>
     path.endsWith("refresh=true")
-      ? Promise.reject(new Error(error))
+      ? Promise.reject(error)
       : original(method, path, body),
   );
   await act(async () =>
@@ -751,8 +752,12 @@ it("keeps the selected connection model during refresh and failure, then drops r
   );
   expect(select.value).toBe(models[0].id);
   expect(select.textContent).not.toContain("当前不可用");
-  expect(container.textContent).toContain(error);
-  error = "上游授权失效 [http_403]";
+  expect(container.textContent).toContain(error.message);
+  error = new BridgeError({
+    code: "auth_rejected",
+    status: 403,
+    message: "上游授权失效",
+  });
   await act(async () =>
     container
       .querySelector<HTMLButtonElement>('[aria-label="刷新模型列表"]')!

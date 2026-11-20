@@ -1,3 +1,4 @@
+import { useEffectEvent } from "react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { LoaderCircle, RefreshCw, Play, Square, X } from "lucide-react";
 import { api, command } from "./bridge";
@@ -169,6 +170,7 @@ export default function TestDialog({
   const running = useRef(false),
     alive = useRef(true),
     cancelled = useRef(false);
+  const loadModels = useEffectEvent(readModels);
   useEffect(() => {
     alive.current = true;
     void api<{ items: Operation[] }>("GET", "/account-operations")
@@ -178,9 +180,9 @@ export default function TestDialog({
       .catch((e) => {
         if (alive.current) setError(String(e));
       });
-    void readModels();
+    void loadModels();
     return () => {
-      ++directoryRequest.current;
+      directoryRequest.current = directoryRequest.current + 1;
       alive.current = false;
       stopMediaRead();
     };
@@ -245,8 +247,9 @@ export default function TestDialog({
     clearMedia();
     close();
   }
+  const resetMedia = useEffectEvent(clearMedia);
   useEffect(() => {
-    clearMedia();
+    resetMedia();
   }, [mode, imageModel, account.id]);
   function changeMode(next: TestMode) {
     clearMedia();

@@ -106,8 +106,9 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   vi.mocked(subscribe).mockResolvedValue(() => {});
-  vi.mocked(command).mockImplementation(async (name) =>
-    name === "get_state" ? (initialState as never) : (undefined as never),
+  vi.mocked(command).mockImplementation(
+    async (...[name]: Parameters<typeof command>) =>
+      name === "get_state" ? (initialState as never) : (undefined as never),
   );
   vi.mocked(api).mockImplementation(async (method, path) => {
     if (method === "POST" && path === "/account-operations/batch")

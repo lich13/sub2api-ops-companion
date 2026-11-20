@@ -1,3 +1,4 @@
+import { useEffectEvent } from "react";
 import {
   createContext,
   useCallback,
@@ -14,12 +15,11 @@ import { useBackAction } from "./mobile";
 import { useDialogFocus } from "./dialogFocus";
 import type { Account } from "./types";
 
-type Settings = { seconds: number; revision: string };
-type TokenSettings = {
-  account_id: number;
-  has_access_token: boolean;
-  revision: string;
-};
+import type {
+  GlobalQuotaReply as Settings,
+  AccountQuotaReply as TokenSettings,
+  AccountTokenReply,
+} from "./protocol";
 const Context = createContext({
   accounts: [] as Account[],
   seconds: 60,
@@ -71,16 +71,9 @@ export function KeyQuotaProvider({
       alive = false;
     };
   }, [online, active, visible, enabled, retry]);
-  const accountsVersionKey = useMemo(
-    () =>
-      enabled
-        ? accounts.map((a) => `${a.id}:${a.operation_versions.usage}`).join("|")
-        : "",
-    [accounts, enabled],
-  );
   const stableAccounts = useMemo(
     () => (enabled ? accounts : []),
-    [accountsVersionKey],
+    [enabled, accounts],
   );
   const reload = useCallback(() => setRetry((n) => n + 1), []);
   const saved = useCallback((v: Settings) => {
@@ -177,6 +170,7 @@ export function KeyQuotaSettingsDialog({
         setError(String(e).replace(/^Error: /, ""));
     }
   }
+  const readOnChange = useEffectEvent(read);
   useEffect(() => {
     alive.current = true;
     setValue(null);
@@ -186,7 +180,7 @@ export function KeyQuotaSettingsDialog({
     setRevealed("");
     setVisible(false);
     setCopied(false);
-    void read();
+    void readOnChange();
     return () => {
       alive.current = false;
     };
@@ -200,12 +194,8 @@ export function KeyQuotaSettingsDialog({
     try {
       const text =
         token.trim() ||
-        (
-          await api<{ account_id: number; access_token: string }>(
-            "GET",
-            `${path}/access-token`,
-          )
-        ).access_token;
+        (await api<AccountTokenReply>("GET", `${path}/access-token`))
+          .access_token;
       if (!alive.current || currentPath.current !== path) return;
       if (!text) throw new Error("尚未配置账户访问令牌");
       setRevealed(text);

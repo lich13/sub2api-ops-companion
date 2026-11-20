@@ -2,14 +2,14 @@ use serde_json::json;
 use std::path::Path;
 use sub2ops_server::store::{valid_object, Store};
 
-pub fn seed(root: &Path) {
+pub fn seed(root: &Path, checked_at: chrono::DateTime<chrono::Utc>) {
     let raw = include_str!("../../resources/modeltrace/unified_bank.json");
     let (_, mut version) = sub2ops_server::modeltrace::bundled().unwrap();
     let manifest = sub2ops_server::modeltrace::manifest();
     for key in ["core", "challenge"] {
         version[format!("{key}_blob")] = manifest["files"][key]["gitBlob"].clone();
     }
-    let now = chrono::Utc::now().timestamp();
+    let now = checked_at.timestamp();
     for (file, data) in [
         (
             "modeltrace-bank-state.json",

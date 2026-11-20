@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { Copy, ExternalLink, LoaderCircle, Plus, X } from "lucide-react";
 import { api, command } from "./bridge";
@@ -165,25 +166,30 @@ export default function AccountCreationDialog({
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);
   }, [close, dirty, confirmDiscard]);
-  const candidates = accounts.filter(
-    (a) => a.platform === draft.platform && a.type === draft.type,
+  const candidates = useMemo(
+    () =>
+      accounts.filter(
+        (a) => a.platform === draft.platform && a.type === draft.type,
+      ),
+    [accounts, draft.platform, draft.type],
   );
   const visibleCandidates = candidates.filter((a) =>
     `${a.name} ${a.id}`.toLowerCase().includes(query.trim().toLowerCase()),
   );
   useEffect(() => {
     mounted.current = true;
+    const requests = ledger.current;
     return () => {
       mounted.current = false;
-      ++scope.current;
-      ++sourceRequest.current;
-      ledger.current.clear();
+      scope.current = scope.current + 1;
+      sourceRequest.current = sourceRequest.current + 1;
+      requests.clear();
     };
   }, []);
   useEffect(() => {
     if (!candidates.some((a) => String(a.id) === source))
       setSource(candidates.length === 1 ? String(candidates[0].id) : "");
-  }, [draft.platform, draft.type, accounts, source]);
+  }, [candidates, source]);
   async function loadOptions() {
     setOptionError("");
     const requests = await Promise.allSettled([
@@ -243,8 +249,8 @@ export default function AccountCreationDialog({
     setIdentity(null);
   }
   function switchKind(platform: string, type?: string) {
-    ++scope.current;
-    ++sourceRequest.current;
+    scope.current = scope.current + 1;
+    sourceRequest.current = sourceRequest.current + 1;
     defaultsTouched.current = false;
     setReusing(false);
     setBusy(false);
@@ -822,7 +828,7 @@ export default function AccountCreationDialog({
                       aria-label="来源账号"
                       value={source}
                       onChange={(e) => {
-                        ++sourceRequest.current;
+                        sourceRequest.current = sourceRequest.current + 1;
                         setReusing(false);
                         setSource(e.target.value);
                         setReuseNotice("");

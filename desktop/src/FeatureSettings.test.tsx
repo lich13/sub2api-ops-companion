@@ -99,8 +99,9 @@ beforeEach(() => {
     },
     bark: { revision: "bark-r1", enabled: false },
   };
-  vi.mocked(command).mockImplementation(async (name) =>
-    name === "get_state" ? (initial as never) : (undefined as never),
+  vi.mocked(command).mockImplementation(
+    async (...[name]: Parameters<typeof command>) =>
+      name === "get_state" ? (initial as never) : (undefined as never),
   );
   vi.mocked(api).mockImplementation(async (method, path) => {
     if (method === "GET" && path === "/quota-refresh")

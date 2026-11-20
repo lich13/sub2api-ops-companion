@@ -1,6 +1,5 @@
 use crate::{
     actions::Actions,
-    audit,
     compat::{datetime, integer, parse_datetime, string, truthy},
     config_service::ConfigService,
     credit::{CreditController, Hooks},
@@ -116,7 +115,7 @@ impl Monitor {
         Ok(string(&self.config.current()?["oauth_recovery_test_model_id"]).to_owned())
     }
     pub fn audit(&self, event: &str, value: Value) {
-        audit::write(&self.actions.settings.audit_path, event, value);
+        self.actions.audit(event, value);
     }
     pub async fn row(&self, id: i64) -> Result<Value> {
         credit_ownership::account(&self.actions.queries.db, id).await
@@ -276,7 +275,7 @@ impl Monitor {
         if self.is_closed() {
             return Ok(());
         }
-        let config = self.config.current_shared()?;
+        let (config, limits) = self.config.current_with_limits()?;
         let now = self.now();
         // Record the due batch even while another tick owns the execution lock.
         // It may be dispatched after the due minute ends.
@@ -315,7 +314,8 @@ impl Monitor {
         let inventory = self.inventory(false).await?;
         let all_live = self.live_rows(&inventory).await?;
         self.credits.sweep(&all_live, now).await?;
-        self.tick_early_reset(&all_live, &config, now).await?;
+        self.tick_early_reset(&all_live, &config, now, limits.usage + limits.recovery)
+            .await?;
         let early_state = self.shared_state()?;
         let methods = recovery_policy::MethodIndex::from_config(&config);
         let rows = all_live
@@ -350,9 +350,7 @@ impl Monitor {
                 || truthy(&credit["attempt_at"]) && credit["stage"] != "finished")
                 && !matches!(string(&credit["stage"]), "recovered" | "closed"))
         });
-        let limit = (integer(&config["oauth_usage_refresh_concurrency"]).unwrap_or(4)
-            + integer(&config["oauth_recovery_test_concurrency"]).unwrap_or(2))
-        .clamp(1, 24) as usize;
+        let limit = limits.usage + limits.recovery;
         let mut workers = self.workers.lock().await;
         let mut cycle_results = BTreeMap::new();
         if self.is_closed() {
@@ -654,7 +652,7 @@ impl Monitor {
             }
             if !config.enabled {
                 self.store
-                    .mark_delivered(std::slice::from_ref(event), true)?;
+                    .mark_delivered(std::slice::from_ref(event), true, self.now())?;
                 if let Some(job) = event["model_test_job_id"].as_str() {
                     if self.hooks.model_notification(job, true).is_err() {
                         eprintln!("detection_log_diagnostic reason=notification_write_failed");
@@ -666,7 +664,7 @@ impl Monitor {
                     .bark
                     .notify_oauth(std::slice::from_ref(event), Some(&config))
                     .await;
-                self.store.mark_delivered(&delivered, false)?;
+                self.store.mark_delivered(&delivered, false, self.now())?;
                 for event in &delivered {
                     if let Some(job) = event["model_test_job_id"].as_str() {
                         if self.hooks.model_notification(job, false).is_err() {

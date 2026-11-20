@@ -1,3 +1,4 @@
+import { BridgeError } from "./bridgeError";
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -123,10 +124,12 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   vi.mocked(subscribe).mockResolvedValue(() => {});
-  vi.mocked(command).mockImplementation(async (name) => {
-    if (name === "get_state") return state() as never;
-    return undefined as never;
-  });
+  vi.mocked(command).mockImplementation(
+    async (...[name]: Parameters<typeof command>) => {
+      if (name === "get_state") return state() as never;
+      return undefined as never;
+    },
+  );
   vi.mocked(api).mockImplementation(async (_method, path) => {
     if (path.startsWith("/usage-records")) return recordPage() as never;
     if (path.startsWith("/errors?category=") || path === "/recoveries")
@@ -135,7 +138,6 @@ beforeEach(() => {
       return {
         platforms: [],
         active_task: null,
-        legacy_last_task: null,
       } as never;
     if (path === "/quota-refresh")
       return { status: "idle", items: [], total: 0, completed: 0 } as never;
@@ -181,8 +183,9 @@ describe("main page surface ownership", () => {
           success_after_error: recovered,
         },
       ];
-      vi.mocked(command).mockImplementation(async (name) =>
-        name === "get_state" ? (initial as never) : (undefined as never),
+      vi.mocked(command).mockImplementation(
+        async (...[name]: Parameters<typeof command>) =>
+          name === "get_state" ? (initial as never) : (undefined as never),
       );
       await act(async () => root.render(<App />));
 
@@ -243,8 +246,9 @@ describe("main page surface ownership", () => {
     root = createRoot(container);
     const mobileState = state();
     mobileState.platform = "android";
-    vi.mocked(command).mockImplementation(async (name) =>
-      name === "get_state" ? (mobileState as never) : (undefined as never),
+    vi.mocked(command).mockImplementation(
+      async (...[name]: Parameters<typeof command>) =>
+        name === "get_state" ? (mobileState as never) : (undefined as never),
     );
     await act(async () => root.render(<App />));
     expect(
@@ -349,8 +353,9 @@ describe("main page surface ownership", () => {
     const initial = state();
     initial.snapshot!.accounts = [account(1, 31)];
     await act(async () => {
-      vi.mocked(command).mockImplementation(async (name) =>
-        name === "get_state" ? (initial as never) : (undefined as never),
+      vi.mocked(command).mockImplementation(
+        async (...[name]: Parameters<typeof command>) =>
+          name === "get_state" ? (initial as never) : (undefined as never),
       );
       root.render(<App />);
     });
@@ -368,8 +373,9 @@ describe("categorized event history", () => {
   it("switches all four tabs and paginates each error category without duplicate IDs or snapshot rows", async () => {
     const initial = state();
     initial.snapshot!.errors = [error(999, "仅快照错误")];
-    vi.mocked(command).mockImplementation(async (name) =>
-      name === "get_state" ? (initial as never) : (undefined as never),
+    vi.mocked(command).mockImplementation(
+      async (...[name]: Parameters<typeof command>) =>
+        name === "get_state" ? (initial as never) : (undefined as never),
     );
     const original = vi.mocked(api).getMockImplementation()!;
     const pages: Record<
@@ -609,8 +615,9 @@ describe("account sorting and Android connection settings", () => {
       Object.assign(account(2), { last_called_at: "2026-10-07T00:00:00Z" }),
       Object.assign(account(3), { last_called_at: "2026-10-05T00:00:00Z" }),
     ];
-    vi.mocked(command).mockImplementation(async (name) =>
-      name === "get_state" ? (initial as never) : (undefined as never),
+    vi.mocked(command).mockImplementation(
+      async (...[name]: Parameters<typeof command>) =>
+        name === "get_state" ? (initial as never) : (undefined as never),
     );
     await act(async () => root.render(<App />));
     const names = () =>
@@ -674,8 +681,9 @@ describe("account sorting and Android connection settings", () => {
       Object.assign(account(2), { last_called_at: "2026-10-07T00:00:00Z" }),
       Object.assign(account(3), { last_called_at: "2026-10-05T00:00:00Z" }),
     ];
-    vi.mocked(command).mockImplementation(async (name) =>
-      name === "get_state" ? (initial as never) : (undefined as never),
+    vi.mocked(command).mockImplementation(
+      async (...[name]: Parameters<typeof command>) =>
+        name === "get_state" ? (initial as never) : (undefined as never),
     );
     await act(async () => root.render(<App />));
     const desktopSort = container.querySelector<HTMLSelectElement>(
@@ -729,8 +737,9 @@ describe("account sorting and Android connection settings", () => {
   it("falls back to recent descending when localStorage cannot be read", async () => {
     const initial = state();
     initial.platform = "android";
-    vi.mocked(command).mockImplementation(async (name) =>
-      name === "get_state" ? (initial as never) : (undefined as never),
+    vi.mocked(command).mockImplementation(
+      async (...[name]: Parameters<typeof command>) =>
+        name === "get_state" ? (initial as never) : (undefined as never),
     );
     const getItem = vi
       .spyOn(Storage.prototype, "getItem")
@@ -749,8 +758,9 @@ describe("account sorting and Android connection settings", () => {
   it("updates the selected sort even when localStorage rejects the write", async () => {
     const initial = state();
     initial.platform = "android";
-    vi.mocked(command).mockImplementation(async (name) =>
-      name === "get_state" ? (initial as never) : (undefined as never),
+    vi.mocked(command).mockImplementation(
+      async (...[name]: Parameters<typeof command>) =>
+        name === "get_state" ? (initial as never) : (undefined as never),
     );
     const originalSetItem = Storage.prototype.setItem;
     const setItem = vi
@@ -806,8 +816,9 @@ describe("account sorting and Android connection settings", () => {
       },
     ];
     let statusReads = 0;
-    vi.mocked(command).mockImplementation(async (name) =>
-      name === "get_state" ? (initial as never) : (undefined as never),
+    vi.mocked(command).mockImplementation(
+      async (...[name]: Parameters<typeof command>) =>
+        name === "get_state" ? (initial as never) : (undefined as never),
     );
     vi.mocked(api).mockImplementation(async (_method, path) => {
       if (path === "/connection-status")
@@ -876,8 +887,9 @@ it("returns to initial account filters, selection, disclosures and scroll while 
       status: "active",
     } as never,
   ];
-  vi.mocked(command).mockImplementation(async (name) =>
-    name === "get_state" ? (initial as never) : (undefined as never),
+  vi.mocked(command).mockImplementation(
+    async (...[name]: Parameters<typeof command>) =>
+      name === "get_state" ? (initial as never) : (undefined as never),
   );
   await act(async () => root.render(<App />));
   const select = async (label: string, value: string) =>
@@ -953,37 +965,50 @@ it("returns to initial account filters, selection, disclosures and scroll while 
 
 it("switches saved Sub2API instances, opens prefilled modal when credentials are missing, and guards active instance deletion", async () => {
   const initial = state();
+  let publish!: (next: ViewState) => void;
+  vi.mocked(subscribe).mockImplementation(async (notify) => {
+    publish = notify;
+    return () => {};
+  });
   initial.preferences.connections = [
     { name: "主力节点", base_url: "https://fixture.invalid" },
     { name: "备用节点", base_url: "https://standby.example.invalid" },
     { name: "缺少凭据节点", base_url: "https://missing-key.example.invalid" },
   ];
-  vi.mocked(command).mockImplementation(async (name, args) => {
-    if (name === "get_state") return initial as never;
-    if (name === "connect") {
-      const payload = args as {
-        baseUrl: string;
-        apiKey: string;
-        name?: string;
-      };
-      if (
-        payload.baseUrl === "https://missing-key.example.invalid" &&
-        !payload.apiKey
-      ) {
-        throw new Error("未找到该实例已保存的 API Key，请重新输入");
+  vi.mocked(command).mockImplementation(
+    async (...[name, args]: Parameters<typeof command>) => {
+      if (name === "get_state") return initial as never;
+      if (name === "connect") {
+        const payload = args as {
+          baseUrl: string;
+          apiKey: string;
+          name?: string;
+        };
+        if (
+          payload.baseUrl === "https://missing-key.example.invalid" &&
+          !payload.apiKey
+        ) {
+          throw new BridgeError({
+            code: "missing_credentials",
+            message: "请重新输入管理员凭据",
+          });
+        }
+        initial.preferences.base_url = payload.baseUrl;
+        publish({ ...initial, preferences: { ...initial.preferences } });
+        return undefined as never;
       }
-      initial.preferences.base_url = payload.baseUrl;
-      return { ...initial, preferences: { ...initial.preferences } } as never;
-    }
-    if (name === "remove_connection") {
-      const payload = args as { baseUrl: string };
-      initial.preferences.connections = initial.preferences.connections?.filter(
-        (item) => item.base_url !== payload.baseUrl,
-      );
-      return { ...initial, preferences: { ...initial.preferences } } as never;
-    }
-    return undefined as never;
-  });
+      if (name === "remove_connection") {
+        const payload = args as { baseUrl: string };
+        initial.preferences.connections =
+          initial.preferences.connections?.filter(
+            (item) => item.base_url !== payload.baseUrl,
+          );
+        publish({ ...initial, preferences: { ...initial.preferences } });
+        return undefined as never;
+      }
+      return undefined as never;
+    },
+  );
   vi.mocked(api).mockImplementation(async (_method, path) => {
     if (path === "/connection-status") {
       return {

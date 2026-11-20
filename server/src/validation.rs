@@ -41,7 +41,7 @@ pub fn coercible_boolean(value: &Value) -> Result<bool> {
         _ => Err(Error::invalid()),
     }
 }
-pub fn integer(value: &Value, min: i64, max: i64) -> Result<i64> {
+pub fn integer_in_range(value: &Value, min: i64, max: i64) -> Result<i64> {
     value
         .as_i64()
         .filter(|v| (min..=max).contains(v))
@@ -106,7 +106,7 @@ pub fn ids(value: &Value, min: usize, max: usize) -> Result<Vec<i64>> {
         .ok_or_else(Error::invalid)?;
     values
         .iter()
-        .map(|v| integer(v, i64::MIN, i64::MAX))
+        .map(|v| integer_in_range(v, i64::MIN, i64::MAX))
         .collect()
 }
 pub fn operation_payload(action: &str, payload: &Value) -> Result<Value> {
@@ -155,19 +155,19 @@ pub fn operation_payload(action: &str, payload: &Value) -> Result<Value> {
     fields(&value, allowed, required)?;
     match action {
         "priority" => {
-            integer(&value["priority"], 0, i32::MAX as i64)?;
+            integer_in_range(&value["priority"], 0, i32::MAX as i64)?;
         }
         "concurrency" => {
-            integer(&value["concurrency"], 1, i32::MAX as i64)?;
+            integer_in_range(&value["concurrency"], 1, i32::MAX as i64)?;
         }
         "load_factor" => {
             if !value["load_factor"].is_null() {
-                integer(&value["load_factor"], 1, 10000)?;
+                integer_in_range(&value["load_factor"], 1, 10000)?;
             }
         }
         "proxy" => {
             if !value["proxy_id"].is_null() {
-                integer(&value["proxy_id"], 1, i64::MAX)?;
+                integer_in_range(&value["proxy_id"], 1, i64::MAX)?;
             }
         }
         "model_config" => value = profile(&value)?,

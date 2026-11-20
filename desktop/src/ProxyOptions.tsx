@@ -63,11 +63,11 @@ export default function ProxyOptions({
     running = useRef(new Set<string>()),
     name = useId();
   useEffect(() => {
-    ++generation.current;
+    generation.current = generation.current + 1;
     setResults({});
     running.current.clear();
     return () => {
-      ++generation.current;
+      generation.current = generation.current + 1;
     };
   }, [connectionKey]);
   async function diagnose(id: number, action: "test" | "quality-check") {

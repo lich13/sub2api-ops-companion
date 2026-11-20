@@ -4,13 +4,13 @@ use crate::{
     oauth_state::OAuthState,
     settings::daily_time,
 };
-use chrono::{DateTime, Duration, FixedOffset, Timelike, Utc};
+use chrono::{DateTime, Duration, Timelike, Utc};
 use serde_json::{json, Value};
 pub fn next_time(at: DateTime<Utc>, time: &str) -> Result<DateTime<Utc>> {
     let value = daily_time(&json!(time))?;
     let hour = value[..2].parse::<u32>().unwrap();
     let minute = value[3..].parse::<u32>().unwrap();
-    let local = at.with_timezone(&FixedOffset::east_opt(8 * 3600).unwrap());
+    let local = at.with_timezone(&crate::settings::BUSINESS_TZ);
     let mut target = local
         .with_hour(hour)
         .unwrap()
@@ -124,7 +124,7 @@ impl Schedule {
             return Ok(());
         }
         self.store.transaction(|state| {let state=daily(state);if state["enabled"]!=enabled || state["time"]!=time {return configuration(state,config,at);}let Some(target)=parse_datetime(&state["next_run_at"]) else{return Ok(());};if !enabled || at<target {return Ok(());}
-            let date=target.with_timezone(&FixedOffset::east_opt(8*3600).unwrap()).date_naive().to_string();let batches=&mut state["batches"];let scheduled=datetime(target);
+            let date=target.with_timezone(&crate::settings::BUSINESS_TZ).date_naive().to_string();let batches=&mut state["batches"];let scheduled=datetime(target);
             if batches.get(&date).is_none() || batches[&date]["status"]=="missed" && batches[&date]["scheduled_at"]!=scheduled {batches[&date]=json!({"date":date,"scheduled_at":scheduled,"status":if at<target+Duration::minutes(1) {"queued"} else {"missed"},"accounts":{}});}
             while batches.as_object().unwrap().len()>60 {let key=batches.as_object().unwrap().keys().min().unwrap().clone();batches.as_object_mut().unwrap().shift_remove(&key);}
             state["next_run_at"]=datetime(next_time(at,&time)?).into();Ok(())})

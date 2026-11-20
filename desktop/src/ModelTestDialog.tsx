@@ -1,3 +1,4 @@
+import { useEffectEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
   LoaderCircle,
@@ -102,15 +103,23 @@ export default function ModelTestDialog({
     dialogRef = useRef<HTMLElement>(null);
   reportRef.current = report;
   const dismiss = () => {
-    ++scope.current;
-    ++generation.current;
+    scope.current = scope.current + 1;
+    generation.current = generation.current + 1;
     clearTimeout(timer.current);
     close();
   };
   useDialogFocus(dialogRef);
   useBackAction(true, dismiss);
+  const initializeSelection = useEffectEvent(() => {
+    setEngine(
+      account.platform !== "openai" || preference?.engine === "lm_detector"
+        ? "lm_detector"
+        : "modeltrace",
+    );
+    setSamples(preference?.sample_count === 3 ? 3 : 1);
+  });
   useEffect(() => {
-    ++scope.current;
+    scope.current = scope.current + 1;
     if (activeAccount.current !== account.id) {
       activeAccount.current = account.id;
       setModels([]);
@@ -122,12 +131,7 @@ export default function ModelTestDialog({
       setTarget(defaultTarget);
       setPolicyError("");
       policyEdited.current = false;
-      setEngine(
-        account.platform !== "openai" || preference?.engine === "lm_detector"
-          ? "lm_detector"
-          : "modeltrace",
-      );
-      setSamples(preference?.sample_count === 3 ? 3 : 1);
+      initializeSelection();
       selectionTouched.current = false;
       submitted.current = false;
     }
@@ -135,7 +139,7 @@ export default function ModelTestDialog({
     setPolicySaving(false);
     policyPending.current = false;
     return () => {
-      ++scope.current;
+      scope.current = scope.current + 1;
     };
   }, [account.id, online]);
   useEffect(() => {
@@ -212,12 +216,14 @@ export default function ModelTestDialog({
       alive = false;
     };
   }, [account.id, online]);
+  const jobId = job?.id,
+    jobStatus = job?.status;
   useEffect(() => {
-    if (!job || terminal.has(job.status) || !online) return;
+    if (!jobId || !jobStatus || terminal.has(jobStatus) || !online) return;
     const current = ++generation.current;
     const poll = async () => {
       try {
-        const next = await api<Result>("GET", `/model-tests/${job.id}`);
+        const next = await api<Result>("GET", `/model-tests/${jobId}`);
         if (generation.current === current) setJob(next);
       } catch (e) {
         if (generation.current === current) reportRef.current(e);
@@ -227,10 +233,10 @@ export default function ModelTestDialog({
     };
     timer.current = setTimeout(() => void poll(), 400);
     return () => {
-      ++generation.current;
+      generation.current = generation.current + 1;
       clearTimeout(timer.current);
     };
-  }, [job?.id, job?.status, account.id, online]);
+  }, [jobId, jobStatus, account.id, online]);
   async function savePolicy(
     nextMode: VerdictMode,
     nextTarget: string,

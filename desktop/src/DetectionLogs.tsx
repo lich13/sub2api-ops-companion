@@ -353,16 +353,20 @@ function Detail({
   online: boolean;
   close: () => void;
 }) {
-  const [groups, setGroups] = useState<
-    { index: number; status: string; duration_ms?: number | null }[]
-  >([]);
+  type DetectionGroups = {
+    index: number;
+    status: string;
+    duration_ms?: number | null;
+  }[];
+  type ModelGroupsResponse = { id: string; groups?: DetectionGroups };
+  const [groups, setGroups] = useState<DetectionGroups>([]);
   const [error, setError] = useState(""),
     [loading, setLoading] = useState(online);
   const generation = useRef(0);
   const dialog = useRef<HTMLElement>(null);
   useDialogFocus(dialog);
   const dismiss = () => {
-    ++generation.current;
+    generation.current = generation.current + 1;
     close();
   };
   useBackAction(true, dismiss);
@@ -374,10 +378,7 @@ function Detail({
     }
     setLoading(true);
     setError("");
-    void api<{ id: string; groups?: typeof groups }>(
-      "GET",
-      `/model-tests/${row.job_id}`,
-    )
+    void api<ModelGroupsResponse>("GET", `/model-tests/${row.job_id}`)
       .then((job) => {
         if (epoch !== generation.current) return;
         if (job.id !== row.job_id) throw new Error("任务详情不匹配");
@@ -391,7 +392,7 @@ function Detail({
         if (epoch === generation.current) setLoading(false);
       });
     return () => {
-      ++generation.current;
+      generation.current = generation.current + 1;
     };
   }, [row.job_id, online]);
   return (

@@ -258,7 +258,7 @@ impl Harness {
             .append_pair("application_name", "priority_order_runtime");
 
         let temp = tempfile::tempdir().expect("create priority-order state directory");
-        fingerprint_cache::seed(temp.path());
+        fingerprint_cache::seed(temp.path(), chrono::Utc::now());
         let upstream_listener = TcpListener::bind(("127.0.0.1", 0))
             .await
             .expect("bind priority-order upstream fixture");
@@ -1507,9 +1507,8 @@ async fn priority_v2_view_is_platform_scoped_and_every_route_requires_schema_2()
         .cloned()
         .collect::<Vec<_>>();
     keys.sort();
-    assert_eq!(keys, vec!["active_task", "legacy_last_task", "platforms"]);
+    assert_eq!(keys, vec!["active_task", "platforms"]);
     assert!(view["active_task"].is_null());
-    assert!(view["legacy_last_task"].is_null());
     let platforms = view["platforms"].as_array().expect("platform list");
     assert_eq!(platforms.len(), 2);
     for platform in platforms {

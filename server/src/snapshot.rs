@@ -51,7 +51,7 @@ impl Runtime {
         {
             return Ok(cache.snapshot_bytes.clone());
         }
-        let now = chrono::Utc::now();
+        let now = self.monitor.now();
         let state = self.actions.queries.oauth.shared_snapshot()?;
         let rows = self.actions.queries.accounts().await?;
         self.key_quota.retain_accounts(&rows);
@@ -158,7 +158,7 @@ impl Runtime {
         usage: Option<Value>,
     ) -> Result<Value> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
-        let now = chrono::Utc::now();
+        let now = self.monitor.now();
         let state = self.actions.queries.oauth.shared_snapshot()?;
         let meta = &state["scheduler"][id.to_string()];
         let mut account = queries::account_dto_without_windows(row, now);

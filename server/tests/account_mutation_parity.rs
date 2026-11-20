@@ -863,7 +863,7 @@ impl Harness {
         let database_url = runtime_database_url.to_string();
 
         let temp = tempfile::tempdir().expect("create test state directory");
-        fingerprint_cache::seed(temp.path());
+        fingerprint_cache::seed(temp.path(), chrono::Utc::now());
         let upstream_listener = TcpListener::bind(("127.0.0.1", 0))
             .await
             .expect("bind loopback upstream");

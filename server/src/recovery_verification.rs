@@ -13,6 +13,18 @@ use chrono::Duration;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
+struct Verification<'a> {
+    id: i64,
+    generation: i64,
+    method_generation: i64,
+    method: &'a str,
+    row: Value,
+    intent: Value,
+    windows: Vec<String>,
+    lease: Option<Lease>,
+    result: Value,
+}
+
 impl Monitor {
     fn selected(
         &self,
@@ -92,6 +104,9 @@ impl Monitor {
         let state = self.shared_state()?;
         let meta = &state["scheduler"][id.to_string()];
         let mut intent = meta["recovery_intent"].clone();
+        if !intent.is_object() {
+            return Ok(json!({"success":false,"skipped":true,"error_code":"manual_intervention"}));
+        }
         if intent["fingerprint"] != original["fingerprint"]
             || !self.selected(id, generation, method_generation, method)?
         {
@@ -296,6 +311,33 @@ impl Monitor {
                 ],
             )
         };
+        self.reconcile_verification(Verification {
+            id,
+            generation,
+            method_generation,
+            method,
+            row,
+            intent,
+            windows,
+            lease,
+            result,
+        })
+        .await
+    }
+
+    async fn reconcile_verification(&self, verified: Verification<'_>) -> Result<Value> {
+        let Verification {
+            id,
+            generation,
+            method_generation,
+            method,
+            row,
+            mut intent,
+            windows,
+            mut lease,
+            result,
+        } = verified;
+        let early = intent["kind"] == "early_reset";
         let _control = self.actions.locks.control(id).await;
         let after = match self.row(id).await {
             Ok(row) => row,

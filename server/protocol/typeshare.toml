@@ -1,0 +1,10 @@
+[swift]
+default_decorators = ["Sendable", "Equatable"]
+
+[swift.type_mappings]
+Json = "JSONValue"
+Integer = "Int"
+
+[typescript.type_mappings]
+Json = "unknown"
+Integer = "number"

@@ -63,7 +63,6 @@ function list(accounts: Account[]): PriorityView {
       ),
     })),
     active_task: summary(active),
-    legacy_last_task: null,
   };
 }
 export function priorityPreview(

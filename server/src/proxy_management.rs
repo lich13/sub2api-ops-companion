@@ -94,14 +94,14 @@ fn proxy_input(value: &Value, create: bool, data: bool) -> Result<()> {
         choices(v, &["none", "proxy", "direct"])?;
     }
     if let Some(v) = value.get("port") {
-        validation::integer(v, 1, 65535)?;
+        validation::integer_in_range(v, 1, 65535)?;
     }
     if let Some(v) = value.get("expiry_warn_days") {
-        validation::integer(v, 0, i32::MAX as i64)?;
+        validation::integer_in_range(v, 0, i32::MAX as i64)?;
     }
     for field in ["expires_at", "backup_proxy_id"] {
         if let Some(v) = value.get(field).filter(|v| !v.is_null()) {
-            validation::integer(v, 1, i64::MAX)?;
+            validation::integer_in_range(v, 1, i64::MAX)?;
         }
     }
     Ok(())
@@ -112,7 +112,7 @@ fn ids(value: &Value) -> Result<()> {
         .filter(|a| !a.is_empty() && a.len() <= 1000)
         .ok_or_else(Error::invalid)?;
     for v in a {
-        validation::integer(v, 1, i64::MAX)?;
+        validation::integer_in_range(v, 1, i64::MAX)?;
     }
     Ok(())
 }
@@ -158,7 +158,7 @@ pub fn validate_body(path: &[&str], method: &str, value: &Value) -> Result<()> {
                 validation::text(v, 0, 80)?;
             }
             if let Some(v) = d.get("version") {
-                validation::integer(v, 1, 1)?;
+                validation::integer_in_range(v, 1, 1)?;
             }
             if let Some(v) = d.get("exported_at") {
                 validation::text(v, 0, 80)?;
@@ -217,12 +217,13 @@ pub fn query_string(query: &BTreeMap<String, String>, export: bool) -> Result<St
     })
 }
 pub fn safe_proxy(value: &Value) -> Result<Value> {
-    validation::integer(&value["id"], 1, i64::MAX)
+    validation::integer_in_range(&value["id"], 1, i64::MAX)
         .map_err(|_| Error::new(502, "代理响应格式无效"))?;
     for key in ["name", "protocol", "host", "status"] {
         validation::text(&value[key], 0, 512).map_err(|_| Error::new(502, "代理响应格式无效"))?;
     }
-    validation::integer(&value["port"], 1, 65535).map_err(|_| Error::new(502, "代理端口无效"))?;
+    validation::integer_in_range(&value["port"], 1, 65535)
+        .map_err(|_| Error::new(502, "代理端口无效"))?;
     let mut out = pick(
         value,
         &[

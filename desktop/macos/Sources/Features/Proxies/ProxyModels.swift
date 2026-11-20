@@ -61,10 +61,7 @@ public struct ProxyManagedPage: Codable, Sendable, Equatable {
     public static let empty = ProxyManagedPage(items: [], page: 1, page_size: 20, total: 0, pages: 0)
 }
 
-public struct ProxyCredentialsDTO: Codable, Sendable, Equatable {
-    public var username: String
-    public var password: String
-}
+public typealias ProxyCredentialsDTO = ProxyLogin
 
 public struct ProxyAssociatedAccount: Codable, Sendable, Equatable, Identifiable {
     public var id: Int

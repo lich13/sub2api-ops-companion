@@ -66,7 +66,7 @@ pub(super) fn mock(method: &Method, path: &str, body: &Value) -> Option<Response
 async fn account_creation_http_forwards_supported_types_and_native_auth_without_secret_echoes() {
     let mut h = Harness::new().await;
     let (_, cap, _) = h.request(Method::GET, "capabilities", None).await;
-    assert_eq!(cap["features"]["account_creation"], true);
+    assert_eq!(cap["api_version"], 1);
     let (status, options, text) = h
         .request(Method::GET, "account-creation/options", None)
         .await;

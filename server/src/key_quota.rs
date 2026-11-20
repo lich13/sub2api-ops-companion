@@ -4,7 +4,6 @@ use crate::{
     compat::{config_revision, integer, string as text_value},
     error::{Error, Result},
     store::{valid_object, Store},
-    validation,
 };
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -12,15 +11,12 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{Arc, Mutex},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime},
 };
 use tokio::sync::{watch, Semaphore};
 const LIMIT: usize = 2_000_000;
-fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
+fn unix(clock: &crate::compat::WallClock) -> u64 {
+    (clock)().timestamp().max(0) as u64
 }
 #[derive(Clone, Debug, Serialize, Default, PartialEq)]
 pub struct Plan {
@@ -99,12 +95,14 @@ struct Shared {
 }
 #[derive(Clone)]
 pub struct Service {
+    pub(crate) clock: crate::compat::WallClock,
     shared: Arc<Shared>,
     config: Store,
     client: reqwest::Client,
     tasks: crate::tasks::Tasks,
 }
 pub struct Query {
+    clock: crate::compat::WallClock,
     pub id: String,
     pub version: String,
     pub base: String,
@@ -132,35 +130,36 @@ fn token(raw: &Value, id: i64) -> Result<Option<String>> {
     }
 }
 pub fn settings_request(value: &Value, account: bool) -> Result<()> {
-    validation::fields(
-        value,
-        if account {
-            &["expected_revision", "access_token"]
-        } else {
-            &["expected_revision", "seconds"]
-        },
-        if account {
-            &["expected_revision"]
-        } else {
-            &["expected_revision", "seconds"]
-        },
-    )?;
-    validation::text(&value["expected_revision"], 64, 64)?;
+    use sub2ops_protocol::messages::{AccountQuotaBody, GlobalQuotaBody};
     if account {
-        if let Some(value) = value.get("access_token") {
-            let v = validation::text(value, 0, 8192)?;
-            if !v.bytes().all(|b| b.is_ascii_graphic()) {
+        let body: AccountQuotaBody =
+            serde::Deserialize::deserialize(value).map_err(|_| Error::invalid())?;
+        if body.expected_revision.chars().count() != 64
+            || value.get("access_token").is_some_and(Value::is_null)
+        {
+            return Err(Error::invalid());
+        }
+        if let Some(v) = body.access_token {
+            if v.len() > 8192 || !v.bytes().all(|b| b.is_ascii_graphic()) {
                 return Err(Error::new(422, "账户访问令牌格式无效"));
             }
         }
-    } else if seconds(value).is_err() {
-        return Err(Error::new(422, "余额刷新间隔需为 10–86400 秒，或 0 关闭"));
+    } else {
+        let body: GlobalQuotaBody =
+            serde::Deserialize::deserialize(value).map_err(|_| Error::invalid())?;
+        if body.expected_revision.chars().count() != 64 {
+            return Err(Error::invalid());
+        }
+        if body.seconds != 0 && !(10..=86400).contains(&body.seconds) {
+            return Err(Error::new(422, "余额刷新间隔需为 10–86400 秒，或 0 关闭"));
+        }
     }
     Ok(())
 }
 impl Service {
     pub fn new(path: PathBuf) -> Result<Self> {
         let service = Self {
+            clock: Arc::new(chrono::Utc::now),
             shared: Arc::new(Shared {
                 entries: Mutex::new(HashMap::new()),
                 permits: Semaphore::new(3),
@@ -230,21 +229,33 @@ impl Service {
         if !raw["accounts"].is_object() {
             return Err(Error::new(503, "余额查询配置无效"));
         }
-        Ok(json!({"seconds":seconds,"revision":config_revision(&json!(seconds))}))
+        Ok(json!(sub2ops_protocol::messages::GlobalQuotaReply {
+            seconds: seconds as i64,
+            revision: config_revision(&json!(seconds))
+        }))
     }
     pub fn account_settings(&self, id: i64) -> Result<Value> {
         let token = token(self.config.read_shared()?.as_ref(), id)?;
-        Ok(
-            json!({"account_id":id,"has_access_token":token.is_some(),"revision":config_revision(&json!([id,token]))}),
-        )
+        Ok(json!(sub2ops_protocol::messages::AccountQuotaReply {
+            account_id: id,
+            has_access_token: token.is_some(),
+            revision: config_revision(&json!([id, token]))
+        }))
     }
     pub fn account_access_token(&self, id: i64) -> Result<Value> {
         let value = token(self.config.read_shared()?.as_ref(), id)?
             .ok_or_else(|| Error::new(404, "尚未配置账户访问令牌"))?;
-        Ok(json!({"account_id":id,"access_token":value}))
+        Ok(json!(sub2ops_protocol::dto::AccountTokenReply {
+            account_id: id,
+            access_token: value
+        }))
     }
     pub fn save_settings(&self, value: &Value, id: Option<i64>) -> Result<Value> {
         settings_request(value, id.is_some())?;
+        self.save_settings_validated(value, id)
+    }
+
+    pub(crate) fn save_settings_validated(&self, value: &Value, id: Option<i64>) -> Result<Value> {
         let changed = self.config.transaction(|raw| {
             let revision = if let Some(id) = id {
                 config_revision(&json!([id, token(raw, id)?]))
@@ -290,6 +301,7 @@ impl Service {
             .to_owned();
         let key = text_value(&credentials["api_key"]).to_owned();
         Ok(Query {
+            clock: self.clock.clone(),
             id: id.to_string(),
             version: config_revision(&json!([owner, base, key, access])),
             base,
@@ -328,9 +340,12 @@ impl Service {
             Self::schedule(&mut e.view, interval);
             if let Some(rx) = &e.flight {
                 rx.clone()
-            } else if e.view.retry_at.is_some_and(|at| at > now())
+            } else if e.view.retry_at.is_some_and(|at| at > unix(&self.clock))
                 || (!force
-                    && (interval == 0 || e.view.next_refresh_at.is_some_and(|at| at > now())))
+                    && (interval == 0
+                        || e.view
+                            .next_refresh_at
+                            .is_some_and(|at| at > unix(&self.clock))))
             {
                 return Ok(e.view.clone());
             } else {
@@ -370,7 +385,7 @@ impl Service {
                         fetch(&input).await
                     };
                     let mut view = previous;
-                    view.checked_at = Some(now());
+                    view.checked_at = Some(unix(&service.clock));
                     view.retry_at = None;
                     match result {
                         Ok(Some(data)) => {
@@ -491,13 +506,13 @@ async fn get_with_token(
                         .map(|n| n.ceil().max(1.0) as u64)
                         .or_else(|| {
                             httpdate::parse_http_date(value).ok().map(|at| {
-                                at.duration_since(SystemTime::now())
+                                at.duration_since(SystemTime::from((input.clock)()))
                                     .unwrap_or_default()
                                     .as_secs()
                                     .saturating_add(1)
                             })
                         });
-                    duration.map(|seconds| now().saturating_add(seconds))
+                    duration.map(|seconds| unix(&input.clock).saturating_add(seconds))
                 });
             return Err(Failure {
                 message: if status == 429 {
@@ -506,7 +521,7 @@ async fn get_with_token(
                     "额度服务暂时不可用"
                 }
                 .into(),
-                retry_at: Some(retry.unwrap_or_else(|| now() + 60)),
+                retry_at: Some(retry.unwrap_or_else(|| unix(&input.clock) + 60)),
             });
         }
         if (300..400).contains(&status) {
@@ -595,7 +610,7 @@ fn number(v: &Value) -> Option<f64> {
 fn n(v: &Value, k: &str) -> Option<f64> {
     number(&v[k])
 }
-fn string(v: &Value, k: &str) -> Option<String> {
+fn string_field(v: &Value, k: &str) -> Option<String> {
     v[k].as_str()
         .filter(|s| !s.is_empty())
         .map(|s| s.chars().filter(|c| !c.is_control()).take(120).collect())
@@ -757,11 +772,11 @@ fn sub2(v: &Value) -> Option<Data> {
     {
         return None;
     }
-    let unit = string(v, "unit").unwrap_or_else(|| "USD".into());
+    let unit = string_field(v, "unit").unwrap_or_else(|| "USD".into());
     let mut d = Data {
         source: "sub2api",
         subscriptions: subscriptions(v, &unit),
-        expires_at: string(v, "expires_at"),
+        expires_at: string_field(v, "expires_at"),
         today: usage(&v["usage"]["today"]),
         total_usage: usage(&v["usage"]["total"]),
         ..Default::default()
@@ -824,7 +839,7 @@ fn sub2(v: &Value) -> Option<Data> {
                 remaining,
                 used,
                 total,
-                &string(q, "unit").unwrap_or_else(|| unit.clone()),
+                &string_field(q, "unit").unwrap_or_else(|| unit.clone()),
                 total.is_some_and(|n| n <= 0.),
             ));
         }
@@ -851,10 +866,10 @@ fn sub2(v: &Value) -> Option<Data> {
                     remaining,
                     Some(used),
                     total,
-                    &string(r, "unit").unwrap_or_else(|| unit.clone()),
+                    &string_field(r, "unit").unwrap_or_else(|| unit.clone()),
                     false,
                 );
-                p.reset_at = string(r, "reset_at");
+                p.reset_at = string_field(r, "reset_at");
                 d.plans.push(p);
             }
         }
@@ -870,7 +885,11 @@ fn sub2(v: &Value) -> Option<Data> {
     }
     Some(d)
 }
+#[cfg(test)]
 fn newapi(v: &Value) -> Option<Data> {
+    newapi_at(v, 1_700_000_000)
+}
+fn newapi_at(v: &Value, now: i64) -> Option<Data> {
     let body = &v["data"];
     if !(v["code"] == true || v["success"] == true) || body["object"] != "token_usage" {
         return None;
@@ -895,9 +914,7 @@ fn newapi(v: &Value) -> Option<Data> {
             unlimited,
         )],
         expires_at_unix: expires,
-        key_status: expires
-            .filter(|t| *t < now() as i64)
-            .map(|_| "已到期".into()),
+        key_status: expires.filter(|t| *t < now).map(|_| "已到期".into()),
         ..Default::default()
     };
     if let Some(remaining) = n(&body["user_quota"], "total_available") {
@@ -927,7 +944,7 @@ fn convert(d: &mut Data, status: &Value) {
         Some("USD") => ("USD".to_string(), Some(1.)),
         Some("CNY") => ("CNY".to_string(), n(s, "usd_exchange_rate")),
         Some("CUSTOM") => (
-            string(s, "custom_currency_symbol").unwrap_or_else(|| "自定义单位".into()),
+            string_field(s, "custom_currency_symbol").unwrap_or_else(|| "自定义单位".into()),
             n(s, "custom_currency_exchange_rate"),
         ),
         _ => return,
@@ -1004,7 +1021,7 @@ async fn fetch(input: &Query) -> std::result::Result<Option<Data>, Failure> {
                     .body
                     .as_ref()
                     .filter(|_| (200..300).contains(&reply.status))
-                    .and_then(newapi)
+                    .and_then(|value| newapi_at(value, (input.clock)().timestamp()))
                 {
                     data.plans
                         .extend(key.plans.into_iter().filter(|p| p.name == "Key 额度"));
@@ -1036,7 +1053,11 @@ async fn fetch(input: &Query) -> std::result::Result<Option<Data>, Failure> {
     }
     let second = get(input, new, true).await?;
     if (200..300).contains(&second.status) {
-        if let Some(mut data) = second.body.as_ref().and_then(newapi) {
+        if let Some(mut data) = second
+            .body
+            .as_ref()
+            .and_then(|value| newapi_at(value, (input.clock)().timestamp()))
+        {
             match get(input, status, false).await {
                 Ok(response) if response.status == 200 => {
                     if let Some(body) = response.body {
@@ -1233,7 +1254,7 @@ impl crate::runtime::Runtime {
     pub async fn key_quota_settings(&self, id: i64, value: Option<&Value>) -> Result<Value> {
         self.key_quota_input(id).await?;
         if let Some(value) = value {
-            self.key_quota.save_settings(value, Some(id))
+            self.key_quota.save_settings_validated(value, Some(id))
         } else {
             self.key_quota.account_settings(id)
         }

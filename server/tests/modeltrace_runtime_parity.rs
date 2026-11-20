@@ -1052,7 +1052,7 @@ async fn account_model_candidates_reject_malformed_directories_and_refresh_chang
         before,
         "directory failure cannot mark a model absent or rewrite configuration"
     );
-    for status in [429, 503] {
+    for status in [401, 403, 429, 503] {
         let transient_id = harness.seed_account("apikey", None, json!({})).await;
         harness
             .state
@@ -1066,11 +1066,14 @@ async fn account_model_candidates_reject_malformed_directories_and_refresh_chang
             .models(transient_id, "fixture-model-admin-key", true)
             .await
             .unwrap_err();
-        assert_eq!(transient.status.as_u16(), 502);
-        assert_eq!(
-            transient.detail,
-            format!("上游模型目录请求失败 [http_{status}]")
-        );
+        let message = format!("上游模型目录请求失败 [http_{status}]");
+        if matches!(status, 401 | 403) {
+            assert_eq!(transient.detail["code"], "model_directory_revoked");
+            assert_eq!(transient.detail["message"], message);
+        } else {
+            assert_eq!(transient.status.as_u16(), 502);
+            assert_eq!(transient.detail, message);
+        }
     }
     let next = harness.seed_account("apikey", None, json!({})).await;
     let gate = Arc::new(Semaphore::new(0));

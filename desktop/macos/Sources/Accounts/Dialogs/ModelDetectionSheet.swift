@@ -39,8 +39,7 @@ public struct ModelDetectionSheet: View {
     @State private var candidateModels: [AccountModelItem] = []
     @State private var modelsReady: Bool = false
     @State private var loadingModels: Bool = false
-    @State private var version: String = ""
-    @State private var serverState: [String: JSONValue] = [:]
+    @State private var serverState: ModelDetectionReply?
     @State private var loading: Bool = true
     @State private var saving: Bool = false
     @State private var error: String = ""
@@ -89,20 +88,18 @@ public struct ModelDetectionSheet: View {
     }
 
     private var lastDetectionDisplay: String {
-        if let raw = serverState["last_automatic_started_at"] {
-            if let s = raw.stringValue {
-                return s.isEmpty ? "时间未知" : BeijingTime.fullTime(s)
-            }
+        if let started = serverState?.last_automatic_started_at {
+            return started.isEmpty ? "时间未知" : BeijingTime.fullTime(started)
         }
-        if serverState["last_result"] != nil && serverState["last_result"] != .null {
+        if serverState?.last_result != nil {
             return "时间未知"
         }
         return "暂无记录"
     }
 
     public var body: some View {
-        let activeJobId = serverState["job_id"]?.stringValue ?? ""
-        let rawStatus = serverState["status"]?.stringValue ?? (enabled ? "waiting" : "disabled")
+        let activeJobId = serverState?.job_id ?? ""
+        let rawStatus = serverState?.status ?? (enabled ? "waiting" : "disabled")
 
         LinearModalCard(
             title: "定时检测",
@@ -111,7 +108,7 @@ public struct ModelDetectionSheet: View {
             closeDisabled: saving,
             onClose: onClose
         ) {
-            if loading && serverState.isEmpty {
+            if loading && serverState == nil {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("正在读取检测设置…")
@@ -255,38 +252,36 @@ public struct ModelDetectionSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Rectangle().fill(DS.line).frame(height: 1).padding(.bottom, 4)
                     metaLine("状态", Self.statusLabels[rawStatus] ?? "等待核对")
-                    let eng = ModelTestEngine.name(for: serverState["engine"]?.stringValue)
-                    let samples = serverState["sample_count"]?.intValue ?? 3
+                    let eng = ModelTestEngine.name(for: serverState?.engine)
+                    let samples = serverState?.sample_count ?? 3
                     metaLine("检测源", "\(eng) · \(samples) 组")
                     metaLine("上次检测（开始）", lastDetectionDisplay)
-                    if serverState["schedule_mode"]?.stringValue == "smart" {
-                        let reqCount = serverState["recent_request_count"]?.intValue
+                    if serverState?.schedule_mode == .smart {
+                        let reqCount = serverState?.recent_request_count
                         metaLine("最近一小时调用", reqCount.map { "\($0) 次" } ?? "暂不可用")
-                        let eff = serverState["effective_interval_minutes"]?.intValue
+                        let eff = serverState?.effective_interval_minutes
                         let effText = eff.map { "\($0) 分钟" } ?? (reqCount == 0 ? "无调用，已暂停" : "等待调用统计")
                         metaLine("当前周期", effText)
                     }
-                    metaLine("下次执行", BeijingTime.fullTime(serverState["next_at"]?.stringValue))
-                    if let reason = serverState["reason"]?.stringValue, !reason.isEmpty {
+                    metaLine("下次执行", BeijingTime.fullTime(serverState?.next_at))
+                    if let reason = serverState?.reason, !reason.isEmpty {
                         metaLine("原因", reason)
                     }
-                    if let cool = serverState["next_allowed_at"]?.stringValue,
+                    if let cool = serverState?.next_allowed_at,
                        let d = BeijingTime.parseISO(cool), d > Date()
                     {
                         metaLine("冷却至", BeijingTime.fullTime(cool))
                     }
-                    if let disp = serverState["disposition"]?.objectValue {
-                        let m = disp["marked"]?.boolValue == true ? "标记已保存" : "标记待保存"
-                        let sv = disp["schedule_verified"]?.boolValue == true ? "停调度已确认" : "停调度待确认"
+                    if let disp = serverState?.disposition {
+                        let m = disp.marked ? "标记已保存" : "标记待保存"
+                        let sv = disp.schedule_verified ? "停调度已确认" : "停调度待确认"
                         metaLine("处置", "\(m) · \(sv)")
                     }
-                    if let notif = (serverState["recovery_notification"]?.objectValue ?? serverState["disposition_notification"]?.objectValue),
-                       let st = notif["status"]?.stringValue
-                    {
+                    if let st = (serverState?.recovery_notification ?? serverState?.disposition_notification)?.status {
                         metaLine("结果通知", Self.notificationLabels[st] ?? "—")
                     }
-                    let lastPred = serverState["last_result"]?["report"]?["prediction_name"]?.stringValue
-                        ?? (serverState["last_result"]?["status"]?.stringValue.flatMap { Self.statusLabels[$0] })
+                    let lastPred = serverState?.last_result?.report?.prediction_name
+                        ?? (serverState?.last_result?.status.flatMap { Self.statusLabels[$0] })
                         ?? "—"
                     metaLine("最近结果", lastPred)
                 }
@@ -348,9 +343,9 @@ public struct ModelDetectionSheet: View {
             while !Task.isCancelled && store.state.online {
                 try? await Task.sleep(for: .seconds(2))
                 guard !Task.isCancelled, store.state.online, !saving else { continue }
-                if let latest: [String: JSONValue] = try? await RustBridge.shared.api("GET", "/accounts/\(account.id)/model-detection") {
+                if let latest: ModelDetectionReply = try? await RustBridge.shared.api("GET", "/accounts/\(account.id)/model-detection") {
                     serverState = latest
-                    serverModelId = latest["model_id"]?.stringValue ?? serverModelId
+                    serverModelId = latest.model_id
                 }
             }
         }
@@ -373,7 +368,7 @@ public struct ModelDetectionSheet: View {
     private func readAll(replaceDraft: Bool, refreshDirectory: Bool) async {
         guard store.state.online else { return }
         ModelDirectoryStore.shared.bindConnection(store.connectionKey)
-        if serverState.isEmpty { loading = true }
+        if serverState == nil { loading = true }
         loadingModels = true
         error = ""
         defer {
@@ -382,18 +377,16 @@ public struct ModelDetectionSheet: View {
         }
 
         do {
-            let raw: [String: JSONValue] = try await RustBridge.shared.api("GET", "/accounts/\(account.id)/model-detection")
+            let raw: ModelDetectionReply = try await RustBridge.shared.api("GET", "/accounts/\(account.id)/model-detection")
             serverState = raw
-            version = raw["version"]?.stringValue ?? ""
-            globalModelId = raw["global_model_id"]?.stringValue ?? ""
-            serverModelId = raw["model_id"]?.stringValue ?? ""
+            globalModelId = raw.global_model_id
+            serverModelId = raw.model_id
             if replaceDraft || loadedModelId.isEmpty {
-                enabled = raw["enabled"]?.boolValue ?? false
-                let mode = raw["schedule_mode"]?.stringValue ?? "fixed"
-                scheduleMode = (mode == "smart") ? "smart" : "fixed"
-                fixedIntervalText = String(raw["interval_minutes"]?.intValue ?? 60)
-                smartMinIntervalText = String(raw["min_interval_minutes"]?.intValue ?? 5)
-                modelOverride = raw["model_override"]?.stringValue ?? ""
+                enabled = raw.enabled
+                scheduleMode = raw.schedule_mode.rawValue
+                fixedIntervalText = String(raw.interval_minutes)
+                smartMinIntervalText = String(raw.min_interval_minutes)
+                modelOverride = raw.model_override ?? ""
                 loadedModelId = serverModelId
             }
         } catch {
@@ -427,8 +420,9 @@ public struct ModelDetectionSheet: View {
     }
 
     private func save() async {
-        let fixedMins = parsedFixedMinutes ?? (Int(serverState["interval_minutes"]?.intValue ?? 60))
-        let smartMins = parsedSmartMinutes ?? (Int(serverState["min_interval_minutes"]?.intValue ?? 5))
+        guard let serverState else { return }
+        let fixedMins = parsedFixedMinutes ?? (serverState.interval_minutes)
+        let smartMins = parsedSmartMinutes ?? (serverState.min_interval_minutes)
         if isSmartMode && parsedSmartMinutes == nil {
             error = "智能模式最小间隔需为 5–30 分钟整数"
             return
@@ -443,7 +437,7 @@ public struct ModelDetectionSheet: View {
         defer { saving = false }
 
         var body: [String: JSONValue] = [
-            "expected_version": .string(version),
+            "expected_version": .string(serverState.version),
             "enabled": .bool(enabled),
             "schedule_mode": .string(isSmartMode ? "smart" : "fixed"),
             "interval_minutes": .int(Int64(max(1, fixedMins))),

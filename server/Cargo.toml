@@ -1,6 +1,6 @@
 [package]
 name = "sub2ops-server"
-version = "0.1.99"
+version = "0.1.100"
 edition = "2021"
 rust-version = "1.99"
 publish = false
@@ -9,6 +9,8 @@ publish = false
 test-fixtures = []
 
 [dependencies]
+indexmap = { version = "2", features = ["serde"] }
+sub2ops-protocol = { path = "protocol" }
 lmfpd = { path = "vendor/lmfpd", default-features = false }
 fancy-regex = "0.16"
 base64 = "0.22"
@@ -30,6 +32,8 @@ httpdate = "1"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 fs2 = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
 futures-util = "0.3"
 regex = "1"
 tempfile = "3"

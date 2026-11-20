@@ -57,7 +57,7 @@ pub fn date_window(start: &str, end: &str) -> Result<(DateTime<Utc>, DateTime<Ut
         .succ_opt()
         .filter(|d| d.year() <= 9999)
         .ok_or_else(fail)?;
-    let zone = chrono_tz::Asia::Shanghai;
+    let zone = crate::settings::BUSINESS_TZ;
     let convert = |d: NaiveDate| {
         let local = d.and_hms_opt(0, 0, 0).unwrap();
         zone.from_local_datetime(&local)

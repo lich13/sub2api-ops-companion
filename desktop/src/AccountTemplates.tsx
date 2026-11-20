@@ -1,3 +1,4 @@
+import { useEffectEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
@@ -366,16 +367,18 @@ export default function AccountTemplates({
     setAccountConfigs(next);
     setAccountErrors(failures);
   }
+  const readOnChange = useEffectEvent(read);
   useEffect(() => {
-    if (online) void read();
+    if (online) void readOnChange();
     return () => {
-      ++configGeneration.current;
+      configGeneration.current = configGeneration.current + 1;
     };
   }, [online]);
+  const loadTargets = useEffectEvent(readAccounts);
   useEffect(() => {
-    if (online) void readAccounts();
+    if (online) void loadTargets();
     return () => {
-      ++accountGeneration.current;
+      accountGeneration.current = accountGeneration.current + 1;
     };
   }, [targetKey, online]);
   function update(id: string, change: Partial<Draft>) {
@@ -487,9 +490,10 @@ export default function AccountTemplates({
         setBatchError(e instanceof Error ? e.message : "批次读取失败");
     }
   }
+  const pollBatch = useEffectEvent(readBatch);
   useEffect(() => {
     if (!online || !batch || !running(batch) || batchError) return;
-    const timer = setTimeout(() => void readBatch(batch.batch_id), 2000);
+    const timer = setTimeout(() => void pollBatch(batch.batch_id), 2000);
     return () => clearTimeout(timer);
   }, [online, batch, batchError]);
   async function apply() {

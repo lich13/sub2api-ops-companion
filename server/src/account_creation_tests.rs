@@ -133,7 +133,10 @@ fn creation_auth_and_import_routes_are_fixed_and_validate_each_branch() {
     ] {
         for action in actions {
             let path = ["account-creation", "auth", provider, action];
-            assert_eq!(allowed(&path), Some(&["POST"][..]));
+            assert!(sub2ops_protocol::routes::Route::resolve(&path)
+                .unwrap()
+                .endpoint("POST")
+                .is_some());
             let body = match action {
                 "authorize" => json!({"proxy_id":null}),
                 "exchange" => {
@@ -175,9 +178,22 @@ fn creation_auth_and_import_routes_are_fixed_and_validate_each_branch() {
         &json!({"content":"fixture","credential_extras":{"access_token":"fixture-disallowed"}})
     )
     .is_err());
-    assert!(allowed(&["account-creation", "source", "0"]).is_none());
-    assert!(allowed(&["account-creation", "auth", "openai", "../delete"]).is_none());
-    assert!(allowed(&["account-creation", "catalog", "credentials"]).is_none());
+    assert!(
+        sub2ops_protocol::routes::Route::resolve(&["account-creation", "source", "0"]).is_none()
+    );
+    assert!(sub2ops_protocol::routes::Route::resolve(&[
+        "account-creation",
+        "auth",
+        "openai",
+        "../delete"
+    ])
+    .is_none());
+    assert!(sub2ops_protocol::routes::Route::resolve(&[
+        "account-creation",
+        "catalog",
+        "credentials"
+    ])
+    .is_none());
 }
 
 #[test]

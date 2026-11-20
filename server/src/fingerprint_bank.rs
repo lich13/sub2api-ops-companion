@@ -250,6 +250,12 @@ impl FingerprintBank {
     }
 
     pub fn new(settings: Arc<Settings>) -> Result<Self> {
+        Self::with_clock(settings, Arc::new(chrono::Utc::now))
+    }
+    pub(crate) fn with_clock(
+        settings: Arc<Settings>,
+        clock: crate::compat::WallClock,
+    ) -> Result<Self> {
         let client = reqwest::Client::builder()
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
@@ -259,7 +265,7 @@ impl FingerprintBank {
         Self::with_transport(
             settings,
             Arc::new(HttpTransport(client)),
-            Arc::new(|| chrono::Utc::now().timestamp_millis() as f64 / 1000.0),
+            Arc::new(move || clock().timestamp_millis() as f64 / 1000.0),
         )
     }
     pub fn with_transport(
@@ -407,6 +413,9 @@ impl FingerprintBank {
     }
     pub async fn close(&self, seconds: u64) {
         self.tasks.close(seconds).await;
+    }
+    fn audit_time(&self) -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::from_timestamp_millis((self.now() * 1000.0) as i64).unwrap_or_default()
     }
     fn now(&self) -> f64 {
         (self.clock)()
@@ -747,10 +756,11 @@ impl FingerprintBank {
                     active.compiled = compiled;
                 }
                 active.status = "idle".into();
-                audit::write(
+                audit::write_at(
                     &self.settings.audit_path,
                     &format!("fingerprint_bank_{event}"),
                     json!({"revision":revision}),
+                    self.audit_time(),
                 );
             }
             Err(failure) => {
@@ -788,10 +798,11 @@ impl FingerprintBank {
                     "error"
                 }
                 .into();
-                audit::write(
+                audit::write_at(
                     &self.settings.audit_path,
                     "fingerprint_bank_sync_error",
                     json!({"code":failure.code}),
+                    self.audit_time(),
                 );
             }
         }

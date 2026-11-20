@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./bridge";
 
+type DetectionLogPage = { items: DetectionLog[]; next_cursor: string | null };
+
 export type DetectionReceipt = {
   status: string;
   basis?: "first_group" | "aggregate" | "sample_family" | null;
@@ -87,10 +89,7 @@ export function useDetectionLogFeed(
       const execute = async () => {
         if (!valid()) return false;
         try {
-          const response = await api<{
-            items: DetectionLog[];
-            next_cursor: string | null;
-          }>(
+          const response = await api<DetectionLogPage>(
             "GET",
             `/detection-logs?limit=50${before === null ? "" : `&before=${encodeURIComponent(before)}`}`,
           );
@@ -129,7 +128,7 @@ export function useDetectionLogFeed(
     if (active && online) void load();
     else setLoading(false);
     return () => {
-      ++generation.current;
+      generation.current = generation.current + 1;
     };
   }, [active, online, connectionKey, load]);
   return {

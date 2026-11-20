@@ -1,3 +1,5 @@
+import { useEffectEvent } from "react";
+import type { ModelDetectionReply } from "./protocol";
 import { useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { LoaderCircle, RefreshCw, X } from "lucide-react";
 import { readAccountModels, modelDirectoryRevoked } from "./accountModels";
@@ -46,40 +48,8 @@ function NumberFieldInput({
   );
 }
 type Model = { id: string; display_name?: string };
-type Detection = {
-  engine?: string;
-  sample_count?: number;
-  schedule_mode: "fixed" | "smart";
-  min_interval_minutes: number;
-  effective_interval_minutes?: number | null;
-  recent_request_count?: number | null;
-  last_automatic_started_at?: string | null;
-  next_allowed_at?: string | null;
-  generation?: number;
-  disposition?: { marked: boolean; schedule_verified: boolean };
-  disposition_notification?: { status: string } | null;
-  recheck_recovery?: {
-    status: string;
-    generation: number;
-    mark_cleared: boolean;
-    reason?: string;
-  } | null;
-  recovery_notification?: { status: string } | null;
-  enabled: boolean;
-  interval_minutes: number;
-  model_id: string;
-  model_override: string | null;
-  global_model_id: string;
-  version: string;
-  next_at?: string | null;
-  status: string;
-  reason?: string;
-  job_id?: string;
-  last_result?: {
-    status?: string;
-    report?: { prediction_name?: string };
-    completed_at?: string;
-  } | null;
+type Detection = Omit<ModelDetectionReply, "model_override"> & {
+  model_override?: string | null;
 };
 const status: Record<string, string> = {
   disabled: "未启用定时检测",
@@ -123,7 +93,7 @@ export default function ModelDetectionDialog({
   draftRef.current = draft;
   const dismiss = () => {
     closed.current = true;
-    ++generation.current;
+    generation.current = generation.current + 1;
     close();
   };
   useDialogFocus(dialogRef);
@@ -181,6 +151,7 @@ export default function ModelDetectionDialog({
       }
     }
   }
+  const readOnChange = useEffectEvent(read);
   useEffect(() => {
     closed.current = false;
     if (loadedAccount.current !== account.id) {
@@ -191,13 +162,14 @@ export default function ModelDetectionDialog({
       setValue(null);
       setModels([]);
     }
-    if (online) void read();
+    if (online) void readOnChange();
     return () => {
-      ++generation.current;
+      generation.current = generation.current + 1;
     };
   }, [account.id, online]);
+  const loaded = !!value;
   useEffect(() => {
-    if (!online || !value) return;
+    if (!online || !loaded) return;
     let alive = true,
       timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
@@ -219,7 +191,7 @@ export default function ModelDetectionDialog({
       alive = false;
       clearTimeout(timer);
     };
-  }, [account.id, online, !!value]);
+  }, [account.id, online, loaded]);
   async function save() {
     if (!draft || busy || !online) return;
     const current = ++generation.current;
@@ -349,7 +321,8 @@ export default function ModelDetectionDialog({
                   onChange={(e) =>
                     setDraft({
                       ...draft,
-                      schedule_mode: e.target.value as "fixed" | "smart",
+                      schedule_mode: e.target
+                        .value as Detection["schedule_mode"],
                     })
                   }
                 >

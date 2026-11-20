@@ -1,3 +1,4 @@
+import { useEffectEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, X } from "lucide-react";
 import { api, command } from "./bridge";
@@ -68,8 +69,8 @@ export default function KeepaliveDialog({
     dialogRef = useRef<HTMLElement>(null);
   closeAction.current = close;
   const dismiss = () => {
-    ++epoch.current;
-    ++revision.current;
+    epoch.current = epoch.current + 1;
+    revision.current = revision.current + 1;
     closeAction.current();
   };
   useDialogFocus(dialogRef);
@@ -101,9 +102,10 @@ export default function KeepaliveDialog({
         setLoading(false);
     }
   }
+  const readOnChange = useEffectEvent(read);
   useEffect(() => {
-    ++epoch.current;
-    ++revision.current;
+    epoch.current = epoch.current + 1;
+    revision.current = revision.current + 1;
     saving.current = false;
     const nextIdentity = `${connectionKey}:${account.id}`;
     if (identity.current !== nextIdentity) {
@@ -114,14 +116,15 @@ export default function KeepaliveDialog({
     setBusy(false);
     setError("");
     setLoading(online);
-    if (online) void read();
+    if (online) void readOnChange();
     return () => {
-      ++epoch.current;
-      ++revision.current;
+      epoch.current = epoch.current + 1;
+      revision.current = revision.current + 1;
     };
   }, [account.id, connectionKey, online]);
+  const loaded = !!value;
   useEffect(() => {
-    if (!online || !value) return;
+    if (!online || !loaded) return;
     let alive = true,
       timer: ReturnType<typeof setTimeout>;
     const current = epoch.current;
@@ -154,7 +157,7 @@ export default function KeepaliveDialog({
       alive = false;
       clearTimeout(timer);
     };
-  }, [account.id, connectionKey, online, !!value]);
+  }, [account.id, connectionKey, online, loaded]);
   async function save() {
     if (!draft || !value || !online || saving.current) return;
     saving.current = true;

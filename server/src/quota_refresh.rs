@@ -4,7 +4,7 @@ use crate::{
     oauth_queries::{QueryOptions, Source},
     runtime::Runtime,
 };
-use chrono::{Timelike, Utc};
+use chrono::Timelike;
 use futures_util::{stream, StreamExt};
 use serde_json::{json, Value};
 use std::{
@@ -32,6 +32,7 @@ impl Runtime {
         {
             return Ok(self.quota_progress());
         }
+        let limit = self.config.concurrency()?.usage;
         let rows = self.db.all("SELECT id,name,platform,type,extra,nullif(to_jsonb(accounts)->>'parent_account_id','')::bigint AS parent_account_id FROM accounts WHERE deleted_at IS NULL AND type='oauth' ORDER BY id", &[]).await?
             .into_iter()
             .filter(|row| {
@@ -40,20 +41,13 @@ impl Runtime {
                         || !crate::account_usage::provider(row).is_empty())
             })
             .collect::<Vec<_>>();
-        let batch = json!({"id":uuid::Uuid::new_v4().simple().to_string(),"status":"running","started_at":crate::compat::now(),"completed_at":null,
+        let batch = json!({"id":uuid::Uuid::new_v4().simple().to_string(),"status":"running","started_at":datetime(self.monitor.now()),"completed_at":null,
             "total":rows.len(),"completed":0,"items":rows.iter().map(|row|json!({"account_id":row["id"],"account_name":row["name"],"platform":row["platform"],"status":"pending"})).collect::<Vec<_>>()});
         *self.quota_batch.lock().unwrap_or_else(|e| e.into_inner()) = batch.clone();
         let runtime = self.clone();
         let key = key.to_owned();
         let requested = Instant::now();
         let handle = self.actions.supervisor.spawn("quota_refresh", async move {
-            let limit = runtime
-                .config
-                .current()
-                .ok()
-                .and_then(|v| integer(&v["oauth_usage_refresh_concurrency"]))
-                .unwrap_or(4)
-                .clamp(1, 16) as usize;
             let openai = Arc::new(tokio::sync::Semaphore::new(limit));
             let grok = Arc::new(tokio::sync::Semaphore::new(limit));
             stream::iter(rows.into_iter().map(|row| {
@@ -74,7 +68,7 @@ impl Runtime {
                 .unwrap_or_else(|e| e.into_inner());
             batch["status"] = "completed".into();
             batch["completed"] = batch["total"].clone();
-            batch["completed_at"] = crate::compat::now().into();
+            batch["completed_at"] = datetime(runtime.monitor.now()).into();
         });
         *self.quota_task.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
         Ok(batch)
@@ -115,7 +109,7 @@ impl Runtime {
                 "error" | "authorization_required" | "unavailable"
             );
             return Ok(
-                json!({"status":if partial {"partial"}else {"success"},"queried_at":datetime(Utc::now()),"error":usage["message"],"usage":usage}),
+                json!({"status":if partial {"partial"}else {"success"},"queried_at":datetime(self.monitor.now()),"error":usage["message"],"usage":usage}),
             );
         }
         let (row, _lease, _budget) = loop {
@@ -144,7 +138,7 @@ impl Runtime {
             return Err(Error::new(409, "账号类型已变化"));
         }
         self.quota_item(id, json!({"status":"running"}), false);
-        let at = chrono::Utc::now();
+        let at = self.monitor.now();
         let data = if row["platform"] == "openai" {
             let result = self
                 .monitor

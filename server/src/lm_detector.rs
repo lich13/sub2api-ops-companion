@@ -155,6 +155,7 @@ struct Snapshots {
 }
 #[derive(Clone)]
 pub struct Bank {
+    pub(crate) clock: crate::compat::WallClock,
     state: Store,
     jobs: Store,
     root: PathBuf,
@@ -171,6 +172,7 @@ impl Bank {
     ) -> Self {
         let root = settings.data_dir().join("lm-detector");
         Self {
+            clock: Arc::new(chrono::Utc::now),
             state: Store::new(
                 root.join("state.json"),
                 json!({"revision":REVISION,"checked_at":null,"synced_at":null,"error":""}),
@@ -251,7 +253,7 @@ impl Bank {
                 .is_some_and(|rev| PREVIOUS_BUNDLED_REVISIONS.contains(&rev))
             {
                 state["revision"] = REVISION.into();
-                state["synced_at"] = crate::compat::now().into();
+                state["synced_at"] = crate::compat::datetime((self.clock)()).into();
                 state["error"] = "".into();
                 state["result"] = "updated".into();
             }
@@ -291,7 +293,7 @@ impl Bank {
         };
         if !manual {
             let state = self.state.read_shared()?;
-            if !check_due(&state["checked_at"], chrono::Utc::now()) {
+            if !check_due(&state["checked_at"], (self.clock)()) {
                 return Ok(());
             }
         }
@@ -303,7 +305,7 @@ impl Bank {
                 .await
                 .unwrap_or_else(|_| Err(Error::new(504, "检测库更新超时，当前版本已保留")));
             let recorded = this.state.transaction(|state| {
-                state["checked_at"] = crate::compat::now().into();
+                state["checked_at"] = crate::compat::datetime((this.clock)()).into();
                 state["error"] = result
                     .as_ref()
                     .err()
@@ -468,7 +470,7 @@ impl Bank {
         let previous = self.state.transaction(|state| {
             let previous = string(&state["revision"]).to_owned();
             state["revision"] = revision.into();
-            state["synced_at"] = crate::compat::now().into();
+            state["synced_at"] = crate::compat::datetime((self.clock)()).into();
             Ok(previous)
         })?;
         let mut keep: BTreeSet<String> = {

@@ -141,6 +141,7 @@ impl Monitor {
         rows: &[impl Borrow<Value>],
         config: &Value,
         at: DateTime<Utc>,
+        limit: usize,
     ) -> Result<()> {
         let state = self.shared_state()?;
         let enabled = config["oauth_early_reset_enabled"] == true;
@@ -176,9 +177,7 @@ impl Monitor {
                 })?;
             }
         }
-        let limit = (integer(&config["oauth_usage_refresh_concurrency"]).unwrap_or(4)
-            + integer(&config["oauth_recovery_test_concurrency"]).unwrap_or(2))
-        .clamp(1, 24) as usize;
+
         let mut workers = self.workers.lock().await;
         for (id, meta) in state["scheduler"].as_object().into_iter().flatten() {
             let intent = &meta["recovery_intent"];

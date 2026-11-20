@@ -111,9 +111,7 @@ impl Runtime {
                     && v["type"] == row["type"]
             });
         self.invalidate_snapshot();
-        crate::audit::write(
-            &self.settings.audit_path,
-            "desktop_schedulable",
+        self.actions.audit("desktop_schedulable",
             json!({"account_id":id,"schedulable":enabled,"verified":verified,"error_code":response["error_code"]}),
         );
         if !verified {
@@ -149,8 +147,7 @@ impl Runtime {
             .await
             .is_err_and(|error| error.status.as_u16() == 404);
         self.invalidate_snapshot();
-        crate::audit::write(
-            &self.settings.audit_path,
+        self.actions.audit(
             "desktop_delete_account",
             json!({"account_id":id,"verified":verified,"code":code}),
         );
@@ -183,20 +180,19 @@ impl Runtime {
             .actions
             .account(id, Some(string(&payload["expected_version"])))
             .await?;
-        if !crate::queries::recoverable(&row, chrono::Utc::now()) {
+        if !crate::queries::recoverable(&row, self.monitor.now()) {
             return Err(Error::new(409, "账号已无可恢复状态，请刷新"));
         }
-        credit_ownership::cancel(&self.monitor.store, id)?;
+        credit_ownership::cancel(&self.monitor.store, id, self.monitor.now())?;
         let code = self.manual_account_write(id, true, key).await;
         let live = self.actions.account(id, None).await;
         let verified = live.is_ok_and(|v| {
             v["platform"] == row["platform"]
                 && v["type"] == row["type"]
-                && !crate::queries::recoverable(&v, chrono::Utc::now())
+                && !crate::queries::recoverable(&v, self.monitor.now())
         });
         self.invalidate_snapshot();
-        crate::audit::write(
-            &self.settings.audit_path,
+        self.actions.audit(
             "desktop_recover_state",
             json!({"account_id":id,"verified":verified,"code":code}),
         );
@@ -229,12 +225,11 @@ impl Runtime {
             id,
             marked,
             expected,
-            chrono::Utc::now(),
+            self.monitor.now(),
             None,
         )?;
         self.invalidate_snapshot();
-        crate::audit::write(
-            &self.settings.audit_path,
+        self.actions.audit(
             "desktop_degradation_mark",
             json!({"account_id":id,"marked":marked}),
         );
@@ -394,7 +389,7 @@ impl Runtime {
             .clone()
             .try_acquire_owned()
             .map_err(|_| crate::account_locks::busy())?;
-        let now = chrono::Utc::now();
+        let now = self.monitor.now();
         let usage = crate::usage::project(&row, now, &Value::Null);
         if !usage["actions"]
             .as_array()
@@ -475,8 +470,7 @@ impl Runtime {
         } else {
             "ok"
         };
-        crate::audit::write(
-            &self.settings.audit_path,
+        self.actions.audit(
             "desktop_usage_action",
             json!({"account_id":id,"action":action,"code":code}),
         );

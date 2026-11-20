@@ -2,7 +2,7 @@ use crate::{
     account_locks::{AccountLocks, Lease},
     account_templates::{self, Templates},
     audit,
-    compat::{account_version, integer, now, operation_versions, string, truthy},
+    compat::{account_version, integer, operation_versions, string, truthy},
     credit_ownership,
     db::Param,
     error::{Error, Result},
@@ -111,6 +111,7 @@ pub fn version_matches(row: &Value, expected: &str) -> bool {
 }
 #[derive(Clone)]
 pub struct Actions {
+    pub(crate) clock: crate::compat::WallClock,
     pub queries: Queries,
     pub upstream: Upstream,
     pub locks: AccountLocks,
@@ -226,6 +227,12 @@ pub fn validate_media(value: &str, kind: &str) -> Result<()> {
     Ok(())
 }
 impl Actions {
+    pub(crate) fn timestamp(&self) -> String {
+        crate::compat::datetime((self.clock)())
+    }
+    pub(crate) fn audit(&self, event: &str, payload: Value) {
+        audit::write_at(&self.settings.audit_path, event, payload, (self.clock)());
+    }
     pub fn new(
         queries: Queries,
         upstream: Upstream,
@@ -241,6 +248,7 @@ impl Actions {
             .build()?;
         let supervisor = crate::supervision::Supervisor::default();
         Ok(Self {
+            clock: Arc::new(chrono::Utc::now),
             queries,
             upstream,
             locks,
@@ -336,6 +344,9 @@ impl Actions {
         let response = self
             .request(method, path, key, body, Duration::from_secs(seconds), false)
             .await?;
+        Self::json_response(response).await
+    }
+    async fn json_response(response: reqwest::Response) -> Result<Value> {
         if !response.status().is_success() {
             return Err(Error::new(
                 502,
@@ -476,7 +487,7 @@ impl Actions {
             if models.is_empty() {
                 return Err(Error::new(422, "上游未返回可用模型，已有草稿已保留"));
             }
-            json!({"models":models,"warnings":if truthy(&data["warnings"]) {vec!["模型能力信息不完整"]} else {vec![]},"synced_at":now()})
+            json!({"models":models,"warnings":if truthy(&data["warnings"]) {vec!["模型能力信息不完整"]} else {vec![]},"synced_at":self.timestamp()})
         } else {
             let (method, path, body) = if action == "model_config" {
                 (
@@ -520,8 +531,7 @@ impl Actions {
             result["settings_versions"] = crate::compat::pick(&versions, EDIT_ACTIONS);
             result
         };
-        audit::write(
-            &self.settings.audit_path,
+        self.audit(
             "desktop_account_settings",
             json!({"account_id":id,"action":action,"result":"completed"}),
         );
@@ -563,6 +573,23 @@ impl Actions {
             })
             .collect())
     }
+    pub(crate) async fn admin_models(&self, id: i64, key: &str) -> Result<Value> {
+        let response = self
+            .request(
+                reqwest::Method::GET,
+                &format!("accounts/{id}/models"),
+                key,
+                None,
+                Duration::from_secs(30),
+                false,
+            )
+            .await?;
+        let status = response.status().as_u16();
+        if matches!(status, 401 | 403) {
+            return Err(crate::model_directory::directory_error(status, 502));
+        }
+        Self::json_response(response).await
+    }
     pub async fn models(&self, id: i64, key: &str, model_test: bool) -> Result<Vec<Value>> {
         if model_test {
             let row = self.queries.private_account(id).await?;
@@ -570,15 +597,7 @@ impl Actions {
         }
         let row = self.account(id, None).await?;
         let allowlists = self.allowlists(&row, false).await?;
-        let data = self
-            .json(
-                reqwest::Method::GET,
-                &format!("accounts/{id}/models"),
-                key,
-                None,
-                30,
-            )
-            .await?;
+        let data = self.admin_models(id, key).await?;
         let list = data
             .as_array()
             .ok_or_else(|| Error::new(502, "模型列表格式无效"))?;
@@ -758,8 +777,7 @@ impl Actions {
         let verified = account_templates::eligible(&live)
             && !account_templates::passthrough(&live)
             && live["model_mapping"] == mapping;
-        audit::write(
-            &self.settings.audit_path,
+        self.audit(
             "account_template_applied",
             json!({"account_id":id,"template_id":payload["template_id"],"verified":verified,"code":if result.is_ok() {"ok"} else {"uncertain"}}),
         );
@@ -845,8 +863,7 @@ impl Actions {
                 failure.unwrap_or_else(|| Error::new(502, "分组写入未确认，请刷新查看实际归属"))
             );
         }
-        audit::write(
-            &self.settings.audit_path,
+        self.audit(
             "desktop_groups",
             json!({"account_id":id,"before":original,"after":desired}),
         );
@@ -1064,7 +1081,7 @@ impl Actions {
                 }
                 if matches!(kind, "test_complete" | "error") {
                     completed = true;
-                    value["completed_at"] = now().into();
+                    value["completed_at"] = self.timestamp().into();
                     value["duration_ms"] =
                         json!((started.elapsed().as_secs_f64() * 1000.0).round_ties_even() as u64);
                 }

@@ -703,13 +703,7 @@ impl Harness {
         let capacity_clock = self.runtime.monitor.config.clone();
         let mut coordinator = Coordinator::new(
             actions,
-            Arc::new(move || {
-                capacity_clock
-                    .current()
-                    .ok()
-                    .and_then(|value| value["oauth_usage_refresh_concurrency"].as_u64())
-                    .unwrap_or(4) as usize
-            }),
+            Arc::new(move || Ok(capacity_clock.concurrency()?.usage)),
         );
         coordinator.clock = Arc::new(move || *clock.lock().unwrap());
         coordinator
@@ -3770,8 +3764,8 @@ async fn monitor_bootstrap_queue_is_bounded_and_advances_between_ticks() {
         .config
         .oauth
         .transaction(|config| {
-            config["oauth_usage_refresh_concurrency"] = 2.into();
-            config["oauth_recovery_test_concurrency"] = 0.into();
+            config["oauth_usage_refresh_concurrency"] = 1.into();
+            config["oauth_recovery_test_concurrency"] = 1.into();
             config["oauth_recovery_connection_account_ids"] = json!(ids);
             config["oauth_recovery_model_account_ids"] = json!([]);
             Ok(())
@@ -5792,4 +5786,24 @@ async fn early_reset_keeps_observation_and_recovers_through_token_renewal() {
         &h.runtime.monitor.row(id).await.unwrap()
     ));
     h.close().await;
+}
+
+#[tokio::test]
+async fn concurrency_tracks_external_replacement_and_keeps_invalid_bytes() {
+    let harness = Harness::new().await;
+    let config = &harness.runtime.config;
+    let path = config.oauth.path();
+    std::fs::write(
+        path,
+        br#"{"oauth_usage_refresh_concurrency":3,"oauth_recovery_test_concurrency":1}"#,
+    )
+    .unwrap();
+    assert_eq!(config.concurrency().unwrap().usage, 3);
+    let invalid = br#"{"oauth_usage_refresh_concurrency":null}"#;
+    std::fs::write(path, invalid).unwrap();
+    assert_eq!(config.concurrency().unwrap_err().status.as_u16(), 503);
+    assert_eq!(std::fs::read(path).unwrap(), invalid);
+    std::fs::write(path, br#"{"oauth_usage_refresh_concurrency":2}"#).unwrap();
+    assert_eq!(config.concurrency().unwrap().usage, 2);
+    harness.close().await;
 }

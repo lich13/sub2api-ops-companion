@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./bridge";
 import type { OpsError } from "./types";
 
+type ErrorsPage = { items: OpsError[]; next_cursor: number | null };
+
 export type ErrorCategory = "degradation" | "other";
 
 /** Each category owns its cursor and generation; snapshots never seed history. */
@@ -42,10 +44,7 @@ export function useErrorFeed(
       const execute = async () => {
         if (!valid()) return false;
         try {
-          const response = await api<{
-            items: OpsError[];
-            next_cursor: number | null;
-          }>(
+          const response = await api<ErrorsPage>(
             "GET",
             `/errors?category=${category}${before === null ? "" : `&before_id=${before}`}`,
           );
@@ -89,7 +88,7 @@ export function useErrorFeed(
     if (active && online) void load();
     else setLoading(false);
     return () => {
-      ++generation.current;
+      generation.current = generation.current + 1;
       controller.current?.abort();
       controller.current = null;
     };

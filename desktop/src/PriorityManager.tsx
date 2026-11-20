@@ -1,3 +1,4 @@
+import { useEffectEvent } from "react";
 import {
   useEffect,
   useMemo,
@@ -236,16 +237,18 @@ export default function PriorityManager(props: Props) {
     latest.current.active &&
     latest.current.online &&
     !document.hidden;
+  const notifyChanges = useEffectEvent(props.changed);
   useEffect(() => {
-    props.changed(changedCount);
+    notifyChanges(changedCount);
   }, [changedCount]);
   useEffect(() => {
     alive.current = true;
+    const timers = resultTimers.current;
     return () => {
       alive.current = false;
-      ++generation.current;
+      generation.current = generation.current + 1;
       clearTimeout(pointer.current?.timer);
-      resultTimers.current.forEach(clearTimeout);
+      timers.forEach(clearTimeout);
     };
   }, []);
   function stopDrag() {
@@ -256,15 +259,21 @@ export default function PriorityManager(props: Props) {
   useEffect(() => {
     stopDrag();
   }, [active, online, columns, selectedPlatform]);
+  const platformState = useEffectEvent(state);
   useEffect(() => {
     const point = dragRef.current;
     if (point) {
       const group = platforms.find(
         (group) => group.platform === point.platform,
       );
-      if (!group || state(group).conflict || !state(group).editing) stopDrag();
+      if (
+        !group ||
+        platformState(group).conflict ||
+        !platformState(group).editing
+      )
+        stopDrag();
     }
-  }, [view, filtered, loading]);
+  }, [platforms, filtered, loading]);
   useEffect(() => {
     if (!active || !section.current) return;
     const node = section.current;
@@ -277,7 +286,7 @@ export default function PriorityManager(props: Props) {
     return () => observer.disconnect();
   }, [active]);
   useEffect(() => {
-    ++generation.current;
+    generation.current = generation.current + 1;
     completed.current.clear();
     requests.current = {};
     setView(null);
@@ -297,7 +306,7 @@ export default function PriorityManager(props: Props) {
     const hidden = () => {
       setVisible(!document.hidden);
       if (document.hidden) {
-        ++generation.current;
+        generation.current = generation.current + 1;
         stopDrag();
       }
     };
@@ -408,11 +417,12 @@ export default function PriorityManager(props: Props) {
       }
     }
   }
+  const readOnChange = useEffectEvent(read);
   useEffect(() => {
-    if (active && online && visible) void read();
+    if (active && online && visible) void readOnChange();
     else setLoading(false);
     return () => {
-      ++generation.current;
+      generation.current = generation.current + 1;
     };
   }, [active, online, visible, connectionKey]);
   function updateTask(task: PriorityTask) {
@@ -455,26 +465,29 @@ export default function PriorityManager(props: Props) {
       if (current(epoch)) setError(cleanError(error));
     });
   }
+  const isCurrentPoll = useEffectEvent(current);
+  const finishPoll = useEffectEvent(finishTask);
+  const pendingTaskId = priorityPending(activeTask) ? activeTask!.id : null;
   useEffect(() => {
-    if (!active || !online || !visible || !priorityPending(activeTask)) return;
+    if (!active || !online || !visible || !pendingTaskId) return;
     let disposed = false,
       timer: ReturnType<typeof setTimeout>;
     const epoch = generation.current,
-      id = activeTask!.id;
+      id = pendingTaskId;
     const poll = async () => {
       try {
         const next = await api<PriorityTask>("GET", taskPath(id, true));
-        if (disposed || !current(epoch)) return;
+        if (disposed || !isCurrentPoll(epoch)) return;
         if (!priorityPending(next)) {
-          await finishTask(next, epoch);
+          await finishPoll(next, epoch);
           return;
         }
         updateTask(next);
         setError("");
       } catch (error) {
-        if (!disposed && current(epoch)) setError(cleanError(error));
+        if (!disposed && isCurrentPoll(epoch)) setError(cleanError(error));
       }
-      if (!disposed && current(epoch))
+      if (!disposed && isCurrentPoll(epoch))
         timer = setTimeout(() => void poll(), 1000);
     };
     timer = setTimeout(() => void poll(), 1000);
@@ -482,7 +495,7 @@ export default function PriorityManager(props: Props) {
       disposed = true;
       clearTimeout(timer);
     };
-  }, [activeTask?.id, active, online, visible, readRevision]);
+  }, [pendingTaskId, active, online, visible, readRevision]);
   function state(group: PriorityPlatform) {
     const s = states.get(group.platform)!;
     const editing =
@@ -631,8 +644,9 @@ export default function PriorityManager(props: Props) {
     if (item && target !== null) move(item.platform, item.id, target);
     stopDrag();
   }
+  const dragging = !!drag;
   useEffect(() => {
-    if (!drag) return;
+    if (!dragging) return;
     let frame = 0;
     const scroll = () => {
       const point = dragRef.current,
@@ -646,7 +660,7 @@ export default function PriorityManager(props: Props) {
     };
     frame = requestAnimationFrame(scroll);
     return () => cancelAnimationFrame(frame);
-  }, [!!drag]);
+  }, [dragging]);
   async function apply(group: PriorityPlatform) {
     const s = state(group),
       platform = group.platform;

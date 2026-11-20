@@ -1,3 +1,4 @@
+import { useEffectEvent } from "react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Search, X } from "lucide-react";
 import { api } from "./bridge";
@@ -103,6 +104,7 @@ export default function RecordFilter({
     queue.current = task;
   }
 
+  const readOnChange = useEffectEvent(read);
   useEffect(() => {
     const generation = ++epoch.current;
     setItems([]);
@@ -116,14 +118,14 @@ export default function RecordFilter({
     }
     setLoading(true);
     const timer = setTimeout(
-      () => read(null, generation),
+      () => readOnChange(null, generation),
       query.trim() ? 250 : 0,
     );
     return () => {
       clearTimeout(timer);
-      ++epoch.current;
+      epoch.current = epoch.current + 1;
     };
-  }, [context]);
+  }, [context, kind, active, open, query]);
   useEffect(() => {
     if (!active) setOpen(false);
   }, [active]);

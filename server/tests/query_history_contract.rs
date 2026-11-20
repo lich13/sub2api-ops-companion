@@ -1129,7 +1129,7 @@ async fn coordinator_fixture(
         settings,
     )
     .expect("construct OAuth query actions");
-    let coordinator = Coordinator::new(actions, Arc::new(|| 2));
+    let coordinator = Coordinator::new(actions, Arc::new(|| Ok(2)));
     (database, state, coordinator)
 }
 

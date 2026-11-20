@@ -1159,6 +1159,12 @@ async fn desktop_runtime_snapshot_reuses_shared_stats_without_upstream_io() {
             .snapshot()
             .await
             .expect("read the first Runtime snapshot from PostgreSQL");
+        let wire = sub2ops_protocol::response::client_response("GET", "/snapshot", first.clone())
+            .expect("both clients can decode a populated server snapshot");
+        assert_eq!(
+            wire["accounts"][0]["usage"]["today"],
+            first["accounts"][0]["usage"]["today"]
+        );
         let first_usage = first["accounts"]
             .as_array()
             .unwrap()

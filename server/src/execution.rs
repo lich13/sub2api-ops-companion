@@ -9,10 +9,15 @@ use std::{
     },
 };
 
+pub(crate) fn retry_delay(failures: u64) -> i64 {
+    const SECONDS: [i64; 4] = [5, 30, 120, 600];
+    SECONDS[failures.min(3) as usize]
+}
+
 #[derive(Clone)]
 pub struct TestSlots {
     active: Arc<AtomicUsize>,
-    limit: Arc<dyn Fn() -> usize + Send + Sync>,
+    limit: Arc<dyn Fn() -> Result<usize> + Send + Sync>,
 }
 pub struct TestPermit(Arc<AtomicUsize>);
 impl Drop for TestPermit {
@@ -21,15 +26,16 @@ impl Drop for TestPermit {
     }
 }
 impl TestSlots {
-    pub fn new(limit: Arc<dyn Fn() -> usize + Send + Sync>) -> Self {
+    pub fn new(limit: Arc<dyn Fn() -> Result<usize> + Send + Sync>) -> Self {
         Self {
             active: Arc::new(AtomicUsize::new(0)),
             limit,
         }
     }
-    pub fn acquire(&self) -> Option<TestPermit> {
-        let limit = (self.limit)().clamp(1, 8);
-        self.active
+    pub fn acquire(&self) -> Result<Option<TestPermit>> {
+        let limit = (self.limit)()?;
+        Ok(self
+            .active
             .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
                 if n < limit {
                     Some(n + 1)
@@ -38,7 +44,7 @@ impl TestSlots {
                 }
             })
             .ok()
-            .map(|_| TestPermit(self.active.clone()))
+            .map(|_| TestPermit(self.active.clone())))
     }
     pub fn active(&self) -> usize {
         self.active.load(Ordering::Acquire)

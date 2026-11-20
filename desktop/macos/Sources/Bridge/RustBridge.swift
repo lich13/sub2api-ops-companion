@@ -35,11 +35,16 @@ public struct Sub2OpsHostCallbacks: Sendable {
 }
 
 public struct RustBridgeError: LocalizedError, Sendable, Equatable {
-    public let message: String
-
-    public init(_ message: String) {
-        self.message = message
+    public let failure: BridgeFailure
+    public var message: String { failure.message }
+    public var needsCredentials: Bool { ["missing_credentials", "auth_rejected"].contains(failure.code) }
+    public var ignored: Bool { ["connection_changed", "background"].contains(failure.code) }
+    public init(_ message: String, code: String = "client_error") {
+        failure = BridgeFailure(code: code, status: nil, message: message, request_id: nil)
     }
+    public init(failure: BridgeFailure) { self.failure = failure }
+    public static var connectionChanged: Self { Self("连接已切换；请求保留在原连接", code: "connection_changed") }
+
 
     public var errorDescription: String? { message }
 }
@@ -151,8 +156,17 @@ public final class RustBridge: Sendable {
         let responseData = try await rawCommand(name, payloadJSON: payloadJSON)
         do {
             return try JSONDecoder().decode(T.self, from: responseData)
-        } catch {
-            throw RustBridgeError("响应数据解析失败")
+        } catch let error as DecodingError {
+            let path: [any CodingKey]
+            switch error {
+            case .keyNotFound(let key, let context): path = context.codingPath + [key]
+            case .dataCorrupted(let context), .typeMismatch(_, let context), .valueNotFound(_, let context): path = context.codingPath
+            @unknown default: path = []
+            }
+            // Dictionary keys and array indices can be user data. Only log model CodingKeys.
+            let fields = path.map { key in String(describing: type(of: key)) == "CodingKeys" ? key.stringValue : "[]" }.joined(separator: ".")
+            Logger(subsystem: "Sub2Ops", category: "bridge").error("response_decode path=\(fields, privacy: .public)")
+            throw RustBridgeError("响应数据解析失败", code: "invalid_response")
         }
     }
 
@@ -235,8 +249,8 @@ public final class RustBridge: Sendable {
         if ok {
             continuation.resume(returning: data)
         } else {
-            let message = String(data: data, encoding: .utf8) ?? "操作失败"
-            continuation.resume(throwing: RustBridgeError(message))
+            let failure = try? JSONDecoder().decode(BridgeFailure.self, from: data)
+            continuation.resume(throwing: failure.map(RustBridgeError.init(failure:)) ?? RustBridgeError("响应数据解析失败", code: "invalid_response"))
         }
     }
 

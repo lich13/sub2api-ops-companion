@@ -3,7 +3,7 @@
 use crate::{
     account_templates,
     actions::{current_value, target_reached, Actions, OperationContext, EDIT_ACTIONS, OPERATION},
-    compat::{account_version, digest, integer, now, operation_versions, pick, string, truthy},
+    compat::{account_version, digest, integer, operation_versions, pick, string, truthy},
     error::{Error, Result},
     queries::{recoverable, settings_capabilities},
     security::clean,
@@ -122,7 +122,7 @@ pub fn validate_store(data: &Value) -> Result<()> {
     if data["version"] != 1 || !data["jobs"].is_object() || !data["requests"].is_object() {
         return Err(error());
     }
-    for job in data["jobs"].as_object().unwrap().values() {
+    for job in data["jobs"].as_object().ok_or_else(error)?.values() {
         validate_job(data, job)?;
     }
     for field in ["batches", "batch_requests"] {
@@ -161,13 +161,23 @@ pub fn validate_store(data: &Value) -> Result<()> {
     Ok(())
 }
 #[derive(Clone)]
-pub struct OperationStore(pub Store);
+pub struct OperationStore(pub Store<crate::state_files::OperationFile>);
 impl OperationStore {
     pub fn new(path: PathBuf) -> Self {
-        Self(Store::new(
+        let lock = path.with_extension("lock");
+        Self::with_lock(path, lock)
+    }
+    pub fn with_lock(path: PathBuf, lock: PathBuf) -> Self {
+        Self(Store::typed(
             path,
+            lock,
             json!({"version":1,"jobs":{},"requests":{},"batches":{},"batch_requests":{}}),
             validate_store,
+            |_| Ok(false),
+            |raw| {
+                serde::Deserialize::deserialize(raw)
+                    .map_err(|_| Error::new(503, "操作状态无法读取"))
+            },
         ))
     }
     fn normalize(data: &mut Value) {
@@ -200,13 +210,13 @@ impl OperationStore {
     }
     fn prune_terminal_jobs(data: &mut Value) -> bool {
         const MAX_TERMINAL_JOBS: usize = 10_000;
-        let Some(jobs_len) = data["jobs"].as_object().map(serde_json::Map::len) else {
+        let Some(jobs) = data["jobs"].as_object() else {
             return false;
         };
+        let jobs_len = jobs.len();
         if jobs_len <= MAX_TERMINAL_JOBS {
             return false;
         }
-        let jobs = data["jobs"].as_object().unwrap();
         let non_pending_upper_bound = jobs
             .values()
             .filter(|job| !PENDING.contains(&string(&job["status"])) && !repeat_open(job))
@@ -311,48 +321,36 @@ impl OperationStore {
         true
     }
     pub fn recover_startup(&self) -> Result<()> {
-        let data = self.read_shared()?;
-        let needs_recovery = data["jobs"]
-            .as_object()
-            .into_iter()
-            .flatten()
-            .any(|(_, job)| job["status"] == "running")
-            || data["batches"]
-                .as_object()
-                .into_iter()
-                .flatten()
-                .any(|(_, batch)| {
-                    batch
-                        .get("chunks")
-                        .and_then(Value::as_array)
-                        .into_iter()
-                        .flatten()
-                        .any(|chunk| chunk["status"] == "dispatched")
-                });
-        if !needs_recovery {
-            return Ok(());
-        }
-        self.transaction(|data| {
-            for job in data["jobs"].as_object_mut().unwrap().values_mut() {
-                if job["status"] == "running" {
-                    job["status"] = "checking".into();
-                    job["reason"] = "服务重启，核对已派发请求".into();
-                }
-            }
-            for batch in data["batches"].as_object_mut().unwrap().values_mut() {
-                for chunk in batch
-                    .get_mut("chunks")
-                    .and_then(Value::as_array_mut)
-                    .into_iter()
-                    .flatten()
+        let data = self.0.read_state()?;
+        let needs_recovery = data.jobs.values().any(|job| job.status == "running")
+            || data
+                .batches
+                .values()
+                .flat_map(|batch| batch.chunks.iter().flatten())
+                .any(|chunk| chunk.status == "dispatched");
+        if needs_recovery {
+            self.0.edit_state(|state| {
+                for job in state
+                    .jobs
+                    .values_mut()
+                    .filter(|job| job.status == "running")
                 {
-                    if chunk["status"] == "dispatched" {
-                        chunk["status"] = "checking".into();
-                    }
+                    job.status = "checking".into();
+                    job.fields
+                        .insert("reason".into(), "服务重启，核对已派发请求".into());
                 }
-            }
-            Ok(())
-        })
+                for chunk in state
+                    .batches
+                    .values_mut()
+                    .flat_map(|batch| batch.chunks.iter_mut().flatten())
+                    .filter(|chunk| chunk.status == "dispatched")
+                {
+                    chunk.status = "checking".into();
+                }
+                Ok(())
+            })?;
+        }
+        Ok(())
     }
 }
 
@@ -509,7 +507,15 @@ impl Operations {
         out
     }
     pub fn model_view(job: &Value) -> Value {
-        json!({"id":job["id"],"account_id":job["account_id"],"account_name":job["account_name"],"action":"model_test","status":if job["status"]=="retrying" {json!("running")} else {job["status"].clone()},"reason":job.get("error").cloned().unwrap_or(json!("")),"requested":{"model_id":job["requested_model"],"concurrency":job["concurrency"]}})
+        json!({
+            "id": job["id"],
+            "account_id": job["account_id"],
+            "account_name": job["account_name"],
+            "action": "model_test",
+            "status": if job["status"]=="retrying" {json!("running")} else {job["status"].clone()},
+            "reason": job.get("error").cloned().unwrap_or(json!("")),
+            "requested": {"model_id":job["requested_model"],"concurrency":job["concurrency"]}
+        })
     }
     pub fn get(&self, jid: &str, after: usize) -> Result<Value> {
         if validation::hex(&json!(jid), 32).is_err() {
@@ -585,7 +591,7 @@ impl Operations {
         let updated = self.store.0.transaction_validated(
             |data| {
                 OperationStore::normalize(data);
-                let at = now();
+                let at = crate::compat::datetime(self.backend.now());
                 let mut updated = Vec::with_capacity(changes.len());
                 let mut became_terminal = false;
                 for (jid, changes) in changes {
@@ -595,7 +601,7 @@ impl Operations {
                     let was_pending = PENDING.contains(&string(&job["status"])) || repeat_open(job);
                     if !(connection_test(job) && job["status"] == "cancelled") {
                         job.as_object_mut()
-                            .unwrap()
+                            .ok_or_else(|| Error::new(503, "操作状态无法读取"))?
                             .extend(changes.as_object().cloned().ok_or_else(Error::invalid)?);
                         job["updated_at"] = at.clone().into();
                         if job["repeat_state"] == "stopped" && job["status"] == "queued" {
@@ -610,7 +616,10 @@ impl Operations {
                         }
                         if !PENDING.contains(&string(&job["status"])) {
                             for name in ["prompt", "image_data_url", "audio_data_url"] {
-                                job["payload"].as_object_mut().unwrap().shift_remove(name);
+                                job["payload"]
+                                    .as_object_mut()
+                                    .ok_or_else(|| Error::new(503, "操作状态无法读取"))?
+                                    .shift_remove(name);
                             }
                         }
                     }
@@ -702,7 +711,7 @@ impl Operations {
                     .collect::<BTreeSet<_>>()
                     == ids(&p["group_ids"])
             }
-            "recover" => !recoverable(row, chrono::Utc::now()),
+            "recover" => !recoverable(row, self.backend.now()),
             "account_template" => {
                 let target = if job["status"] == "checking" && job["template_target"].is_object() {
                     job["template_target"].clone()
@@ -722,8 +731,7 @@ impl Operations {
         })
     }
     pub fn audit(&self, job: &Value, result: &str) {
-        crate::audit::write(
-            &self.actions.settings.audit_path,
+        self.actions.audit(
             "desktop_operation",
             json!({"operation_id":job["id"],"account_id":job["account_id"],"action":job["action"],"result":result}),
         );
@@ -746,38 +754,29 @@ impl Operations {
         Ok(())
     }
     pub async fn submit(self: &Arc<Self>, aid: i64, request: &Value, key: &str) -> Result<Value> {
+        self.submit_validated(aid, crate::request_schema::submission(request)?, key)
+            .await
+    }
+
+    pub(crate) async fn submit_validated(
+        self: &Arc<Self>,
+        aid: i64,
+        request: crate::request_schema::Submission<'_>,
+        key: &str,
+    ) -> Result<Value> {
         if aid < 1 {
             return Err(Error::new(422, "账号编号无效"));
         }
-        validation::fields(
-            request,
-            &[
-                "action",
-                "request_id",
-                "client_id",
-                "expected_version",
-                "payload",
-                "scheduled_at",
-                "repeat",
-            ],
-            &["action", "request_id", "client_id", "expected_version"],
-        )?;
-        let rid = validation::request_id(&request["request_id"])?;
-        let client = validation::request_id(&request["client_id"])?;
-        let expected = validation::text(&request["expected_version"], 64, 64)?;
-        let action = string(&request["action"]);
-        let mut payload =
-            validation::operation_payload(action, request.get("payload").unwrap_or(&json!({})))?;
-        let scheduled = request
-            .get("scheduled_at")
-            .map(scheduled_time)
-            .transpose()?;
-        let repeat = request.get("repeat");
-        if repeat.is_some_and(|value| value != "quota_cycle")
-            || repeat.is_some() && scheduled.is_some()
-        {
-            return Err(Error::new(422, "连续预约由服务端计算周期时间"));
-        }
+        let crate::request_schema::Submission {
+            action,
+            rid,
+            client,
+            expected,
+            payload,
+            scheduled,
+            repeat,
+        } = request;
+        let mut payload = validation::operation_payload(action, payload.unwrap_or(&json!({})))?;
         if (scheduled.is_some() || repeat.is_some())
             && (action != "test"
                 || !matches!(string(&payload["mode"]), "default" | "text")
@@ -846,7 +845,23 @@ impl Operations {
             self.resolve_test_model(&row, &mut payload)?;
         }
         let jid = id();
-        let mut job = json!({"id":jid,"account_id":aid,"account_name":row["name"],"action":action,"payload":payload,"expected_version":expected,"client_id":client,"request_id":rid,"request_hash":signature,"parent_account_id":row["parent_account_id"],"created_at":now(),"updated_at":now(),"status":"queued","reason":"等待执行","result":null});
+        let mut job = json!({
+            "id": jid,
+            "account_id": aid,
+            "account_name": row["name"],
+            "action": action,
+            "payload": payload,
+            "expected_version": expected,
+            "client_id": client,
+            "request_id": rid,
+            "request_hash": signature,
+            "parent_account_id": row["parent_account_id"],
+            "created_at": crate::compat::datetime(self.backend.now()),
+            "updated_at": crate::compat::datetime(self.backend.now()),
+            "status": "queued",
+            "reason": "等待执行",
+            "result": null
+        });
         if let Some(at) = scheduled {
             job["scheduled_at"] = crate::compat::datetime(at).into();
             job["reason"] = "等待预约时间".into();
@@ -879,7 +894,7 @@ impl Operations {
                 {
                     old["status"] = "superseded".into();
                     old["reason"] = "已由本客户端的新请求替代".into();
-                    old["updated_at"] = now().into();
+                    old["updated_at"] = crate::compat::datetime(self.backend.now()).into();
                 }
             }
             data["jobs"][&jid] = job.clone();
@@ -897,118 +912,57 @@ impl Operations {
         Ok(self.public(&job, false, 0))
     }
     pub async fn submit_batch(&self, request: &Value, key: &str, template: bool) -> Result<Value> {
-        crate::request_schema::batch(request, template)?;
-        let mut normalized = request.clone();
-        if !template
-            && matches!(
-                string(&normalized["action"]),
-                "delete" | "groups" | "recover"
-            )
-            && normalized.get("payload").is_none()
-        {
-            normalized["payload"] = json!({});
-        }
-        let request = &normalized;
+        let mut request = request.clone();
+        crate::request_schema::batch(&mut request, template)?;
+        self.submit_batch_validated(&request, key, template).await
+    }
+
+    pub(crate) async fn submit_batch_validated(
+        &self,
+        request: &Value,
+        key: &str,
+        template: bool,
+    ) -> Result<Value> {
         let action = if template {
             "account_template"
         } else {
             string(&request["action"])
         };
-        if !matches!(
-            action,
-            "test" | "proxy" | "delete" | "groups" | "recover" | "account_template"
-        ) {
-            return Err(Error::invalid());
+        let rid = string(&request["request_id"]);
+        let client = string(&request["client_id"]);
+        let accepted = request["accounts"].as_array().ok_or_else(Error::invalid)?;
+        let seen: BTreeSet<_> = accepted
+            .iter()
+            .filter_map(|v| v["account_id"].as_i64())
+            .collect();
+        if seen.len() != accepted.len() {
+            return Err(Error::new(422, "批量账号不能重复"));
         }
-        let fields = if template {
-            vec![
-                "template_id",
-                "template_version",
-                "accounts",
-                "request_id",
-                "client_id",
-            ]
-        } else {
-            vec!["action", "payload", "accounts", "request_id", "client_id"]
-        };
-        validation::fields(request, &fields, &fields)?;
-        let rid = if template {
-            validation::hex(&request["request_id"], 32)?
-        } else {
-            validation::request_id(&request["request_id"])?
-        };
-        let client = if template {
-            validation::hex(&request["client_id"], 32)?
-        } else {
-            validation::request_id(&request["client_id"])?
-        };
-        let accounts = request["accounts"]
-            .as_array()
-            .filter(|v| !v.is_empty() && v.len() <= 1000)
-            .ok_or_else(Error::invalid)?;
-        let mut accepted = Vec::new();
-        let mut seen = BTreeSet::new();
         let mut canonical = request.clone();
-        for item in accounts {
-            validation::fields(
-                item,
-                if matches!(action, "delete" | "groups") {
-                    &["account_id", "expected_version", "payload"]
-                } else {
-                    &["account_id", "expected_version"]
-                },
-                &["account_id", "expected_version"],
-            )?;
-            let aid = if template {
-                validation::coercible_integer(&item["account_id"], 1, i64::MAX)?
-            } else {
-                validation::integer(&item["account_id"], 1, i64::MAX)?
-            };
-            if !seen.insert(aid) {
-                return Err(Error::new(422, "批量账号不能重复"));
-            }
-            if template {
-                validation::text(&item["expected_version"], 64, 64)?;
-            } else {
-                validation::hex(&item["expected_version"], 64)?;
-            }
-            let mut value = item.clone();
-            value["account_id"] = aid.into();
-            if matches!(action, "delete" | "groups") && value.get("payload").is_none() {
-                value["payload"] = json!({});
-            }
-            accepted.push(value);
-        }
         let mut sorted = accepted.clone();
-        sorted.sort_by_key(|v| integer(&v["account_id"]));
+        sorted.sort_by_key(|v| v["account_id"].as_i64());
         canonical["accounts"] = sorted.into();
         canonical
             .as_object_mut()
-            .unwrap()
+            .ok_or_else(Error::invalid)?
             .shift_remove("request_id");
         let signature = digest(&canonical);
         let payload = &request["payload"];
-        if action == "test" {
-            validation::fields(payload, &["confirmed"], &["confirmed"])?;
-            if !validation::boolean(&payload["confirmed"])? {
-                return Err(Error::new(422, "请先确认连接测试"));
-            }
-        }
-        if action == "proxy" {
-            validation::operation_payload("proxy", payload)?;
+        if action == "test" && payload["confirmed"] != true {
+            return Err(Error::new(422, "请先确认连接测试"));
         }
         if action == "delete" && *payload != json!({"confirmed":true})
-            || matches!(action, "groups" | "recover") && *payload != json!({})
+            || action == "groups" && *payload != json!({})
         {
             return Err(Error::new(422, "请确认删除，或核对批量操作参数"));
         }
-        let item_payloads = if matches!(action, "delete" | "groups") {
+        let item_payloads = if matches!(action, "groups" | "delete") {
             accepted
                 .iter()
-                .map(|v| validation::operation_payload(action, &v["payload"]))
+                .map(|item| validation::operation_payload(action, &item["payload"]))
                 .collect::<Result<Vec<_>>>()?
         } else {
-            vec![]
+            Vec::new()
         };
         let _submit = self.submit_lock.lock().await;
         let data = self.store.read_shared()?;
@@ -1087,10 +1041,10 @@ impl Operations {
             BTreeMap::new()
         };
         let bid = id();
-        let created = now();
+        let created = crate::compat::datetime(self.backend.now());
         let mut jobs = vec![];
         for (index, item) in accepted.iter().enumerate() {
-            let aid = integer(&item["account_id"]).unwrap();
+            let aid = item["account_id"].as_i64().ok_or_else(Error::invalid)?;
             let row = rows.get(&aid).unwrap_or(&Value::Null);
             let grok = row["platform"] == "grok";
             let p = match action {
@@ -1103,7 +1057,24 @@ impl Operations {
                 "delete" | "groups" => item_payloads[index].clone(),
                 _ => payload.clone(),
             };
-            let mut job = json!({"id":id(),"batch_id":bid,"account_id":aid,"account_name":clean(&row.get("name").cloned().filter(truthy).unwrap_or(json!(format!("#{aid}"))),200),"action":action,"payload":p,"expected_version":item["expected_version"],"client_id":client,"request_id":id(),"request_hash":if matches!(action,"test"|"account_template") {digest(&json!([p,item["expected_version"]]))} else {digest(&json!([action,p,item["expected_version"]]))},"parent_account_id":if action=="proxy" && !truthy(&row["parent_account_id"]) {row["extra"]["parent_account_id"].clone()} else {row["parent_account_id"].clone()},"created_at":created,"updated_at":created,"status":"queued","reason":"等待执行","result":null});
+            let mut job = json!({
+                "id": id(),
+                "batch_id": bid,
+                "account_id": aid,
+                "account_name": clean(&row.get("name").cloned().filter(truthy).unwrap_or(json!(format!("#{aid}"))),200),
+                "action": action,
+                "payload": p,
+                "expected_version": item["expected_version"],
+                "client_id": client,
+                "request_id": id(),
+                "request_hash": if matches!(action,"test"|"account_template") {digest(&json!([p,item["expected_version"]]))} else {digest(&json!([action,p,item["expected_version"]]))},
+                "parent_account_id": if action=="proxy" && !truthy(&row["parent_account_id"]) {row["extra"]["parent_account_id"].clone()} else {row["parent_account_id"].clone()},
+                "created_at": created,
+                "updated_at": created,
+                "status": "queued",
+                "reason": "等待执行",
+                "result": null
+            });
             if template {
                 job["template_target"] = target.clone();
             }
@@ -1111,85 +1082,32 @@ impl Operations {
                 let children = descendants.get(&aid).cloned().unwrap_or_default();
                 job["child_account_ids"] = json!(children);
             }
-            let mut change = None;
-            if action == "test" {
-                change = if row.is_null() || truthy(&row["deleted_at"]) {
-                    Some(("failed", "账号不存在或已删除"))
-                } else if !matches!(string(&row["platform"]), "openai" | "grok")
-                    || !matches!(string(&row["type"]), "oauth" | "apikey")
-                {
-                    Some(("failed", "此账号不支持连接测试"))
-                } else if operation_versions(row)["test"] != item["expected_version"] {
-                    Some((
-                        "needs_confirmation",
-                        "账号凭据、代理或模型配置已变化，请刷新后重新选择",
-                    ))
-                } else {
-                    None
-                };
-            } else if template {
-                if !account_templates::eligible(row) {
-                    change = Some(("failed", "仅可应用到未删除的独立 OpenAI OAuth 或 Key 账号"));
-                } else if account_templates::passthrough(row) {
-                    change = Some((
-                        "needs_confirmation",
-                        "透传模式会绕过模型限制，请先处理透传设置",
-                    ));
-                } else if native_reached(Some(row), &job) {
-                    job["status"] = "completed".into();
-                    job["reason"] = "".into();
-                    job["result"] = json!({"verified":true,"unchanged":true});
-                } else if self.fingerprint(row, &job)? != string(&item["expected_version"]) {
-                    change = Some(("needs_confirmation", "账号模型配置或凭据已变化，请重新预览"));
-                }
-            } else if action == "proxy" {
-                if row.is_null() || truthy(&row["deleted_at"]) {
-                    change = Some(("failed", "账号已删除或不存在"));
-                } else if settings_capabilities(row)["proxy"]["editable"] != true {
-                    job["status"] = "failed".into();
-                    job["reason"] = settings_capabilities(row)["proxy"]["reason"].clone();
-                } else if target_reached(row, "proxy", &p) {
-                    job["status"] = "completed".into();
-                    job["reason"] = "".into();
-                    job["result"] =
-                        json!({"verified":true,"unchanged":true,"proxy_id":p["proxy_id"]});
-                } else if !proxy_available {
-                    change = Some(("needs_confirmation", "所选代理已不可用，请重新选择"));
-                } else if self.fingerprint(row, &job)? != string(&item["expected_version"]) {
-                    change = Some(("needs_confirmation", "代理或继承关系已变化，请重新预览"));
-                    job["current"] = json!({"proxy_id":row["proxy_id"]});
-                }
-            } else if action == "recover" {
-                if row.is_null() || truthy(&row["deleted_at"]) {
-                    change = Some(("failed", "账号已删除或不存在"));
-                } else if self.fingerprint(row, &job)? != string(&item["expected_version"]) {
-                    change = Some(("needs_confirmation", "账号恢复状态已变化，请刷新后重新选择"));
-                } else if !recoverable(row, chrono::Utc::now()) {
-                    job["status"] = "completed".into();
-                    job["reason"] = "无需恢复".into();
-                    job["result"] = json!({"verified":true,"account_id":aid,"unchanged":true});
-                }
-            } else if native_reached(rows.get(&aid), &job) {
-                job["status"] = "completed".into();
-                job["reason"] = "".into();
-                job["result"] = native_confirmed(rows.get(&aid), &job, true);
-            } else if row.is_null()
-                || self.fingerprint(row, &job)? != string(&item["expected_version"])
-            {
-                change = Some(("needs_confirmation", "相关字段或账号资格已变化，请重新预览"));
-            }
-            if let Some((status, reason)) = change {
-                job["status"] = status.into();
-                job["reason"] = reason.into();
-            }
+            self.evaluate_batch_job(&mut job, row, action, proxy_available)?;
             jobs.push(job);
         }
         self.store.transaction(|data| {
-            let mut batch=json!({"id":bid,"request_hash":signature,"client_id":client,"request_id":rid,"created_at":created,"job_ids":jobs.iter().map(|j|&j["id"]).collect::<Vec<_>>()});if action=="test" {batch["action"]="test".into();}data["batches"][&bid]=batch;data["batch_requests"][rid]=bid.clone().into();
+            let mut batch = json!({
+                "id":bid, "request_hash":signature, "client_id":client, "request_id":rid, "created_at":created,
+                "job_ids": jobs.iter().map(|job| &job["id"]).collect::<Vec<_>>()
+            });
+            if action == "test" { batch["action"] = "test".into(); }
+            data["batches"][&bid] = batch;
+            data["batch_requests"][rid] = bid.clone().into();
             for job in &jobs {
-                if matches!(action,"proxy"|"groups") && job["status"]=="queued" {for old in data["jobs"].as_object_mut().unwrap().values_mut() {if old["account_id"]==job["account_id"] && old["client_id"]==client && old["action"]==action && matches!(string(&old["status"]),"queued"|"needs_confirmation") {old["status"]="superseded".into();old["reason"]="已由本客户端的新请求替代".into();old["updated_at"]=created.clone().into();}}}
-                data["jobs"][string(&job["id"])]=job.clone();data["requests"][string(&job["request_id"])]=job["id"].clone();
-            }Ok(())
+                if matches!(action, "proxy" | "groups") && job["status"] == "queued" {
+                    for old in data["jobs"].as_object_mut().ok_or_else(Error::internal)?.values_mut() {
+                        if old["account_id"] == job["account_id"] && old["client_id"] == client && old["action"] == action
+                            && matches!(string(&old["status"]), "queued" | "needs_confirmation") {
+                            old["status"] = "superseded".into();
+                            old["reason"] = "已由本客户端的新请求替代".into();
+                            old["updated_at"] = created.clone().into();
+                        }
+                    }
+                }
+                data["jobs"][string(&job["id"])] = job.clone();
+                data["requests"][string(&job["request_id"])] = job["id"].clone();
+            }
+            Ok(())
         })?;
         for job in &jobs {
             self.keys
@@ -1200,6 +1118,86 @@ impl Operations {
         }
         self.listing(Some(&bid))
     }
+    fn evaluate_batch_job(
+        &self,
+        job: &mut Value,
+        row: &Value,
+        action: &str,
+        proxy_available: bool,
+    ) -> Result<()> {
+        let mut change = None;
+        if action == "test" {
+            change = if row.is_null() || truthy(&row["deleted_at"]) {
+                Some(("failed", "账号不存在或已删除"))
+            } else if !matches!(string(&row["platform"]), "openai" | "grok")
+                || !matches!(string(&row["type"]), "oauth" | "apikey")
+            {
+                Some(("failed", "此账号不支持连接测试"))
+            } else if operation_versions(row)["test"] != job["expected_version"] {
+                Some((
+                    "needs_confirmation",
+                    "账号凭据、代理或模型配置已变化，请刷新后重新选择",
+                ))
+            } else {
+                None
+            };
+        } else if action == "account_template" {
+            if !account_templates::eligible(row) {
+                change = Some(("failed", "仅可应用到未删除的独立 OpenAI OAuth 或 Key 账号"));
+            } else if account_templates::passthrough(row) {
+                change = Some((
+                    "needs_confirmation",
+                    "透传模式会绕过模型限制，请先处理透传设置",
+                ));
+            } else if native_reached(Some(row), job) {
+                job["status"] = "completed".into();
+                job["reason"] = "".into();
+                job["result"] = json!({"verified":true,"unchanged":true});
+            } else if self.fingerprint(row, job)? != string(&job["expected_version"]) {
+                change = Some(("needs_confirmation", "账号模型配置或凭据已变化，请重新预览"));
+            }
+        } else if action == "proxy" {
+            if row.is_null() || truthy(&row["deleted_at"]) {
+                change = Some(("failed", "账号已删除或不存在"));
+            } else if settings_capabilities(row)["proxy"]["editable"] != true {
+                job["status"] = "failed".into();
+                job["reason"] = settings_capabilities(row)["proxy"]["reason"].clone();
+            } else if target_reached(row, "proxy", &job["payload"]) {
+                job["status"] = "completed".into();
+                job["reason"] = "".into();
+                job["result"] =
+                    json!({"verified":true,"unchanged":true,"proxy_id":job["payload"]["proxy_id"]});
+            } else if !proxy_available {
+                change = Some(("needs_confirmation", "所选代理已不可用，请重新选择"));
+            } else if self.fingerprint(row, job)? != string(&job["expected_version"]) {
+                change = Some(("needs_confirmation", "代理或继承关系已变化，请重新预览"));
+                job["current"] = json!({"proxy_id":row["proxy_id"]});
+            }
+        } else if action == "recover" {
+            if row.is_null() || truthy(&row["deleted_at"]) {
+                change = Some(("failed", "账号已删除或不存在"));
+            } else if self.fingerprint(row, job)? != string(&job["expected_version"]) {
+                change = Some(("needs_confirmation", "账号恢复状态已变化，请刷新后重新选择"));
+            } else if !recoverable(row, self.backend.now()) {
+                job["status"] = "completed".into();
+                job["reason"] = "无需恢复".into();
+                job["result"] =
+                    json!({"verified":true,"account_id":job["account_id"],"unchanged":true});
+            }
+        } else if native_reached((!row.is_null()).then_some(row), job) {
+            job["status"] = "completed".into();
+            job["reason"] = "".into();
+            job["result"] = native_confirmed((!row.is_null()).then_some(row), job, true);
+        } else if row.is_null() || self.fingerprint(row, job)? != string(&job["expected_version"]) {
+            change = Some(("needs_confirmation", "相关字段或账号资格已变化，请重新预览"));
+        }
+        if let Some((status, reason)) = change {
+            job["status"] = status.into();
+            job["reason"] = reason.into();
+        }
+        Ok(())
+    }
+
     pub async fn cancel_batch(&self, bid: &str) -> Result<Value> {
         if validation::hex(&json!(bid), 32).is_err() {
             return Err(Error::new(404, "批量测试不存在"));
@@ -1220,7 +1218,7 @@ impl Operations {
                 {
                     job["status"] = "cancelled".into();
                     job["reason"] = "已停止，未派发测试".into();
-                    job["updated_at"] = now().into();
+                    job["updated_at"] = crate::compat::datetime(self.backend.now()).into();
                 }
             }
             Ok(())
@@ -1420,7 +1418,7 @@ impl Operations {
             };
             let test_permit = if job["action"] == "test" && job["status"] == "queued" {
                 match self.backend.test_slots() {
-                    Some(slots) => match slots.acquire() {
+                    Some(slots) => match slots.acquire()? {
                         Some(permit) => Some(permit),
                         None => {
                             waiting.insert(jid, "等待测试执行容量");
@@ -1498,7 +1496,17 @@ impl Operations {
             } else {
                 string(&job["status"])
             };
-            let entry = json!({"account_id":job["account_id"],"account_name":job["account_name"],"model_id":result["actual_model"].as_str().unwrap_or(string(&job["payload"]["model_id"])),"test_completed_at":result["completed_at"].as_str().unwrap_or(string(&job["updated_at"])),"recovered_at":null,"legacy":false,"kind":"connection_test","result_status":status,"attempt_count":job.get("attempt_count").cloned().unwrap_or_else(|| if status == "cancelled" && !truthy(&job["started_at"]) { json!(0) } else { Value::Null })});
+            let entry = json!({
+                "account_id": job["account_id"],
+                "account_name": job["account_name"],
+                "model_id": result["actual_model"].as_str().unwrap_or(string(&job["payload"]["model_id"])),
+                "test_completed_at": result["completed_at"].as_str().unwrap_or(string(&job["updated_at"])),
+                "recovered_at": null,
+                "legacy": false,
+                "kind": "connection_test",
+                "result_status": status,
+                "attempt_count": job.get("attempt_count").cloned().unwrap_or_else(|| if status == "cancelled" && !truthy(&job["started_at"]) { json!(0) } else { Value::Null })
+            });
             if matches!(status, "completed" | "failed" | "needs_confirmation")
                 && job["notification_suppressed"] != true
             {
@@ -1690,7 +1698,7 @@ impl Operations {
         if self.store.read_shared()?["jobs"][jid]["status"] != "queued" {
             return Ok(());
         }
-        let mut started = json!({"status":"running","reason":"","started_at":now()});
+        let mut started = json!({"status":"running","reason":"","started_at":crate::compat::datetime(self.backend.now())});
         if job["action"] == "test" {
             let mut payload = job["payload"].clone();
             self.resolve_test_model(row.as_ref().unwrap(), &mut payload)?;
@@ -1900,7 +1908,7 @@ impl Operations {
             }
             result["duration_ms"] =
                 json!((start.elapsed().as_secs_f64() * 1000.0).round_ties_even() as u64);
-            result["completed_at"] = now().into();
+            result["completed_at"] = crate::compat::datetime(self.backend.now()).into();
         }
         Ok(result)
     }

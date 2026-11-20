@@ -1,4 +1,5 @@
-use crate::compat::now;
+use crate::compat::datetime;
+use chrono::{DateTime, Utc};
 use fs2::FileExt;
 use serde_json::{json, Value};
 use std::{
@@ -43,7 +44,11 @@ fn lock(path: &Path, exclusive: bool) -> std::io::Result<fs::File> {
     Ok(file)
 }
 pub fn write(path: &Path, event: &str, payload: Value) {
-    let result = (|| -> std::io::Result<()> {
+    write_at(path, event, payload, Utc::now());
+}
+
+pub fn write_at(path: &Path, event: &str, payload: Value, at: DateTime<Utc>) {
+    let result = crate::store::blocking_file_io(|| -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -51,7 +56,8 @@ pub fn write(path: &Path, event: &str, payload: Value) {
         let mut file = options().open(path)?;
         crate::store::private_permissions(&file)?;
         let payload = crate::security::redact_json(&payload);
-        let mut bytes = serde_json::to_vec(&json!({"ts":now(),"event":event,"payload":payload}))?;
+        let mut bytes =
+            serde_json::to_vec(&json!({"ts":datetime(at),"event":event,"payload":payload}))?;
         bytes.push(b'\n');
         if bytes.len() as u64 > MAX_BYTES {
             return Err(std::io::Error::new(
@@ -66,8 +72,10 @@ pub fn write(path: &Path, event: &str, payload: Value) {
             file = options().open(path)?;
         }
         file.write_all(&bytes)
-    })();
-    let _ = result; // Audit failure must not undo an already confirmed operation.
+    });
+    if let Err(error) = result {
+        tracing::error!(category = "audit_write", kind = ?error.kind(), "audit_write_failed");
+    }
 }
 fn tail(file: &mut fs::File, mut visit: impl FnMut(&[u8]) -> bool) -> std::io::Result<()> {
     let mut offset = file.metadata()?.len();

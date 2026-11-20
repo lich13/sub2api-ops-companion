@@ -214,7 +214,7 @@ public struct RecoveryDetectionTabView: View {
             store.showToast("设置已保存")
         } catch {
             store.report(error)
-            if error.localizedDescription.contains("409") {
+            if (error as? RustBridgeError)?.failure.status == 409 {
                 conflict = true
             }
         }

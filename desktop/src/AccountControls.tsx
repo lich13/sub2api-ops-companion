@@ -1,3 +1,4 @@
+import { useEffectEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { api, command } from "./bridge";
@@ -197,10 +198,11 @@ export function RecoveryHistory({
         : old.filter((row) => liveAccounts.current.has(row.account_id)),
     );
   }, [accounts]);
+  const loadOnActivation = useEffectEvent(load);
   useEffect(() => {
-    if (active && online) void load();
+    if (active && online) void loadOnActivation();
     return () => {
-      ++generation.current;
+      generation.current = generation.current + 1;
       running.current = false;
     };
   }, [online, active]);

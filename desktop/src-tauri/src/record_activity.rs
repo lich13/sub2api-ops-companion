@@ -2,7 +2,7 @@ use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::watch;
 
-const BACKGROUND: &str = "应用已转入后台，已停止读取";
+use crate::api_http::HttpFailure;
 
 pub(crate) fn application_active() -> bool {
     crate::macos_bridge::application_active()
@@ -54,18 +54,18 @@ impl RecordActivity {
 
     pub(crate) async fn read<T>(
         &self,
-        request: impl Future<Output = Result<T, String>>,
-    ) -> Result<T, String> {
+        request: impl Future<Output = Result<T, HttpFailure>>,
+    ) -> Result<T, HttpFailure> {
         if !self.active.load(Ordering::Acquire) {
-            return Err(BACKGROUND.into());
+            return Err(HttpFailure::background());
         }
         let mut activity = self.tx.subscribe();
         if !*activity.borrow_and_update() {
-            return Err(BACKGROUND.into());
+            return Err(HttpFailure::background());
         }
         tokio::select! {
             biased;
-            _ = activity.changed() => Err(BACKGROUND.into()),
+            _ = activity.changed() => Err(HttpFailure::background()),
             result = request => result,
         }
     }
@@ -103,7 +103,7 @@ mod tests {
         let (started, wait_started) = tokio::sync::oneshot::channel();
         let request = async {
             started.send(()).unwrap();
-            std::future::pending::<Result<(), String>>().await
+            std::future::pending::<Result<(), HttpFailure>>().await
         };
         let (result, ()) = tokio::join!(activity.read(request), async {
             wait_started.await.unwrap();
@@ -111,7 +111,7 @@ mod tests {
             activity.set_active(false);
             activity.set_active(true);
         });
-        assert!(result.unwrap_err().contains("后台"));
+        assert!(result.unwrap_err().code == "background");
         assert_eq!(activity.read(async { Ok(7) }).await.unwrap(), 7);
     }
 

@@ -2,7 +2,12 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import Sub2ApiConfig, { type ConfigDocument } from "./Sub2ApiConfig";
+import sharedYaml from "../../tests/contracts/structured-config.json";
+import Sub2ApiConfig, {
+  structuredText,
+  structuredValue,
+  type ConfigDocument,
+} from "./Sub2ApiConfig";
 import { configPreview } from "./sub2apiConfigPreview";
 import { api } from "./bridge";
 vi.mock("./bridge", () => ({ api: vi.fn() }));
@@ -548,4 +553,18 @@ it("keeps the native version panel available when the configuration host fails",
   expect(button("检查更新").disabled).toBe(false);
   await act(async () => button("检查更新").click());
   expect(container.textContent).toContain("运行 0.2.19");
+});
+
+it("round trips the shared structured configuration fixtures", () => {
+  for (const sample of sharedYaml.valid) {
+    expect(structuredValue(sample.text, sample.type)).toEqual({
+      value: sample.value,
+      error: "",
+    });
+    expect(
+      structuredValue(structuredText(sample.value), sample.type).value,
+    ).toEqual(sample.value);
+  }
+  for (const invalid of sharedYaml.invalid)
+    expect(structuredValue(invalid, "array").error).toBeTruthy();
 });

@@ -1,5 +1,5 @@
-//! State files are shared with the previous release during rollback. Every
-//! transaction checks the file identity under the advisory lock before atomic replacement.
+//! State file paths may be shared by independently configured instance leases.
+//! The advisory lock also records prior writes, so a missing file fails closed after restart.
 use crate::error::{Error, Result};
 use fs2::FileExt;
 use serde_json::{json, Value};
@@ -17,7 +17,14 @@ use std::{
 
 type Validator = fn(&Value) -> Result<()>;
 type Loader = fn(&mut Value) -> Result<bool>;
-type CachedSnapshot = Option<(FileStamp, u64, Arc<Value>, bool)>;
+#[derive(Clone)]
+struct Document<S> {
+    raw: Arc<Value>,
+    state: Arc<S>,
+}
+
+type Decoder<S> = fn(&Value) -> Result<S>;
+type CachedSnapshot<S> = Option<(FileStamp, u64, Document<S>, bool)>;
 
 static NEXT_CACHE_REVISION: AtomicU64 = AtomicU64::new(1);
 
@@ -49,20 +56,21 @@ impl From<&fs::Metadata> for FileStamp {
     }
 }
 
-struct Inner {
+struct Inner<S> {
     path: PathBuf,
     lock_path: PathBuf,
-    defaults: Arc<Value>,
+    defaults: Result<Document<S>>,
+    decode: Decoder<S>,
     default_revision: u64,
     existed: AtomicBool,
     mutex: Mutex<()>,
     validate: Validator,
     load: Loader,
-    cache: Mutex<CachedSnapshot>,
+    cache: Mutex<CachedSnapshot<S>>,
 }
 
 #[derive(Clone)]
-pub struct Store(Arc<Inner>);
+pub struct Store<S = ()>(Arc<Inner<S>>);
 
 pub fn valid_object(value: &Value) -> Result<()> {
     if value.is_object() {
@@ -104,11 +112,34 @@ impl Store {
         validate: Validator,
         load: Loader,
     ) -> Self {
+        Self::typed(path, lock_path, defaults, validate, load, |_| Ok(()))
+    }
+
+    pub fn policy(path: impl Into<PathBuf>, mut defaults: Value) -> Self {
+        defaults["version"] = json!(1);
+        Self::new(path, defaults, valid_policy)
+    }
+}
+
+impl<S: Clone> Store<S> {
+    pub(crate) fn typed(
+        path: PathBuf,
+        lock_path: PathBuf,
+        defaults: Value,
+        validate: Validator,
+        load: Loader,
+        decode: Decoder<S>,
+    ) -> Self {
         let existed = path.exists() || lock_path.exists();
+        let state = decode(&defaults);
         Self(Arc::new(Inner {
             path,
             lock_path,
-            defaults: Arc::new(defaults),
+            defaults: state.map(|state| Document {
+                raw: Arc::new(defaults),
+                state: Arc::new(state),
+            }),
+            decode,
             default_revision: next_cache_revision(),
             existed: AtomicBool::new(existed),
             mutex: Mutex::new(()),
@@ -116,11 +147,6 @@ impl Store {
             load,
             cache: Mutex::new(None),
         }))
-    }
-
-    pub fn policy(path: impl Into<PathBuf>, mut defaults: Value) -> Self {
-        defaults["version"] = json!(1);
-        Self::new(path, defaults, valid_policy)
     }
 
     pub fn path(&self) -> &Path {
@@ -148,10 +174,14 @@ impl Store {
 
     pub(crate) fn read_shared_versioned(&self) -> Result<(u64, Arc<Value>)> {
         let (revision, value, _) = self.read_snapshot()?;
-        Ok((revision, value))
+        Ok((revision, value.raw))
     }
 
-    fn read_snapshot(&self) -> Result<(u64, Arc<Value>, bool)> {
+    pub(crate) fn read_state(&self) -> Result<Arc<S>> {
+        Ok(self.read_snapshot()?.1.state)
+    }
+
+    fn read_snapshot(&self) -> Result<(u64, Document<S>, bool)> {
         match fs::metadata(&self.0.path) {
             Ok(metadata) => {
                 let stamp = FileStamp::from(&metadata);
@@ -166,7 +196,7 @@ impl Store {
                 if error.kind() == std::io::ErrorKind::NotFound
                     && !self.0.existed.load(Ordering::Acquire) =>
             {
-                return Ok((self.0.default_revision, self.0.defaults.clone(), false));
+                return Ok((self.0.default_revision, self.0.defaults.clone()?, false));
             }
             Err(_) => {
                 *self.0.cache.lock().map_err(|_| Error::internal())? = None;
@@ -175,7 +205,7 @@ impl Store {
         self.read_disk()
     }
 
-    fn read_disk(&self) -> Result<(u64, Arc<Value>, bool)> {
+    fn read_disk(&self) -> Result<(u64, Document<S>, bool)> {
         match File::open(&self.0.path) {
             Ok(mut file) => {
                 let before = FileStamp::from(&file.metadata()?);
@@ -185,7 +215,11 @@ impl Store {
                     .map_err(|_| Error::new(503, "控制状态文件无效"))?;
                 (self.0.validate)(&value)?;
                 let migrated = (self.0.load)(&mut value)?;
-                let value = Arc::new(value);
+                let state = (self.0.decode)(&value)?;
+                let value = Document {
+                    raw: Arc::new(value),
+                    state: Arc::new(state),
+                };
                 self.0.existed.store(true, Ordering::Release);
                 // Never label bytes with metadata from a replacement file.
                 // Transactions always read under the file lock; read snapshots
@@ -198,7 +232,7 @@ impl Store {
                     if let Some((cached_stamp, cached_rev, cached_val, cached_migrated)) =
                         cache.as_ref()
                     {
-                        if *cached_stamp == before && **cached_val == *value {
+                        if *cached_stamp == before && cached_val.raw == value.raw {
                             return Ok((*cached_rev, cached_val.clone(), *cached_migrated));
                         }
                     }
@@ -214,7 +248,7 @@ impl Store {
                 if e.kind() == std::io::ErrorKind::NotFound
                     && !self.0.existed.load(Ordering::Acquire) =>
             {
-                Ok((self.0.default_revision, self.0.defaults.clone(), false))
+                Ok((self.0.default_revision, self.0.defaults.clone()?, false))
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 Err(Error::new(503, "控制状态文件丢失"))
@@ -232,21 +266,45 @@ impl Store {
         action: impl FnOnce(&mut Value) -> Result<T>,
         validate: impl FnOnce(&Value) -> Result<()>,
     ) -> Result<T> {
-        // Waiting for the cross-process lock and syncing a file are blocking
-        // operations. Let Tokio replace this worker so cancellation, timers and
-        // other account requests can continue while a write drains.
-        if tokio::runtime::Handle::try_current().is_ok_and(|handle| {
-            handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread
-        }) {
-            tokio::task::block_in_place(|| self.transaction_blocking(action, validate))
-        } else {
-            self.transaction_blocking(action, validate)
-        }
+        blocking_file_io(|| {
+            self.transaction_blocking(
+                |previous| {
+                    let mut raw = (*previous.raw).clone();
+                    let result = action(&mut raw)?;
+                    Ok((raw, result))
+                },
+                validate,
+            )
+        })
+    }
+
+    pub(crate) fn edit_state<T>(&self, action: impl FnOnce(&mut S) -> Result<T>) -> Result<T>
+    where
+        S: serde::Serialize + PartialEq,
+    {
+        blocking_file_io(|| {
+            self.transaction_blocking(
+                |previous| {
+                    let mut state = (*previous.state).clone();
+                    let result = action(&mut state)?;
+                    let mut raw = (*previous.raw).clone();
+                    if state != *previous.state {
+                        apply_state_changes(
+                            &mut raw,
+                            serde_json::to_value(&*previous.state)?,
+                            serde_json::to_value(state)?,
+                        );
+                    }
+                    Ok((raw, result))
+                },
+                self.0.validate,
+            )
+        })
     }
 
     fn transaction_blocking<T>(
         &self,
-        action: impl FnOnce(&mut Value) -> Result<T>,
+        action: impl FnOnce(&Document<S>) -> Result<(Value, T)>,
         validate: impl FnOnce(&Value) -> Result<()>,
     ) -> Result<T> {
         let _mutex = self.0.mutex.lock().map_err(|_| Error::internal())?;
@@ -262,21 +320,24 @@ impl Store {
         // Recheck the current file stamp under the cross-process lock. Reuse
         // validated bytes only while that identity is unchanged.
         let (_, previous, migrated) = self.read_snapshot()?;
-        let mut value = (*previous).clone();
-        let result = action(&mut value)?;
+        let (value, result) = action(&previous)?;
         let first_write = !self.0.existed.load(Ordering::Acquire);
-        if migrated || first_write || value != *previous {
+        if migrated || first_write || value != *previous.raw {
             if migrated || first_write {
                 (self.0.validate)(&value)?;
             } else {
                 validate(&value)?;
             }
+            let state = (self.0.decode)(&value)?;
             write_json(&self.0.path, &value)?;
             let cached = fs::metadata(&self.0.path).ok().map(|metadata| {
                 (
                     FileStamp::from(&metadata),
                     next_cache_revision(),
-                    Arc::new(value),
+                    Document {
+                        raw: Arc::new(value),
+                        state: Arc::new(state),
+                    },
                     false,
                 )
             });
@@ -285,6 +346,40 @@ impl Store {
         self.0.existed.store(true, Ordering::Release);
         // File drop releases the OS lock on every error path too.
         Ok(result)
+    }
+}
+
+// Preserve the original representation of unchanged fields. Older state may
+// omit a field with a serde default, or explicitly store an optional null.
+fn apply_state_changes(raw: &mut Value, before: Value, after: Value) {
+    if before == after {
+        return;
+    }
+    match (raw, before, after) {
+        (Value::Object(raw), Value::Object(mut before), Value::Object(after)) => {
+            for (key, value) in after {
+                match before.shift_remove(&key) {
+                    Some(old) if old == value => {}
+                    Some(old) if raw.contains_key(&key) => {
+                        apply_state_changes(&mut raw[&key], old, value)
+                    }
+                    _ => {
+                        raw.insert(key, value);
+                    }
+                }
+            }
+            for key in before.keys() {
+                raw.shift_remove(key);
+            }
+        }
+        (Value::Array(raw), Value::Array(before), Value::Array(after))
+            if raw.len() == before.len() && raw.len() == after.len() =>
+        {
+            for ((item, old), new) in raw.iter_mut().zip(before).zip(after) {
+                apply_state_changes(item, old, new);
+            }
+        }
+        (raw, _, after) => *raw = after,
     }
 }
 
@@ -341,6 +436,16 @@ pub(crate) fn diagnose_permissions(path: &Path, resource: &'static str) {
             eprintln!("startup_diagnostic resource={resource} error_code=metadata_unavailable");
         }
         _ => {}
+    }
+}
+
+pub(crate) fn blocking_file_io<T>(action: impl FnOnce() -> T) -> T {
+    if tokio::runtime::Handle::try_current()
+        .is_ok_and(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread)
+    {
+        tokio::task::block_in_place(action)
+    } else {
+        action()
     }
 }
 

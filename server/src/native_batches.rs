@@ -1,6 +1,6 @@
 use crate::{
     account_templates,
-    compat::{digest, integer, now, string, truthy},
+    compat::{digest, integer, string, truthy},
     db::Param,
     error::{Error, Result},
     operations::{id, ids, native, native_confirmed, native_reached, Operations},
@@ -388,7 +388,7 @@ impl Operations {
     }
     fn record_native(&self, bid: &str, jobs: &[Value]) -> Result<Vec<Value>> {
         let cid = id();
-        let at = now();
+        let at = crate::compat::datetime(self.backend.now());
         self.store.transaction(|data| {
             let mut selected = vec![];
             for job in jobs {

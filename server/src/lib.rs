@@ -74,6 +74,7 @@ pub mod settings;
 pub mod slow_ttft;
 mod snapshot;
 pub mod sql;
+pub mod state_files;
 pub mod store;
 pub mod sub2api_config;
 pub mod sub2api_system;

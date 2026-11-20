@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
-FROM rust:slim-bookworm AS build
+FROM rust:slim-bookworm@sha256:7c7d4eb4d05b7781187a327809466cfddf29753f6defdc3d19a0e291951b7a37 AS build
 WORKDIR /build/server
 COPY server/Cargo.toml server/Cargo.lock ./
 COPY server/build.rs ./
+COPY server/protocol ./protocol
 COPY server/vendor ./vendor
 COPY server/src ./src
 COPY server/resources ./resources
@@ -29,7 +30,7 @@ COPY server/resources/lm-detector/LICENSE.txt /usr/share/doc/sub2ops/LM-Detector
 ARG BUILD_REVISION=development
 LABEL org.opencontainers.image.title="Sub2Ops Companion" \
       org.opencontainers.image.revision=$BUILD_REVISION \
-      org.opencontainers.image.version="0.1.99"
+      org.opencontainers.image.version="0.1.100"
 ENV APP_PORT=18081
 USER 10001:10001
 EXPOSE 18081

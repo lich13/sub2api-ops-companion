@@ -111,7 +111,7 @@ export default function Sub2ApiVersion({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [waiting, active]);
+  }, [waiting, active, version]);
   async function run(action: "check-updates" | "update" | "restart") {
     if (guard.current || !online) return;
     guard.current = true;

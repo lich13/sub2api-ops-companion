@@ -144,7 +144,10 @@ impl Runtime {
         }
         let instance = DiskLease::try_acquire(&settings.usage_path, "companion-instance")?;
         let db = Database::open(&settings.database_url).await?;
-        let upstream = startup("upstream", Upstream::new(settings.clone()))?;
+        let upstream = startup(
+            "upstream",
+            Upstream::with_clock(settings.clone(), clock.clone()),
+        )?;
         let oauth = OAuthState::new(settings.usage_path.clone());
         let queries = Queries {
             db: db.clone(),
@@ -158,31 +161,24 @@ impl Runtime {
             templates,
             settings.clone(),
         )?;
+        actions.clock = clock.clone();
+        actions.priorities.clock = clock.clone();
         actions.candidates =
             crate::model_candidates::Candidates::with_clock(actions.supervisor.clone(), monotonic)
                 .persisted(&settings)?;
         let mut bark = Bark::new(settings.clone())?;
         bark.supervise(actions.supervisor.clone());
-        let config = ConfigService::new(settings.clone(), bark.clone(), queries);
+        let mut config = ConfigService::new(settings.clone(), bark.clone(), queries);
+        config.clock = clock.clone();
         let hooks = Arc::new(Hooks(OnceLock::new()));
         let config_for_slots = config.clone();
         let slots = TestSlots::new(Arc::new(move || {
-            config_for_slots
-                .current()
-                .ok()
-                .and_then(|v| v["oauth_recovery_test_concurrency"].as_u64())
-                .unwrap_or(2) as usize
+            Ok(config_for_slots.concurrency()?.recovery)
         }));
         let config_for_queries = config.clone();
         let mut coordinator = Coordinator::new(
             actions.clone(),
-            Arc::new(move || {
-                config_for_queries
-                    .current()
-                    .ok()
-                    .and_then(|v| v["oauth_usage_refresh_concurrency"].as_u64())
-                    .unwrap_or(4) as usize
-            }),
+            Arc::new(move || Ok(config_for_queries.concurrency()?.usage)),
         );
         coordinator.clock = clock.clone();
         let budget = Arc::new(Semaphore::new(24));
@@ -204,11 +200,16 @@ impl Runtime {
             budget.clone(),
         );
         monitor.clock = clock.clone();
-        let mut bank = startup("fingerprints", FingerprintBank::new(settings.clone()))?;
+        let mut bank = startup(
+            "fingerprints",
+            FingerprintBank::with_clock(settings.clone(), clock.clone()),
+        )?;
         bank.supervise(actions.supervisor.clone());
         let mut tests = ModelTests::new(actions.clone(), bank, hooks.clone(), budget.clone());
         tests.clock = clock.clone();
-        let capacity = CapacityAlerts::new(db.clone(), &settings);
+        tests.lm_bank.clock = clock.clone();
+        let mut capacity = CapacityAlerts::new(db.clone(), &settings);
+        capacity.clock = clock.clone();
         let mut detection = Detection::new(
             actions.clone(),
             tests.clone(),
@@ -216,7 +217,7 @@ impl Runtime {
             capacity,
             bark,
         );
-        detection.clock = clock;
+        detection.clock = clock.clone();
         let operations = startup(
             "operations",
             Operations::new_deferred(actions.clone(), hooks.clone(), budget.clone()),
@@ -229,6 +230,7 @@ impl Runtime {
             "key_quota",
             crate::key_quota::Service::new(settings.data_dir().join("api-key-quota-config.json")),
         )?;
+        key_quota.clock = clock;
         key_quota.supervise(actions.supervisor.clone());
         let requests = crate::tasks::Tasks::supervised(actions.supervisor.clone());
         let (stop, _) = watch::channel(false);
@@ -264,7 +266,7 @@ impl Runtime {
         hooks
             .0
             .set(Arc::downgrade(&runtime))
-            .map_err(|_| Error::internal())?;
+            .expect("new runtime hooks are initialized once");
         startup("preflight", runtime.preflight().await)?;
         Ok(runtime)
     }
@@ -303,7 +305,7 @@ impl Runtime {
         startup("fingerprints", self.tests.bank.adopt_bundled())?;
         startup(
             "capacity",
-            self.detection.capacity.initialize(chrono::Utc::now()),
+            self.detection.capacity.initialize(self.detection.now()),
         )?;
         startup("monitor", self.monitor.startup().await)?;
         self.refresh_route().await;
@@ -369,8 +371,7 @@ impl Runtime {
                     };
                     if result.is_err() {
                         failures = (failures + 1).min(4);
-                        crate::audit::write(
-                            &runtime.settings.audit_path,
+                        runtime.actions.audit(
                             "runtime_task_error",
                             json!({"task":kind,"error_code":"cycle_failed"}),
                         );

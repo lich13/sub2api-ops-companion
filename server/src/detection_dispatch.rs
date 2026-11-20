@@ -189,9 +189,9 @@ impl Detection {
             event["attempts"] = attempts.into();
             event["next_at"] = datetime(
                 self.now()
-                    + Duration::seconds(
-                        [5, 30, 120, 600][attempts.saturating_sub(1).clamp(0, 3) as usize],
-                    ),
+                    + Duration::seconds(crate::execution::retry_delay(
+                        attempts.saturating_sub(1).max(0) as u64,
+                    )),
             )
             .into();
             Ok(event.clone())

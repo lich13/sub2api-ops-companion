@@ -9,6 +9,7 @@ use std::{
     },
 };
 use tokio::{sync::watch, task::JoinHandle};
+use tracing::Instrument;
 
 struct State {
     stopping: AtomicBool,
@@ -68,7 +69,11 @@ impl Supervisor {
 
     /// Cancellation drops this future normally; it is not a task failure.
     pub async fn guard<T>(&self, kind: &'static str, future: impl Future<Output = T>) -> Option<T> {
-        match AssertUnwindSafe(future).catch_unwind().await {
+        match AssertUnwindSafe(future)
+            .catch_unwind()
+            .instrument(tracing::info_span!("background", task = kind))
+            .await
+        {
             Ok(value) => Some(value),
             Err(_) => {
                 self.fail(kind);

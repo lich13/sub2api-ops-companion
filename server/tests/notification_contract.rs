@@ -344,24 +344,18 @@ impl Drop for CaptureServer {
     }
 }
 
-async fn runtime_for(
-    root: &Path,
-    base_url: String,
-    bark_url: String,
-    enabled: bool,
-    valid: bool,
-) -> Arc<Runtime> {
+async fn runtime_for(root: &Path, base_url: String, clock: fn() -> DateTime<Utc>) -> Arc<Runtime> {
     let config = settings(
         root,
         database_url(),
-        json!({"enabled":enabled,"device_key":"fixture-bark-device-key","server_url":bark_url}),
-        valid,
+        json!({"enabled":true,"device_key":"fixture-bark-device-key","server_url":base_url}),
+        true,
         base_url,
     );
-    let runtime = Runtime::new_with_clock(config, Arc::new(reference_time))
+    let runtime = Runtime::new_with_clock(config, Arc::new(clock))
         .await
         .expect("construct Runtime against runner-owned PostgreSQL");
-    runtime.detection.capacity.initialize(Utc::now()).unwrap();
+    runtime.detection.capacity.initialize(clock()).unwrap();
     runtime
 }
 
@@ -1189,14 +1183,7 @@ async fn bark_config_service_save_preserves_fields_and_redacts_runtime_key() {
     let configured_url = "http://127.0.0.1:50126";
     let capture = CaptureServer::start(vec![]).await;
     let root = tempfile::tempdir().unwrap();
-    let runtime = runtime_for(
-        root.path(),
-        capture.url.clone(),
-        capture.url.clone(),
-        true,
-        true,
-    )
-    .await;
+    let runtime = runtime_for(root.path(), capture.url.clone(), reference_time).await;
     let initial = runtime.config.snapshot(Some("bark")).unwrap()["bark"].clone();
     let first = runtime
         .config
@@ -1302,14 +1289,7 @@ async fn oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_p
     let reference = fixture();
     let capture = CaptureServer::start(vec![]).await;
     let root = tempfile::tempdir().unwrap();
-    let runtime = runtime_for(
-        root.path(),
-        capture.url.clone(),
-        capture.url.clone(),
-        true,
-        true,
-    )
-    .await;
+    let runtime = runtime_for(root.path(), capture.url.clone(), reference_time).await;
 
     let success = oauth_event("fixture:queue-success", "recovered", "active_usage");
     seed_pending(&runtime.monitor.store, std::slice::from_ref(&success));
@@ -1469,14 +1449,8 @@ async fn oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_p
         PlannedResponse::json(200, json!({"code":500})),
     ])
     .await;
-    let multi_runtime = runtime_for(
-        multi_root.path(),
-        multi_capture.url.clone(),
-        multi_capture.url.clone(),
-        true,
-        true,
-    )
-    .await;
+    let multi_runtime =
+        runtime_for(multi_root.path(), multi_capture.url.clone(), reference_time).await;
     let multi_reference = &reference["bark"]["queue"]["multisegment_failure"];
     let long_event = multi_reference["event"].clone();
     seed_pending(
@@ -1531,14 +1505,7 @@ async fn manual_control_cancels_copied_recovery_notification_before_bark_deliver
     let _serial = DB_TEST_LOCK.lock().await;
     let capture = CaptureServer::start(vec![]).await;
     let root = tempfile::tempdir().unwrap();
-    let runtime = runtime_for(
-        root.path(),
-        capture.url.clone(),
-        capture.url.clone(),
-        true,
-        true,
-    )
-    .await;
+    let runtime = runtime_for(root.path(), capture.url.clone(), reference_time).await;
 
     let pre_revoked = oauth_event("fixture:pre-revoked", "recovered", "recovery");
     seed_pending(&runtime.monitor.store, std::slice::from_ref(&pre_revoked));
@@ -1595,14 +1562,7 @@ async fn bark_monitor_and_test_endpoint_observe_three_and_eight_second_timeouts(
     let _serial = DB_TEST_LOCK.lock().await;
     let capture = CaptureServer::start(vec![]).await;
     let root = tempfile::tempdir().unwrap();
-    let runtime = runtime_for(
-        root.path(),
-        capture.url.clone(),
-        capture.url.clone(),
-        true,
-        true,
-    )
-    .await;
+    let runtime = runtime_for(root.path(), capture.url.clone(), reference_time).await;
 
     let event = oauth_event("fixture:timeout-monitor", "recovered", "active_usage");
     seed_pending(&runtime.monitor.store, std::slice::from_ref(&event));
@@ -1727,14 +1687,7 @@ async fn capacity_watermark_replay_pagination_and_restart_preserve_clue_events()
     let _serial = DB_TEST_LOCK.lock().await;
     let capture = CaptureServer::start(vec![]).await;
     let root = tempfile::tempdir().unwrap();
-    let runtime = runtime_for(
-        root.path(),
-        capture.url.clone(),
-        capture.url.clone(),
-        true,
-        true,
-    )
-    .await;
+    let runtime = runtime_for(root.path(), capture.url.clone(), Utc::now).await;
     let database = runtime.db.clone();
     let first_account = account_id();
     let second_account = account_id();
@@ -1767,7 +1720,11 @@ async fn capacity_watermark_replay_pagination_and_restart_preserve_clue_events()
     assert!(first["detection_events"].as_object().unwrap().is_empty());
     assert!(first["pending"].as_object().unwrap().is_empty());
 
-    let delayed = ErrorInput::provider(base + 1, first_account, Utc::now());
+    let delayed = ErrorInput::provider(
+        base + 1,
+        first_account,
+        Utc::now() + Duration::milliseconds(1),
+    );
     insert_error(&database, &delayed).await;
     alerts.poll().await.unwrap();
     let replayed = alerts.store.snapshot().unwrap();
@@ -1818,7 +1775,11 @@ async fn capacity_watermark_replay_pagination_and_restart_preserve_clue_events()
     let restored = restarted.store.snapshot().unwrap();
     assert_eq!(restored["cursor"], base + 403);
     assert_eq!(restored["detection_events"].as_object().unwrap().len(), 402);
-    let after_restart = ErrorInput::provider(base + 404, second_account, Utc::now());
+    let after_restart = ErrorInput::provider(
+        base + 404,
+        second_account,
+        Utc::now() + Duration::milliseconds(12),
+    );
     insert_error(&database, &after_restart).await;
     restarted.poll().await.unwrap();
     let resumed = restarted.store.snapshot().unwrap();
@@ -1834,14 +1795,7 @@ async fn raw_capacity_clues_never_enter_retry_windows_or_bark_request_schedule()
     let _serial = DB_TEST_LOCK.lock().await;
     let capture = CaptureServer::start(vec![]).await;
     let root = tempfile::tempdir().unwrap();
-    let runtime = runtime_for(
-        root.path(),
-        capture.url.clone(),
-        capture.url.clone(),
-        true,
-        true,
-    )
-    .await;
+    let runtime = runtime_for(root.path(), capture.url.clone(), reference_time).await;
     let alerts = &runtime.detection.capacity;
     let at = Utc::now();
     seed_capacity_baseline(alerts, at);
@@ -1887,7 +1841,7 @@ async fn capacity_save_failures_do_not_advance_or_lose_cursor_and_evidence() {
         capture.url.clone(),
     );
     config.usage_path = state_parent.join("usage-state.json");
-    let runtime = Runtime::new_with_clock(config.clone(), Arc::new(reference_time))
+    let runtime = Runtime::new_with_clock(config.clone(), Arc::new(Utc::now))
         .await
         .unwrap();
     runtime.detection.capacity.initialize(Utc::now()).unwrap();
@@ -1971,14 +1925,7 @@ async fn capacity_mark_suppresses_only_its_account_and_preserves_other_clues() {
     let _serial = DB_TEST_LOCK.lock().await;
     let capture = CaptureServer::start(vec![]).await;
     let root = tempfile::tempdir().unwrap();
-    let runtime = runtime_for(
-        root.path(),
-        capture.url.clone(),
-        capture.url.clone(),
-        true,
-        true,
-    )
-    .await;
+    let runtime = runtime_for(root.path(), capture.url.clone(), reference_time).await;
     let alerts = &runtime.detection.capacity;
     let at = Utc::now();
     seed_capacity_baseline(alerts, at);
@@ -2025,14 +1972,7 @@ async fn capacity_mark_clears_legacy_pending_and_retry_only_for_marked_account()
     let _serial = DB_TEST_LOCK.lock().await;
     let capture = CaptureServer::start(vec![]).await;
     let root = tempfile::tempdir().unwrap();
-    let runtime = runtime_for(
-        root.path(),
-        capture.url.clone(),
-        capture.url.clone(),
-        true,
-        true,
-    )
-    .await;
+    let runtime = runtime_for(root.path(), capture.url.clone(), reference_time).await;
     let alerts = &runtime.detection.capacity;
     let at = Utc::now();
     seed_capacity_baseline(alerts, at);
@@ -2063,14 +2003,7 @@ async fn capacity_mark_scope_uses_account_id_instead_of_parent_or_name() {
     let _serial = DB_TEST_LOCK.lock().await;
     let capture = CaptureServer::start(vec![]).await;
     let root = tempfile::tempdir().unwrap();
-    let runtime = runtime_for(
-        root.path(),
-        capture.url.clone(),
-        capture.url.clone(),
-        true,
-        true,
-    )
-    .await;
+    let runtime = runtime_for(root.path(), capture.url.clone(), Utc::now).await;
     let database = runtime.db.clone();
     let parent = account_id();
     let child = account_id();
@@ -2143,14 +2076,7 @@ async fn capacity_unmark_allows_only_newer_evidence_and_persists_across_restart(
     let _serial = DB_TEST_LOCK.lock().await;
     let capture = CaptureServer::start(vec![]).await;
     let root = tempfile::tempdir().unwrap();
-    let runtime = runtime_for(
-        root.path(),
-        capture.url.clone(),
-        capture.url.clone(),
-        true,
-        true,
-    )
-    .await;
+    let runtime = runtime_for(root.path(), capture.url.clone(), reference_time).await;
     let alerts = &runtime.detection.capacity;
     let at = Utc::now();
     seed_capacity_baseline(alerts, at);
@@ -2285,14 +2211,7 @@ async fn gateway_history_remains_queryable_while_upgrade_clues_are_not_backfille
     let _serial = DB_TEST_LOCK.lock().await;
     let capture = CaptureServer::start(vec![]).await;
     let root = tempfile::tempdir().unwrap();
-    let runtime = runtime_for(
-        root.path(),
-        capture.url.clone(),
-        capture.url.clone(),
-        true,
-        true,
-    )
-    .await;
+    let runtime = runtime_for(root.path(), capture.url.clone(), Utc::now).await;
     let database = runtime.db.clone();
     let first_account = account_id();
     let marked_account = account_id();
@@ -2414,14 +2333,7 @@ async fn runtime_persists_provider_and_gateway_clues_within_three_seconds_withou
     let _serial = DB_TEST_LOCK.lock().await;
     let capture = CaptureServer::start(vec![]).await;
     let root = tempfile::tempdir().unwrap();
-    let runtime = runtime_for(
-        root.path(),
-        capture.url.clone(),
-        capture.url.clone(),
-        true,
-        true,
-    )
-    .await;
+    let runtime = runtime_for(root.path(), capture.url.clone(), Utc::now).await;
     let account = account_id();
     insert_account(
         &runtime.db,

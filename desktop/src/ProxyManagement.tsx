@@ -149,13 +149,13 @@ export default function ProxyManagement({
     alive.current = true;
     return () => {
       alive.current = false;
-      ++generation.current;
-      ++readGeneration.current;
+      generation.current = generation.current + 1;
+      readGeneration.current = readGeneration.current + 1;
     };
   }, []);
   useEffect(() => {
-    ++generation.current;
-    ++readGeneration.current;
+    generation.current = generation.current + 1;
+    readGeneration.current = readGeneration.current + 1;
     setData(emptyPage);
     setSelected(new Set());
     setDialog(null);
@@ -166,8 +166,8 @@ export default function ProxyManagement({
   }, [connectionKey]);
   useEffect(() => {
     if (!online) {
-      ++generation.current;
-      ++readGeneration.current;
+      generation.current = generation.current + 1;
+      readGeneration.current = readGeneration.current + 1;
       setLoading(false);
       setMenu(false);
       setBusy("");
@@ -219,7 +219,7 @@ export default function ProxyManagement({
     const timer = window.setTimeout(() => void load(), 180);
     return () => {
       window.clearTimeout(timer);
-      ++readGeneration.current;
+      readGeneration.current = readGeneration.current + 1;
     };
   }, [active, online, load]);
   function filter(set: (value: string) => void, value: string) {

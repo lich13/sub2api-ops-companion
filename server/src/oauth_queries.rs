@@ -1,6 +1,5 @@
 use crate::{
     actions::Actions,
-    audit,
     compat::{datetime, integer, parse_datetime, string, truthy},
     credit_ownership,
     error::{Error, Result},
@@ -82,7 +81,7 @@ pub struct Coordinator {
     pub actions: Actions,
     pub clock: Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>,
     flights: Arc<Mutex<Flights>>,
-    capacity: Arc<dyn Fn() -> usize + Send + Sync>,
+    capacity: Arc<dyn Fn() -> Result<usize> + Send + Sync>,
 }
 fn skipped(code: &str) -> Value {
     json!({"success":false,"skipped":true,"error_code":code})
@@ -120,7 +119,7 @@ impl Coordinator {
             .unwrap_or_else(|e| e.into_inner())
             .retain_accounts(&ids);
     }
-    pub fn new(actions: Actions, capacity: Arc<dyn Fn() -> usize + Send + Sync>) -> Self {
+    pub fn new(actions: Actions, capacity: Arc<dyn Fn() -> Result<usize> + Send + Sync>) -> Self {
         Self {
             actions,
             clock: Arc::new(Utc::now),
@@ -209,9 +208,7 @@ impl Coordinator {
                 changed
             };
             if !blocked.is_empty() && changed {
-                audit::write(
-                    &self.actions.settings.audit_path,
-                    "oauth_usage_deferred",
+                self.actions.audit("oauth_usage_deferred",
                     json!({"account_id":id,"source":"automatic","reason":blocked,"next_query_at":value.1}),
                 );
             }
@@ -250,7 +247,10 @@ impl Coordinator {
             {
                 return coalesced(previous.clone());
             } else {
-                if flights.pending.len() >= (self.capacity)().clamp(1, 16) {
+                let Ok(capacity) = (self.capacity)() else {
+                    return skipped("config_read_failed");
+                };
+                if flights.pending.len() >= capacity {
                     return Self::slot_wait(options.at);
                 }
                 let (tx, rx) = watch::channel(None);
@@ -513,9 +513,7 @@ impl Coordinator {
         json!({"account_id":id,"success":true,"data":data,"error":"","queried_at":datetime(at),"unit":"%","plan_name":summary["plan_type"],"oauth_quota":summary,"source":"sub2api_admin_usage"})
     }
     fn audit(&self, id: i64, options: &QueryOptions, admitted: bool, result: &Value) {
-        audit::write(
-            &self.actions.settings.audit_path,
-            "oauth_usage_query",
+        self.actions.audit("oauth_usage_query",
             json!({"account_id":id,"source":options.source.as_str(),"reason":options.reason,"requested":admitted,"success":truthy(&result["success"]),"error_code":string(&result["error_code"]),"next_query_at":result["next_query_at"]}),
         );
     }
@@ -548,7 +546,10 @@ impl Coordinator {
             if flights.pending.contains_key(&id) {
                 return (skipped("query_busy"), None);
             }
-            if flights.pending.len() >= (self.capacity)().clamp(1, 16) {
+            let Ok(capacity) = (self.capacity)() else {
+                return (skipped("config_read_failed"), None);
+            };
+            if flights.pending.len() >= capacity {
                 return (Self::slot_wait(options.at), None);
             }
             let (tx, rx) = watch::channel(None);

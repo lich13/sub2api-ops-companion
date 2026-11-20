@@ -321,11 +321,9 @@ public final class AppStore {
     }
 
     public func showToast(_ message: String) {
-        let cleaned = message.replacingOccurrences(of: "^Error: ", with: "", options: .regularExpression)
-        guard !cleaned.contains("连接已切换；请求保留在原连接") else { return }
-        toast = cleaned
+        toast = message
         toastClearTask?.cancel()
-        guard !cleaned.isEmpty else { return }
+        guard !message.isEmpty else { return }
         toastClearTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(6))
             guard !Task.isCancelled else { return }
@@ -334,6 +332,7 @@ public final class AppStore {
     }
 
     public func report(_ error: Error) {
+        guard (error as? RustBridgeError)?.ignored != true else { return }
         showToast(error.localizedDescription)
     }
 
@@ -405,9 +404,8 @@ public final class AppStore {
             )
             showToast("已切换到 \(item.name)")
         } catch {
-            let msg = error.localizedDescription
             report(error)
-            if msg.contains("Key") || msg.contains("401") || msg.contains("403") || msg.contains("未找到") || msg.contains("拒绝") {
+            if (error as? RustBridgeError)?.needsCredentials == true {
                 connectionModal = ConnectionModalTarget(baseUrl: targetUrl, name: item.name, requireKey: true)
             }
         }

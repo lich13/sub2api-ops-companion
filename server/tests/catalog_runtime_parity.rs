@@ -24,6 +24,7 @@ fn native() -> Value {
 struct Upstream {
     calls: Arc<Mutex<Vec<Value>>>,
     pages: Arc<Mutex<BTreeMap<String, Value>>>,
+    admin: Arc<Mutex<BTreeMap<String, (u16, Value)>>>,
 }
 
 async fn upstream(State(mock): State<Upstream>, request: Request) -> Response {
@@ -42,7 +43,12 @@ async fn upstream(State(mock): State<Upstream>, request: Request) -> Response {
         .push(json!({"path":request.uri().to_string(),"authorization":header("authorization")}));
     let (status, body) = if path.starts_with("/api/v1/admin/") {
         if header("x-api-key") == ADMIN {
-            (200, json!({"code":0,"data":[]}))
+            mock.admin
+                .lock()
+                .unwrap()
+                .get(path)
+                .cloned()
+                .unwrap_or_else(|| (200, json!({"code":0,"data":[]})))
         } else {
             (401, json!({"code":401}))
         }
@@ -890,9 +896,7 @@ async fn model_operation_summaries_preserve_fields_status_and_full_details() {
     let expected: Vec<_> = jobs[..4]
         .iter()
         .map(|job| {
-            sub2ops_server::operations::Operations::model_view(
-                &sub2ops_server::model_tests::ModelTests::public(job.clone()),
-            )
+            sub2ops_server::operations::Operations::model_view(&h.runtime.tests.public(job.clone()))
         })
         .collect();
     assert_eq!(listing["items"], json!(expected));
@@ -905,6 +909,68 @@ async fn model_operation_summaries_preserve_fields_status_and_full_details() {
             *job
         );
     }
+    h.close().await;
+}
+
+#[tokio::test]
+async fn admin_model_directory_revocation_evicts_cached_candidates() {
+    let h = Harness::new().await;
+    sqlx::query("INSERT INTO accounts(id,name,platform,type,credentials) VALUES(92,'fixture-admin-directory','gemini','oauth',$1)")
+        .bind(sqlx::types::Json(json!({"access_token":"fixture-catalog-token"})))
+        .execute(&h.runtime.db.pool).await.unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!(
+        "http://{}/api/desktop/v1/accounts/92/models?purpose=model_test",
+        listener.local_addr().unwrap()
+    );
+    let app = sub2ops_server::api::router(h.runtime.clone());
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let request = || client.get(&url).header("x-api-key", ADMIN);
+    let admin_route = "/api/v1/admin/accounts/92/models";
+    for status in [401, 403] {
+        h.mock.admin.lock().unwrap().insert(
+            admin_route.into(),
+            (200, json!({"code":0,"data":[{"id":"fixture-admin-model"}]})),
+        );
+        let response = request()
+            .query(&[("refresh", "true")])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        assert_eq!(
+            response.json::<Value>().await.unwrap()[0]["id"],
+            "fixture-admin-model"
+        );
+
+        h.mock
+            .admin
+            .lock()
+            .unwrap()
+            .insert(admin_route.into(), (status, json!({"code":status})));
+        for read in [request().query(&[("refresh", "true")]), request()] {
+            let response = read.send().await.unwrap();
+            assert_eq!(response.status(), 502);
+            assert_eq!(
+                response.json::<Value>().await.unwrap()["detail"]["code"],
+                "model_directory_revoked"
+            );
+        }
+        let cache = fs::read(
+            h.runtime
+                .settings
+                .data_dir()
+                .join("account-model-cache.json"),
+        )
+        .unwrap();
+        assert!(serde_json::from_slice::<Value>(&cache).unwrap()["entries"]
+            .as_object()
+            .unwrap()
+            .is_empty());
+    }
+    server.abort();
+    let _ = server.await;
     h.close().await;
 }
 

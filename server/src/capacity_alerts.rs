@@ -243,6 +243,7 @@ struct SlowPollCache {
 
 #[derive(Clone)]
 pub struct CapacityAlerts {
+    pub(crate) clock: crate::compat::WallClock,
     pub store: CapacityStore,
     db: Database,
     audit_path: PathBuf,
@@ -258,16 +259,18 @@ impl CapacityAlerts {
                     .with_file_name("capacity-alert-state.json"),
             ),
             db,
+            clock: std::sync::Arc::new(Utc::now),
             audit_path: settings.audit_path.clone(),
             last_seen_cleanup: std::sync::Arc::new(std::sync::Mutex::new(None)),
             slow_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
     fn audit(&self, event: &str, payload: Value) {
-        crate::audit::write(
+        crate::audit::write_at(
             &self.audit_path,
             &format!("capacity_alert_{event}"),
             payload,
+            (self.clock)(),
         );
     }
     pub fn initialize(&self, at: DateTime<Utc>) -> Result<()> {
@@ -288,7 +291,7 @@ impl CapacityAlerts {
         })
     }
     pub async fn poll(&self) -> Result<()> {
-        let at = Utc::now();
+        let at = (self.clock)();
         let state = self.store.shared_snapshot()?;
         if state["cursor"].is_null() {
             let row = self
@@ -312,7 +315,7 @@ impl CapacityAlerts {
             if rows.is_empty() {
                 break;
             }
-            self.collect(&rows, true, Utc::now())?;
+            self.collect(&rows, true, (self.clock)())?;
             if rows.len() < 200 {
                 break;
             }
@@ -355,7 +358,7 @@ impl CapacityAlerts {
                 break;
             }
             collected_any = true;
-            self.collect(&rows, false, Utc::now())?;
+            self.collect(&rows, false, (self.clock)())?;
             after = integer(&rows.last().unwrap()["id"]).ok_or_else(Error::internal)?;
             if rows.len() < 200 {
                 break;
@@ -371,7 +374,7 @@ impl CapacityAlerts {
                 *last = Some(at);
             }
         }
-        self.poll_slow(Utc::now()).await
+        self.poll_slow((self.clock)()).await
     }
     pub fn collect(&self, rows: &[Value], advance: bool, at: DateTime<Utc>) -> Result<()> {
         let keep_seen = |key: &str, time: &Value, cursor: i64| {

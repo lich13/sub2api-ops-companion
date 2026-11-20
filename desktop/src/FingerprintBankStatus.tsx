@@ -1,3 +1,4 @@
+import { useEffectEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { api } from "./bridge";
@@ -69,11 +70,12 @@ export default function FingerprintBankStatus({
       }
     }
   }
+  const readOnChange = useEffectEvent(read);
   useEffect(() => {
     const current = ++generation.current;
-    if (online) void read(current);
+    if (online) void readOnChange(current);
     return () => {
-      ++generation.current;
+      generation.current = generation.current + 1;
       clearTimeout(timer.current);
     };
   }, [online, path]);

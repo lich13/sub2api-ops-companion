@@ -302,7 +302,7 @@ impl CreditController {
         let _test_slot = if action == "reset" {
             Some(
                 self.slots
-                    .acquire()
+                    .acquire()?
                     .ok_or_else(crate::account_locks::busy)?,
             )
         } else {

@@ -26,7 +26,7 @@ public struct SettingsPageView: View {
     }
 
     private var clientVersionString: String {
-        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.1.99"
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "未知"
     }
 
     public var body: some View {
@@ -378,7 +378,7 @@ public struct SettingsPageView: View {
             store.showToast("设置已保存")
         } catch {
             store.report(error)
-            if error.localizedDescription.contains("409") {
+            if (error as? RustBridgeError)?.failure.status == 409 {
                 barkConflict = true
             }
         }

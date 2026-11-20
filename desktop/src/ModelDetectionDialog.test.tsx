@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { BridgeError } from "./bridgeError";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -163,12 +164,12 @@ describe("scheduled model detection", () => {
       model_source: "account",
       global_model_id: "gpt-6-sol",
     };
-    let error = "";
+    let error: Error | undefined;
     let finish: ((value: unknown) => void) | undefined;
     vi.mocked(api).mockImplementation(async (_method, path) => {
       if (path.endsWith("/model-detection")) return detection as never;
       if (path.endsWith("refresh=true")) {
-        if (error) throw new Error(error);
+        if (error) throw error;
         return new Promise((resolve) => {
           finish = resolve;
         }) as never;
@@ -196,13 +197,17 @@ describe("scheduled model detection", () => {
     expect(select.value).toBe("gpt-6-luna");
     await act(async () => finish!(models));
     expect(refresh.disabled).toBe(false);
-    error = "目录暂不可用";
+    error = new Error("目录暂不可用");
     await act(async () => refresh.click());
     expect(select.value).toBe("gpt-6-luna");
     expect(select.disabled).toBe(false);
     expect(select.textContent).toContain("GPT-6 Sol");
-    expect(container.textContent).toContain(error);
-    error = "上游授权失效 [http_401]";
+    expect(container.textContent).toContain(error.message);
+    error = new BridgeError({
+      code: "model_directory_revoked",
+      status: 502,
+      message: "上游授权失效",
+    });
     await act(async () => refresh.click());
     expect(select.value).toBe("gpt-6-luna");
     expect(select.disabled).toBe(true);

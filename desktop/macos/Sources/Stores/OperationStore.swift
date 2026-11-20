@@ -157,7 +157,7 @@ public final class OperationStore {
             body: .object(body)
         )
         guard epoch == currentEpoch else {
-            throw RustBridgeError("连接已切换；请求保留在原连接")
+            throw RustBridgeError.connectionChanged
         }
         publish(job)
         return job
@@ -173,7 +173,7 @@ public final class OperationStore {
         var after = 0
         while true {
             guard epoch == currentEpoch else {
-                throw RustBridgeError("连接已切换；请求保留在原连接")
+                throw RustBridgeError.connectionChanged
             }
             if let onEvent {
                 for event in job.events ?? [] {
@@ -210,12 +210,12 @@ public final class OperationStore {
             }
             try await Task.sleep(for: .milliseconds(500))
             guard epoch == currentEpoch else {
-                throw RustBridgeError("连接已切换；请求保留在原连接")
+                throw RustBridgeError.connectionChanged
             }
             let suffix = onEvent != nil ? "?after_event=\(after)" : ""
             let next: Operation = try await RustBridge.shared.api("GET", "/account-operations/\(job.id)\(suffix)")
             guard epoch == currentEpoch else {
-                throw RustBridgeError("连接已切换；请求保留在原连接")
+                throw RustBridgeError.connectionChanged
             }
             job = next
             if rows.contains(where: { $0.id == job.id }) {
@@ -263,7 +263,7 @@ public final class OperationStore {
             ])
         )
         guard epoch == currentEpoch else {
-            throw RustBridgeError("连接已切换；请求保留在原连接")
+            throw RustBridgeError.connectionChanged
         }
         let batchIds = Set(batch.items.map(\.id))
         setOperations(batch.items + rows.filter { !batchIds.contains($0.id) })
@@ -280,14 +280,14 @@ public final class OperationStore {
         while !current.items.allSatisfy({ Self.isTerminal($0.status) }) {
             try await Task.sleep(for: .milliseconds(600))
             guard epoch == currentEpoch else {
-                throw RustBridgeError("连接已切换；请求保留在原连接")
+                throw RustBridgeError.connectionChanged
             }
             let envelope: OperationListEnvelope = try await RustBridge.shared.api(
                 "GET",
                 "/account-operations?batch_id=\(current.batch_id)"
             )
             guard epoch == currentEpoch else {
-                throw RustBridgeError("连接已切换；请求保留在原连接")
+                throw RustBridgeError.connectionChanged
             }
             let remaining = envelope.items.filter { !Self.isTerminal($0.status) }.count
             current = OperationBatch(batch_id: current.batch_id, items: envelope.items, pending: remaining)

@@ -1,6 +1,6 @@
 import SwiftUI
 
-private struct AccountTemplatesConfig: Decodable, Sendable, Equatable {
+struct AccountTemplatesConfig: Decodable, Sendable, Equatable {
     var version: String
     var configured: Bool
     var templates: [String: AccountModelProfile]
@@ -13,7 +13,7 @@ private struct AccountTemplatesConfig: Decodable, Sendable, Equatable {
     }
 }
 
-private struct AccountTemplateTargetPreview: Decodable, Sendable {
+struct AccountTemplateTargetPreview: Decodable, Sendable {
     var account: AccountEntry?
 
     struct AccountEntry: Decodable, Sendable, Equatable {
@@ -26,7 +26,7 @@ private struct AccountTemplateTargetPreview: Decodable, Sendable {
     }
 }
 
-private struct TemplateDraft: Sendable, Equatable {
+struct TemplateDraft: Sendable, Equatable {
     var name: String
     var profile: AccountModelProfile
 }
@@ -37,20 +37,20 @@ public struct AccountTemplatesSheet: View {
     public let targetAccounts: [Account]?
     public let onClose: () -> Void
 
-    @State private var saved: AccountTemplatesConfig?
-    @State private var drafts: [String: TemplateDraft] = [:]
-    @State private var creating: TemplateDraft?
-    @State private var deleteId: String?
-    @State private var selectedTemplateId: String = ""
+    @State var saved: AccountTemplatesConfig?
+    @State var drafts: [String: TemplateDraft] = [:]
+    @State var creating: TemplateDraft?
+    @State var deleteId: String?
+    @State var selectedTemplateId: String = ""
     @State private var selectedAccountId: Int = 0
-    @State private var accountConfigs: [Int: AccountTemplateTargetPreview.AccountEntry] = [:]
-    @State private var accountErrors: [Int: String] = [:]
-    @State private var batch: OperationBatch?
-    @State private var batchError: String = ""
-    @State private var pendingSignature: String = ""
-    @State private var pendingRequestId: String = ""
-    @State private var busy: Bool = false
-    @State private var error: String = ""
+    @State var accountConfigs: [Int: AccountTemplateTargetPreview.AccountEntry] = [:]
+    @State var accountErrors: [Int: String] = [:]
+    @State var batch: OperationBatch?
+    @State var batchError: String = ""
+    @State var pendingSignature: String = ""
+    @State var pendingRequestId: String = ""
+    @State var busy: Bool = false
+    @State var error: String = ""
     @State private var confirmDiscard: Bool = false
 
     public init(
@@ -72,7 +72,7 @@ public struct AccountTemplatesSheet: View {
         store.accounts.filter { $0.platform == "openai" && ["oauth", "apikey"].contains($0.type) }
     }
 
-    private var targetIds: [Int] {
+    var targetIds: [Int] {
         if let targetAccounts {
             var seen = Set<Int>()
             return targetAccounts.map(\.id).filter { seen.insert($0).inserted }
@@ -80,7 +80,7 @@ public struct AccountTemplatesSheet: View {
         return selectedAccountId > 0 ? [selectedAccountId] : []
     }
 
-    private var targetKey: String {
+    var targetKey: String {
         targetIds.map(String.init).joined(separator: ",")
     }
 
@@ -101,7 +101,7 @@ public struct AccountTemplatesSheet: View {
         batch?.items.contains { ["queued", "running", "checking"].contains($0.status) } ?? false
     }
 
-    private var readyToApply: Bool {
+    var readyToApply: Bool {
         !targetIds.isEmpty
             && targetIds.allSatisfy { accountConfigs[$0] != nil }
             && targetIds.contains { id in
@@ -656,7 +656,7 @@ public struct AccountTemplatesSheet: View {
         onClose()
     }
 
-    private func resetDrafts(from value: AccountTemplatesConfig) {
+    func resetDrafts(from value: AccountTemplatesConfig) {
         var map: [String: TemplateDraft] = [:]
         for id in value.template_order {
             if let meta = value.template_meta[id], let prof = value.templates[id] {
@@ -666,142 +666,6 @@ public struct AccountTemplatesSheet: View {
         drafts = map
         if value.templates[selectedTemplateId] == nil {
             selectedTemplateId = value.template_order.first ?? ""
-        }
-    }
-
-    private func reloadAll() async {
-        await loadConfig()
-        await readAccountPreviews()
-    }
-
-    private func loadConfig() async {
-        guard store.state.online else { return }
-        busy = true
-        error = ""
-        defer { busy = false }
-        do {
-            let loaded: AccountTemplatesConfig = try await RustBridge.shared.api("GET", "/account-templates")
-            saved = loaded
-            resetDrafts(from: loaded)
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-
-    private func readAccountPreviews() async {
-        guard store.state.online else { return }
-        var nextConfigs: [Int: AccountTemplateTargetPreview.AccountEntry] = [:]
-        var nextErrors: [Int: String] = [:]
-        for id in targetIds {
-            do {
-                let res: AccountTemplateTargetPreview = try await RustBridge.shared.api("GET", "/account-templates?account_id=\(id)")
-                if let entry = res.account {
-                    nextConfigs[id] = entry
-                } else {
-                    nextErrors[id] = "账号配置读取失败"
-                }
-            } catch {
-                nextErrors[id] = error.localizedDescription
-            }
-        }
-        accountConfigs = nextConfigs
-        accountErrors = nextErrors
-    }
-
-    private func mutateTemplate(method: String, id: String?) async {
-        guard let currentSaved = saved, !busy, store.state.online else { return }
-        let draftValue = id.flatMap { drafts[$0] } ?? creating
-        if method != "DELETE" {
-            let trimmedName = draftValue?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if trimmedName.isEmpty || trimmedName.count > 40 {
-                error = "模板名称需为 1–40 个字符"
-                return
-            }
-            if let prof = draftValue?.profile {
-                let invalid = AccountModelProfile.validate(prof)
-                if !invalid.isEmpty {
-                    error = invalid
-                    return
-                }
-            }
-        }
-        busy = true
-        error = ""
-        defer { busy = false }
-        var payload: [String: JSONValue] = [
-            "expected_version": .string(currentSaved.version),
-        ]
-        if method != "DELETE", let draftValue {
-            payload["name"] = .string(draftValue.name.trimmingCharacters(in: .whitespacesAndNewlines))
-            payload["whitelist"] = .array(draftValue.profile.whitelist.map(JSONValue.string))
-            payload["mappings"] = .array(draftValue.profile.mappings.map {
-                .object(["source": .string($0.source), "target": .string($0.target)])
-            })
-        }
-        do {
-            let path = id.map { "/account-templates/\($0)" } ?? "/account-templates"
-            let updated: AccountTemplatesConfig = try await RustBridge.shared.api(method, path, body: .object(payload))
-            let previousIds = Set(currentSaved.template_order)
-            saved = updated
-            resetDrafts(from: updated)
-            if method == "POST" {
-                if let createdId = updated.template_order.first(where: { !previousIds.contains($0) }) {
-                    selectedTemplateId = createdId
-                }
-                creating = nil
-            }
-            if method == "DELETE" {
-                deleteId = nil
-            }
-            store.showToast(method == "DELETE" ? "模板已删除" : "模板已保存")
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-
-    private func applySelectedTemplate(saved: AccountTemplatesConfig) async {
-        guard !busy, store.state.online, readyToApply, !selectedTemplateId.isEmpty else { return }
-        busy = true
-        error = ""
-        batchError = ""
-        defer { busy = false }
-
-        let tplVer = saved.template_versions?[selectedTemplateId] ?? saved.version
-        let accountsPayload: [JSONValue] = targetIds.compactMap { id in
-            guard let cfg = accountConfigs[id] else { return nil }
-            return .object([
-                "account_id": .int(Int64(id)),
-                "expected_version": .string(cfg.version),
-            ])
-        }
-        let clientClean = store.operations.clientId().replacingOccurrences(of: "-", with: "")
-        let sig = "\(selectedTemplateId):\(tplVer):\(targetKey)"
-        if pendingSignature != sig || pendingRequestId.isEmpty {
-            pendingSignature = sig
-            pendingRequestId = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
-        }
-
-        let body: JSONValue = .object([
-            "template_id": .string(selectedTemplateId),
-            "template_version": .string(tplVer),
-            "accounts": .array(accountsPayload),
-            "client_id": .string(clientClean),
-            "request_id": .string(pendingRequestId),
-        ])
-
-        do {
-            let initialBatch: OperationBatch = try await RustBridge.shared.api("POST", "/account-templates/apply", body: body)
-            batch = initialBatch
-            let finalBatch = try await store.operations.followBatch(initial: initialBatch) { updated in
-                batch = updated
-            }
-            store.refresh()
-            if !finalBatch.items.isEmpty && finalBatch.items.allSatisfy({ $0.status == "completed" }) {
-                store.showToast("模板已应用")
-                onClose()
-            }
-        } catch {
-            self.error = error.localizedDescription
         }
     }
 }

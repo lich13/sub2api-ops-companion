@@ -471,3 +471,41 @@ pub fn prepare(
     }
     Ok((output, config))
 }
+
+#[cfg(test)]
+mod structured_config_fixtures {
+    use super::*;
+    #[test]
+    fn host_reads_and_writes_the_same_values_as_both_editors() {
+        let cases: Value =
+            serde_json::from_str(include_str!("../../tests/contracts/structured-config.json"))
+                .unwrap();
+        let document = |input: &str| {
+            format!(
+                "field:\n{}\n",
+                input
+                    .lines()
+                    .map(|s| format!("  {s}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
+        };
+        for sample in cases["valid"].as_array().unwrap() {
+            let value = parse_yaml(document(sample["text"].as_str().unwrap()).as_bytes()).unwrap();
+            assert_eq!(value["field"], sample["value"]);
+            assert_eq!(
+                parse_yaml(yaml_serde::to_string(&value).unwrap().as_bytes()).unwrap(),
+                value
+            );
+        }
+        for invalid in cases["invalid"].as_array().unwrap() {
+            assert_eq!(
+                parse_yaml(document(invalid.as_str().unwrap()).as_bytes())
+                    .unwrap_err()
+                    .status
+                    .as_u16(),
+                422
+            );
+        }
+    }
+}

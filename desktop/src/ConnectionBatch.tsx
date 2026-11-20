@@ -1,3 +1,4 @@
+import { useEffectEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, RefreshCw, Square, X } from "lucide-react";
 import { api, command } from "./bridge";
@@ -114,8 +115,8 @@ export function useConnectionBatch({
       ? batch.batch_id
       : null;
   useEffect(() => {
-    ++generation.current;
-    ++revision.current;
+    generation.current = generation.current + 1;
+    revision.current = revision.current + 1;
     guard.current = false;
     focusTarget.current = null;
     deadline.current = null;
@@ -130,8 +131,8 @@ export function useConnectionBatch({
     setStopping(false);
     setError(saved.request ? "上次提交结果未确认，请恢复提交结果" : "");
     return () => {
-      ++generation.current;
-      ++revision.current;
+      generation.current = generation.current + 1;
+      revision.current = revision.current + 1;
     };
   }, [connectionKey, key]);
   useEffect(() => {
@@ -197,7 +198,16 @@ export function useConnectionBatch({
       alive = false;
       clearTimeout(timer);
     };
-  }, [connectionKey, batchId, terminalId, online, active, refresh, view.scope]);
+  }, [
+    connectionKey,
+    batchId,
+    terminalId,
+    online,
+    active,
+    refresh,
+    view.scope,
+    key,
+  ]);
 
   async function send(request: Submission) {
     if (!online || guard.current) return;
@@ -205,7 +215,7 @@ export function useConnectionBatch({
     setStarting(true);
     setError("");
     const token = generation.current;
-    ++revision.current;
+    revision.current = revision.current + 1;
     try {
       remember(key, { request, visible: visibility.current });
       submission.current = request;
@@ -286,6 +296,7 @@ export function useConnectionBatch({
       /* Closing a result must remain possible when storage is unavailable. */
     }
   }
+  const closeAfterDelay = useEffectEvent(close);
   useEffect(() => {
     if (!terminalId || !visible || starting || submission.current || error)
       return;
@@ -298,7 +309,7 @@ export function useConnectionBatch({
         deadline.current?.id === terminalId &&
         Date.now() >= deadline.current.at
       )
-        close(true);
+        closeAfterDelay(true);
     };
     const timer = setTimeout(
       expire,
@@ -316,7 +327,7 @@ export function useConnectionBatch({
   async function stop() {
     if (!online || !batchId || stopping) return;
     const token = generation.current;
-    ++revision.current;
+    revision.current = revision.current + 1;
     setStopping(true);
     setError("");
     try {

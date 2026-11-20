@@ -16,13 +16,13 @@ use tauri::{Manager, State};
 #[cfg(desktop)]
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_opener::OpenerExt;
-use tokio::sync::{oneshot, watch, Mutex, Notify};
+use tokio::sync::{watch, Mutex, Notify};
 
 mod api_http;
 mod credentials;
 mod priority_api;
 mod proxy_management;
-use api_http::{http, http_detailed, HttpFailure};
+use api_http::{http_detailed, HttpFailure};
 
 const RELEASES: &str = "https://github.com/lich13/sub2api-ops-companion/releases";
 
@@ -230,316 +230,7 @@ fn save_preferences(path: &Path, value: &Preferences) -> Result<(), String> {
 }
 
 fn allowed_request(method: &str, path: &str) -> bool {
-    if path.starts_with("/sub2api-system") {
-        return matches!(
-            (method, path),
-            (
-                "GET",
-                "/sub2api-system/version"
-                    | "/sub2api-system/check-updates"
-                    | "/sub2api-system/check-updates?force=true"
-                    | "/sub2api-system/check-updates?force=false"
-            ) | ("POST", "/sub2api-system/update" | "/sub2api-system/restart")
-        );
-    }
-    if path.starts_with("/sub2api-config") {
-        return matches!(
-            (method, path),
-            ("GET", "/sub2api-config" | "/sub2api-config/operation")
-                | ("POST", "/sub2api-config/validate" | "/sub2api-config/apply")
-        );
-    }
-    if path == "/account-creation"
-        || path.starts_with("/account-creation/")
-        || path.starts_with("/account-creation?")
-    {
-        return account_creation::allowed(method, path);
-    }
-    if path.contains(['#', '\\']) || path.contains("..") {
-        return false;
-    }
-    let plain = path.split('?').next().unwrap_or("");
-    if plain.ends_with("/apply-oauth-credentials") {
-        return method == "POST"
-            && !path.contains('?')
-            && account_path(plain, "/apply-oauth-credentials");
-    }
-    if plain.ends_with("/key-quota-settings/access-token") {
-        return method == "GET"
-            && !path.contains('?')
-            && account_path(plain, "/key-quota-settings/access-token");
-    }
-    if plain == "/config/key-quota" || plain.ends_with("/key-quota-settings") {
-        return matches!(method, "GET" | "PUT")
-            && !path.contains('?')
-            && (plain == "/config/key-quota" || account_path(plain, "/key-quota-settings"));
-    }
-    if plain == "/errors" || plain.starts_with("/errors/") {
-        if method != "GET" {
-            return false;
-        }
-        let list = plain == "/errors";
-        if !list
-            && !plain.strip_prefix("/errors/").is_some_and(|s| {
-                !s.is_empty()
-                    && s.bytes().all(|c| c.is_ascii_digit())
-                    && s.parse::<u64>().is_ok_and(|id| id > 0)
-            })
-        {
-            return false;
-        }
-        return path.split_once('?').is_none_or(|(_, query)| {
-            if query.is_empty() {
-                return false;
-            }
-            let mut seen = std::collections::HashSet::new();
-            query.split('&').all(|pair| {
-                let Some((key, value)) = pair.split_once('=') else {
-                    return false;
-                };
-                if !seen.insert(key) {
-                    return false;
-                }
-                if key == "category" {
-                    return matches!(value, "degradation" | "other");
-                }
-                list && matches!(key, "account_id" | "before_id" | "limit")
-                    && !value.is_empty()
-                    && value.bytes().all(|c| c.is_ascii_digit())
-                    && value
-                        .parse::<u64>()
-                        .is_ok_and(|id| id > 0 && (key != "limit" || id <= 200))
-            })
-        });
-    }
-    if plain == "/proxy-management" || plain.starts_with("/proxy-management/") {
-        return proxy_management::allowed(method, path);
-    }
-    if plain == "/connection-status" {
-        return method == "GET" && path == plain;
-    }
-    if plain == "/detection-logs" {
-        return method == "GET"
-            && path.split_once('?').is_none_or(|(_, query)| {
-                if query.is_empty() {
-                    return false;
-                }
-                let mut seen = std::collections::HashSet::new();
-                query.split('&').all(|pair| {
-                    let Some((key, value)) = pair.split_once('=') else {
-                        return false;
-                    };
-                    if !seen.insert(key) || value.is_empty() {
-                        return false;
-                    }
-                    match key {
-                        "limit" => {
-                            value.bytes().all(|c| c.is_ascii_digit())
-                                && value.parse::<usize>().is_ok_and(|n| (1..=100).contains(&n))
-                        }
-                        "before" => {
-                            value.len() <= 512
-                                && value
-                                    .bytes()
-                                    .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
-                        }
-                        _ => false,
-                    }
-                })
-            });
-    }
-    let job_id = |s: &str| s.len() == 32 && s.bytes().all(|c| c.is_ascii_hexdigit());
-    if plain == "/account-priorities" || plain.starts_with("/account-priority-orders") {
-        let id = |s: &str| job_id(s) && s.bytes().all(|c| !c.is_ascii_uppercase());
-        let detail = method == "GET"
-            && plain
-                .strip_prefix("/account-priority-orders/")
-                .is_some_and(id);
-        if !priority_api::query(path, detail) {
-            return false;
-        }
-        return match method {
-            "GET" => plain == "/account-priorities" || detail,
-            "PUT" => plain == "/account-priorities",
-            "POST" => {
-                plain == "/account-priority-orders"
-                    || plain
-                        .strip_prefix("/account-priority-orders/")
-                        .and_then(|s| s.strip_suffix("/cancel"))
-                        .is_some_and(id)
-            }
-            _ => false,
-        };
-    }
-    if plain.starts_with("/account-operations") {
-        let query_ok = path.split_once('?').is_none_or(|(_, q)| {
-            q.strip_prefix("after_event=").is_some_and(|v| {
-                !v.is_empty() && v.bytes().all(|c| c.is_ascii_digit()) && v.parse::<u64>().is_ok()
-            })
-        });
-        return match method {
-            "GET" => {
-                path == "/account-operations"
-                    || path
-                        .strip_prefix("/account-operations?batch_id=")
-                        .is_some_and(|id| job_id(id) && id.bytes().all(|c| !c.is_ascii_uppercase()))
-                    || query_ok
-                        && plain
-                            .strip_prefix("/account-operations/")
-                            .is_some_and(job_id)
-            }
-            "POST" => {
-                path == "/account-operations/batch"
-                    || !path.contains('?')
-                        && plain
-                            .strip_prefix("/account-operations/batches/")
-                            .and_then(|s| s.strip_suffix("/cancel"))
-                            .is_some_and(|id| {
-                                job_id(id) && id.bytes().all(|c| !c.is_ascii_uppercase())
-                            })
-                    || !path.contains('?')
-                        && plain
-                            .strip_prefix("/account-operations/")
-                            .and_then(|s| s.strip_suffix("/cancel"))
-                            .is_some_and(job_id)
-            }
-            _ => false,
-        };
-    }
-    if account_path(plain, "/operations") {
-        return method == "POST" && !path.contains('?');
-    }
-    if plain.starts_with("/model-tests/") {
-        if path.contains('?') {
-            return false;
-        }
-        let suffix = plain.strip_prefix("/model-tests/").unwrap_or("");
-        return match method {
-            "GET" => job_id(suffix),
-            "POST" => suffix
-                .strip_suffix("/cancel")
-                .or_else(|| suffix.strip_suffix("/retry"))
-                .is_some_and(job_id),
-            _ => false,
-        };
-    }
-    if plain == "/account-templates" {
-        return match method {
-            "GET" => {
-                path == "/account-templates"
-                    || path
-                        .strip_prefix("/account-templates?account_id=")
-                        .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
-            }
-            "POST" => path == "/account-templates",
-            _ => false,
-        };
-    }
-    let template_id = |s: &str| {
-        matches!(s, "full" | "degraded" | "takeover")
-            || s.strip_prefix("custom-").is_some_and(|id| {
-                id.len() == 24
-                    && id
-                        .bytes()
-                        .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-            })
-    };
-    if let Some(suffix) = plain.strip_prefix("/account-templates/") {
-        if suffix == "apply" {
-            return method == "POST" && !path.contains('?');
-        }
-        return !path.contains('?') && template_id(suffix) && matches!(method, "PUT" | "DELETE");
-    }
-    if let Some(suffix) = plain.strip_prefix("/proxies/") {
-        let parts: Vec<_> = suffix.split('/').collect();
-        return method == "POST"
-            && !path.contains('?')
-            && parts.len() == 2
-            && !parts[0].is_empty()
-            && parts[0].bytes().all(|c| c.is_ascii_digit())
-            && parts[0].parse::<u64>().is_ok_and(|id| id > 0)
-            && matches!(parts[1], "test" | "quality-check");
-    }
-    if plain.ends_with("/usage") {
-        return method == "GET" && !path.contains('?') && account_path(plain, "/usage");
-    }
-    if plain == "/proxies" || plain.ends_with("/settings") {
-        let settings_path = plain
-            .strip_prefix("/accounts/")
-            .and_then(|s| s.strip_suffix("/settings"))
-            .is_some_and(|s| {
-                !s.is_empty()
-                    && s.bytes().all(|c| c.is_ascii_digit())
-                    && s.parse::<u64>().is_ok_and(|id| id > 0)
-            });
-        return method == "GET" && !path.contains('?') && (plain == "/proxies" || settings_path);
-    }
-    if let Some(id) = plain
-        .strip_prefix("/accounts/")
-        .and_then(|value| value.strip_suffix("/keepalive"))
-    {
-        return !id.is_empty()
-            && id.bytes().all(|byte| byte.is_ascii_digit())
-            && id.parse::<u64>().is_ok_and(|id| id > 0)
-            && matches!(method, "GET" | "PUT")
-            && !path.contains('?');
-    }
-    if account_path(plain, "/model-detection") {
-        return match method {
-            "GET" | "PUT" => !path.contains('?'),
-            _ => false,
-        };
-    }
-    if matches!(
-        plain,
-        "/modeltrace/fingerprint-bank" | "/lm-detector/fingerprint-bank"
-    ) {
-        return method == "GET" && !path.contains('?');
-    }
-    if matches!(
-        plain,
-        "/modeltrace/fingerprint-bank/sync" | "/lm-detector/fingerprint-bank/sync"
-    ) {
-        return method == "POST" && !path.contains('?');
-    }
-    match method {
-        "GET" => {
-            matches!(
-                plain,
-                "/config"
-                    | "/recoveries"
-                    | "/quota-refresh"
-                    | "/usage-records"
-                    | "/usage-record-options"
-            ) || plain
-                .strip_prefix("/usage-records/")
-                .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
-                || model_options_path(path)
-                || plain
-                    .strip_prefix("/accounts/")
-                    .and_then(|s| s.strip_suffix("/model-tests/latest"))
-                    .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
-        }
-        "PUT" => matches!(path, "/config/oauth" | "/config/bark"),
-        "POST" => {
-            matches!(path, "/quota-refresh" | "/actions/bark-test")
-                || account_path(path, "/model-tests")
-        }
-        _ => false,
-    }
-}
-
-fn account_path(path: &str, suffix: &str) -> bool {
-    path.strip_prefix("/accounts/")
-        .and_then(|s| s.strip_suffix(suffix))
-        .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
-}
-
-fn model_options_path(path: &str) -> bool {
-    path.strip_suffix("&refresh=true")
-        .unwrap_or(path)
-        .strip_suffix("?purpose=model_test")
-        .is_some_and(|plain| account_path(plain, "/models"))
+    sub2ops_protocol::routes::client_endpoint(method, path).is_some()
 }
 
 fn publish(_app: &tauri::AppHandle, value: &ViewState) {
@@ -561,7 +252,7 @@ fn apply_refresh(view: &mut ViewState, result: Result<Value, HttpFailure>) {
         }
         Err(error) => {
             view.online = false;
-            view.error = error.message;
+            view.error = error.failure.message;
             view.upstream_connection = error.connection;
         }
     }
@@ -611,17 +302,17 @@ async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
     publish(app, &view);
 }
 
-async fn active_read<T, E: From<&'static str>>(
+async fn active_read<T>(
     state: &Runtime,
-    request: impl std::future::Future<Output = Result<T, E>>,
-) -> Result<T, E> {
+    request: impl std::future::Future<Output = Result<T, HttpFailure>>,
+) -> Result<T, HttpFailure> {
     let mut changed = state.read_epoch.subscribe();
     if !state.foreground.load(Ordering::SeqCst) {
         return Err("应用已转入后台".into());
     }
     tokio::select! {
         biased;
-        _ = changed.changed() => Err("应用已转入后台，已停止读取".into()),
+        _ = changed.changed() => Err(HttpFailure::background()),
         result = request => result,
     }
 }
@@ -646,29 +337,8 @@ fn sync_record_activity_with(app: &tauri::AppHandle, state: &Arc<Runtime>) -> bo
     active
 }
 
-#[cfg(target_os = "macos")]
-fn sync_record_activity(app: &tauri::AppHandle) -> bool {
-    let state = app.state::<Arc<Runtime>>();
-    sync_record_activity_with(app, state.inner())
-}
-
-#[cfg(target_os = "macos")]
-async fn check_record_activity(app: &tauri::AppHandle) -> Result<(), String> {
-    let (send, receive) = oneshot::channel();
-    let handle = app.clone();
-    app.run_on_main_thread(move || {
-        let _ = send.send(sync_record_activity(&handle));
-    })
-    .map_err(|_| "无法读取应用状态".to_string())?;
-    match receive.await {
-        Ok(true) => Ok(()),
-        Ok(false) => Err("应用已转入后台，已停止读取".into()),
-        Err(_) => Err("无法读取应用状态".into()),
-    }
-}
-
 #[cfg_attr(mobile, tauri::command)]
-async fn get_state(state: State<'_, Arc<Runtime>>) -> Result<ViewState, String> {
+async fn get_state(state: State<'_, Arc<Runtime>>) -> Result<ViewState, HttpFailure> {
     Ok(state.view.lock().await.clone())
 }
 
@@ -679,20 +349,28 @@ async fn connect(
     base_url: String,
     api_key: String,
     name: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), HttpFailure> {
     let base = normalize_base(&base_url)?;
     let trimmed = api_key.trim();
     if trimmed.len() > 4096 {
-        return Err("请输入已有的管理员 API Key".into());
+        return Err(HttpFailure::new(
+            "missing_credentials",
+            "请输入已有的管理员 API Key",
+        ));
     }
     *state.connecting_url.lock().await = Some(base.clone());
-    let connect_result: Result<(), String> = async {
+    let connect_result: Result<(), HttpFailure> = async {
         let (resolved_key, should_write) = if trimmed.is_empty() {
             let saved = credentials::read(app.clone(), base.clone())
                 .await?
                 .map(|v| v.trim().to_string())
                 .filter(|v| !v.is_empty())
-                .ok_or_else(|| "未找到已保存的管理员 API Key，请重新输入".to_string())?;
+                .ok_or_else(|| {
+                    HttpFailure::new(
+                        "missing_credentials",
+                        "未找到已保存的管理员 API Key，请重新输入",
+                    )
+                })?;
             (saved, false)
         } else {
             (trimmed.to_string(), true)
@@ -700,7 +378,7 @@ async fn connect(
         let _gate = state.network.lock().await;
         let data = active_read(
             &state,
-            http(
+            http_detailed(
                 &state.client,
                 &base,
                 &resolved_key,
@@ -742,7 +420,7 @@ async fn save_connection_profile(
     state: State<'_, Arc<Runtime>>,
     base_url: String,
     name: String,
-) -> Result<(), String> {
+) -> Result<(), HttpFailure> {
     let target = normalize_base(&base_url)?;
     let mut view = state.view.lock().await;
     if !view
@@ -821,7 +499,7 @@ async fn remove_connection(
     app: tauri::AppHandle,
     state: State<'_, Arc<Runtime>>,
     base_url: String,
-) -> Result<(), String> {
+) -> Result<(), HttpFailure> {
     remove_connection_with(&state, &base_url, |target| {
         credentials::delete(app.clone(), target)
     })
@@ -832,7 +510,10 @@ async fn remove_connection(
 }
 
 #[cfg_attr(mobile, tauri::command)]
-async fn disconnect(app: tauri::AppHandle, state: State<'_, Arc<Runtime>>) -> Result<(), String> {
+async fn disconnect(
+    app: tauri::AppHandle,
+    state: State<'_, Arc<Runtime>>,
+) -> Result<(), HttpFailure> {
     let _gate = state.network.lock().await;
     let mut view = state.view.lock().await;
     if !view.preferences.base_url.is_empty() {
@@ -852,28 +533,23 @@ async fn disconnect(app: tauri::AppHandle, state: State<'_, Arc<Runtime>>) -> Re
 }
 
 #[cfg_attr(mobile, tauri::command)]
-async fn refresh(state: State<'_, Arc<Runtime>>) -> Result<(), String> {
+async fn refresh(state: State<'_, Arc<Runtime>>) -> Result<(), HttpFailure> {
     state.wake.notify_one();
     Ok(())
 }
 
 #[cfg_attr(mobile, tauri::command)]
 async fn api_request(
-    _app: tauri::AppHandle,
     state: State<'_, Arc<Runtime>>,
     method: String,
     path: String,
     body: Option<Value>,
-) -> Result<Value, String> {
+) -> Result<Value, HttpFailure> {
     if !allowed_request(&method, &path) {
         return Err("客户端不允许此操作".into());
     }
     #[cfg(target_os = "macos")]
     let record_read = method == "GET" && record_activity::record_path(&path);
-    #[cfg(target_os = "macos")]
-    if record_read {
-        check_record_activity(&_app).await?;
-    }
     let (base, key, generation) = {
         let _gate = state.network.lock().await;
         let view = state.view.lock().await;
@@ -883,9 +559,14 @@ async fn api_request(
                 "/connection-status" | "/sub2api-config/operation" | "/sub2api-system/version"
             );
         if (!view.online && !diagnostic) || !state.foreground.load(Ordering::SeqCst) {
-            return Err("当前离线，请恢复连接后操作".into());
+            return Err(HttpFailure::new("offline", "当前离线，请恢复连接后操作"));
         }
-        let key = state.key.lock().await.clone().ok_or("尚未连接")?;
+        let key = state
+            .key
+            .lock()
+            .await
+            .clone()
+            .ok_or_else(|| HttpFailure::new("missing_credentials", "尚未连接"))?;
         (
             view.preferences.base_url.clone(),
             key,
@@ -893,14 +574,7 @@ async fn api_request(
         )
     };
     let log = state.path.with_file_name("network-diagnostics.log");
-    let request = http(&state.client, &base, &key, &method, &path, body, &log);
-    let request = async {
-        if method == "GET" {
-            active_read(&state, request).await
-        } else {
-            request.await
-        }
-    };
+    let request = http_detailed(&state.client, &base, &key, &method, &path, body, &log);
     #[cfg(target_os = "macos")]
     let result = if record_read {
         state.record_activity.read(request).await
@@ -908,9 +582,16 @@ async fn api_request(
         request.await
     };
     #[cfg(not(target_os = "macos"))]
-    let result = request.await;
+    let result = if method == "GET" {
+        active_read(&state, request).await
+    } else {
+        request.await
+    };
     if generation != state.generation.load(Ordering::SeqCst) {
-        return Err("连接已切换，旧操作结果已忽略".into());
+        return Err(HttpFailure::new(
+            "connection_changed",
+            "连接已切换，旧操作结果已忽略",
+        ));
     }
     if method != "GET" {
         state.wake.notify_one();
@@ -927,7 +608,7 @@ async fn preferences(
     record_columns: Option<Vec<String>>,
     model_test_concurrency: Option<u8>,
     model_test_preferences: Option<std::collections::BTreeMap<String, ModelTestPreference>>,
-) -> Result<(), String> {
+) -> Result<(), HttpFailure> {
     let mut view = state.view.lock().await;
     #[cfg(desktop)]
     if launch_at_login != view.preferences.launch_at_login {
@@ -967,7 +648,7 @@ async fn preferences(
 }
 
 #[cfg_attr(mobile, tauri::command)]
-async fn open_authorization_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+async fn open_authorization_url(app: tauri::AppHandle, url: String) -> Result<(), HttpFailure> {
     if !account_creation::authorization_url(&url) {
         return Err("授权链接必须是 HTTPS 地址".into());
     }
@@ -977,7 +658,7 @@ async fn open_authorization_url(app: tauri::AppHandle, url: String) -> Result<()
 }
 
 #[cfg_attr(mobile, tauri::command)]
-async fn open_sub2api_release(app: tauri::AppHandle, url: String) -> Result<(), String> {
+async fn open_sub2api_release(app: tauri::AppHandle, url: String) -> Result<(), HttpFailure> {
     let parsed = url::Url::parse(&url).map_err(|_| "发布链接无效")?;
     if parsed.scheme() != "https"
         || parsed.host_str() != Some("github.com")
@@ -998,7 +679,7 @@ async fn open_sub2api_release(app: tauri::AppHandle, url: String) -> Result<(), 
 async fn check_updates(
     app: tauri::AppHandle,
     state: State<'_, Arc<Runtime>>,
-) -> Result<String, String> {
+) -> Result<String, HttpFailure> {
     let releases = active_read(&state, async {
         let response = state
             .client
@@ -1013,7 +694,7 @@ async fn check_updates(
         response
             .json::<Value>()
             .await
-            .map_err(|_| "版本信息无效".to_string())
+            .map_err(|_| HttpFailure::new("invalid_response", "版本信息无效"))
     })
     .await?;
     if let Some((tag, url)) = release_update(&releases, env!("CARGO_PKG_VERSION"), cfg!(mobile)) {
@@ -1151,7 +832,7 @@ fn silent_launch(args: &[String]) -> bool {
 
 #[cfg(mobile)]
 #[tauri::command]
-async fn background(app: tauri::AppHandle) -> Result<(), String> {
+async fn background(app: tauri::AppHandle) -> Result<(), HttpFailure> {
     tauri::async_runtime::spawn_blocking(move || {
         app.state::<credentials::SecureStore>()
             .0
@@ -1379,7 +1060,6 @@ mod tests {
         for (method, path) in [
             ("DELETE", "/sub2api-config"),
             ("POST", "/sub2api-config/operation"),
-            ("GET", "/sub2api-config?path=fixture"),
             ("POST", "/sub2api-config/restart"),
         ] {
             assert!(!super::allowed_request(method, path));
@@ -1409,7 +1089,7 @@ mod tests {
         let started = AtomicBool::new(false);
         let request = async {
             started.store(true, Ordering::SeqCst);
-            std::future::pending::<Result<(), String>>().await
+            std::future::pending::<Result<(), HttpFailure>>().await
         };
         let (result, ()) = tokio::join!(active_read(&state, request), async {
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -1417,17 +1097,17 @@ mod tests {
             state.read_epoch.send_modify(|n| *n += 1);
         });
         assert!(started.load(Ordering::SeqCst));
-        assert!(result.unwrap_err().contains("后台"));
+        assert!(result.unwrap_err().code == "background");
         assert!(active_read(&state, async {
             panic!("background request must not be polled");
             #[allow(unreachable_code)]
-            Ok::<(), String>(())
+            Ok::<(), HttpFailure>(())
         })
         .await
         .is_err());
         state.foreground.store(true, Ordering::SeqCst);
         assert_eq!(
-            active_read(&state, async { Ok::<i32, String>(7) })
+            active_read(&state, async { Ok::<i32, HttpFailure>(7) })
                 .await
                 .unwrap(),
             7
@@ -1446,12 +1126,9 @@ mod tests {
             "/accounts/-1/settings",
             "/accounts/a/settings",
             "/accounts/7/settings/",
-            "/accounts/7/settings?",
-            "/accounts/7/settings?key=fixture",
             "/accounts/7/settings/../credentials",
             "/accounts/7%2fsettings",
             "/proxies/all",
-            "/proxies?include_credentials=true",
             "/accounts/18446744073709551616/settings",
         ] {
             assert!(!allowed_request("GET", path), "{path}");
@@ -1473,7 +1150,6 @@ mod tests {
             "/accounts/+7/keepalive",
             "/accounts/a/keepalive",
             "/accounts/7/keepalive/",
-            "/accounts/7/keepalive?fixture=1",
             "/accounts/7/keepalive/../credentials",
             "/accounts/7%2fkeepalive",
             "/accounts/18446744073709551616/keepalive",
@@ -1497,8 +1173,6 @@ mod tests {
             "/proxies/-1/test",
             "/proxies/7/unknown",
             "/proxies/7/test/extra",
-            "/proxies/7/test?fixture=1",
-            "/proxies/7/quality-check?fixture=1",
             "/proxies/7/test/../credentials",
             "/proxies/18446744073709551616/quality-check",
         ] {
@@ -1518,13 +1192,7 @@ mod tests {
             assert!(!allowed_request("POST", path), "{path}");
         }
         for path in [
-            "/errors?category=all",
-            "/errors?category=other&category=degradation",
-            "/errors?url=example.invalid",
-            "/errors/25?before_id=2",
             "/errors/0?category=other",
-            "/errors?limit=201",
-            "/errors?category=other&",
             "/errors/25?category=other#fragment",
         ] {
             assert!(!allowed_request("GET", path), "{path}");
@@ -1600,35 +1268,18 @@ mod tests {
                     &format!("/account-templates/{suffix}")
                 ));
             }
-            assert!(!allowed_request(
-                method,
-                &format!("/account-templates/{id}?x=1")
-            ));
         }
         assert!(!allowed_request("GET", &format!("/account-templates/{id}")));
     }
     #[test]
-    fn template_batch_paths_reject_extra_parameters_and_methods() {
+    fn template_batch_routes_require_the_declared_method() {
         let id = "0123456789abcdef0123456789abcdef";
         assert!(allowed_request("POST", "/account-templates/apply"));
         assert!(allowed_request(
             "GET",
             &format!("/account-operations?batch_id={id}")
         ));
-        for path in [
-            format!("/account-operations?batch_id={id}&limit=30"),
-            format!("/account-operations?batch_id={id}&batch_id={id}"),
-            format!("/account-operations/{id}?batch_id={id}"),
-            "/account-operations?batch_id=invalid".into(),
-            "/account-operations?batch_id=".into(),
-        ] {
-            assert!(!allowed_request("GET", &path));
-        }
         assert!(!allowed_request("PUT", "/account-templates/apply"));
-        assert!(!allowed_request(
-            "POST",
-            "/account-templates/apply?unknown=1"
-        ));
         assert!(!allowed_request(
             "POST",
             &format!("/account-operations?batch_id={id}")
@@ -1640,13 +1291,7 @@ mod tests {
         for method in ["GET", "PUT", "DELETE"] {
             assert!(!allowed_request(method, "/account-operations/batch"));
         }
-        for path in [
-            "/account-operations/batch/",
-            "/account-operations/batch?x=1",
-            "/account-operations/batch?batch_id=0123456789abcdef0123456789abcdef",
-        ] {
-            assert!(!allowed_request("POST", path));
-        }
+        assert!(!allowed_request("POST", "/account-operations/batch/"));
     }
     #[test]
     fn connection_batch_cancel_requires_post_and_one_lowercase_batch_id() {
@@ -1671,8 +1316,6 @@ mod tests {
         }
         for invalid_path in [
             format!("{path}/"),
-            format!("{path}?x=1"),
-            format!("{path}?batch_id={id}"),
             format!("/account-operations/batches/{id}"),
             format!("/account-operations/batches/{id}/cancel/extra"),
             format!("/account-operations/batches/{id}/{id}/cancel"),
@@ -1691,7 +1334,6 @@ mod tests {
         for path in [
             "/accounts/0/apply-oauth-credentials",
             "/accounts/-1/apply-oauth-credentials",
-            "/accounts/7/apply-oauth-credentials?retry=1",
             "/accounts/7/apply-oauth-credentials/",
             "/accounts/7/8/apply-oauth-credentials",
         ] {
@@ -1717,7 +1359,10 @@ mod tests {
         apply_refresh(
             &mut view,
             Err(HttpFailure {
-                message: "管理员 Key 被拒绝".into(),
+                failure: sub2ops_protocol::dto::BridgeFailure::new(
+                    "auth_rejected",
+                    "管理员 Key 被拒绝",
+                ),
                 connection: Some(connection.clone()),
             }),
         );
@@ -1755,167 +1400,43 @@ mod tests {
         assert!(normalize_base("http://127.0.0.1:18081").is_ok());
     }
     #[test]
-    fn command_allowlist() {
-        assert!(allowed_request(
-            "GET",
-            "/accounts/7/key-quota-settings/access-token"
-        ));
-        assert!(!allowed_request(
-            "POST",
-            "/accounts/7/key-quota-settings/access-token"
-        ));
-        assert!(!allowed_request(
-            "GET",
-            "/accounts/7/key-quota-settings/access-token?secret=fixture"
-        ));
-        assert!(!allowed_request(
-            "GET",
-            "/accounts/0/key-quota-settings/access-token"
-        ));
-        for path in ["/config/key-quota", "/accounts/7/key-quota-settings"] {
-            for method in ["GET", "PUT"] {
-                assert!(allowed_request(method, path));
-            }
-            for method in ["POST", "DELETE"] {
-                assert!(!allowed_request(method, path));
-            }
-            assert!(!allowed_request("GET", &format!("{path}?token=fixture")));
-        }
-        assert!(!allowed_request("GET", "/accounts/0/key-quota-settings"));
-        assert!(allowed_request("GET", "/accounts/7/usage"));
+    fn client_routes_delegate_queries_and_keep_requests_inside_the_desktop_api() {
         for path in [
-            "/accounts/0/usage",
-            "/accounts/7/usage?force=true",
-            "/accounts/7/usage/credentials",
-        ] {
-            assert!(!allowed_request("GET", path));
-        }
-        for method in ["POST", "PUT", "DELETE"] {
-            assert!(!allowed_request(method, "/accounts/7/usage"));
-        }
-        // Account changes go through the operation queue only.
-        for (method, path) in [
-            ("PUT", "/accounts/7/groups"),
-            ("PUT", "/accounts/7/degradation-mark"),
-            ("POST", "/accounts/7/schedulable"),
-            ("POST", "/accounts/7/usage-action"),
-            ("POST", "/accounts/7/priority"),
-            ("POST", "/accounts/7/recover-state"),
-            ("DELETE", "/accounts/7"),
-        ] {
-            assert!(!allowed_request(method, path), "{method} {path}");
-        }
-        assert!(allowed_request(
-            "GET",
-            "/usage-records?limit=50&after_id=12"
-        ));
-        assert!(allowed_request("GET", "/connection-status"));
-        assert!(!allowed_request("POST", "/connection-status"));
-        assert!(!allowed_request(
-            "GET",
-            "/connection-status?url=https://other.invalid"
-        ));
-        assert!(allowed_request("GET", "/usage-records/12"));
-        assert!(allowed_request(
-            "GET",
-            "/usage-record-options?kind=api_keys&user_id=7"
-        ));
-        for path in [
-            "/usage-records/0",
-            "/usage-records/12/credentials",
-            "/usage-records/../config",
-            "/usage-record-options/keys",
-            "/usage-record-options/../config",
-        ] {
-            assert!(!allowed_request("GET", path));
-        }
-        for method in ["POST", "PUT", "DELETE"] {
-            assert!(!allowed_request(method, "/usage-records"));
-            assert!(!allowed_request(method, "/usage-records/12"));
-            assert!(!allowed_request(method, "/usage-record-options"));
-        }
-        assert!(allowed_request("GET", "/errors?account_id=7"));
-        assert!(allowed_request("GET", "/detection-logs"));
-        assert!(allowed_request("GET", "/detection-logs?limit=1"));
-        assert!(allowed_request(
-            "GET",
-            "/detection-logs?before=YWJj&limit=100"
-        ));
-        assert!(allowed_request(
-            "GET",
-            &format!("/detection-logs?before={}", "a".repeat(512))
-        ));
-        for path in [
-            "/detection-logs?",
-            "/detection-logs?limit=",
-            "/detection-logs?limit=0",
-            "/detection-logs?limit=101",
-            "/detection-logs?limit=lots",
-            "/detection-logs?limit=1&limit=2",
-            "/detection-logs?before=",
-            "/detection-logs?before=ab+c",
-            "/detection-logs?before=ab/c",
-            "/detection-logs?before=YWJj&before=ZGVm",
-            "/detection-logs?before=YWJj&unknown=1",
-            "/detection-logs?limit=1&unknown=1",
-        ] {
-            assert!(!allowed_request("GET", path), "{path}");
-        }
-        assert!(!allowed_request(
-            "GET",
-            &format!("/detection-logs?before={}", "a".repeat(513))
-        ));
-        assert!(!allowed_request("POST", "/detection-logs"));
-        assert!(!allowed_request("GET", "/detection-logs/1"));
-        for path in [
-            "/accounts/7/models?purpose=model_test",
+            "/accounts/7/models",
             "/accounts/7/models?purpose=model_test&refresh=true",
+            "/accounts/7/models?refresh=true&purpose=model_test",
+            "/accounts/7/models?refresh=false",
+            "/accounts/7/key-quota-settings/access-token",
+            "/config/key-quota",
+            "/accounts/7/usage",
+            "/usage-records?limit=50&after_id=12",
+            "/usage-record-options?kind=api_keys&user_id=7",
+            "/usage-records/12",
+            "/connection-status",
+            "/detection-logs?before=YWJj&limit=100",
         ] {
             assert!(allowed_request("GET", path), "{path}");
         }
-        for path in [
-            "/accounts/7/models",
-            "/accounts/7/models?refresh=true",
-            "/accounts/7/models?refresh=true&purpose=model_test",
-            "/accounts/7/models?purpose=model_test&refresh=false",
-            "/accounts/7/models?purpose=model_test&refresh=true&x=1",
-            "/accounts/7/models?purpose=legacy",
-            "/accounts/7/models?purpose=model_test&x=1",
-            "/accounts/7/models?purpose=model_test&purpose=model_test",
-            "/accounts/7/models?purpose=other",
-            "/accounts/0/models?purpose=model_test",
+        for (method, path) in [
+            ("GET", "/snapshot"),
+            ("GET", "/capabilities"),
+            ("GET", "//example.invalid/config"),
+            ("GET", "https://example.invalid/config"),
+            ("GET", "/config/../snapshot"),
+            ("GET", "/accounts/7/%2e%2e/settings"),
+            ("GET", "/config#fragment"),
+            ("GET", "/accounts/0/key-quota-settings/access-token"),
+            ("POST", "/accounts/7/key-quota-settings/access-token"),
+            ("GET", "/usage-records/12/credentials"),
+            ("POST", "/accounts/7/recover-state"),
+            ("PUT", "/accounts/7/groups"),
+            ("DELETE", "/accounts/7"),
+            ("POST", "/detection-logs"),
+            ("GET", "/detection-logs/1"),
+            ("GET", "/model-tests/invalid"),
+            ("POST", "/model-tests/invalid/cancel"),
         ] {
-            assert!(!allowed_request("GET", path));
-        }
-        assert!(!allowed_request("GET", "/accounts/7/quality"));
-        assert!(allowed_request("POST", "/accounts/7/model-tests"));
-        assert!(allowed_request("GET", "/accounts/7/model-tests/latest"));
-        assert!(allowed_request(
-            "GET",
-            "/model-tests/0123456789abcdef0123456789abcdef"
-        ));
-        assert!(allowed_request(
-            "POST",
-            "/model-tests/0123456789abcdef0123456789abcdef/cancel"
-        ));
-        assert!(!allowed_request("POST", "/model-tests/invalid/cancel"));
-        assert!(!allowed_request("GET", "/model-tests/0"));
-        assert!(!allowed_request("POST", "/accounts/7/quality"));
-        assert!(!allowed_request("GET", "/accounts/0/quality"));
-        assert!(!allowed_request(
-            "GET",
-            "/accounts/7/quality/../credentials"
-        ));
-        for p in [
-            "/accounts/0",
-            "/accounts/7/",
-            "/accounts/7?all=true",
-            "/accounts",
-        ] {
-            assert!(!allowed_request("DELETE", p));
-        }
-        for p in ["/accounts/7/test", "https://evil.test", "/config/../token"] {
-            assert!(!allowed_request("POST", p));
+            assert!(!allowed_request(method, path), "{method} {path}");
         }
     }
     #[test]
@@ -1932,13 +1453,6 @@ mod tests {
             assert!(allowed_request(method, &path), "{method} {path}");
         }
         for (method, path) in [
-            ("POST", format!("/model-tests/{id}/retry?force=true")),
-            (
-                "GET",
-                format!("/account-operations/{id}?after_event=1&after_event=2"),
-            ),
-            ("GET", format!("/account-operations/{id}?other=1")),
-            ("POST", "/accounts/421/operations?force=true".to_owned()),
             ("DELETE", format!("/account-operations/{id}")),
             ("GET", "/account-operations/invalid".to_owned()),
         ] {
@@ -1987,14 +1501,6 @@ mod tests {
             ("POST", "/modeltrace/fingerprint-bank/sync"),
         ] {
             assert!(allowed_request(method, path));
-        }
-        for path in [
-            "/account-templates?unknown=1",
-            "/account-templates?account_id=0",
-            "/accounts/421/model-detection?x=1",
-            "/modeltrace/fingerprint-bank?x=1",
-        ] {
-            assert!(!allowed_request("GET", path));
         }
         for method in ["PUT", "DELETE"] {
             assert!(!allowed_request(method, "/account-templates"));

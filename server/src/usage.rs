@@ -2,7 +2,7 @@ use crate::{
     compat::{datetime, integer, parse_datetime, string, truthy},
     quota::{nonnegative, usage_windows, window},
 };
-use chrono::{DateTime, Duration, FixedOffset, Timelike, Utc};
+use chrono::{DateTime, Duration, Timelike, Utc};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
@@ -79,7 +79,7 @@ pub fn project(row: &Value, at: DateTime<Utc>, result: &Value) -> Value {
     ) {
         value["branch"] = "apikey".into();
         let midnight = at
-            .with_timezone(&FixedOffset::east_opt(8 * 3600).unwrap())
+            .with_timezone(&crate::settings::BUSINESS_TZ)
             .with_hour(0)
             .unwrap()
             .with_minute(0)

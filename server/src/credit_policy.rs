@@ -216,6 +216,19 @@ impl CreditController {
             }
             admitted = true;
         }
+        self.advance_credit(id, row, task, evidence, at, admitted)
+            .await
+    }
+
+    async fn advance_credit(
+        &self,
+        id: i64,
+        row: Value,
+        mut task: Value,
+        evidence: Value,
+        at: DateTime<Utc>,
+        admitted: bool,
+    ) -> Result<()> {
         let reason = self.guard_reason(id, &row, &task, at)?;
         if !reason.is_empty() {
             self.finish(id, &task, reason, at, &row, true, &Value::Null)
@@ -321,7 +334,7 @@ impl CreditController {
         {
             let changes = evidence
                 .as_object()
-                .unwrap()
+                .ok_or_else(crate::error::Error::invalid)?
                 .iter()
                 .filter(|(key, _)| key.as_str() != "evidence_at")
                 .map(|(k, v)| (k.clone(), v.clone()))
@@ -345,6 +358,17 @@ impl CreditController {
                 .await?;
             return Ok(());
         }
+        self.consume_credit(id, row, task, evidence, at).await
+    }
+
+    async fn consume_credit(
+        &self,
+        id: i64,
+        row: Value,
+        mut task: Value,
+        evidence: Value,
+        at: DateTime<Utc>,
+    ) -> Result<()> {
         if recovery_policy::method(&self.hooks.config()?, id) == Some("model") {
             let result = self
                 .hooks
@@ -390,7 +414,7 @@ impl CreditController {
             }
             return Ok(());
         }
-        let Some(_slot) = self.slots.acquire() else {
+        let Some(_slot) = self.slots.acquire()? else {
             self.bounded_wait(
                 id,
                 &task,

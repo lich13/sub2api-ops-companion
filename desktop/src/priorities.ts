@@ -47,7 +47,6 @@ export type PriorityPlatform = {
 export type PriorityView = {
   platforms: PriorityPlatform[];
   active_task: PriorityTask | null;
-  legacy_last_task: PriorityTask | null;
 };
 export type PrioritySlot = { priority: number; id: number | null };
 export type PriorityDraft = {

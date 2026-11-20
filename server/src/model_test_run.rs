@@ -1,5 +1,4 @@
 use crate::{
-    audit,
     compat::{integer, string, truthy},
     error::{Error, Result},
     model_downgrade::{diagnose_prediction, is_downgrade, valid_report},
@@ -18,6 +17,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+struct CompletedSample {
+    index: usize,
+    started: Instant,
+    diagnostics: Value,
+}
 struct Run {
     groups: Mutex<Vec<Value>>,
     returned: Mutex<BTreeSet<String>>,
@@ -247,7 +251,7 @@ impl ModelTests {
             "completion_reason": reason,
             "automatic_disposition": disposition,
             "groups": groups,
-            "completed_at": crate::compat::now(),
+            "completed_at": crate::compat::datetime((self.clock)()),
             "duration_ms": run.started.elapsed().as_millis(),
             "attempts": run.attempts.load(Ordering::Acquire),
         });
@@ -267,10 +271,9 @@ impl ModelTests {
                     json!({"tokenizer":{"status":"failed","error":crate::security::safe_error(&error.detail,200)}}),
                 )?;
             }
-            self.update(id,json!({"status":status,"phase":"finished","completed_at":crate::compat::now(),"duration_ms":run.started.elapsed().as_millis()}))?;
+            self.update(id,json!({"status":status,"phase":"finished","completed_at":crate::compat::datetime((self.clock)()),"duration_ms":run.started.elapsed().as_millis()}))?;
         }
-        audit::write(
-            &self.actions.settings.audit_path,
+        self.actions.audit(
             "model_test_result",
             json!({
                 "account_id": aid,
@@ -356,7 +359,8 @@ impl ModelTests {
     ) -> std::result::Result<(), Failure> {
         let internal = |_: Error| Failure::new("internal_error", false);
         let id = string(&job["id"]);
-        let aid = integer(&job["account_id"]).unwrap();
+        let aid =
+            integer(&job["account_id"]).ok_or_else(|| Failure::new("invalid_account", false))?;
         let (expected, prompt) = &context.challenges[index];
         for attempt in 0..3 {
             let permit = match group_slots.clone().try_acquire_owned() {
@@ -429,15 +433,13 @@ impl ModelTests {
                     "error": "",
                     "ttft_ms": null,
                     "retryable": false,
-                    "started_at": crate::compat::now(),
+                    "started_at": crate::compat::datetime((self.clock)()),
                     "diagnostics": {},
                 }),
             )
             .map_err(internal)?;
 
-            audit::write(
-                &self.actions.settings.audit_path,
-                "model_test_attempt",
+            self.actions.audit("model_test_attempt",
                 json!({"account_id":aid,"job_id":id,"group":index+1,"attempt":attempt+1,"engine":job["engine"],"sample_count":job["planned_groups"],"resource_revision":job["resource_revision"]}),
             );
             let callback: Progress = {
@@ -472,11 +474,7 @@ impl ModelTests {
                     .unwrap()
                     .clone(),
             );
-            audit::write(
-                &self.actions.settings.audit_path,
-                "model_test_transport",
-                transport,
-            );
+            self.actions.audit("model_test_transport", transport);
             match received {
                 Ok((text, model)) => {
                     if let Some(model) =
@@ -492,142 +490,18 @@ impl ModelTests {
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
                         .insert(index, text);
-                    let error = match string(&diagnostics["end_reason"]) {
-                        "max_output_tokens" | "max_tokens" | "length" => {
-                            "达到输出预算，已保留收到的样本"
-                        }
-                        "content_filter" => "上游内容过滤，已保留收到的样本",
-                        _ => "",
-                    };
-                    self.group(id, &run, index, json!({
-                        "status":"analyzing", "duration_ms":started.elapsed().as_millis(), "error":error,
-                        "diagnostics":diagnostics
-                    })).map_err(internal)?;
-                    let _analysis = run.analysis.lock().await;
-                    let analysis_started = Instant::now();
-                    let samples = context
-                        .samples
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .clone();
-                    let completed_groups = samples.len();
-                    // With one sample the aggregate is already its independent report.
-                    let independent_sample = (completed_groups > 1
-                        && (context.lm.is_some() || index == 0 && job["automatic"] == true))
-                        .then(|| BTreeMap::from([(index, samples[&index].clone())]));
-                    let scorer = context.clone();
-                    let report = crate::supervision::join(tokio::task::spawn_blocking(move || {
-                        scorer.analyze(&samples)
-                    }))
-                    .await;
-                    let report = match report {
-                        Ok(Ok(report)) => report,
-                        _ => {
-                            self.group(
-                                id,
-                                &run,
+                    return self
+                        .analyze_sample(
+                            job,
+                            context,
+                            run,
+                            CompletedSample {
                                 index,
-                                json!({"status":"completed","error":"样本已完成，本地分析失败","transport_complete":matches!(string(&diagnostics["end_reason"]),"completed"|"stop"|"done"|"end_turn"|"stop_sequence"|"message_stop")}),
-                            )
-                            .map_err(internal)?;
-                            return Ok(());
-                        }
-                    };
-                    if job["automatic"] == true {
-                        diagnose_prediction(
-                            string(&job["requested_model"]),
-                            string(&report["prediction"]),
-                        );
-                    }
-                    // Retried first groups must be scored independently even
-                    // when later groups already contributed to the aggregate.
-                    let independent = if let Some(one) = independent_sample {
-                        let scorer = context.clone();
-                        match crate::supervision::join(tokio::task::spawn_blocking(move || {
-                            scorer.analyze(&one)
-                        }))
-                        .await
-                        {
-                            Ok(Ok(report)) => report,
-                            _ if context.lm.is_some() => Value::Null,
-                            Ok(Err(error)) => return Err(internal(error)),
-                            Err(_) => return Err(Failure::new("internal_error", false)),
-                        }
-                    } else {
-                        report.clone()
-                    };
-                    let first = independent.clone();
-                    let group_result = json!({
-                        "status":"completed", "duration_ms":started.elapsed().as_millis(), "analysis_ms":analysis_started.elapsed().as_millis(),
-                        "error": if context.lm.is_some() && independent.is_null() { "样本已完成，本地分析失败" } else { error },
-                        "report": if context.lm.is_some() { independent } else { Value::Null },
-                        "transport_complete": matches!(string(&diagnostics["end_reason"]),"completed"|"stop"|"done"|"end_turn"|"stop_sequence"|"message_stop"),
-                    });
-                    let current = self.get(id).map_err(internal)?;
-                    let first_group_valid = if index == 0 {
-                        valid_report(&first)
-                    } else {
-                        truthy(&current["first_group_valid"])
-                    };
-                    let first_group_prediction = if index == 0 {
-                        &first["prediction"]
-                    } else {
-                        &current["first_group_prediction"]
-                    };
-                    {
-                        let mut groups = run.groups.lock().unwrap_or_else(|e| e.into_inner());
-                        groups[index]
-                            .as_object_mut()
-                            .ok_or_else(|| internal(Error::internal()))?
-                            .extend(group_result.as_object().unwrap().clone());
-                        self.update(id, json!({
-                        "groups": *groups,
-                        "attempts": run.attempts.load(Ordering::Acquire),
-                        "duration_ms": run.started.elapsed().as_millis(),
-                        "completed_groups": completed_groups,
-                        "valid_groups": integer(&report["used_outputs"]).unwrap_or(0),
-                        "returned_models": run.returned.lock().unwrap_or_else(|e| e.into_inner()).clone(),
-                        "report": report,
-                        "first_group_valid": first_group_valid,
-                        "first_group_prediction": first_group_prediction,
-                        "first_group_probability": if index == 0 { &first["probability"] } else { &current["first_group_probability"] },
-                    })).map_err(internal)?;
-                    }
-                    if context.lm.is_none()
-                        && !crate::verdict_policy::relaxed(job)
-                        && index == 0
-                        && job["automatic"] == true
-                        && valid_report(&first)
-                        && is_downgrade(
-                            string(&job["requested_model"]),
-                            string(&first["prediction"]),
+                                started,
+                                diagnostics,
+                            },
                         )
-                    {
-                        run.early.store(true, Ordering::Release);
-                        let disposition = self
-                            .hooks
-                            .verdict(self.get(id).map_err(internal)?, first)
-                            .await
-                            .unwrap_or_else(|error| {
-                                json!({
-                                    "status": "overridden",
-                                    "basis": "first_group",
-                                    "reason": crate::security::safe_error(&error.detail, 200),
-                                })
-                            });
-
-                        *run.disposition.lock().unwrap_or_else(|e| e.into_inner()) =
-                            disposition.clone();
-                    }
-                    if context.lm.is_none()
-                        && !crate::verdict_policy::relaxed(job)
-                        && report["probability"]
-                            .as_f64()
-                            .is_some_and(|value| value >= 0.99)
-                    {
-                        run.early.store(true, Ordering::Release);
-                    }
-                    return Ok(());
+                        .await;
                 }
                 Err(failure) => {
                     let retryable = failure.retryable && !failure.uncertain;
@@ -658,6 +532,160 @@ impl ModelTests {
             }
             drop(permit);
             tokio::time::sleep(Duration::from_secs([1, 3][attempt])).await;
+        }
+        Ok(())
+    }
+    async fn analyze_sample(
+        &self,
+        job: &Value,
+        context: Arc<Context>,
+        run: Arc<Run>,
+        sample: CompletedSample,
+    ) -> std::result::Result<(), Failure> {
+        let CompletedSample {
+            index,
+            started,
+            diagnostics,
+        } = sample;
+        let id = string(&job["id"]);
+        let internal = |_: Error| Failure::new("internal_error", false);
+        let error = match string(&diagnostics["end_reason"]) {
+            "max_output_tokens" | "max_tokens" | "length" => "达到输出预算，已保留收到的样本",
+            "content_filter" => "上游内容过滤，已保留收到的样本",
+            _ => "",
+        };
+        self.group(
+            id,
+            &run,
+            index,
+            json!({
+                "status":"analyzing", "duration_ms":started.elapsed().as_millis(), "error":error,
+                "diagnostics":diagnostics
+            }),
+        )
+        .map_err(internal)?;
+        let _analysis = run.analysis.lock().await;
+        let analysis_started = Instant::now();
+        let samples = context
+            .samples
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let completed_groups = samples.len();
+        // With one sample the aggregate is already its independent report.
+        let independent_sample = (completed_groups > 1
+            && (context.lm.is_some() || index == 0 && job["automatic"] == true))
+            .then(|| BTreeMap::from([(index, samples[&index].clone())]));
+        let scorer = context.clone();
+        let report = crate::supervision::join(tokio::task::spawn_blocking(move || {
+            scorer.analyze(&samples)
+        }))
+        .await;
+        let report = match report {
+            Ok(Ok(report)) => report,
+            _ => {
+                self.group(
+                    id,
+                    &run,
+                    index,
+                    json!({"status":"completed","error":"样本已完成，本地分析失败","transport_complete":matches!(string(&diagnostics["end_reason"]),"completed"|"stop"|"done"|"end_turn"|"stop_sequence"|"message_stop")}),
+                )
+                .map_err(internal)?;
+                return Ok(());
+            }
+        };
+        if job["automatic"] == true {
+            diagnose_prediction(
+                string(&job["requested_model"]),
+                string(&report["prediction"]),
+            );
+        }
+        // Retried first groups must be scored independently even
+        // when later groups already contributed to the aggregate.
+        let independent = if let Some(one) = independent_sample {
+            let scorer = context.clone();
+            match crate::supervision::join(tokio::task::spawn_blocking(move || {
+                scorer.analyze(&one)
+            }))
+            .await
+            {
+                Ok(Ok(report)) => report,
+                _ if context.lm.is_some() => Value::Null,
+                Ok(Err(error)) => return Err(internal(error)),
+                Err(_) => return Err(Failure::new("internal_error", false)),
+            }
+        } else {
+            report.clone()
+        };
+        let first = independent.clone();
+        let group_result = json!({
+            "status":"completed", "duration_ms":started.elapsed().as_millis(), "analysis_ms":analysis_started.elapsed().as_millis(),
+            "error": if context.lm.is_some() && independent.is_null() { "样本已完成，本地分析失败" } else { error },
+            "report": if context.lm.is_some() { independent } else { Value::Null },
+            "transport_complete": matches!(string(&diagnostics["end_reason"]),"completed"|"stop"|"done"|"end_turn"|"stop_sequence"|"message_stop"),
+        });
+        let current = self.get(id).map_err(internal)?;
+        let first_group_valid = if index == 0 {
+            valid_report(&first)
+        } else {
+            truthy(&current["first_group_valid"])
+        };
+        let first_group_prediction = if index == 0 {
+            &first["prediction"]
+        } else {
+            &current["first_group_prediction"]
+        };
+        {
+            let mut groups = run.groups.lock().unwrap_or_else(|e| e.into_inner());
+            groups[index]
+                .as_object_mut()
+                .ok_or_else(|| internal(Error::internal()))?
+                .extend(group_result.as_object().unwrap().clone());
+            self.update(id, json!({
+            "groups": *groups,
+            "attempts": run.attempts.load(Ordering::Acquire),
+            "duration_ms": run.started.elapsed().as_millis(),
+            "completed_groups": completed_groups,
+            "valid_groups": integer(&report["used_outputs"]).unwrap_or(0),
+            "returned_models": run.returned.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            "report": report,
+            "first_group_valid": first_group_valid,
+            "first_group_prediction": first_group_prediction,
+            "first_group_probability": if index == 0 { &first["probability"] } else { &current["first_group_probability"] },
+        })).map_err(internal)?;
+        }
+        if context.lm.is_none()
+            && !crate::verdict_policy::relaxed(job)
+            && index == 0
+            && job["automatic"] == true
+            && valid_report(&first)
+            && is_downgrade(
+                string(&job["requested_model"]),
+                string(&first["prediction"]),
+            )
+        {
+            run.early.store(true, Ordering::Release);
+            let disposition = self
+                .hooks
+                .verdict(self.get(id).map_err(internal)?, first)
+                .await
+                .unwrap_or_else(|error| {
+                    json!({
+                        "status": "overridden",
+                        "basis": "first_group",
+                        "reason": crate::security::safe_error(&error.detail, 200),
+                    })
+                });
+
+            *run.disposition.lock().unwrap_or_else(|e| e.into_inner()) = disposition.clone();
+        }
+        if context.lm.is_none()
+            && !crate::verdict_policy::relaxed(job)
+            && report["probability"]
+                .as_f64()
+                .is_some_and(|value| value >= 0.99)
+        {
+            run.early.store(true, Ordering::Release);
         }
         Ok(())
     }

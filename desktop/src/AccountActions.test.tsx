@@ -140,8 +140,9 @@ const groupCard = (name: string) =>
   )!;
 
 async function render(initial: ViewState = state()) {
-  vi.mocked(command).mockImplementation(async (name) =>
-    name === "get_state" ? (initial as never) : (undefined as never),
+  vi.mocked(command).mockImplementation(
+    async (...[name]: Parameters<typeof command>) =>
+      name === "get_state" ? (initial as never) : (undefined as never),
   );
   await act(async () => root.render(<App />));
 }
@@ -805,7 +806,6 @@ describe("shared scheduling in groups and priorities", () => {
             },
           ],
           active_task: null,
-          legacy_last_task: null,
         } as never;
       return original(method, path, body);
     });

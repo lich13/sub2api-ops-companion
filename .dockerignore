@@ -8,5 +8,9 @@
 !server/src/**
 !server/resources
 !server/resources/**
+!server/protocol
+!server/protocol/Cargo.toml
+!server/protocol/src
+!server/protocol/src/**
 !server/vendor
 !server/vendor/**

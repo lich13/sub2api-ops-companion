@@ -1,18 +1,18 @@
 use crate::{
     audit,
     bark::{self, Bark},
-    compat::{config_revision, integer, now, string, text},
+    compat::{config_revision, datetime, integer, string, text},
     error::{Error, Result},
     oauth_state::OAuthState,
     queries::Queries,
     recovery_policy::{self, CONNECTION_IDS, MODEL_IDS, SEEN_IDS},
-    settings::{daily_time, Settings, OAUTH_FIELDS},
+    settings::{daily_time, Concurrency, Settings, OAUTH_FIELDS},
     store::{valid_object, Store},
 };
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, sync::Arc};
 
-type CachedCurrent = Option<(u64, Arc<Value>)>;
+type CachedCurrent = Option<(u64, Arc<Value>, Concurrency)>;
 
 #[derive(Clone)]
 pub struct ConfigService {
@@ -22,6 +22,7 @@ pub struct ConfigService {
     pub bark: Bark,
     pub state: OAuthState,
     pub queries: Queries,
+    pub(crate) clock: crate::compat::WallClock,
     pub lock: Arc<tokio::sync::Mutex<()>>,
     cached_current: Arc<std::sync::Mutex<CachedCurrent>>,
 }
@@ -37,18 +38,21 @@ impl ConfigService {
             settings,
             bark,
             queries,
+            clock: Arc::new(chrono::Utc::now),
             lock: Arc::new(tokio::sync::Mutex::new(())),
             cached_current: Arc::new(std::sync::Mutex::new(None)),
         }
     }
     pub fn oauth_values(&self, raw: &Value) -> Result<Value> {
+        self.effective(raw).map(|(value, _)| value)
+    }
+    fn effective(&self, raw: &Value) -> Result<(Value, Concurrency)> {
         let mut values: Value = OAUTH_FIELDS
             .iter()
-            .map(|key| {
-                (
-                    (*key).to_owned(),
-                    raw.get(*key).unwrap_or(&self.settings.oauth[*key]).clone(),
-                )
+            .filter_map(|&key| {
+                raw.get(key)
+                    .or_else(|| self.settings.oauth.get(key))
+                    .map(|value| (key.to_owned(), value.clone()))
             })
             .collect();
         if values["oauth_early_reset_enabled"].is_null() {
@@ -66,26 +70,34 @@ impl ConfigService {
         let retry = crate::connection_retry::Policy::config(&values)?;
         values["connection_test_retry_interval_seconds"] = retry.interval_seconds.into();
         values["connection_test_max_retries"] = retry.max_retries.into();
-        Ok(values)
+        let limits = Concurrency::read(&mut values, 503)?;
+        Ok((values, limits))
     }
     pub(crate) fn current_shared(&self) -> Result<Arc<Value>> {
+        self.current_with_limits().map(|(v, _)| v)
+    }
+    pub fn concurrency(&self) -> Result<Concurrency> {
+        self.current_with_limits().map(|(_, limits)| limits)
+    }
+    pub(crate) fn current_with_limits(&self) -> Result<(Arc<Value>, Concurrency)> {
         let (rev, raw) = self.oauth.read_shared_versioned()?;
-        if let Some((cached_rev, value)) = self
+        if let Some((cached_rev, value, limits)) = self
             .cached_current
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .as_ref()
         {
             if *cached_rev == rev {
-                return Ok(value.clone());
+                return Ok((value.clone(), *limits));
             }
         }
-        let computed = Arc::new(self.oauth_values(&raw)?);
+        let (values, limits) = self.effective(&raw)?;
+        let computed = Arc::new(values);
         *self
             .cached_current
             .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Some((rev, computed.clone()));
-        Ok(computed)
+            .unwrap_or_else(|e| e.into_inner()) = Some((rev, computed.clone(), limits));
+        Ok((computed, limits))
     }
     pub fn current(&self) -> Result<Value> {
         Ok((*self.current_shared()?).clone())
@@ -194,7 +206,7 @@ impl ConfigService {
             return Err(conflict());
         }
         let changes = changes.as_object().ok_or_else(Error::invalid)?;
-        let stamp = now();
+        let stamp = datetime((self.clock)());
         match section {
             "oauth" => {
                 if changes
@@ -227,11 +239,10 @@ impl ConfigService {
                 }
                 values["oauth_daily_test_time"] =
                     daily_time(&values["oauth_daily_test_time"])?.into();
+                Concurrency::read(&mut values, 422)?;
                 for (key, low, high) in [
                     ("connection_test_retry_interval_seconds", 1, 3600),
                     ("connection_test_max_retries", 0, 10),
-                    ("oauth_usage_refresh_concurrency", 1, 16),
-                    ("oauth_recovery_test_concurrency", 1, 8),
                     ("oauth_early_reset_interval_seconds", 2, i64::MAX / 1000),
                 ] {
                     if !values[key].is_i64()
@@ -409,10 +420,11 @@ impl ConfigService {
             }
             _ => unreachable!("validated config section"),
         }
-        audit::write(
+        audit::write_at(
             &self.settings.audit_path,
             &format!("{section}_config_update"),
             json!({"user":user,"fields":changes.keys().collect::<BTreeSet<_>>()}),
+            (self.clock)(),
         );
         Ok(self.snapshot(Some(section))?[section].clone())
     }

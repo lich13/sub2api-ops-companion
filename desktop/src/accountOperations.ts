@@ -1,3 +1,4 @@
+import { BridgeError } from "./bridgeError";
 import { api, command } from "./bridge";
 import type { Account, TestEvent } from "./types";
 
@@ -143,7 +144,7 @@ export async function submitAccountBatch(
     request_id: requestId,
     client_id: clientId(),
   });
-  if (current !== epoch) throw new Error("连接已切换；请求保留在原连接");
+  if (current !== epoch) throw BridgeError.changed();
   setOperations([
     ...batch.items,
     ...rows.filter((r) => !batch.items.some((j) => j.id === r.id)),
@@ -205,7 +206,7 @@ export async function submitOperation(
       ...(repeat ? { repeat } : {}),
     },
   );
-  if (current !== epoch) throw new Error("连接已切换；请求保留在原连接");
+  if (current !== epoch) throw BridgeError.changed();
   publishOperation(job);
   return job;
 }
@@ -218,7 +219,7 @@ export async function followOperation<T>(
   let job = initial,
     after = 0;
   while (true) {
-    if (current !== epoch) throw new Error("连接已切换；请求保留在原连接");
+    if (current !== epoch) throw BridgeError.changed();
     if (onEvent) {
       for (const event of job.events ?? []) onEvent(event);
       after = job.next_event ?? after;
@@ -256,12 +257,12 @@ export async function followOperation<T>(
             : "测试中",
     });
     await new Promise((resolve) => setTimeout(resolve, 500));
-    if (current !== epoch) throw new Error("连接已切换；请求保留在原连接");
+    if (current !== epoch) throw BridgeError.changed();
     const next = await api<Operation>(
       "GET",
       `/account-operations/${job.id}${onEvent ? `?after_event=${after}` : ""}`,
     );
-    if (current !== epoch) throw new Error("连接已切换；请求保留在原连接");
+    if (current !== epoch) throw BridgeError.changed();
     job = next;
     setOperations(
       rows.some((r) => r.id === job.id)

@@ -452,16 +452,9 @@ pub fn apply_native(row: &Value, usage: &mut Value, data: &Value, at: DateTime<U
 
 impl Runtime {
     pub(crate) async fn usage_row(&self, id: i64, include_account: bool) -> Result<Value> {
-        const PARENT: &str = " LEFT JOIN accounts p ON p.id=coalesce(nullif(to_jsonb(a)->>'parent_account_id','')::bigint,nullif(a.extra->>'parent_account_id','')::bigint) AND p.deleted_at IS NULL ";
+        use crate::sql::USAGE_PARENT_JOIN as PARENT;
         static ACCOUNT_SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-            crate::sql::MODEL_ACCOUNT_SQL
-                .replacen(
-                    "SELECT ",
-                    "SELECT p.id AS effective_parent_id,p.credentials AS parent_credentials, ",
-                    1,
-                )
-                .replacen("FROM accounts a", &format!("FROM accounts a{PARENT}"), 1)
-                .replace("{filter}", "AND a.id=$1")
+            crate::sql::USAGE_ACCOUNT_SQL.replace("{filter}", "AND a.id=$1")
         });
         static USAGE_SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
             format!(
@@ -493,7 +486,7 @@ impl Runtime {
             &state["oauth_results"][id.to_string()],
             &state["scheduler"][id.to_string()],
         );
-        let mut usage = crate::usage::project(row, Utc::now(), &result);
+        let mut usage = crate::usage::project(row, self.monitor.now(), &result);
         let specs = crate::usage::stats_specs(id, &usage);
         let stats = if specs.is_empty() {
             Ok(crate::usage::Stats::new())
@@ -601,7 +594,7 @@ impl Runtime {
         }
         if let Some(response) = response {
             match response {
-                Ok(data) => apply_native(&live, &mut usage, &data, Utc::now())?,
+                Ok(data) => apply_native(&live, &mut usage, &data, self.monitor.now())?,
                 Err(error) => failure(
                     &mut usage,
                     matches!(error.status.as_u16(), 401 | 403)

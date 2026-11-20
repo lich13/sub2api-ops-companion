@@ -558,7 +558,7 @@ async fn coordinator_drain_closes_aborts_owned_query_and_releases_state_lock() {
         settings,
     )
     .unwrap();
-    let coordinator = Coordinator::new(actions, Arc::new(|| 2));
+    let coordinator = Coordinator::new(actions, Arc::new(|| Ok(2)));
     let row = json!({"id":71998,"platform":"openai","type":"oauth","credentials":{}});
     let started = Arc::new(Notify::new());
     let called = Arc::new(AtomicUsize::new(0));
@@ -671,7 +671,7 @@ async fn coordinator_drain_closes_aborts_owned_query_and_releases_state_lock() {
 async fn runtime_new_directory_startup_creates_valid_state_without_missing_intents() {
     let root = contract_dir().join("runtime-new-directory");
     fs::create_dir_all(&root).expect("create runner-owned fresh runtime directory");
-    fingerprint_cache::seed(&root);
+    fingerprint_cache::seed(&root, chrono::Utc::now());
     let runtime = Runtime::new(settings(&root, database_url()))
         .await
         .expect("construct Runtime in fresh writable directory");
@@ -696,7 +696,7 @@ async fn runtime_new_directory_startup_creates_valid_state_without_missing_inten
 async fn runtime_start_preserves_retired_files_and_initializes_current_detection() {
     let root = contract_dir().join("runtime-migration");
     fs::create_dir_all(&root).unwrap();
-    fingerprint_cache::seed(&root);
+    fingerprint_cache::seed(&root, chrono::Utc::now());
     let retired = root.join("account-model-profiles.json");
     fs::write(&retired, b"fixture-retired-file-not-read").unwrap();
     let guard = root.join("guard-state.json");

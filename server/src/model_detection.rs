@@ -1,6 +1,5 @@
 use crate::{
     actions::{self, Actions},
-    audit,
     bark::Bark,
     capacity_alerts::{mark_view, CapacityAlerts},
     compat::{datetime, digest, integer, operation_versions, parse_datetime, pick, string, truthy},
@@ -200,7 +199,7 @@ impl Detection {
         })
     }
     pub fn audit(&self, event: &str, value: Value) {
-        audit::write(&self.actions.settings.audit_path, event, value);
+        self.actions.audit(event, value);
     }
     pub async fn view(&self, id: i64) -> Result<Value> {
         let row = model_target::account(&self.actions, id).await?;
@@ -300,6 +299,10 @@ impl Detection {
     }
     pub async fn save(&self, id: i64, payload: &Value) -> Result<Value> {
         let request = detection_request(payload)?;
+        self.save_validated(id, &request).await
+    }
+
+    pub(crate) async fn save_validated(&self, id: i64, request: &Value) -> Result<Value> {
         let row = model_target::account(&self.actions, id).await?;
         if request.get("model_override").is_some() && row["type"] != "apikey" {
             return Err(Error::new(422, "仅 API Key 账号可单独指定检测模型"));
@@ -854,26 +857,10 @@ impl Detection {
     }
 }
 pub fn detection_request(payload: &Value) -> Result<Value> {
-    let object = payload.as_object().ok_or_else(Error::invalid)?;
-    if object.keys().any(|key| {
-        ![
-            "expected_version",
-            "enabled",
-            "interval_minutes",
-            "schedule_mode",
-            "min_interval_minutes",
-            "model_id",
-            "model_override",
-            "verdict_mode",
-            "degraded_model_id",
-        ]
-        .contains(&key.as_str())
-    }) || payload["expected_version"]
-        .as_str()
-        .is_none_or(|v| v.chars().count() != 64)
-        || payload
-            .get("enabled")
-            .is_some_and(|value| !value.is_boolean())
+    let body: sub2ops_protocol::messages::DetectionUpdateBody =
+        serde::Deserialize::deserialize(payload).map_err(|_| Error::invalid())?;
+    if body.expected_version.chars().count() != 64
+        || payload.get("enabled").is_some_and(Value::is_null)
     {
         return Err(Error::invalid());
     }
@@ -886,8 +873,11 @@ pub fn detection_request(payload: &Value) -> Result<Value> {
         if !["verdict_mode", "degraded_model_id"]
             .iter()
             .any(|key| value.get(*key).is_some())
-            || object.keys().any(|key| {
-                !["expected_version", "verdict_mode", "degraded_model_id"].contains(&key.as_str())
+            || value.as_object().is_some_and(|fields| {
+                fields.keys().any(|key| {
+                    !["expected_version", "verdict_mode", "degraded_model_id"]
+                        .contains(&key.as_str())
+                })
             })
         {
             return Err(Error::invalid());

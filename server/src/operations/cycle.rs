@@ -113,7 +113,7 @@ impl Operations {
                     .into();
                     job["reason"] = reason.into();
                 }
-                job["updated_at"] = now().into();
+                job["updated_at"] = crate::compat::datetime(self.backend.now()).into();
             }
             Ok(job.clone())
         })?;
@@ -130,7 +130,7 @@ impl Operations {
                     job["status"] = "needs_confirmation".into();
                     job["reason"] = reason.into();
                 }
-                job["updated_at"] = now().into();
+                job["updated_at"] = crate::compat::datetime(self.backend.now()).into();
             }
             Ok(())
         })
@@ -274,7 +274,7 @@ impl Operations {
         let mut next = json!({"id":next_id,"account_id":aid,"account_name":previous["account_name"],
             "action":"test","payload":previous["payload"],"expected_version":previous["expected_version"],
             "client_id":previous["client_id"],"parent_account_id":previous["parent_account_id"],
-            "created_at":now(),"updated_at":now(),"status":"queued","reason":"等待预约时间","result":null,
+            "created_at":crate::compat::datetime(self.backend.now()),"updated_at":crate::compat::datetime(self.backend.now()),"status":"queued","reason":"等待预约时间","result":null,
             "scheduled_at":crate::compat::datetime(due),"repeat":"quota_cycle",
             "repeat_series_id":previous["repeat_series_id"],"repeat_state":"active"});
         next["payload"]["prompt"] = "".into();

@@ -140,7 +140,7 @@ export function useRecordFeed(
               consumedPages.current.has(`${revision}:${page.next_cursor}`) ||
               items.length === current.current.items.length);
           if (mode !== "more") {
-            ++pageRevision.current;
+            pageRevision.current = pageRevision.current + 1;
             consumedPages.current.clear();
           } else if (!stalled)
             consumedPages.current.add(`${revision}:${cursor}`);
@@ -211,7 +211,7 @@ export function useRecordFeed(
     }
     return () => {
       disposed = true;
-      ++epoch.current;
+      epoch.current = epoch.current + 1;
       clearTimeout(timer);
     };
   }, [query, active, request, update]);

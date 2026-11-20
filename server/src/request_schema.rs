@@ -3,38 +3,10 @@
 use crate::{
     compat::string,
     error::{Error, Result},
-    validation::{self, boolean, fields, integer, text},
+    validation::{self, boolean, fields, integer_in_range, text},
 };
 use serde_json::{json, Value};
-
-pub fn has_body(path: &[&str], method: &str) -> bool {
-    if method == "GET" || method == "DELETE" && path.first() == Some(&"proxy-management") {
-        return false;
-    }
-    matches!(
-        path,
-        ["proxy-management", ..]
-            | ["sub2api-config", "validate" | "apply"]
-            | ["account-creation", ..]
-            | [
-                "accounts",
-                _,
-                "operations"
-                    | "model-tests"
-                    | "apply-oauth-credentials"
-                    | "model-detection"
-                    | "keepalive"
-                    | "key-quota-settings"
-            ]
-            | ["account-operations", "batch"]
-            | ["account-priorities"]
-            | ["account-priority-orders"]
-            | ["account-priority-orders", _, "cancel"]
-            | ["account-templates", ..]
-            | ["model-tests", _, "retry"]
-            | ["config", _]
-    )
-}
+use sub2ops_protocol::routes::RequestBody;
 
 fn version(value: &Value, name: &str) -> Result<()> {
     text(&value[name], 64, 64).map(|_| ())
@@ -81,12 +53,13 @@ pub fn template_id(value: &Value) -> Result<()> {
         Err(Error::invalid())
     }
 }
-pub fn batch(value: &Value, template: bool) -> Result<()> {
+pub fn batch(value: &mut Value, template: bool) -> Result<()> {
     let action = if template {
         "account_template"
     } else {
         string(&value["action"])
-    };
+    }
+    .to_owned();
     if template {
         let keys = [
             "template_id",
@@ -108,7 +81,12 @@ pub fn batch(value: &Value, template: bool) -> Result<()> {
             &value["action"],
             &["test", "proxy", "groups", "delete", "recover"],
         )?;
-        match action {
+        if matches!(action.as_str(), "delete" | "groups" | "recover")
+            && value.get("payload").is_none()
+        {
+            value["payload"] = json!({});
+        }
+        match action.as_str() {
             "test" => {
                 fields(&value["payload"], &["confirmed"], &["confirmed"])?;
                 boolean(&value["payload"]["confirmed"])?;
@@ -116,7 +94,7 @@ pub fn batch(value: &Value, template: bool) -> Result<()> {
             "proxy" => {
                 fields(&value["payload"], &["proxy_id"], &["proxy_id"])?;
                 if !value["payload"]["proxy_id"].is_null() {
-                    integer(&value["payload"]["proxy_id"], 1, i64::MAX)?;
+                    integer_in_range(&value["payload"]["proxy_id"], 1, i64::MAX)?;
                 }
             }
             "recover" => {
@@ -124,11 +102,7 @@ pub fn batch(value: &Value, template: bool) -> Result<()> {
                     fields(payload, &[], &[])?;
                 }
             }
-            _ => {
-                if let Some(payload) = value.get("payload") {
-                    object(payload)?;
-                }
-            }
+            _ => object(&value["payload"])?,
         }
     }
     for key in ["request_id", "client_id"] {
@@ -139,11 +113,11 @@ pub fn batch(value: &Value, template: bool) -> Result<()> {
         }
     }
     let items = value["accounts"]
-        .as_array()
+        .as_array_mut()
         .filter(|items| (1..=1000).contains(&items.len()))
         .ok_or_else(Error::invalid)?;
     for item in items {
-        let with_payload = matches!(action, "groups" | "delete");
+        let with_payload = matches!(action.as_str(), "groups" | "delete");
         fields(
             item,
             if with_payload {
@@ -153,124 +127,134 @@ pub fn batch(value: &Value, template: bool) -> Result<()> {
             },
             &["account_id", "expected_version"],
         )?;
-        if template {
-            validation::coercible_integer(&item["account_id"], 1, i64::MAX)?;
+        let id = if template {
             version(item, "expected_version")?;
+            validation::coercible_integer(&item["account_id"], 1, i64::MAX)?
         } else {
-            integer(&item["account_id"], 1, i64::MAX)?;
             validation::hex(&item["expected_version"], 64)?;
-        }
+            integer_in_range(&item["account_id"], 1, i64::MAX)?
+        };
+        item["account_id"] = id.into();
         if with_payload {
             if let Some(payload) = item.get("payload") {
                 object(payload)?;
+            } else {
+                item["payload"] = json!({});
             }
         }
     }
     Ok(())
 }
 
-pub fn validate(path: &[&str], method: &str, value: &mut Value) -> Result<()> {
-    if path.first() == Some(&"sub2api-config") {
-        return crate::sub2api_config::validate_request(value);
+pub(crate) struct Submission<'a> {
+    pub action: &'a str,
+    pub rid: &'a str,
+    pub client: &'a str,
+    pub expected: &'a str,
+    pub payload: Option<&'a Value>,
+    pub scheduled: Option<chrono::DateTime<chrono::Utc>>,
+    pub repeat: Option<&'a Value>,
+}
+
+pub(crate) fn submission(value: &Value) -> Result<Submission<'_>> {
+    fields(
+        value,
+        &[
+            "action",
+            "payload",
+            "expected_version",
+            "request_id",
+            "client_id",
+            "scheduled_at",
+            "repeat",
+        ],
+        &["action", "expected_version", "request_id", "client_id"],
+    )?;
+    choice(
+        &value["action"],
+        &[
+            "priority",
+            "groups",
+            "recover",
+            "usage",
+            "reset_quota",
+            "delete",
+            "test",
+            "schedulable",
+            "degradation_mark",
+            "account_template",
+            "concurrency",
+            "load_factor",
+            "model_config",
+            "proxy",
+            "sync_models",
+        ],
+    )?;
+    let action = string(&value["action"]);
+    let scheduled = value
+        .get("scheduled_at")
+        .map(crate::operations::scheduled_time)
+        .transpose()?;
+    let repeat = value.get("repeat");
+    if (repeat.is_some() || scheduled.is_some()) && action != "test"
+        || repeat.is_some_and(|v| v != "quota_cycle" || scheduled.is_some())
+    {
+        return Err(Error::invalid());
     }
-    if path.first() == Some(&"account-creation") {
-        return crate::account_creation::validate(path, value);
+    let payload = value.get("payload");
+    if let Some(payload) = payload {
+        object(payload)?;
     }
-    if path.first() == Some(&"proxy-management") {
-        return crate::proxy_management::validate_body(path, method, value);
-    }
-    match path {
-        ["accounts", _, "apply-oauth-credentials"] => {
-            crate::oauth_reauthorization::validate(value)?
-        }
-        ["account-operations", "batch"] => batch(value, false)?,
-        ["account-templates", "apply"] => batch(value, true)?,
-        ["account-priorities"] if method == "PUT" => {
-            crate::priority_orders::validate_parallelism_request(value)?
-        }
-        ["account-priority-orders"] => crate::priority_orders::validate_request(value)?,
-        ["account-priority-orders", _, "cancel"] => fields(value, &[], &[])?,
-        ["accounts", _, "operations"] => {
-            fields(
-                value,
-                &[
-                    "action",
-                    "payload",
-                    "expected_version",
-                    "request_id",
-                    "client_id",
-                    "scheduled_at",
-                    "repeat",
-                ],
-                &["action", "expected_version", "request_id", "client_id"],
-            )?;
-            choice(
-                &value["action"],
-                &[
-                    "priority",
-                    "groups",
-                    "recover",
-                    "usage",
-                    "reset_quota",
-                    "delete",
-                    "test",
-                    "schedulable",
-                    "degradation_mark",
-                    "account_template",
-                    "concurrency",
-                    "load_factor",
-                    "model_config",
-                    "proxy",
-                    "sync_models",
-                ],
-            )?;
-            version(value, "expected_version")?;
-            for key in ["request_id", "client_id"] {
-                validation::request_id(&value[key])?;
-            }
-            if let Some(at) = value.get("scheduled_at") {
-                if value["action"] != "test" {
-                    return Err(Error::invalid());
-                }
-                crate::operations::scheduled_time(at)?;
-            }
-            if let Some(repeat) = value.get("repeat") {
-                choice(repeat, &["quota_cycle"])?;
-                if value["action"] != "test" || value.get("scheduled_at").is_some() {
-                    return Err(Error::invalid());
-                }
-            }
-            if let Some(payload) = value.get("payload") {
-                object(payload)?;
-            }
-        }
-        ["accounts", _, "model-tests"] => {
+    Ok(Submission {
+        action,
+        expected: text(&value["expected_version"], 64, 64)?,
+        rid: validation::request_id(&value["request_id"])?,
+        client: validation::request_id(&value["client_id"])?,
+        scheduled,
+        repeat,
+        payload,
+    })
+}
+
+pub fn validate(kind: RequestBody, path: &[&str], method: &str, value: &mut Value) -> Result<()> {
+    match kind {
+        RequestBody::None => {}
+        RequestBody::HostConfig => crate::sub2api_config::validate_request(value)?,
+        RequestBody::Creation => crate::account_creation::validate(path, value)?,
+        RequestBody::Proxy => crate::proxy_management::validate_body(path, method, value)?,
+        RequestBody::Credentials => crate::oauth_reauthorization::validate(value)?,
+        RequestBody::Batch => batch(value, false)?,
+        RequestBody::TemplateBatch => batch(value, true)?,
+        RequestBody::Parallelism => crate::priority_orders::validate_parallelism_request(value)?,
+        RequestBody::PriorityOrder => crate::priority_orders::validate_request(value)?,
+        RequestBody::CancelOrder => fields(value, &[], &[])?,
+        // The dispatch future captures the parsed submission before authentication.
+        RequestBody::Operation => {}
+        RequestBody::ModelTest => {
             *value = crate::model_tests::model_request(value)?;
         }
-        ["accounts", _, "model-detection"] => {
+        RequestBody::Detection => {
             *value = crate::model_detection::detection_request(value)?;
         }
-        ["config", "key-quota"] => crate::key_quota::settings_request(value, false)?,
-        ["accounts", _, "key-quota-settings"] => crate::key_quota::settings_request(value, true)?,
-        ["accounts", _, "keepalive"] => crate::keepalive::request(value)?,
-        ["model-tests", _, "retry"] => {
+        RequestBody::GlobalQuota => crate::key_quota::settings_request(value, false)?,
+        RequestBody::AccountQuota => crate::key_quota::settings_request(value, true)?,
+        RequestBody::Keepalive => crate::keepalive::request(value)?,
+        RequestBody::Retry => {
             fields(value, &["request_id"], &["request_id"])?;
             validation::request_id(&value["request_id"])?;
         }
-        ["config", _] => {
-            fields(
-                value,
-                &["expected_revision", "changes"],
-                &["expected_revision", "changes"],
-            )?;
-            version(value, "expected_revision")?;
-            object(&value["changes"])?;
+        RequestBody::Config => {
+            let body: sub2ops_protocol::messages::ConfigUpdateBody =
+                serde::Deserialize::deserialize(&*value).map_err(|_| Error::invalid())?;
+            if body.expected_revision.chars().count() != 64 {
+                return Err(Error::invalid());
+            }
         }
-        ["account-templates", ..] if method == "DELETE" => {
+        RequestBody::DeleteTemplate => {
             fields(value, &["expected_version"], &["expected_version"])?;
             version(value, "expected_version")?;
         }
-        ["account-templates", ..] => {
+        RequestBody::Template => {
             fields(
                 value,
                 &["expected_version", "name", "whitelist", "mappings"],
@@ -279,8 +263,12 @@ pub fn validate(path: &[&str], method: &str, value: &mut Value) -> Result<()> {
             version(value, "expected_version")?;
             text(&value["name"], 1, 40)?;
             profile(value)?;
+            for field in ["whitelist", "mappings"] {
+                if value.get(field).is_none() {
+                    value[field] = json!([]);
+                }
+            }
         }
-        _ => {}
     }
     Ok(())
 }
@@ -290,12 +278,11 @@ mod tests {
     #[test]
     fn scheduled_connection_request_accepts_second_precision_only_for_test_operations() {
         use serde_json::json;
-        let path = ["accounts", "42", "operations"];
         let base = json!({"action":"test","expected_version":"a".repeat(64),"request_id":"fixture-scheduled-request","client_id":"fixture-scheduled-client","payload":{"mode":"default"},"scheduled_at":"2030-01-02T09:31:00+08:00"});
-        assert!(super::validate(&path, "POST", &mut base.clone()).is_ok());
+        assert!(super::submission(&base).is_ok());
         let mut seconds = base.clone();
         seconds["scheduled_at"] = "2030-01-02T09:31:38+08:00".into();
-        assert!(super::validate(&path, "POST", &mut seconds).is_ok());
+        assert!(super::submission(&seconds).is_ok());
         for at in [
             "2030-01-02T09:31:01.001+08:00",
             "2030-02-30T09:31:00+08:00",
@@ -304,10 +291,10 @@ mod tests {
         ] {
             let mut bad = base.clone();
             bad["scheduled_at"] = at.into();
-            assert!(super::validate(&path, "POST", &mut bad).is_err());
+            assert!(super::submission(&bad).is_err());
         }
         let mut bad = base;
         bad["action"] = "delete".into();
-        assert!(super::validate(&path, "POST", &mut bad).is_err());
+        assert!(super::submission(&bad).is_err());
     }
 }

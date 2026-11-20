@@ -1,5 +1,5 @@
 use crate::{
-    compat::{now, sha256},
+    compat::{datetime, sha256, WallClock},
     error::{Error, Result},
     settings::Settings,
 };
@@ -20,6 +20,7 @@ pub struct Probe {
 }
 impl Probe {
     fn new(
+        clock: &WallClock,
         state: &str,
         endpoint: &str,
         status: Option<u16>,
@@ -32,11 +33,21 @@ impl Probe {
             status,
             message: message.into(),
             retryable,
-            checked_at: now(),
+            checked_at: datetime(clock()),
+        }
+    }
+    pub fn reply(&self) -> sub2ops_protocol::dto::ConnectionReply {
+        sub2ops_protocol::dto::ConnectionReply {
+            state: self.state.clone(),
+            endpoint: self.endpoint.clone(),
+            http_status: self.status,
+            message: self.message.clone(),
+            retryable: self.retryable,
+            checked_at: Some(self.checked_at.clone()),
         }
     }
     pub fn public(&self) -> Value {
-        json!({"state":self.state,"endpoint":self.endpoint,"http_status":self.status,"message":self.message,"retryable":self.retryable,"checked_at":self.checked_at})
+        json!(self.reply())
     }
     pub fn error(&self) -> Error {
         Error::new(
@@ -82,6 +93,7 @@ impl Cache {
 
 #[derive(Clone)]
 pub struct Upstream {
+    clock: WallClock,
     settings: Arc<Settings>,
     cache: Arc<Mutex<Cache>>,
     probe_lock: Arc<tokio::sync::Mutex<()>>,
@@ -90,11 +102,15 @@ pub struct Upstream {
 
 impl Upstream {
     pub fn new(settings: Arc<Settings>) -> Result<Self> {
+        Self::with_clock(settings, Arc::new(chrono::Utc::now))
+    }
+    pub(crate) fn with_clock(settings: Arc<Settings>, clock: WallClock) -> Result<Self> {
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(Duration::from_secs(5))
             .build()?;
         Ok(Self {
+            clock: clock.clone(),
             settings,
             client,
             probe_lock: Arc::new(tokio::sync::Mutex::new(())),
@@ -104,7 +120,14 @@ impl Upstream {
                 failure: None,
                 completed_probe: None,
                 candidates: None,
-                status: Probe::new("network_unreachable", "none", None, "尚未检查上游", false),
+                status: Probe::new(
+                    &clock,
+                    "network_unreachable",
+                    "none",
+                    None,
+                    "尚未检查上游",
+                    false,
+                ),
             })),
         })
     }
@@ -165,11 +188,14 @@ impl Upstream {
         values.first().map(|(_, v)| v.clone()).unwrap_or_default()
     }
     pub fn status(&self) -> Value {
+        json!(self.connection())
+    }
+    pub fn connection(&self) -> sub2ops_protocol::dto::ConnectionReply {
         self.cache
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .status
-            .public()
+            .reply()
     }
     pub fn invalidate(&self) {
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
@@ -190,6 +216,7 @@ impl Upstream {
         let response = request.send().await;
         let Ok(response) = response else {
             return Probe::new(
+                &self.clock,
                 "network_unreachable",
                 endpoint,
                 None,
@@ -201,6 +228,7 @@ impl Upstream {
         match status {
             401 | 403 => {
                 return Probe::new(
+                    &self.clock,
                     "auth_rejected",
                     endpoint,
                     Some(status),
@@ -210,6 +238,7 @@ impl Upstream {
             }
             404 => {
                 return Probe::new(
+                    &self.clock,
                     "route_not_found",
                     endpoint,
                     Some(status),
@@ -220,6 +249,7 @@ impl Upstream {
             200..=299 => (),
             _ => {
                 return Probe::new(
+                    &self.clock,
                     "upstream_error",
                     endpoint,
                     Some(status),
@@ -233,6 +263,7 @@ impl Upstream {
             .and_then(|v| serde_json::from_slice::<Value>(&v).map_err(Into::into));
         let Ok(body) = body else {
             return Probe::new(
+                &self.clock,
                 "protocol_mismatch",
                 endpoint,
                 Some(status),
@@ -242,6 +273,7 @@ impl Upstream {
         };
         if body["code"].as_i64().is_some_and(|v| v != 0) {
             return Probe::new(
+                &self.clock,
                 "upstream_error",
                 endpoint,
                 Some(status),
@@ -251,6 +283,7 @@ impl Upstream {
         }
         if !(body.is_array() || (body["code"].as_i64() == Some(0) && body["data"].is_array())) {
             return Probe::new(
+                &self.clock,
                 "protocol_mismatch",
                 endpoint,
                 Some(status),
@@ -259,6 +292,7 @@ impl Upstream {
             );
         }
         Probe::new(
+            &self.clock,
             "ok",
             endpoint,
             Some(status),
@@ -272,6 +306,7 @@ impl Upstream {
         if key.is_empty() || key.chars().count() > 4096 || key.chars().any(|c| (c as u32) < 33) {
             let _guard = self.probe_lock.lock().await;
             let result = Probe::new(
+                &self.clock,
                 "auth_rejected",
                 "none",
                 Some(401),
@@ -326,6 +361,7 @@ impl Upstream {
         }
         if candidates.is_empty() {
             let result = Probe::new(
+                &self.clock,
                 "network_unreachable",
                 "none",
                 None,
@@ -336,6 +372,7 @@ impl Upstream {
             return Err(result.error());
         }
         let mut last = Probe::new(
+            &self.clock,
             "network_unreachable",
             &candidates[0].0,
             None,

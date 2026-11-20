@@ -286,14 +286,14 @@ impl ModelTests {
             Ok(out)
         })
     }
-    pub fn public(mut job: Value) -> Value {
+    pub fn public(&self, mut job: Value) -> Value {
         if let Some(object) = job.as_object_mut() {
             object.shift_remove("target_signature");
             object.shift_remove("owner_signature");
         }
         if ACTIVE.contains(&string(&job["status"])) && job["status"] != "queued" {
             if let Some(start) = parse_datetime(&job["started_at"]) {
-                job["duration_ms"] = chrono::Utc::now()
+                job["duration_ms"] = (self.clock)()
                     .signed_duration_since(start)
                     .num_milliseconds()
                     .max(0)
@@ -321,7 +321,7 @@ impl ModelTests {
                 );
             }
         }
-        Self::public(job)
+        self.public(job)
     }
     pub(crate) fn display_progress(&self, id: &str, changes: Value) -> Result<()> {
         let context = self
@@ -447,8 +447,11 @@ impl ModelTests {
             let mut changed = vec![];
             for job in data["jobs"].as_object_mut().unwrap().values_mut() {
                 if matches!(string(&job["status"]), "running" | "retrying") {
-                    let changes =
-                        interruption(job, "服务重启，测试已中断", crate::compat::now().into());
+                    let changes = interruption(
+                        job,
+                        "服务重启，测试已中断",
+                        crate::compat::datetime((self.clock)()).into(),
+                    );
                     job.as_object_mut()
                         .unwrap()
                         .extend(changes.as_object().unwrap().clone());
@@ -490,11 +493,34 @@ impl ModelTests {
         payload: &Value,
         automatic: Option<&Value>,
     ) -> Result<Value> {
+        self.start_inner(id, automatic, || {
+            validate_request(payload, automatic.is_some()).map(std::borrow::Cow::Owned)
+        })
+        .await
+    }
+
+    pub(crate) async fn start_validated(
+        &self,
+        id: i64,
+        payload: &Value,
+        automatic: Option<&Value>,
+    ) -> Result<Value> {
+        self.start_inner(id, automatic, || Ok(std::borrow::Cow::Borrowed(payload)))
+            .await
+    }
+
+    async fn start_inner<'a>(
+        &self,
+        id: i64,
+        automatic: Option<&Value>,
+        payload: impl FnOnce() -> Result<std::borrow::Cow<'a, Value>>,
+    ) -> Result<Value> {
         if self.closing.load(Ordering::Acquire) || self.actions.supervisor.is_stopping() {
             return Err(Error::new(503, "服务正在停止"));
         }
+        let input = payload()?;
+        let payload = input.as_ref();
         let _guard = self.start.lock().await;
-        let payload = validate_request(payload, automatic.is_some())?;
         if automatic.is_some_and(|auto| {
             payload["tokenizer_probe"] == true
                 || payload["engine"] == crate::lm_detector::ENGINE
@@ -554,7 +580,38 @@ impl ModelTests {
         } else {
             None
         };
-        let mut job = json!({"id":job_id,"request_id":request,"account_id":id,"account_name":row["name"],"requested_model":model,"forwarded_model":target.model,"returned_models":[],"status":if conflict {"needs_confirmation"}else {"queued"},"completed_groups":0,"valid_groups":0,"attempts":0,"queued_at":crate::compat::now(),"started_at":null,"completed_at":null,"duration_ms":0,"error":if conflict {"测试目标已变化，请重新确认"}else {""},"report":null,"bank_version":null,"concurrency":payload["concurrency"],"trigger_source":if automatic.is_some() {"automatic"}else {"manual"},"automatic":automatic.is_some(),"triggers":auto["triggers"].as_array().into_iter().flatten().filter_map(|v|v.as_str()).collect::<std::collections::BTreeSet<_>>(),"degradation_recheck":auto["degradation_recheck"]==true,"planned_groups":groups,"first_group_prediction":null,"first_group_valid":false,"automatic_disposition":null,"target_signature":model_target::signature(&row),"owner_signature":model_target::signature(&owner),"groups":(0..groups).map(|i|json!({"index":i+1,"status":"queued","attempts":0,"ttft_ms":null,"duration_ms":null,"error":""})).collect::<Vec<_>>()});
+        let mut job = json!({
+            "id": job_id,
+            "request_id": request,
+            "account_id": id,
+            "account_name": row["name"],
+            "requested_model": model,
+            "forwarded_model": target.model,
+            "returned_models": [],
+            "status": if conflict {"needs_confirmation"} else {"queued"},
+            "completed_groups": 0,
+            "valid_groups": 0,
+            "attempts": 0,
+            "queued_at": crate::compat::datetime((self.clock)()),
+            "started_at": null,
+            "completed_at": null,
+            "duration_ms": 0,
+            "error": if conflict {"测试目标已变化，请重新确认"} else {""},
+            "report": null,
+            "bank_version": null,
+            "concurrency": payload["concurrency"],
+            "trigger_source": if automatic.is_some() {"automatic"} else {"manual"},
+            "automatic": automatic.is_some(),
+            "triggers": auto["triggers"].as_array().into_iter().flatten().filter_map(|v|v.as_str()).collect::<std::collections::BTreeSet<_>>(),
+            "degradation_recheck": auto["degradation_recheck"]==true,
+            "planned_groups": groups,
+            "first_group_prediction": null,
+            "first_group_valid": false,
+            "automatic_disposition": null,
+            "target_signature": model_target::signature(&row),
+            "owner_signature": model_target::signature(&owner),
+            "groups": (0..groups).map(|i|json!({"index":i+1,"status":"queued","attempts":0,"ttft_ms":null,"duration_ms":null,"error":""})).collect::<Vec<_>>()
+        });
         job["engine"] = payload["engine"].clone();
         crate::verdict_policy::copy(&policy, &mut job);
         if crate::verdict_policy::relaxed(&policy) {
@@ -606,7 +663,7 @@ impl ModelTests {
         if !conflict {
             self.launch(job.clone(), None, Some((row, target, owner)))?;
         }
-        Ok(Self::public(job))
+        Ok(self.public(job))
     }
     pub(crate) fn launch(
         &self,
@@ -673,7 +730,7 @@ impl ModelTests {
                     } else {
                         "测试无法完成".into()
                     };
-                    let _=this.update(&task_id,json!({"status":if matches!(error.status.as_u16(),409|422) {"needs_confirmation"}else {"failed"},"error":message,"completed_at":crate::compat::now(),"can_retry":false}));
+                    let _=this.update(&task_id,json!({"status":if matches!(error.status.as_u16(),409|422) {"needs_confirmation"}else {"failed"},"error":message,"completed_at":crate::compat::datetime((this.clock)()),"can_retry":false}));
                 }
             }
         });
@@ -875,14 +932,14 @@ impl ModelTests {
                 .await?;
             prepared_row = row;
             if truthy(&result) {
-                self.update(id,json!({"status":"failed","preflight_result":result,"completed_at":crate::compat::now(),"error":result.get("error").unwrap_or(&json!("恢复条件未确认"))}))?;
+                self.update(id,json!({"status":"failed","preflight_result":result,"completed_at":crate::compat::datetime((self.clock)()),"error":result.get("error").unwrap_or(&json!("恢复条件未确认"))}))?;
                 return Ok(());
             }
         }
         if self.actions.supervisor.is_stopping() {
             return Ok(());
         }
-        let job=self.update(id,json!({"status":"running","started_at":crate::compat::now(),"error":"","completed_at":null,"waiting_until":null,"bank_version":context.lm.as_ref().map(|lm|&lm.version).unwrap_or(&context.snapshot.1),"can_retry":false}))?;
+        let job=self.update(id,json!({"status":"running","started_at":crate::compat::datetime((self.clock)()),"error":"","completed_at":null,"waiting_until":null,"bank_version":context.lm.as_ref().map(|lm|&lm.version).unwrap_or(&context.snapshot.1),"can_retry":false}))?;
         self.run(job, context, prepared_row).await
     }
     pub async fn retry_failed(&self, id: &str, request: &str) -> Result<Value> {
@@ -961,14 +1018,14 @@ impl ModelTests {
                 }
             }
             job["previous_attempts"] = json!(integer(&job["previous_attempts"]).unwrap_or(0) + integer(&job["attempts"]).unwrap_or(0));
-            job.as_object_mut().unwrap().extend(json!({"status":"queued","can_retry":false,"completed_at":null,"queued_at":crate::compat::now(),"error":""}).as_object().unwrap().clone());
+            job.as_object_mut().unwrap().extend(json!({"status":"queued","can_retry":false,"completed_at":null,"queued_at":crate::compat::datetime((self.clock)()),"error":""}).as_object().unwrap().clone());
             let stored = job.clone();
             data["accounts"][aid.to_string()] = stored.clone();
             data["requests"][request] = id.into();
             Ok(stored)
         })?;
         self.launch(stored.clone(), Some(context), None)?;
-        Ok(Self::public(stored))
+        Ok(self.public(stored))
     }
     pub async fn cancel(&self, id: &str) -> Result<Value> {
         let handle = self
@@ -998,7 +1055,7 @@ impl ModelTests {
                 tokenizer = json!({});
             }
             tokenizer["status"] = "cancelled".into();
-            self.update(id,json!({"status":"completed","phase":"finished","tokenizer":tokenizer,"completed_at":crate::compat::now(),"can_retry":false}))?;
+            self.update(id,json!({"status":"completed","phase":"finished","tokenizer":tokenizer,"completed_at":crate::compat::datetime((self.clock)()),"can_retry":false}))?;
             self.contexts
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
@@ -1015,7 +1072,7 @@ impl ModelTests {
                 group["retryable"] = false.into();
             }
         }
-        self.update(id,json!({"status":"cancelled","groups":groups,"error":"测试已停止","completed_at":crate::compat::now(),"can_retry":false}))?;
+        self.update(id,json!({"status":"cancelled","groups":groups,"error":"测试已停止","completed_at":crate::compat::datetime((self.clock)()),"can_retry":false}))?;
         self.contexts
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -1034,7 +1091,11 @@ impl ModelTests {
                 if let Ok(job) = self.get(&id) {
                     let _ = self.update(
                         &id,
-                        interruption(&job, "服务重启，测试已中断", crate::compat::now().into()),
+                        interruption(
+                            &job,
+                            "服务重启，测试已中断",
+                            crate::compat::datetime((self.clock)()).into(),
+                        ),
                     );
                 }
             }

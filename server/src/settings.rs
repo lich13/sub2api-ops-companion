@@ -6,6 +6,8 @@ use crate::{
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, path::PathBuf};
 
+pub const BUSINESS_TZ: chrono_tz::Tz = chrono_tz::Asia::Shanghai;
+
 pub const OAUTH_FIELDS: &[&str] = &[
     "connection_test_retry_interval_seconds",
     "connection_test_max_retries",
@@ -40,6 +42,37 @@ pub struct Settings {
     pub bark_valid: bool,
     pub base_url: String,
     pub verify_url: String,
+}
+
+pub const USAGE_CONCURRENCY: (&str, i64, i64, i64) = ("oauth_usage_refresh_concurrency", 4, 1, 16);
+pub const RECOVERY_CONCURRENCY: (&str, i64, i64, i64) =
+    ("oauth_recovery_test_concurrency", 2, 1, 8);
+
+#[derive(Clone, Copy, Debug)]
+pub struct Concurrency {
+    pub usage: usize,
+    pub recovery: usize,
+}
+
+impl Concurrency {
+    pub fn read(values: &mut Value, status: u16) -> Result<Self> {
+        let mut field = |(key, default, low, high): (&str, i64, i64, i64)| -> Result<usize> {
+            let n = if values.get(key).is_none() {
+                default
+            } else {
+                values[key]
+                    .as_i64()
+                    .filter(|n| (low..=high).contains(n))
+                    .ok_or_else(|| Error::new(status, format!("{key} 必须在 {low}–{high} 之间")))?
+            };
+            values[key] = n.into();
+            Ok(n as usize)
+        };
+        Ok(Self {
+            usage: field(USAGE_CONCURRENCY)?,
+            recovery: field(RECOVERY_CONCURRENCY)?,
+        })
+    }
 }
 
 pub const DEFAULT_DETECTION_MODEL: &str = "gpt-6-luna";
@@ -162,8 +195,8 @@ impl Settings {
         for (key, default, min, max) in [
             ("connection_test_retry_interval_seconds", 10, 1, 3600),
             ("connection_test_max_retries", 3, 0, 10),
-            ("oauth_usage_refresh_concurrency", 4, 1, 16),
-            ("oauth_recovery_test_concurrency", 2, 1, 8),
+            USAGE_CONCURRENCY,
+            RECOVERY_CONCURRENCY,
             ("oauth_early_reset_interval_seconds", 60, 2, i64::MAX / 1000),
         ] {
             let value = text(&configured(key))

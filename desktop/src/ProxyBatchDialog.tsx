@@ -1,3 +1,4 @@
+import { useEffectEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, RefreshCw, X } from "lucide-react";
 import { api, command } from "./bridge";
@@ -93,13 +94,14 @@ export default function ProxyBatchDialog({
     setErrors(failed);
     setLoading(false);
   }
+  const readOnChange = useEffectEvent(read);
   useEffect(() => {
     guard.current = false;
     setBusy(false);
     setProxyId(undefined);
-    void read();
+    void readOnChange();
     return () => {
-      ++generation.current;
+      generation.current = generation.current + 1;
     };
   }, [connectionKey, accounts]);
   function accept(value: Batch) {
@@ -132,9 +134,10 @@ export default function ProxyBatchDialog({
         setBatchError(String(e).replace(/^Error: /, ""));
     }
   }
+  const pollBatch = useEffectEvent(readBatch);
   useEffect(() => {
     if (!online || !batch || !pending(batch) || batchError) return;
-    const timer = setTimeout(() => void readBatch(batch.batch_id), 2000);
+    const timer = setTimeout(() => void pollBatch(batch.batch_id), 2000);
     return () => clearTimeout(timer);
   }, [batch, batchError, online]);
   const editable = accounts.filter(

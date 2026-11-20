@@ -4,6 +4,9 @@ use crate::{
     runtime::Runtime,
     validation,
 };
+mod dispatch;
+mod models;
+mod query;
 use axum::{
     body::{to_bytes, Body},
     extract::{Query, Request, State},
@@ -14,8 +17,11 @@ use axum::{
     Json, Router,
 };
 use futures_util::FutureExt;
+use query::QueryParams;
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, panic::AssertUnwindSafe, sync::Arc};
+use sub2ops_protocol::routes::{RequestBody, Route};
+use tracing::Instrument;
 
 // Requests can carry two existing 16 MiB media fields. Desktop response limits
 // are independent of this inbound JSON limit.
@@ -46,19 +52,18 @@ pub fn router(runtime: Arc<Runtime>) -> Router {
 
 async fn desktop_response(request: Request, next: Next) -> Response {
     let desktop = request.uri().path().starts_with("/api/desktop/v1/");
-    let mut response = if desktop {
-        AssertUnwindSafe(next.run(request))
+    if !desktop {
+        return next.run(request).await;
+    }
+    let request_id = uuid::Uuid::new_v4().simple().to_string();
+    async {
+        let mut response = AssertUnwindSafe(next.run(request))
             .catch_unwind()
             .await
-            .unwrap_or_else(|_| Error::internal().into_response())
-    } else {
-        next.run(request).await
-    };
-    if desktop {
-        let request_id = uuid::Uuid::new_v4().simple().to_string();
+            .unwrap_or_else(|_| Error::internal().into_response());
         if let Some(failure) = response.extensions().get::<crate::error::InternalFailure>() {
             // Neither the URL nor the nested error is safe to include in logs.
-            eprintln!("desktop_failure request_id={request_id}");
+            tracing::error!("desktop_failure");
             let mut detail = failure.0.clone();
             detail["request_id"] = request_id.clone().into();
             let (mut parts, _) = response.into_parts();
@@ -75,632 +80,83 @@ async fn desktop_response(request: Request, next: Next) -> Response {
         response
             .headers_mut()
             .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        response
     }
-    response
+    .instrument(tracing::info_span!("desktop", request_id = %request_id))
+    .await
 }
 
 async fn health(State(runtime): State<Arc<Runtime>>) -> Result<Json<Value>> {
     runtime.db.one("SELECT 1 AS ok", &[]).await?;
     Ok(Json(json!({"status":"ok"})))
 }
-fn params(request: &Request) -> Result<BTreeMap<String, String>> {
-    Query::<BTreeMap<String, String>>::try_from_uri(request.uri())
-        .map(|v| v.0)
-        .map_err(|_| Error::invalid())
-}
-fn path_id(value: &str) -> Result<i64> {
-    validation::coercible_integer(&json!(value), i64::MIN, i64::MAX)
-}
-fn number(query: &BTreeMap<String, String>, name: &str, min: i64, max: i64) -> Result<Option<i64>> {
-    query
-        .get(name)
-        .map(|v| validation::coercible_integer(&json!(v), min, max))
-        .transpose()
-}
-fn boolean(query: &BTreeMap<String, String>, name: &str) -> Result<bool> {
-    query
-        .get(name)
-        .map(|value| validation::coercible_boolean(&json!(value)))
-        .transpose()
-        .map(|value| value.unwrap_or(false))
-}
-fn get_string<'a>(query: &'a BTreeMap<String, String>, name: &str) -> Option<&'a str> {
-    query.get(name).map(String::as_str)
-}
-fn category(query: &BTreeMap<String, String>) -> Result<Option<&str>> {
-    match get_string(query, "category") {
-        None => Ok(None),
-        Some(value @ ("degradation" | "other")) => Ok(Some(value)),
-        _ => Err(Error::new(422, "错误分类无效")),
-    }
-}
-fn version(payload: &Value, key: &str) -> Result<()> {
-    validation::text(&payload[key], 64, 64).map(|_| ())
-}
-fn request_payload(payload: &Value, allowed: &[&str], required: &[&str]) -> Result<()> {
-    validation::fields(payload, allowed, required)
-}
-
-fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
-    if path.first() == Some(&"account-creation") {
-        return crate::account_creation::allowed(path);
-    }
-    match path {
-        ["capabilities"
-        | "connection-status"
-        | "snapshot"
-        | "detection-logs"
-        | "errors"
-        | "usage-records"
-        | "usage-record-options"
-        | "recoveries"
-        | "proxies"
-        | "config"] => Some(&["GET"]),
-        ["proxy-management"] => Some(&["GET", "POST"]),
-        ["proxy-management", "data"] => Some(&["GET", "POST"]),
-        ["proxy-management", "batch" | "batch-delete"] => Some(&["POST"]),
-        ["proxy-management", _, "credentials" | "accounts"] => Some(&["GET"]),
-        ["proxy-management", _] => Some(&["GET", "PUT", "DELETE"]),
-        ["account-priorities"] => Some(&["GET", "PUT"]),
-        ["account-operations"] => Some(&["GET"]),
-        ["account-priority-orders"] => Some(&["POST"]),
-        ["account-priority-orders", _] => Some(&["GET"]),
-        ["account-priority-orders", _, "cancel"] => Some(&["POST"]),
-        ["account-operations", "batch"] => Some(&["POST"]),
-        ["account-operations", _] => Some(&["GET"]),
-        ["account-operations", _, "cancel"] | ["account-operations", "batches", _, "cancel"] => {
-            Some(&["POST"])
-        }
-        ["accounts", _, "settings" | "models" | "usage"]
-        | ["accounts", _, "model-tests", "latest"] => Some(&["GET"]),
-        ["accounts", _, "operations" | "model-tests" | "apply-oauth-credentials"] => {
-            Some(&["POST"])
-        }
-        ["accounts", _, "model-detection" | "keepalive"] => Some(&["GET", "PUT"]),
-        ["errors" | "usage-records", _] => Some(&["GET"]),
-        ["proxies", _, "test" | "quality-check"] => Some(&["POST"]),
-        ["sub2api-config"] | ["sub2api-config", "operation"] => Some(&["GET"]),
-        ["sub2api-config", "validate" | "apply"] => Some(&["POST"]),
-        ["sub2api-system", "version" | "check-updates"] => Some(&["GET"]),
-        ["sub2api-system", "update" | "restart"] => Some(&["POST"]),
-        ["account-templates"] => Some(&["GET", "POST"]),
-        ["account-templates", "apply"] => Some(&["POST"]),
-        ["account-templates", _] => Some(&["PUT", "DELETE"]),
-        ["modeltrace" | "lm-detector", "fingerprint-bank"] => Some(&["GET"]),
-        ["modeltrace" | "lm-detector", "fingerprint-bank", "sync"] => Some(&["POST"]),
-        ["model-tests", _] => Some(&["GET"]),
-        ["model-tests", _, "cancel" | "retry"] => Some(&["POST"]),
-        ["quota-refresh"] => Some(&["GET", "POST"]),
-        ["config", "key-quota"] => Some(&["GET", "PUT"]),
-        ["accounts", _, "key-quota-settings"] => Some(&["GET", "PUT"]),
-        ["accounts", _, "key-quota-settings", "access-token"] => Some(&["GET"]),
-        ["config", "oauth" | "bark"] => Some(&["PUT"]),
-        ["actions", "bark-test"] => Some(&["POST"]),
-        _ => None,
-    }
-}
 async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Result<Response> {
-    let route = request
-        .uri()
+    let uri = request.uri().clone();
+    let path = uri
         .path()
         .strip_prefix("/api/desktop/v1/")
         .unwrap_or("")
         .trim_end_matches('/')
-        .to_owned();
-    let path = route.split('/').collect::<Vec<_>>();
+        .split('/')
+        .collect::<Vec<_>>();
+    let route = Route::resolve(&path).ok_or_else(|| Error::new(404, "Not Found"))?;
     let method = request.method().clone();
-    let allowed = allowed(&path).ok_or_else(|| Error::new(404, "Not Found"))?;
-    if !allowed.contains(&method.as_str()) {
+    let Some(endpoint) = route.endpoint(method.as_str()) else {
+        let allow = route
+            .endpoints()
+            .iter()
+            .map(|e| e.method)
+            .collect::<Vec<_>>()
+            .join(", ");
         let mut response = Error::new(405, "Method Not Allowed").into_response();
         response.headers_mut().insert(
             header::ALLOW,
-            HeaderValue::from_str(&allowed.join(", ")).expect("static method list"),
+            HeaderValue::from_str(&allow).expect("static method list"),
         );
         return Ok(response);
-    }
-    let query = params(&request)?;
-    let priority_route = matches!(
-        path.first().copied(),
-        Some("account-priorities" | "account-priority-orders")
-    );
-    let priority_summary = query.get("details").is_some_and(|value| value == "0");
-    if priority_route {
-        let pairs = Query::<Vec<(String, String)>>::try_from_uri(request.uri())
-            .map_err(|_| Error::invalid())?
-            .0;
-        if pairs.len() != query.len() || request.uri().query().is_some_and(str::is_empty) {
-            return Err(Error::invalid());
-        }
-        let detail_get =
-            method == Method::GET && matches!(path.as_slice(), ["account-priority-orders", _]);
-        if query.iter().any(|(key, value)| match key.as_str() {
-            "schema" => value != "2",
-            "details" => !detail_get || value != "0",
-            _ => true,
-        }) {
-            return Err(Error::invalid());
-        }
-        if !query.contains_key("schema") {
-            return Err(crate::priority_orders::upgrade_required());
-        }
-    }
+    };
+    let route =
+        route.parse_numbers(|id| validation::coercible_integer(&json!(id), i64::MIN, i64::MAX))?;
+    let query = QueryParams::parse(&request, route)?;
     let key = request
         .headers()
         .get("x-api-key")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_owned();
-    // Match FastAPI's parameter validation before entering an authenticated
-    // handler. This checks types only; domain reads and writes still need auth.
-    match path.as_slice() {
-        ["accounts" | "proxies", id, ..] | ["errors" | "usage-records", id] => {
-            validation::coercible_integer(&json!(id), i64::MIN, i64::MAX)?;
-        }
-        _ => {}
-    }
-    let integer_queries: &[&str] = match path.as_slice() {
-        ["errors"] => &["account_id", "before_id", "limit"],
-        ["recoveries"] => &["before_id", "limit"],
-        ["detection-logs"] => &["limit"],
-        ["usage-records"] => &["account_id", "api_key_id", "user_id", "after_id", "limit"],
-        ["usage-record-options"] => &["user_id", "limit"],
-        ["account-templates"] => &["account_id"],
-        ["account-operations", _] if method == Method::GET => &["after_event"],
-        _ => &[],
+    let mut payload = match endpoint.body {
+        RequestBody::None => Value::Null,
+        RequestBody::CancelOrder => json_payload_optional(request.into_body(), true).await?,
+        _ => json_payload(request.into_body()).await?,
     };
-    for name in integer_queries {
-        number(&query, name, i64::MIN, i64::MAX)?;
-    }
-    if path == ["usage-records"] {
-        boolean(&query, "include_summary")?;
-        boolean(&query, "mismatch_only")?;
-    }
-    if path == ["usage-record-options"] && !query.contains_key("kind") {
-        return Err(Error::invalid());
-    }
-    if matches!(path.as_slice(), ["accounts", _, "models"])
-        && query
-            .get("purpose")
-            .is_some_and(|value| value != "model_test")
-    {
-        return Err(Error::invalid());
-    }
-    if matches!(path.as_slice(), ["accounts", _, "models"]) {
-        boolean(&query, "refresh")?;
-    }
-    let mut payload = json!({});
-    if crate::request_schema::has_body(&path, method.as_str()) {
-        payload = if matches!(path.as_slice(), ["account-priority-orders", _, "cancel"]) {
-            json_payload_optional(request.into_body(), true).await?
-        } else {
-            json_payload(request.into_body()).await?
-        };
-        crate::request_schema::validate(&path, method.as_str(), &mut payload)?;
-    }
-    if path == ["connection-status"] {
+    crate::request_schema::validate(endpoint.body, &path, method.as_str(), &mut payload)?;
+    let call = dispatch::Call {
+        runtime: &runtime,
+        key: &key,
+        path: &path,
+        query: &query,
+        method: &method,
+        payload: &payload,
+    };
+    let action = call.prepare(route)?;
+    if route == Route::ConnectionStatus {
         if let Err(error) = runtime.authenticate(&key, true).await {
             if error.detail["connection"].is_object() {
                 return Ok(Json(error.detail["connection"].clone()).into_response());
             }
             return Err(error);
         }
-        return Ok(Json(runtime.upstream.status()).into_response());
-    }
-    let own_config_operation = path == ["sub2api-config", "operation"]
-        && method == Method::GET
-        && runtime.sub2api_config.owns_operation(&key);
-    if !own_config_operation {
+    } else if !(route == Route::HostOperation && runtime.sub2api_config.owns_operation(&key)) {
         runtime.authenticate(&key, method != Method::GET).await?;
     }
     if method != Method::GET {
         runtime.writable()?;
     }
-    let mut status = StatusCode::OK;
-    let result: Value = match path.as_slice() {
-        ["sub2api-system", action] => {
-            crate::sub2api_system::request(&runtime.actions, &key, action, &query).await?
-        }
-        ["sub2api-config", ..] => {
-            if !query.is_empty() {
-                return Err(Error::invalid());
-            }
-            let action = path.get(1).copied().unwrap_or("read");
-            runtime
-                .sub2api_config
-                .request(action, &runtime.upstream.active_url(), &key, &payload)
-                .await?
-        }
-        ["account-creation", ..] => {
-            let sync_models = path.len() == 1
-                && query.len() == 1
-                && query.get("sync_models").is_some_and(|v| v == "true");
-            if !query.is_empty() && !sync_models {
-                return Err(Error::invalid());
-            }
-            let value = crate::account_creation::handle(
-                &runtime.actions,
-                &key,
-                &path,
-                &payload,
-                sync_models,
-            )
-            .await?;
-            let mut response = Json(value).into_response();
-            response
-                .headers_mut()
-                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-            return Ok(response);
-        }
-        ["capabilities"] => {
-            json!({"api_version":1,"service":"Sub2API Ops Companion","platforms":["macos","android"],"version":crate::VERSION,
-            "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"sub2api_update":true,"account_creation":true,"detection_logs":true,"account_priority_ordering":true,"account_priority_per_platform":true}})
-        }
-        ["snapshot"] => {
-            let bytes = runtime.snapshot_bytes().await?;
-            return Ok((
-                [(
-                    header::CONTENT_TYPE,
-                    HeaderValue::from_static("application/json"),
-                )],
-                bytes,
-            )
-                .into_response());
-        }
-        ["config", "key-quota"] => {
-            if method == Method::GET {
-                runtime.key_quota.settings()?
-            } else {
-                runtime.key_quota.save_settings(&payload, None)?
-            }
-        }
-        ["accounts", id, "key-quota-settings"] => {
-            runtime
-                .key_quota_settings(path_id(id)?, (method == Method::PUT).then_some(&payload))
-                .await?
-        }
-        ["accounts", id, "key-quota-settings", "access-token"] => {
-            if !query.is_empty() {
-                return Err(Error::invalid());
-            }
-            let id = path_id(id)?;
-            runtime.key_quota_settings(id, None).await?;
-            let mut response = Json(runtime.key_quota.account_access_token(id)?).into_response();
-            response
-                .headers_mut()
-                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-            return Ok(response);
-        }
-        ["accounts", id, "usage"] => {
-            if !query.is_empty() {
-                return Err(Error::invalid());
-            }
-            runtime.account_usage(path_id(id)?, &key, false).await?
-        }
-        ["account-priorities"] if method == Method::GET => runtime.priorities.view().await?,
-        ["account-priorities"] => runtime.priorities.set_parallelism(&payload).await?,
-        ["account-priority-orders"] => {
-            let result = runtime.priorities.submit(&payload).await?;
-            runtime.priorities.tick().await?;
-            result
-        }
-        ["account-priority-orders", id] => runtime.priorities.get(id, !priority_summary)?,
-        ["account-priority-orders", id, "cancel"] => runtime.priorities.cancel(id)?,
-        ["errors"] => {
-            runtime
-                .actions
-                .queries
-                .errors(
-                    number(&query, "account_id", 1, i64::MAX)?,
-                    number(&query, "before_id", 1, i64::MAX)?,
-                    number(&query, "limit", 1, 100)?.unwrap_or(50) as usize,
-                    category(&query)?,
-                )
-                .await?
-        }
-        ["errors", id] => {
-            runtime
-                .error_detail(path_id(id)?, category(&query)?)
-                .await?
-        }
-        ["detection-logs"] => runtime.detection.logs(
-            get_string(&query, "before"),
-            number(&query, "limit", 1, 100)?.unwrap_or(50) as usize,
-        )?,
-        ["recoveries"] => {
-            runtime
-                .actions
-                .queries
-                .recoveries(
-                    number(&query, "before_id", 1, i64::MAX)?,
-                    number(&query, "limit", 1, 100)?.unwrap_or(50) as usize,
-                )
-                .await?
-        }
-        ["usage-records"] => {
-            let filter = crate::usage_records::Filter {
-                from_at: query.get("from_at").cloned(),
-                to_at: query.get("to_at").cloned(),
-                start_date: query.get("start_date").cloned(),
-                end_date: query.get("end_date").cloned(),
-                include_summary: boolean(&query, "include_summary")?,
-                account_id: number(&query, "account_id", i64::MIN, i64::MAX)?,
-                platform: query.get("platform").filter(|v| !v.is_empty()).cloned(),
-                api_key_id: number(&query, "api_key_id", i64::MIN, i64::MAX)?,
-                user_id: number(&query, "user_id", i64::MIN, i64::MAX)?,
-                model: query.get("model").cloned(),
-                request_type: query.get("request_type").cloned(),
-                mismatch_only: boolean(&query, "mismatch_only")?,
-                cursor: query.get("cursor").cloned(),
-                after_id: number(&query, "after_id", i64::MIN, i64::MAX)?,
-                limit: number(&query, "limit", 1, 100)?.map(|n| n as usize),
-            };
-            crate::usage_records::UsageRecords(runtime.db.clone())
-                .list_at(&filter, runtime.monitor.now())
-                .await?
-        }
-        ["usage-record-options"] => {
-            crate::usage_records::UsageRecords(runtime.db.clone())
-                .options(
-                    get_string(&query, "kind").ok_or_else(Error::invalid)?,
-                    get_string(&query, "q"),
-                    number(&query, "user_id", 1, i64::MAX)?,
-                    get_string(&query, "cursor"),
-                    number(&query, "limit", 1, 100)?.unwrap_or(50) as usize,
-                )
-                .await?
-        }
-        ["usage-records", id] => {
-            crate::usage_records::UsageRecords(runtime.db.clone())
-                .detail(path_id(id)?)
-                .await?
-        }
-        ["account-operations"] => runtime.operations.listing(get_string(&query, "batch_id"))?,
-        ["account-operations", "batch"] => {
-            status = StatusCode::ACCEPTED;
-            runtime
-                .operations
-                .submit_batch(&payload, &key, false)
-                .await?
-        }
-        ["account-operations", "batches", id, "cancel"] => {
-            runtime.operations.cancel_batch(id).await?
-        }
-        ["account-operations", id] => runtime.operations.get(
-            id,
-            number(&query, "after_event", 0, i64::MAX)?.unwrap_or(0) as usize,
-        )?,
-        ["account-operations", id, "cancel"] => runtime.operations.cancel(id).await?,
-        ["accounts", id, "operations"] => {
-            status = StatusCode::ACCEPTED;
-            runtime
-                .operations
-                .submit(path_id(id)?, &payload, &key)
-                .await?
-        }
-        ["accounts", id, "apply-oauth-credentials"] => {
-            if !query.is_empty() {
-                return Err(Error::invalid());
-            }
-            runtime
-                .apply_oauth_credentials(path_id(id)?, &key, &payload)
-                .await?
-        }
-        ["accounts", id, "settings"] => runtime.actions.settings_view(path_id(id)?).await?,
-        ["proxy-management", ..] => {
-            crate::proxy_management::handle(
-                &runtime.actions,
-                &key,
-                &path,
-                method.clone(),
-                &query,
-                &payload,
-            )
-            .await?
-        }
-        ["proxies"] => json!(runtime.actions.proxies(&key).await?),
-        ["proxies", id, action] => runtime.proxies.run(&key, path_id(id)?, action).await?,
-        ["accounts", id, "models"] => {
-            let refresh = boolean(&query, "refresh")?;
-            let purpose = get_string(&query, "purpose");
-            if purpose.is_some_and(|value| value != "model_test") {
-                return Err(Error::new(422, "模型目录用途无效"));
-            }
-            let account_id = path_id(id)?;
-            if purpose == Some("model_test") {
-                let row = runtime.actions.queries.private_account(account_id).await?;
-                if crate::model_target::supported(&row) {
-                    json!(
-                        runtime
-                            .actions
-                            .model_test_candidates(&row, &key, refresh)
-                            .await?
-                    )
-                } else {
-                    let identity = runtime.actions.candidate_source(&row, &key).await?;
-                    let actions = runtime.actions.clone();
-                    let key = key.clone();
-                    let fetch = async move {
-                        let result: Result<Vec<Value>> = async {
-                            let models = match crate::model_directory::account_models_read(
-                                &actions.queries.db,
-                                account_id,
-                            )
-                            .await
-                            {
-                                Ok(models) => models,
-                                Err(error) if error.status.as_u16() == 422 => {
-                                    let data = actions
-                                        .json(
-                                            reqwest::Method::GET,
-                                            &format!("accounts/{account_id}/models"),
-                                            &key,
-                                            None,
-                                            30,
-                                        )
-                                        .await?;
-                                    let items = data
-                                        .as_array()
-                                        .ok_or_else(|| Error::new(502, "模型列表格式无效"))?;
-                                    if items.len() > 10_000 {
-                                        return Err(Error::new(502, "上游模型列表超过限制"));
-                                    }
-                                    crate::actions::filter_models(items, &[])
-                                }
-                                Err(error) => return Err(error),
-                            };
-                            Ok(models)
-                        }
-                        .await;
-                        result.map_err(|error| {
-                            if error.status.is_server_error() {
-                                crate::model_candidates::Failure::temporary(error)
-                            } else {
-                                crate::model_candidates::Failure::permanent(error)
-                            }
-                        })
-                    };
-                    json!(
-                        runtime
-                            .actions
-                            .candidates
-                            .get(identity, refresh, fetch)
-                            .await?
-                    )
-                }
-            } else {
-                json!(runtime.actions.models(account_id, &key, false).await?)
-            }
-        }
-        ["account-templates"] if method == Method::GET => {
-            let row = if let Some(id) = number(&query, "account_id", 1, i64::MAX)? {
-                Some(runtime.actions.account(id, None).await?)
-            } else {
-                None
-            };
-            runtime.actions.templates.view(row.as_ref())?
-        }
-        ["account-templates", "apply"] => {
-            status = StatusCode::ACCEPTED;
-            runtime
-                .operations
-                .submit_batch(&payload, &key, true)
-                .await?
-        }
-        ["account-templates"] => {
-            template_request(&mut payload, false)?;
-            runtime.actions.templates.edit(None, &payload, false)?
-        }
-        ["account-templates", id] => {
-            template_request(&mut payload, method == Method::DELETE)?;
-            runtime
-                .actions
-                .templates
-                .edit(Some(id), &payload, method == Method::DELETE)?
-        }
-        ["accounts", id, "model-detection"] if method == Method::GET => {
-            runtime.detection.view(path_id(id)?).await?
-        }
-        ["accounts", id, "keepalive"] if method == Method::GET => {
-            runtime.keepalive.view(path_id(id)?).await?
-        }
-        ["accounts", id, "keepalive"] => runtime.keepalive.save(path_id(id)?, &payload).await?,
-        ["accounts", id, "model-detection"] => {
-            payload = crate::model_detection::detection_request(&payload)?;
-            runtime.detection.save(path_id(id)?, &payload).await?
-        }
-        ["lm-detector", "fingerprint-bank"] => runtime.tests.lm_bank.public().await?,
-        ["lm-detector", "fingerprint-bank", "sync"] => runtime.tests.lm_bank.request_sync().await?,
-        ["modeltrace", "fingerprint-bank"] => runtime.tests.bank.public(),
-        ["modeltrace", "fingerprint-bank", "sync"] => runtime.tests.bank.request_sync()?,
-        ["accounts", id, "model-tests"] => {
-            runtime
-                .tests
-                .start(
-                    path_id(id)?,
-                    &crate::model_tests::model_request(&payload)?,
-                    None,
-                )
-                .await?
-        }
-        ["accounts", id, "model-tests", "latest"] => runtime.tests.latest(path_id(id)?)?,
-        ["model-tests", id] => runtime.tests.get(id)?,
-        ["model-tests", id, "cancel"] => runtime.tests.cancel(id).await?,
-        ["model-tests", id, "retry"] => {
-            request_payload(&payload, &["request_id"], &["request_id"])?;
-            runtime
-                .tests
-                .retry_failed(id, validation::request_id(&payload["request_id"])?)
-                .await?
-        }
-        ["quota-refresh"] if method == Method::GET => runtime.quota_progress(),
-        ["quota-refresh"] => runtime.start_quota_refresh(&key).await?,
-        ["config"] => runtime.config.snapshot(None)?,
-        ["config", section] => {
-            request_payload(
-                &payload,
-                &["expected_revision", "changes"],
-                &["expected_revision", "changes"],
-            )?;
-            version(&payload, "expected_revision")?;
-            if !payload["changes"].is_object() {
-                return Err(Error::invalid());
-            }
-            runtime
-                .config
-                .save(
-                    section,
-                    &payload["changes"],
-                    "desktop:admin",
-                    Some(string(&payload["expected_revision"])),
-                )
-                .await?
-        }
-        ["actions", "bark-test"] => {
-            let push = runtime
-                .config
-                .bark
-                .push(
-                    "Sub2API Ops Companion",
-                    "Bark 推送通道正常。",
-                    8,
-                    &json!({}),
-                )
-                .await;
-            if !push.success {
-                return Err(Error::new(
-                    502,
-                    format!("Bark 测试失败：{}", push.error_code),
-                ));
-            }
-            json!({"message":"Bark 测试消息已发送"})
-        }
-        _ => return Err(Error::new(404, "Not Found")),
-    };
+    let response = action.await?;
     if method != Method::GET {
         runtime.invalidate_snapshot();
     }
-    Ok((status, Json(result)).into_response())
-}
-fn template_request(payload: &mut Value, delete: bool) -> Result<()> {
-    if delete {
-        request_payload(payload, &["expected_version"], &["expected_version"])?;
-    } else {
-        request_payload(
-            payload,
-            &["expected_version", "name", "whitelist", "mappings"],
-            &["expected_version", "name"],
-        )?;
-        validation::text(&payload["name"], 1, 40)?;
-        for key in ["whitelist", "mappings"] {
-            if payload.get(key).is_none() {
-                payload[key] = json!([]);
-            }
-        }
-        crate::account_templates::profile(
-            &json!({"whitelist":payload["whitelist"],"mappings":payload["mappings"]}),
-        )?;
-    }
-    version(payload, "expected_version")
+    Ok(response)
 }
 
 #[cfg(test)]
@@ -758,8 +214,10 @@ mod response_tests {
                 .unwrap();
             assert!(output.status.success(), "response contract process failed");
             let logs = String::from_utf8(output.stderr).unwrap();
-            assert_eq!(logs.matches("desktop_failure request_id=").count(), 2);
+            assert_eq!(logs.matches("desktop_failure").count(), 2);
             assert!(logs.contains("Sub2Ops internal task failed"));
+            assert!(logs.contains("api.rs") && logs.contains("line="));
+            assert!(logs.contains("request_id=") && logs.contains("category="));
             assert!(!logs.contains("fixture-private"));
             assert!(!String::from_utf8(output.stdout)
                 .unwrap()

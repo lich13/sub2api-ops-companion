@@ -1,4 +1,18 @@
-import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useEffectEvent } from "react";
+import {
+  bridgeFailure,
+  credentialsRequired,
+  ignoredFailure,
+} from "./bridgeError";
+import { accountDialog, closedDialog } from "./accountDialog";
+import React, {
+  Suspense,
+  useReducer,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Activity,
   ArrowUpRight,
@@ -15,9 +29,7 @@ import {
   Network,
   Plus,
   Trash2,
-  LayoutDashboard,
   LoaderCircle,
-  Pin,
   Plug,
   RefreshCw,
   Search,
@@ -57,11 +69,6 @@ import { useErrorFeed, type ErrorCategory } from "./useErrorFeed";
 import { MiniUsage, QuotaRefresh, RecoveryHistory } from "./AccountControls";
 import TestDialog from "./TestDialog";
 import { useConnectionBatch, ConnectionBatchResults } from "./ConnectionBatch";
-import {
-  accountRestriction,
-  QuickRestriction,
-  QuickRecover,
-} from "./QuickAccountStatus";
 import ModelTestDialog from "./ModelTestDialog";
 import DetectionPlatformSettings from "./DetectionPlatformSettings";
 import FingerprintBankStatus from "./FingerprintBankStatus";
@@ -73,7 +80,6 @@ import {
   ResetCreditsDialog,
   resetCreditEligible,
 } from "./AccountManagement";
-import { useQuickHeight } from "./useQuickHeight";
 import AccountTemplates from "./AccountTemplates";
 import SchedulingParameters from "./SchedulingParameters";
 import AccountSettingsDialog, {
@@ -152,7 +158,6 @@ type Page =
   | "events"
   | "features"
   | "settings";
-const quick = new URLSearchParams(location.search).get("panel") === "quick";
 const pages: { id: Page; label: string; icon: typeof Activity }[] = [
   { id: "accounts", label: "账号", icon: Users },
   { id: "groups", label: "分组", icon: Layers3 },
@@ -199,15 +204,6 @@ export default function App() {
     [ready, setReady] = useState(false),
     [page, setPage] = useState<Page>("accounts"),
     [accountSort, setAccountSort] = useState(readAccountSort),
-    [reauthorizeAccount, setReauthorizeAccount] = useState<{
-      account: Account;
-      connection: string;
-    } | null>(null),
-    [settingsAccount, setSettingsAccount] = useState<{
-      account: Account;
-      section: SettingsSection;
-      connection: string;
-    } | null>(null),
     [nameExpanded, setNameExpanded] = useState(() => {
       try {
         return localStorage.getItem("sub2ops-account-name-expanded") === "true";
@@ -215,18 +211,6 @@ export default function App() {
         return false;
       }
     }),
-    [testAccount, setTestAccount] = useState<Account | null>(null),
-    [modelTestAccount, setModelTestAccount] = useState<Account | null>(null),
-    [modelDetectionAccount, setModelDetectionAccount] =
-      useState<Account | null>(null),
-    [keepaliveAccount, setKeepaliveAccount] = useState<Account | null>(null),
-    [templatesOpen, setTemplatesOpen] = useState(false),
-    [templateAccount, setTemplateAccount] = useState<Account | null>(null),
-    [templateAccounts, setTemplateAccounts] = useState<Account[] | undefined>(
-      undefined,
-    ),
-    [proxyAccounts, setProxyAccounts] = useState<Account[] | null>(null),
-    [quickTab, setQuickTab] = useState<"groups" | "errors">("groups"),
     [toast, setToast] = useState(""),
     [busy, setBusy] = useState<number | null>(null),
     [detail, setDetail] = useState<OpsError | null>(null),
@@ -243,8 +227,6 @@ export default function App() {
     ),
     [selected, setSelected] = useState<Set<number>>(new Set()),
     [removedIds, setRemovedIds] = useState<Set<number>>(new Set()),
-    [deleteAccounts, setDeleteAccounts] = useState<Account[] | null>(null),
-    [resetAccounts, setResetAccounts] = useState<Account[] | null>(null),
     [filtersOpen, setFiltersOpen] = useState(false),
     [groupsOpen, setGroupsOpen] = useState(false),
     [groupChanges, setGroupChanges] = useState({ count: 0, busy: false }),
@@ -265,6 +247,17 @@ export default function App() {
     schedulePending = useRef(false),
     detailGeneration = useRef(0),
     detailAbort = useRef<AbortController | null>(null);
+  const [dialog, showDialog] = useReducer(accountDialog, closedDialog);
+  const testAccount = dialog.kind === "test" ? dialog.account : null;
+  const modelTestAccount = dialog.kind === "modelTest" ? dialog.account : null;
+  const modelDetectionAccount =
+    dialog.kind === "detection" ? dialog.account : null;
+  const keepaliveAccount = dialog.kind === "keepalive" ? dialog.account : null;
+  const settingsAccount = dialog.kind === "settings" ? dialog : null;
+  const reauthorizeAccount = dialog.kind === "reauthorize" ? dialog : null;
+  const deleteAccounts = dialog.kind === "delete" ? dialog.accounts : null;
+  const resetAccounts = dialog.kind === "reset" ? dialog.accounts : null;
+  const proxyAccounts = dialog.kind === "proxy" ? dialog.accounts : null;
   const switcherOpen = switcherAnchor !== null;
   const connections = useMemo(
     () => savedConnections(state.preferences),
@@ -289,7 +282,7 @@ export default function App() {
   function closeDetail() {
     detailAbort.current?.abort();
     detailAbort.current = null;
-    ++detailGeneration.current;
+    detailGeneration.current = detailGeneration.current + 1;
     setDetail(null);
     setDetailBusy(false);
   }
@@ -309,16 +302,16 @@ export default function App() {
     if (!(await beforeConnectionChange())) return;
     setSwitchingUrl(targetUrl);
     try {
-      const next = await command<ViewState>("connect", {
+      await command("connect", {
         baseUrl: targetUrl,
         apiKey: "",
         name: item.name,
       });
-      if (next?.preferences) setState(next);
+
       setToast(`已切换到 ${item.name}`);
     } catch (error) {
       report(error);
-      if (/Key|401|403|未找到|拒绝/.test(String(error))) {
+      if (credentialsRequired(error)) {
         setConnectionModal({
           baseUrl: targetUrl,
           name: item.name,
@@ -371,18 +364,7 @@ export default function App() {
       setSelected(new Set());
       setFiltersOpen(false);
       setGroupsOpen(false);
-      setDeleteAccounts(null);
-      setResetAccounts(null);
-      setTestAccount(null);
-      setModelTestAccount(null);
-      setModelDetectionAccount(null);
-      setKeepaliveAccount(null);
-      setSettingsAccount(null);
-      setReauthorizeAccount(null);
-      setProxyAccounts(null);
-      setTemplatesOpen(false);
-      setTemplateAccount(null);
-      setTemplateAccounts(undefined);
+      showDialog(closedDialog);
       closeDetail();
       if (page === "accounts") {
         setAccountSort(readAccountSort());
@@ -401,44 +383,25 @@ export default function App() {
     }
     previousPage.current = page;
   }, [page]);
-  const quickBody = useQuickHeight(quick, !!detail || detailBusy, [
-    state.connected,
-    state.online,
-    ready,
-    quickTab,
-    state.snapshot?.observed_at,
-  ]);
   const connectionKey = `${state.preferences.base_url}:${state.connected}:${state.connection_revision ?? 0}`;
   useEffect(() => bindOperationConnection(connectionKey), [connectionKey]);
   const connectionBatch = useConnectionBatch({
     connectionKey,
     storageKey: state.preferences.base_url,
     online: state.online,
-    active: !quick && page === "accounts" && state.foreground !== false,
+    active: page === "accounts" && state.foreground !== false,
   });
-  const filterKey = JSON.stringify([query, group, platform, filter, type]);
   useEffect(() => {
     setSelected(new Set());
-  }, [filterKey, connectionKey]);
+  }, [query, group, platform, filter, type, connectionKey]);
   useEffect(() => {
     closeDetail();
     setSwitcherAnchor(null);
   }, [page, connectionKey, eventTab]);
   useEffect(() => {
     setRemovedIds(new Set());
-    setDeleteAccounts(null);
-    setResetAccounts(null);
+    showDialog(closedDialog);
     closeDetail();
-    setTestAccount(null);
-    setModelTestAccount(null);
-    setModelDetectionAccount(null);
-    setKeepaliveAccount(null);
-    setTemplatesOpen(false);
-    setTemplateAccount(null);
-    setTemplateAccounts(undefined);
-    setSettingsAccount(null);
-    setReauthorizeAccount(null);
-    setProxyAccounts(null);
     setConnectionModal(null);
     setSwitcherAnchor(null);
     schedulePending.current = false;
@@ -454,27 +417,29 @@ export default function App() {
     });
   }, [connectionKey]);
   const report = (e: unknown) => {
-    if (!String(e).includes("连接已切换；请求保留在原连接"))
-      setToast(String(e).replace(/^Error: /, ""));
+    if (!ignoredFailure(e)) setToast(String(e).replace(/^Error: /, ""));
   };
   const accountActions = useAccountActions({
     online: state.online,
     connectionKey,
     report,
-    modelTest: setModelTestAccount,
-    modelDetection: setModelDetectionAccount,
-    test: setTestAccount,
-    keepalive: setKeepaliveAccount,
+    modelTest: (account) => showDialog({ kind: "modelTest", account }),
+    modelDetection: (account) => showDialog({ kind: "detection", account }),
+    test: (account) => showDialog({ kind: "test", account }),
+    keepalive: (account) => showDialog({ kind: "keepalive", account }),
     reauthorize: (account) =>
-      setReauthorizeAccount({ account, connection: connectionKey }),
+      showDialog({ kind: "reauthorize", account, connection: connectionKey }),
     template: (account) => {
-      setTemplateAccounts(undefined);
-      setTemplateAccount(account);
-      setTemplatesOpen(true);
+      showDialog({ kind: "templates", account: account });
     },
-    remove: (account) => setDeleteAccounts([account]),
+    remove: (account) => showDialog({ kind: "delete", accounts: [account] }),
     settings: (account, section) =>
-      setSettingsAccount({ account, section, connection: connectionKey }),
+      showDialog({
+        kind: "settings",
+        account,
+        section,
+        connection: connectionKey,
+      }),
   });
   useEffect(() => {
     let disposed = false;
@@ -485,7 +450,7 @@ export default function App() {
         if (!disposed) setState(s);
       });
       unUpdate = await updates(setToast);
-      const s = await command<ViewState>("get_state");
+      const s = await command("get_state");
       if (!disposed) {
         setState(s);
         setReady(true);
@@ -521,25 +486,9 @@ export default function App() {
         return;
       if (switcherOpen) setSwitcherAnchor(null);
       else if (connectionModal) setConnectionModal(null);
-      else if (testAccount) setTestAccount(null);
+      else if (testAccount) showDialog(closedDialog);
       else if (detail || detailBusy) {
         closeDetail();
-      } else if (quick) {
-        if (
-          leaveGroups ||
-          deleteAccounts ||
-          resetAccounts ||
-          modelTestAccount ||
-          modelDetectionAccount ||
-          keepaliveAccount ||
-          templatesOpen ||
-          proxyAccounts ||
-          reauthorizeAccount ||
-          settingsAccount ||
-          document.querySelector('[role="dialog"], [role="alertdialog"]')
-        )
-          return;
-        void command("hide_quick").catch(report);
       }
     };
     window.addEventListener("keydown", escape);
@@ -556,7 +505,6 @@ export default function App() {
     modelTestAccount,
     modelDetectionAccount,
     keepaliveAccount,
-    templatesOpen,
     proxyAccounts,
     reauthorizeAccount,
     settingsAccount,
@@ -577,21 +525,20 @@ export default function App() {
   }, [page, state.online, connectionKey]);
   const degradationFeed = useErrorFeed(
     "degradation",
-    !quick && page === "events" && eventTab === "degradation",
+    page === "events" && eventTab === "degradation",
     state.online,
     connectionKey,
   );
   const otherFeed = useErrorFeed(
     "other",
-    !quick && page === "events" && eventTab === "other",
+    page === "events" && eventTab === "other",
     state.online,
     connectionKey,
   );
   const eventFeed = eventTab === "other" ? otherFeed : degradationFeed;
   const loadEvents = eventFeed.load;
   const snap = state.snapshot,
-    groups = snap?.groups ?? [],
-    errors = snap?.errors ?? [];
+    groups = useMemo(() => snap?.groups ?? [], [snap?.groups]);
   const accounts = useMemo(
     () => (snap?.accounts ?? []).filter((a) => !removedIds.has(a.id)),
     [snap?.accounts, removedIds],
@@ -602,11 +549,11 @@ export default function App() {
         filterAccounts(accounts, query, group, platform, filter, type),
         ascending,
       ),
-    [accounts, filterKey, ascending, sortBy],
+    [accounts, query, group, platform, filter, type, ascending, sortBy],
   );
   useEffect(() => {
     const live = new Set(accounts.map((a) => a.id));
-    setKeepaliveAccount((old) => (old && !live.has(old.id) ? null : old));
+    showDialog({ kind: "accountsChanged", ids: live });
     setSelected((old) =>
       [...old].every((id) => live.has(id))
         ? old
@@ -615,10 +562,10 @@ export default function App() {
   }, [accounts]);
   const eventRows = useMemo(
     () =>
-      (quick ? errors : page === "events" ? eventFeed.items : [])
+      (page === "events" ? eventFeed.items : [])
         .slice()
         .sort((a, b) => b.id - a.id),
-    [quick, page, errors, eventFeed.items],
+    [page, eventFeed.items],
   );
   const hasApiKey = useMemo(
     () => accounts.some((a) => a.type === "apikey"),
@@ -727,10 +674,10 @@ export default function App() {
       </div>
     );
   }
-  function groupRow(g: Group, compact = false) {
+  function groupRow(g: Group) {
     const recent = g.recent_accounts;
     return (
-      <article className={`group-row ${compact ? "compact" : ""}`} key={g.id}>
+      <article className="group-row compact" key={g.id}>
         <div className="group-heading">
           <div className="group-symbol">
             <Layers3 size={16} />
@@ -741,46 +688,20 @@ export default function App() {
         <div className="recent-accounts">
           {recent.map((call) => {
             const a = accounts.find((item) => item.id === call.account_id);
-            const restriction = quick ? accountRestriction(a) : "";
-            const recover =
-              quick && a
-                ? accountActions(a).find((item) => item.id === "recover")
-                : undefined;
             return (
               <div className="recent-account" key={call.account_id}>
-                {compact ? (
+                {
                   <>
                     <div className="compact-identity">
-                      <strong
-                        className={
-                          restriction ? "quick-account-restricted" : undefined
-                        }
-                        title={[call.account_name, restriction]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      >
+                      <strong title={call.account_name}>
                         {call.account_name}
-                        <QuickRestriction reason={restriction} />
                         {a && (
                           <>
                             <DegradationBadge account={a} compact />
                           </>
                         )}
                       </strong>
-                      {a &&
-                        (quick && a.type === "apikey" ? (
-                          <UsageCell
-                            account={a}
-                            compact
-                            online={state.online}
-                            active={state.foreground !== false}
-                            connectionKey={connectionKey}
-                            refresh={() => command("refresh")}
-                            report={report}
-                          />
-                        ) : (
-                          <MiniUsage account={a} />
-                        ))}
+                      {a && <MiniUsage account={a} />}
                     </div>
                     <div className="compact-times">
                       <div>
@@ -801,57 +722,9 @@ export default function App() {
                         </div>
                       )}
                     </div>
-                    {a &&
-                      (quick ? (
-                        <div className="quick-account-controls">
-                          <QuickRecover account={a} action={recover} />
-                          {schedule(a)}
-                        </div>
-                      ) : (
-                        schedule(a)
-                      ))}
+                    {a && schedule(a)}
                   </>
-                ) : (
-                  <>
-                    <div className="group-call">
-                      {!compact && (
-                        <span
-                          className={`status-dot ${a?.available ? "good" : "muted"}`}
-                        />
-                      )}
-                      <div className="call-info">
-                        <strong title={call.account_name}>
-                          {call.account_name || `账号 #${call.account_id}`}
-                        </strong>
-                        {!compact && (
-                          <span>
-                            #{call.account_id} · {call.model}
-                          </span>
-                        )}
-                      </div>
-                      {a ? schedule(a) : null}
-                    </div>
-                    <div className="call-time">
-                      {compact && <span>最近调用</span>}
-                      <Time at={call.called_at} />
-                    </div>
-                    {a?.last_error_id ? (
-                      <button
-                        className="error-link"
-                        onClick={() => void openError(a.last_error_id!)}
-                      >
-                        {!compact && <CircleAlert size={12} />}
-                        <span>{compact ? "上次错误" : "报错"}</span>
-                        <Time at={a.last_error_at} />
-                      </button>
-                    ) : compact ? (
-                      <div className="call-time">
-                        <span>上次错误</span>
-                        <Time at={a?.last_error_at} />
-                      </div>
-                    ) : null}
-                  </>
-                )}
+                }
               </div>
             );
           })}
@@ -860,14 +733,8 @@ export default function App() {
       </article>
     );
   }
-  function errorRow(e: OpsError, compact = false, category?: ErrorCategory) {
+  function errorRow(e: OpsError, category?: ErrorCategory) {
     const stateLabel = errorState(e);
-    const account = accounts.find((item) => item.id === e.account_id);
-    const restriction = compact && quick ? accountRestriction(account) : "";
-    const recover =
-      compact && quick && account
-        ? accountActions(account).find((item) => item.id === "recover")
-        : undefined;
     const contents = (
       <>
         <span
@@ -876,16 +743,9 @@ export default function App() {
           {e.upstream_status_code || e.status_code || "ERR"}
         </span>
         <div>
-          <strong
-            className={restriction ? "quick-account-restricted" : undefined}
-            title={restriction || undefined}
-          >
+          <strong>
             {e.account_name ||
               (e.account_id ? `账号 #${e.account_id}` : "未关联账号")}
-            <QuickRestriction reason={restriction} />
-            {compact && account && (
-              <DegradationBadge account={account} compact />
-            )}
           </strong>
           <span>
             <em
@@ -893,34 +753,18 @@ export default function App() {
             >
               {stateLabel}
             </em>
-            {!compact && (
+            {
               <span className="event-model">
                 {e.requested_model || e.model || "未知模型"} ·{" "}
               </span>
-            )}
+            }
             {e.provider_error_code || e.message || "查看错误详情"}
           </span>
         </div>
         <Time at={e.created_at} />
       </>
     );
-    if (compact && quick)
-      return (
-        <div key={e.id} className="error-row quick-error-row">
-          <button
-            type="button"
-            className="quick-error-open"
-            onClick={() => void openError(e.id, category)}
-          >
-            {contents}
-          </button>
-          {account && recover ? (
-            <QuickRecover account={account} action={recover} />
-          ) : (
-            <ChevronRight size={15} aria-hidden="true" />
-          )}
-        </div>
-      );
+
     return (
       <button
         key={e.id}
@@ -946,7 +790,7 @@ export default function App() {
         >
           <div className="instance-switcher-header">
             <span>Sub2API 实例 ({connections.length})</span>
-            {!quick && (
+            {
               <button
                 type="button"
                 className="text-button"
@@ -957,7 +801,7 @@ export default function App() {
               >
                 管理实例
               </button>
-            )}
+            }
           </div>
           <div className="instance-switcher-list">
             {connections.map((item) => {
@@ -1037,16 +881,15 @@ export default function App() {
     );
   }
   const visibleGroups = useMemo(
-    () =>
-      quick || (mobile && groupsOpen) ? currentGroups(groups, accounts) : [],
-    [quick, mobile, groupsOpen, groups, accounts],
+    () => (mobile && groupsOpen ? currentGroups(groups, accounts) : []),
+    [mobile, groupsOpen, groups, accounts],
   );
   const detailAccount = detail
     ? accounts.find((a) => a.id === detail.account_id)
     : undefined;
   return (
-    <div className={`app${quick ? " quick" : ""}${mobile ? " mobile" : ""}`}>
-      {!quick && !mobile && (
+    <div className={`app${mobile ? " mobile" : ""}`}>
+      {!mobile && (
         <aside className="sidebar" data-tauri-drag-region>
           <div className="brand">
             <span className="brand-icon">
@@ -1097,28 +940,13 @@ export default function App() {
       )}
       <main className="main">
         <header className="topbar" data-tauri-drag-region>
-          {quick ? (
-            <nav className="quick-tabs" aria-label="快捷面板">
-              <button
-                className={quickTab === "groups" ? "active" : ""}
-                onClick={() => setQuickTab("groups")}
-              >
-                分组
-              </button>
-              <button
-                className={quickTab === "errors" ? "active" : ""}
-                onClick={() => setQuickTab("errors")}
-              >
-                异常{eventRows.length > 0 && <span>{eventRows.length}</span>}
-              </button>
-            </nav>
-          ) : (
+          {
             <div className="breadcrumb">
               <strong>{pages.find((p) => p.id === page)?.label}</strong>
             </div>
-          )}
+          }
           <div className="top-actions">
-            {preview && !quick && <span className="preview-label">预览</span>}
+            {preview && <span className="preview-label">预览</span>}
             {status()}
             <AccountOperations
               accounts={accounts}
@@ -1126,23 +954,15 @@ export default function App() {
               connectionKey={connectionKey}
               active={state.foreground !== false}
               report={report}
-              modelTest={setModelTestAccount}
+              modelTest={(account) =>
+                showDialog({ kind: "modelTest", account })
+              }
               priorities={() => setPage("priorities")}
               template={(a) => {
-                setTemplateAccounts(undefined);
-                setTemplateAccount(a);
-                setTemplatesOpen(true);
+                showDialog({ kind: "templates", account: a });
               }}
             />
-            {!quick && !preview && !mobile && (
-              <button
-                className="icon-button"
-                title="打开快捷面板"
-                onClick={() => void command("show_quick").catch(report)}
-              >
-                <LayoutDashboard size={15} />
-              </button>
-            )}
+
             <button
               className="icon-button"
               title="立即刷新"
@@ -1150,27 +970,6 @@ export default function App() {
             >
               <RefreshCw size={15} />
             </button>
-            {quick && (
-              <button
-                className={`icon-button ${state.preferences.pinned ? "selected" : ""}`}
-                aria-pressed={state.preferences.pinned}
-                title={state.preferences.pinned ? "取消固定" : "固定面板"}
-                onClick={() =>
-                  void prefs({ pinned: !state.preferences.pinned })
-                }
-              >
-                <Pin size={15} />
-              </button>
-            )}
-            {quick && (
-              <button
-                className="icon-button"
-                title="关闭快捷面板"
-                onClick={() => void command("hide_quick").catch(report)}
-              >
-                <X size={16} />
-              </button>
-            )}
           </div>
         </header>
         {state.connected && !state.online && (
@@ -1190,9 +989,9 @@ export default function App() {
         <div
           ref={contentRef}
           key={mobile ? connectionKey : "content"}
-          className={`content ${!quick && page === "events" ? "events-content" : ""} ${!quick && page === "records" ? "records-content" : ""}`}
+          className={`content ${page === "events" ? "events-content" : ""} ${page === "records" ? "records-content" : ""}`}
         >
-          <div ref={quickBody} className="content-inner">
+          <div className="content-inner">
             {!ready || state.initializing ? (
               <div className="empty">
                 <LoaderCircle className="spin" />
@@ -1201,7 +1000,7 @@ export default function App() {
             ) : !state.connected ? (
               <Connection
                 state={state}
-                onState={setState}
+
                 onError={report}
                 onSwitchSaved={(item) => void switchConnection(item)}
                 switchingUrl={switchingUrl}
@@ -1217,7 +1016,7 @@ export default function App() {
                     <ConnectionStatusCard connectionKey={connectionKey} />
                     <Connection
                       state={state}
-                      onState={setState}
+
                       onError={report}
                       beforeChange={beforeConnectionChange}
                       onSwitchSaved={(item) => void switchConnection(item)}
@@ -1226,33 +1025,6 @@ export default function App() {
                   </>
                 )}
               </div>
-            ) : quick ? (
-              <>
-                {quickTab === "groups" ? (
-                  <KeyQuotaProvider
-                    key={connectionKey}
-                    accounts={accounts}
-                    online={state.online}
-                    active={state.foreground !== false}
-                    enabled={hasApiKey}
-                  >
-                    <div className="quick-groups">
-                      {visibleGroups.map((g) => groupRow(g, true))}
-                      {!groups.length && <Empty text="没有分组记录" />}
-                    </div>
-                  </KeyQuotaProvider>
-                ) : (
-                  <div className="error-list">
-                    {eventRows.map((error) => errorRow(error, true))}
-                    {!eventRows.length && (
-                      <div className="quiet">
-                        <Check size={15} />
-                        暂无账号错误
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
             ) : (
               <>
                 <GroupManager
@@ -1360,9 +1132,7 @@ export default function App() {
                           </label>
                           <button
                             onClick={() => {
-                              setTemplateAccounts(undefined);
-                              setTemplateAccount(null);
-                              setTemplatesOpen(true);
+                              showDialog({ kind: "templates", account: null });
                             }}
                           >
                             账号模板
@@ -1496,9 +1266,7 @@ export default function App() {
                           />
                           <button
                             onClick={() => {
-                              setTemplateAccounts(undefined);
-                              setTemplateAccount(null);
-                              setTemplatesOpen(true);
+                              showDialog({ kind: "templates", account: null });
                             }}
                           >
                             账号模板
@@ -1587,9 +1355,12 @@ export default function App() {
                                   )
                                 }
                                 onClick={() =>
-                                  setResetAccounts(
-                                    accounts.filter((a) => selected.has(a.id)),
-                                  )
+                                  showDialog({
+                                    kind: "reset",
+                                    accounts: accounts.filter((a) =>
+                                      selected.has(a.id),
+                                    ),
+                                  })
                                 }
                               >
                                 <Ticket size={12} />
@@ -1598,9 +1369,12 @@ export default function App() {
                               <button
                                 disabled={!state.online || selected.size === 0}
                                 onClick={() =>
-                                  setProxyAccounts(
-                                    accounts.filter((a) => selected.has(a.id)),
-                                  )
+                                  showDialog({
+                                    kind: "proxy",
+                                    accounts: accounts.filter((a) =>
+                                      selected.has(a.id),
+                                    ),
+                                  })
                                 }
                               >
                                 <Network size={12} />
@@ -1609,11 +1383,13 @@ export default function App() {
                               <button
                                 disabled={!state.online || selected.size === 0}
                                 onClick={() => {
-                                  setTemplateAccount(null);
-                                  setTemplateAccounts(
-                                    accounts.filter((a) => selected.has(a.id)),
-                                  );
-                                  setTemplatesOpen(true);
+                                  showDialog({
+                                    kind: "templates",
+                                    account: null,
+                                    accounts: accounts.filter((a) =>
+                                      selected.has(a.id),
+                                    ),
+                                  });
                                 }}
                               >
                                 <LayoutTemplate size={12} />
@@ -1623,9 +1399,12 @@ export default function App() {
                                 className="danger-text"
                                 disabled={!state.online || selected.size === 0}
                                 onClick={() =>
-                                  setDeleteAccounts(
-                                    accounts.filter((a) => selected.has(a.id)),
-                                  )
+                                  showDialog({
+                                    kind: "delete",
+                                    accounts: accounts.filter((a) =>
+                                      selected.has(a.id),
+                                    ),
+                                  })
                                 }
                               >
                                 <Trash2 size={12} />
@@ -1947,7 +1726,7 @@ export default function App() {
                             )}
                             <div className="error-list">
                               {eventRows.map((error) =>
-                                errorRow(error, false, eventTab),
+                                errorRow(error, eventTab),
                               )}
                               {!eventRows.length && (
                                 <Empty
@@ -2018,7 +1797,7 @@ export default function App() {
                         state={state}
                         runtimeVersion={runtimeVersion}
                         prefs={prefs}
-                        onState={setState}
+
                         onChange={(key, value) =>
                           setConfig({ ...config, [key]: value })
                         }
@@ -2035,7 +1814,7 @@ export default function App() {
                       <section className="settings-card">
                         <Connection
                           state={state}
-                          onState={setState}
+
                           onError={report}
                           beforeChange={beforeConnectionChange}
                           onSwitchSaved={(item) => void switchConnection(item)}
@@ -2050,16 +1829,6 @@ export default function App() {
             )}
           </div>
         </div>
-        {quick && (
-          <footer className="quick-bottom">
-            <span>
-              <Time at={snap?.observed_at} />
-            </span>
-            <button onClick={() => void command("show_main").catch(report)}>
-              打开主窗口 <ArrowUpRight size={14} />
-            </button>
-          </footer>
-        )}
       </main>
       {mobile && (
         <nav className="bottom-nav" aria-label="主导航">
@@ -2145,7 +1914,7 @@ export default function App() {
           >
             <Connection
               state={state}
-              onState={setState}
+
               initialUrl={connectionModal.baseUrl}
               initialName={connectionModal.name}
               requireKey={Boolean(connectionModal.requireKey)}
@@ -2180,8 +1949,8 @@ export default function App() {
               <X size={20} />
             </button>
           </header>
-          <div className="quick-groups">
-            {visibleGroups.map((g) => groupRow(g, true))}
+          <div className="mobile-activity-groups">
+            {visibleGroups.map((g) => groupRow(g))}
             {!groups.length && <Empty text="没有分组记录" />}
           </div>
         </div>
@@ -2191,7 +1960,7 @@ export default function App() {
           accounts={resetAccounts}
           online={state.online}
           report={report}
-          close={() => setResetAccounts(null)}
+          close={() => showDialog(closedDialog)}
         />
       )}
       {deleteAccounts && (
@@ -2220,7 +1989,7 @@ export default function App() {
               ),
             )
           }
-          close={() => setDeleteAccounts(null)}
+          close={() => showDialog(closedDialog)}
         />
       )}
       {(detail || detailBusy) && (
@@ -2238,14 +2007,7 @@ export default function App() {
                   closeDetail();
                 }}
               >
-                {quick ? (
-                  <>
-                    <ChevronLeft size={17} />
-                    返回
-                  </>
-                ) : (
-                  <X size={19} />
-                )}
+                {<X size={19} />}
               </button>
             </header>
             {detailBusy ? (
@@ -2347,7 +2109,6 @@ export default function App() {
                       className="text-button"
                       onClick={() => {
                         setPage("events");
-                        setQuickTab("errors");
                         closeDetail();
                       }}
                     >
@@ -2366,7 +2127,7 @@ export default function App() {
           key={`${connectionKey}:${testAccount.id}`}
           account={accounts.find((a) => a.id === testAccount.id) ?? testAccount}
           online={state.online}
-          close={() => setTestAccount(null)}
+          close={() => showDialog(closedDialog)}
         />
       )}
       {modelTestAccount && (
@@ -2378,7 +2139,7 @@ export default function App() {
           }
           online={state.online}
           report={report}
-          close={() => setModelTestAccount(null)}
+          close={() => showDialog(closedDialog)}
           preference={
             state.preferences.model_test_preferences?.[
               `${state.preferences.base_url}:${modelTestAccount.id}`
@@ -2398,14 +2159,14 @@ export default function App() {
           }
         />
       )}
-      {templatesOpen && (
+      {dialog.kind === "templates" && (
         <AccountTemplates
           key={connectionKey}
           accounts={accounts}
           online={state.online}
-          initialAccount={templateAccount}
-          initialAccounts={templateAccounts}
-          close={() => setTemplatesOpen(false)}
+          initialAccount={dialog.account}
+          initialAccounts={dialog.accounts}
+          close={() => showDialog(closedDialog)}
           report={report}
         />
       )}
@@ -2416,7 +2177,7 @@ export default function App() {
             accounts={proxyAccounts}
             online={state.online}
             connectionKey={connectionKey}
-            close={() => setProxyAccounts(null)}
+            close={() => showDialog(closedDialog)}
             report={report}
           />
         </Suspense>
@@ -2429,10 +2190,9 @@ export default function App() {
             modelDetectionAccount
           }
           online={state.online}
-          close={() => setModelDetectionAccount(null)}
+          close={() => showDialog(closedDialog)}
           showResult={() => {
-            setModelTestAccount(modelDetectionAccount);
-            setModelDetectionAccount(null);
+            showDialog({ kind: "modelTest", account: modelDetectionAccount });
           }}
           report={report}
         />
@@ -2446,7 +2206,7 @@ export default function App() {
           }
           online={state.online}
           connectionKey={connectionKey}
-          close={() => setKeepaliveAccount(null)}
+          close={() => showDialog(closedDialog)}
           report={report}
         />
       )}
@@ -2456,7 +2216,7 @@ export default function App() {
             key={`${connectionKey}:${reauthorizeAccount.account.id}`}
             account={reauthorizeAccount.account}
             online={state.online}
-            close={() => setReauthorizeAccount(null)}
+            close={() => showDialog(closedDialog)}
             report={report}
           />
         </Suspense>
@@ -2467,7 +2227,7 @@ export default function App() {
           account={settingsAccount.account}
           initialSection={settingsAccount.section}
           online={state.online}
-          close={() => setSettingsAccount(null)}
+          close={() => showDialog(closedDialog)}
         />
       )}
       {toast && (
@@ -2491,7 +2251,6 @@ function Empty({ text }: { text: string }) {
 }
 function Connection({
   state,
-  onState,
   onError,
   beforeChange = async () => true,
   initialUrl,
@@ -2504,7 +2263,7 @@ function Connection({
   switchingUrl = null,
 }: {
   state: ViewState;
-  onState?: (s: ViewState) => void;
+
   onError: (e: unknown) => void;
   beforeChange?: () => Promise<boolean>;
   initialUrl?: string;
@@ -2552,12 +2311,11 @@ function Connection({
         const trimmedName = name.trim();
         if (isEditingSaved && !key.trim()) {
           setBusy(true);
-          void command<ViewState>("save_connection_profile", {
+          void command("save_connection_profile", {
             baseUrl: url,
             name: trimmedName,
           })
-            .then((next) => {
-              if (next?.preferences) onState?.(next);
+            .then(() => {
               onConnected?.();
             })
             .catch(onError)
@@ -2566,11 +2324,13 @@ function Connection({
         }
         if (!(await beforeChange())) return;
         setBusy(true);
-        const payload: Record<string, unknown> = { baseUrl: url, apiKey: key };
-        if (trimmedName) payload.name = trimmedName;
-        void command<ViewState>("connect", payload)
-          .then((next) => {
-            if (next?.preferences) onState?.(next);
+        const payload = {
+          baseUrl: url,
+          apiKey: key,
+          name: trimmedName || undefined,
+        };
+        void command("connect", payload)
+          .then(() => {
             setKey("");
             onConnected?.();
           })
@@ -2724,7 +2484,6 @@ function SettingsPage({
   state,
   runtimeVersion,
   prefs,
-  onState,
   onChange,
   onMessage,
   onError,
@@ -2740,7 +2499,7 @@ function SettingsPage({
   state: ViewState;
   runtimeVersion: string | null;
   prefs: (p: Partial<Preferences>) => Promise<void>;
-  onState?: (s: ViewState) => void;
+
   onChange: (k: string, c: ConfigSection) => void;
   onMessage: (m: string) => void;
   onError: (e: unknown) => void;
@@ -2783,10 +2542,10 @@ function SettingsPage({
     if (removingUrl) return;
     setRemovingUrl(item.base_url);
     try {
-      const next = await command<ViewState>("remove_connection", {
+      await command("remove_connection", {
         baseUrl: item.base_url,
       });
-      if (next?.preferences) onState?.(next);
+
       onMessage(`已删除实例 ${item.name}`);
     } catch (e) {
       onError(e);
@@ -3071,9 +2830,7 @@ function SettingsPage({
               <span>当前版本</span>
               <button
                 onClick={() =>
-                  void command<string>("check_updates")
-                    .then(onMessage)
-                    .catch(onError)
+                  void command("check_updates").then(onMessage).catch(onError)
                 }
               >
                 {runtimeVersion ?? appVersion} ·{" "}
@@ -3117,7 +2874,7 @@ function SettingsPage({
           <section className="settings-card">
             <Connection
               state={state}
-              onState={onState}
+
               onError={onError}
               beforeChange={beforeConnectionChange}
               onSwitchSaved={onSwitchConnection}
@@ -3238,11 +2995,14 @@ function ConfigForm({
     [changes, setChanges] = useState<Record<string, unknown>>({}),
     [busy, setBusy] = useState(false),
     [conflict, setConflict] = useState(false);
-  useEffect(() => {
+  const receiveConfig = useEffectEvent(() => {
     if (!Object.keys(changes).length) {
       setDraft(value);
       setConflict(false);
     } else if (draft.revision !== value.revision) setConflict(true);
+  });
+  useEffect(() => {
+    receiveConfig();
   }, [value]);
   const set = (key: string, v: unknown) => {
     setDraft((d) => ({ ...d, [key]: v }));
@@ -3267,7 +3027,7 @@ function ConfigForm({
           })
           .catch((e) => {
             onError(e);
-            if (String(e).includes("409")) setConflict(true);
+            if (bridgeFailure(e)?.status === 409) setConflict(true);
           })
           .finally(() => setBusy(false));
       }}

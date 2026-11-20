@@ -90,11 +90,11 @@ impl credit::Hooks for Hooks {
             let _slot = if reserved {
                 None
             } else {
-                match runtime.slots.acquire() {
+                match runtime.slots.acquire()? {
                     Some(slot) => Some(slot),
                     None => {
                         return Ok(json!({"success":false,"deferred":true,
-                    "error_code":"test_slots","error":"等待测活并发空闲","next_at":crate::compat::datetime(chrono::Utc::now()+chrono::Duration::seconds(2))}))
+                    "error_code":"test_slots","error":"等待测活并发空闲","next_at":crate::compat::datetime(runtime.monitor.now()+chrono::Duration::seconds(2))}))
                     }
                 }
             };
@@ -343,19 +343,14 @@ impl operations::Backend for Hooks {
         Box::pin(async move { self.runtime()?.tests.cancel(id).await })
     }
     fn test_config(&self) -> Result<(String, usize)> {
-        let config = self.runtime()?.config.current()?;
+        let (config, limits) = self.runtime()?.config.current_with_limits()?;
         let configured = &config["oauth_recovery_test_model_id"];
         let model = if truthy(configured) {
             text(configured).trim().to_owned()
         } else {
             crate::model_downgrade::DEFAULT_TEST_MODEL.to_owned()
         };
-        Ok((
-            model,
-            integer(&config["oauth_recovery_test_concurrency"])
-                .unwrap_or(2)
-                .clamp(1, 8) as usize,
-        ))
+        Ok((model, limits.recovery))
     }
     fn test_slots(&self) -> Option<crate::execution::TestSlots> {
         self.runtime().ok().map(|runtime| runtime.slots.clone())

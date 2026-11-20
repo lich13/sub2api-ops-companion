@@ -22,34 +22,37 @@ impl Monitor {
         let started = self.now();
         let model = self.model()?;
         let state = self.shared_state()?;
-        let generations = rows
-            .iter()
-            .filter_map(|row| {
-                integer(&row["id"]).map(|id| (id, credit_ownership::generation(&state, id)))
-            })
-            .collect::<BTreeMap<_, _>>();
+        let concurrency = self.config.concurrency()?.recovery;
         if !batch["accounts"].is_object() {
             batch["accounts"] = json!({});
         }
-        let rows = rows
+        let pending: Vec<_> = rows
             .iter()
-            .filter(|row| {
-                integer(&row["id"])
-                    .is_some_and(|id| id > 0 && batch["accounts"].get(id.to_string()).is_none())
+            .filter_map(|row| {
+                let id = integer(&row["id"]).filter(|id| *id > 0)?;
+                if batch["accounts"].get(id.to_string()).is_some() {
+                    return None;
+                }
+                let generation = credit_ownership::generation(&state, id);
+                Some((id, row.clone(), generation))
             })
-            .cloned()
-            .collect::<Vec<_>>();
-        for row in &rows {
-            batch["accounts"][integer(&row["id"]).unwrap().to_string()] =
-                json!({"status":"claimed","claimed_at":datetime(started)});
+            .collect();
+        for (id, _, _) in &pending {
+            batch["accounts"][id.to_string()] =
+                json!({"status": "claimed", "claimed_at": datetime(started)});
         }
         self.schedule.save_batch(&batch, &json!({}))?;
-        let concurrency = integer(&self.config.current()?["oauth_recovery_test_concurrency"])
-            .unwrap_or(2)
-            .clamp(1, 8) as usize;
-        let mut results=stream::iter(rows.into_iter().map(|row|{let this=self.clone();let model=model.clone();let id=integer(&row["id"]).unwrap();let generation=generations[&id];let recovery=cycle_results.remove(&id);async move {let result=this.daily_account(id,&model,generation,recovery).await.unwrap_or_else(|_|json!({"success":false,"error_code":"daily_test_error","error":"每日测活未完成"}));(row,generation,result)}})).buffer_unordered(concurrency);
-        while let Some((row, generation, mut result)) = results.next().await {
-            let id = integer(&row["id"]).unwrap();
+        let mut results = stream::iter(pending.into_iter().map(|(id, row, generation)| {
+            let model = &model;
+            let recovery = cycle_results.remove(&id);
+            async move {
+                let result = self.daily_account(id, model, generation, recovery).await.unwrap_or_else(|_| {
+                    json!({"success": false, "error_code": "daily_test_error", "error": "每日测活未完成"})
+                });
+                (id, row, generation, result)
+            }
+        })).buffer_unordered(concurrency);
+        while let Some((id, row, generation, mut result)) = results.next().await {
             if self.generation(id)? != generation {
                 result = json!({"skipped":true,"error_code":"manual_intervention"});
             }

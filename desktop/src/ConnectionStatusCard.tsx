@@ -46,7 +46,7 @@ export default function ConnectionStatusCard({
         if (current === generation.current) setLoading(false);
       });
     return () => {
-      ++generation.current;
+      generation.current = generation.current + 1;
     };
   }, [connectionKey, revision]);
   return (

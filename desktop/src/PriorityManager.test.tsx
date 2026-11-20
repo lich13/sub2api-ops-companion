@@ -99,7 +99,6 @@ const platform = (
 const view = (overrides: Partial<PriorityView> = {}): PriorityView => ({
   platforms: [platform("openai", openaiItems), platform("grok", grokItems)],
   active_task: null,
-  legacy_last_task: null,
   ...overrides,
 });
 

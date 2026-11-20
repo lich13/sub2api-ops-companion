@@ -1,6 +1,5 @@
 use crate::{
     actions::Actions,
-    audit,
     bark::Bark,
     compat::{datetime, integer, parse_datetime, string, truthy},
     credit_ownership, credit_rules,
@@ -94,11 +93,7 @@ impl CreditController {
         if let Some(fields) = fields.as_object() {
             payload.as_object_mut().unwrap().extend(fields.clone());
         }
-        audit::write(
-            &self.actions.settings.audit_path,
-            "oauth_auto_reset_credit",
-            payload,
-        );
+        self.actions.audit("oauth_auto_reset_credit", payload);
     }
     pub fn saved_quota(&self, row: &Value, at: DateTime<Utc>) -> Result<Value> {
         Ok(quota::latest_result(
@@ -586,7 +581,7 @@ impl CreditController {
                     }
                     item["attempts"] = json!(count + 1);
                     item["next_at"] = datetime(
-                        at + Duration::seconds([5, 30, 120, 600, 600][count.clamp(0, 4) as usize]),
+                        at + Duration::seconds(crate::execution::retry_delay(count.max(0) as u64)),
                     )
                     .into();
                     Ok(item.clone())

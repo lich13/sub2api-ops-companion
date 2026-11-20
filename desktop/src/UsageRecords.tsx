@@ -724,14 +724,21 @@ export default function UsageRecords({
     scrolled || overlayOpen || datePending,
     paginationActive,
   );
+  const {
+    more,
+    cursor: nextCursor,
+    loading: fetching,
+    pageError,
+    items: visibleItems,
+  } = feed;
   useEffect(() => {
     const target = sentinel.current,
       root = scroll.current;
     if (
       !paginationActive ||
-      !feed.cursor ||
-      feed.loading ||
-      feed.pageError ||
+      !nextCursor ||
+      fetching ||
+      pageError ||
       !target ||
       !root ||
       typeof IntersectionObserver === "undefined"
@@ -740,8 +747,7 @@ export default function UsageRecords({
     let live = true;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (live && entries.some((entry) => entry.isIntersecting))
-          void feed.more();
+        if (live && entries.some((entry) => entry.isIntersecting)) void more();
       },
       { root, rootMargin: "0px 0px 200px 0px" },
     );
@@ -752,11 +758,11 @@ export default function UsageRecords({
     };
   }, [
     paginationActive,
-    feed.cursor,
-    feed.loading,
-    feed.pageError,
-    feed.more,
-    feed.items.length,
+    nextCursor,
+    fetching,
+    pageError,
+    more,
+    visibleItems.length,
   ]);
   useEffect(() => {
     if (!active || !range.preset) return;
@@ -801,8 +807,7 @@ export default function UsageRecords({
     feed.items.length,
     datePending,
   ]);
-  const chosenKey = normalizeRecordColumns(columns).join(",");
-  const chosen = useMemo(() => normalizeRecordColumns(columns), [chosenKey]);
+  const chosen = useMemo(() => normalizeRecordColumns(columns), [columns]);
   const shown = useMemo(
     () => recordColumns.filter(([key]) => chosen.includes(key)),
     [chosen],
@@ -811,17 +816,17 @@ export default function UsageRecords({
   useEffect(() => {
     if (scroll.current) scroll.current.scrollTop = 0;
     setScrolled(false);
-    ++detailEpoch.current;
+    detailEpoch.current = detailEpoch.current + 1;
     setSelected(null);
   }, [query]);
   useEffect(
     () => () => {
-      ++detailEpoch.current;
+      detailEpoch.current = detailEpoch.current + 1;
     },
     [],
   );
   const closeDetail = () => {
-    ++detailEpoch.current;
+    detailEpoch.current = detailEpoch.current + 1;
     setSelected(null);
     setDetail(null);
     setDetailError("");

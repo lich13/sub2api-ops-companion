@@ -582,7 +582,7 @@ impl Harness {
             settings.clone(),
         )
         .expect("construct fixture actions");
-        let coordinator = Coordinator::new(actions.clone(), Arc::new(|| 4));
+        let coordinator = Coordinator::new(actions.clone(), Arc::new(|| Ok(4)));
         let hooks: Arc<dyn Hooks> = Arc::new(FixtureHooks {
             actions: actions.clone(),
             state: oauth,
@@ -593,7 +593,7 @@ impl Harness {
             actions,
             coordinator,
             hooks,
-            TestSlots::new(Arc::new(|| 2)),
+            TestSlots::new(Arc::new(|| Ok(2))),
             Arc::new(Semaphore::new(2)),
         );
         let now = clock.clone();

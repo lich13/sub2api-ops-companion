@@ -308,7 +308,9 @@ pub fn normalize(raw: &Value) -> Value {
             continue;
         }
         let mut value = value.clone();
-        let fields = value.as_object_mut().unwrap();
+        let Some(fields) = value.as_object_mut() else {
+            continue;
+        };
         fields.remove("reset_credit_observation");
         fields.remove("reset_credit_episodes");
         if let Some(task) = fields.get_mut("auto_reset_credit") {
@@ -452,7 +454,7 @@ fn prune_credit_history(state: &mut Value) {
 }
 
 #[derive(Clone)]
-pub struct OAuthState(pub Store);
+pub struct OAuthState(pub Store<crate::state_files::OAuthFile>);
 
 #[derive(Default)]
 pub struct Update {
@@ -469,12 +471,13 @@ pub struct Update {
 impl OAuthState {
     pub fn new(path: PathBuf) -> Self {
         let lock = PathBuf::from(format!("{}.lock", path.display()));
-        Self(Store::with_loader(
+        Self(Store::typed(
             path,
             lock,
             normalize(&json!({})),
             validate_shape,
             load,
+            |raw| serde::Deserialize::deserialize(raw).map_err(|_| invalid("OAuth 状态文件无效")),
         ))
     }
     pub fn snapshot(&self) -> Result<Value> {
@@ -491,42 +494,50 @@ impl OAuthState {
         })
     }
     pub(crate) fn recover_interrupted(&self, account: Option<i64>) -> Result<()> {
-        if !self.shared_snapshot()?["scheduler"]
-            .as_object()
-            .into_iter()
-            .flatten()
-            .any(|(id, meta)| {
-                account.is_none_or(|account| id == &account.to_string())
-                    && meta["recovery_intent"]["status"] == "testing"
-            })
+        let applies = |id: &str, meta: &crate::state_files::SchedulerEntry| {
+            account.is_none_or(|account| id.parse() == Ok(account))
+                && meta
+                    .recovery_intent
+                    .as_ref()
+                    .and_then(|i| i.get("status"))
+                    .is_some_and(|s| s == "testing")
+        };
+        if !self
+            .0
+            .read_state()?
+            .scheduler
+            .iter()
+            .any(|(id, meta)| applies(id, meta))
         {
             return Ok(());
         }
-        self.transaction(|state| {
-            for (id, meta) in state["scheduler"].as_object_mut().unwrap() {
-                let intent = &mut meta["recovery_intent"];
-                if account.is_none_or(|account| id == &account.to_string())
-                    && intent["status"] == "testing"
-                {
-                    intent["status"] = "retry".into();
-                    intent["next_retry_at"] =
-                        ["next_retry_at", "tested_at", "confirmed_at", "due_at"]
-                            .into_iter()
-                            .map(|key| &intent[key])
-                            .find(|value| truthy(value))
-                            .cloned()
-                            .unwrap_or(json!(""));
+        self.0.edit_state(|state| {
+            for (id, meta) in &mut state.scheduler {
+                if !applies(id, meta) {
+                    continue;
+                }
+                if let Some(intent) = &mut meta.recovery_intent {
+                    let next = ["next_retry_at", "tested_at", "confirmed_at", "due_at"]
+                        .into_iter()
+                        .filter_map(|key| intent.get(key))
+                        .find(|v| truthy(v))
+                        .cloned()
+                        .unwrap_or(json!(""));
+                    intent.insert("status".into(), "retry".into());
+                    intent.insert("next_retry_at".into(), next);
                 }
             }
             Ok(())
         })
     }
     pub fn admin_token(&self) -> Result<String> {
-        Ok(
-            string(&self.0.read_shared()?["settings"]["sub2api_admin_token"])
-                .trim()
-                .to_owned(),
-        )
+        Ok(self
+            .0
+            .read_state()?
+            .settings
+            .sub2api_admin_token
+            .clone()
+            .unwrap_or_default())
     }
     pub fn save_admin_token(&self, key: &str) -> Result<()> {
         let key = key.trim();
@@ -536,8 +547,8 @@ impl OAuthState {
         if self.admin_token()? == key {
             return Ok(());
         }
-        self.transaction(|v| {
-            v["settings"]["sub2api_admin_token"] = key.into();
+        self.0.edit_state(|state| {
+            state.settings.sub2api_admin_token = Some(key.to_owned());
             Ok(())
         })
     }

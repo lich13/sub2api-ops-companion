@@ -1,3 +1,4 @@
+import { useEffectEvent } from "react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
@@ -89,7 +90,7 @@ export default function GroupManager(props: Props) {
       platforms.length
     )
       setPlatform(platforms[0].platform);
-  }, [active, platform, platforms.map((item) => item.platform).join(",")]);
+  }, [active, platform, platforms]);
   const available = active ? platformGroups(groups, platform) : [];
   const pair = available.slice(0, 2).map((group) => group.id);
   const pairRef = useRef(pair);
@@ -109,8 +110,9 @@ export default function GroupManager(props: Props) {
     `${a.name} #${a.id}`
       .toLocaleLowerCase()
       .includes(query.trim().toLocaleLowerCase());
+  const notifyChanges = useEffectEvent(props.changed);
   useEffect(() => {
-    props.changed(pending.length, busy);
+    notifyChanges(pending.length, busy);
   }, [pending.length, busy]);
   useEffect(() => {
     mounted.current = true;
@@ -127,7 +129,6 @@ export default function GroupManager(props: Props) {
     }
   }, [active]);
   useEffect(() => {
-    if (!Object.keys(draftRef.current).length && !history.length) return;
     const ids = new Set(accounts.map((account) => account.id));
     const keepLive = (value: Drafts): Drafts =>
       Object.values(value).every((draft) => ids.has(draft.id))
@@ -138,7 +139,13 @@ export default function GroupManager(props: Props) {
     if (Object.values(draftRef.current).some((draft) => !ids.has(draft.id)))
       setMessage("已删除账号的分组草稿已失效");
     setDrafts(keepLive);
-    setHistory((values) => values.map(keepLive));
+    setHistory((values) =>
+      values.some((item) =>
+        Object.values(item).some((draft) => !ids.has(draft.id)),
+      )
+        ? values.map(keepLive)
+        : values,
+    );
   }, [accounts]);
 
   function move(id: number, zone: Zone) {
@@ -163,8 +170,9 @@ export default function GroupManager(props: Props) {
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
   }, [active]);
+  const dragging = !!drag;
   useEffect(() => {
-    if (!drag) return;
+    if (!dragging) return;
     let frame = 0;
     const scroll = () => {
       const current = dragRef.current,
@@ -178,7 +186,7 @@ export default function GroupManager(props: Props) {
     };
     frame = requestAnimationFrame(scroll);
     return () => cancelAnimationFrame(frame);
-  }, [!!drag]);
+  }, [dragging]);
   function pointerDown(event: React.PointerEvent, id: number) {
     if (!online || busy || event.button !== 0) return;
     event.stopPropagation();

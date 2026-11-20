@@ -35,21 +35,9 @@ public struct QuotaRefreshJob: Codable, Sendable, Equatable {
     }
 }
 
-public struct KeyQuotaGlobalConfig: Codable, Sendable, Equatable {
-    public var seconds: Int
-    public var revision: String
-}
-
-public struct AccountKeyQuotaSettings: Codable, Sendable, Equatable {
-    public var account_id: Int
-    public var has_access_token: Bool
-    public var revision: String
-}
-
-public struct AccountKeyQuotaTokenResponse: Codable, Sendable, Equatable {
-    public var account_id: Int
-    public var access_token: String
-}
+public typealias KeyQuotaGlobalConfig = GlobalQuotaReply
+public typealias AccountKeyQuotaSettings = AccountQuotaReply
+public typealias AccountKeyQuotaTokenResponse = AccountTokenReply
 
 /// 4-slot concurrent native usage reader matching `desktop/src/nativeUsage.ts`.
 @MainActor

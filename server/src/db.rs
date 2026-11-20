@@ -82,14 +82,14 @@ pub fn row_value(row: PgRow) -> Result<Value> {
                 "INT8" => json!(row.try_get::<i64, _>(i)?),
                 "FLOAT4" => json!(row.try_get::<f32, _>(i)?),
                 "FLOAT8" => json!(row.try_get::<f64, _>(i)?),
-                // psycopg returns Decimal; Python's default=str is part of hashes.
+                // Decimal text, including its scale, is part of persisted version hashes.
                 "NUMERIC" => {
                     let raw = row.try_get_raw(i)?;
                     let mut amount = row.try_get::<sqlx::types::BigDecimal, _>(i)?;
                     if raw.format() == PgValueFormat::Binary {
                         // SQLx reconstructs a base-10000 value but discards the
                         // display scale. Preserve PostgreSQL's decimal places,
-                        // including zero, for Python-compatible values and hashes.
+                        // including zero, for stable values and hashes.
                         let bytes = raw.as_bytes().map_err(|_| Error::internal())?;
                         let scale = bytes.get(6..8).ok_or_else(Error::internal)?;
                         amount =

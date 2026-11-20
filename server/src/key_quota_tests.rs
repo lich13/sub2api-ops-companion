@@ -132,7 +132,7 @@ async fn failure_keeps_success_and_manual_queries_honor_retry_after() {
     assert_eq!(failed.state, "error");
     assert_eq!(failed.plans, old.plans);
     assert_eq!(failed.success_at, old.success_at);
-    assert!(failed.retry_at.unwrap() >= now() + 119);
+    assert!(failed.retry_at.unwrap() >= unix(&s.clock) + 119);
     let repeated = s.query(input(&s, &site, 1), true).await.unwrap();
     assert_eq!(repeated.retry_at, failed.retry_at);
     assert_eq!(hits.load(Ordering::SeqCst), 2);
@@ -369,7 +369,7 @@ async fn unit_query_backoff_keeps_raw_values_and_respects_http_date_and_fraction
         assert_eq!(value.plans[0].unit, "额度单位");
         assert_eq!(value.plans[0].remaining, Some(1000.));
         assert!(value.error.is_some());
-        assert!(value.retry_at.unwrap() >= now() + if code == 429 { 1 } else { 177 });
+        assert!(value.retry_at.unwrap() >= unix(&s.clock) + if code == 429 { 1 } else { 177 });
         s.query(input(&s, &site, 1), true).await.unwrap();
         assert_eq!(requests.load(Ordering::SeqCst), 3);
     }

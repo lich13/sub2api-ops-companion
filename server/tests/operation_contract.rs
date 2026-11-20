@@ -29,7 +29,6 @@ use sub2ops_server::{
     operations::{Backend, OperationStore, Operations},
     queries::Queries,
     settings::Settings,
-    store::Store,
     upstream::Upstream,
 };
 use tokio::{
@@ -992,12 +991,8 @@ async fn batch_acceptance_is_idempotent_conflicts_are_rejected_and_dispatch_is_d
     let original = harness.operations.store.clone();
     let failed_lock = harness._temp.path().join("acceptance-failed-lock");
     fs::create_dir(&failed_lock).unwrap();
-    Arc::get_mut(&mut harness.operations).unwrap().store = OperationStore(Store::with_lock(
-        original.0.path().to_path_buf(),
-        failed_lock,
-        json!({"version":1,"jobs":{},"requests":{},"batches":{},"batch_requests":{}}),
-        sub2ops_server::operations::validate_store,
-    ));
+    Arc::get_mut(&mut harness.operations).unwrap().store =
+        OperationStore::with_lock(original.0.path().to_path_buf(), failed_lock);
     let extra = harness.seed_accounts(2, json!({})).await;
     let failed_request = harness
         .batch_request(
@@ -1524,6 +1519,16 @@ async fn running_job_restarts_as_checking_and_never_retests_automatically() {
         )
         .unwrap();
     harness.operations.close().await;
+    let legacy_batch = json!({"job_ids":[],"chunks":null,"previous_format":{"cursor":null}});
+    harness
+        .operations
+        .store
+        .0
+        .transaction(|state| {
+            state["batches"]["older-empty-batch"] = legacy_batch.clone();
+            Ok(())
+        })
+        .unwrap();
     let restarted = Operations::new(
         harness.actions.clone(),
         harness.backend.clone(),
@@ -1533,6 +1538,10 @@ async fn running_job_restarts_as_checking_and_never_retests_automatically() {
     assert_eq!(
         restarted.store.read().unwrap()["jobs"][&job_id]["status"],
         "checking"
+    );
+    assert_eq!(
+        restarted.store.0.read().unwrap()["batches"]["older-empty-batch"],
+        legacy_batch
     );
     restarted.tick().await.unwrap();
     tokio::time::timeout(Duration::from_secs(8), async {
@@ -1583,12 +1592,7 @@ async fn dispatch_state_save_failure_never_sends_the_native_test_request() {
     fs::create_dir(&lock_path).expect("make the operation state lock path unwritable");
     Arc::get_mut(&mut harness.operations)
         .expect("no operation task is running")
-        .store = OperationStore(Store::with_lock(
-        store_path,
-        lock_path,
-        json!({"version": 1, "jobs": {}, "requests": {}, "batches": {}, "batch_requests": {}}),
-        sub2ops_server::operations::validate_store,
-    ));
+        .store = OperationStore::with_lock(store_path, lock_path);
 
     harness.operations.tick().await.unwrap();
     tokio::time::timeout(Duration::from_secs(8), async {
@@ -3351,7 +3355,7 @@ async fn scheduled_retry_freezes_policy_survives_restart_and_notifies_only_final
     h.actions
         .queries
         .oauth
-        .mark_delivered(std::slice::from_ref(event), false)
+        .mark_delivered(std::slice::from_ref(event), false, chrono::Utc::now())
         .unwrap();
     h.restart().await;
     h.operations.tick().await.unwrap();

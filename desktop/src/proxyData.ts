@@ -46,13 +46,11 @@ export type ProxyPage = {
   total: number;
   pages: number;
 };
-export type ProxyCredentials = { username: string; password: string };
-export type ProxyAccount = {
-  id: number;
-  name: string;
-  platform: string;
-  type: string;
-};
+export type {
+  ProxyLogin as ProxyCredentials,
+  AccountIdentity as ProxyAccount,
+} from "./protocol";
+import type { ProxyLogin as ProxyCredentials } from "./protocol";
 export type ConnectionResult = {
   success: boolean;
   message: string;

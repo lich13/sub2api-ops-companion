@@ -1,3 +1,4 @@
+import { useEffectEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
@@ -132,10 +133,11 @@ export default function AccountSettingsDialog({
       if (current === generation.current) setLoading(false);
     }
   }
+  const readOnChange = useEffectEvent(read);
   useEffect(() => {
-    void read();
+    void readOnChange();
     return () => {
-      ++generation.current;
+      generation.current = generation.current + 1;
     };
   }, [account.id]);
   useEffect(() => {

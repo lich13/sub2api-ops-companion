@@ -1,8 +1,10 @@
-//! Serialization at the persisted Python/Rust boundary. Do not use a compact
-//! serializer for optimistic versions: whitespace is part of their digest.
+//! Persisted timestamps and optimistic versions are shared across supported releases.
+//! The original JSON whitespace and scalar representations are part of their digest.
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, SecondsFormat, Utc};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
+
+pub type WallClock = std::sync::Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
 
 pub fn now() -> String {
     datetime(Utc::now())

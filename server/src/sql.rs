@@ -214,7 +214,7 @@ pub const DESKTOP_ERROR_FIELDS: &str = r####"e.id, e.account_id, e.group_id, e.c
  e.request_id, e.resolved, a.name AS account_name, g.name AS group_name"####;
 
 macro_rules! desktop_account_sql {
-    ($private:literal) => { concat!(
+    ($private:literal, $parent:expr) => { concat!(
     "SELECT ", $private, r####"a.id, a.name, a.platform, a.type, a.status, a.schedulable, a.updated_at, a.priority, a.concurrency, a.load_factor, a.error_message, a.extra,
  nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id,
  coalesce(nullif(a.credentials->>'plan_type',''),nullif(a.credentials->>'chatgpt_plan_type',''),a.extra->>'plan_type') AS quota_plan_type,
@@ -235,7 +235,7 @@ macro_rules! desktop_account_sql {
  u.created_at AS last_success_at, u.created_at AS last_called_at, e.created_at AS last_error_at, e.id AS last_error_id,
  e.provider_error_code AS last_error_code, coalesce(e.upstream_status_code,e.status_code) AS last_error_status,
  coalesce(nullif(e.upstream_error_message,''),e.error_message) AS last_error_message
-FROM accounts a
+FROM accounts a"####, $parent, r####"
 LEFT JOIN LATERAL (SELECT created_at FROM usage_logs WHERE account_id=a.id ORDER BY created_at DESC,id DESC LIMIT 1) u ON true
 LEFT JOIN LATERAL (SELECT e.* FROM ops_error_logs e WHERE e.account_id=a.id AND "####,
     sql_desktop_error_where!(),
@@ -244,8 +244,17 @@ WHERE a.deleted_at IS NULL {filter} ORDER BY a.id
 "####
 ) };
 }
-pub const DESKTOP_ACCOUNT_SQL: &str = desktop_account_sql!("");
-pub const MODEL_ACCOUNT_SQL: &str = desktop_account_sql!("a.credentials, ");
+pub const DESKTOP_ACCOUNT_SQL: &str = desktop_account_sql!("", "");
+pub const MODEL_ACCOUNT_SQL: &str = desktop_account_sql!("a.credentials, ", "");
+
+macro_rules! usage_parent_join {
+    () => { " LEFT JOIN accounts p ON p.id=coalesce(nullif(to_jsonb(a)->>'parent_account_id','')::bigint,nullif(a.extra->>'parent_account_id','')::bigint) AND p.deleted_at IS NULL " };
+}
+pub const USAGE_PARENT_JOIN: &str = usage_parent_join!();
+pub const USAGE_ACCOUNT_SQL: &str = desktop_account_sql!(
+    "p.id AS effective_parent_id,p.credentials AS parent_credentials, a.credentials, ",
+    usage_parent_join!()
+);
 
 pub const DESKTOP_GROUP_SQL: &str = r####"
 SELECT g.id,g.name,g.platform,g.sort_order,u.id AS log_id,u.account_id,

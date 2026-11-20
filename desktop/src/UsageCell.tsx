@@ -1,3 +1,4 @@
+import { useEffectEvent } from "react";
 import { api } from "./bridge";
 import { accountOperation } from "./accountOperations";
 import { useEffect, useRef, useState } from "react";
@@ -132,7 +133,7 @@ export default function UsageCell({
     });
   useEffect(
     () => () => {
-      ++request.current;
+      request.current = request.current + 1;
       lastRead.current = { identity: "", at: 0 };
     },
     [identity, online, active],
@@ -147,9 +148,9 @@ export default function UsageCell({
         (item) => item.account_id === account.id,
       )?.usage;
       if (value) {
-        ++request.current;
+        request.current = request.current + 1;
         lastRead.current = { identity, at: Date.now() };
-        acceptNative(value);
+        applyObservedUsage(value);
       }
     };
     document.addEventListener(usageRefreshEvent, refreshed);
@@ -173,11 +174,11 @@ export default function UsageCell({
     const token = ++request.current;
     void readNativeUsage(identity, account.id, () => request.current === token)
       .then((value) => {
-        if (request.current === token) acceptNative(value);
+        if (request.current === token) applyObservedUsage(value);
       })
       .catch(() => {
         if (request.current === token)
-          acceptNative({
+          applyObservedUsage({
             ...account.usage!,
             status: "error",
             message: "用量读取失败，请重新查询",
@@ -186,7 +187,8 @@ export default function UsageCell({
             ),
           });
       });
-  }, [identity, account.usage, account.id, online, active]);
+  }, [identity, account.usage, account.id, account.type, online, active]);
+  const applyObservedUsage = useEffectEvent(acceptNative);
   useEffect(() => {
     if (
       account.type !== "apikey" ||
@@ -225,11 +227,11 @@ export default function UsageCell({
           account.id,
           () => alive && request.current === token,
         );
-        if (alive && request.current === token) acceptNative(value);
+        if (alive && request.current === token) applyObservedUsage(value);
       } catch {
         if (alive && request.current === token && latestUsage.current) {
           const previous = latestUsage.current;
-          acceptNative({
+          applyObservedUsage({
             ...previous,
             key_quota: {
               plans: [],
@@ -279,7 +281,7 @@ export default function UsageCell({
     return () => {
       alive = false;
       clearTimeout(timer);
-      ++request.current;
+      request.current = request.current + 1;
       setQuotaBusy(false);
     };
   }, [
@@ -352,7 +354,7 @@ export default function UsageCell({
           online={online}
           close={() => setQuotaDialog(false)}
           saved={() => {
-            ++request.current;
+            request.current = request.current + 1;
             latestUsage.current = account.usage;
             setNative(null);
             void run("query_usage");

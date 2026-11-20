@@ -9,12 +9,10 @@ use crate::{
 };
 use reqwest::Method;
 use serde_json::{json, Value};
-use std::{sync::LazyLock, time::Duration};
+use std::time::Duration;
+use sub2ops_protocol::creation::{applies, pick, AUTH_EXTRA, IDENTITY};
+pub use sub2ops_protocol::creation::{supported, SCHEMA};
 
-pub static SCHEMA: LazyLock<Value> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("account_creation_fields.json"))
-        .expect("account field catalog")
-});
 const COMMON: &[&str] = &[
     "name",
     "notes",
@@ -27,210 +25,13 @@ const COMMON: &[&str] = &[
     "expires_at",
     "auto_pause_on_expired",
 ];
-const IDENTITY: &[&str] = &[
-    "api_key",
-    "access_token",
-    "refresh_token",
-    "id_token",
-    "token_type",
-    "expires_at",
-    "expires_in",
-    "scope",
-    "email",
-    "email_address",
-    "org_uuid",
-    "account_uuid",
-    "chatgpt_account_id",
-    "chatgpt_user_id",
-    "organization_id",
-    "plan_type",
-    "subscription_expires_at",
-    "client_id",
-    "project_id",
-    "client_email",
-    "tier_id",
-    "oauth_type",
-    "sub",
-    "team_id",
-    "subscription_tier",
-    "entitlement_status",
-    "aws_access_key_id",
-    "aws_secret_access_key",
-    "aws_session_token",
-    "service_account_json",
-];
-const AUTH_EXTRA: &[&str] = &[
-    "email",
-    "email_address",
-    "name",
-    "privacy_mode",
-    "org_uuid",
-    "account_uuid",
-    "subscription_type",
-    "subscription_tier",
-    "entitlement_status",
-    "drive_storage_limit",
-    "drive_storage_usage",
-    "drive_tier_updated_at",
-];
 
-fn pick(value: &Value, fields: &[&str]) -> Value {
-    Value::Object(
-        fields
-            .iter()
-            .filter_map(|k| value.get(*k).map(|v| ((*k).to_string(), v.clone())))
-            .collect(),
-    )
-}
-
-pub fn supported(platform: &str, kind: &str) -> bool {
-    SCHEMA["platforms"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|p| p["id"] == platform && p["types"].as_array().unwrap().iter().any(|t| t == kind))
-}
-fn applies(field: &Value, platform: &str, kind: &str) -> bool {
-    [("platforms", platform), ("types", kind)]
-        .iter()
-        .all(|(key, value)| {
-            field[*key]
-                .as_array()
-                .is_none_or(|a| a.iter().any(|v| v == *value))
-        })
-}
-fn field_value<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
-    match path.split_once('.') {
-        Some((section, key)) => value.get(section)?.get(key),
-        None => value.get(path),
-    }
-}
-fn insert(out: &mut Value, path: &str, value: Value) {
-    match path.split_once('.') {
-        Some((section, key)) => {
-            if !out[section].is_object() {
-                out[section] = json!({});
-            }
-            out[section][key] = value;
-        }
-        None => out[path] = value,
-    }
-}
+#[cfg(test)]
+use sub2ops_protocol::creation::insert;
+pub use sub2ops_protocol::routes::auth_route;
+use sub2ops_protocol::routes::{catalog_route, import_route};
 pub fn reusable(row: &Value) -> Result<Value> {
-    let platform = string(&row["platform"]);
-    let kind = string(&row["type"]);
-    if !supported(platform, kind) {
-        return Err(Error::new(422, "此账号类型不支持创建"));
-    }
-    let mut out = pick(
-        row,
-        &[
-            "notes",
-            "proxy_id",
-            "concurrency",
-            "load_factor",
-            "priority",
-            "rate_multiplier",
-            "group_ids",
-            "expires_at",
-            "auto_pause_on_expired",
-        ],
-    );
-    if !out["group_ids"].is_array() {
-        out["group_ids"] = json!(row["groups"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|g| g["id"].as_i64())
-            .collect::<Vec<_>>());
-    }
-    out["platform"] = row["platform"].clone();
-    out["type"] = row["type"].clone();
-    out["credentials"] = json!({});
-    out["extra"] = json!({});
-    for f in SCHEMA["fields"].as_array().unwrap() {
-        let path = string(&f["path"]);
-        if applies(f, platform, kind) {
-            if let Some(value) = field_value(row, path) {
-                insert(&mut out, path, value.clone());
-            }
-        }
-    }
-    // Account creation parameters are selected positively; identity and live quota
-    // state never ride along with the source account's credentials or extra.
-    if kind == "service_account" {
-        out["credentials"]
-            .as_object_mut()
-            .unwrap()
-            .remove("project_id");
-    }
-    if kind == "apikey" {
-        if let Some(v) = row["extra"].get("upstream_billing_probe_enabled") {
-            out["upstream_billing_probe_enabled"] = v.clone();
-        }
-    }
-    Ok(out)
-}
-
-pub fn auth_route(platform: &str, action: &str) -> Option<&'static str> {
-    match (platform, action) {
-        ("anthropic", "authorize") => Some("accounts/generate-auth-url"),
-        ("anthropic", "exchange") => Some("accounts/exchange-code"),
-        ("anthropic", "cookie") => Some("accounts/cookie-auth"),
-        ("setup-token", "authorize") => Some("accounts/generate-setup-token-url"),
-        ("setup-token", "exchange") => Some("accounts/exchange-setup-token-code"),
-        ("setup-token", "cookie") => Some("accounts/setup-token-cookie-auth"),
-        ("openai", "authorize") => Some("openai/generate-auth-url"),
-        ("openai", "exchange") => Some("openai/exchange-code"),
-        ("openai", "refresh") => Some("openai/refresh-token"),
-        ("gemini", "authorize") => Some("gemini/oauth/auth-url"),
-        ("gemini", "exchange") => Some("gemini/oauth/exchange-code"),
-        ("antigravity", "authorize") => Some("antigravity/oauth/auth-url"),
-        ("antigravity", "exchange") => Some("antigravity/oauth/exchange-code"),
-        ("antigravity", "refresh") => Some("antigravity/oauth/refresh-token"),
-        ("grok", "authorize") => Some("grok/oauth/auth-url"),
-        ("grok", "exchange") => Some("grok/oauth/exchange-code"),
-        ("grok", "refresh") => Some("grok/oauth/refresh-token"),
-        _ => None,
-    }
-}
-fn import_route(kind: &str) -> Option<&'static str> {
-    match kind {
-        "codex-session" => Some("accounts/import/codex-session"),
-        "codex-pat" => Some("openai/create-from-codex-pat"),
-        "grok-sso" => Some("grok/sso-to-oauth"),
-        _ => None,
-    }
-}
-fn catalog_route(kind: &str) -> Option<&'static str> {
-    match kind {
-        "gemini" => Some("gemini/oauth/capabilities"),
-        "grok" => Some("grok/oauth/capabilities"),
-        "tls" => Some("tls-fingerprint-profiles"),
-        "settings" => Some("settings"),
-        "web-search" => Some("settings/web-search-emulation"),
-        "antigravity-models" => Some("accounts/antigravity/default-model-mapping"),
-        _ => None,
-    }
-}
-pub fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
-    match path {
-        ["account-creation"] | ["account-creation", "check-mixed-channel" | "models"] => {
-            Some(&["POST"])
-        }
-        ["account-creation", "options"] => Some(&["GET"]),
-        ["account-creation", "source", id] if id.parse::<i64>().is_ok_and(|v| v > 0) => {
-            Some(&["GET"])
-        }
-        ["account-creation", "catalog", kind] if catalog_route(kind).is_some() => Some(&["GET"]),
-        ["account-creation", "auth", platform, action]
-            if auth_route(platform, action).is_some() =>
-        {
-            Some(&["POST"])
-        }
-        ["account-creation", "import", kind] if import_route(kind).is_some() => Some(&["POST"]),
-        _ => None,
-    }
+    sub2ops_protocol::creation::reusable(row).ok_or_else(|| Error::new(422, "此账号类型不支持创建"))
 }
 fn common(value: &Value) -> Result<()> {
     for name in ["name", "notes"] {
@@ -240,12 +41,12 @@ fn common(value: &Value) -> Result<()> {
     }
     for name in ["proxy_id", "load_factor", "expires_at"] {
         if let Some(v) = value.get(name).filter(|v| !v.is_null()) {
-            validation::integer(v, 1, i64::MAX)?;
+            validation::integer_in_range(v, 1, i64::MAX)?;
         }
     }
     for name in ["concurrency", "priority"] {
         if let Some(v) = value.get(name) {
-            validation::integer(v, i64::from(name == "concurrency"), i32::MAX as i64)?;
+            validation::integer_in_range(v, i64::from(name == "concurrency"), i32::MAX as i64)?;
         }
     }
     if let Some(v) = value.get("rate_multiplier") {
@@ -262,7 +63,7 @@ fn common(value: &Value) -> Result<()> {
             .filter(|a| a.len() <= 1000)
             .ok_or_else(Error::invalid)?
         {
-            validation::integer(id, 1, i64::MAX)?;
+            validation::integer_in_range(id, 1, i64::MAX)?;
         }
     }
     Ok(())

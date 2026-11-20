@@ -1204,7 +1204,7 @@ td strong {
 .quick .section-heading > span {
   font-size: 10px;
 }
-.quick-groups {
+.mobile-activity-groups {
   display: grid;
   gap: 6px;
 }

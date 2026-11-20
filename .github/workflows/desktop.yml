@@ -146,7 +146,7 @@ jobs:
           key: macos-aarch64
       - run: pnpm install --frozen-lockfile
         working-directory: desktop
-      - run: pnpm test && pnpm build
+      - run: pnpm format:check && pnpm lint && pnpm test && pnpm build
         working-directory: desktop
       - run: swift test --package-path desktop/macos
       - run: cargo test --locked && cargo clippy --locked --all-targets -- -D warnings

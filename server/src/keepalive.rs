@@ -1,6 +1,5 @@
 //! Opt-in clearing of native temporary scheduling blocks. Never opens scheduling.
 use crate::{
-    audit,
     compat::{integer, string},
     db::Param,
     error::{Error, Result},
@@ -116,8 +115,7 @@ impl Keepalive {
             .contains(&id)
     }
     fn audit(&self, event: &str, id: i64, intent: &Intent, result: &str) {
-        audit::write(
-            &self.detection.actions.settings.audit_path,
+        self.detection.actions.audit(
             event,
             json!({"account_id":id,"before_until":intent.before_until,"reason":intent.reason,
                 "result":result,"generation":intent.generation,"request_id":intent.id}),
@@ -237,6 +235,10 @@ impl Keepalive {
     }
     pub async fn save(&self, id: i64, payload: &Value) -> Result<Value> {
         request(payload)?;
+        self.save_validated(id, payload).await
+    }
+
+    pub(crate) async fn save_validated(&self, id: i64, payload: &Value) -> Result<Value> {
         if self.tasks.is_closed() {
             return Err(Error::new(503, "服务正在停止"));
         }
@@ -328,8 +330,7 @@ impl Keepalive {
             self.tasks.spawn(async move {
                 let (_guard, _permit) = (guard, permit);
                 if owner.run(id, generation, &row).await.is_err() {
-                    audit::write(
-                        &owner.detection.actions.settings.audit_path,
+                    owner.detection.actions.audit(
                         "keepalive_task_error",
                         json!({"account_id":id,"error_code":"cycle_failed"}),
                     );
@@ -441,7 +442,7 @@ impl Keepalive {
                     }
                 }
                 Outcome::Failed => {
-                    let delay = [5, 30, 120, 600][control.failures.min(3) as usize];
+                    let delay = crate::execution::retry_delay(control.failures.into());
                     control.failures = control.failures.saturating_add(1);
                     control.retry_at = Some(at + Duration::seconds(delay));
                 }
@@ -494,10 +495,9 @@ impl Keepalive {
                     current.attempts += 1;
                     current.next_at = Some(
                         self.now()
-                            + Duration::seconds(
-                                [5, 30, 120, 600]
-                                    [current.attempts.saturating_sub(1).min(3) as usize],
-                            ),
+                            + Duration::seconds(crate::execution::retry_delay(
+                                current.attempts.saturating_sub(1).into(),
+                            )),
                     );
                     Ok(true)
                 })?;
@@ -527,10 +527,9 @@ impl Keepalive {
                         current.next_at = if current.status == "pending" {
                             Some(
                                 self.now()
-                                    + Duration::seconds(
-                                        [5, 30, 120, 600]
-                                            [current.attempts.saturating_sub(1).min(3) as usize],
-                                    ),
+                                    + Duration::seconds(crate::execution::retry_delay(
+                                        current.attempts.saturating_sub(1).into(),
+                                    )),
                             )
                         } else {
                             None

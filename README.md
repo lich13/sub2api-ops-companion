@@ -72,6 +72,7 @@ docker compose up -d --build
   ```
 - 生产环境建议通过 Nginx 挂载到 Sub2API 同域名的 `/sub2ops/` 路径下，并关闭该路径的 query access log（配置示例见 `deploy/nginx/sub2ops.location.conf`）。
 - 桌面管理路由强制校验管理员 API Key；`connection-status` 保持 HTTP 200 返回脱敏鉴权诊断的契约（不回传地址、密钥或业务数据）；`/healthz` 保持免鉴权健康检查语义。
+- 写请求每次向上游核验管理员 Key。同一地址、同一 Key 的重叠请求共用一次核验，不同凭据排队等待上游响应。前一次请求完成后，下一次写入会重新核验，以便及时发现撤权。
 - 数据库跨主机连接请启用 TLS、配置可信 CA 并验证服务端主机名（`sslmode=verify-full`）；`sslmode=disable` 仅适用于同一受控容器内网。
 
 ---
@@ -104,6 +105,8 @@ docker compose up -d --build
 ---
 
 ## 依赖维护与质量门禁
+
+API 路由和传输类型定义在 `server/protocol`。修改类型后运行 `sh scripts/generate_protocol.sh`，通过 Typeshare CLI 重新生成 Swift 与 TypeScript 模型，并提交两端生成文件。
 
 - **自动更新策略**：Dependabot 每周一 09:00（Asia/Taipei）检查两份 Cargo 锁文件、前端依赖、Python 测试工具、基础镜像、GitHub Actions 与 Android 应用库；普通版本观察 7 天后提出更新，安全修复立即响应。
 - **锁文件与兼容边界**：Cargo 采用 `lockfile-only` 并限制跨越 `0.x` 兼容线的普通更新；React 与 React DOM 保持同版本；Tauri JS 包与 Rust 核心（`~2.12.5`）、构建辅助（`~2.7.4`）及插件成组对齐验证。

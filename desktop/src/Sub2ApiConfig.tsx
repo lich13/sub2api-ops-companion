@@ -1,3 +1,4 @@
+import { useEffectEvent, useCallback } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Eye, EyeOff, RefreshCw, Search, X } from "lucide-react";
 import { parseDocument, stringify } from "yaml";
@@ -77,9 +78,9 @@ const subsection = (field: ConfigField) =>
   field.path.split(".").length > 2
     ? field.path.split(".").slice(0, 2).join(".")
     : field.group;
-const structuredText = (value: unknown) =>
+export const structuredText = (value: unknown) =>
   typeof value === "string" ? value : value == null ? "" : stringify(value);
-function structuredValue(text: string, type: string) {
+export function structuredValue(text: string, type: string) {
   const document = parseDocument(text, { uniqueKeys: true });
   if (document.errors.length)
     return { value: text, error: "YAML 语法无效，请检查缩进和重复字段" };
@@ -511,8 +512,11 @@ export default function Sub2ApiConfig({
       if (alive.current && seq === loadSeq.current) setBusy(false);
     }
   }
+  const refreshDocument = useEffectEvent(() => {
+    if (!applying) void load(false, true);
+  });
   useEffect(() => {
-    if (active && online && !applying) void load(false, true);
+    if (active && online) refreshDocument();
   }, [active, online]);
   useEffect(() => {
     if (!active || statusLoaded.current) return;
@@ -678,8 +682,11 @@ export default function Sub2ApiConfig({
     );
   }, [document]);
   const needle = query.trim().toLowerCase();
-  const matches = (field: ConfigField) =>
-    `${field.path} ${field.description}`.toLowerCase().includes(needle);
+  const matches = useCallback(
+    (field: ConfigField) =>
+      `${field.path} ${field.description}`.toLowerCase().includes(needle),
+    [needle],
+  );
   const fields = useMemo(() => {
     if (!document?.available) return [];
     return document.catalog.fields.filter((field) => {
@@ -698,7 +705,7 @@ export default function Sub2ApiConfig({
           (filter === "changed" && !!draft[field.path]))
       );
     });
-  }, [document, needle, childrenByPath, filter, draft]);
+  }, [document, needle, matches, childrenByPath, filter, draft]);
   const groupCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const field of fields)
@@ -764,7 +771,7 @@ export default function Sub2ApiConfig({
       rootRef.current?.ownerDocument.getElementById(`config-${field.path}`);
     input?.focus({ preventScroll: true });
     input?.scrollIntoView?.({ block: "nearest" });
-  }, [focusTarget]);
+  }, [focusTarget, document?.catalog.fields]);
   function undo(path: string) {
     setDraft((old) => {
       const next = { ...old };

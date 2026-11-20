@@ -1,3 +1,4 @@
+import { useEffectEvent } from "react";
 import { useEffect, useId, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import {
@@ -47,15 +48,16 @@ export default function AccountModelField({
       if (current === request.current) setLoading(false);
     }
   }
+  const readOnChange = useEffectEvent(read);
   useEffect(() => {
-    void read();
+    void readOnChange();
     return () => {
-      ++request.current;
+      request.current = request.current + 1;
     };
   }, [source, online]);
   useEffect(() => {
     if (source && !accounts.some((account) => String(account.id) === source)) {
-      ++request.current;
+      request.current = request.current + 1;
       setSource("");
       setModels([]);
       setError("");
@@ -98,7 +100,7 @@ export default function AccountModelField({
           value={source}
           disabled={!online}
           onChange={(e) => {
-            ++request.current;
+            request.current = request.current + 1;
             setModels([]);
             setError("");
             setSource(e.target.value);

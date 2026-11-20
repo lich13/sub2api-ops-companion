@@ -833,7 +833,7 @@ impl Harness {
             settings.clone(),
         )
         .expect("construct fixture actions");
-        let mut coordinator = Coordinator::new(actions.clone(), Arc::new(|| 4));
+        let mut coordinator = Coordinator::new(actions.clone(), Arc::new(|| Ok(4)));
         let query_clock = clock.clone();
         coordinator.clock = Arc::new(move || *query_clock.lock().unwrap());
         let hooks: Arc<dyn Hooks> = Arc::new(FixtureHooks {
@@ -846,7 +846,7 @@ impl Harness {
             actions,
             coordinator,
             hooks,
-            TestSlots::new(Arc::new(|| 2)),
+            TestSlots::new(Arc::new(|| Ok(2))),
             Arc::new(Semaphore::new(2)),
         );
         let now = clock.clone();
@@ -2382,8 +2382,8 @@ async fn unissued_episode_requires_manual_reopen_recovery_and_newer_depletion_af
     harness.set_config(recovery_config(id, "connection"));
     let old_episode;
     {
-        let slot_a = harness.controller.slots.acquire().unwrap();
-        let slot_b = harness.controller.slots.acquire().unwrap();
+        let slot_a = harness.controller.slots.acquire().unwrap().unwrap();
+        let slot_b = harness.controller.slots.acquire().unwrap().unwrap();
         run_automatic(&harness, &row, now).await;
         let waiting = harness.controller.state(id).unwrap();
         assert_eq!(waiting["stage"], "waiting");
@@ -2504,8 +2504,8 @@ async fn unissued_episode_requires_manual_reopen_recovery_and_newer_depletion_af
         .await;
     assert_eq!(observation["success"], true, "{observation}");
     let new_row = reload_account(&harness, id).await;
-    let slot_a = harness.controller.slots.acquire().unwrap();
-    let slot_b = harness.controller.slots.acquire().unwrap();
+    let slot_a = harness.controller.slots.acquire().unwrap().unwrap();
+    let slot_b = harness.controller.slots.acquire().unwrap().unwrap();
     harness.set_now(trigger + Duration::seconds(1));
     run_automatic(&harness, &new_row, trigger + Duration::seconds(1)).await;
     let next = harness.controller.state(id).unwrap();
@@ -2533,8 +2533,8 @@ async fn waiting_episode_finishes_on_manual_disable_or_deletion_without_dispatch
         let id = NEXT_ACCOUNT_ID.load(Ordering::Relaxed);
         harness.set_config(recovery_config(id, "connection"));
         let (row, _) = harness.seed_depletion(&harness.controller).await;
-        let slot_a = harness.controller.slots.acquire().unwrap();
-        let slot_b = harness.controller.slots.acquire().unwrap();
+        let slot_a = harness.controller.slots.acquire().unwrap().unwrap();
+        let slot_b = harness.controller.slots.acquire().unwrap().unwrap();
         run_automatic(&harness, &row, now).await;
         assert_eq!(harness.controller.state(id).unwrap()["stage"], "waiting");
         drop(slot_a);
@@ -4385,8 +4385,8 @@ async fn newer_depletion_after_manual_unknown_recovery_uses_a_new_episode_and_po
         snapshot(1, trigger + Duration::days(2), trigger),
     )
     .await;
-    let slot_a = harness.controller.slots.acquire().unwrap();
-    let slot_b = harness.controller.slots.acquire().unwrap();
+    let slot_a = harness.controller.slots.acquire().unwrap().unwrap();
+    let slot_b = harness.controller.slots.acquire().unwrap().unwrap();
     harness.set_now(trigger + Duration::seconds(1));
     run_automatic(&harness, &row, trigger + Duration::seconds(1)).await;
     let fresh = harness.controller.state(id).unwrap();
@@ -4519,8 +4519,8 @@ async fn terminal_credit_outcomes_and_bark_receipts_survive_restart_once() {
                 run_automatic(&harness, &row, now).await;
             }
             "not_executed" => {
-                let slot_a = harness.controller.slots.acquire().unwrap();
-                let slot_b = harness.controller.slots.acquire().unwrap();
+                let slot_a = harness.controller.slots.acquire().unwrap().unwrap();
+                let slot_b = harness.controller.slots.acquire().unwrap().unwrap();
                 run_automatic(&harness, &row, now).await;
                 assert_eq!(harness.controller.state(id).unwrap()["stage"], "waiting");
                 assert_eq!(
@@ -5143,8 +5143,8 @@ async fn waiting_episode_rechecks_current_cards_without_requiring_old_observatio
         let (row, _) = harness.seed_depletion(&harness.controller).await;
         let id = integer(&row["id"]).unwrap();
         harness.set_config(recovery_config(id, "connection"));
-        let slot_a = harness.controller.slots.acquire().unwrap();
-        let slot_b = harness.controller.slots.acquire().unwrap();
+        let slot_a = harness.controller.slots.acquire().unwrap().unwrap();
+        let slot_b = harness.controller.slots.acquire().unwrap().unwrap();
         run_automatic(&harness, &row, now).await;
         let waiting = harness.controller.state(id).unwrap();
         assert_eq!(waiting["stage"], "waiting", "{change}");
