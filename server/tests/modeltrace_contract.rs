@@ -487,6 +487,43 @@ fn settings_at(directory: &Path) -> Arc<Settings> {
     })
 }
 
+#[tokio::test]
+async fn desktop_decodes_each_fingerprint_bank_status_and_sync_reply() {
+    use sub2ops_protocol::response::client_response;
+    use sub2ops_server::{
+        lm_detector,
+        store::{valid_object, Store},
+    };
+
+    let directory = tempfile::tempdir().unwrap();
+    let settings = settings_at(directory.path());
+    let modeltrace = fingerprint_bank::FingerprintBank::new(settings.clone())
+        .unwrap()
+        .public();
+    let jobs = Store::new(
+        directory.path().join("jobs.json"),
+        json!({"jobs": {}}),
+        valid_object,
+    );
+    let lm_detector = lm_detector::Bank::new(settings, Default::default(), jobs)
+        .public()
+        .await
+        .unwrap();
+
+    for (engine, status, other_engine_status) in [
+        ("lm-detector", &lm_detector, &modeltrace),
+        ("modeltrace", &modeltrace, &lm_detector),
+    ] {
+        for (method, suffix) in [("GET", ""), ("POST", "/sync")] {
+            let path = format!("/{engine}/fingerprint-bank{suffix}");
+            let decoded = client_response(method, &path, status.clone())
+                .unwrap_or_else(|| panic!("client rejected {method} {path}"));
+            assert_eq!(&decoded, status);
+            assert!(client_response(method, &path, other_engine_status.clone()).is_none());
+        }
+    }
+}
+
 fn valid_cache_state() -> Value {
     let (_, mut version) = modeltrace::bundled().unwrap();
     let manifest = modeltrace::manifest();

@@ -207,7 +207,12 @@ pub fn client_response(method: &str, path: &str, data: Value) -> Option<Value> {
         }
         Reply::Config => None,
         Reply::QuotaRefresh => checked::<QuotaRefreshHeader>(data),
-        Reply::Bank => checked::<BankStatusReply>(data),
+        Reply::Bank => match route {
+            Route::Bank("lm-detector") | Route::SyncBank("lm-detector") => {
+                checked::<BankStatusReply<String>>(data)
+            }
+            _ => checked::<BankStatusReply<Integer>>(data),
+        },
         Reply::HostConfig => checked::<HostConfigHeader>(data),
         Reply::HostOperation => checked::<HostOperationReply>(data),
         Reply::HostValidation => checked::<HostValidationReply>(data),

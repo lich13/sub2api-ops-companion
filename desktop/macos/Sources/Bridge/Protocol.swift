@@ -518,24 +518,24 @@ public struct AccountTokenReply: Codable, Sendable, Equatable {
 	}
 }
 
-public struct BankVersionReply: Codable, Sendable, Equatable {
+public struct BankVersionReply<AnalyzerVersion: Codable & Equatable & Sendable>: Codable, Sendable, Equatable {
 	public let revision: String
 	public let sha256: String
-	public let analyzer_version: Int
+	public let analyzer_version: AnalyzerVersion
 
-	public init(revision: String, sha256: String, analyzer_version: Int) {
+	public init(revision: String, sha256: String, analyzer_version: AnalyzerVersion) {
 		self.revision = revision
 		self.sha256 = sha256
 		self.analyzer_version = analyzer_version
 	}
 }
 
-public struct BankStatusReply: Codable, Sendable, Equatable {
-	public let version: BankVersionReply
+public struct BankStatusReply<AnalyzerVersion: Codable & Equatable & Sendable>: Codable, Sendable, Equatable {
+	public let version: BankVersionReply<AnalyzerVersion>
 	public let source: String
 	public let status: String
 
-	public init(version: BankVersionReply, source: String, status: String) {
+	public init(version: BankVersionReply<AnalyzerVersion>, source: String, status: String) {
 		self.version = version
 		self.source = source
 		self.status = status

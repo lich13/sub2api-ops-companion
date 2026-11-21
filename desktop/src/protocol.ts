@@ -259,14 +259,14 @@ export interface AccountTokenReply {
   access_token: string;
 }
 
-export interface BankVersionReply {
+export interface BankVersionReply<AnalyzerVersion> {
   revision: string;
   sha256: string;
-  analyzer_version: number;
+  analyzer_version: AnalyzerVersion;
 }
 
-export interface BankStatusReply {
-  version: BankVersionReply;
+export interface BankStatusReply<AnalyzerVersion> {
+  version: BankVersionReply<AnalyzerVersion>;
   source: string;
   status: string;
 }

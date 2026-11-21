@@ -1,5 +1,6 @@
 [swift]
 default_decorators = ["Sendable", "Equatable"]
+default_generic_constraints = ["Sendable", "Equatable"]
 
 [swift.type_mappings]
 Json = "JSONValue"

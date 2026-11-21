@@ -397,16 +397,16 @@ pub struct HostOperationReply {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BankVersionReply {
+pub struct BankVersionReply<AnalyzerVersion> {
     pub revision: String,
     pub sha256: String,
-    pub analyzer_version: Integer,
+    pub analyzer_version: AnalyzerVersion,
 }
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BankStatusReply {
-    pub version: BankVersionReply,
+pub struct BankStatusReply<AnalyzerVersion> {
+    pub version: BankVersionReply<AnalyzerVersion>,
     pub source: String,
     pub status: String,
 }
