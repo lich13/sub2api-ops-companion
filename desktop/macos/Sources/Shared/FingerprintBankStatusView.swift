@@ -172,7 +172,7 @@ private struct FingerprintBankRow: View {
         let path = endpointPrefix(for: engine)
         do {
             if manual {
-                let _: JSONValue = try await RustBridge.shared.api("POST", "\(path)/sync", body: .object([:]))
+                try await RustBridge.shared.apiVoid("POST", "\(path)/sync", body: .object([:]))
             }
             var followStart = manual
             while !Task.isCancelled {

@@ -34,11 +34,11 @@ public struct ErrorDetailDrawerView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(error.map { "HTTP \($0.upstream_status_code ?? $0.status_code) · 错误详情" } ?? "错误详情")
+                        Text(error.map { "HTTP \($0.upstream_status_code ?? $0.statusCodeValue) · 错误详情" } ?? "错误详情")
                             .font(DS.fontPriorityMeta)
                             .monospacedDigit()
                             .foregroundStyle(DS.muted)
-                        Text(error?.account_name.isEmpty == false ? error!.account_name : (error?.account_id.map { "账号 #\($0)" } ?? "读取中…"))
+                        Text(error?.accountNameText.isEmpty == false ? error!.accountNameText : (error?.account_id.map { "账号 #\($0)" } ?? "读取中…"))
                             .font(DS.fontDialogTitle)
                             .foregroundStyle(DS.ink)
                     }
@@ -75,11 +75,11 @@ public struct ErrorDetailDrawerView: View {
                                     .foregroundStyle(DS.bad)
                                     .padding(.top, 1)
                                 VStack(alignment: .leading, spacing: 5) {
-                                    Text(verbatim: error.provider_error_code.isEmpty ? "HTTP \(error.upstream_status_code ?? error.status_code)" : error.provider_error_code)
+                                    Text(verbatim: error.providerErrorCodeText.isEmpty ? "HTTP \(error.upstream_status_code ?? error.statusCodeValue)" : error.providerErrorCodeText)
                                         .font(DS.fontBodySemibold)
                                         .foregroundStyle(DS.bad)
-                                    if !error.message.isEmpty {
-                                        Text(verbatim: error.message)
+                                    if !error.messageText.isEmpty {
+                                        Text(verbatim: error.messageText)
                                             .font(DS.fontCompact)
                                             .foregroundStyle(DS.bad)
                                             .textSelection(.enabled)
@@ -93,30 +93,30 @@ public struct ErrorDetailDrawerView: View {
 
                             VStack(alignment: .leading, spacing: 10) {
                                 metaRow("发生时间", value: BeijingTime.fullTime(error.created_at))
-                                metaRow("关联账号", value: error.account_name.isEmpty ? (error.account_id.map { "#\($0)" } ?? "—") : "\(error.account_name)\(error.account_id.map { " #\($0)" } ?? "")")
-                                metaRow("所属分组", value: error.group_name.isEmpty ? (error.group_id.map { "#\($0)" } ?? "—") : "\(error.group_name)\(error.group_id.map { " #\($0)" } ?? "")")
-                                metaRow("HTTP 状态", value: "\(error.status_code)\(error.upstream_status_code.map { "（上游 \($0)）" } ?? "")")
-                                metaRow("请求模型", value: error.requested_model.isEmpty ? (error.model.isEmpty ? "—" : error.model) : error.requested_model)
-                                if !error.upstream_model.isEmpty {
-                                    metaRow("转发模型", value: error.upstream_model)
+                                metaRow("关联账号", value: error.accountNameText.isEmpty ? (error.account_id.map { "#\($0)" } ?? "—") : "\(error.accountNameText)\(error.account_id.map { " #\($0)" } ?? "")")
+                                metaRow("所属分组", value: error.groupNameText.isEmpty ? (error.group_id.map { "#\($0)" } ?? "—") : "\(error.groupNameText)\(error.group_id.map { " #\($0)" } ?? "")")
+                                metaRow("HTTP 状态", value: "\(error.statusCodeValue)\(error.upstream_status_code.map { "（上游 \($0)）" } ?? "")")
+                                metaRow("请求模型", value: error.requestedModelText.isEmpty ? (error.modelText.isEmpty ? "—" : error.modelText) : error.requestedModelText)
+                                if !error.upstreamModelText.isEmpty {
+                                    metaRow("转发模型", value: error.upstreamModelText)
                                 }
                                 if let owner = error.error_owner, !owner.isEmpty {
                                     metaRow("来源阶段", value: "\(owner)\(error.error_phase.map { " · \($0)" } ?? "")")
                                 }
-                                if !error.request_id.isEmpty {
+                                if !error.requestIdText.isEmpty {
                                     HStack(spacing: 10) {
                                         Text("请求 ID")
                                             .font(DS.fontCompact)
                                             .foregroundStyle(DS.muted)
                                             .frame(width: 82, alignment: .leading)
-                                        Text(verbatim: error.request_id)
+                                        Text(verbatim: error.requestIdText)
                                             .font(DS.fontMono11)
                                             .foregroundStyle(DS.ink)
                                             .lineLimit(1)
                                             .truncationMode(.middle)
                                         Button {
                                             NSPasteboard.general.clearContents()
-                                            NSPasteboard.general.setString(error.request_id, forType: .string)
+                                            NSPasteboard.general.setString(error.requestIdText, forType: .string)
                                             copiedId = true
                                         } label: {
                                             Image(systemName: copiedId ? "checkmark" : "doc.on.doc")

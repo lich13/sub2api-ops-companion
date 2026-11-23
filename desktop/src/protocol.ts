@@ -946,6 +946,13 @@ export interface RecoveryRecord {
   reset_credit?: RecoveryResetCreditRecord;
 }
 
+export interface ReleaseInfoReply {
+  name?: string;
+  html_url?: string;
+  published_at?: string;
+  body?: string;
+}
+
 export interface SessionImportReply {
   created: number;
   updated: number;
@@ -970,6 +977,7 @@ export interface SystemUpdateReply {
   already_up_to_date?: boolean;
   current_version?: string;
   latest_version?: string;
+  operation_id?: string;
 }
 
 export interface SystemVersionReply {
@@ -994,6 +1002,8 @@ export interface UpdatesReply {
   has_update: boolean;
   build_type: string;
   cached: boolean;
+  warning?: string;
+  release_info?: ReleaseInfoReply;
 }
 
 export interface UsageDeltaReply {

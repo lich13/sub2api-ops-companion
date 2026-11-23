@@ -4,6 +4,7 @@ import { Copy, ExternalLink, LoaderCircle, Plus, X } from "lucide-react";
 import { api, command } from "./bridge";
 import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
+import type { TokenAuthorization as Authorization } from "./protocol";
 import type { Account } from "./types";
 import AccountCreationFields from "./AccountCreationFields";
 import {
@@ -79,7 +80,6 @@ type Outcome = {
   status: "success" | "failed" | "unknown";
   message: string;
 };
-type Authorization = { auth_url: string; session_id: string; state?: string };
 const message = (error: unknown) => String(error).replace(/^Error: /, "");
 export const uncertainCreation = (error: unknown) =>
   !/\[4\d\d\]/.test(message(error));

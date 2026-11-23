@@ -1,4 +1,6 @@
 import catalog from "../../server/src/account_creation_fields.json";
+import type { ChoiceRecord, CreationOptionsReply } from "./protocol";
+export type { CreatedAccountReply as Created } from "./protocol";
 
 export type RecordValue = Record<string, unknown>;
 export type CreationDraft = {
@@ -31,19 +33,8 @@ export type Field = {
   min?: number;
   max?: number;
 };
-export type CreationOptions = {
-  groups: {
-    id: number;
-    name: string;
-    platform: string;
-    status?: string;
-    long_context_pricing_enabled?: boolean;
-  }[];
-  proxies: { id: number; name: string; status?: string }[];
-};
-export type Created = {
-  account: { id: number; name: string; platform: string; type: string };
-  warnings: string[];
+export type CreationOptions = Omit<CreationOptionsReply, "groups"> & {
+  groups: (Omit<ChoiceRecord, "platform"> & { platform: string })[];
 };
 export const fields = catalog.fields as Field[];
 export const platforms = catalog.platforms;

@@ -65,14 +65,14 @@ fn input(service: &Service, site: &Site, id: i64) -> Query {
         .unwrap()
 }
 fn set_seconds(s: &Service, seconds: u64) {
-    s.save_settings(
-        &json!({"expected_revision":s.settings().unwrap()["revision"],"seconds":seconds}),
-        None,
-    )
-    .unwrap();
+    let payload = json!({"expected_revision":s.settings().unwrap()["revision"],"seconds":seconds});
+    settings_request(&payload, false).unwrap();
+    s.save_settings_validated(&payload, None).unwrap();
 }
 fn set_token(s: &Service, id: i64, token: &str) {
-    s.save_settings(&json!({"expected_revision":s.account_settings(id).unwrap()["revision"],"access_token":token}), Some(id)).unwrap();
+    let payload = json!({"expected_revision":s.account_settings(id).unwrap()["revision"],"access_token":token});
+    settings_request(&payload, true).unwrap();
+    s.save_settings_validated(&payload, Some(id)).unwrap();
 }
 
 #[tokio::test]
@@ -294,16 +294,15 @@ fn settings_are_private_persistent_conflict_checked_and_allow_explicit_clear() {
     let (dir, s) = fixture();
     let initial = s.settings().unwrap();
     for n in [1, 9, 86401] {
-        assert!(s
-            .save_settings(
-                &json!({"seconds":n,"expected_revision":initial["revision"]}),
-                None
-            )
-            .is_err());
+        assert!(settings_request(
+            &json!({"seconds":n,"expected_revision":initial["revision"]}),
+            false
+        )
+        .is_err());
     }
     set_seconds(&s, 120);
     assert!(s
-        .save_settings(
+        .save_settings_validated(
             &json!({"seconds":60,"expected_revision":initial["revision"]}),
             None
         )
@@ -317,7 +316,7 @@ fn settings_are_private_persistent_conflict_checked_and_allow_explicit_clear() {
         json!({"account_id":1,"access_token":"fixture-account"})
     );
     assert_eq!(s.account_access_token(2).unwrap_err().status.as_u16(), 404);
-    s.save_settings(&json!({"expected_revision":public["revision"]}), Some(1))
+    s.save_settings_validated(&json!({"expected_revision":public["revision"]}), Some(1))
         .unwrap();
     assert_eq!(s.account_settings(1).unwrap(), public);
     let restored = Service::new(dir.path().join("quota.json")).unwrap();

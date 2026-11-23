@@ -206,7 +206,7 @@ class Harness {
     return locator;
   }
 
-  async within(locator, kind, { touch = this.scenario.mobile, vertical = true, scroll = true, hit = false } = {}) {
+  async within(locator, kind, { touch = true, vertical = true, scroll = true, hit = false } = {}) {
     await this.visible(locator, kind);
     if (scroll) await locator.scrollIntoViewIfNeeded();
     const bounds = await geometry(locator);
@@ -1097,12 +1097,10 @@ async function templateChecks(h) {
   await h.click(account102.locator("label.account-check"), "batch-select-long-name-account");
   await h.layout();
   const selectionBar = surface.locator(".selection-bar");
-  if (h.scenario.mobile) {
-    const mobileSort = surface.locator(".mobile-sort");
-    await h.state(await mobileSort.getByRole("checkbox", { name: "全选当前筛选账号", exact: true }).count() === 1
-      && await selectionBar.locator('input[type="checkbox"]').count() === 0,
-    "mobile-select-all-not-in-sort-row", mobileSort);
-  }
+  const mobileSort = surface.locator(".mobile-sort");
+  await h.state(await mobileSort.getByRole("checkbox", { name: "全选当前筛选账号", exact: true }).count() === 1
+    && await selectionBar.locator('input[type="checkbox"]').count() === 0,
+  "mobile-select-all-not-in-sort-row", mobileSort);
   const selectionSummary = selectionBar.locator(".selection-summary");
   const selectionActions = selectionBar.locator(".selection-actions");
   const testConnectionAction = selectionActions.getByRole("button", { name: "测试连接", exact: true });
@@ -1214,7 +1212,7 @@ async function templateChecks(h) {
   await h.click(deleteDialog.getByRole("button", { name: "关闭账号模板", exact: true }), "delete-template-close");
   await deleteDialog.waitFor({ state: "hidden" });
 
-  await page.goto(`${ORIGIN}/?mobile=1&scenario=empty`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${ORIGIN}/?scenario=empty`, { waitUntil: "domcontentloaded" });
   h.phase = "templates/empty-account-set";
   await h.visible(page.locator('.page-surface[data-page="accounts"]'), "empty-account-surface");
   const emptySurface = page.locator('.page-surface[data-page="accounts"]');
@@ -1236,7 +1234,7 @@ async function connectionBatchChecks(h, fixture) {
   const surface = page.locator('.page-surface[data-page="accounts"]');
   const selection = surface.locator(".selection-bar");
   const results = surface.getByRole("region", { name: "批量测试连接", exact: true });
-  const accountRows = surface.locator(h.scenario.mobile ? ".mobile-account" : ".accounts-table > tbody > tr");
+  const accountRows = surface.locator(".mobile-account");
   const selectedAccounts = [101, 102, 201].map((id) => fixture.accounts.find((account) => account.id === id));
   await h.state(selectedAccounts.every(Boolean), "missing-batch-connection-fixture", surface);
   await h.state(await selection.count() === 0, "batch-connection-selection-bar-rendered-with-no-selection", surface);
@@ -1249,14 +1247,9 @@ async function connectionBatchChecks(h, fixture) {
   });
   const beforeJobs = await readJobs();
   for (const account of selectedAccounts) {
-    const checkboxOptions = { name: `选择 ${account.name}`, exact: true };
-    const checkbox = page.getByRole("checkbox", checkboxOptions);
-    if (h.scenario.mobile) {
-      const card = accountRows.filter({ has: checkbox });
-      await h.click(card.locator("label.account-check"), "batch-connection-select-account");
-    } else {
-      await h.click(surface.getByRole("checkbox", checkboxOptions), "batch-connection-select-account", { touch: false, vertical: false });
-    }
+    const checkbox = page.getByRole("checkbox", { name: `选择 ${account.name}`, exact: true });
+    const card = accountRows.filter({ has: checkbox });
+    await h.click(card.locator("label.account-check"), "batch-connection-select-account");
   }
   const entry = selection.getByRole("button", { name: "测试连接", exact: true });
   await h.state((await selection.textContent() || "").includes("已选 3 个账号"), "batch-connection-selection-count", selection);
@@ -1320,11 +1313,11 @@ async function connectionBatchChecks(h, fixture) {
 
   h.phase = "accounts/batch-connection-filter";
   async function platform(value) {
-    if (h.scenario.mobile) await h.click(surface.getByRole("button", { name: "筛选账号", exact: true }), "batch-connection-filter-entry");
+    await h.click(surface.getByRole("button", { name: "筛选账号", exact: true }), "batch-connection-filter-entry");
     const select = surface.getByRole("combobox", { name: "平台筛选", exact: true });
     await h.within(select, "batch-connection-platform-filter");
     await select.selectOption(value);
-    if (h.scenario.mobile) await h.click(page.getByRole("dialog", { name: "账号筛选", exact: true })
+    await h.click(page.getByRole("dialog", { name: "账号筛选", exact: true })
       .getByRole("button", { name: "关闭筛选", exact: true }), "batch-connection-filter-close");
   }
   await platform("grok");
@@ -1337,17 +1330,10 @@ async function connectionBatchChecks(h, fixture) {
   await platform("");
 
   h.phase = "accounts/batch-connection-page-return";
-  async function navigate(label, id) {
-    if (h.scenario.mobile) await h.navigate(label, id);
-    else {
-      await h.click(page.locator(".sidebar nav").getByRole("button", { name: label, exact: true }), "batch-connection-navigation");
-      await h.visible(page.locator(`.page-surface[data-page="${id}"]`), "batch-connection-return-surface");
-    }
-  }
-  await navigate("事件", "events");
+  await h.navigate("事件", "events");
   await h.state(await page.getByRole("region", { name: "批量测试连接", exact: true }).count() === 0,
     "batch-connection-results-leaked-to-other-page");
-  await navigate("账号", "accounts");
+  await h.navigate("账号", "accounts");
   await h.state(await page.getByRole("region", { name: "批量测试连接", exact: true }).count() === 0,
     "batch-connection-results-reappeared-after-return");
 
@@ -1381,15 +1367,9 @@ async function proxyBatchChecks(h, fixture, { navigate = false } = {}) {
   const accountNames = selectedAccounts.map((account) => account.name);
   const select = async (account, index) => {
     const checkbox = page.getByRole("checkbox", { name: `选择 ${account.name}`, exact: true });
-    if (h.scenario.mobile) {
-      const card = surface.locator(".mobile-account").filter({ has: checkbox });
-      await h.state(await card.count() === 1, "batch-proxy-mobile-account-not-unique", card);
-      await h.click(card.locator("label.account-check"), `batch-proxy-select-${index}`);
-    } else {
-      const row = surface.locator(".accounts-table > tbody > tr").filter({ has: checkbox });
-      await h.state(await row.count() === 1, "batch-proxy-desktop-account-not-unique", row);
-      await h.click(checkbox, `batch-proxy-select-${index}`, { touch: false, vertical: false });
-    }
+    const card = surface.locator(".mobile-account").filter({ has: checkbox });
+    await h.state(await card.count() === 1, "batch-proxy-mobile-account-not-unique", card);
+    await h.click(card.locator("label.account-check"), `batch-proxy-select-${index}`);
   };
   for (let index = 0; index < selectedAccounts.length; index++) await select(selectedAccounts[index], index);
 
@@ -1491,364 +1471,10 @@ async function proxyBatchChecks(h, fixture, { navigate = false } = {}) {
   await h.state(isDeepStrictEqual((await fixtureData(page)).accounts, fixture.accounts), "batch-proxy-mutated-preview-accounts", surface);
 }
 
-async function desktopActionChecks(h, table, fixture) {
-  const { page } = h;
-  for (const account of fixture.accounts) {
-    const row = table.locator(":scope > tbody > tr").filter({
-      has: page.getByRole("checkbox", { name: `选择 ${account.name}`, exact: true }),
-    });
-    await h.state(await row.count() === 1, "desktop-account-row-not-unique", row);
-    const panel = row.locator(".account-actions");
-    const actions = fixtureAccountActions(account);
-    await accountActionButtons(h, panel, [...actions.primary, ...actions.more], "desktop-account-action");
-    const grid = await panel.evaluate((element) => {
-      const panelRect = element.getBoundingClientRect();
-      const buttons = [...element.querySelectorAll("button")];
-      const rects = buttons.map((button) => button.getBoundingClientRect());
-      const style = getComputedStyle(element);
-      return {
-        width: panelRect.width,
-        right: panelRect.right,
-        minWidth: Math.min(...rects.map((rect) => rect.width)),
-        maxRight: Math.max(...rects.map((rect) => rect.right)),
-        columns: style.gridTemplateColumns.split(/\s+/).filter(Boolean).length,
-        gridTemplateColumns: style.gridTemplateColumns,
-        justify: buttons.map((button) => getComputedStyle(button).justifyContent),
-        whiteSpace: buttons.map((button) => getComputedStyle(button).whiteSpace),
-      };
-    });
-    await h.state(grid.width > 0 && grid.minWidth >= 95.5 && grid.maxRight <= grid.right + 1
-      && (h.scenario.viewport.width < 1310 || grid.columns >= 2)
-      && grid.gridTemplateColumns !== "none" && grid.justify.every((value) => value === "flex-start")
-      && grid.whiteSpace.every((value) => value === "normal"),
-    "desktop-account-action-grid-not-filled", panel);
-  }
-}
-
-async function desktopMenuChecks(h, fixture) {
-  const { page } = h;
-  h.phase = "desktop/priorities";
-  const sidebar = page.locator(".sidebar nav");
-  const priorityEntry = sidebar.getByRole("button", { name: "优先级", exact: true });
-  await h.visible(priorityEntry, "desktop-priority-entry");
-  await h.click(priorityEntry, "desktop-priority-entry", { touch: false });
-  const priorityManager = page.getByRole("region", { name: "全局优先级管理", exact: true });
-  await h.visible(priorityManager, "desktop-priority-surface");
-  await h.within(priorityManager, "desktop-priority-manager", { touch: false, scroll: false, vertical: false });
-  await h.visible(priorityManager.locator(".priority-column:visible .priority-list > li").first(), "desktop-priority-list");
-  await h.allWithin(priorityManager.locator(".priority-column:visible .priority-moves button"), "desktop-priority-move-control", { touch: false, vertical: false });
-  const priorityLayout = await priorityManager.evaluate(element => {
-    const groups = element.querySelector('.priority-platforms');
-    const panels = [...element.querySelectorAll('.priority-column:not([hidden])')];
-    return { width: element.getBoundingClientRect().width, columns: groups.classList.contains('is-columns'), count: element.querySelectorAll('.priority-column').length,
-      panels: panels.map(panel => ({ width: panel.getBoundingClientRect().width, scroll: getComputedStyle(panel.querySelector('.priority-list')).overflowY })),
-      numbers: panels.map(panel => [...panel.querySelectorAll('.priority-number span:last-child b')].map(value => Number(value.textContent))) };
-  });
-  await h.state(priorityLayout.columns === (priorityLayout.count > 1 && priorityLayout.count <= 3 && priorityLayout.width >= Math.max(960, priorityLayout.count * 320 + (priorityLayout.count - 1) * 12))
-    && priorityLayout.panels.every(panel => (!priorityLayout.columns || panel.width >= 320) && panel.scroll === 'auto')
-    && priorityLayout.numbers.every(numbers => numbers.every((value, index) => value === index + 1)), 'priority-platform-layout-or-numbering-mismatch', priorityManager);
-  await h.state(!(await priorityManager.textContent()).includes('全部平台统一排序'), 'priority-description-still-present', priorityManager);
-  await h.layout();
-  await h.click(sidebar.getByRole("button", { name: "账号", exact: true }), "desktop-priority-return", { touch: false });
-  h.phase = "desktop/table";
-  const table = page.locator(".accounts-table");
-  await h.visible(table, "desktop-account-table");
-  const accountToolbar = page.locator('.page-surface[data-page="accounts"] .account-toolbar');
-  const accountSort = page.locator('.page-surface[data-page="accounts"] .account-sort');
-  const sortSelect = page.locator('.page-surface[data-page="accounts"] select[aria-label="账号排序"]');
-  const accountFilterSelects = page.locator('.page-surface[data-page="accounts"] .filters select');
-  await h.within(accountSort, "desktop-account-sort", { touch: false, vertical: false });
-  await h.within(sortSelect, "desktop-account-sort-dropdown", { touch: false, vertical: false });
-  await h.allWithin(accountToolbar.locator("button"), "desktop-account-toolbar-button", { touch: false, vertical: false });
-  await h.allWithin(accountFilterSelects, "desktop-account-filter", { touch: false, vertical: false });
-  const accountTypography = await measureTypography(page, {
-    sort: '.page-surface[data-page="accounts"] .account-sort',
-    dropdown: '.page-surface[data-page="accounts"] select[aria-label="账号排序"]',
-    toolbar: '.page-surface[data-page="accounts"] .account-toolbar > button',
-    filters: '.page-surface[data-page="accounts"] .filters select',
-  });
-  const desktopSort = accountTypography.sort[0];
-  const desktopDropdown = accountTypography.dropdown[0];
-  await h.state(desktopSort?.fontSize === "12px"
-    && desktopSort?.lineHeight === "20px"
-    && desktopDropdown?.fontSize === "12px"
-    && desktopDropdown?.lineHeightOk
-    && accountTypography.toolbar.length > 0
-    && accountTypography.toolbar.every((item) => item.fontSize === "12px" && item.lineHeight === "20px")
-    && accountTypography.filters.length > 0
-    && accountTypography.filters.every((item) => item.fontSize === "12px" && item.lineHeightOk),
-  "desktop-account-sort-typography-mismatch", accountToolbar);
-  await h.state(desktopDropdown?.height >= 30
-    && accountTypography.filters.every((item) => item.height >= 30),
-  "desktop-account-select-under-30px", accountToolbar);
-  const baseColumnsWidth = await table.locator("col:not(.col-name):not(.col-actions)").evaluateAll((columns) =>
-    Math.round(columns.reduce((total, column) => total + column.getBoundingClientRect().width, 0)));
-  await h.state(baseColumnsWidth === 734, "account-table-base-columns-width", table);
-  await h.layout();
-  h.phase = "desktop/account-column-preference";
-  let columnToggle = table.getByRole("button", { name: "展开账号列", exact: true });
-  const nameColumn = table.locator("col.col-name");
-  const columnWidth = async () => nameColumn.evaluate((element) => Math.round(element.getBoundingClientRect().width));
-  await h.within(columnToggle, "account-column-toggle", { touch: false, vertical: false, hit: true });
-  await h.state(Math.abs(await columnWidth() - 128) <= 1, "account-column-default-width", nameColumn);
-  await h.click(columnToggle, "account-column-toggle", { touch: false, vertical: false });
-  await h.state((await table.getAttribute("class"))?.includes("name-expanded"), "account-column-did-not-expand", table);
-  await h.state(await table.getByRole("button", { name: "收起账号列", exact: true }).getAttribute("aria-expanded") === "true", "account-column-expanded-state-mismatch", table);
-  await h.state(Math.abs(await columnWidth() - 240) <= 1, "account-column-expanded-width", nameColumn);
-  await h.state(await page.evaluate(() => localStorage.getItem("sub2ops-account-name-expanded")) === "true", "account-column-preference-not-saved", table);
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await h.visible(page.locator('.page-surface[data-page="accounts"]'), "reloaded-account-surface");
-  const reloadedFixture = await fixtureData(page);
-  await h.visible(page.locator(".accounts-table"), "reloaded-desktop-account-table");
-  const reloadedTable = page.locator(".accounts-table");
-  await h.state((await reloadedTable.getAttribute("class"))?.includes("name-expanded"), "account-column-preference-not-restored", reloadedTable);
-  columnToggle = reloadedTable.getByRole("button", { name: "收起账号列", exact: true });
-  await h.state(Math.abs(await reloadedTable.locator("col.col-name").evaluate((element) => Math.round(element.getBoundingClientRect().width)) - 240) <= 1,
-    "account-column-restored-width", reloadedTable.locator("col.col-name"));
-  await h.click(columnToggle, "account-column-toggle", { touch: false, vertical: false });
-  await h.state(Math.abs(await reloadedTable.locator("col.col-name").evaluate((element) => Math.round(element.getBoundingClientRect().width)) - 128) <= 1,
-    "account-column-collapse-width", reloadedTable.locator("col.col-name"));
-  await h.state(await page.evaluate(() => localStorage.getItem("sub2ops-account-name-expanded")) === "false", "account-column-collapse-preference-not-saved", reloadedTable);
-  await h.layout();
-
-  h.phase = "desktop/expanded-actions";
-  await desktopActionChecks(h, reloadedTable, reloadedFixture);
-  await connectionBatchChecks(h, reloadedFixture);
-  await proxyBatchChecks(h, reloadedFixture);
-  await h.layout();
-  await h.click(page.locator(".sidebar nav").getByRole("button", { name: "分组", exact: true }), "desktop-group-entry", { touch: false });
-  const manager = page.locator(".group-manager");
-  await h.visible(manager, "group-manager");
-  await groupMenuChecks(h, reloadedFixture, manager);
-
-  h.phase = "desktop/records-type-badges";
-  await h.click(page.locator(".sidebar nav").getByRole("button", { name: "记录", exact: true }), "desktop-record-entry", { touch: false });
-  const records = page.getByRole("region", { name: "调用记录", exact: true });
-  await h.visible(records.locator(".records-table"), "desktop-record-table");
-  await h.visible(records.locator(".records-table tbody tr").first(), "desktop-record-row");
-  const recordsDensity = await records.evaluate((section) => {
-    const style = (element) => {
-      if (!element) return null;
-      const computed = getComputedStyle(element);
-      const rect = element.getBoundingClientRect();
-      return {
-        height: computed.height,
-        minHeight: computed.minHeight,
-        rectHeight: rect.height,
-        paddingTop: computed.paddingTop,
-        paddingRight: computed.paddingRight,
-        paddingBottom: computed.paddingBottom,
-        paddingLeft: computed.paddingLeft,
-      };
-    };
-    const filterBar = section.querySelector(".records-filter-bar");
-    const toolbar = section.querySelector(".records-toolbar");
-    const rect = (element) => {
-      if (!element) return null;
-      const box = element.getBoundingClientRect();
-      return { top: box.top, bottom: box.bottom, width: box.width };
-    };
-    const toolbarChildren = [...(toolbar?.children ?? [])]
-      .filter((element) => getComputedStyle(element).display !== "none")
-      .map(rect);
-    const controls = [...section.querySelectorAll(
-      ".records-toolbar input:not([type=checkbox]), .records-toolbar select, .records-toolbar .record-filter-trigger, .records-toolbar > button[type=submit]",
-    )];
-    return {
-      filterGap: filterBar ? getComputedStyle(filterBar).gap : "",
-      filterBar: filterBar ? {
-        ...rect(filterBar),
-        scrollWidth: filterBar.scrollWidth,
-        clientWidth: filterBar.clientWidth,
-      } : null,
-      toolbar: toolbar ? {
-        ...rect(toolbar),
-        scrollWidth: toolbar.scrollWidth,
-        clientWidth: toolbar.clientWidth,
-      } : null,
-      toolbarChildren,
-      filterInline: rect(section.querySelector(".records-filter-inline")),
-      datePicker: rect(section.querySelector(".records-date-picker")),
-      dateLabelWhiteSpace: getComputedStyle(section.querySelector(".records-date-trigger > span")).whiteSpace,
-      controls: controls.map((element) => style(element)),
-      dateTrigger: style(section.querySelector(".records-date-trigger")),
-      head: style(section.querySelector(".records-table thead th")),
-      cell: style(section.querySelector(".records-table tbody td")),
-      columns: Object.fromEntries([
-        ["user", [".records-table th.record-user", ".records-table td.record-user"]],
-        ["key", [".records-table th.record-col-api_key", ".records-table td.record-col-api_key"]],
-        ["account", [".records-table th.record-col-account", ".records-table td.record-col-account"]],
-        ["model", [".records-table th.record-col-model", ".records-table td.record-col-model"]],
-        ["type", [".records-table th.record-col-type", ".records-table td.record-col-type"]],
-        ["tokens", [".records-table th.record-col-tokens", ".records-table td.record-col-tokens .record-tokens"]],
-        ["money", [".records-table th.record-col-cost", ".records-table td.record-col-cost .record-money"]],
-        ["latency", [".records-table th.record-col-latency", ".records-table td.record-col-latency .record-latency"]],
-        ["userAgent", [".records-table th.record-col-user_agent", ".records-table td.record-col-user_agent"]],
-        ["ip", [".records-table th.record-col-ip", ".records-table td.record-col-ip"]],
-      ].map(([key, selectors]) => {
-        const header = section.querySelector(selectors[0]);
-        const content = section.querySelector(selectors[1]);
-        const measure = (element) => element ? {
-          minWidth: getComputedStyle(element).minWidth,
-          width: Math.round(element.getBoundingClientRect().width),
-        } : null;
-        return [key, { header: measure(header), content: measure(content), button: measure(content?.querySelector("button")) }];
-      })),
-    };
-  });
-  await h.state(recordsDensity.filterGap === "6px"
-    && recordsDensity.filterBar?.width > 0
-    && recordsDensity.filterBar.scrollWidth <= recordsDensity.filterBar.clientWidth + 1
-    && recordsDensity.toolbar?.scrollWidth <= recordsDensity.toolbar.clientWidth + 1
-    && recordsDensity.datePicker?.width > 0
-    && recordsDensity.filterInline?.width > 0
-    && Math.abs(
-      (recordsDensity.datePicker.top + recordsDensity.datePicker.bottom) / 2
-      - (recordsDensity.filterInline.top + recordsDensity.filterInline.bottom) / 2,
-    ) <= 1
-    && recordsDensity.dateLabelWhiteSpace === "nowrap"
-    && recordsDensity.toolbarChildren.every((child) => child !== null)
-    && Math.max(...recordsDensity.toolbarChildren.map((child) => (child.top + child.bottom) / 2))
-      - Math.min(...recordsDensity.toolbarChildren.map((child) => (child.top + child.bottom) / 2)) <= 1
-    && recordsDensity.controls.length > 0
-    && recordsDensity.controls.every((control) => control?.rectHeight >= 27.5 && control?.rectHeight <= 28.5)
-    && recordsDensity.dateTrigger?.rectHeight >= 27.5
-    && recordsDensity.dateTrigger?.minHeight === "28px"
-    && recordsDensity.head?.height === "26px"
-    && recordsDensity.head?.paddingTop === "3px"
-    && recordsDensity.head?.paddingRight === "4px"
-    && recordsDensity.head?.paddingBottom === "3px"
-    && recordsDensity.head?.paddingLeft === "4px"
-    && recordsDensity.cell?.rectHeight >= 32
-    && recordsDensity.cell?.paddingTop === "3px"
-    && recordsDensity.cell?.paddingRight === "4px"
-    && recordsDensity.cell?.paddingBottom === "3px"
-    && recordsDensity.cell?.paddingLeft === "4px"
-    && recordsDensity.columns.user?.header?.minWidth === "110px"
-    && recordsDensity.columns.user?.content?.width >= 110
-    && recordsDensity.columns.user?.button?.width === 96
-    && recordsDensity.columns.key?.header?.minWidth === "88px"
-    && recordsDensity.columns.account?.header?.minWidth === "88px"
-    && recordsDensity.columns.model?.header?.minWidth === "124px"
-    && recordsDensity.columns.type?.header?.minWidth === "72px"
-    && recordsDensity.columns.tokens?.content?.minWidth === "118px"
-    && recordsDensity.columns.money?.content?.minWidth === "80px"
-    && recordsDensity.columns.latency?.content?.minWidth === "104px"
-    && recordsDensity.columns.userAgent?.header?.minWidth === "120px"
-    && recordsDensity.columns.ip?.header?.minWidth === "108px",
-  "desktop-record-density-mismatch", records.locator(".records-table"));
-  const compactRecord = records.locator("tbody tr").filter({ has: page.locator('button[title="查看记录 #200"]') });
-  await h.visible(compactRecord, "desktop-record-compact-row");
-  const typeCell = compactRecord.locator(".record-col-type");
-  await h.within(typeCell, "desktop-record-type-cell", { touch: false, vertical: false });
-  const badges = typeCell.locator(".record-type-badge");
-  await h.state(await badges.count() === 2
-    && await typeCell.locator(".record-type-badge.is-compact").count() === 1
-    && await typeCell.locator(".record-type-badge.is-stream").count() === 1,
-  "desktop-record-type-badges-missing-or-duplicated", typeCell);
-  const cellLayout = await typeCell.evaluate((element) => {
-    const cell = element.getBoundingClientRect();
-    const rects = [...element.querySelectorAll(".record-type-badge")].map((badge) => {
-      const rect = badge.getBoundingClientRect();
-      return { left: rect.left - cell.left, right: rect.right - cell.left, top: rect.top - cell.top, bottom: rect.bottom - cell.top };
-    });
-    return {
-      width: cell.width,
-      height: cell.height,
-      rects,
-      scrollWidth: element.scrollWidth,
-      clientWidth: element.clientWidth,
-      scrollHeight: element.scrollHeight,
-      clientHeight: element.clientHeight,
-    };
-  });
-  await h.state(cellLayout.width > 0 && cellLayout.height > 0
-    && cellLayout.rects.every((rect) => rect.left >= 0 && rect.right <= cellLayout.width + 1)
-    && cellLayout.scrollWidth <= cellLayout.clientWidth + 1
-    && cellLayout.scrollHeight <= cellLayout.clientHeight + 1,
-  "desktop-record-type-badges-clipped-or-overflowing", typeCell);
-  const desktopBadgeStyle = await typeCell.locator(".record-type-badge").first().evaluate((element) => {
-    const computed = getComputedStyle(element);
-    return { fontSize: computed.fontSize, padding: [computed.paddingTop, computed.paddingRight, computed.paddingBottom, computed.paddingLeft] };
-  });
-  await h.state(desktopBadgeStyle.fontSize === "10px"
-    && isDeepStrictEqual(desktopBadgeStyle.padding, ["0px", "5px", "0px", "5px"]),
-  "desktop-record-badge-density-mismatch", typeCell);
-  h.phase = "desktop/record-column-widths";
-  const columnMenu = records.locator("details.records-column-menu");
-  await h.click(columnMenu.locator("summary"), "desktop-record-columns-open", { touch: false, vertical: false });
-  for (const label of ["请求 ID", "上游 ID"]) {
-    const option = columnMenu.locator("label").filter({ hasText: label });
-    const checkbox = option.getByRole("checkbox");
-    if (!(await checkbox.isChecked())) {
-      await checkbox.click({ force: true });
-      await page.waitForFunction(() => [...document.querySelectorAll(".records-column-menu input")].every((input) => !(input instanceof HTMLInputElement) || !input.disabled));
-    }
-  }
-  await h.state(await records.locator("th.record-col-request_id").evaluate((element) => getComputedStyle(element).minWidth) === "130px"
-    && await records.locator("th.record-col-upstream_id").evaluate((element) => getComputedStyle(element).minWidth) === "130px",
-  "desktop-record-request-id-width-mismatch", records.locator(".records-table"));
-  await h.click(columnMenu.locator("summary"), "desktop-record-columns-close", { touch: false, vertical: false });
-  const multilineLayout = await compactRecord.evaluate((row) => {
-    const within = (parent, child) => {
-      const parentRect = parent.getBoundingClientRect();
-      const childRect = child.getBoundingClientRect();
-      return childRect.top >= parentRect.top - 1
-        && childRect.bottom <= parentRect.bottom + 1
-        && childRect.left >= parentRect.left - 1
-        && childRect.right <= parentRect.right + 1;
-    };
-    const measure = (selector, childSelector) => {
-      const node = row.querySelector(selector);
-      const cell = node?.closest("td");
-      if (!node || !cell) return null;
-      return {
-        childCount: node.querySelectorAll(childSelector).length,
-        withinCell: within(cell, node),
-        scrollHeight: node.scrollHeight,
-        clientHeight: node.clientHeight,
-        scrollWidth: node.scrollWidth,
-        clientWidth: node.clientWidth,
-        overflowY: getComputedStyle(node).overflowY,
-        childBounds: [...node.querySelectorAll(childSelector)].map((child) => within(node, child)),
-      };
-    };
-    return {
-      route: measure(".record-col-model .record-route", ":scope > div"),
-      tokens: measure(".record-col-tokens .record-tokens", ":scope > span"),
-      latency: measure(".record-col-latency .record-latency", ":scope > div > *"),
-    };
-  });
-  await h.state(multilineLayout.route?.childCount >= 2
-    && multilineLayout.route.withinCell
-    && multilineLayout.route.overflowY !== "hidden"
-    && multilineLayout.route.scrollHeight <= multilineLayout.route.clientHeight + 1
-    && multilineLayout.route.childBounds.every(Boolean)
-    && multilineLayout.tokens?.childCount >= 4
-    && multilineLayout.tokens.withinCell
-    && multilineLayout.tokens.overflowY !== "hidden"
-    && multilineLayout.tokens.scrollHeight <= multilineLayout.tokens.clientHeight + 1
-    && multilineLayout.tokens.childBounds.every(Boolean)
-    && multilineLayout.latency?.childCount >= 6
-    && multilineLayout.latency.withinCell
-    && multilineLayout.latency.overflowY !== "hidden"
-    && multilineLayout.latency.scrollHeight <= multilineLayout.latency.clientHeight + 1
-    && multilineLayout.latency.childBounds.every(Boolean),
-  "desktop-record-multiline-content-clipped-or-overflowing", compactRecord);
-  const syncCompactRecord = records.locator("tbody tr").filter({ has: page.locator('button[title="查看记录 #199"]') });
-  await h.visible(syncCompactRecord, "desktop-record-sync-compact-row");
-  const syncCompactTypeCell = syncCompactRecord.locator(".record-col-type");
-  await h.state(await syncCompactTypeCell.locator(".record-type-badge").count() === 2
-    && await syncCompactTypeCell.locator(".record-type-badge.is-sync").count() === 1
-    && await syncCompactTypeCell.locator(".record-type-badge.is-compact").count() === 1,
-  "desktop-record-sync-compact-badges-missing-or-duplicated", syncCompactTypeCell);
-  await h.layout();
-}
-
 async function runScenario(scenario) {
   const context = await browser.newContext({
     viewport: scenario.viewport, colorScheme: scenario.theme,
-    hasTouch: scenario.mobile, isMobile: scenario.mobile,
+    hasTouch: true, isMobile: true,
     reducedMotion: "reduce", serviceWorkers: "block", locale: "zh-CN",
   });
   const blocked = [];
@@ -1875,7 +1501,7 @@ async function runScenario(scenario) {
     page.setDefaultNavigationTimeout(30000);
     page.on("pageerror", (error) => pageErrors.push(error.name));
     h = new Harness(page, scenario);
-    await page.goto(`${ORIGIN}/${scenario.mobile ? "?mobile=1" : ""}`, { waitUntil: "domcontentloaded" });
+    await page.goto(ORIGIN, { waitUntil: "domcontentloaded" });
     await h.visible(page.locator('.page-surface[data-page="accounts"]'), "initial-account-surface");
     await h.visible(page.locator(".preview-label"), "synthetic-preview-indicator");
     const initialFont = await page.locator("html").evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
@@ -1890,26 +1516,21 @@ async function runScenario(scenario) {
     await h.state(presentation.colorScheme === scenario.theme && presentation.dark === (scenario.theme === "dark"), "theme-not-applied");
     if (scenario.largeFont) await h.state(presentation.fontSize > initialFont, "font-enlargement-not-applied");
     const fixture = await fixtureData(page);
-    await h.state(fixture.platform === (scenario.mobile ? "android" : "macos"), "unexpected-preview-platform");
-    if (scenario.mobile) {
-      await accountChecks(h, fixture);
-      h.phase = "mobile/priorities";
-      await h.click(page.getByRole("button", { name: "优先级管理", exact: true }), "mobile-priority-entry");
-      const priority = page.getByRole("region", { name: "全局优先级管理", exact: true });
-      await h.visible(priority, "mobile-priority-surface");
-      await h.visible(priority.locator('.priority-column:visible .priority-moves button').first(), "mobile-priority-controls-ready");
-      await h.state(await priority.locator('.priority-platforms.is-columns').count() === 0, "mobile-priority-must-use-tabs", priority);
-      await h.allWithin(priority.locator('.priority-column:visible .priority-moves button'), "mobile-priority-controls");
-      await h.click(priority.getByRole('button', { name: '返回账号', exact: true }), "mobile-priority-return");
-      await connectionBatchChecks(h, fixture);
-      await recordChecks(h);
-      await eventChecks(h, fixture);
-      await featureChecks(h, fixture.config);
-      await proxyBatchChecks(h, fixture, { navigate: true });
-      await templateChecks(h);
-    } else {
-      await desktopMenuChecks(h, fixture);
-    }
+    await h.state(fixture.platform === "android", "unexpected-preview-platform");
+    await accountChecks(h, fixture);
+    h.phase = "mobile/priorities";
+    await h.click(page.getByRole("button", { name: "优先级管理", exact: true }), "mobile-priority-entry");
+    const priority = page.getByRole("region", { name: "全局优先级管理", exact: true });
+    await h.visible(priority, "mobile-priority-surface");
+    await h.visible(priority.locator('.priority-column:visible .priority-moves button').first(), "mobile-priority-controls-ready");
+    await h.allWithin(priority.locator('.priority-column:visible .priority-moves button'), "mobile-priority-controls");
+    await h.click(priority.getByRole('button', { name: '返回账号', exact: true }), "mobile-priority-return");
+    await connectionBatchChecks(h, fixture);
+    await recordChecks(h);
+    await eventChecks(h, fixture);
+    await featureChecks(h, fixture.config);
+    await proxyBatchChecks(h, fixture, { navigate: true });
+    await templateChecks(h);
     requireCondition(!blocked.length, "non-loopback-request-blocked", { blocked });
     requireCondition(!pageErrors.length, "browser-page-error", { errorTypes: pageErrors });
     requireCondition(!serverExit && !serverError, "preview-exited-during-check", { processCode: serverExit?.code || serverError });
@@ -1942,15 +1563,13 @@ async function main() {
     { width: 844, height: 390 },
   ];
   let total = 0;
-  for (const mobile of [true, false]) {
-    for (const viewport of mobile ? viewports : [{ width: 900, height: 540 }, { width: 1310, height: 900 }]) {
-      for (const theme of ["light", "dark"]) {
-        for (const largeFont of [false, true]) {
-          const name = `${mobile ? "mobile" : "desktop"}-${viewport.width}x${viewport.height}-${theme}-font${largeFont ? "125" : "default"}`;
-          if (selectedScenario && name !== selectedScenario) continue;
-          await runScenario({ name, viewport, theme, largeFont, mobile });
-          total++;
-        }
+  for (const viewport of viewports) {
+    for (const theme of ["light", "dark"]) {
+      for (const largeFont of [false, true]) {
+        const name = `mobile-${viewport.width}x${viewport.height}-${theme}-font${largeFont ? "125" : "default"}`;
+        if (selectedScenario && name !== selectedScenario) continue;
+        await runScenario({ name, viewport, theme, largeFont });
+        total++;
       }
     }
   }

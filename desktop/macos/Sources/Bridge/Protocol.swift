@@ -1887,6 +1887,20 @@ public struct RecoveryRecord: Codable, Sendable, Equatable {
 	}
 }
 
+public struct ReleaseInfoReply: Codable, Sendable, Equatable {
+	public let name: String?
+	public let html_url: String?
+	public let published_at: String?
+	public let body: String?
+
+	public init(name: String?, html_url: String?, published_at: String?, body: String?) {
+		self.name = name
+		self.html_url = html_url
+		self.published_at = published_at
+		self.body = body
+	}
+}
+
 public struct SessionImportReply: Codable, Sendable, Equatable {
 	public let created: Int
 	public let updated: Int
@@ -1929,13 +1943,15 @@ public struct SystemUpdateReply: Codable, Sendable, Equatable {
 	public let already_up_to_date: Bool?
 	public let current_version: String?
 	public let latest_version: String?
+	public let operation_id: String?
 
-	public init(message: String, need_restart: Bool?, already_up_to_date: Bool?, current_version: String?, latest_version: String?) {
+	public init(message: String, need_restart: Bool?, already_up_to_date: Bool?, current_version: String?, latest_version: String?, operation_id: String?) {
 		self.message = message
 		self.need_restart = need_restart
 		self.already_up_to_date = already_up_to_date
 		self.current_version = current_version
 		self.latest_version = latest_version
+		self.operation_id = operation_id
 	}
 }
 
@@ -1977,13 +1993,17 @@ public struct UpdatesReply: Codable, Sendable, Equatable {
 	public let has_update: Bool
 	public let build_type: String
 	public let cached: Bool
+	public let warning: String?
+	public let release_info: ReleaseInfoReply?
 
-	public init(current_version: String, latest_version: String, has_update: Bool, build_type: String, cached: Bool) {
+	public init(current_version: String, latest_version: String, has_update: Bool, build_type: String, cached: Bool, warning: String?, release_info: ReleaseInfoReply?) {
 		self.current_version = current_version
 		self.latest_version = latest_version
 		self.has_update = has_update
 		self.build_type = build_type
 		self.cached = cached
+		self.warning = warning
+		self.release_info = release_info
 	}
 }
 

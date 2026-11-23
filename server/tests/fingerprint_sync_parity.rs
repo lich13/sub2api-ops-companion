@@ -17,7 +17,7 @@ use sub2ops_server::{
 };
 use tokio::sync::{Notify, Semaphore};
 
-const SOURCE_COMMIT: &str = "477d59d525c3cd31fe56e4e63958fbc4574ca187";
+const SOURCE_COMMIT: &str = "c5ff880f517a606bbe1aced238ce48c3a7bec7ae";
 const COMMIT_PATH: &str = "/commits/hanmo";
 const INFO_REFS_PATH: &str = "/info/refs?service=git-upload-pack";
 const PINNED_CORE: &[u8] =
@@ -465,7 +465,7 @@ fn pinned_public_source_hashes_match_the_manifest_and_fixed_commit() {
         (
             "challenge",
             PINNED_CHALLENGE,
-            "4a3868c9fe237cabde92f0d2bffaf32118f558f7a43fcc336874fecd2bf6be39",
+            "af5c70254afd01f40298373e348588ddd77f7e021cbcc101898ed06c2491e70c",
         ),
     ] {
         assert_eq!(sha256(source), expected_sha);

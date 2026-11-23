@@ -1,58 +1,13 @@
 import SwiftUI
 
-public struct ProxyOptionItem: Codable, Sendable, Equatable, Identifiable {
-    public var id: Int
-    public var name: String
-    public var protocolName: String?
-    public var host: String?
-    public var port: Int?
-    public var status: String?
-    public var country: String?
+public typealias ProxyOptionItem = ProxyChoiceReply
 
-    enum CodingKeys: String, CodingKey {
-        case id, name, host, port, status, country
-        case protocolName = "protocol"
-    }
+extension ProxyChoiceReply: Identifiable {
+    public var protocolName: String { self.protocol }
 
     public var addressSummary: String {
-        let proto = (protocolName ?? "socks5").uppercased()
-        if let host, !host.isEmpty, let port {
-            return "\(proto) · \(host):\(port)"
-        }
-        return proto
+        protocolName.isEmpty ? "SOCKS5" : protocolName.uppercased()
     }
-}
-
-public struct ProxyQuickTestResult: Codable, Sendable, Equatable {
-    public var success: Bool
-    public var message: String?
-    public var latency_ms: Int?
-    public var ip_address: String?
-    public var country: String?
-}
-
-public struct ProxyQuickQualityItem: Codable, Sendable, Equatable {
-    public var target: String
-    public var status: String
-    public var http_status: Int?
-    public var latency_ms: Int?
-    public var message: String?
-}
-
-public struct ProxyQuickQualityResult: Codable, Sendable, Equatable {
-    public var score: Int
-    public var grade: String
-    public var summary: String
-    public var exit_ip: String?
-    public var country: String?
-    public var base_latency_ms: Int?
-    public var checked_at: Int?
-    public var items: [ProxyQuickQualityItem]
-}
-
-private struct ProxyListEnvelope: Decodable, Sendable {
-    var items: [ProxyOptionItem]?
-    var proxies: [ProxyOptionItem]?
 }
 
 public struct ProxyOptionsPickerView: View {
@@ -66,8 +21,8 @@ public struct ProxyOptionsPickerView: View {
     @State private var loadError: String = ""
     @State private var testingIds: Set<Int> = []
     @State private var qualityIds: Set<Int> = []
-    @State private var testResults: [Int: ProxyQuickTestResult] = [:]
-    @State private var qualityResults: [Int: ProxyQuickQualityResult] = [:]
+    @State private var testResults: [Int: ProxyTestReply] = [:]
+    @State private var qualityResults: [Int: ProxyQualityReply] = [:]
     @State private var diagErrors: [Int: String] = [:]
 
     public init(selectedProxyId: Binding<Int?>, online: Bool, connectionKey: String) {
@@ -80,7 +35,7 @@ public struct ProxyOptionsPickerView: View {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return proxies }
         return proxies.filter { p in
-            "\(p.name) \(p.host ?? "") \(p.id)".lowercased().contains(q)
+            "\(p.name) \(p.protocolName) \(p.id)".lowercased().contains(q)
         }
     }
 
@@ -207,17 +162,19 @@ public struct ProxyOptionsPickerView: View {
             }
 
             if let tResult {
+                let ipSuffix = tResult.ip_address.isEmpty ? "" : " · \(tResult.ip_address)"
+                let latencySuffix = tResult.latency_ms.map { " · \(Int($0.rounded())) ms" } ?? ""
                 Text(
                     tResult.success
-                        ? "连接成功\(tResult.ip_address.map { " · \($0)" } ?? "")\(tResult.latency_ms.map { " · \($0) ms" } ?? "")"
-                        : (tResult.message ?? "连接失败")
+                        ? "连接成功\(ipSuffix)\(latencySuffix)"
+                        : (tResult.message.isEmpty ? "连接失败" : tResult.message)
                 )
                 .font(DS.fontResetTime)
                 .monospacedDigit()
                 .foregroundStyle(tResult.success ? DS.good : DS.bad)
             }
             if let qResult {
-                Text("\(qResult.score) 分 · \(qResult.grade) · \(qResult.summary)")
+                Text("\(Int(qResult.score.rounded())) 分 · \(qResult.grade) · \(qResult.summary)")
                     .font(DS.fontResetTime)
                     .monospacedDigit()
                     .foregroundStyle(DS.ink)
@@ -239,15 +196,7 @@ public struct ProxyOptionsPickerView: View {
         loading = true
         defer { loading = false }
         do {
-            let raw: JSONValue = try await RustBridge.shared.api("GET", "/proxies")
-            let data = try JSONEncoder().encode(raw)
-            if let direct = try? JSONDecoder().decode([ProxyOptionItem].self, from: data) {
-                proxies = direct
-            } else if let env = try? JSONDecoder().decode(ProxyListEnvelope.self, from: data) {
-                proxies = env.items ?? env.proxies ?? []
-            } else {
-                proxies = []
-            }
+            proxies = try await RustBridge.shared.api("GET", "/proxies")
             loadError = ""
         } catch {
             loadError = error.localizedDescription
@@ -259,7 +208,7 @@ public struct ProxyOptionsPickerView: View {
         diagErrors[id] = nil
         defer { testingIds.remove(id) }
         do {
-            let result: ProxyQuickTestResult = try await RustBridge.shared.api("POST", "/proxies/\(id)/test", body: .object([:]))
+            let result: ProxyTestReply = try await RustBridge.shared.api("POST", "/proxies/\(id)/test", body: .object([:]))
             testResults[id] = result
         } catch {
             diagErrors[id] = error.localizedDescription
@@ -271,7 +220,7 @@ public struct ProxyOptionsPickerView: View {
         diagErrors[id] = nil
         defer { qualityIds.remove(id) }
         do {
-            let result: ProxyQuickQualityResult = try await RustBridge.shared.api("POST", "/proxies/\(id)/quality-check", body: .object([:]))
+            let result: ProxyQualityReply = try await RustBridge.shared.api("POST", "/proxies/\(id)/quality-check", body: .object([:]))
             qualityResults[id] = result
         } catch {
             diagErrors[id] = error.localizedDescription

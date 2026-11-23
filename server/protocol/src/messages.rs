@@ -419,6 +419,7 @@ pub struct SystemUpdateReply {
     pub already_up_to_date: Option<bool>,
     pub current_version: Option<String>,
     pub latest_version: Option<String>,
+    pub operation_id: Option<String>,
 }
 
 #[typeshare]

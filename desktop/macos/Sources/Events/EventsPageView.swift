@@ -186,7 +186,7 @@ public struct EventsPageView: View {
                     .clipShape(RoundedRectangle(cornerRadius: DS.cardRadius))
             } else {
                 VStack(spacing: 0) {
-                    ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, err in
+                    ForEach(Array(feed.items.enumerated()), id: \.element.recordId) { idx, err in
                         errorRow(err, category: category)
                         if idx < feed.items.count - 1 {
                             Rectangle().fill(DS.line).frame(height: 1)
@@ -209,20 +209,22 @@ public struct EventsPageView: View {
     }
 
     private func errorRow(_ err: OpsError, category: String) -> some View {
-        let isWarnCode = err.status_code == 429 || err.status_code == 529
+        let isWarnCode = err.statusCodeValue == 429 || err.statusCodeValue == 529
         let detailSummary: String = {
             var parts: [String] = []
-            if !err.model.isEmpty { parts.append(err.model) }
-            let msg = err.provider_error_code.isEmpty ? err.message : err.provider_error_code
+            if !err.modelText.isEmpty { parts.append(err.modelText) }
+            let msg = err.providerErrorCodeText.isEmpty ? err.messageText : err.providerErrorCodeText
             if !msg.isEmpty { parts.append(msg) }
-            return parts.isEmpty ? err.message : parts.joined(separator: " · ")
+            return parts.isEmpty ? err.messageText : parts.joined(separator: " · ")
         }()
 
         return Button {
-            store.openErrorDetail(id: err.id, category: category)
+            if let errId = err.id {
+                store.openErrorDetail(id: errId, category: category)
+            }
         } label: {
             HStack(alignment: .center, spacing: 14) {
-                Text("\(err.status_code)")
+                Text("\(err.statusCodeValue)")
                     .font(DS.fontCompactSemibold)
                     .monospacedDigit()
                     .foregroundStyle(isWarnCode ? DS.warn : DS.bad)
@@ -232,15 +234,15 @@ public struct EventsPageView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6))
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(err.account_name.isEmpty ? "账号 #\(err.account_id ?? 0)" : err.account_name)
+                    Text(err.accountNameText.isEmpty ? "账号 #\(err.account_id ?? 0)" : err.accountNameText)
                         .font(DS.fontBodySemibold)
                         .foregroundStyle(DS.ink)
                         .lineLimit(1)
 
                     HStack(spacing: 6) {
-                        Text(err.resolved ? "历史" : "当前")
+                        Text(err.isResolved ? "历史" : "当前")
                             .font(DS.fontResetTimeSemibold)
-                            .foregroundStyle(err.resolved ? DS.muted : DS.warn)
+                            .foregroundStyle(err.isResolved ? DS.muted : DS.warn)
 
                         Text(verbatim: detailSummary)
                             .font(DS.fontCompact)

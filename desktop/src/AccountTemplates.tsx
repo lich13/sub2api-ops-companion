@@ -16,15 +16,17 @@ import {
   operationEpoch,
   setOperations,
   type Operation,
+  type OperationBatch as Batch,
 } from "./accountOperations";
+import type { ModelProfileReply as Profile } from "./protocol";
 import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
 import type { Account } from "./types";
 
-export type Profile = {
-  whitelist: string[];
-  mappings: { source: string; target: string }[];
-};
+export type {
+  ModelMappingRule,
+  ModelProfileReply as Profile,
+} from "./protocol";
 type Config = {
   version: string;
   configured: boolean;
@@ -44,7 +46,6 @@ type AccountConfig = {
     reason?: string;
   };
 };
-type Batch = { batch_id: string; items: Operation[]; pending: number };
 const emptyProfile = (): Profile => ({ whitelist: [], mappings: [] });
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);

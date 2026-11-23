@@ -194,8 +194,17 @@ struct SnapshotRenderTests {
                 action: "schedulable",
                 status: "needs_confirmation",
                 reason: "账号版本已变化，请核对当前调度状态",
-                requested: ["schedulable": .bool(true)],
-                current: ["schedulable": .bool(false)]
+                requested: OperationRequestFields(
+                    priority: nil, concurrency: nil, load_factor: nil, proxy_id: nil,
+                    schedulable: true, marked: nil, confirmed: nil, model_id: nil, mode: nil,
+                    action: nil, template_id: nil, template_version: nil, group_ids: nil,
+                    scope_group_ids: nil, whitelist: nil, mappings: nil
+                ),
+                current: OperationCurrentFields(
+                    id: nil, priority: nil, concurrency: nil, load_factor: nil, proxy_id: nil,
+                    name: nil, platform: nil, type: nil, status: nil, schedulable: false,
+                    marked: nil, group_ids: nil, whitelist: nil, mappings: nil
+                )
             ),
         ])
 

@@ -3,7 +3,32 @@ vi.mock("./bridge", () => ({ api: vi.fn() }));
 import { api } from "./bridge";
 import { renderToStaticMarkup } from "react-dom/server";
 import UsageCell, { usageColor } from "./UsageCell";
-import type { Account } from "./types";
+import type { Account, UsageSummary } from "./types";
+
+const makeAccount = (overrides: Partial<Account> = {}): Account => ({
+  id: 1,
+  name: "test",
+  priority: 1,
+  platform: "openai",
+  type: "oauth",
+  status: "active",
+  schedulable: true,
+  available: true,
+  group_ids: [],
+  blockers: [],
+  version: "a".repeat(64),
+  operation_versions: {},
+  last_success_at: null,
+  last_error_at: null,
+  last_error_id: null,
+  last_error_code: null,
+  last_error_status: null,
+  error_message: "",
+  success_after_error: false,
+  usage_windows: [],
+  ...overrides,
+});
+
 beforeEach(() => vi.clearAllMocks());
 describe("Sub2API usage cell", () => {
   it("uses 75 and 90 percent boundaries", () => {
@@ -16,10 +41,7 @@ describe("Sub2API usage cell", () => {
     ]);
   });
   it("renders stats, absolute reset time and only supported actions", () => {
-    const account = {
-      id: 1,
-      name: "test",
-      operation_versions: {},
+    const account = makeAccount({
       usage: {
         branch: "openai_oauth",
         today: null,
@@ -49,7 +71,7 @@ describe("Sub2API usage cell", () => {
           observed_at: null,
         },
       },
-    } as Account;
+    });
     const html = renderToStaticMarkup(
       <UsageCell
         account={account}
@@ -74,15 +96,22 @@ describe("Sub2API usage cell", () => {
       expect(html).not.toContain(text);
   });
   it("does not invent a percentage or OAuth actions for a Key without quota", () => {
-    const account = {
-      operation_versions: {},
+    const account = makeAccount({
+      type: "apikey",
       usage: {
         branch: "apikey",
         windows: [],
-        today: { requests: 0, tokens: 0, cost: 0, user_cost: 0 },
+        today: {
+          requests: 0,
+          tokens: 0,
+          cost: 0,
+          standard_cost: 0,
+          user_cost: 0,
+        },
         actions: [],
+        reset_credits: null,
       },
-    } as unknown as Account;
+    });
     const html = renderToStaticMarkup(
       <UsageCell
         account={account}
@@ -92,8 +121,11 @@ describe("Sub2API usage cell", () => {
       />,
     );
     expect(html).toContain("req");
+    expect(html).toContain("上游余额");
     expect(html).not.toContain("progressbar");
-    expect(html).not.toContain("查询");
+    expect(html).not.toContain("usage-actions");
+    expect(html).not.toContain("次数");
+    expect(html).not.toContain("重置");
   });
 
   it.each([undefined, null])(
@@ -101,14 +133,7 @@ describe("Sub2API usage cell", () => {
     (status) => {
       const html = renderToStaticMarkup(
         <UsageCell
-          account={
-            {
-              id: 1,
-              operation_versions: {},
-              usage_windows: [],
-              auto_reset_credit: status,
-            } as unknown as Account
-          }
+          account={makeAccount({ auto_reset_credit: status })}
           online
           refresh={async () => {}}
           report={vi.fn()}
@@ -123,20 +148,15 @@ describe("Sub2API usage cell", () => {
   it("shows an active recovery monitor wait with its next time", () => {
     const html = renderToStaticMarkup(
       <UsageCell
-        account={
-          {
-            id: 1,
-            operation_versions: {},
-            usage_windows: [],
-            recovery_monitor: {
-              status: "waiting",
-              label: "等待额度恢复时间",
-              reason: "waiting_reset",
-              attempt_count: 2,
-              next_at: "2026-09-30T16:05:02Z",
-            },
-          } as unknown as Account
-        }
+        account={makeAccount({
+          recovery_monitor: {
+            status: "waiting",
+            label: "等待额度恢复时间",
+            reason: "waiting_reset",
+            attempt_count: 2,
+            next_at: "2026-09-30T16:05:02Z",
+          },
+        })}
         online
         refresh={async () => {}}
         report={vi.fn()}
@@ -155,19 +175,14 @@ describe("Sub2API usage cell", () => {
     (status) => {
       const html = renderToStaticMarkup(
         <UsageCell
-          account={
-            {
-              id: 1,
-              operation_versions: {},
-              usage_windows: [],
-              recovery_monitor: {
-                status,
-                label: "恢复已结束",
-                reason: "",
-                next_at: "2026-09-30T16:05:02Z",
-              },
-            } as unknown as Account
-          }
+          account={makeAccount({
+            recovery_monitor: {
+              status,
+              label: "恢复已结束",
+              reason: "",
+              next_at: "2026-09-30T16:05:02Z",
+            },
+          })}
           online
           refresh={async () => {}}
           report={vi.fn()}
@@ -183,22 +198,17 @@ describe("Sub2API usage cell", () => {
   it("keeps failure and retry information in a closed disclosure with Beijing timestamps", () => {
     const html = renderToStaticMarkup(
       <UsageCell
-        account={
-          {
-            id: 1,
-            operation_versions: {},
-            usage_windows: [],
-            auto_reset_credit: {
-              stage: "retry",
-              label: "等待重试",
-              error: "暂时无法确认重置结果",
-              next_at: "2026-09-30T16:05:02Z",
-              attempt_at: "2026-09-30T15:00:00Z",
-              test_completed_at: null,
-              recovered_at: null,
-            },
-          } as unknown as Account
-        }
+        account={makeAccount({
+          auto_reset_credit: {
+            stage: "retry",
+            label: "等待重试",
+            error: "暂时无法确认重置结果",
+            next_at: "2026-09-30T16:05:02Z",
+            attempt_at: "2026-09-30T15:00:00Z",
+            test_completed_at: null,
+            recovered_at: null,
+          },
+        })}
         online
         refresh={async () => {}}
         report={vi.fn()}
@@ -226,22 +236,17 @@ describe("Sub2API usage cell", () => {
     (stage, label) => {
       const html = renderToStaticMarkup(
         <UsageCell
-          account={
-            {
-              id: 1,
-              operation_versions: {},
-              usage_windows: [],
-              auto_reset_credit: {
-                stage,
-                label,
-                error: "旧任务错误",
-                next_at: "2026-09-30T16:00:00Z",
-                attempt_at: "2026-09-30T15:00:00Z",
-                test_completed_at: "2026-09-30T15:00:10Z",
-                recovered_at: "2026-09-30T15:00:20Z",
-              },
-            } as unknown as Account
-          }
+          account={makeAccount({
+            auto_reset_credit: {
+              stage,
+              label,
+              error: "旧任务错误",
+              next_at: "2026-09-30T16:00:00Z",
+              attempt_at: "2026-09-30T15:00:00Z",
+              test_completed_at: "2026-09-30T15:00:10Z",
+              recovered_at: "2026-09-30T15:00:20Z",
+            },
+          })}
           online={false}
           refresh={async () => {}}
           report={vi.fn()}
@@ -262,10 +267,11 @@ describe("Sub2API usage cell", () => {
 });
 
 it("shows actual OAuth duration and distinguishes failed statistics from zero usage", () => {
-  const usage = {
+  const usage: UsageSummary = {
     branch: "openai_oauth",
     actions: [],
     today: null,
+    reset_credits: null,
     windows: [
       {
         key: "codex_7d",
@@ -276,20 +282,22 @@ it("shows actual OAuth duration and distinguishes failed statistics from zero us
         observed_at: null,
         status: "known",
         source: "passive",
-        stats: { requests: 0, tokens: 0, cost: 0, user_cost: 0 },
+        stats: {
+          requests: 0,
+          tokens: 0,
+          cost: 0,
+          standard_cost: 0,
+          user_cost: 0,
+        },
       },
     ],
   };
   const render = (stats_status?: "ok" | "error") =>
     renderToStaticMarkup(
       <UsageCell
-        account={
-          {
-            id: 1,
-            operation_versions: {},
-            usage: { ...usage, stats_status },
-          } as unknown as Account
-        }
+        account={makeAccount({
+          usage: { ...usage, stats_status },
+        })}
         online
         refresh={async () => {}}
         report={() => {}}

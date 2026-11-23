@@ -11,7 +11,7 @@ public struct AccountModelFieldView: View {
 
     @State private var textValue: String
     @State private var selectedAccountId: Int = 0
-    @State private var models: [AccountModelItem] = []
+    @State private var models: [ModelOption] = []
     @State private var loading: Bool = false
     @State private var errorText: String = ""
 
@@ -79,7 +79,8 @@ public struct AccountModelFieldView: View {
                                 height: DS.controlHeight,
                                 compactFont: true,
                                 entries: models.map { item in
-                                    let title = item.display_name == item.id ? item.id : "\(item.id) (\(item.display_name))"
+                                    let display = item.titleText
+                                    let title = display == item.id ? item.id : "\(item.id) (\(display))"
                                     return LinearMenuEntry(id: item.id, title: title, checked: item.id == textValue) {
                                         onChange(item.id)
                                     }

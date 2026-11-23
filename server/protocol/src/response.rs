@@ -104,7 +104,8 @@ pub fn client_response(method: &str, path: &str, data: Value) -> Option<Value> {
         Reply::QuotaSettings if route == Route::GlobalQuota => projected::<GlobalQuotaReply>(&data),
         Reply::QuotaSettings => projected::<AccountQuotaReply>(&data),
         Reply::Detection => checked::<ModelDetectionReply>(data),
-        Reply::Keepalive => checked::<KeepaliveReply>(data),
+        Reply::Keepalive if semantics::keepalive_valid(&data) => checked::<KeepaliveReply>(data),
+        Reply::Keepalive => None,
         Reply::SystemVersion => checked::<SystemVersionReply>(data),
         Reply::SystemUpdates => checked::<UpdatesReply>(data),
         Reply::SystemUpdate

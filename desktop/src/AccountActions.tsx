@@ -301,31 +301,21 @@ export function AccountActionButton({
 export default function AccountActions({
   items,
   label,
-  mode = "panel",
   active = true,
   contextKey,
   disabled = false,
 }: {
   items: AccountActionItem[];
   label: string;
-  mode?: "panel" | "group";
   active?: boolean;
   contextKey?: string;
   disabled?: boolean;
 }) {
-  if (mode === "panel")
-    return (
-      <div className="account-actions" aria-label={label}>
-        {items.map((item) => (
-          <AccountActionButton key={item.id} item={item} disabled={disabled} />
-        ))}
-      </div>
-    );
   return (
     <div className="group-account-menu">
       <AccountActionMenu
         label={label}
-        iconOnly={mode === "group"}
+        iconOnly
         active={active}
         contextKey={contextKey}
         disabled={disabled}

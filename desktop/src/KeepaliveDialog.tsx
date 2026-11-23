@@ -13,33 +13,6 @@ const labels: Record<string, string> = {
   running: "恢复中",
   needs_confirmation: "待核对",
 };
-function checked(value: AccountKeepalive, id: number): AccountKeepalive {
-  if (
-    !value ||
-    value.account_id !== id ||
-    typeof value.enabled !== "boolean" ||
-    !/^[0-9a-f]{64}$/.test(value.version) ||
-    !Number.isSafeInteger(value.generation) ||
-    value.generation < 0 ||
-    !Object.prototype.hasOwnProperty.call(labels, value.status) ||
-    typeof value.reason !== "string" ||
-    typeof value.paused_reason !== "string" ||
-    !Number.isInteger(value.restore_count) ||
-    value.restore_count < 0 ||
-    value.restore_count > 5 ||
-    !Number.isInteger(value.budget_used) ||
-    value.budget_used < value.restore_count ||
-    value.budget_used > 5 ||
-    [value.last_restore_at, value.next_allowed_at].some(
-      (at) =>
-        at !== null &&
-        (typeof at !== "string" || !Number.isFinite(Date.parse(at))),
-    )
-  ) {
-    throw new Error("保活设置响应无效，请重新读取");
-  }
-  return value;
-}
 const message = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
@@ -83,9 +56,9 @@ export default function KeepaliveDialog({
     setLoading(true);
     setError("");
     try {
-      const result = checked(
-        await api<AccountKeepalive>("GET", `/accounts/${account.id}/keepalive`),
-        account.id,
+      const result = await api<AccountKeepalive>(
+        "GET",
+        `/accounts/${account.id}/keepalive`,
       );
       if (current === epoch.current && request === revision.current) {
         setValue(result);
@@ -132,12 +105,9 @@ export default function KeepaliveDialog({
       const request = revision.current;
       if (!saving.current) {
         try {
-          const result = checked(
-            await api<AccountKeepalive>(
-              "GET",
-              `/accounts/${account.id}/keepalive`,
-            ),
-            account.id,
+          const result = await api<AccountKeepalive>(
+            "GET",
+            `/accounts/${account.id}/keepalive`,
           );
           if (
             alive &&
@@ -166,16 +136,13 @@ export default function KeepaliveDialog({
     const current = epoch.current,
       request = ++revision.current;
     try {
-      const result = checked(
-        await api<AccountKeepalive>(
-          "PUT",
-          `/accounts/${account.id}/keepalive`,
-          {
-            enabled: draft.enabled,
-            expected_version: draft.version,
-          },
-        ),
-        account.id,
+      const result = await api<AccountKeepalive>(
+        "PUT",
+        `/accounts/${account.id}/keepalive`,
+        {
+          enabled: draft.enabled,
+          expected_version: draft.version,
+        },
       );
       if (current === epoch.current && request === revision.current) {
         setValue(result);

@@ -11,7 +11,7 @@ public struct ModelTestSheet: View {
     @State private var concurrency: Int = 1
     @State private var tokenizerProbe: Bool = false
     @State private var selectedModel: String = ""
-    @State private var models: [AccountModelItem] = []
+    @State private var models: [ModelOption] = []
     @State private var loadingModels: Bool = false
     @State private var modelError: String = ""
 
@@ -76,7 +76,7 @@ public struct ModelTestSheet: View {
                                 entries: models.map { item in
                                     LinearMenuEntry(
                                         id: item.id,
-                                        title: item.display_name.isEmpty ? item.id : item.display_name,
+                                        title: item.titleText,
                                         checked: selectedModel == item.id
                                     ) {
                                         selectedModel = item.id
@@ -345,7 +345,7 @@ public struct ModelTestSheet: View {
 
     private var selectedModelLabel: String {
         if let found = models.first(where: { $0.id == selectedModel }) {
-            return found.display_name.isEmpty ? found.id : found.display_name
+            return found.titleText
         }
         return selectedModel.isEmpty ? (loadingModels ? "正在读取模型…" : "暂无可用模型") : selectedModel
     }

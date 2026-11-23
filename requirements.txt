@@ -1,3 +1,3 @@
 # Isolated test drivers only.
 # The production Companion runtime is the Rust server image.
-psycopg[binary,pool]==3.3.8
+psycopg[binary,pool]==3.3.9

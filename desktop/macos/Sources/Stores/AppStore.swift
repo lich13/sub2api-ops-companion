@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import Observation
 import SwiftUI
 
@@ -154,8 +155,10 @@ public final class AppStore {
         state.snapshot?.groups ?? []
     }
 
+    private static let bridgeLogger = Logger(subsystem: "Sub2Ops", category: "bridge")
+
     public var errors: [OpsError] {
-        (state.snapshot?.errors ?? []).sorted { $0.id > $1.id }
+        (state.snapshot?.errors ?? []).sorted { ($0.id ?? 0) > ($1.id ?? 0) }
     }
 
     public func bindBridge() {
@@ -163,8 +166,11 @@ public final class AppStore {
             guard let self else { return }
             switch kind {
             case .opsState:
-                if let next = try? JSONDecoder().decode(ViewState.self, from: data) {
+                do {
+                    let next = try JSONDecoder().decode(ViewState.self, from: data)
                     self.applyViewState(next)
+                } catch {
+                    Self.bridgeLogger.error("Failed to decode ops-state event: \(error.localizedDescription, privacy: .public)")
                 }
             case .updateResult:
                 if let message = String(data: data, encoding: .utf8), !message.isEmpty {
@@ -236,7 +242,7 @@ public final class AppStore {
         do {
             let res = try await operations.accountOperation(account: acc, action: "recover", payload: [:])
             if operations.epoch == capturedEpoch {
-                let verified = res["verified"]?.boolValue == true
+                let verified = res?.verified == true
                 showToast(verified ? "\(acc.name)：状态已恢复" : "恢复状态未确认，请刷新")
                 refresh()
             }
@@ -429,11 +435,15 @@ public final class AppStore {
         if let conc = modelTestConcurrency ?? p.model_test_concurrency {
             args["modelTestConcurrency"] = .int(Int64(conc))
         }
-        if let prefsMap = modelTestPreferences ?? p.model_test_preferences,
-           let encoded = try? JSONEncoder().encode(prefsMap),
-           let jsonVal = try? JSONDecoder().decode(JSONValue.self, from: encoded)
-        {
-            args["modelTestPreferences"] = jsonVal
+        if let prefsMap = modelTestPreferences ?? p.model_test_preferences {
+            args["modelTestPreferences"] = .object(
+                prefsMap.mapValues { pref in
+                    .object([
+                        "engine": .string(pref.engine),
+                        "sample_count": .int(Int64(pref.sample_count)),
+                    ])
+                }
+            )
         }
         do {
             try await RustBridge.shared.commandVoid("preferences", args: .object(args))
@@ -457,7 +467,7 @@ public final class AppStore {
                 action: "schedulable",
                 payload: ["schedulable": .bool(!account.schedulable)]
             )
-            if result["verified"]?.boolValue != true {
+            if result?.verified != true {
                 throw RustBridgeError("调度写入未确认，请刷新查看实际状态")
             }
             if operations.epoch == capturedEpoch {

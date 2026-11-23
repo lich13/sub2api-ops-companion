@@ -84,7 +84,6 @@ function render(
       accounts={accounts}
       groups={groups}
       active
-      mobile={false}
       online
       connectionKey="fixture"
       back={vi.fn()}

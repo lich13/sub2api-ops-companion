@@ -41,7 +41,6 @@ type Props = {
   accounts: Account[];
   active: boolean;
   online: boolean;
-  mobile: boolean;
   connectionKey: string;
   back: () => void;
   schedule: (account: Account, disabled?: boolean) => ReactNode;
@@ -68,7 +67,7 @@ const cleanError = (error: unknown) => String(error).replace(/^Error: /, "");
 const taskPath = (id: string, summary = false) =>
   `/account-priority-orders/${id}?schema=2${summary ? "&details=0" : ""}`;
 export default function PriorityManager(props: Props) {
-  const { active, online, mobile, connectionKey } = props;
+  const { active, online, connectionKey } = props;
   const [view, setView] = useState<PriorityView | null>(null);
   const [drafts, setDrafts] = useState<Drafts>({}),
     [history, setHistory] = useState<
@@ -84,17 +83,16 @@ export default function PriorityManager(props: Props) {
   const [error, setError] = useState(""),
     [notices, setNotices] = useState<Record<string, string>>({});
   const [readRevision, setReadRevision] = useState(0),
-    [width, setWidth] = useState(0),
     [visible, setVisible] = useState(!document.hidden);
   const [drag, setDrag] = useState<Drag | null>(null);
   const generation = useRef(0),
+    section = useRef<HTMLElement>(null),
     alive = useRef(true),
     submittingRef = useRef(false),
     latest = useRef(props);
   const draftsRef = useRef(drafts),
     viewRef = useRef(view),
-    dragRef = useRef(drag),
-    section = useRef<HTMLElement>(null);
+    dragRef = useRef(drag);
   const lists = useRef(new Map<string, HTMLOListElement>());
   const pointer = useRef<
     (Drag & { ready: boolean; timer?: ReturnType<typeof setTimeout> }) | null
@@ -184,20 +182,6 @@ export default function PriorityManager(props: Props) {
       ),
     [platforms, drafts],
   );
-  const columns =
-    !mobile &&
-    platforms.length > 1 &&
-    platforms.length <= 3 &&
-    width >=
-      Math.max(
-        960,
-        platforms.reduce(
-          (sum, group) =>
-            sum + Math.max(320, (group.parallelism ?? 1) * 220 + 72),
-          0,
-        ) +
-          (platforms.length - 1) * 12,
-      );
   const selectedPlatform = platforms.some((p) => p.platform === selected)
     ? selected
     : platforms[0]?.platform;
@@ -258,7 +242,7 @@ export default function PriorityManager(props: Props) {
   }
   useEffect(() => {
     stopDrag();
-  }, [active, online, columns, selectedPlatform]);
+  }, [active, online, selectedPlatform]);
   const platformState = useEffectEvent(state);
   useEffect(() => {
     const point = dragRef.current;
@@ -274,17 +258,6 @@ export default function PriorityManager(props: Props) {
         stopDrag();
     }
   }, [platforms, filtered, loading]);
-  useEffect(() => {
-    if (!active || !section.current) return;
-    const node = section.current;
-    setWidth(node.getBoundingClientRect().width);
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver((entries) =>
-      setWidth(entries[0].contentRect.width),
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [active]);
   useEffect(() => {
     generation.current = generation.current + 1;
     completed.current.clear();
@@ -811,15 +784,13 @@ export default function PriorityManager(props: Props) {
       aria-label="全局优先级管理"
     >
       <header className="priority-heading">
-        {mobile && (
-          <button
-            className="icon-button"
-            aria-label="返回账号"
-            onClick={props.back}
-          >
-            <ArrowLeft size={20} />
-          </button>
-        )}
+        <button
+          className="icon-button"
+          aria-label="返回账号"
+          onClick={props.back}
+        >
+          <ArrowLeft size={20} />
+        </button>
         <h1>优先级</h1>
         <button
           className="icon-button"
@@ -858,7 +829,7 @@ export default function PriorityManager(props: Props) {
       {!loading && view !== null && !error && !platforms.length && (
         <p className="priority-empty">暂无账号</p>
       )}
-      {!columns && platforms.length > 1 && (
+      {platforms.length > 1 && (
         <div className="priority-tabs" role="tablist" aria-label="优先级平台">
           {platforms.map((group) => (
             <button
@@ -879,21 +850,7 @@ export default function PriorityManager(props: Props) {
           ))}
         </div>
       )}
-      <div
-        className={`priority-platforms${columns ? " is-columns" : ""}`}
-        style={
-          columns
-            ? {
-                gridTemplateColumns: platforms
-                  .map(
-                    (group) =>
-                      `minmax(0, ${Math.max(320, (group.parallelism ?? 1) * 220 + 72)}fr)`,
-                  )
-                  .join(" "),
-              }
-            : undefined
-        }
-      >
+      <div className="priority-platforms">
         {platforms.map((group) => {
           const platform = group.platform,
             s = state(group),
@@ -907,7 +864,7 @@ export default function PriorityManager(props: Props) {
               id={`priority-platform-${platform}`}
               data-priority-platform={platform}
               className="priority-column"
-              hidden={!columns && selectedPlatform !== platform}
+              hidden={selectedPlatform !== platform}
               aria-label={`${priorityPlatformName(platform)} 优先级`}
             >
               <header className="priority-column-heading">

@@ -19,20 +19,18 @@ import { useBackAction } from "./mobile";
 import { useDialogFocus } from "./dialogFocus";
 import type { Account } from "./types";
 import { validate as validateProfile, type Profile } from "./AccountTemplates";
+import type { AccountSettingsReply } from "./protocol";
 import "./account-settings.css";
 import ProxyOptions, { type ProxyOption } from "./ProxyOptions";
 
 export type SettingsSection = "whitelist" | "mappings" | "proxy";
-export type AccountSettings = {
-  account_id: number;
-  priority: number;
+export type AccountSettings = Omit<
+  AccountSettingsReply,
+  "concurrency" | "load_factor" | "proxy_id"
+> & {
   concurrency: number | null;
   load_factor: number | null;
-  effective_load_factor: number;
   proxy_id: number | null;
-  model_config: Profile;
-  capabilities: Record<string, { editable: boolean; reason: string }>;
-  versions: Record<string, string>;
 };
 type SyncResult = { models: string[]; warnings: string[]; synced_at: string };
 export const operationLabel = (job: Operation) =>
@@ -182,7 +180,7 @@ export default function AccountSettingsDialog({
       const job = await submitOperation(
         account,
         action,
-        isProxy ? { proxy_id: proxyId } : profile,
+        isProxy ? { proxy_id: proxyId } : { ...profile },
         settings.versions[action],
       );
       if (current === generation.current) setNotice(operationLabel(job));

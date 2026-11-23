@@ -64,7 +64,6 @@ public enum DS {
     public static let backdrop = Color(nsColor: dynamicNSColor(lightHex: 0x101728, darkHex: 0x090B10, alpha: 0.36))
     public static let shadowColor = Color(nsColor: dynamicNSColor(lightHex: 0x0F172A, darkHex: 0x000000, alpha: 0.05))
     public static let modalShadowColor = Color(nsColor: dynamicNSColor(lightHex: 0x18223F, darkHex: 0x000000, alpha: 0.18))
-    public static let stickyShadowColor = Color(nsColor: dynamicNSColor(lightHex: 0x0F172A, darkHex: 0x000000, alpha: 0.08))
     public static let clear = Color.clear
 
     // Usage & Group Domain Colors (Matched to Sub2API AccountUsageCell & style.css)
@@ -98,7 +97,6 @@ public enum DS {
     public static let recordCompactFg = Color(nsColor: dynamicNSColor(lightHex: 0x115E59, darkHex: 0x99F6E4))
     public static let recordCompactBg = Color(nsColor: dynamicNSColor(lightHex: 0xCCFBF1, darkHex: 0x134E4A))
     public static let groupTeal = Color(nsColor: dynamicNSColor(lightHex: 0x387F8B, darkHex: 0x78BAC4))
-    public static let groupTealBg = Color(nsColor: dynamicNSColor(lightHex: 0xE8F5F6, darkHex: 0x1D3236))
     public static let groupLeftFill = Color(nsColor: dynamicNSColor(lightHex: 0x6262CE, darkHex: 0x9797EF, alpha: 0.04))
     public static let groupRightFill = Color(nsColor: dynamicNSColor(lightHex: 0x387F8B, darkHex: 0x78BAC4, alpha: 0.04))
     public static let groupLeftBorder = Color(nsColor: dynamicNSColor(lightHex: 0x9E9EE0, darkHex: 0x5C5DA0))
@@ -118,7 +116,6 @@ public enum DS {
     /// 14–15pt Card / Section Heading
     public static let fontCardHeading = Font.system(size: 15, weight: .semibold)
     public static let fontSectionTitle = Font.system(size: 14, weight: .semibold)
-    public static let fontSectionMedium = Font.system(size: 14, weight: .medium)
     /// 13pt Primary Body & Form Controls
     public static let fontBody = Font.system(size: 13, weight: .regular)
     public static let fontBodyMedium = Font.system(size: 13, weight: .medium)
@@ -144,7 +141,6 @@ public enum DS {
     /// Monospaced Fonts (Strictly for code, IDs, paths & raw logs)
     public static let fontMono11 = Font.system(size: 11, weight: .regular, design: .monospaced)
     public static let fontMono12 = Font.system(size: 12, weight: .regular, design: .monospaced)
-    public static let fontMono13 = Font.system(size: 13, weight: .regular, design: .monospaced)
 
     /// SF Symbol Icon Font Helper
     public static func iconFont(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {

@@ -1,7 +1,9 @@
+import OSLog
 import SwiftUI
 
 /// Dialog sheets for IP/Proxy management (`ProxyDialogs.tsx`).
 public struct ProxyEditorSheet: View {
+    private static let logger = Logger(subsystem: "Sub2Ops", category: "proxy")
     public let row: ProxyManagedRow?
     public let online: Bool
     public let onSaved: () -> Void
@@ -229,8 +231,14 @@ public struct ProxyEditorSheet: View {
         .sub2opsDialogFocus(onEscape: { if !busy { onClose() } })
         .task(id: fallbackMode) {
             guard fallbackMode == "proxy", online else { return }
-            if let p: ProxyManagedPage = try? await RustBridge.shared.api("GET", "/proxy-management?page=1&page_size=200&status=active") {
+            do {
+                let p: ProxyManagedPage = try await RustBridge.shared.api("GET", "/proxy-management?page=1&page_size=200&status=active")
                 backupOptions = p.items.filter { $0.id != row?.id }
+            } catch {
+                Self.logger.error("Failed to load backup proxies: \(error.localizedDescription, privacy: .public)")
+                if !Task.isCancelled {
+                    errorText = error.localizedDescription
+                }
             }
         }
     }
@@ -302,7 +310,7 @@ public struct ProxyEditorSheet: View {
         errorText = ""
         defer { busy = false }
         do {
-            let _: JSONValue = try await RustBridge.shared.api(
+            try await RustBridge.shared.apiVoid(
                 row == nil ? "POST" : "PUT",
                 row.map { "/proxy-management/\($0.id)" } ?? "/proxy-management",
                 body: .object(body)
@@ -411,7 +419,6 @@ public struct ProxyBatchAddSheet: View {
     }
 
     private func runBatch() async {
-        struct BatchReply: Decodable, Sendable { var created: Int; var skipped: Int }
         let items = parsed.proxies
         busy = true
         defer { busy = false }
@@ -419,7 +426,7 @@ public struct ProxyBatchAddSheet: View {
         for item in items {
             guard online else { break }
             do {
-                let r: BatchReply = try await RustBridge.shared.api(
+                let r: CreateProxyBatchReply = try await RustBridge.shared.api(
                     "POST",
                     "/proxy-management/batch",
                     body: .object(["proxies": .array([item.jsonObject])])

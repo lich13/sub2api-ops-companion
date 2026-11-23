@@ -1,6 +1,12 @@
 // Development-only, deterministic fixtures. The native build never uses this transport.
 import type { ConfigHeader } from "./protocol";
-import type { ViewState, Account, Config, Preferences } from "./types";
+import {
+  defaultConnectionName,
+  type ViewState,
+  type Account,
+  type Config,
+  type Preferences,
+} from "./types";
 import { version as appVersion } from "../package.json";
 const now = new Date().toISOString(),
   before = new Date(Date.now() - 7 * 60e3).toISOString();
@@ -408,16 +414,21 @@ for (const account of accounts.filter((a) => a.type === "apikey")) {
     total_usage: { requests: 180, tokens: 128000, cost: 8.4 },
   };
 }
+const previewBaseUrl = "https://demo.example/sub2ops";
 let state: ViewState = {
-  platform: new URLSearchParams(location.search).has("mobile")
-    ? "android"
-    : "macos",
+  platform: "android",
   foreground: true,
   connected: true,
   online: true,
   error: "",
   preferences: {
-    base_url: "https://demo.example/sub2ops",
+    base_url: previewBaseUrl,
+    connections: [
+      {
+        name: defaultConnectionName(previewBaseUrl),
+        base_url: previewBaseUrl,
+      },
+    ],
     pinned: false,
     launch_at_login: false,
   },
@@ -740,7 +751,13 @@ export async function run(
             ? { ...item, name: customName }
             : item,
         )
-      : [...existing, { name: customName || baseUrl, base_url: baseUrl }];
+      : [
+          ...existing,
+          {
+            name: customName || defaultConnectionName(baseUrl),
+            base_url: baseUrl,
+          },
+        ];
     state.connected = true;
     state.online = true;
     state.connection_revision = (state.connection_revision ?? 0) + 1;
@@ -756,7 +773,8 @@ export async function run(
     const baseUrl = String(args.baseUrl ?? "")
       .trim()
       .replace(/\/+$/, "");
-    const customName = String(args.name ?? "").trim() || baseUrl;
+    const customName =
+      String(args.name ?? "").trim() || defaultConnectionName(baseUrl);
     const existing = state.preferences.connections ?? [];
     state.preferences = {
       ...state.preferences,

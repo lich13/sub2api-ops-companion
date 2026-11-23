@@ -250,10 +250,6 @@ impl Service {
             access_token: value
         }))
     }
-    pub fn save_settings(&self, value: &Value, id: Option<i64>) -> Result<Value> {
-        settings_request(value, id.is_some())?;
-        self.save_settings_validated(value, id)
-    }
 
     pub(crate) fn save_settings_validated(&self, value: &Value, id: Option<i64>) -> Result<Value> {
         let changed = self.config.transaction(|raw| {

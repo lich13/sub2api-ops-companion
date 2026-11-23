@@ -30,13 +30,28 @@ const button = (text: string) =>
   )!;
 
 describe("test interaction", () => {
-  const account = {
+  const account: Account = {
     id: 1,
     name: "Fixture account",
+    priority: 1,
     platform: "openai",
+    type: "oauth",
+    status: "active",
+    schedulable: true,
+    available: true,
+    group_ids: [],
+    blockers: [],
     version: "a".repeat(64),
     operation_versions: { test: "b".repeat(64) },
-  } as unknown as Account;
+    last_success_at: null,
+    last_error_at: null,
+    last_error_id: null,
+    last_error_code: null,
+    last_error_status: null,
+    error_message: "",
+    success_after_error: false,
+    usage_windows: [],
+  };
   const id = "c".repeat(32);
   const job = (status: string, events: TestEvent[] = []) => ({
     id,

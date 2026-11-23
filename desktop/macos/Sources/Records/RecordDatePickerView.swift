@@ -78,7 +78,6 @@ public struct RecordDatePickerView: View {
                         TextField(text: $draft.start, prompt: Text(verbatim: "YYYY-MM-DD")) { EmptyView() }
                         .textFieldStyle(.plain)
                         .font(DS.fontCompact).monospacedDigit()
-                        .monospacedDigit()
                         .padding(.horizontal, 8)
                         .frame(height: DS.controlHeightCompact)
                         .background(DS.surface)
@@ -97,7 +96,6 @@ public struct RecordDatePickerView: View {
                         TextField(text: $draft.end, prompt: Text(verbatim: "YYYY-MM-DD")) { EmptyView() }
                         .textFieldStyle(.plain)
                         .font(DS.fontCompact).monospacedDigit()
-                        .monospacedDigit()
                         .padding(.horizontal, 8)
                         .frame(height: DS.controlHeightCompact)
                         .background(DS.surface)

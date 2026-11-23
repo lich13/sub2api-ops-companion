@@ -25,25 +25,22 @@ public struct ModelFingerprintResultView: View {
 
             if let report = job.report {
                 HStack(spacing: 12) {
-                    metricPill("检测源", value: ModelTestEngine.name(for: report.engine ?? job.engine))
+                    metricPill("检测源", value: ModelTestEngine.name(for: job.engine))
                     if let pred = report.prediction_name ?? report.prediction, !pred.isEmpty {
                         metricPill("汇总预测", value: pred)
                     }
                     if let prob = report.probability {
                         metricPill("匹配度", value: String(format: "%.1f%%", prob * 100.0))
                     }
-                    if let first = report.first_prediction, !first.isEmpty {
-                        metricPill("首组", value: first)
-                    }
                 }
 
-                if let reason = report.reason, !reason.isEmpty {
+                if let reason = job.classification?.reason, !reason.isEmpty {
                     Text(reason)
                         .font(DS.fontResetTime)
                         .foregroundStyle(DS.warn)
                 }
 
-                if let candidates = report.candidates, !candidates.isEmpty {
+                if let candidates = report.results, !candidates.isEmpty {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("候选模型分布")
                             .font(DS.fontResetTimeSemibold)
@@ -114,7 +111,7 @@ public struct ModelFingerprintResultView: View {
         if job.status != "completed" {
             return job.status == "failed" ? .bad : .warning
         }
-        let outcome = job.report?.outcome ?? ""
+        let outcome = job.classification?.outcome ?? ""
         if outcome == "degraded" || outcome == "aggregate_degraded" { return .bad }
         if outcome == "normal" { return .good }
         return .warning
@@ -127,7 +124,7 @@ public struct ModelFingerprintResultView: View {
         case "cancelled": return "测试已取消"
         case "failed": return "模型测试失败"
         default:
-            switch job.report?.outcome {
+            switch job.classification?.outcome {
             case "degraded", "aggregate_degraded": return "判定存在降智特征"
             case "normal": return "未确认降智（指纹正常）"
             case "unavailable": return "样本不足，暂无法判断"

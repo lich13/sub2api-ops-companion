@@ -8,10 +8,6 @@
   gap: 8px;
   flex-shrink: 0;
 }
-.records-filter-inline {
-  flex: 1;
-  min-width: 0;
-}
 .records-date-picker {
   position: relative;
   min-width: 0;

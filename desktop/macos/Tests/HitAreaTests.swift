@@ -130,10 +130,16 @@ struct HitAreaTests {
     func schedulingParametersFullRightSlotHitArea() {
         let store = AppStore()
         store.ready = true
-        var account = Account(id: 101, name: "Codex", priority: 1, platform: "openai", type: "oauth")
-        account.concurrency = 2
-        account.load_factor = nil
-        account.operation_versions = ["concurrency": "v1", "load_factor": "v1"]
+        let account = Account(
+            id: 101,
+            name: "Codex",
+            priority: 1,
+            platform: "openai",
+            type: "oauth",
+            concurrency: 2,
+            load_factor: nil,
+            operation_versions: ["concurrency": "v1", "load_factor": "v1"]
+        )
         store.applyViewState(
             ViewState(
                 connected: true,

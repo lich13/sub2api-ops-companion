@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, command, subscribe } from "./bridge";
+import type { OperationBatch } from "./accountOperations";
 import App from "./main";
 import type { Account, OpsError, ViewState } from "./types";
 
@@ -11,8 +12,6 @@ vi.mock("./bridge", () => ({
   api: vi.fn(),
   command: vi.fn(),
   subscribe: vi.fn(),
-  updates: vi.fn(async () => () => {}),
-  watchWindowFocus: vi.fn(async () => () => {}),
   preview: true,
 }));
 
@@ -63,7 +62,7 @@ const error = (id: number, name: string): OpsError => ({
 });
 
 const state = (): ViewState => ({
-  platform: "macos",
+  platform: "android",
   foreground: true,
   connected: true,
   online: true,
@@ -83,7 +82,7 @@ const state = (): ViewState => ({
 });
 
 const nav = (label: string) =>
-  [...container.querySelectorAll<HTMLButtonElement>("aside nav button")].find(
+  [...container.querySelectorAll<HTMLButtonElement>(".bottom-nav button")].find(
     (button) => button.textContent?.trim().startsWith(label),
   )!;
 
@@ -190,14 +189,14 @@ describe("main page surface ownership", () => {
       await act(async () => root.render(<App />));
 
       const summary = container.querySelector<HTMLElement>(
-        ".accounts-table .account-last-success",
+        ".mobile-account .account-last-success",
       )!;
       expect(summary.textContent).toBe(`最后成功${expected}`);
       expect(
         summary.querySelector("time")!.classList.contains("good-text"),
       ).toBe(recovered);
       const errorButton = container.querySelector(
-        ".accounts-table .error-time",
+        ".mobile-account .mobile-error",
       );
       expect(!!errorButton).toBe(errorId !== null);
       expect(
@@ -216,7 +215,7 @@ describe("main page surface ownership", () => {
     await act(async () => root.render(<App />));
     await act(async () =>
       container
-        .querySelector<HTMLButtonElement>(".accounts-table .error-time")!
+        .querySelector<HTMLButtonElement>(".mobile-account .mobile-error")!
         .click(),
     );
     expect(
@@ -230,32 +229,20 @@ describe("main page surface ownership", () => {
     expect(container.querySelector(".account-last-success button")).toBeNull();
   });
 
-  it("adds a desktop priority page while keeping five mobile navigation items", async () => {
-    await act(async () => root.render(<App />));
-    expect(
-      [
-        ...container.querySelectorAll<HTMLButtonElement>("aside nav button"),
-      ].map((button) => button.textContent?.trim()),
-    ).toEqual(["账号", "分组", "优先级", "记录", "事件", "功能", "设置"]);
-    await act(async () => nav("优先级").click());
-    expect(container.querySelectorAll('[data-page="priorities"]')).toHaveLength(
-      1,
-    );
-
-    await act(async () => root.unmount());
-    root = createRoot(container);
-    const mobileState = state();
-    mobileState.platform = "android";
-    vi.mocked(command).mockImplementation(
-      async (...[name]: Parameters<typeof command>) =>
-        name === "get_state" ? (mobileState as never) : (undefined as never),
-    );
+  it("keeps five mobile navigation items and enters priority management from the accounts page", async () => {
     await act(async () => root.render(<App />));
     expect(
       [
         ...container.querySelectorAll<HTMLButtonElement>(".bottom-nav button"),
       ].map((button) => button.textContent?.trim()),
     ).toEqual(["账号", "记录", "事件", "功能", "设置"]);
+    const priorityEntry = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        ".mobile-group-entry button",
+      ),
+    ].find((button) => button.textContent?.includes("优先级管理"))!;
+    await act(async () => priorityEntry.click());
+    expect(container.querySelector(".priority-manager")).not.toBeNull();
   });
 
   it("unmounts records and events surfaces across repeated navigation", async () => {
@@ -668,9 +655,8 @@ describe("account sorting and Android connection settings", () => {
     expect(localStorage.getItem("sub2ops-account-sort")).toBe("recent:asc");
   });
 
-  it("shares the saved sort between desktop controls and restores it after remount", async () => {
+  it("retains the saved sort across navigation, connection changes, and remount", async () => {
     const initial = state();
-    initial.platform = "macos";
     let receive!: (value: ViewState) => void;
     vi.mocked(subscribe).mockImplementation(async (callback) => {
       receive = callback;
@@ -686,20 +672,15 @@ describe("account sorting and Android connection settings", () => {
         name === "get_state" ? (initial as never) : (undefined as never),
     );
     await act(async () => root.render(<App />));
-    const desktopSort = container.querySelector<HTMLSelectElement>(
+    const sortSelect = container.querySelector<HTMLSelectElement>(
       'select[aria-label="账号排序"]',
     )!;
-    expect(desktopSort.value).toBe("recent:desc");
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>(".sort-button")!.click(),
-    );
-    expect(desktopSort.value).toBe("priority:asc");
-    expect(container.querySelector('th[aria-sort="ascending"]')).not.toBeNull();
+    expect(sortSelect.value).toBe("recent:desc");
     await act(async () => {
-      desktopSort.value = "priority:desc";
-      desktopSort.dispatchEvent(new Event("change", { bubbles: true }));
+      sortSelect.value = "priority:desc";
+      sortSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    expect(desktopSort.value).toBe("priority:desc");
+    expect(sortSelect.value).toBe("priority:desc");
     expect(localStorage.getItem("sub2ops-account-sort")).toBe("priority:desc");
     await act(async () => nav("记录").click());
     await act(async () => nav("账号").click());
@@ -723,7 +704,6 @@ describe("account sorting and Android connection settings", () => {
     ] as const) {
       await act(async () => root.unmount());
       root = createRoot(container);
-      initial.platform = "android";
       localStorage.setItem("sub2ops-account-sort", value);
       await act(async () => root.render(<App />));
       const mobileSort = container.querySelector<HTMLSelectElement>(
@@ -923,10 +903,6 @@ it("returns to initial account filters, selection, disclosures and scroll while 
       .querySelector<HTMLInputElement>('[aria-label="全选当前筛选账号"]')!
       .click(),
   );
-  const detail = container.querySelector<HTMLDetailsElement>(
-    ".accounts-table details",
-  );
-  if (detail) detail.open = true;
   const content = container.querySelector<HTMLElement>(".content")!;
   content.scrollTop = 240;
   content.scrollLeft = 60;
@@ -954,7 +930,6 @@ it("returns to initial account filters, selection, disclosures and scroll while 
     container.querySelector<HTMLInputElement>('[aria-label="全选当前筛选账号"]')
       ?.checked,
   ).toBe(false);
-  expect(container.querySelector(".accounts-table details[open]")).toBeNull();
   expect(
     container.querySelector<HTMLSelectElement>('[aria-label="账号排序"]')
       ?.value,
@@ -1055,14 +1030,14 @@ it("switches saved Sub2API instances, opens prefilled modal when credentials are
 
   await act(async () =>
     container
-      .querySelector<HTMLButtonElement>(".sidebar-instance-button")!
+      .querySelector<HTMLButtonElement>(".instance-switcher-trigger")!
       .click(),
   );
   expect(
-    container.querySelector('.sidebar-instance-button[aria-expanded="true"]'),
+    container.querySelector('.instance-switcher-trigger[aria-expanded="true"]'),
   ).not.toBeNull();
   expect(
-    container.querySelector(".sidebar-instance .instance-switcher-menu"),
+    container.querySelector(".instance-switcher .instance-switcher-menu"),
   ).not.toBeNull();
   const missingKeyOption = [
     ...container.querySelectorAll<HTMLButtonElement>(".instance-switcher-item"),
@@ -1139,4 +1114,195 @@ it("switches saved Sub2API instances, opens prefilled modal when credentials are
     baseUrl: "https://fixture.invalid",
   });
   expect(container.querySelectorAll(".saved-instance-row").length).toBe(2);
+});
+
+describe("main account selection surface", () => {
+  const selectionAccount = (id: number): Account => ({
+    ...account(id),
+    name: `选择测试账号 ${id}`,
+    operation_versions: { test: "b".repeat(64) },
+  });
+  const selectionState = (): ViewState => ({
+    ...state(),
+    preferences: {
+      base_url: "https://main-041.example.invalid",
+      pinned: false,
+      launch_at_login: false,
+    },
+    snapshot: {
+      observed_at: "2026-10-14T00:00:00Z",
+      accounts: [selectionAccount(1), selectionAccount(2)],
+      groups: [],
+      errors: [],
+      recoveries: [],
+    },
+  });
+  const finishedBatch: OperationBatch = {
+    batch_id: "a".repeat(32),
+    pending: 0,
+    items: [
+      {
+        id: "batch-041-operation-1",
+        batch_id: "a".repeat(32),
+        account_id: 1,
+        account_name: selectionAccount(1).name,
+        action: "test",
+        requested: { confirmed: true, model_id: "fixture-model" },
+        status: "completed",
+        result: {
+          requested_model: "fixture-model",
+          actual_model: "fixture-model",
+          success: true,
+          duration_ms: 10,
+          completed_at: "2026-10-14T00:00:01Z",
+          error: "",
+          uncertain: false,
+        },
+      },
+    ],
+  };
+  const selectionBar = () =>
+    container.querySelector<HTMLElement>(".selection-bar");
+
+  async function renderSelectionApp(batchReply = finishedBatch) {
+    localStorage.clear();
+    const initial = selectionState();
+    vi.mocked(command).mockImplementation(
+      async (...[name]: Parameters<typeof command>) =>
+        name === "get_state" ? (initial as never) : (undefined as never),
+    );
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "POST" && path === "/account-operations/batch")
+        return batchReply as never;
+      if (
+        method === "GET" &&
+        path === `/account-operations?batch_id=${finishedBatch.batch_id}`
+      )
+        return batchReply as never;
+      if (path.startsWith("/account-operations")) return batchReply as never;
+      if (path.startsWith("/usage-records")) return recordPage() as never;
+      if (path.startsWith("/errors?category=") || path === "/recoveries")
+        return { items: [], next_cursor: null } as never;
+      if (path === "/quota-refresh")
+        return { status: "idle", items: [], total: 0, completed: 0 } as never;
+      throw new Error(`Unexpected fixture request: ${method} ${path}`);
+    });
+    await act(async () => root.render(<App />));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
+  it("returns focus to the busy test button when running results are closed", async () => {
+    const running: OperationBatch = {
+      ...finishedBatch,
+      pending: 1,
+      items: finishedBatch.items.map((j) => ({
+        ...j,
+        status: "running",
+        result: undefined,
+      })),
+    };
+    await renderSelectionApp(running);
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>(
+          `[aria-label="选择 ${selectionAccount(1).name}"]`,
+        )!
+        .click(),
+    );
+    const start = container.querySelector<HTMLButtonElement>(
+      "#connection-batch-start",
+    )!;
+    await act(async () => start.click());
+    const close = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        ".connection-batch button",
+      ),
+    ].find((b) => b.textContent?.includes("关闭结果"))!;
+    await act(async () => close.click());
+    expect(document.activeElement).toBe(start);
+    expect(start.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => start.click());
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(
+          ([method, path]) =>
+            method === "POST" && path === "/account-operations/batch",
+        ),
+    ).toHaveLength(1);
+  });
+
+  it("closes batch results and restores focus to the test button without a separate entry", async () => {
+    await renderSelectionApp();
+    expect(selectionBar()).toBeNull();
+
+    const accountCheckbox = container.querySelector<HTMLInputElement>(
+      `[aria-label="选择 ${selectionAccount(1).name}"]`,
+    )!;
+    await act(async () => accountCheckbox.click());
+    expect(selectionBar()?.textContent).toContain("已选 1 个账号");
+
+    await act(async () =>
+      [
+        ...container.querySelectorAll<HTMLButtonElement>(
+          ".selection-actions button",
+        ),
+      ]
+        .find((button) => button.textContent?.includes("测试连接"))!
+        .click(),
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const resultsSelector = 'section[aria-label="批量测试连接"]';
+    expect(container.querySelector(resultsSelector)?.textContent).toContain(
+      "通过",
+    );
+    expect(
+      container.querySelector('section[aria-label="批量测试连接摘要"]'),
+    ).toBeNull();
+
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>(`${resultsSelector} button`)!
+        .click(),
+    );
+    expect(container.querySelector(resultsSelector)).toBeNull();
+    expect(
+      container.querySelector(
+        '.account-toolbar button[aria-label="查看测活结果"]',
+      ),
+    ).toBeNull();
+    expect(document.activeElement).toBe(
+      container.querySelector("#connection-batch-start"),
+    );
+    await act(async () => accountCheckbox.click());
+    expect(selectionBar()).toBeNull();
+    expect(container.querySelector(resultsSelector)).toBeNull();
+  });
+
+  it("places mobile select-all in the sort row and hides the selection bar when no account is selected", async () => {
+    await renderSelectionApp();
+
+    const mobileSort = container.querySelector<HTMLElement>(".mobile-sort")!;
+    const selectAll = mobileSort.querySelector<HTMLInputElement>(
+      'input[aria-label="全选当前筛选账号"]',
+    )!;
+    expect(selectAll.closest(".mobile-sort")).toBe(mobileSort);
+    expect(selectionBar()).toBeNull();
+
+    await act(async () => selectAll.click());
+    expect(selectionBar()?.textContent).toContain("已选 2 个账号");
+    expect(
+      selectionBar()?.querySelector('input[aria-label="全选当前筛选账号"]'),
+    ).toBeNull();
+    expect(selectAll.closest(".mobile-sort")).toBe(mobileSort);
+
+    await act(async () => selectAll.click());
+    expect(selectionBar()).toBeNull();
+  });
 });

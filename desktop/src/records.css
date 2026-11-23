@@ -41,47 +41,6 @@
 .records-toolbar select {
   max-width: 155px;
 }
-.app:not(.mobile) .records-filter-bar {
-  gap: 6px;
-  flex-wrap: nowrap;
-  align-items: center;
-}
-.app:not(.mobile) .records-date-picker {
-  flex: 0 0 126px;
-}
-.app:not(.mobile) .records-date-trigger {
-  width: 100%;
-  white-space: nowrap;
-}
-.app:not(.mobile) .records-date-trigger > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.app:not(.mobile) .records-filter-inline {
-  flex: 1 1 0;
-  min-width: 0;
-}
-.app:not(.mobile) .records-toolbar {
-  margin-bottom: 0;
-  width: 100%;
-  min-width: 0;
-}
-.app:not(.mobile) .records-toolbar input,
-.app:not(.mobile) .records-toolbar select,
-.app:not(.mobile) .records-toolbar button,
-.app:not(.mobile) .records-toolbar .record-filter-trigger,
-.app:not(.mobile) .records-mismatch-filter,
-.app:not(.mobile) .records-date-trigger {
-  font-size: 13px;
-}
-.app:not(.mobile) .records-date-trigger,
-.app:not(.mobile) .records-toolbar > button[type="submit"] {
-  min-height: 28px;
-  padding: 3px 6px;
-  line-height: 20px;
-}
 .records-toolbar .records-model-filter {
   width: 0;
   min-width: 84px;
@@ -327,20 +286,6 @@
   border-color: transparent;
   padding: 4px 9px;
 }
-.app:not(.mobile) .records-actions > .icon-button,
-.app:not(.mobile) .records-actions > .new-records,
-.app:not(.mobile) .records-column-menu summary {
-  height: 28px;
-  min-height: 28px;
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.app:not(.mobile) .records-actions > .icon-button {
-  width: 28px;
-  padding: 0;
-}
 .records-scroll {
   flex: 1;
   min-height: 0;
@@ -349,82 +294,6 @@
   border-radius: 9px;
   background: var(--surface);
   overscroll-behavior: contain;
-}
-.records-table {
-  width: max-content;
-  border-collapse: separate;
-  border-spacing: 0;
-  font-size: 12px;
-}
-.records-table th {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  font-size: 11px;
-  color: var(--muted);
-  font-weight: 500;
-  white-space: nowrap;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
-  height: 26px;
-  padding: 4px 6px;
-}
-.records-table td {
-  padding: 4px 6px;
-  border-top: 0;
-  border-bottom: 1px solid var(--line);
-  vertical-align: middle;
-  height: 36px;
-  font-variant-numeric: tabular-nums;
-}
-.records-table td small {
-  margin-top: 0;
-}
-.records-table tr:last-child td {
-  border-bottom: 0;
-}
-.records-table tbody tr {
-  cursor: pointer;
-}
-.records-table tbody tr:hover td {
-  background: var(--hover);
-}
-.records-table .record-user {
-  position: sticky;
-  left: 0;
-  width: 150px;
-  min-width: 150px;
-  max-width: 150px;
-  background: var(--surface);
-  border-right: 1px solid var(--line);
-  z-index: 1;
-}
-.records-table th.record-user {
-  z-index: 3;
-}
-.record-user button {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  min-height: 0;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  padding: 0;
-  width: 120px;
-  font-size: 12px;
-  color: var(--ink);
-}
-.record-user button > span {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.record-user small {
-  color: var(--muted);
-  font-size: 10px;
 }
 .record-ellipsis {
   display: block;
@@ -537,11 +406,6 @@
 .record-stack small {
   color: var(--muted);
   font-size: 10px;
-}
-.records-table .record-col-tokens,
-.records-table .record-col-cost,
-.records-table .record-col-latency {
-  text-align: right;
 }
 .record-tokens {
   display: grid;
@@ -759,13 +623,6 @@
 .mobile .records-scroll {
   min-height: 200px;
 }
-.mobile .record-user {
-  position: static;
-  min-width: 125px;
-}
-.mobile .records-table th.record-user {
-  position: sticky;
-}
 .records-view,
 .record-detail {
   --record-good: #04815e;
@@ -818,83 +675,6 @@
   }
 }
 
-/* Desktop table density. Cards and detail typography keep their own sizing. */
-.app:not(.mobile) .records-table th {
-  height: 26px;
-  padding: 3px 4px;
-}
-.app:not(.mobile) .records-table td {
-  height: 32px;
-  padding: 3px 4px;
-}
-.app:not(.mobile) .records-table .record-user {
-  width: 110px;
-  min-width: 110px;
-  max-width: 110px;
-}
-.app:not(.mobile) .records-table .record-user button {
-  width: 96px;
-}
-.app:not(.mobile) .records-table .record-ellipsis {
-  width: 100%;
-  max-width: 100px;
-}
-.app:not(.mobile) .records-table .record-col-account,
-.app:not(.mobile) .records-table .record-col-api_key {
-  min-width: 88px;
-}
-.app:not(.mobile) .records-table .record-col-account .record-ellipsis,
-.app:not(.mobile) .records-table .record-key {
-  width: 80px;
-}
-.app:not(.mobile) .records-table .record-col-model {
-  min-width: 124px;
-}
-.app:not(.mobile) .records-table .record-route {
-  width: 116px;
-}
-.app:not(.mobile) .records-table .record-route > div {
-  min-width: 0;
-}
-.app:not(.mobile) .records-table .record-route > div > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.app:not(.mobile) .records-table .record-route small {
-  flex-shrink: 0;
-}
-.app:not(.mobile) .records-table .record-col-type {
-  min-width: 72px;
-}
-.app:not(.mobile) .records-table .record-type-badges {
-  max-width: 92px;
-}
-.app:not(.mobile) .records-table .record-type-badge {
-  font-size: 10px;
-  padding: 0 5px;
-}
-.app:not(.mobile) .records-table .record-tokens {
-  min-width: 118px;
-  font-size: 11px;
-}
-.app:not(.mobile) .records-table .record-money {
-  min-width: 80px;
-  white-space: nowrap;
-}
-.app:not(.mobile) .records-table .record-latency {
-  min-width: 104px;
-}
-.app:not(.mobile) .records-table .record-col-user_agent {
-  min-width: 120px;
-}
-.app:not(.mobile) .records-table .record-col-ip {
-  min-width: 108px;
-}
-.app:not(.mobile) .records-table .record-col-request_id,
-.app:not(.mobile) .records-table .record-col-upstream_id {
-  min-width: 130px;
-}
 .record-cost-trigger {
   min-height: 0;
   border: 0;
@@ -994,22 +774,6 @@
   right: 6px;
   color: var(--muted);
   pointer-events: none;
-}
-.app:not(.mobile) .records-date-trigger,
-.app:not(.mobile) .records-toolbar .record-filter-trigger,
-.app:not(.mobile) .records-toolbar .records-platform-select select,
-.app:not(.mobile) .records-toolbar .records-model-filter,
-.app:not(.mobile) .records-toolbar > button[type="submit"] {
-  box-sizing: border-box;
-  height: 28px;
-  min-height: 28px;
-  font-family: inherit;
-  font-size: 13px;
-  line-height: 20px;
-  padding: 3px 8px;
-}
-.app:not(.mobile) .records-toolbar .records-platform-select select {
-  padding-right: 28px;
 }
 .records-date-trigger:focus-visible,
 .records-toolbar .record-filter-trigger:focus-visible,

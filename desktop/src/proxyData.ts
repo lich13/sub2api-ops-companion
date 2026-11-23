@@ -1,30 +1,21 @@
 import { api, preview } from "./bridge";
+import type {
+  ProxyLogin as ProxyCredentials,
+  ProxyPageReply,
+  ProxyQualityCheck,
+  ProxyQualityReply,
+  ProxyRowReply,
+  ProxyTestReply,
+} from "./protocol";
+export type {
+  ProxyLogin as ProxyCredentials,
+  AccountIdentity as ProxyAccount,
+  ProxyImportReply as ImportResult,
+} from "./protocol";
 export type ProxyRow = {
-  id: number;
-  name: string;
-  protocol: string;
-  host: string;
-  port: number;
-  status: string;
-  username_set: boolean;
-  password_set: boolean;
-  created_at?: string | null;
-  expires_at?: string | null;
-  fallback_mode?: string | null;
-  backup_proxy_id?: number | null;
-  expiry_warn_days?: number | null;
-  account_count?: number | null;
-  latency_ms?: number | null;
-  latency_status?: string | null;
-  ip_address?: string | null;
-  country?: string | null;
-  country_code?: string | null;
-  region?: string | null;
-  city?: string | null;
-  quality_status?: string | null;
-  quality_score?: number | null;
-  quality_grade?: string | null;
-  quality_checked?: number | null;
+  [K in keyof ProxyRowReply]: undefined extends ProxyRowReply[K]
+    ? ProxyRowReply[K] | null
+    : ProxyRowReply[K];
 };
 export type ProxyInput = {
   name: string;
@@ -39,43 +30,27 @@ export type ProxyInput = {
   backup_proxy_id?: number | null;
   expiry_warn_days?: number;
 };
-export type ProxyPage = {
+export type ProxyPage = Omit<ProxyPageReply, "items"> & {
   items: ProxyRow[];
-  page: number;
-  page_size: number;
-  total: number;
-  pages: number;
 };
-export type {
-  ProxyLogin as ProxyCredentials,
-  AccountIdentity as ProxyAccount,
-} from "./protocol";
-import type { ProxyLogin as ProxyCredentials } from "./protocol";
-export type ConnectionResult = {
-  success: boolean;
-  message: string;
+export type ConnectionResult = Omit<ProxyTestReply, "latency_ms"> & {
   latency_ms: number | null;
-  ip_address: string;
-  city: string;
-  region: string;
-  country: string;
-  country_code: string;
 };
-export type QualityResult = {
-  score: number;
-  grade: string;
-  summary: string;
-  exit_ip: string;
-  country: string;
+export type QualityCheck = Omit<
+  ProxyQualityCheck,
+  "status" | "latency_ms" | "http_status"
+> & {
+  status: "pass" | "warn" | "fail" | "challenge";
+  http_status: number | null;
+  latency_ms: number | null;
+};
+export type QualityResult = Omit<
+  ProxyQualityReply,
+  "country_code" | "base_latency_ms" | "items"
+> & {
+  country_code?: string;
   base_latency_ms: number | null;
-  checked_at?: number;
-  items: {
-    target: string;
-    status: "pass" | "warn" | "fail" | "challenge";
-    http_status: number | null;
-    latency_ms: number | null;
-    message: string;
-  }[];
+  items: QualityCheck[];
 };
 export type ImportData = {
   exported_at?: string;
@@ -83,12 +58,6 @@ export type ImportData = {
   version?: number;
   proxies: unknown[];
   accounts?: never[];
-};
-export type ImportResult = {
-  proxy_created: number;
-  proxy_reused: number;
-  proxy_failed: number;
-  errors: { name: string; message: string }[];
 };
 export const proxyAddress = (p: Pick<ProxyRow, "host" | "port">) =>
   `${p.host.includes(":") ? `[${p.host.replace(/^\[|\]$/g, "")}]` : p.host}:${p.port}`;

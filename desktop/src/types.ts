@@ -1,207 +1,272 @@
-export type DegradationMark = {
-  marked?: boolean;
-  marked_at?: string | null;
-  version?: string;
-  error?: string;
+import type {
+  AccountBlockerRecord,
+  AccountRecord,
+  AutoResetCreditStateRecord,
+  ConnectionReply,
+  DegradationMarkRecord,
+  GroupRecord,
+  KeepaliveReply,
+  KeyQuotaRecord,
+  KeyQuotaUsageRecord,
+  ModelDetectionSummaryRecord,
+  OpsErrorRecord,
+  QuotaPlanRecord,
+  QuotaSubscriptionRecord,
+  RecentAccountRecord,
+  RecoveryMonitorStateRecord,
+  RecoveryRecord,
+  RecoveryResetCreditRecord,
+  ResetCreditsInfoRecord,
+  SnapshotRecord,
+  UsageBalanceRecord,
+  UsageStatsRecord,
+  UsageSummaryRecord,
+  UsageWindowRecord,
+} from "./protocol";
+export type {
+  TestEventRecord as TestEvent,
+  UsageStatsRecord as UsageStats,
+} from "./protocol";
+
+type WithNull<T, K extends keyof T> = Omit<T, K> & {
+  [P in K]?: Exclude<T[P], undefined> | null;
 };
-export type AccountKeepalive = {
-  account_id: number;
-  enabled: boolean;
-  generation: number;
-  version: string;
-  status: string;
-  reason: string;
-  paused_reason: string;
+type WithRequired<T, K extends keyof T> = Omit<T, K> & Required<Pick<T, K>>;
+
+export type DegradationMark = WithNull<DegradationMarkRecord, "marked_at">;
+export type AccountKeepalive = Omit<
+  KeepaliveReply,
+  "last_restore_at" | "next_allowed_at"
+> & {
   last_restore_at: string | null;
-  restore_count: number;
-  budget_used: number;
   next_allowed_at: string | null;
 };
-export type Account = {
+export type AccountBlocker = WithRequired<
+  AccountBlockerRecord,
+  "code" | "label"
+>;
+export type ModelDetectionSummary = Omit<
+  WithNull<
+    WithRequired<
+      ModelDetectionSummaryRecord,
+      "enabled" | "interval_minutes" | "model_id" | "version"
+    >,
+    | "effective_interval_minutes"
+    | "recent_request_count"
+    | "last_automatic_started_at"
+    | "next_at"
+    | "last_result"
+  >,
+  "schedule_mode"
+> & {
+  schedule_mode?: "fixed" | "smart";
+};
+export type Account = Omit<
+  WithRequired<
+    AccountRecord,
+    "status" | "error_message" | "success_after_error"
+  >,
+  | "degradation_mark"
+  | "model_detection"
+  | "parent_account_id"
+  | "concurrency"
+  | "load_factor"
+  | "blockers"
+  | "last_success_at"
+  | "last_called_at"
+  | "last_error_at"
+  | "last_error_id"
+  | "last_error_code"
+  | "last_error_status"
+  | "usage_windows"
+  | "usage"
+  | "recovery_monitor"
+  | "auto_reset_credit"
+> & {
   degradation_mark?: DegradationMark;
-  recovery_selectable?: boolean;
-  model_detection?: {
-    schedule_mode?: "fixed" | "smart";
-    min_interval_minutes?: number;
-    effective_interval_minutes?: number | null;
-    recent_request_count?: number | null;
-    last_automatic_started_at?: string | null;
-    enabled: boolean;
-    interval_minutes: number;
-    model_id: string;
-    version: string;
-    next_at?: string | null;
-    status: string;
-    reason?: string;
-    last_result?: {
-      status?: string;
-      report?: { prediction_name?: string };
-      completed_at?: string;
-    } | null;
-  };
-  id: number;
+  model_detection?: ModelDetectionSummary;
   parent_account_id?: number | null;
-  name: string;
-  priority: number;
   concurrency?: number | null;
   load_factor?: number | null;
-  settings_capabilities?: Record<string, { editable: boolean; reason: string }>;
-  platform: string;
-  type: string;
-  status: string;
-  schedulable: boolean;
-  available: boolean;
-  group_ids: number[];
-  blockers: { code: string; label: string; until?: string }[];
-  recoverable?: boolean;
-  version: string;
-  operation_versions: Record<string, string>;
+  blockers: AccountBlocker[];
   last_success_at: string | null;
   last_called_at?: string | null;
   last_error_at: string | null;
   last_error_id: number | null;
   last_error_code: string | null;
   last_error_status: number | null;
-  error_message: string;
-  success_after_error: boolean;
   usage_windows: UsageWindow[];
   usage?: UsageSummary;
-  recovery_monitor?: {
-    status: string;
-    label: string;
-    reason: string;
-    next_at?: string | null;
-    attempt_count?: number;
-    next_retry_at?: string | null;
-  } | null;
-  auto_reset_credit?: {
-    trigger_at?: string | null;
-    consume_deadline_at?: string | null;
-    verification_deadline_at?: string | null;
-    completed_at?: string | null;
-    outcome?: string | null;
-    notification_status?: string | null;
-    notification_attempts?: number;
-    evidence_source?: "upstream_error" | "account_rate_limit";
-    evidence_at?: string | null;
-    stage: string;
-    label: string;
-    error: string;
-    next_at?: string | null;
-    attempt_at?: string | null;
-    test_completed_at?: string | null;
-    recovered_at?: string | null;
-  } | null;
+  recovery_monitor?: WithNull<
+    RecoveryMonitorStateRecord,
+    "next_at" | "next_retry_at"
+  > | null;
+  auto_reset_credit?:
+    | (Omit<
+        WithNull<
+          AutoResetCreditStateRecord,
+          | "trigger_at"
+          | "consume_deadline_at"
+          | "verification_deadline_at"
+          | "completed_at"
+          | "outcome"
+          | "notification_status"
+          | "evidence_at"
+          | "next_at"
+          | "attempt_at"
+          | "test_completed_at"
+          | "recovered_at"
+        >,
+        "evidence_source"
+      > & {
+        evidence_source?: "upstream_error" | "account_rate_limit";
+      })
+    | null;
 };
 export type UsageAction =
   "query_usage" | "query_reset_credits" | "reset_quota" | "probe_quota";
-export type UsageStats = {
-  requests: number;
-  tokens: number;
-  cost: number;
-  standard_cost: number;
-  user_cost: number;
-};
-export type QuotaPlan = {
-  name: string;
+export type QuotaPlan = Omit<
+  QuotaPlanRecord,
+  "remaining" | "used" | "total" | "reset_at"
+> & {
   remaining: number | null;
   used: number | null;
   total: number | null;
-  unit: string;
-  unlimited: boolean;
   reset_at: string | null;
 };
-export type KeyQuota = {
+export type KeyQuota = Omit<
+  KeyQuotaRecord,
+  | "state"
+  | "source"
+  | "checked_at"
+  | "success_at"
+  | "retry_at"
+  | "next_refresh_at"
+  | "error"
+  | "key_status"
+  | "plans"
+  | "subscriptions"
+  | "expires_at"
+  | "expires_at_unix"
+  | "today"
+  | "total_usage"
+> & {
   state: "idle" | "loading" | "ok" | "error" | "unsupported";
   source: "sub2api" | "newapi" | null;
   checked_at: number | null;
   success_at: number | null;
   retry_at: number | null;
   next_refresh_at: number | null;
-  stale: boolean;
   error: string | null;
   key_status: string | null;
   plans: QuotaPlan[];
-  subscriptions: {
+  subscriptions: (Omit<
+    QuotaSubscriptionRecord,
+    "name" | "status" | "active" | "expires_at" | "plans"
+  > & {
     name: string | null;
     status: string | null;
     active: boolean | null;
     expires_at: string | null;
     plans: QuotaPlan[];
-  }[];
+  })[];
   expires_at: string | null;
   expires_at_unix: number | null;
-  today: {
-    requests: number | null;
-    tokens: number | null;
-    cost: number | null;
-  } | null;
-  total_usage: {
-    requests: number | null;
-    tokens: number | null;
-    cost: number | null;
-  } | null;
+  today:
+    | {
+        [K in keyof KeyQuotaUsageRecord]-?: Exclude<
+          KeyQuotaUsageRecord[K],
+          undefined
+        > | null;
+      }
+    | null;
+  total_usage:
+    | {
+        [K in keyof KeyQuotaUsageRecord]-?: Exclude<
+          KeyQuotaUsageRecord[K],
+          undefined
+        > | null;
+      }
+    | null;
 };
-export type UsageSummary = {
+export type UsageSummary = Omit<
+  UsageSummaryRecord,
+  | "stats_status"
+  | "key_quota"
+  | "branch"
+  | "status"
+  | "balances"
+  | "windows"
+  | "today"
+  | "actions"
+  | "reset_credits"
+  | "prepaid_balance"
+  | "monthly_limit"
+  | "monthly_used"
+> & {
   stats_status?: "ok" | "error";
   key_quota?: KeyQuota;
   branch:
     "none" | "apikey" | "openai_oauth" | "grok_free" | "grok_paid" | "native";
-  native_read?: boolean;
   status?: "known" | "unavailable" | "error" | "authorization_required";
-  message?: string;
-  balances?: {
-    currency: string;
-    balance: number;
+  balances?: (Omit<UsageBalanceRecord, "observed_at" | "status"> & {
     observed_at?: string | null;
     status?: UsageWindow["status"];
-  }[];
+  })[];
   windows: UsageWindow[];
-  today: UsageStats | null;
+  today: UsageStatsRecord | null;
   actions: UsageAction[];
-  reset_credits: {
-    available: number | null;
-    expires_at: string[];
-    observed_at: string | null;
-  } | null;
+  reset_credits:
+    | (Omit<ResetCreditsInfoRecord, "available" | "observed_at"> & {
+        available: number | null;
+        observed_at: string | null;
+      })
+    | null;
   prepaid_balance?: number | null;
   monthly_limit?: number | null;
   monthly_used?: number | null;
 };
-export type UsageWindow = {
-  window_minutes?: number;
-  estimated?: boolean;
-  key: string;
-  label: string;
+export type UsageWindow = Omit<
+  UsageWindowRecord,
+  | "used_percent"
+  | "reset_at"
+  | "observed_at"
+  | "status"
+  | "used"
+  | "limit"
+  | "remaining"
+  | "color"
+  | "stats"
+  | "estimated_total_cost"
+> & {
   used_percent: number | null;
   reset_at: string | null;
   observed_at: string | null;
   status: "known" | "unknown" | "stale" | "error";
-  source: string;
   used?: number | null;
   limit?: number | null;
   remaining?: number | null;
   color?: "indigo" | "emerald" | "purple";
-  stats?: UsageStats | null;
+  stats?: UsageStatsRecord | null;
   estimated_total_cost?: number | null;
 };
-export type RecentAccount = {
-  log_id: number;
-  account_id: number;
-  account_name: string;
-  model: string;
-  upstream_model: string;
+export type RecentAccount = Omit<
+  WithRequired<
+    RecentAccountRecord,
+    "log_id" | "account_id" | "account_name" | "model" | "upstream_model"
+  >,
+  "called_at"
+> & {
   called_at: string | null;
 };
-export type Group = {
-  id: number;
-  sort_order?: number;
-  name: string;
-  platform: string;
+export type Group = Omit<
+  WithRequired<
+    GroupRecord,
+    "platform" | "account_name" | "model" | "upstream_model"
+  >,
+  "account_id" | "called_at" | "recent_accounts"
+> & {
   account_id: number | null;
-  account_name: string;
-  model: string;
-  upstream_model: string;
   called_at: string | null;
   recent_accounts: RecentAccount[];
 };
@@ -239,55 +304,50 @@ export function currentGroups(groups: Group[], accounts: Account[]): Group[] {
     );
 }
 
-export type OpsError = {
-  id: number;
+export type OpsError = Omit<
+  WithRequired<
+    OpsErrorRecord,
+    | "id"
+    | "account_name"
+    | "group_name"
+    | "created_at"
+    | "model"
+    | "requested_model"
+    | "upstream_model"
+    | "status_code"
+    | "provider_error_code"
+    | "message"
+    | "request_id"
+    | "resolved"
+  >,
+  "account_id" | "group_id" | "upstream_status_code" | "notification"
+> & {
   account_id: number | null;
-  account_name: string;
   group_id: number | null;
-  group_name: string;
-  created_at: string;
-  model: string;
-  requested_model: string;
-  upstream_model: string;
-  status_code: number;
   upstream_status_code: number | null;
-  provider_error_code: string;
-  message: string;
-  request_id: string;
-  resolved: boolean;
-  error_owner?: string;
-  error_phase?: string;
-  error_source?: string;
-  disposition_notification?: { status: string };
-  content?: string;
-  content_limited?: boolean;
-  notification?: {
-    status: string;
-    reason?: string;
-    at?: string;
-    attempts?: number;
-    next_at?: string | null;
-  };
+  notification?: WithNull<
+    NonNullable<OpsErrorRecord["notification"]>,
+    "next_at"
+  >;
 };
-export type Recovery = {
-  id: number;
-  account_id: number;
-  account_name: string;
-  model_id: string;
+export type Recovery = Omit<
+  WithRequired<
+    RecoveryRecord,
+    "id" | "account_id" | "account_name" | "model_id" | "legacy"
+  >,
+  "test_completed_at" | "recovered_at" | "kind" | "reset_credit"
+> & {
   test_completed_at: string | null;
   recovered_at: string | null;
-  legacy: boolean;
   kind?: "quota_recovery" | "reset_credit" | "connection_test";
-  result_status?: string;
-  attempt_count?: number;
-  reset_credit?: {
-    consumed?: boolean;
-    completed_at: string;
+  reset_credit?: Omit<RecoveryResetCreditRecord, "verification_method"> & {
     verification_method: "connection" | "model";
   };
 };
-export type Snapshot = {
-  observed_at: string;
+export type Snapshot = Omit<
+  SnapshotRecord,
+  "accounts" | "groups" | "errors" | "recoveries"
+> & {
   accounts: Account[];
   groups: Group[];
   errors: OpsError[];
@@ -320,26 +380,28 @@ export function defaultConnectionName(baseUrl: string): string {
   }
 }
 export function savedConnections(preferences: Preferences): SavedConnection[] {
-  const seen = new Set<string>();
-  const list: SavedConnection[] = [];
-  for (const item of preferences.connections ?? []) {
-    const url = item.base_url.trim().replace(/\/+$/, "");
-    if (!url || seen.has(url)) continue;
-    seen.add(url);
-    list.push({
-      name: item.name.trim() || defaultConnectionName(url),
-      base_url: url,
-    });
+  if (preferences.connections?.length) {
+    return preferences.connections.map((item) => ({
+      name: item.name || defaultConnectionName(item.base_url),
+      base_url: item.base_url,
+    }));
   }
-  const active = preferences.base_url.trim().replace(/\/+$/, "");
-  if (active && !seen.has(active)) {
-    list.push({
-      name: defaultConnectionName(active),
-      base_url: active,
-    });
-  }
-  return list;
+  return preferences.base_url
+    ? [
+        {
+          name: defaultConnectionName(preferences.base_url),
+          base_url: preferences.base_url,
+        },
+      ]
+    : [];
 }
+export type UpstreamConnection = Omit<
+  ConnectionReply,
+  "http_status" | "checked_at"
+> & {
+  http_status: number | null;
+  checked_at: string | null;
+};
 export type ViewState = {
   platform?: "macos" | "android";
   foreground?: boolean;
@@ -348,14 +410,7 @@ export type ViewState = {
   connected: boolean;
   online: boolean;
   error: string;
-  upstream_connection?: {
-    state: string;
-    endpoint: string;
-    http_status: number | null;
-    message: string;
-    retryable: boolean;
-    checked_at: string | null;
-  } | null;
+  upstream_connection?: UpstreamConnection | null;
   snapshot: Snapshot | null;
   preferences: Preferences;
 };
@@ -396,18 +451,6 @@ export function sortPriority(accounts: Account[], ascending = true): Account[] {
     (a, b) => (ascending ? 1 : -1) * (a.priority - b.priority) || a.id - b.id,
   );
 }
-export type TestEvent = {
-  type: string;
-  text?: string;
-  model?: string;
-  error?: string;
-  success?: boolean;
-  image_url?: string;
-  audio_url?: string;
-  video_url?: string;
-  duration_ms?: number;
-  completed_at?: string;
-};
 export type QuotaBatch = {
   id: string;
   status: string;

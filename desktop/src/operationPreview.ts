@@ -181,7 +181,10 @@ export async function operationPreview(
             try {
               if (action === "test")
                 job.result = {
-                  requested_model: payload.model_id,
+                  requested_model:
+                    typeof payload.model_id === "string"
+                      ? payload.model_id
+                      : undefined,
                   actual_model:
                     account.platform === "grok" ? "grok" : "gpt-6-luna",
                   success: account.status !== "error",
@@ -514,8 +517,12 @@ export function templateBatchPreview(
         account_name: account?.name ?? "账号",
         action: "account_template",
         requested: {
-          template_id: body.template_id,
-          template_version: body.template_version,
+          template_id:
+            typeof body.template_id === "string" ? body.template_id : undefined,
+          template_version:
+            typeof body.template_version === "string"
+              ? body.template_version
+              : undefined,
         },
         status: !eligible
           ? "failed"

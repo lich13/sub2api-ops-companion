@@ -117,7 +117,7 @@ export function priorityPreview(
       parallelism < 1 ||
       parallelism > 8 ||
       body.expected_version !== version(accounts, platform) ||
-      !samePriorityAccounts(ids, selected as unknown as PriorityAccount[])
+      !samePriorityAccounts(ids, selected)
     )
       throw new Error("账号集合或优先级已变化，请重新核对");
     const byId = new Map(selected.map((a) => [a.id, a]));

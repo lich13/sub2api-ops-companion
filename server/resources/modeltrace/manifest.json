@@ -1,13 +1,13 @@
 {
   "repository": "Hanmo123/ModelTrace",
   "branch": "hanmo",
-  "revision": "477d59d525c3cd31fe56e4e63958fbc4574ca187",
+  "revision": "c5ff880f517a606bbe1aced238ce48c3a7bec7ae",
   "analyzerVersion": 1,
   "files": {
     "bank": {
       "path": "data/unified_bank.json",
-      "sha256": "2c5f065333558565cc8b1a01093aef259cac4909b9073f068da6a604730687ad",
-      "gitBlob": "ede2573fb4e1c0f432e035c60caadbb610fc8b0b"
+      "sha256": "682281d06d0ab8d8d2a3162f77964cf87f13ce93f15b8f137d0139860fc3119c",
+      "gitBlob": "d3763337ed160452f2eebd17fbc039223c5a12f2"
     },
     "core": {
       "path": "static/fingerprint-core.js",
@@ -19,8 +19,11 @@
     },
     "challenge": {
       "path": "static/challenge-browser.js",
-      "sha256": "4a3868c9fe237cabde92f0d2bffaf32118f558f7a43fcc336874fecd2bf6be39",
-      "gitBlob": "411ef706a8439aa07fbbc3a4e4648b3cd9e4500a"
+      "sha256": "af5c70254afd01f40298373e348588ddd77f7e021cbcc101898ed06c2491e70c",
+      "gitBlob": "d9846a92684a10a0fd760f61e89207cbda671b8b",
+      "compatibleGitBlobs": [
+        "411ef706a8439aa07fbbc3a4e4648b3cd9e4500a"
+      ]
     }
   }
 }

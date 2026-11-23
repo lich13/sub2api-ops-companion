@@ -49,8 +49,6 @@ public struct RustBridgeError: LocalizedError, Sendable, Equatable {
     public var errorDescription: String? { message }
 }
 
-private struct EmptyResponse: Decodable, Sendable {}
-
 // MARK: - RustBridge Singleton
 
 public final class RustBridge: Sendable {

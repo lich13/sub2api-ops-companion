@@ -95,11 +95,6 @@ public final class OperationStore {
         }
     }
 
-    public func stopPolling() {
-        pollingTask?.cancel()
-        pollingTask = nil
-    }
-
     private struct OperationListEnvelope: Decodable, Sendable {
         let items: [Operation]
     }
@@ -167,7 +162,7 @@ public final class OperationStore {
         initial: Operation,
         onEvent: (@MainActor (TestEvent) -> Void)? = nil,
         onUpdate: (@MainActor (Operation) -> Void)? = nil
-    ) async throws -> [String: JSONValue] {
+    ) async throws -> OperationReceipt? {
         let currentEpoch = epoch
         var job = initial
         var after = 0
@@ -188,7 +183,7 @@ public final class OperationStore {
                     continue
                 }
                 if job.status == "completed" {
-                    return job.result ?? [:]
+                    return job.result
                 }
                 let fallback: String
                 switch job.status {
@@ -233,7 +228,7 @@ public final class OperationStore {
         payload: [String: JSONValue],
         expectedVersion: String? = nil,
         onUpdate: (@MainActor (Operation) -> Void)? = nil
-    ) async throws -> [String: JSONValue] {
+    ) async throws -> OperationReceipt? {
         let job = try await submitOperation(account: account, action: action, payload: payload, expectedVersion: expectedVersion)
         let result = try await followOperation(initial: job, onUpdate: onUpdate)
         Task { try? await RustBridge.shared.commandVoid("refresh") }

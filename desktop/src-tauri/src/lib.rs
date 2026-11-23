@@ -1,5 +1,3 @@
-mod account_creation;
-mod key_quota;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -20,8 +18,6 @@ use tokio::sync::{watch, Mutex, Notify};
 
 mod api_http;
 mod credentials;
-mod priority_api;
-mod proxy_management;
 use api_http::{http_detailed, HttpFailure};
 
 const RELEASES: &str = "https://github.com/lich13/sub2api-ops-companion/releases";
@@ -227,10 +223,6 @@ fn save_preferences(path: &Path, value: &Preferences) -> Result<(), String> {
     file.sync_all().map_err(|_| "无法同步设置")?;
     std::fs::rename(&temp, path).map_err(|_| "无法替换设置")?;
     Ok(())
-}
-
-fn allowed_request(method: &str, path: &str) -> bool {
-    sub2ops_protocol::routes::client_endpoint(method, path).is_some()
 }
 
 fn publish(_app: &tauri::AppHandle, value: &ViewState) {
@@ -545,7 +537,7 @@ async fn api_request(
     path: String,
     body: Option<Value>,
 ) -> Result<Value, HttpFailure> {
-    if !allowed_request(&method, &path) {
+    if sub2ops_protocol::routes::client_endpoint(&method, &path).is_none() {
         return Err("客户端不允许此操作".into());
     }
     #[cfg(target_os = "macos")]
@@ -649,7 +641,7 @@ async fn preferences(
 
 #[cfg_attr(mobile, tauri::command)]
 async fn open_authorization_url(app: tauri::AppHandle, url: String) -> Result<(), HttpFailure> {
-    if !account_creation::authorization_url(&url) {
+    if !sub2ops_protocol::creation::authorization_url(&url) {
         return Err("授权链接必须是 HTTPS 地址".into());
     }
     app.opener()
@@ -870,10 +862,7 @@ fn active_polling_visible(state: &Runtime) -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init());
+    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
     #[cfg(desktop)]
     let builder = builder
         .plugin(tauri_plugin_single_instance::init(|_app, args, _| {
@@ -889,7 +878,10 @@ pub fn run() {
                 .build(),
         );
     #[cfg(mobile)]
-    let builder = builder.plugin(credentials::plugin());
+    let builder = builder
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(credentials::plugin());
     let builder = builder.setup(|app| {
         let path = app.path().app_config_dir()?.join("preferences.json");
         let prefs = normalize_preferences(
@@ -1048,24 +1040,6 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn configuration_routes_are_explicit_and_reject_arbitrary_targets() {
-        for (method, path) in [
-            ("GET", "/sub2api-config"),
-            ("GET", "/sub2api-config/operation"),
-            ("POST", "/sub2api-config/validate"),
-            ("POST", "/sub2api-config/apply"),
-        ] {
-            assert!(super::allowed_request(method, path));
-        }
-        for (method, path) in [
-            ("DELETE", "/sub2api-config"),
-            ("POST", "/sub2api-config/operation"),
-            ("POST", "/sub2api-config/restart"),
-        ] {
-            assert!(!super::allowed_request(method, path));
-        }
-    }
     use super::*;
     fn runtime() -> Runtime {
         Runtime {
@@ -1114,91 +1088,6 @@ mod tests {
             7
         );
     }
-    #[test]
-    fn account_settings_routes_are_exact_and_read_only() {
-        for path in ["/accounts/7/settings", "/proxies"] {
-            assert!(allowed_request("GET", path), "{path}");
-            for method in ["POST", "PUT", "DELETE"] {
-                assert!(!allowed_request(method, path), "{method} {path}");
-            }
-        }
-        for path in [
-            "/accounts/0/settings",
-            "/accounts/-1/settings",
-            "/accounts/a/settings",
-            "/accounts/7/settings/",
-            "/accounts/7/settings/../credentials",
-            "/accounts/7%2fsettings",
-            "/proxies/all",
-            "/accounts/18446744073709551616/settings",
-        ] {
-            assert!(!allowed_request("GET", path), "{path}");
-        }
-    }
-
-    #[test]
-    fn account_keepalive_routes_allow_only_exact_get_and_put() {
-        let path = "/accounts/7/keepalive";
-        for method in ["GET", "PUT"] {
-            assert!(allowed_request(method, path), "{method} {path}");
-        }
-        for method in ["POST", "PATCH", "DELETE"] {
-            assert!(!allowed_request(method, path), "{method} {path}");
-        }
-        for malformed in [
-            "/accounts/0/keepalive",
-            "/accounts/-1/keepalive",
-            "/accounts/+7/keepalive",
-            "/accounts/a/keepalive",
-            "/accounts/7/keepalive/",
-            "/accounts/7/keepalive/../credentials",
-            "/accounts/7%2fkeepalive",
-            "/accounts/18446744073709551616/keepalive",
-        ] {
-            assert!(!allowed_request("GET", malformed), "GET {malformed}");
-            assert!(!allowed_request("PUT", malformed), "PUT {malformed}");
-        }
-    }
-
-    #[test]
-    fn proxy_diagnostic_routes_are_exact_post_only() {
-        for suffix in ["test", "quality-check"] {
-            let path = format!("/proxies/7/{suffix}");
-            assert!(allowed_request("POST", &path), "{path}");
-            for method in ["GET", "PUT", "DELETE"] {
-                assert!(!allowed_request(method, &path), "{method} {path}");
-            }
-        }
-        for path in [
-            "/proxies/0/test",
-            "/proxies/-1/test",
-            "/proxies/7/unknown",
-            "/proxies/7/test/extra",
-            "/proxies/7/test/../credentials",
-            "/proxies/18446744073709551616/quality-check",
-        ] {
-            assert!(!allowed_request("POST", path), "{path}");
-        }
-    }
-
-    #[test]
-    fn error_categories_have_exact_read_only_routes() {
-        for path in [
-            "/errors",
-            "/errors?category=degradation",
-            "/errors?category=other&before_id=25&limit=50",
-            "/errors/25?category=other",
-        ] {
-            assert!(allowed_request("GET", path), "{path}");
-            assert!(!allowed_request("POST", path), "{path}");
-        }
-        for path in [
-            "/errors/0?category=other",
-            "/errors/25?category=other#fragment",
-        ] {
-            assert!(!allowed_request("GET", path), "{path}");
-        }
-    }
 
     #[test]
     fn updates_select_newer_signed_platform_package_only() {
@@ -1241,105 +1130,6 @@ mod tests {
             format!("{RELEASES}/tag/desktop-v1.2.3")
         );
         assert!(latest_release_page(&serde_json::json!([])).is_none());
-    }
-    #[test]
-    fn templates_allow_legacy_and_generated_ids_with_explicit_methods() {
-        let id = "custom-0123456789abcdef01234567";
-        assert!(allowed_request("POST", "/account-templates"));
-        assert!(!allowed_request("POST", "/account-templates/custom"));
-        for method in ["PUT", "DELETE"] {
-            assert!(allowed_request(method, &format!("/account-templates/{id}")));
-            assert!(!allowed_request(
-                method,
-                &format!("/account-templates/custom/{id}")
-            ));
-            for legacy in ["full", "degraded", "takeover"] {
-                assert!(allowed_request(
-                    method,
-                    &format!("/account-templates/{legacy}")
-                ));
-            }
-            for suffix in [
-                "unknown",
-                "custom-not-an-id",
-                "custom-0123456789ABCDEF01234567",
-            ] {
-                assert!(!allowed_request(
-                    method,
-                    &format!("/account-templates/{suffix}")
-                ));
-            }
-        }
-        assert!(!allowed_request("GET", &format!("/account-templates/{id}")));
-    }
-    #[test]
-    fn template_batch_routes_require_the_declared_method() {
-        let id = "0123456789abcdef0123456789abcdef";
-        assert!(allowed_request("POST", "/account-templates/apply"));
-        assert!(allowed_request(
-            "GET",
-            &format!("/account-operations?batch_id={id}")
-        ));
-        assert!(!allowed_request("PUT", "/account-templates/apply"));
-        assert!(!allowed_request(
-            "POST",
-            &format!("/account-operations?batch_id={id}")
-        ));
-    }
-    #[test]
-    fn proxy_batch_path_is_explicit() {
-        assert!(allowed_request("POST", "/account-operations/batch"));
-        for method in ["GET", "PUT", "DELETE"] {
-            assert!(!allowed_request(method, "/account-operations/batch"));
-        }
-        assert!(!allowed_request("POST", "/account-operations/batch/"));
-    }
-    #[test]
-    fn connection_batch_cancel_requires_post_and_one_lowercase_batch_id() {
-        let id = "0123456789abcdef0123456789abcdef";
-        let path = format!("/account-operations/batches/{id}/cancel");
-        assert!(allowed_request("POST", &path));
-        for method in ["GET", "PUT", "PATCH", "DELETE", "HEAD"] {
-            assert!(!allowed_request(method, &path), "{method}");
-        }
-        for invalid_id in [
-            "",
-            "invalid",
-            "0123456789ABCDEF0123456789ABCDEF",
-            "0123456789abcdef0123456789abcde",
-            "0123456789abcdef0123456789abcdef0",
-            "0123456789abcdef0123456789abcdeg",
-        ] {
-            assert!(!allowed_request(
-                "POST",
-                &format!("/account-operations/batches/{invalid_id}/cancel")
-            ));
-        }
-        for invalid_path in [
-            format!("{path}/"),
-            format!("/account-operations/batches/{id}"),
-            format!("/account-operations/batches/{id}/cancel/extra"),
-            format!("/account-operations/batches/{id}/{id}/cancel"),
-        ] {
-            assert!(!allowed_request("POST", &invalid_path), "{invalid_path}");
-        }
-    }
-
-    #[test]
-    fn oauth_reauthorization_only_allows_post_for_one_account() {
-        let path = "/accounts/7/apply-oauth-credentials";
-        assert!(allowed_request("POST", path));
-        for method in ["GET", "PUT", "PATCH", "DELETE", "HEAD"] {
-            assert!(!allowed_request(method, path));
-        }
-        for path in [
-            "/accounts/0/apply-oauth-credentials",
-            "/accounts/-1/apply-oauth-credentials",
-            "/accounts/7/apply-oauth-credentials/",
-            "/accounts/7/8/apply-oauth-credentials",
-        ] {
-            assert!(!allowed_request("POST", path));
-        }
     }
 
     #[test]
@@ -1400,66 +1190,7 @@ mod tests {
         }
         assert!(normalize_base("http://127.0.0.1:18081").is_ok());
     }
-    #[test]
-    fn client_routes_delegate_queries_and_keep_requests_inside_the_desktop_api() {
-        for path in [
-            "/accounts/7/models",
-            "/accounts/7/models?purpose=model_test&refresh=true",
-            "/accounts/7/models?refresh=true&purpose=model_test",
-            "/accounts/7/models?refresh=false",
-            "/accounts/7/key-quota-settings/access-token",
-            "/config/key-quota",
-            "/accounts/7/usage",
-            "/usage-records?limit=50&after_id=12",
-            "/usage-record-options?kind=api_keys&user_id=7",
-            "/usage-records/12",
-            "/connection-status",
-            "/detection-logs?before=YWJj&limit=100",
-        ] {
-            assert!(allowed_request("GET", path), "{path}");
-        }
-        for (method, path) in [
-            ("GET", "/snapshot"),
-            ("GET", "/capabilities"),
-            ("GET", "//example.invalid/config"),
-            ("GET", "https://example.invalid/config"),
-            ("GET", "/config/../snapshot"),
-            ("GET", "/accounts/7/%2e%2e/settings"),
-            ("GET", "/config#fragment"),
-            ("GET", "/accounts/0/key-quota-settings/access-token"),
-            ("POST", "/accounts/7/key-quota-settings/access-token"),
-            ("GET", "/usage-records/12/credentials"),
-            ("POST", "/accounts/7/recover-state"),
-            ("PUT", "/accounts/7/groups"),
-            ("DELETE", "/accounts/7"),
-            ("POST", "/detection-logs"),
-            ("GET", "/detection-logs/1"),
-            ("GET", "/model-tests/invalid"),
-            ("POST", "/model-tests/invalid/cancel"),
-        ] {
-            assert!(!allowed_request(method, path), "{method} {path}");
-        }
-    }
-    #[test]
-    fn queued_operations_and_retry_have_explicit_paths() {
-        let id = "0123456789abcdef0123456789abcdef";
-        for (method, path) in [
-            ("POST", "/accounts/421/operations".to_owned()),
-            ("GET", "/account-operations".to_owned()),
-            ("GET", format!("/account-operations/{id}")),
-            ("GET", format!("/account-operations/{id}?after_event=100")),
-            ("POST", format!("/account-operations/{id}/cancel")),
-            ("POST", format!("/model-tests/{id}/retry")),
-        ] {
-            assert!(allowed_request(method, &path), "{method} {path}");
-        }
-        for (method, path) in [
-            ("DELETE", format!("/account-operations/{id}")),
-            ("GET", "/account-operations/invalid".to_owned()),
-        ] {
-            assert!(!allowed_request(method, &path), "{method} {path}");
-        }
-    }
+
     #[cfg(desktop)]
     #[test]
     fn login_launch_is_silent_but_manual_and_second_instances_open() {
@@ -1492,21 +1223,7 @@ mod tests {
     }
 
     #[test]
-    fn account_templates_and_detection_have_explicit_method_and_path_allowlist() {
-        for (method, path) in [
-            ("GET", "/account-templates"),
-            ("GET", "/account-templates?account_id=421"),
-            ("GET", "/accounts/421/model-detection"),
-            ("PUT", "/accounts/421/model-detection"),
-            ("GET", "/modeltrace/fingerprint-bank"),
-            ("POST", "/modeltrace/fingerprint-bank/sync"),
-        ] {
-            assert!(allowed_request(method, path));
-        }
-        for method in ["PUT", "DELETE"] {
-            assert!(!allowed_request(method, "/account-templates"));
-        }
-        assert!(!allowed_request("PUT", "/modeltrace/fingerprint-bank"));
+    fn model_test_preferences_persist_and_default_cleanly() {
         let old: Preferences = serde_json::from_str("{}").unwrap();
         assert!(old.model_test_concurrency.is_none());
         assert!(old.model_test_preferences.is_empty());
@@ -1532,12 +1249,6 @@ mod tests {
             restored.model_test_preferences["https://example.invalid:7"].sample_count,
             3
         );
-        assert!(allowed_request("GET", "/lm-detector/fingerprint-bank"));
-        assert!(allowed_request(
-            "POST",
-            "/lm-detector/fingerprint-bank/sync"
-        ));
-        assert!(!allowed_request("PUT", "/lm-detector/fingerprint-bank"));
     }
 
     #[test]

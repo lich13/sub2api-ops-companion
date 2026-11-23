@@ -526,7 +526,7 @@ public struct AccountsPageView: View {
                     }
                 }
                 .buttonStyle(.linearPlain)
-            } else if !account.error_message.isEmpty || account.last_error_status != nil {
+            } else if !account.errorMessageText.isEmpty || account.last_error_status != nil {
                 Text(account.last_error_at == nil ? "错误时间未知" : BeijingTime.fullTime(account.last_error_at))
                     .font(DS.fontCompactMedium)
                     .monospacedDigit()
@@ -538,7 +538,7 @@ public struct AccountsPageView: View {
             }
 
             if let okAt = account.last_success_at, !okAt.isEmpty {
-                let recoveredAfterErr = account.success_after_error
+                let recoveredAfterErr = account.isSuccessAfterError
                 VStack(alignment: .leading, spacing: 2) {
                     Text("最后成功")
                         .font(DS.fontResetTime)

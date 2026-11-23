@@ -22,7 +22,7 @@ public struct RecoveryDetectionTabView: View {
     }
 
     private var serverRevision: String {
-        serverOAuth["revision"]?.stringValue ?? "\(serverOAuth["revision"]?.intValue ?? 0)"
+        serverOAuth["revision"]?.stringValue ?? ""
     }
 
     public var body: some View {
@@ -43,7 +43,7 @@ public struct RecoveryDetectionTabView: View {
                         }
                     }
                     .buttonStyle(LinearButtonStyle(variant: .primary, compact: true))
-                    .disabled(!store.state.online || busy || changes.isEmpty || conflict)
+                    .disabled(!store.state.online || busy || changes.isEmpty || conflict || serverRevision.isEmpty)
                 }
                 .padding(.bottom, 14)
 
@@ -191,16 +191,16 @@ public struct RecoveryDetectionTabView: View {
     }
 
     private func save() async {
-        guard store.state.online, !busy, !changes.isEmpty, !conflict else { return }
+        let rev = draft["revision"]?.stringValue ?? serverRevision
+        guard store.state.online, !busy, !changes.isEmpty, !conflict, !rev.isEmpty else { return }
         busy = true
         defer { busy = false }
-        let revVal = draft["revision"] ?? .int(0)
         do {
             let updated: [String: JSONValue] = try await RustBridge.shared.api(
                 "PUT",
                 "/config/oauth",
                 body: .object([
-                    "expected_revision": revVal,
+                    "expected_revision": .string(rev),
                     "changes": .object(changes),
                 ])
             )

@@ -185,7 +185,7 @@ public struct ResetCreditsSheet: View {
                     )
                     latestJobStatus = "completed"
                     used += 1
-                    let msg = resultObj["message"]?.stringValue ?? "重置已执行"
+                    let msg = resultObj?.message ?? "重置已执行"
                     outcomes[idx] = RowOutcome(status: "done", message: msg)
                 } catch {
                     let msg = error.localizedDescription.replacingOccurrences(of: "^Error: ", with: "", options: .regularExpression)

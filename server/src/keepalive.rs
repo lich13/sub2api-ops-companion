@@ -229,13 +229,8 @@ impl Keepalive {
             json!({"account_id":id,"enabled":control.enabled,"generation":control.generation,
             "version":control.version(),"status":status,"reason":reason,"paused_reason":control.paused_reason,
             "last_restore_at":control.last_restore_at,"restore_count":control.restores.len(),
-            "budget_used":control.used(self.now()),"next_allowed_at":control.next_allowed(self.now()),
-            "read_only":false}),
+            "budget_used":control.used(self.now()),"next_allowed_at":control.next_allowed(self.now())}),
         )
-    }
-    pub async fn save(&self, id: i64, payload: &Value) -> Result<Value> {
-        request(payload)?;
-        self.save_validated(id, payload).await
     }
 
     pub(crate) async fn save_validated(&self, id: i64, payload: &Value) -> Result<Value> {

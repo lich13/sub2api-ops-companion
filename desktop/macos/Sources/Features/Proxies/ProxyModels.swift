@@ -1,40 +1,18 @@
 import Foundation
 
-/// Matches `desktop/src/proxyData.ts`.
-public struct ProxyManagedRow: Codable, Sendable, Equatable, Identifiable {
-    public var id: Int
-    public var name: String
-    public var protocolName: String
-    public var host: String
-    public var port: Int
-    public var status: String
-    public var username_set: Bool
-    public var password_set: Bool
-    public var created_at: String?
-    public var expires_at: String?
-    public var fallback_mode: String?
-    public var backup_proxy_id: Int?
-    public var expiry_warn_days: Int?
-    public var account_count: Int?
-    public var latency_ms: Int?
-    public var latency_status: String?
-    public var ip_address: String?
-    public var country: String?
-    public var country_code: String?
-    public var region: String?
-    public var city: String?
-    public var quality_status: String?
-    public var quality_score: Int?
-    public var quality_grade: String?
-    public var quality_checked: Double?
+/// Matches `Protocol.swift` & `desktop/src/proxyData.ts`.
+public typealias ProxyManagedRow = ProxyRowReply
+public typealias ProxyManagedPage = ProxyPageReply
+public typealias ProxyCredentialsDTO = ProxyLogin
+public typealias ProxyAssociatedAccount = AccountIdentity
+public typealias ProxyConnectionResult = ProxyTestReply
+public typealias ProxyQualityTargetItem = ProxyQualityCheck
+public typealias ProxyQualityResult = ProxyQualityReply
+public typealias ProxyImportResultDTO = ProxyImportReply
+public typealias ProxyImportErrorItem = NamedMessage
 
-    enum CodingKeys: String, CodingKey {
-        case id, name, host, port, status, username_set, password_set
-        case protocolName = "protocol"
-        case created_at, expires_at, fallback_mode, backup_proxy_id, expiry_warn_days
-        case account_count, latency_ms, latency_status, ip_address, country, country_code, region, city
-        case quality_status, quality_score, quality_grade, quality_checked
-    }
+extension ProxyRowReply: Identifiable {
+    public var protocolName: String { self.protocol }
 
     public var formattedAddress: String {
         let clean = host.replacingOccurrences(of: "^\\[|\\]$", with: "", options: .regularExpression)
@@ -51,66 +29,14 @@ public struct ProxyManagedRow: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-public struct ProxyManagedPage: Codable, Sendable, Equatable {
-    public var items: [ProxyManagedRow]
-    public var page: Int
-    public var page_size: Int
-    public var total: Int
-    public var pages: Int
-
-    public static let empty = ProxyManagedPage(items: [], page: 1, page_size: 20, total: 0, pages: 0)
+extension ProxyPageReply {
+    public static let empty = ProxyPageReply(items: [], page: 1, page_size: 20, total: 0, pages: 0)
 }
 
-public typealias ProxyCredentialsDTO = ProxyLogin
+extension AccountIdentity: Identifiable {}
 
-public struct ProxyAssociatedAccount: Codable, Sendable, Equatable, Identifiable {
-    public var id: Int
-    public var name: String
-    public var platform: String
-    public var type: String
-}
-
-public struct ProxyConnectionResult: Codable, Sendable, Equatable {
-    public var success: Bool
-    public var message: String
-    public var latency_ms: Int?
-    public var ip_address: String
-    public var city: String
-    public var region: String
-    public var country: String
-    public var country_code: String
-}
-
-public struct ProxyQualityTargetItem: Codable, Sendable, Equatable, Identifiable {
+extension ProxyQualityCheck: Identifiable {
     public var id: String { target }
-    public var target: String
-    public var status: String
-    public var http_status: Int?
-    public var latency_ms: Int?
-    public var message: String
-}
-
-public struct ProxyQualityResult: Codable, Sendable, Equatable {
-    public var score: Int
-    public var grade: String
-    public var summary: String
-    public var exit_ip: String
-    public var country: String
-    public var base_latency_ms: Int?
-    public var checked_at: Double?
-    public var items: [ProxyQualityTargetItem]
-}
-
-public struct ProxyImportResultDTO: Codable, Sendable, Equatable {
-    public var proxy_created: Int
-    public var proxy_reused: Int
-    public var proxy_failed: Int
-    public var errors: [ProxyImportErrorItem]
-}
-
-public struct ProxyImportErrorItem: Codable, Sendable, Equatable {
-    public var name: String
-    public var message: String
 }
 
 public struct ParsedProxyLine: Sendable, Equatable {

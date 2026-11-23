@@ -19,7 +19,6 @@ import {
   X,
 } from "lucide-react";
 import { fullTime, type Account, type Preferences } from "./types";
-import { watchWindowFocus } from "./bridge";
 import {
   cacheTokenCount,
   decimal,
@@ -510,70 +509,15 @@ const MobileRecordRow = React.memo(function MobileRecordRow({
   );
 });
 
-const DesktopRecordRow = React.memo(function DesktopRecordRow({
-  row,
-  active,
-  shown,
-  onOpen,
-}: {
-  row: UsageRecord;
-  active: boolean;
-  shown: readonly (readonly [RecordColumn, string])[];
-  onOpen: (id: number) => void;
-}) {
-  return (
-    <tr
-      onClick={() => {
-        if (active) onOpen(row.id);
-      }}
-    >
-      <td className="record-user">
-        <button
-          disabled={!active}
-          title={`查看记录 #${row.id}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpen(row.id);
-          }}
-        >
-          <span>{row.user_name || row.user_email || `#${row.user_id}`}</span>
-          <small>#{row.user_id}</small>
-        </button>
-      </td>
-      {shown
-        .filter(([key]) => key === "api_key")
-        .map(([key]) => (
-          <td key={key} className={`record-col-${key}`}>
-            <Cell column={key} row={row} />
-          </td>
-        ))}
-      <td className="record-time">
-        <time>{fullTime(row.created_at)}</time>
-      </td>
-      {shown
-        .filter(([key]) => key !== "api_key")
-        .map(([key]) => (
-          <td key={key} className={`record-col-${key}`}>
-            <Cell column={key} row={row} />
-          </td>
-        ))}
-    </tr>
-  );
-});
-
 export default function UsageRecords({
   online,
   foreground,
-  desktop = true,
-  mobile = false,
   accounts,
   columns,
   saveColumns,
 }: {
   online: boolean;
   foreground: boolean;
-  desktop?: boolean;
-  mobile?: boolean;
   accounts: Account[];
   columns: Preferences["record_columns"];
   saveColumns: (columns: string[]) => Promise<void>;
@@ -610,7 +554,6 @@ export default function UsageRecords({
     [],
   );
   const [visible, setVisible] = useState(document.visibilityState !== "hidden");
-  const [focused, setFocused] = useState(!desktop);
   const [scrolled, setScrolled] = useState(false),
     [selected, setSelected] = useState<number | null>(null);
   const [detail, setDetail] = useState<UsageRecord | null>(null),
@@ -664,26 +607,6 @@ export default function UsageRecords({
     if (menu.current) menu.current.open = false;
   });
   useEffect(() => {
-    setFocused(!desktop);
-    if (!desktop) return;
-    let live = true;
-    let unlisten: (() => void) | undefined;
-    void watchWindowFocus((value) => {
-      if (live) setFocused(value);
-    })
-      .then((stop) => {
-        if (live) unlisten = stop;
-        else stop();
-      })
-      .catch(() => {
-        if (live) setFilterError("窗口状态读取失败，请重新打开记录页");
-      });
-    return () => {
-      live = false;
-      unlisten?.();
-    };
-  }, [desktop]);
-  useEffect(() => {
     const visibility = () => setVisible(document.visibilityState !== "hidden");
     document.addEventListener("visibilitychange", visibility);
     const outsideMenu = (event: PointerEvent) => {
@@ -710,7 +633,7 @@ export default function UsageRecords({
     if (filters.mismatch) p.set("mismatch_only", "true");
     return p.toString();
   }, [filters, range]);
-  const active = online && foreground && visible && focused;
+  const active = online && foreground && visible;
   const overlayOpen =
     selected !== null ||
     filtersOpen ||
@@ -876,37 +799,32 @@ export default function UsageRecords({
             setRange(next);
           }}
         />
-        {mobile && (
-          <button
-            className="records-filter-toggle"
-            type="button"
-            aria-label="筛选记录"
-            aria-expanded={filtersOpen}
-            onClick={() => {
-              setFiltersOpen(true);
-            }}
-          >
-            <ListFilter size={16} />
-            筛选
-          </button>
-        )}
-        {(!mobile || filtersOpen) && (
+        <button
+          className="records-filter-toggle"
+          type="button"
+          aria-label="筛选记录"
+          aria-expanded={filtersOpen}
+          onClick={() => {
+            setFiltersOpen(true);
+          }}
+        >
+          <ListFilter size={16} />
+          筛选
+        </button>
+        {filtersOpen && (
           <div
-            className={
-              mobile ? "records-filter-backdrop" : "records-filter-inline"
-            }
+            className="records-filter-backdrop"
             onClick={(event) => {
-              if (event.target === event.currentTarget && mobile)
-                closeFilters();
+              if (event.target === event.currentTarget) closeFilters();
             }}
           >
             <form
-              className={`records-toolbar${mobile ? " records-filter-sheet" : ""}`}
-              role={mobile ? "dialog" : undefined}
-              aria-label={mobile ? "筛选记录" : undefined}
-              aria-modal={mobile || undefined}
+              className="records-toolbar records-filter-sheet"
+              role="dialog"
+              aria-label="筛选记录"
+              aria-modal
               onKeyDown={(event) => {
-                if (mobile && event.key === "Escape") {
+                if (event.key === "Escape") {
                   event.stopPropagation();
                   closeFilters();
                 }
@@ -920,19 +838,17 @@ export default function UsageRecords({
                 }));
               }}
             >
-              {mobile && (
-                <header className="mobile-sheet-heading">
-                  <strong>筛选记录</strong>
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label="关闭记录筛选"
-                    onClick={closeFilters}
-                  >
-                    <X size={20} />
-                  </button>
-                </header>
-              )}
+              <header className="mobile-sheet-heading">
+                <strong>筛选记录</strong>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="关闭记录筛选"
+                  onClick={closeFilters}
+                >
+                  <X size={20} />
+                </button>
+              </header>
               <div className="records-platform-select">
                 <select
                   aria-label="记录平台"
@@ -1077,25 +993,23 @@ export default function UsageRecords({
         >
           <summary onClick={() => setColumnsOpen(!menu.current?.open)}>
             <ListFilter size={14} />
-            {mobile ? "显示字段" : "列"}
+            显示字段
             <ChevronDown size={12} />
           </summary>
           <div className="records-column-options">
-            {mobile && (
-              <header className="mobile-sheet-heading">
-                <strong>显示字段</strong>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label="关闭显示字段"
-                  onClick={() => {
-                    if (menu.current) menu.current.open = false;
-                  }}
-                >
-                  <X size={20} />
-                </button>
-              </header>
-            )}
+            <header className="mobile-sheet-heading">
+              <strong>显示字段</strong>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="关闭显示字段"
+                onClick={() => {
+                  if (menu.current) menu.current.open = false;
+                }}
+              >
+                <X size={20} />
+              </button>
+            </header>
             {recordColumns.map(([key, label]) => (
               <label key={key}>
                 <span>{label}</span>
@@ -1143,54 +1057,18 @@ export default function UsageRecords({
         ref={scroll}
         onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 8)}
       >
-        {mobile ? (
-          <div className="mobile-records">
-            {feed.items.map((row) => (
-              <MobileRecordRow
-                key={row.id}
-                row={row}
-                active={active}
-                hasCost={hasCost}
-                shown={shown}
-                onOpen={openDetail}
-              />
-            ))}
-          </div>
-        ) : (
-          <table className="records-table">
-            <thead>
-              <tr>
-                <th className="record-user">用户</th>
-                {shown
-                  .filter(([key]) => key === "api_key")
-                  .map(([key, label]) => (
-                    <th key={key} className={`record-col-${key}`}>
-                      {label}
-                    </th>
-                  ))}
-                <th className="record-time">时间</th>
-                {shown
-                  .filter(([key]) => key !== "api_key")
-                  .map(([key, label]) => (
-                    <th key={key} className={`record-col-${key}`}>
-                      {label}
-                    </th>
-                  ))}
-              </tr>
-            </thead>
-            <tbody>
-              {feed.items.map((row) => (
-                <DesktopRecordRow
-                  key={row.id}
-                  row={row}
-                  active={active}
-                  shown={shown}
-                  onOpen={openDetail}
-                />
-              ))}
-            </tbody>
-          </table>
-        )}
+        <div className="mobile-records">
+          {feed.items.map((row) => (
+            <MobileRecordRow
+              key={row.id}
+              row={row}
+              active={active}
+              hasCost={hasCost}
+              shown={shown}
+              onOpen={openDetail}
+            />
+          ))}
+        </div>
         {!feed.items.length && (
           <div className="records-empty" role="status">
             {feed.loading

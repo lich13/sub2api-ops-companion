@@ -17,12 +17,28 @@ vi.mock("./bridge", () => ({
   api: vi.fn(),
   command: vi.fn().mockResolvedValue(undefined),
 }));
-const account = {
+const account: Account = {
   id: 421,
   name: "Key",
+  priority: 1,
+  platform: "openai",
+  type: "apikey",
+  status: "active",
+  schedulable: true,
+  available: true,
+  group_ids: [],
+  blockers: [],
   version: "v".repeat(64),
   operation_versions: { priority: "p".repeat(64) },
-} as unknown as Account;
+  last_success_at: null,
+  last_error_at: null,
+  last_error_id: null,
+  last_error_code: null,
+  last_error_status: null,
+  error_message: "",
+  success_after_error: false,
+  usage_windows: [],
+};
 const job: Operation = {
   id: "a".repeat(32),
   account_id: 421,

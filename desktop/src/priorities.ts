@@ -1,50 +1,34 @@
-export type PriorityAccount = {
-  id: number;
-  name: string;
-  platform: string;
-  type: string;
-  priority: number;
-  version: string;
-  editable: boolean;
-  reason: string;
-  status: string;
-  schedulable: boolean;
-};
-export type PriorityItem = {
-  account_id: number;
-  account_name: string;
+import type {
+  PriorityAccountReply as PriorityAccount,
+  PriorityItemReply,
+  PriorityOverviewReply,
+  PriorityPlatformReply,
+  PriorityTaskReply,
+} from "./protocol";
+export type { PriorityAccountReply as PriorityAccount } from "./protocol";
+export type PriorityItem = Omit<
+  PriorityItemReply,
+  "platform" | "observed_priority" | "status"
+> & {
   platform?: string;
-  original_priority: number;
-  target_priority: number;
   observed_priority: number | null;
   status: "pending" | "unchanged" | "dispatched" | "verified";
 };
-export type PriorityTask = {
-  id: string;
-  status: string;
-  cancel_requested: boolean;
-  reason: string;
-  total: number;
-  change_count: number;
-  verified_count: number;
-  created_at: string;
-  updated_at: string;
+export type PriorityTask = Omit<PriorityTaskReply, "completed_at" | "items"> & {
   completed_at: string | null;
   items?: PriorityItem[];
-  platform: string;
-  base: 1;
-  waiting_reason: string;
-  waiting_account_ids: number[];
-  parallelism?: number;
 };
-export type PriorityPlatform = {
-  platform: string;
+export type PriorityPlatform = Omit<
+  PriorityPlatformReply,
+  "items" | "last_task"
+> & {
   items: PriorityAccount[];
-  version: string;
   last_task: PriorityTask | null;
-  parallelism?: number;
 };
-export type PriorityView = {
+export type PriorityView = Omit<
+  PriorityOverviewReply,
+  "platforms" | "active_task"
+> & {
   platforms: PriorityPlatform[];
   active_task: PriorityTask | null;
 };
@@ -60,7 +44,7 @@ export const priorityPending = (task: PriorityTask | null | undefined) =>
   !!task && ["queued", "running", "checking"].includes(task.status);
 export function samePriorityAccounts(
   ids: number[],
-  accounts: PriorityAccount[],
+  accounts: Pick<PriorityAccount, "id">[],
 ) {
   const unique = new Set(ids);
   return (

@@ -648,10 +648,6 @@ impl PriorityOrders {
         })?;
         Ok(public_job(&job, true))
     }
-    pub async fn set_parallelism(&self, request: &Value) -> Result<Value> {
-        validate_parallelism_request(request)?;
-        self.set_parallelism_validated(request).await
-    }
 
     pub(crate) async fn set_parallelism_validated(&self, request: &Value) -> Result<Value> {
         let _gate = self.actions.priorities.admission.write().await;

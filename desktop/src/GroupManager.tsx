@@ -37,7 +37,6 @@ type Props = {
   accounts: Account[];
   groups: Group[];
   active: boolean;
-  mobile: boolean;
   online: boolean;
   connectionKey: string;
   back: () => void;
@@ -48,7 +47,7 @@ type Props = {
 };
 type Drag = { id: number; x: number; y: number; zone?: Zone };
 export default function GroupManager(props: Props) {
-  const { accounts, groups, online, mobile, active } = props;
+  const { accounts, groups, online, active } = props;
   const [platform, setPlatform] = useState("openai"),
     [query, setQuery] = useState("");
   const [drafts, setDrafts] = useState<Drafts>({}),
@@ -364,7 +363,6 @@ export default function GroupManager(props: Props) {
         <AccountActions
           items={props.accountActions(a)}
           label={`${a.name}操作`}
-          mode="group"
           active={active}
           contextKey={`${props.connectionKey}:${platform}:${pair.join(",")}`}
           disabled={busy || !!drag}
@@ -407,15 +405,13 @@ export default function GroupManager(props: Props) {
   return (
     <section className="group-manager" hidden={!active} aria-hidden={!active}>
       <div className="group-manager-toolbar">
-        {mobile && (
-          <button
-            className="icon-button"
-            aria-label="返回账号"
-            onClick={props.back}
-          >
-            <ArrowLeft size={20} />
-          </button>
-        )}
+        <button
+          className="icon-button"
+          aria-label="返回账号"
+          onClick={props.back}
+        >
+          <ArrowLeft size={20} />
+        </button>
         <div className="group-platforms" role="tablist" aria-label="分组平台">
           {platforms.map(({ platform: id }) => (
             <button

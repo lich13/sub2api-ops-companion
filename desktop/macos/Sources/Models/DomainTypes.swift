@@ -44,108 +44,26 @@ public enum BeijingTime {
     }
 }
 
-// MARK: - Core Domain DTOs (`desktop/src/types.ts`)
+// MARK: - Core Domain DTOs (`Protocol.swift` Single Source of Truth)
 
-public struct DegradationMark: Codable, Sendable, Equatable {
-    public var marked: Bool?
-    public var marked_at: String?
-    public var version: String?
-    public var error: String?
+public typealias DegradationMark = DegradationMarkRecord
+public typealias AccountKeepalive = KeepaliveReply
+public typealias ModelDetectionLastReport = ModelDetectionLastReportRecord
+public typealias ModelDetectionLastResult = ModelDetectionLastResultRecord
+public typealias ModelDetectionSummary = ModelDetectionSummaryRecord
+public typealias AccountBlocker = AccountBlockerRecord
+public typealias SettingCapability = SettingCapabilityRecord
+public typealias RecoveryMonitorState = RecoveryMonitorStateRecord
+public typealias AutoResetCreditState = AutoResetCreditStateRecord
 
-    public init(marked: Bool? = nil, marked_at: String? = nil, version: String? = nil, error: String? = nil) {
-        self.marked = marked
-        self.marked_at = marked_at
-        self.version = version
-        self.error = error
+extension DegradationMarkRecord {
+    public init(marked: Bool? = nil, marked_at: String? = nil, version: String? = nil) {
+        self.init(marked: marked, marked_at: marked_at, version: version, error: nil)
     }
 }
 
-public struct AccountKeepalive: Codable, Sendable, Equatable {
-    public var account_id: Int
-    public var enabled: Bool
-    public var generation: Int
-    public var version: String
-    public var status: String
-    public var reason: String
-    public var paused_reason: String
-    public var last_restore_at: String?
-    public var restore_count: Int
-    public var budget_used: Int
-    public var next_allowed_at: String?
-}
-
-public struct ModelDetectionLastReport: Codable, Sendable, Equatable {
-    public var prediction_name: String?
-}
-
-public struct ModelDetectionLastResult: Codable, Sendable, Equatable {
-    public var status: String?
-    public var report: ModelDetectionLastReport?
-    public var completed_at: String?
-}
-
-public struct ModelDetectionSummary: Codable, Sendable, Equatable {
-    public var schedule_mode: String?
-    public var min_interval_minutes: Int?
-    public var effective_interval_minutes: Int?
-    public var recent_request_count: Int?
-    public var last_automatic_started_at: String?
-    public var enabled: Bool
-    public var interval_minutes: Int
-    public var model_id: String
-    public var version: String
-    public var next_at: String?
-    public var status: String
-    public var reason: String?
-    public var last_result: ModelDetectionLastResult?
-}
-
-public struct AccountBlocker: Codable, Sendable, Equatable {
-    public var code: String
-    public var label: String
-    public var until: String?
-
-    public init(code: String, label: String, until: String? = nil) {
-        self.code = code
-        self.label = label
-        self.until = until
+extension AccountBlockerRecord {
+    public init(code: String, label: String) {
+        self.init(code: code, label: label, until: nil)
     }
-}
-
-public struct SettingCapability: Codable, Sendable, Equatable {
-    public var editable: Bool
-    public var reason: String
-
-    public init(editable: Bool, reason: String) {
-        self.editable = editable
-        self.reason = reason
-    }
-}
-
-public struct RecoveryMonitorState: Codable, Sendable, Equatable {
-    public var status: String
-    public var label: String
-    public var reason: String
-    public var next_at: String?
-    public var attempt_count: Int?
-    public var next_retry_at: String?
-}
-
-public struct AutoResetCreditState: Codable, Sendable, Equatable {
-    public var trigger_at: String?
-    public var consume_deadline_at: String?
-    public var verification_deadline_at: String?
-    public var completed_at: String?
-    public var outcome: String?
-    public var notification_status: String?
-    public var notification_attempts: Int?
-    public var evidence_source: String?
-    public var evidence_at: String?
-    public var stage: String
-    public var label: String
-    public var error: String
-    public var next_at: String?
-    public var attempt_at: String?
-    public var test_completed_at: String?
-    public var recovered_at: String?
 }

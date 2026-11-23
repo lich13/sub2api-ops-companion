@@ -1,34 +1,40 @@
 import { BridgeError } from "./bridgeError";
 import { api, command } from "./bridge";
-import type { Account, TestEvent } from "./types";
+import type {
+  BatchHeader,
+  OperationCurrentFields,
+  OperationHeader,
+  OperationReceipt,
+  OperationRequestFields,
+} from "./protocol";
+import type { Account, DegradationMark, TestEvent } from "./types";
 
-export type Operation = {
-  id: string;
-  account_id: number;
+export type Operation = Omit<
+  OperationHeader,
+  | "account_name"
+  | "next_retry_at"
+  | "repeat"
+  | "repeat_state"
+  | "requested"
+  | "current"
+  | "result"
+  | "events"
+> & {
   account_name: string;
-  action: string;
-  status: string;
-  batch_id?: string;
-  reason?: string;
-  requested: Record<string, unknown>;
-  current?: Record<string, unknown>;
-  result?: Record<string, unknown>;
-  events?: TestEvent[];
-  next_event?: number;
-  started_at?: string;
-  scheduled_at?: string;
-  attempt_count?: number;
   next_retry_at?: string | null;
   repeat?: "quota_cycle";
-  repeat_series_id?: string;
   repeat_state?: "active" | "continued" | "stopped" | "needs_confirmation";
-  repeat_reason?: string;
-  next_operation_id?: string;
+  requested: Omit<OperationRequestFields, "proxy_id"> & {
+    proxy_id?: number | null;
+  } & Record<string, unknown>;
+  current?: OperationCurrentFields & Record<string, unknown>;
+  result?: Omit<OperationReceipt, "degradation_mark"> & {
+    degradation_mark?: DegradationMark;
+  } & Record<string, unknown>;
+  events?: TestEvent[];
 };
-export type OperationBatch = {
-  batch_id: string;
+export type OperationBatch = Omit<BatchHeader, "items"> & {
   items: Operation[];
-  pending: number;
 };
 export const operationTerminal = new Set([
   "completed",

@@ -82,11 +82,114 @@ struct FeaturesAndSettingsTests {
           "engine": "modeltrace",
           "prediction": "gpt-5.4",
           "probability": 0.98,
-          "bank_version": { "revision": "deadbeef12345678" }
+          "results": [
+            { "model": "gpt-5.4", "display_name": "GPT-5.4", "probability": 0.98 },
+            { "model": "gpt-5.4-mini", "display_name": "GPT-5.4 Mini", "probability": 0.02 }
+          ],
+          "bank_version": { "revision": "deadbeef12345678", "analyzer_version": 1 }
         }
         """.utf8)
         let report = try JSONDecoder().decode(ModelFingerprintReport.self, from: reportJSON)
-        #expect(report.bank_revision == "deadbeef12345678")
+        #expect(report.bank_version?.revision == "deadbeef12345678")
+        #expect(report.bank_version?.analyzer_version == "1")
+        #expect(report.results?.count == 2)
+        #expect(report.results?.first?.model == "gpt-5.4")
+    }
+
+    @Test("Contract regressions: null remove_connection, float proxy metrics, model test classification/results, partial detection summary, and hex config revisions")
+    @MainActor
+    func fiveContractBugRegressions() async throws {
+        // Bug 1: remove_connection returns JSON "null" and commandVoid must succeed without ViewState decode failure
+        RustBridge.shared.setMockHandler { cmd, _ in
+            cmd == "remove_connection" ? "null" : "{}"
+        }
+        defer { RustBridge.shared.setMockHandler(nil) }
+        try await RustBridge.shared.commandVoid("remove_connection", args: .object(["baseUrl": .string("https://old.example.invalid/sub2ops")]))
+
+        // Bug 2: ProxyTestReply, ProxyQualityReply, and ProxyQualityCheck decode floating-point latency_ms / score / base_latency_ms
+        let proxyTest = try JSONDecoder().decode(ProxyTestReply.self, from: Data("""
+        {
+          "success": true, "message": "连接成功", "latency_ms": 19.4,
+          "ip_address": "198.51.100.18", "city": "Singapore", "region": "SG", "country": "新加坡", "country_code": "SG"
+        }
+        """.utf8))
+        #expect(proxyTest.latency_ms == 19.4)
+
+        let proxyQuality = try JSONDecoder().decode(ProxyQualityReply.self, from: Data("""
+        {
+          "score": 91.8, "grade": "A", "summary": "原生质量检测通过",
+          "exit_ip": "198.51.100.18", "country": "新加坡", "country_code": "SG",
+          "base_latency_ms": 32.4, "passed_count": 3, "warn_count": 0, "failed_count": 0, "challenge_count": 0,
+          "checked_at": 1794902400,
+          "items": [{ "target": "openai", "status": "ok", "message": "200 OK", "latency_ms": 44.6, "http_status": 200 }]
+        }
+        """.utf8))
+        #expect(proxyQuality.score == 91.8 && proxyQuality.base_latency_ms == 32.4)
+        #expect(proxyQuality.items.first?.latency_ms == 44.6)
+
+        // Bug 3: ModelTestJob decodes top-level classification + report.results
+        let job = try JSONDecoder().decode(ModelTestJob.self, from: Data("""
+        {
+          "id": "mt-101",
+          "status": "completed",
+          "engine": "modeltrace",
+          "classification": {
+            "outcome": "degraded",
+            "reason": "第 1 组命中 gpt-5.6-luna",
+            "basis": "first_group",
+            "group_indexes": [1]
+          },
+          "report": {
+            "engine": "modeltrace",
+            "prediction": "gpt-5.6-luna",
+            "probability": 0.94,
+            "results": [
+              { "model": "gpt-5.6-luna", "display_name": "GPT-5.6 Luna", "probability": 0.94 },
+              { "model": "gpt-6-astra", "display_name": "GPT-6 Astra", "probability": 0.06 }
+            ]
+          }
+        }
+        """.utf8))
+        #expect(job.classification?.outcome == "degraded")
+        #expect(job.classification?.reason == "第 1 组命中 gpt-5.6-luna")
+        #expect(job.report?.results?.count == 2)
+
+        // Bug 4: Partial/error ModelDetectionSummary inside Snapshot does not break Snapshot decoding
+        let snap = try JSONDecoder().decode(Snapshot.self, from: Data("""
+        {
+          "observed_at": "2026-11-17T09:15:00Z",
+          "accounts": [{
+            "id": 101,
+            "name": "Codex-Partial",
+            "priority": 1,
+            "platform": "openai",
+            "type": "oauth",
+            "status": "active",
+            "schedulable": true,
+            "available": true,
+            "group_ids": [],
+            "blockers": [],
+            "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "operation_versions": {},
+            "usage_windows": [],
+            "model_detection": {
+              "status": "unavailable",
+              "error": "upstream model detection state degraded"
+            }
+          }],
+          "groups": [],
+          "errors": [],
+          "recoveries": []
+        }
+        """.utf8))
+        #expect(snap.accounts.count == 1)
+        #expect(snap.accounts[0].model_detection?.status == "unavailable")
+        #expect(snap.accounts[0].model_detection?.enabled == nil)
+
+        // Bug 5: Config revision must be a non-empty string token (never integer 0 fallback)
+        let missingRevConfig: [String: JSONValue] = ["oauth": .object(["oauth_recovery_monitor_enabled": .bool(true)])]
+        let parsedRev = missingRevConfig["oauth"]?.objectValue?["revision"]?.stringValue ?? ""
+        #expect(parsedRev.isEmpty)
     }
 
     @Test("Render FeaturesAndSettings Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")
@@ -102,7 +205,7 @@ struct FeaturesAndSettingsTests {
         let configJSON = """
         {
           "oauth": {
-            "revision": 4,
+            "revision": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             "oauth_recovery_monitor_enabled": true,
             "oauth_early_reset_enabled": true,
             "oauth_early_reset_interval_seconds": 30,
@@ -125,7 +228,7 @@ struct FeaturesAndSettingsTests {
             }
           },
           "bark": {
-            "revision": 2,
+            "revision": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
             "enabled": true,
             "device_key_set": true
           }

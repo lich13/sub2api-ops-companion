@@ -45,7 +45,7 @@ extension ProxyManagementTabView {
         defer { busyLabel = "" }
         do {
             let nextStatus = row.status == "active" ? "inactive" : "active"
-            let _: JSONValue = try await RustBridge.shared.api(
+            try await RustBridge.shared.apiVoid(
                 "PUT",
                 "/proxy-management/\(row.id)",
                 body: .object(["status": .string(nextStatus)])
@@ -68,7 +68,7 @@ extension ProxyManagementTabView {
                 if quality {
                     let q: ProxyQualityResult = try await RustBridge.shared.api("POST", "/proxies/\(row.id)/quality-check")
                     qualityById[row.id] = q
-                    out.append((row.name, true, "\(q.grade) · \(q.score)/100 \(q.summary)"))
+                    out.append((row.name, true, "\(q.grade) · \(Int(q.score.rounded()))/100 \(q.summary)"))
                     if rows.count == 1 {
                         presentModal(.quality(row, q))
                         await loadPage()
@@ -76,7 +76,7 @@ extension ProxyManagementTabView {
                     }
                 } else {
                     let c: ProxyConnectionResult = try await RustBridge.shared.api("POST", "/proxies/\(row.id)/test")
-                    out.append((row.name, c.success, c.success ? "连接成功\(c.latency_ms.map { " · \($0) ms" } ?? "")" : (c.message.isEmpty ? "连接失败" : c.message)))
+                    out.append((row.name, c.success, c.success ? "连接成功\(c.latency_ms.map { " · \(Int($0.rounded())) ms" } ?? "")" : (c.message.isEmpty ? "连接失败" : c.message)))
                 }
             } catch {
                 out.append((row.name, false, error.localizedDescription))
@@ -96,19 +96,17 @@ extension ProxyManagementTabView {
         defer { busyLabel = "" }
         do {
             if rows.count == 1 {
-                let _: JSONValue = try await RustBridge.shared.api("DELETE", "/proxy-management/\(rows[0].id)")
+                try await RustBridge.shared.apiVoid("DELETE", "/proxy-management/\(rows[0].id)")
                 selectedIds.remove(rows[0].id)
                 dismissCurrentModal()
                 messageText = "已删除"
             } else {
-                struct SkippedItem: Decodable, Sendable { var id: Int; var reason: String }
-                struct BatchDel: Decodable, Sendable { var deleted_ids: [Int]; var skipped: [SkippedItem]? }
-                let res: BatchDel = try await RustBridge.shared.api(
+                let res: DeleteProxyBatchReply = try await RustBridge.shared.api(
                     "POST",
                     "/proxy-management/batch-delete",
                     body: .object(["ids": .array(rows.map { .int(Int64($0.id)) })])
                 )
-                let skipped = res.skipped ?? []
+                let skipped = res.skipped
                 selectedIds = Set(skipped.map(\.id))
                 let outcomeRows: [(name: String, ok: Bool, message: String)] = rows.map { p in
                     let ok = res.deleted_ids.contains(p.id)
@@ -134,12 +132,8 @@ extension ProxyManagementTabView {
     }
 
     func showAccounts(_ row: ProxyManagedRow) async {
-        struct Env: Decodable, Sendable { var items: [ProxyAssociatedAccount]? }
         do {
-            let raw: JSONValue = try await RustBridge.shared.api("GET", "/proxy-management/\(row.id)/accounts")
-            let data = try JSONEncoder().encode(raw)
-            let list = (try? JSONDecoder().decode([ProxyAssociatedAccount].self, from: data))
-                ?? (try? JSONDecoder().decode(Env.self, from: data))?.items ?? []
+            let list: [ProxyAssociatedAccount] = try await RustBridge.shared.api("GET", "/proxy-management/\(row.id)/accounts")
             presentModal(.accounts(row, list))
         } catch {
             errorText = error.localizedDescription

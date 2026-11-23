@@ -137,7 +137,7 @@ describe("IP administration", () => {
   });
   it("reports linked-account deletion failures and only deletes selected rows", async () => {
     await render();
-    await click(container.querySelector('[aria-label="全选 IP"]')!);
+    await click(container.querySelector('[aria-label="全选当前页 IP"]')!);
     const original = vi.mocked(api).getMockImplementation()!;
     vi.mocked(api).mockImplementation(async (m, p, b) =>
       p.endsWith("batch-delete")

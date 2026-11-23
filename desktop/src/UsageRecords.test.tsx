@@ -2,7 +2,7 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, watchWindowFocus } from "./bridge";
+import { api } from "./bridge";
 import UsageRecords from "./UsageRecords";
 import {
   defaultRecordColumns,
@@ -13,12 +13,11 @@ import { useRecordFeed } from "./useRecordFeed";
 import { handleBack } from "./mobile";
 import type { Account } from "./types";
 
-vi.mock("./bridge", () => ({ api: vi.fn(), watchWindowFocus: vi.fn() }));
+vi.mock("./bridge", () => ({ api: vi.fn() }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 let container: HTMLDivElement, root: Root, unmounted: boolean;
 let visibility: DocumentVisibilityState;
-const focusListeners = new Set<(focused: boolean) => void>();
 type TestIntersectionObserver = {
   callback: IntersectionObserverCallback;
   options: IntersectionObserverInit;
@@ -183,8 +182,8 @@ const paths = () => vi.mocked(api).mock.calls.map(([, path]) => path);
 const params = (path: string) =>
   new URL(path, "https://fixture.invalid").searchParams;
 const tableIds = () =>
-  [...container.querySelectorAll<HTMLButtonElement>(".record-user button")].map(
-    (b) => b.title,
+  [...container.querySelectorAll<HTMLButtonElement>(".mobile-record-open")].map(
+    (b) => b.getAttribute("aria-label"),
   );
 const summary = () => container.querySelector(".records-summary strong");
 function button(label: string) {
@@ -242,7 +241,6 @@ async function renderView(props: ViewProps = {}, connectionKey = "fixture") {
           key={connectionKey}
           online
           foreground
-          desktop
           accounts={[]}
           columns={undefined}
           saveColumns={saveColumns}
@@ -255,20 +253,6 @@ async function renderView(props: ViewProps = {}, connectionKey = "fixture") {
 async function setVisibility(value: DocumentVisibilityState) {
   visibility = value;
   await act(async () => document.dispatchEvent(new Event("visibilitychange")));
-}
-function mockFocus(initial: boolean | undefined) {
-  vi.mocked(watchWindowFocus).mockImplementation(async (callback) => {
-    focusListeners.add(callback);
-    if (initial !== undefined) callback(initial);
-    return () => {
-      focusListeners.delete(callback);
-    };
-  });
-}
-async function setFocus(value: boolean) {
-  await act(async () => {
-    for (const callback of focusListeners) callback(value);
-  });
 }
 async function scrollTo(top: number) {
   await act(async () => {
@@ -323,8 +307,6 @@ beforeEach(() => {
   vi.spyOn(document, "visibilityState", "get").mockImplementation(
     () => visibility,
   );
-  focusListeners.clear();
-  mockFocus(true);
   saveColumns.mockResolvedValue();
   unmounted = false;
   container = document.createElement("div");
@@ -732,11 +714,10 @@ describe("record view", () => {
     "background",
     "offline",
     "hidden",
-    "blur",
     "date",
     "columns",
     "detail",
-    "mobile-filter",
+    "filters",
     "users",
     "accounts",
     "api_keys",
@@ -750,15 +731,12 @@ describe("record view", () => {
         : page([record(100)], { next_cursor: cursor });
     });
     await renderView({
-      mobile: holding === "mobile-filter",
-      desktop: holding !== "mobile-filter",
       accounts: holding === "accounts" ? [account(22, "East")] : [],
     });
     const observer = observers.at(-1)!;
     if (holding === "background") await renderView({ foreground: false });
     if (holding === "offline") await renderView({ online: false });
     if (holding === "hidden") await setVisibility("hidden");
-    if (holding === "blur") await setFocus(false);
     if (holding === "date") await click("时间范围");
     if (holding === "columns")
       await act(async () =>
@@ -767,13 +745,14 @@ describe("record view", () => {
           .querySelector("summary")!
           .click(),
       );
-    if (holding === "detail")
-      await act(async () =>
-        container
-          .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
-          .click(),
-      );
-    if (holding === "mobile-filter") await click("筛选记录");
+    if (holding === "detail") await click("查看记录 #100");
+    if (
+      holding === "filters" ||
+      holding === "users" ||
+      holding === "accounts" ||
+      holding === "api_keys"
+    )
+      await click("筛选记录");
     if (holding === "users") await click("用户筛选");
     if (holding === "accounts") await click("账户筛选");
     if (holding === "api_keys") await click("API 密钥筛选");
@@ -786,19 +765,16 @@ describe("record view", () => {
     expect(paths()).toHaveLength(before);
   });
 
-  it.each([false, true])(
-    "only displays the six-decimal total without a precise tooltip or copy control, mobile=%s",
-    async (mobile) => {
-      const exact = "9007199254740993.1234567890";
-      serve(() => page([], { summary: { actual_cost: exact } }));
-      await renderView({ mobile, desktop: !mobile });
-      expect(summary()?.textContent).toBe("$9007199254740993.123457");
-      const area = container.querySelector(".records-summary")!;
-      expect(area.innerHTML).not.toContain(exact);
-      expect(area.querySelector("[title], button, details")).toBeNull();
-      expect(container.querySelector(".records-total-detail")).toBeNull();
-    },
-  );
+  it("only displays the six-decimal total without a precise tooltip or copy control", async () => {
+    const exact = "9007199254740993.1234567890";
+    serve(() => page([], { summary: { actual_cost: exact } }));
+    await renderView();
+    expect(summary()?.textContent).toBe("$9007199254740993.123457");
+    const area = container.querySelector(".records-summary")!;
+    expect(area.innerHTML).not.toContain(exact);
+    expect(area.querySelector("[title], button, details")).toBeNull();
+    expect(container.querySelector(".records-total-detail")).toBeNull();
+  });
 
   it("defaults to today in Beijing and only changes date queries after Apply", async () => {
     await renderView();
@@ -894,8 +870,6 @@ describe("record view", () => {
     "defers a midnight date change while holding %s until an explicit refresh",
     async (holding) => {
       vi.setSystemTime(new Date("2026-09-30T15:59:59Z"));
-      const props =
-        holding === "filters" ? { mobile: true, desktop: false } : {};
       serve((path) => {
         if (path === "/usage-records/100") return record(100);
         const search = params(path);
@@ -914,14 +888,9 @@ describe("record view", () => {
             )
           : page([record(100)]);
       });
-      await renderView(props);
+      await renderView();
       if (holding === "scroll") await scrollTo(240);
-      if (holding === "detail")
-        await act(async () =>
-          container
-            .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
-            .click(),
-        );
+      if (holding === "detail") await click("查看记录 #100");
       if (holding === "history") {
         const observer = observers.at(-1)!;
         await act(async () => {
@@ -966,12 +935,12 @@ describe("record view", () => {
         ? page([record(200)], { summary: { actual_cost: "0.125" } })
         : page([record(100)]),
     );
-    await renderView({ mobile: true, desktop: false });
-    await renderView({ mobile: true, desktop: false, foreground: false });
+    await renderView();
+    await renderView({ foreground: false });
     await advance(30000);
     expect(api).toHaveBeenCalledTimes(1);
     expect(summary()?.textContent).toBe("$12.345679");
-    await renderView({ mobile: true, desktop: false });
+    await renderView();
     expect(params(paths().at(-1)!).get("start_date")).toBe("2026-10-01");
     expect(summary()?.textContent).toBe("$0.125000");
     expect(container.textContent).toContain("user-200");
@@ -1009,7 +978,6 @@ describe("record view", () => {
     );
     expect(tableIds()).toEqual(["查看记录 #200"]);
     expect(summary()?.textContent).toBe("$20.200000");
-    expect(focusListeners.size).toBe(1);
     expect(api).toHaveBeenCalledTimes(3);
   });
 
@@ -1026,8 +994,6 @@ describe("record view", () => {
     });
     serve((path) => (path === "/usage-records/100" ? row : page([row])));
     await renderView({
-      mobile: true,
-      desktop: false,
       columns: [
         "api_key",
         "account",
@@ -1142,8 +1108,6 @@ describe("record view", () => {
 
   it("applies saved field preferences to mobile cards and preserves mandatory user and time", async () => {
     const props = {
-      mobile: true,
-      desktop: false,
       columns: ["model", "cost", "user_agent", "type"],
     };
     await renderView(props);
@@ -1190,7 +1154,7 @@ describe("record view", () => {
   it.each(["close", "Escape", "Back", "backdrop"])(
     "keeps mobile filter changes when closed with %s and applies without submit",
     async (action) => {
-      await renderView({ mobile: true, desktop: false });
+      await renderView();
       await click("筛选记录");
       await setInput("模型筛选", "retained-model");
       const fallback = vi.fn();
@@ -1228,210 +1192,92 @@ describe("record view", () => {
     },
   );
 
-  it.each([
-    { state: "unconfirmed", initial: undefined },
-    { state: "unfocused", initial: false },
-  ])(
-    "waits for confirmed window focus when initially $state",
-    async ({ initial }) => {
-      mockFocus(initial);
-      await renderView();
-      await advance(30000);
-      expect(document.visibilityState).toBe("visible");
-      expect(api).not.toHaveBeenCalled();
-      expect(button("刷新记录").disabled).toBe(true);
-      expect(button("用户筛选").disabled).toBe(true);
-      expect(focusListeners.size).toBe(1);
-
-      await setFocus(true);
-      expect(api).toHaveBeenCalledTimes(1);
-      expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
-      expect(button("刷新记录").disabled).toBe(false);
-    },
-  );
-
-  it("pauses for native focus loss and checks immediately on return while preserving history and detail", async () => {
-    serve((path) => {
-      if (path === "/usage-records/99") return record(99);
-      return params(path).has("after_id")
-        ? { new_count: 2 }
-        : page([record(100), record(99)]);
-    });
+  it("discards an in-flight refresh in background without replacing cached rows", async () => {
     await renderView();
-    await scrollTo(240);
-    await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[title="查看记录 #99"]')!
-        .click(),
+    const stale = deferred<RecordPage>();
+    serve((path) =>
+      params(path).has("after_id") ? { new_count: 0 } : stale.promise,
     );
+    await click("刷新记录");
     expect(api).toHaveBeenCalledTimes(2);
-
-    await setFocus(false);
+    await renderView({ foreground: false });
     expect(document.visibilityState).toBe("visible");
     expect(button("刷新记录").disabled).toBe(true);
+    await act(async () =>
+      stale.resolve(page([record(200)], { summary: { actual_cost: "999" } })),
+    );
+    expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
+    expect(summary()?.textContent).toBe("$12.345679");
     await advance(30000);
     expect(api).toHaveBeenCalledTimes(2);
 
-    await setFocus(true);
+    await renderView();
     expect(api).toHaveBeenCalledTimes(3);
     expect(params(paths()[2]).get("after_id")).toBe("100");
     expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
-    expect(container.querySelector(".records-scroll")?.scrollTop).toBe(240);
-    expect(container.querySelector("[role=dialog]")?.textContent).toContain(
-      "#99",
-    );
-    expect(button("2 条新记录")).toBeDefined();
+    expect(summary()?.textContent).toBe("$12.345679");
     await advance(10000);
     expect(api).toHaveBeenCalledTimes(4);
-    expect(params(paths()[3]).get("after_id")).toBe("100");
   });
 
-  it.each(["unfocused", "background"])(
-    "discards an in-flight refresh when %s without replacing cached rows",
-    async (state) => {
-      await renderView();
-      const stale = deferred<RecordPage>();
-      serve((path) =>
-        params(path).has("after_id") ? { new_count: 0 } : stale.promise,
-      );
-      await click("刷新记录");
-      expect(api).toHaveBeenCalledTimes(2);
-      if (state === "unfocused") await setFocus(false);
-      else {
-        await renderView({ foreground: false });
-        await setFocus(true);
-      }
-      expect(document.visibilityState).toBe("visible");
-      expect(button("刷新记录").disabled).toBe(true);
-      await act(async () =>
-        stale.resolve(page([record(200)], { summary: { actual_cost: "999" } })),
-      );
-      expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
-      expect(summary()?.textContent).toBe("$12.345679");
-      await advance(30000);
-      expect(api).toHaveBeenCalledTimes(2);
+  it("uses foreground state to pause and resume polling", async () => {
+    await renderView({ foreground: false });
+    await advance(30000);
+    expect(api).not.toHaveBeenCalled();
 
-      if (state === "unfocused") await setFocus(true);
-      else await renderView();
-      expect(api).toHaveBeenCalledTimes(3);
-      expect(params(paths()[2]).get("after_id")).toBe("100");
-      expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
-      expect(summary()?.textContent).toBe("$12.345679");
-      await advance(10000);
-      expect(api).toHaveBeenCalledTimes(4);
-    },
-  );
-
-  it("disposes delayed focus subscriptions from StrictMode and unmount and ignores their callbacks", async () => {
-    const first = deferred<() => void>(),
-      second = deferred<() => void>();
-    const firstStop = vi.fn(),
-      secondStop = vi.fn();
-    const callbacks: ((focused: boolean) => void)[] = [];
-    vi.mocked(watchWindowFocus).mockImplementation((callback) => {
-      callbacks.push(callback);
-      return callbacks.length === 1 ? first.promise : second.promise;
-    });
     await renderView();
-    expect(watchWindowFocus).toHaveBeenCalledTimes(2);
-    await act(async () => {
-      callbacks[0](true);
-      first.resolve(firstStop);
-    });
-    expect(firstStop).toHaveBeenCalledTimes(1);
-    expect(api).not.toHaveBeenCalled();
-
-    await act(async () => callbacks[1](true));
     expect(api).toHaveBeenCalledTimes(1);
-    await stop();
-    await act(async () => {
-      callbacks[0](false);
-      callbacks[1](false);
-      callbacks[1](true);
-      second.resolve(secondStop);
-    });
-    await advance(30000);
-    expect(secondStop).toHaveBeenCalledTimes(1);
-    expect(firstStop).toHaveBeenCalledTimes(1);
-    expect(api).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toBe("");
-  });
-
-  it("reports a failed initial focus read and leaves record reads paused", async () => {
-    vi.mocked(watchWindowFocus).mockRejectedValue(
-      new Error("focus unavailable"),
-    );
-    await renderView();
-    expect(container.querySelector("[role=alert]")?.textContent).toContain(
-      "窗口状态读取失败",
-    );
-    await advance(30000);
-    expect(api).not.toHaveBeenCalled();
-    expect(button("刷新记录").disabled).toBe(true);
-  });
-
-  it("uses foreground state without a window focus subscription on non-desktop clients", async () => {
-    await renderView({ desktop: false, foreground: false });
-    await advance(30000);
-    expect(api).not.toHaveBeenCalled();
-    expect(watchWindowFocus).not.toHaveBeenCalled();
-
-    await renderView({ desktop: false });
-    expect(api).toHaveBeenCalledTimes(1);
-    await renderView({ desktop: false, foreground: false });
+    await renderView({ foreground: false });
     await advance(30000);
     expect(api).toHaveBeenCalledTimes(1);
     expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
-    await renderView({ desktop: false });
+    await renderView();
     expect(api).toHaveBeenCalledTimes(2);
     expect(params(paths()[1]).get("after_id")).toBe("100");
-    expect(watchWindowFocus).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])(
-    "only offers snapshot accounts and applies local name or ID search, mobile=%s",
-    async (mobile) => {
-      const accounts = [
-        account(22, "Current East"),
-        account(33, "Current West", "disabled"),
-      ];
-      serve((path) =>
-        page([
-          params(path).get("account_id") === "22"
-            ? record(200, { account_id: 22, account_name: "Current East" })
-            : record(100),
-        ]),
-      );
-      await renderView({ accounts, mobile, desktop: !mobile });
-      expect(container.textContent).toContain("test-account");
-      if (mobile) await click("筛选记录");
-      await click("账户筛选");
-      const list = () => container.querySelector('[role="listbox"]')!;
-      expect(list().textContent).toContain("Current East#22");
-      expect(list().textContent).toContain("Current West#33停用");
-      expect(list().textContent).not.toContain("test-account");
-      await setInput("搜索账户", " west ");
-      expect(list().textContent).toContain("Current West#33");
-      expect(list().textContent).not.toContain("Current East");
-      await setInput("搜索账户", "#9");
-      expect(list().querySelectorAll('[role="option"]')).toHaveLength(1);
-      await setInput("搜索账户", "#22");
-      expect(list().querySelectorAll('[role="option"]')).toHaveLength(2);
-      await click("Current East#22");
+  it("only offers snapshot accounts and applies local name or ID search", async () => {
+    const accounts = [
+      account(22, "Current East"),
+      account(33, "Current West", "disabled"),
+    ];
+    serve((path) =>
+      page([
+        params(path).get("account_id") === "22"
+          ? record(200, { account_id: 22, account_name: "Current East" })
+          : record(100),
+      ]),
+    );
+    await renderView({ accounts });
+    expect(container.textContent).toContain("test-account");
+    await click("筛选记录");
+    await click("账户筛选");
+    const list = () => container.querySelector('[role="listbox"]')!;
+    expect(list().textContent).toContain("Current East#22");
+    expect(list().textContent).toContain("Current West#33停用");
+    expect(list().textContent).not.toContain("test-account");
+    await setInput("搜索账户", " west ");
+    expect(list().textContent).toContain("Current West#33");
+    expect(list().textContent).not.toContain("Current East");
+    await setInput("搜索账户", "#9");
+    expect(list().querySelectorAll('[role="option"]')).toHaveLength(1);
+    await setInput("搜索账户", "#22");
+    expect(list().querySelectorAll('[role="option"]')).toHaveLength(2);
+    await click("Current East#22");
 
-      expect(api).toHaveBeenCalledTimes(2);
-      expect(params(paths().at(-1)!).get("account_id")).toBe("22");
-      expect(paths().every((path) => path.startsWith("/usage-records?"))).toBe(
-        true,
-      );
-      expect(container.textContent).not.toContain("test-account");
-      expect(container.textContent).toContain("Current East");
-    },
-  );
+    expect(api).toHaveBeenCalledTimes(2);
+    expect(params(paths().at(-1)!).get("account_id")).toBe("22");
+    expect(paths().every((path) => path.startsWith("/usage-records?"))).toBe(
+      true,
+    );
+    expect(container.textContent).not.toContain("test-account");
+    expect(container.textContent).toContain("Current East");
+  });
 
   it("clears a removed account when the online snapshot changes", async () => {
     const accounts = [account(22, "Current East")];
     await renderView({ accounts });
+    await click("筛选记录");
     await click("账户筛选");
     await click("Current East#22");
     expect(params(paths().at(-1)!).get("account_id")).toBe("22");
@@ -1451,6 +1297,7 @@ describe("record view", () => {
 
   it("preserves an applied account while offline and clears it when a fresh online snapshot removes it", async () => {
     await renderView({ accounts: [account(22, "Current East")] });
+    await click("筛选记录");
     await click("账户筛选");
     await click("Current East#22");
 
@@ -1508,6 +1355,7 @@ describe("record view", () => {
     };
     await renderView();
     expect(tableIds()).toEqual([]);
+    await click("筛选记录");
     await click("用户筛选");
     await advance(0);
     await choose("user-one#71");
@@ -1551,7 +1399,7 @@ describe("record view", () => {
     ).toBe(true);
   });
 
-  it.each(["hidden", "offline", "background", "unfocused"])(
+  it.each(["hidden", "offline", "background"])(
     "stops directory interaction when the record view becomes %s",
     async (state) => {
       const stale = deferred<unknown>();
@@ -1559,15 +1407,14 @@ describe("record view", () => {
         path.startsWith("/usage-record-options?") ? stale.promise : page([]),
       );
       await renderView();
+      await click("筛选记录");
       await click("用户筛选");
       await advance(0);
       if (state === "hidden") await setVisibility("hidden");
-      else if (state === "unfocused") await setFocus(false);
       else
         await renderView(
           state === "offline" ? { online: false } : { foreground: false },
         );
-      if (state === "background") await setFocus(true);
       expect(button("用户筛选").disabled).toBe(true);
       expect(button("API 密钥筛选").disabled).toBe(true);
       expect(container.querySelector('[role="listbox"]')).toBeNull();
@@ -1584,7 +1431,6 @@ describe("record view", () => {
       ).toHaveLength(1);
       expect(container.textContent).not.toContain("stale-user");
       if (state === "hidden") await setVisibility("visible");
-      else if (state === "unfocused") await setFocus(true);
       else await renderView();
       expect(button("用户筛选").disabled).toBe(false);
       expect(container.querySelector('[role="listbox"]')).toBeNull();
@@ -1601,28 +1447,24 @@ describe("record view", () => {
     });
     serve((path) => (path === "/usage-records/100" ? row : page([row])));
     await renderView();
-    const body = container.querySelector("tbody")!;
-    expect(body.querySelector(".record-cache-read")?.textContent).toBe(
+    const card = container.querySelector(".mobile-record")!;
+    expect(card.querySelector(".record-cache-read")?.textContent).toBe(
       "127.1K",
     );
     expect(
-      body.querySelector(".record-cache-read")?.getAttribute("title"),
+      card.querySelector(".record-cache-read")?.getAttribute("title"),
     ).toBe("缓存读取：127,100");
-    expect(body.querySelector(".record-cache-write")?.textContent).toBe("1.3M");
+    expect(card.querySelector(".record-cache-write")?.textContent).toBe("1.3M");
     expect(
-      body.querySelector(".record-cache-write")?.getAttribute("title"),
+      card.querySelector(".record-cache-write")?.getAttribute("title"),
     ).toBe("缓存写入：1,250,000");
     expect(
-      [...body.querySelectorAll(".latency-warn")].map(
+      [...card.querySelectorAll(".latency-warn")].map(
         (node) => node.textContent,
       ),
     ).toEqual(["10.00s", "70.00s"]);
-    expect(body.querySelector(".record-tps")?.textContent).toBe("1.7 tok/s");
-    await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
-        .click(),
-    );
+    expect(card.querySelector(".record-tps")?.textContent).toBe("1.7 tok/s");
+    await click("查看记录 #100");
     expect(detailValue("缓存读取")).toBe("127,100");
     expect(detailValue("缓存写入")).toBe("1,250,000");
     expect(detailValue("输出 TPS")).toBe("1.7 tok/s");
@@ -1684,11 +1526,7 @@ describe("record view", () => {
     expect(button("2 条新记录")).toBeDefined();
     expect(heads).toBe(1);
     await scrollTo(0);
-    await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[title="查看记录 #99"]')!
-        .click(),
-    );
+    await click("查看记录 #99");
     count = 3;
     await advance(10000);
     expect(container.querySelector("[role=dialog]")?.textContent).toContain(
@@ -1713,20 +1551,21 @@ describe("record view", () => {
       ]);
     });
     await renderView();
-    await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
-        .click(),
-    );
+    await click("查看记录 #100");
     expect(container.querySelector("[role=dialog]")?.textContent).toContain(
       "正在读取记录",
     );
+    await click("筛选记录");
     await setInput("模型筛选", "next-model");
     await submitModel();
 
-    expect(container.querySelector("[role=dialog]")).toBeNull();
+    expect(
+      container.querySelector('[role=dialog][aria-label="调用记录详情"]'),
+    ).toBeNull();
     await act(async () => stale.resolve(record(100)));
-    expect(container.querySelector("[role=dialog]")).toBeNull();
+    expect(
+      container.querySelector('[role=dialog][aria-label="调用记录详情"]'),
+    ).toBeNull();
     expect(tableIds()).toEqual(["查看记录 #200"]);
     expect(params(paths().at(-1)!).get("model")).toBe("next-model");
   });
@@ -1747,12 +1586,7 @@ describe("record view", () => {
       await advance(10000);
       expect(heads).toBe(2);
       if (action === "scroll") await scrollTo(240);
-      else
-        await act(async () =>
-          container
-            .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
-            .click(),
-        );
+      else await click("查看记录 #100");
       await act(async () =>
         replacement.resolve(
           page([record(102), record(101)], { summary: { actual_cost: "999" } }),
@@ -1772,22 +1606,26 @@ describe("record view", () => {
 
   it("offers the default columns and persists visibility through the supplied preferences callback", async () => {
     await renderView();
-    const headers = () =>
-      [...container.querySelectorAll("th")].map((th) => th.textContent);
-    expect(headers()).toEqual([
-      "用户",
+    const cardLabels = () =>
+      [
+        ...container.querySelectorAll(
+          ".mobile-record:first-child .mobile-record-label",
+        ),
+      ].map((node) => node.textContent);
+    expect(cardLabels()).toEqual([
       "API 密钥",
-      "时间",
       "账户",
       "模型",
       "类型",
       "推理强度",
       "Token",
-      "费用",
       "延迟",
       "User-Agent",
       "IP",
     ]);
+    expect(
+      container.querySelector(".mobile-record:first-child .record-money"),
+    ).not.toBeNull();
     const toggle = (name: string) =>
       [
         ...container.querySelectorAll<HTMLLabelElement>(
@@ -1800,12 +1638,12 @@ describe("record view", () => {
     const withEndpoint = [...defaultRecordColumns, "endpoint"];
     expect(saveColumns).toHaveBeenLastCalledWith(withEndpoint);
     await renderView({ columns: withEndpoint });
-    expect(headers()).toContain("端点");
+    expect(cardLabels()).toContain("端点");
     await act(async () => toggle("User-Agent").click());
     const saved = withEndpoint.filter((key) => key !== "user_agent");
     expect(saveColumns).toHaveBeenLastCalledWith(saved);
     await renderView({ columns: saved });
-    expect(headers()).not.toContain("User-Agent");
+    expect(cardLabels()).not.toContain("User-Agent");
     expect(toggle("User-Agent").checked).toBe(false);
     expect(toggle("端点").checked).toBe(true);
     expect(saveColumns).toHaveBeenCalledTimes(2);
@@ -1814,8 +1652,15 @@ describe("record view", () => {
   it("preserves saved type-column preferences without losing the user's remaining columns", async () => {
     await renderView({ columns: ["type", "model", "cost", "user_agent"] });
     expect(
-      [...container.querySelectorAll("th")].map((node) => node.textContent),
-    ).toEqual(["用户", "时间", "模型", "类型", "费用", "User-Agent"]);
+      [
+        ...container.querySelectorAll(
+          ".mobile-record:first-child .mobile-record-label",
+        ),
+      ].map((node) => node.textContent),
+    ).toEqual(["模型", "类型", "User-Agent"]);
+    expect(
+      container.querySelector(".mobile-record:first-child .record-money"),
+    ).not.toBeNull();
     const options = [
       ...container.querySelectorAll<HTMLLabelElement>(
         ".records-column-options label",
@@ -1851,30 +1696,41 @@ describe("record view", () => {
   it("preserves an empty saved selection without restoring defaults", async () => {
     await renderView({ columns: [] });
     expect(
-      [...container.querySelectorAll("th")].map((node) => node.textContent),
-    ).toEqual(["用户", "时间"]);
+      container.querySelectorAll(
+        ".mobile-record:first-child .mobile-record-label",
+      ),
+    ).toHaveLength(0);
+    expect(
+      container.querySelector(".mobile-record:first-child .record-money"),
+    ).toBeNull();
+    expect(
+      container.querySelector(".mobile-record:first-child .mobile-record-user"),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(".mobile-record:first-child time"),
+    ).not.toBeNull();
     expect(saveColumns).not.toHaveBeenCalled();
   });
 
-  it("renders a saved type-only selection as a type column", async () => {
+  it("renders a saved type-only selection as a type field", async () => {
     await renderView({ columns: ["type"] });
     expect(
-      [...container.querySelectorAll("th")].map((node) => node.textContent),
-    ).toEqual(["用户", "时间", "类型"]);
+      [
+        ...container.querySelectorAll(
+          ".mobile-record:first-child .mobile-record-label",
+        ),
+      ].map((node) => node.textContent),
+    ).toEqual(["类型"]);
     expect(saveColumns).not.toHaveBeenCalled();
   });
 
-  it("keeps the legacy request type in details after removing the table column and type filter", async () => {
+  it("keeps the legacy request type in details after removing the type field and type filter", async () => {
     const row = record(100, { request_type: "ws_v2" });
     serve((path) => (path === "/usage-records/100" ? row : page([row])));
     await renderView({ columns: ["model", "cost"] });
-    expect(container.querySelector(".record-col-type")).toBeNull();
+    expect(container.querySelector(".mobile-record-type")).toBeNull();
     expect(container.querySelector('[aria-label="请求类型"]')).toBeNull();
-    await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
-        .click(),
-    );
+    await click("查看记录 #100");
     expect(detailValue("类型")).toContain("WebSocket");
     expect(
       container.querySelector(".record-detail .record-type-badge.is-ws_v2"),
@@ -1888,11 +1744,7 @@ describe("record view", () => {
     expect(
       container.querySelector(".record-type-badge.is-sync")?.textContent,
     ).toBe("同步");
-    await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
-        .click(),
-    );
+    await click("查看记录 #100");
     expect(detailValue("类型")).toContain("同步");
   });
 
@@ -1915,7 +1767,7 @@ describe("record view", () => {
     });
     serve((path) => (path === "/usage-records/100" ? row : page([row])));
     await renderView({ columns: ["type", "cost", "latency"] });
-    const cell = container.querySelector("tbody .record-col-type")!;
+    const cell = container.querySelector(".mobile-record .mobile-record-type")!;
     expect(
       cell.querySelector(".record-type-badge.is-stream")?.textContent,
     ).toBe("流式");
@@ -1963,7 +1815,7 @@ describe("record view", () => {
     expect(menu.open).toBe(true);
     await act(async () =>
       container
-        .querySelector("form")!
+        .querySelector(".records-summary")!
         .dispatchEvent(new Event("pointerdown", { bubbles: true })),
     );
     expect(menu.open).toBe(false);
@@ -1988,7 +1840,7 @@ describe("record view", () => {
     expect(container.querySelector("[role=alert]")?.textContent).toContain(
       "保存列失败",
     );
-    expect(container.querySelector(".record-col-api_key")).not.toBeNull();
+    expect(container.querySelector(".mobile-record-api_key")).not.toBeNull();
     expect(
       container.querySelector<HTMLInputElement>(
         ".records-column-options input",
@@ -2000,33 +1852,27 @@ describe("record view", () => {
     const row = record(100);
     serve((path) => (path === "/usage-records/100" ? row : page([row])));
     await renderView();
-    const cells = container.querySelector("tbody")!;
-    expect(cells.querySelector(".record-col-model")?.textContent).toContain(
+    const card = container.querySelector(".mobile-record")!;
+    expect(card.querySelector(".mobile-record-model")?.textContent).toContain(
       "request-model",
     );
-    expect(cells.querySelector(".record-col-model")?.textContent).toContain(
+    expect(card.querySelector(".mobile-record-model")?.textContent).toContain(
       "forward-model",
     );
-    expect(cells.querySelector(".record-col-model")?.textContent).toContain(
+    expect(card.querySelector(".mobile-record-model")?.textContent).toContain(
       "returned-model",
     );
-    expect(cells.querySelector(".route-mismatch")?.textContent).toBe(
-      "返回差异",
+    expect(card.querySelector(".route-mismatch")?.textContent).toBe("返回差异");
+    expect(card.querySelector(".mobile-record-reasoning")?.textContent).toBe(
+      "推理强度max↳ high",
     );
-    expect(cells.querySelector(".record-col-reasoning")?.textContent).toBe(
-      "max↳ high",
-    );
-    expect(cells.querySelector('[title="用户实扣"]')?.textContent).toBe(
+    expect(card.querySelector('[title="用户实扣"]')?.textContent).toBe(
       "$9007199254740993.123457",
     );
-    expect(cells.querySelector('[title="账户费用"]')?.textContent).toBe(
+    expect(card.querySelector('[title="账户费用"]')?.textContent).toBe(
       "A $0.000000",
     );
-    await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
-        .click(),
-    );
+    await click("查看记录 #100");
     expect(detailValue("请求")).toBe("request-model");
     expect(detailValue("转发")).toBe("forward-model");
     expect(detailValue("返回")).toBe("returned-model");
@@ -2046,9 +1892,9 @@ describe("record view", () => {
   });
 
   it.each([
-    { requested: null, actual: null, display: "—" },
-    { requested: "max", actual: null, display: "max" },
-    { requested: null, actual: "high", display: "high" },
+    { requested: null, actual: null, display: "推理强度—" },
+    { requested: "max", actual: null, display: "推理强度max" },
+    { requested: null, actual: "high", display: "推理强度high" },
   ])(
     "does not fabricate missing response or reasoning fields: $requested / $actual",
     async ({ requested, actual, display }) => {
@@ -2067,17 +1913,17 @@ describe("record view", () => {
       serve((path) => (path === "/usage-records/100" ? row : page([row])));
       await renderView();
       expect(
-        container.querySelector("tbody .record-col-model")?.textContent,
-      ).toBe("legacy-model");
+        container.querySelector(".mobile-record .mobile-record-model")
+          ?.textContent,
+      ).toBe("模型legacy-model");
       expect(
-        container.querySelector("tbody .record-col-reasoning")?.textContent,
+        container.querySelector(".mobile-record .mobile-record-reasoning")
+          ?.textContent,
       ).toBe(display);
-      expect(container.querySelector("tbody .route-mismatch")).toBeNull();
-      await act(async () =>
-        container
-          .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
-          .click(),
-      );
+      expect(
+        container.querySelector(".mobile-record .route-mismatch"),
+      ).toBeNull();
+      await click("查看记录 #100");
       expect(detailValue("请求")).toBe("legacy-model");
       expect(detailValue("转发")).toBe("legacy-model");
       expect(detailValue("返回")).toBe("—");
@@ -2096,6 +1942,7 @@ it("applies platform to the record feed and clears an incompatible account", asy
       { ...account(10, "Claude fixture"), platform: "anthropic" },
     ],
   });
+  await click("筛选记录");
   await click("账户筛选");
   await click("Codex fixture#9");
 
@@ -2144,6 +1991,7 @@ it("applies platform to the record feed and clears an incompatible account", asy
 
 it("debounces model text for 300ms, submits Enter immediately, and applies mismatch without a filter button", async () => {
   await renderView();
+  await click("筛选记录");
   expect(
     container.querySelector('.records-toolbar button[type="submit"]'),
   ).toBeNull();

@@ -12,8 +12,6 @@ vi.mock("./bridge", () => ({
   api: vi.fn(),
   command: vi.fn(),
   subscribe: vi.fn(),
-  updates: vi.fn(async () => () => {}),
-  watchWindowFocus: vi.fn(async () => () => {}),
   preview: true,
 }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -63,7 +61,7 @@ const group = (id: number, name: string, platform = "openai"): Group => ({
 });
 
 const state = (accounts: Account[] = [account(1)]): ViewState => ({
-  platform: "macos",
+  platform: "android",
   foreground: true,
   connected: true,
   online: true,
@@ -132,8 +130,11 @@ const button = (text: string, scope: ParentNode = container) =>
   [...scope.querySelectorAll<HTMLButtonElement>("button")].find(
     (node) => node.textContent?.trim() === text,
   )!;
-const navigation = (name: string) =>
-  button(name, container.querySelector("aside nav")!);
+const navigation = (name: string) => {
+  if (name === "分组") return button("分组管理");
+  if (name === "优先级") return button("优先级管理");
+  return button(name, container.querySelector(".bottom-nav")!);
+};
 const groupCard = (name: string) =>
   [...container.querySelectorAll<HTMLElement>(".group-account")].find(
     (node) => node.querySelector("strong")?.textContent === name,
@@ -283,33 +284,63 @@ describe("shared account actions", () => {
       for (const type of ["apikey", "oauth"]) {
         await act(async () => root.render(null));
         await render(state([account(1, { platform, type })]));
-        const panel = container.querySelector<HTMLElement>(
-          ".accounts-table .account-actions",
+        const primary = container.querySelector<HTMLElement>(
+          ".mobile-primary-actions",
+        );
+        expect(primary !== null).toBe(type === "apikey");
+        await act(async () =>
+          container
+            .querySelector<HTMLButtonElement>(
+              '.mobile-accounts [aria-label="Fixture 1操作"]',
+            )!
+            .click(),
+        );
+        const sheet = container.querySelector<HTMLElement>(
+          ".mobile-action-sheet .mobile-more-actions",
         )!;
+        const allLabels = [
+          ...(primary ? labels(primary) : []),
+          ...labels(sheet),
+        ];
         for (const label of ["模型测试", "定时检测", "标记降智"]) {
-          expect(labels(panel).includes(label)).toBe(type === "apikey");
+          expect(allLabels.includes(label)).toBe(type === "apikey");
         }
       }
     },
   );
   it.each(["oauth", "apikey"])(
-    "expands every supported OpenAI %s action in the account table while retaining the group menu",
+    "exposes every supported OpenAI %s action across mobile cards and action sheet while retaining the group menu",
     async (type) => {
       await render(state([account(1, { type })]));
-      const panel = container.querySelector<HTMLElement>(
-        ".accounts-table .account-actions",
+      const primary = container.querySelector<HTMLElement>(
+        ".mobile-primary-actions",
       )!;
-      expect(labels(panel)).toEqual(
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>(
+            '.mobile-accounts [aria-label="Fixture 1操作"]',
+          )!
+          .click(),
+      );
+      const more = container.querySelector<HTMLElement>(
+        ".mobile-action-sheet .mobile-more-actions",
+      )!;
+      expect([...labels(primary), ...labels(more)]).toEqual(
         openAILabels.filter(
           (label) => type === "oauth" || label !== "重新授权",
         ),
       );
-      expect(panel.querySelector(".account-more-trigger")).toBeNull();
       expect(
-        [...panel.querySelectorAll("button")].every(
-          (node) => !!node.querySelector("svg"),
-        ),
+        [
+          ...primary.querySelectorAll("button"),
+          ...more.querySelectorAll("button"),
+        ].every((node) => !!node.querySelector("svg")),
       ).toBe(true);
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>('[aria-label="关闭账号操作"]')!
+          .click(),
+      );
       expect(
         container.querySelector('[role="group"][aria-label="批量账号操作"]'),
       ).toBeNull();
@@ -343,51 +374,39 @@ describe("shared account actions", () => {
     },
   );
 
-  it.each(["macos", "android"] as const)(
-    "opens and closes account keepalive from the %s account actions",
-    async (platform) => {
-      await render({ ...state(), platform });
-      let actions: ParentNode;
-      if (platform === "android") {
-        const primary = container.querySelector<HTMLElement>(
-          ".mobile-primary-actions",
-        )!;
-        expect(labels(primary)).not.toContain("账号保活");
-        await act(async () =>
-          container
-            .querySelector<HTMLButtonElement>(
-              '.mobile-accounts [aria-label="Fixture 1操作"]',
-            )!
-            .click(),
-        );
-        const sheet = container.querySelector<HTMLElement>(
-          ".mobile-action-sheet",
-        );
-        expect(sheet).not.toBeNull();
-        actions = sheet!.querySelector<HTMLElement>(".mobile-more-actions")!;
-      } else {
-        actions = container.querySelector<HTMLElement>(
-          ".accounts-table .account-actions",
-        )!;
-      }
+  it("opens and closes account keepalive from the Android account actions", async () => {
+    await render(state());
+    const primary = container.querySelector<HTMLElement>(
+      ".mobile-primary-actions",
+    )!;
+    expect(labels(primary)).not.toContain("账号保活");
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>(
+          '.mobile-accounts [aria-label="Fixture 1操作"]',
+        )!
+        .click(),
+    );
+    const sheet = container.querySelector<HTMLElement>(".mobile-action-sheet");
+    expect(sheet).not.toBeNull();
+    const actions = sheet!.querySelector<HTMLElement>(".mobile-more-actions")!;
 
-      await act(async () => button("账号保活", actions).click());
-      expect(
-        container.querySelector('[role="dialog"][aria-label="账号保活"]')
-          ?.textContent,
-      ).toContain("Fixture 1");
-      expect(api).toHaveBeenCalledWith("GET", "/accounts/1/keepalive");
+    await act(async () => button("账号保活", actions).click());
+    expect(
+      container.querySelector('[role="dialog"][aria-label="账号保活"]')
+        ?.textContent,
+    ).toContain("Fixture 1");
+    expect(api).toHaveBeenCalledWith("GET", "/accounts/1/keepalive");
 
-      await act(async () =>
-        container
-          .querySelector<HTMLButtonElement>('[aria-label="关闭账号保活"]')!
-          .click(),
-      );
-      expect(
-        container.querySelector('[role="dialog"][aria-label="账号保活"]'),
-      ).toBeNull();
-    },
-  );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="关闭账号保活"]')!
+        .click(),
+    );
+    expect(
+      container.querySelector('[role="dialog"][aria-label="账号保活"]'),
+    ).toBeNull();
+  });
 
   it.each([true, false])(
     "limits a Grok group menu to supported actions with recovery eligibility %s",

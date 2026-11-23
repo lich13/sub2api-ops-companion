@@ -19,7 +19,7 @@ public struct GroupsPageView: View {
     }
 
     private var platforms: [String] {
-        let all = store.accounts.map(\.platform) + store.groups.map(\.platform)
+        let all = store.accounts.map(\.platform) + store.groups.compactMap(\.platform)
         return PlatformMeta.sortPlatforms(all)
     }
 
@@ -613,7 +613,7 @@ public struct GroupsPageView: View {
                 requestId: UUID().uuidString.lowercased()
             )
             let final = try await store.operations.followBatch(initial: initial)
-            let completed = final.items.filter { $0.status == "completed" && $0.result?["verified"]?.boolValue != false }
+            let completed = final.items.filter { $0.status == "completed" && $0.result?.verified != false }
             for job in completed {
                 drafts.removeValue(forKey: job.account_id)
             }
@@ -625,7 +625,7 @@ public struct GroupsPageView: View {
                 statusMessage = "已保存 \(completed.count) 个账号"
                 expandedDraftList = false
             } else {
-                statusMessage = "已保存 \(completed.count) 个账号；\(failed.map { "\($0.account_name)：\($0.reason ?? $0.status)" }.joined(separator: "；"))"
+                statusMessage = "已保存 \(completed.count) 个账号；\(failed.map { "\($0.accountNameText)：\($0.reason ?? $0.status)" }.joined(separator: "；"))"
             }
             store.refresh()
         } catch {

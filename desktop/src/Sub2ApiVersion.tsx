@@ -1,28 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { api, command } from "./bridge";
+import type {
+  SystemUpdateReply as Sub2ApiUpdateResult,
+  SystemVersionReply,
+  UpdatesReply as Sub2ApiUpdate,
+} from "./protocol";
 
-export type Sub2ApiUpdate = {
-  current_version: string;
-  latest_version: string;
-  has_update: boolean;
-  cached: boolean;
-  build_type: string;
-  warning?: string;
-  release_info?: {
-    name: string;
-    html_url: string;
-    published_at: string;
-    body: string;
-  };
-};
-export type Sub2ApiUpdateResult = {
-  message: string;
-  need_restart?: boolean;
-  already_up_to_date?: boolean;
-  current_version?: string;
-  latest_version?: string;
-  operation_id?: string;
-};
+export type {
+  SystemUpdateReply as Sub2ApiUpdateResult,
+  UpdatesReply as Sub2ApiUpdate,
+} from "./protocol";
 const normalize = (version: string) => version.replace(/^v/, "");
 
 export default function Sub2ApiVersion({
@@ -68,7 +55,7 @@ export default function Sub2ApiVersion({
       timer: ReturnType<typeof setTimeout>;
     async function check() {
       try {
-        const current = await api<{ version: string }>(
+        const current = await api<SystemVersionReply>(
           "GET",
           "/sub2api-system/version",
         );

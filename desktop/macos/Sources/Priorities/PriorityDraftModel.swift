@@ -1,132 +1,72 @@
 import Foundation
 
-public struct PriorityAccount: Codable, Sendable, Equatable, Identifiable {
-    public var id: Int
-    public var name: String
-    public var platform: String
-    public var type: String
-    public var priority: Int
-    public var version: String
-    public var editable: Bool
-    public var reason: String
-    public var status: String
-    public var schedulable: Bool
+public typealias PriorityAccount = PriorityAccountReply
+public typealias PriorityOrderItem = PriorityItemReply
+public typealias PriorityTask = PriorityTaskReply
+public typealias PriorityPlatformGroup = PriorityPlatformReply
+public typealias PriorityViewEnvelope = PriorityOverviewReply
 
+extension PriorityAccountReply: Identifiable {
     public init(
         id: Int,
         name: String,
         platform: String,
-        type: String = "oauth",
         priority: Int,
+        type: String = "oauth",
         version: String = "",
         editable: Bool = true,
         reason: String = "",
         status: String = "active",
         schedulable: Bool = true
     ) {
-        self.id = id
-        self.name = name
-        self.platform = platform
-        self.type = type
-        self.priority = priority
-        self.version = version
-        self.editable = editable
-        self.reason = reason
-        self.status = status
-        self.schedulable = schedulable
-    }
-
-    public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(Int.self, forKey: .id)
-        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
-        platform = try c.decodeIfPresent(String.self, forKey: .platform) ?? ""
-        type = try c.decodeIfPresent(String.self, forKey: .type) ?? ""
-        priority = try c.decodeIfPresent(Int.self, forKey: .priority) ?? 1
-        version = try c.decodeIfPresent(String.self, forKey: .version) ?? ""
-        editable = try c.decodeIfPresent(Bool.self, forKey: .editable) ?? true
-        reason = try c.decodeIfPresent(String.self, forKey: .reason) ?? ""
-        status = try c.decodeIfPresent(String.self, forKey: .status) ?? "active"
-        schedulable = try c.decodeIfPresent(Bool.self, forKey: .schedulable) ?? true
+        self.init(
+            id: id,
+            name: name,
+            platform: platform,
+            type: type,
+            priority: priority,
+            version: version,
+            editable: editable,
+            reason: reason,
+            status: status,
+            schedulable: schedulable
+        )
     }
 }
 
-public struct PriorityOrderItem: Codable, Sendable, Equatable {
-    public var account_id: Int
-    public var account_name: String
-    public var platform: String?
-    public var original_priority: Int
-    public var target_priority: Int
-    public var observed_priority: Int?
-    public var status: String
-}
-
-public struct PriorityTask: Codable, Sendable, Equatable, Identifiable {
-    public var id: String
-    public var status: String
-    public var cancel_requested: Bool
-    public var reason: String
-    public var total: Int
-    public var change_count: Int
-    public var verified_count: Int
-    public var created_at: String
-    public var updated_at: String
-    public var completed_at: String?
-    public var items: [PriorityOrderItem]?
-    public var platform: String
-    public var waiting_reason: String
-    public var waiting_account_ids: [Int]
-    public var parallelism: Int?
-
-    public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(String.self, forKey: .id)
-        status = try c.decodeIfPresent(String.self, forKey: .status) ?? ""
-        cancel_requested = try c.decodeIfPresent(Bool.self, forKey: .cancel_requested) ?? false
-        reason = try c.decodeIfPresent(String.self, forKey: .reason) ?? ""
-        total = try c.decodeIfPresent(Int.self, forKey: .total) ?? 0
-        change_count = try c.decodeIfPresent(Int.self, forKey: .change_count) ?? 0
-        verified_count = try c.decodeIfPresent(Int.self, forKey: .verified_count) ?? 0
-        created_at = try c.decodeIfPresent(String.self, forKey: .created_at) ?? ""
-        updated_at = try c.decodeIfPresent(String.self, forKey: .updated_at) ?? ""
-        completed_at = try c.decodeIfPresent(String.self, forKey: .completed_at)
-        items = try c.decodeIfPresent([PriorityOrderItem].self, forKey: .items)
-        platform = try c.decodeIfPresent(String.self, forKey: .platform) ?? ""
-        waiting_reason = try c.decodeIfPresent(String.self, forKey: .waiting_reason) ?? ""
-        waiting_account_ids = try c.decodeIfPresent([Int].self, forKey: .waiting_account_ids) ?? []
-        parallelism = try c.decodeIfPresent(Int.self, forKey: .parallelism)
-    }
-
+extension PriorityTaskReply: Identifiable {
     public var isPending: Bool {
         ["queued", "running", "checking"].contains(status)
     }
 }
 
-public struct PriorityPlatformGroup: Codable, Sendable, Equatable, Identifiable {
-    public var platform: String
-    public var items: [PriorityAccount]
-    public var version: String
-    public var last_task: PriorityTask?
-    public var parallelism: Int?
-
+extension PriorityPlatformReply: Identifiable {
     public var id: String { platform }
 
-    public init(platform: String, items: [PriorityAccount], version: String = "", last_task: PriorityTask? = nil, parallelism: Int? = 1) {
-        self.platform = platform
-        self.items = items
-        self.version = version
-        self.last_task = last_task
-        self.parallelism = parallelism
+    public init(
+        platform: String,
+        items: [PriorityAccountReply],
+        version: String = "",
+        last_task: PriorityTaskReply? = nil,
+        parallelism: Int? = 1
+    ) {
+        self.init(
+            platform: platform,
+            parallelism: parallelism,
+            version: version,
+            items: items,
+            last_task: last_task
+        )
     }
 }
 
-public struct PriorityViewEnvelope: Codable, Sendable, Equatable {
-    public var platforms: [PriorityPlatformGroup]
-    public var active_task: PriorityTask?
+extension PriorityOverviewReply {
+    public init(platforms: [PriorityPlatformReply]) {
+        self.init(platforms: platforms, active_task: nil)
+    }
 
-    public init(platforms: [PriorityPlatformGroup], active_task: PriorityTask? = nil) {
-        self.platforms = platforms
-        self.active_task = active_task
+    public func withActiveTask(_ task: PriorityTaskReply?) -> PriorityOverviewReply {
+        PriorityOverviewReply(platforms: platforms, active_task: task)
     }
 }
 

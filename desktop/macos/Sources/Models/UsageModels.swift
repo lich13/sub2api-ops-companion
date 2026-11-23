@@ -131,13 +131,17 @@ public final class NativeUsageReader {
 
 public enum UsageFormatting {
     public static func compactTokens(_ tokens: Int) -> String {
+        compactTokens(Double(tokens))
+    }
+
+    public static func compactTokens(_ tokens: Double) -> String {
         if tokens >= 1_000_000 {
-            return String(format: "%.1fM", Double(tokens) / 1_000_000.0)
+            return String(format: "%.1fM", tokens / 1_000_000.0)
         }
         if tokens >= 1_000 {
-            return String(format: "%.1fK", Double(tokens) / 1_000.0)
+            return String(format: "%.1fK", tokens / 1_000.0)
         }
-        return "\(tokens)"
+        return "\(Int(tokens.rounded()))"
     }
 
     public static func money(_ amount: Double) -> String {

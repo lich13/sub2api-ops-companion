@@ -24,7 +24,6 @@ vi.mock("./bridge", () => ({
   api: vi.fn(),
   command: vi.fn(),
   subscribe: vi.fn(),
-  updates: vi.fn(async () => () => {}),
   preview: true,
 }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -98,7 +97,7 @@ async function openAutoResetSettings(
   const state: ViewState = {
     connected: true,
     online: true,
-    platform: "macos",
+    platform: "android",
     foreground: true,
     error: "",
     preferences: {
@@ -516,7 +515,7 @@ it("selects current filters, preserves live selections on polling and clears on 
 it("keeps batch actions adjacent and requires confirmation before deleting selected accounts", async () => {
   let receive: (state: ViewState) => void = () => {};
   const state: ViewState = {
-    platform: "macos",
+    platform: "android",
     connected: true,
     online: true,
     error: "",
@@ -763,7 +762,7 @@ it("ignores late recovery results after changing connections", async () => {
 
 it("offers batch reset cards only for a selection holding one and spends nothing before confirmation", async () => {
   const state: ViewState = {
-    platform: "macos",
+    platform: "android",
     connected: true,
     online: true,
     error: "",

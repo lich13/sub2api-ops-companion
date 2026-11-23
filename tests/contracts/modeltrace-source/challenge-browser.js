@@ -45,7 +45,7 @@ export function generateChallenges(count = 3) {
     "只要每个整数边界清楚，格式可自行选择。",
   ];
   return uniqueLengths(count).map((length, index) => ({
-    id: `probe-${index + 1}-${crypto.randomUUID()}`,
+    id: `probe-${index + 1}-${typeof crypto.randomUUID === "function" ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)}`,
     expected_count: length,
     prompt: `${choose(openings)}。${choose(actions)} ${length} 个 1 到 355（含端点）的整数。`
       + "每个位置都要单独选择；不要从 1 开始计数，不要连续递增或递减，也不要采用等差、循环、重复区块或其他规则化模式。"

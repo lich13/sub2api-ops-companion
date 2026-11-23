@@ -1,17 +1,10 @@
 import Foundation
 
-public struct TestEvent: Codable, Sendable, Equatable {
-    public var type: String
-    public var text: String?
-    public var model: String?
-    public var error: String?
-    public var success: Bool?
-    public var image_url: String?
-    public var audio_url: String?
-    public var video_url: String?
-    public var duration_ms: Double?
-    public var completed_at: String?
+public typealias TestEvent = TestEventRecord
+public typealias Operation = OperationHeader
+public typealias OperationBatch = BatchHeader
 
+extension TestEventRecord {
     public init(
         type: String,
         text: String? = nil,
@@ -24,74 +17,105 @@ public struct TestEvent: Codable, Sendable, Equatable {
         duration_ms: Double? = nil,
         completed_at: String? = nil
     ) {
-        self.type = type
-        self.text = text
-        self.model = model
-        self.error = error
-        self.success = success
-        self.image_url = image_url
-        self.audio_url = audio_url
-        self.video_url = video_url
-        self.duration_ms = duration_ms
-        self.completed_at = completed_at
+        self.init(
+            type: type,
+            text: text,
+            model: model,
+            error: error,
+            success: success,
+            image_url: image_url,
+            audio_url: audio_url,
+            video_url: video_url,
+            duration_ms: duration_ms,
+            completed_at: completed_at,
+            mime_type: nil,
+            audio_format: nil
+        )
     }
 }
 
-public struct Operation: Codable, Sendable, Equatable, Identifiable {
-    public var id: String
-    public var account_id: Int
-    public var account_name: String
-    public var action: String
-    public var status: String
-    public var batch_id: String?
-    public var reason: String?
-    public var requested: [String: JSONValue]
-    public var current: [String: JSONValue]?
-    public var result: [String: JSONValue]?
-    public var events: [TestEvent]?
-    public var next_event: Int?
-    public var started_at: String?
-    public var scheduled_at: String?
-    public var attempt_count: Int?
-    public var next_retry_at: String?
-    public var repeat_mode: String?
-    public var repeat_series_id: String?
-    public var repeat_state: String?
-    public var repeat_reason: String?
-    public var next_operation_id: String?
+extension OperationRequestFields {
+    public static let empty = OperationRequestFields(
+        priority: nil,
+        concurrency: nil,
+        load_factor: nil,
+        proxy_id: nil,
+        schedulable: nil,
+        marked: nil,
+        confirmed: nil,
+        model_id: nil,
+        mode: nil,
+        action: nil,
+        template_id: nil,
+        template_version: nil,
+        group_ids: nil,
+        scope_group_ids: nil,
+        whitelist: nil,
+        mappings: nil
+    )
 
-    enum CodingKeys: String, CodingKey {
-        case id, account_id, account_name, action, status, batch_id, reason
-        case requested, current, result, events, next_event
-        case started_at, scheduled_at, attempt_count, next_retry_at
-        case repeat_mode = "repeat"
-        case repeat_series_id, repeat_state, repeat_reason, next_operation_id
+    public func asPayload(for actionName: String) -> [String: JSONValue] {
+        var obj: [String: JSONValue] = [:]
+        if let priority { obj["priority"] = .int(Int64(priority)) }
+        if let concurrency { obj["concurrency"] = .int(Int64(concurrency)) }
+        if actionName == "load_factor" || load_factor != nil {
+            obj["load_factor"] = load_factor.map { .int(Int64($0)) } ?? .null
+        }
+        if actionName == "proxy" || proxy_id != nil {
+            obj["proxy_id"] = proxy_id.map { .int(Int64($0)) } ?? .null
+        }
+        if let schedulable { obj["schedulable"] = .bool(schedulable) }
+        if let marked { obj["marked"] = .bool(marked) }
+        if let confirmed { obj["confirmed"] = .bool(confirmed) }
+        if let model_id { obj["model_id"] = .string(model_id) }
+        if let mode { obj["mode"] = .string(mode) }
+        if let action { obj["action"] = .string(action) }
+        if let template_id { obj["template_id"] = .string(template_id) }
+        if let template_version { obj["template_version"] = .string(template_version) }
+        if let group_ids { obj["group_ids"] = .array(group_ids.map { .int(Int64($0)) }) }
+        if let scope_group_ids { obj["scope_group_ids"] = .array(scope_group_ids.map { .int(Int64($0)) }) }
+        if let whitelist { obj["whitelist"] = .array(whitelist.map(JSONValue.string)) }
+        if let mappings {
+            obj["mappings"] = .array(mappings.map {
+                .object(["source": .string($0.source), "target": .string($0.target)])
+            })
+        }
+        return obj
     }
+}
 
-    public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(String.self, forKey: .id)
-        account_id = try c.decodeIfPresent(Int.self, forKey: .account_id) ?? 0
-        account_name = try c.decodeIfPresent(String.self, forKey: .account_name) ?? ""
-        action = try c.decodeIfPresent(String.self, forKey: .action) ?? ""
-        status = try c.decodeIfPresent(String.self, forKey: .status) ?? ""
-        batch_id = try c.decodeIfPresent(String.self, forKey: .batch_id)
-        reason = try c.decodeIfPresent(String.self, forKey: .reason)
-        requested = try c.decodeIfPresent([String: JSONValue].self, forKey: .requested) ?? [:]
-        current = try c.decodeIfPresent([String: JSONValue].self, forKey: .current)
-        result = try c.decodeIfPresent([String: JSONValue].self, forKey: .result)
-        events = try c.decodeIfPresent([TestEvent].self, forKey: .events)
-        next_event = try c.decodeIfPresent(Int.self, forKey: .next_event)
-        started_at = try c.decodeIfPresent(String.self, forKey: .started_at)
-        scheduled_at = try c.decodeIfPresent(String.self, forKey: .scheduled_at)
-        attempt_count = try c.decodeIfPresent(Int.self, forKey: .attempt_count)
-        next_retry_at = try c.decodeIfPresent(String.self, forKey: .next_retry_at)
-        repeat_mode = try c.decodeIfPresent(String.self, forKey: .repeat_mode)
-        repeat_series_id = try c.decodeIfPresent(String.self, forKey: .repeat_series_id)
-        repeat_state = try c.decodeIfPresent(String.self, forKey: .repeat_state)
-        repeat_reason = try c.decodeIfPresent(String.self, forKey: .repeat_reason)
-        next_operation_id = try c.decodeIfPresent(String.self, forKey: .next_operation_id)
+extension OperationCurrentFields {
+    public func asPayload(for actionName: String) -> [String: JSONValue] {
+        var obj: [String: JSONValue] = [:]
+        if let id { obj["id"] = .int(Int64(id)) }
+        if let priority { obj["priority"] = .int(Int64(priority)) }
+        if let concurrency { obj["concurrency"] = .int(Int64(concurrency)) }
+        if actionName == "load_factor" || load_factor != nil {
+            obj["load_factor"] = load_factor.map { .int(Int64($0)) } ?? .null
+        }
+        if actionName == "proxy" || proxy_id != nil {
+            obj["proxy_id"] = proxy_id.map { .int(Int64($0)) } ?? .null
+        }
+        if let name { obj["name"] = .string(name) }
+        if let platform { obj["platform"] = .string(platform) }
+        if let type { obj["type"] = .string(type) }
+        if let status { obj["status"] = .string(status) }
+        if let schedulable { obj["schedulable"] = .bool(schedulable) }
+        if let marked { obj["marked"] = .bool(marked) }
+        if let group_ids { obj["group_ids"] = .array(group_ids.map { .int(Int64($0)) }) }
+        if let whitelist { obj["whitelist"] = .array(whitelist.map(JSONValue.string)) }
+        if let mappings {
+            obj["mappings"] = .array(mappings.map {
+                .object(["source": .string($0.source), "target": .string($0.target)])
+            })
+        }
+        return obj
     }
+}
+
+extension OperationHeader: Identifiable {
+    public var repeat_mode: String? { self.repeat }
+    public var accountNameText: String { account_name ?? "" }
 
     public init(
         id: String,
@@ -100,34 +124,50 @@ public struct Operation: Codable, Sendable, Equatable, Identifiable {
         action: String,
         status: String,
         reason: String? = nil,
-        requested: [String: JSONValue] = [:],
-        current: [String: JSONValue]? = nil,
+        requested: OperationRequestFields = .empty,
+        current: OperationCurrentFields? = nil,
+        result: OperationReceipt? = nil,
         scheduled_at: String? = nil,
         repeat_mode: String? = nil,
         repeat_state: String? = nil
     ) {
-        self.id = id
-        self.account_id = account_id
-        self.account_name = account_name
-        self.action = action
-        self.status = status
-        self.reason = reason
-        self.requested = requested
-        self.current = current
-        self.scheduled_at = scheduled_at
-        self.repeat_mode = repeat_mode
-        self.repeat_state = repeat_state
+        self.init(
+            id: id,
+            account_id: account_id,
+            action: action,
+            status: status,
+            account_name: account_name,
+            batch_id: nil,
+            reason: reason,
+            started_at: nil,
+            scheduled_at: scheduled_at,
+            updated_at: nil,
+            created_at: nil,
+            completed_at: nil,
+            next_retry_at: nil,
+            repeat: repeat_mode,
+            repeat_series_id: nil,
+            repeat_state: repeat_state,
+            repeat_reason: nil,
+            next_operation_id: nil,
+            previous_operation_id: nil,
+            execution_mode: nil,
+            dispatch_id: nil,
+            attempt_count: nil,
+            next_event: nil,
+            parent_account_id: nil,
+            child_account_ids: nil,
+            native_target: nil,
+            requested: requested,
+            current: current,
+            result: result,
+            events: nil
+        )
     }
 }
 
-public struct OperationBatch: Codable, Sendable, Equatable {
-    public var batch_id: String
-    public var items: [Operation]
-    public var pending: Int
-
-    public init(batch_id: String, items: [Operation], pending: Int) {
-        self.batch_id = batch_id
-        self.items = items
-        self.pending = pending
+extension BatchHeader {
+    public init(batch_id: String, items: [OperationHeader], pending: Int) {
+        self.init(batch_id: batch_id, pending: pending, items: items)
     }
 }

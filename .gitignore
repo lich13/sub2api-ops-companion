@@ -20,5 +20,4 @@ desktop/src-tauri/gen/android/app/src/main/jniLibs/
 desktop/artifacts/
 desktop/macos/.build/
 desktop/macos/.swiftpm/
-experiments/connection_probe/rust/target/
 server/target/

@@ -1,1 +1,1 @@
-The pinned public ModelTrace source fixtures are from Hanmo123/ModelTrace commit 477d59d525c3cd31fe56e4e63958fbc4574ca187 and remain under its MIT license.
+The pinned public ModelTrace source fixtures are from Hanmo123/ModelTrace commit c5ff880f517a606bbe1aced238ce48c3a7bec7ae and remain under its MIT license.

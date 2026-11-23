@@ -243,8 +243,8 @@ extension TestDialogSheet {
                     }
                 },
                 onUpdate: { updated in
-                    if let ms = updated.result?["duration_ms"]?.doubleValue {
-                        durationMs = ms
+                    if let ms = updated.result?.duration_ms {
+                        durationMs = Double(ms)
                     }
                 }
             )

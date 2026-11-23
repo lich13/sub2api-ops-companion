@@ -1,5 +1,12 @@
 # 升级与回退
 
+## 0.1.102 协议统一、原生契约修复与 ModelTrace 指纹库更新
+
+先升级 Companion 和配置宿主，再更新 macOS 与 Android 客户端。沿用现有 HTTP 接口、JSON 状态文件与业务数据库结构，无需数据库迁移。
+
+- **ModelTrace 内置指纹库**：更新到上游 `c5ff880f517a606bbe1aced238ce48c3a7bec7ae`（36 → 37 个模型，新增 `gemini-4-neon`），分析器版本与评分源不变，并兼容上游浏览器端新增的 `crypto.randomUUID` 回退文件摘要。服务启动时，数据目录下 `modeltrace-bank-state.json` 早于新内置库的自动切换至新内置库并清除旧更新错误；不早于新内置库的保持不变。
+- **回退 0.1.101 说明**：0.1.102 写入的 `modeltrace-bank-state.json` 记录新挑战脚本摘要，回退 0.1.101 前请先停止服务并移走数据目录下的 `modeltrace-bank-state.json`，启动后即恢复使用 0.1.101 内置库（36 个模型）。LM Detector 与其他业务状态文件不受影响。
+
 ## 0.1.101 LM Detector 检测库状态修复
 
 从 0.1.100 升级时，先更新 Companion 和配置宿主，再更新客户端。检测库状态的解码修复在客户端生效。升级或回退到 0.1.100 均可沿用现有数据库、状态文件和检测库。

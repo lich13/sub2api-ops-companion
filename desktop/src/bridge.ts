@@ -1,6 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ViewState, Preferences } from "./types";
 import { bridgeFailure, BridgeError } from "./bridgeError";
 
@@ -16,8 +15,7 @@ type Commands = {
   preferences: [
     [
       {
-        pinned: boolean;
-        launchAtLogin: boolean;
+        pinned?: boolean;
         recordColumns?: string[] | null;
         modelTestConcurrency?: number | null;
         modelTestPreferences?: Preferences["model_test_preferences"];
@@ -33,42 +31,15 @@ export type CommandName = keyof Commands;
 
 const native = "__TAURI_INTERNALS__" in window;
 export const preview = !native && import.meta.env.DEV;
-export async function watchWindowFocus(
-  callback: (focused: boolean) => void,
-): Promise<() => void> {
-  if (!native) {
-    const focus = () => callback(true);
-    const blur = () => callback(false);
-    window.addEventListener("focus", focus);
-    window.addEventListener("blur", blur);
-    callback(document.hasFocus());
-    return () => {
-      window.removeEventListener("focus", focus);
-      window.removeEventListener("blur", blur);
-    };
-  }
-  const current = getCurrentWindow();
-  let revision = 0;
-  const unlisten = await current.onFocusChanged(({ payload }) => {
-    ++revision;
-    callback(payload);
-  });
-  try {
-    const observed = revision;
-    const focused = await current.isFocused();
-    // A focus event during the initial read is newer than that snapshot.
-    if (revision === observed) callback(focused);
-    return unlisten;
-  } catch (error) {
-    unlisten();
-    throw error;
-  }
-}
 export async function command<K extends CommandName>(
   name: K,
   ...parameters: Commands[K][0]
 ): Promise<Commands[K][1]> {
-  const args = parameters[0] ?? {};
+  const rawArgs = parameters[0] ?? {};
+  const args =
+    name === "preferences"
+      ? { pinned: false, launchAtLogin: false, ...rawArgs }
+      : rawArgs;
   try {
     if (native) return await invoke<Commands[K][1]>(name, args);
     if (import.meta.env.DEV && preview) {
@@ -91,13 +62,6 @@ export async function subscribe(
     return demo.subscribe(callback);
   }
   return () => {};
-}
-export async function updates(
-  callback: (message: string) => void,
-): Promise<() => void> {
-  return native
-    ? listen<string>("update-result", (e) => callback(e.payload))
-    : () => {};
 }
 export function api<T>(method: string, path: string, body?: unknown) {
   return command("api_request", {

@@ -145,7 +145,7 @@ public struct DeleteAccountsSheet: View {
             var out: [(Int, String, Bool, String)] = []
             for acc in accounts {
                 let job = final.items.first(where: { $0.account_id == acc.id })
-                let ok = job?.status == "completed" && (job?.result?["deleted"]?.boolValue ?? true)
+                let ok = job?.status == "completed" && (job?.result?.deleted ?? true)
                 if ok { deleted.insert(acc.id) }
                 out.append((acc.id, acc.name, ok, ok ? "已删除" : (job?.reason ?? "删除未完成")))
             }

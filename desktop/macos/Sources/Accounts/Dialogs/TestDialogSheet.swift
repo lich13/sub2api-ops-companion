@@ -24,7 +24,7 @@ public struct TestDialogSheet: View {
     @State var execution: ExecutionKind = .now
     @State var mode: String
     @State var model: String = ""
-    @State var candidateModels: [AccountModelItem] = []
+    @State var candidateModels: [ModelOption] = []
     @State var loadingModels: Bool = false
     @State var modelError: String = ""
     @State var prompt: String = ""
@@ -82,7 +82,7 @@ public struct TestDialogSheet: View {
         (account.platform == "grok" && ["image", "video", "stt"].contains(mode)) || isOpenAIImageModel
     }
 
-    private var availableModels: [AccountModelItem] {
+    private var availableModels: [ModelOption] {
         Self.modelsForMode(candidateModels, platform: account.platform, mode: mode)
     }
 
@@ -98,7 +98,7 @@ public struct TestDialogSheet: View {
         scheduledOperations.contains(where: OperationStore.isRepeating)
     }
 
-    public static func modelsForMode(_ models: [AccountModelItem], platform: String, mode: String) -> [AccountModelItem] {
+    public static func modelsForMode(_ models: [ModelOption], platform: String, mode: String) -> [ModelOption] {
         guard platform == "grok" else { return models }
         if ["search", "tts", "stt", "realtime"].contains(mode) { return [] }
         let isImage: (String) -> Bool = { id in
@@ -114,7 +114,7 @@ public struct TestDialogSheet: View {
         }
     }
 
-    public static func preferredModel(_ models: [AccountModelItem], platform: String, mode: String) -> String {
+    public static func preferredModel(_ models: [ModelOption], platform: String, mode: String) -> String {
         let opts = modelsForMode(models, platform: platform, mode: mode)
         if platform == "grok" {
             return opts.first(where: { $0.id.contains("grok-4.5") })?.id
@@ -189,7 +189,7 @@ public struct TestDialogSheet: View {
         let currentModelLabel: String = {
             if model.isEmpty { return "默认模型" }
             if let found = availableModels.first(where: { $0.id == model }) {
-                return found.display_name.isEmpty ? found.id : found.display_name
+                return found.titleText
             }
             return "\(model)（当前不可用）"
         }()
@@ -267,7 +267,7 @@ public struct TestDialogSheet: View {
                                     ] + (availableModels.isEmpty ? [] : [.separator()]) + availableModels.map { item in
                                         LinearMenuEntry(
                                             id: item.id,
-                                            title: item.display_name.isEmpty ? item.id : item.display_name,
+                                            title: item.titleText,
                                             checked: model == item.id
                                         ) {
                                             clearMediaIfNeeded(nextModel: item.id)
@@ -385,7 +385,7 @@ public struct TestDialogSheet: View {
                     VStack(spacing: 6) {
                         ForEach(scheduledOperations) { job in
                             let isRep = OperationStore.isRepeating(job)
-                            let reqModel = job.requested["model_id"]?.stringValue ?? ""
+                            let reqModel = job.requested.model_id ?? ""
                             let stateMap = [
                                 "queued": "待执行", "running": "测试中", "checking": "核对中",
                                 "needs_confirmation": "待核对", "completed": "准备下一次预约",

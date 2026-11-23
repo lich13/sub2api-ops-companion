@@ -10,8 +10,6 @@ vi.mock("./bridge", () => ({
   api: vi.fn(),
   command: vi.fn(),
   subscribe: vi.fn(),
-  updates: vi.fn(async () => () => {}),
-  watchWindowFocus: vi.fn(async () => () => {}),
   preview: true,
 }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -58,7 +56,7 @@ beforeEach(() => {
   initial = {
     connected: true,
     online: true,
-    platform: "macos",
+    platform: "android",
     foreground: true,
     error: "",
     preferences: {
@@ -126,9 +124,7 @@ afterEach(async () => {
 async function openFeatures() {
   await act(async () => root.render(<App />));
   const nav = [
-    ...container.querySelectorAll<HTMLButtonElement>(
-      "aside nav button, .bottom-nav button",
-    ),
+    ...container.querySelectorAll<HTMLButtonElement>(".bottom-nav button"),
   ].find((button) => button.textContent === "功能")!;
   await act(async () => nav.click());
 }

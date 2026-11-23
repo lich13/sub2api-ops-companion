@@ -1,7 +1,9 @@
+import OSLog
 import SwiftUI
 
 /// Matches `desktop/src/KeepaliveDialog.tsx` (`status` labels, `restore_count/5`, 2s live polling, `重新读取`).
 public struct KeepaliveSheet: View {
+    private static let logger = Logger(subsystem: "Sub2Ops", category: "keepalive")
     public let account: Account
     @Bindable public var store: AppStore
     public let onClose: () -> Void
@@ -125,8 +127,15 @@ public struct KeepaliveSheet: View {
             while !Task.isCancelled && store.state.online {
                 try? await Task.sleep(for: .seconds(2))
                 guard !Task.isCancelled, store.state.online, !saving else { continue }
-                if let polled: AccountKeepalive = try? await RustBridge.shared.api("GET", "/accounts/\(account.id)/keepalive") {
+                do {
+                    let polled: AccountKeepalive = try await RustBridge.shared.api("GET", "/accounts/\(account.id)/keepalive")
                     state = polled
+                    error = ""
+                } catch {
+                    if !Task.isCancelled && (error as? RustBridgeError)?.ignored != true {
+                        Self.logger.warning("Keepalive poll failed: \(error.localizedDescription, privacy: .public)")
+                        self.error = error.localizedDescription
+                    }
                 }
             }
         }

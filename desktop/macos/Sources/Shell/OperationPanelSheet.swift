@@ -1,33 +1,6 @@
 import SwiftUI
 
-/// Matches `desktop/src/OperationPanel.tsx` (`AccountOperationStatus` & `AccountOperations` dialog).
-public struct AccountOperationStatusBadge: View {
-    public let accountId: Int
-    public let operations: OperationStore
-
-    public init(accountId: Int, operations: OperationStore) {
-        self.accountId = accountId
-        self.operations = operations
-    }
-
-    public var body: some View {
-        let active = operations.pendingForAccount(accountId)
-        if !active.isEmpty {
-            let needsConfirm = active.contains {
-                $0.status == "needs_confirmation" || $0.repeat_state == "needs_confirmation"
-            }
-            Text(needsConfirm ? "操作需确认" : "\(active.count) 项待办")
-                .font(DS.fontResetTimeSemibold)
-                .monospacedDigit()
-                .foregroundStyle(needsConfirm ? DS.bad : DS.accent)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(needsConfirm ? DS.badBg : DS.accentBg)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-        }
-    }
-}
-
+/// Matches `desktop/src/OperationPanel.tsx` (`AccountOperations` dialog).
 public struct OperationToolbarButton: View {
     @Bindable public var store: AppStore
 
@@ -179,7 +152,7 @@ public struct OperationPanelSheet: View {
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text(job.account_name)
+                Text(job.accountNameText)
                     .font(DS.fontCompactSemibold)
                     .foregroundStyle(DS.ink)
                 Text("#\(job.account_id)")
@@ -215,11 +188,11 @@ public struct OperationPanelSheet: View {
 
             if needsConfirm {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("请求：\(Self.describePayload(job.requested))")
+                    Text("请求：\(Self.describePayload(job.requested.asPayload(for: job.action)))")
                         .font(DS.fontPriorityMeta)
                         .foregroundStyle(DS.ink)
                     if let current = job.current {
-                        Text("当前：\(Self.describePayload(current))")
+                        Text("当前：\(Self.describePayload(current.asPayload(for: job.action)))")
                             .font(DS.fontPriorityMeta)
                             .foregroundStyle(DS.muted)
                     }
@@ -316,7 +289,7 @@ public struct OperationPanelSheet: View {
             _ = try await ops.submitOperation(
                 account: account,
                 action: job.action,
-                payload: job.requested,
+                payload: job.requested.asPayload(for: job.action),
                 repeatMode: job.repeat_mode
             )
             store.refresh()

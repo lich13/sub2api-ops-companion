@@ -54,10 +54,6 @@ public final class AccountSortStore {
         }
     }
 
-    public func toggleDirection() {
-        option.ascending.toggle()
-    }
-
     public func sort(_ accounts: [Account]) -> [Account] {
         switch option.key {
         case .recent:

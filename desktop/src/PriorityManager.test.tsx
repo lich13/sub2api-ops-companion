@@ -108,7 +108,6 @@ const props = (
   accounts: allItems.map(account),
   active: true,
   online: true,
-  mobile: false,
   connectionKey: "fixture-connection",
   back: vi.fn(),
   changed: vi.fn(),
@@ -850,71 +849,6 @@ describe("platform priority manager", () => {
       )!.disabled,
     ).toBe(true);
   });
-
-  it.each([2, 3, 4])(
-    "uses the width threshold for %i platforms and falls back to tabs",
-    async (count) => {
-      const groups = [
-        ...view().platforms,
-        platform("anthropic", [priorityItem(301, "Claude", 1, "anthropic")]),
-        platform("custom", [priorityItem(401, "Custom", 1, "custom")]),
-      ].slice(0, count);
-      vi.mocked(api).mockImplementation(async (_method, path) => {
-        if (path === "/account-priorities?schema=2")
-          return view({ platforms: groups }) as never;
-        throw new Error(path);
-      });
-      let width = count === 2 ? 960 : count === 3 ? 984 : 1600;
-      vi.spyOn(
-        HTMLElement.prototype,
-        "getBoundingClientRect",
-      ).mockImplementation(function (this: HTMLElement) {
-        return {
-          width: this.classList.contains("priority-manager") ? width : 0,
-          height: 0,
-          top: 0,
-          bottom: 0,
-          left: 0,
-          right: 0,
-          x: 0,
-          y: 0,
-          toJSON: () => ({}),
-        } as DOMRect;
-      });
-      await render();
-      expect(
-        container
-          .querySelector(".priority-platforms")
-          ?.classList.contains("is-columns"),
-      ).toBe(count <= 3);
-      expect(container.querySelector('[role="tablist"]') === null).toBe(
-        count <= 3,
-      );
-      expect(
-        [
-          ...container.querySelectorAll<HTMLElement>(
-            "[data-priority-platform]",
-          ),
-        ].every((section) => !section.hidden),
-      ).toBe(count <= 3);
-
-      await act(async () => root.unmount());
-      container.replaceChildren();
-      root = createRoot(container);
-      width--;
-      await render();
-      expect(
-        container
-          .querySelector(".priority-platforms")
-          ?.classList.contains("is-columns"),
-      ).toBe(false);
-      expect(container.querySelector('[role="tablist"]')).not.toBeNull();
-      expect(
-        container.querySelector<HTMLElement>('[data-priority-platform="grok"]')!
-          .hidden,
-      ).toBe(true);
-    },
-  );
 });
 
 it.each(["completed", "failed", "cancelled", "needs_confirmation"])(

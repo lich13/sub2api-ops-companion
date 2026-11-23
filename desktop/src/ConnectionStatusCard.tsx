@@ -1,16 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, RefreshCw } from "lucide-react";
 import { api } from "./bridge";
-import { fullTime } from "./types";
+import { fullTime, type UpstreamConnection as Status } from "./types";
 
-type Status = {
-  state: string;
-  endpoint: string;
-  http_status: number | null;
-  message: string;
-  retryable: boolean;
-  checked_at: string | null;
-};
 const labels: Record<string, string> = {
   ok: "上游连接正常",
   network_unreachable: "上游不可达",

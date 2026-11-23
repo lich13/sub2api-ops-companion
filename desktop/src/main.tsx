@@ -15,10 +15,8 @@ import React, {
 } from "react";
 import {
   Activity,
-  ArrowUpRight,
   Bell,
   Check,
-  ChevronLeft,
   ChevronRight,
   CircleAlert,
   Clock3,
@@ -40,7 +38,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { api, command, preview, subscribe, updates } from "./bridge";
+import { api, command, preview, subscribe } from "./bridge";
 import { isAccountSort, readAccountSort, saveAccountSort } from "./accountSort";
 import {
   filterAccounts,
@@ -62,7 +60,6 @@ import {
 } from "./types";
 import "./style.css";
 import "./responsive.css";
-import UsageCell from "./UsageCell";
 import { KeyQuotaProvider, KeyQuotaRefreshSettings } from "./KeyQuotaSettings";
 import RecoveryAccounts from "./RecoveryAccounts";
 import { useErrorFeed, type ErrorCategory } from "./useErrorFeed";
@@ -73,7 +70,6 @@ import ModelTestDialog from "./ModelTestDialog";
 import DetectionPlatformSettings from "./DetectionPlatformSettings";
 import FingerprintBankStatus from "./FingerprintBankStatus";
 import ConnectionStatusCard from "./ConnectionStatusCard";
-import AccountStatus from "./AccountStatus";
 import {
   DeleteAccountsDialog,
   RecoverSelectedButton,
@@ -81,16 +77,13 @@ import {
   resetCreditEligible,
 } from "./AccountManagement";
 import AccountTemplates from "./AccountTemplates";
-import SchedulingParameters from "./SchedulingParameters";
-import AccountSettingsDialog, {
-  type SettingsSection,
-} from "./AccountSettingsDialog";
-import AccountActions, { useAccountActions } from "./AccountActions";
+import AccountSettingsDialog from "./AccountSettingsDialog";
+import { useAccountActions } from "./AccountActions";
 import ModelDetectionDialog from "./ModelDetectionDialog";
 import AccountModelField from "./AccountModelField";
 import DetectionLogs from "./DetectionLogs";
 import KeepaliveDialog from "./KeepaliveDialog";
-import AccountOperations, { AccountOperationStatus } from "./OperationPanel";
+import AccountOperations from "./OperationPanel";
 import {
   accountOperation,
   bindOperationConnection,
@@ -204,13 +197,6 @@ export default function App() {
     [ready, setReady] = useState(false),
     [page, setPage] = useState<Page>("accounts"),
     [accountSort, setAccountSort] = useState(readAccountSort),
-    [nameExpanded, setNameExpanded] = useState(() => {
-      try {
-        return localStorage.getItem("sub2ops-account-name-expanded") === "true";
-      } catch {
-        return false;
-      }
-    }),
     [toast, setToast] = useState(""),
     [busy, setBusy] = useState<number | null>(null),
     [detail, setDetail] = useState<OpsError | null>(null),
@@ -240,9 +226,7 @@ export default function App() {
       name: string;
       requireKey?: boolean;
     } | null>(null),
-    [switcherAnchor, setSwitcherAnchor] = useState<"topbar" | "sidebar" | null>(
-      null,
-    ),
+    [switcherOpen, setSwitcherOpen] = useState(false),
     discardRef = useRef<HTMLElement>(null),
     schedulePending = useRef(false),
     detailGeneration = useRef(0),
@@ -258,7 +242,6 @@ export default function App() {
   const deleteAccounts = dialog.kind === "delete" ? dialog.accounts : null;
   const resetAccounts = dialog.kind === "reset" ? dialog.accounts : null;
   const proxyAccounts = dialog.kind === "proxy" ? dialog.accounts : null;
-  const switcherOpen = switcherAnchor !== null;
   const connections = useMemo(
     () => savedConnections(state.preferences),
     [state.preferences],
@@ -297,7 +280,7 @@ export default function App() {
   async function switchConnection(item: SavedConnection) {
     const targetUrl = item.base_url.trim().replace(/\/+$/, "");
     if (!targetUrl || switchingUrl) return;
-    setSwitcherAnchor(null);
+    setSwitcherOpen(false);
     if (state.connected && targetUrl === activeUrl) return;
     if (!(await beforeConnectionChange())) return;
     setSwitchingUrl(targetUrl);
@@ -322,9 +305,6 @@ export default function App() {
       setSwitchingUrl(null);
     }
   }
-  const mobile =
-    state.platform === "android" ||
-    (preview && new URLSearchParams(location.search).has("mobile"));
   useDialogFocus(discardRef, !!leaveGroups);
   useBackAction(groupsOpen, () => setGroupsOpen(false));
   useBackAction(!!leaveGroups, () => {
@@ -334,7 +314,6 @@ export default function App() {
   useBackAction(filtersOpen, () => setFiltersOpen(false));
   useBackAction(!!detail || detailBusy, closeDetail);
   useEffect(() => {
-    if (!mobile) return;
     let disposed = false,
       off = () => {};
     void listenBack(() => {
@@ -348,7 +327,7 @@ export default function App() {
       disposed = true;
       off();
     };
-  }, [mobile, page]);
+  }, [page]);
   const contentRef = useRef<HTMLDivElement>(null);
   const previousPage = useRef(page);
   useEffect(() => {
@@ -368,13 +347,6 @@ export default function App() {
       closeDetail();
       if (page === "accounts") {
         setAccountSort(readAccountSort());
-        try {
-          setNameExpanded(
-            localStorage.getItem("sub2ops-account-name-expanded") === "true",
-          );
-        } catch {
-          setNameExpanded(false);
-        }
         if (contentRef.current) {
           contentRef.current.scrollTop = 0;
           contentRef.current.scrollLeft = 0;
@@ -396,14 +368,14 @@ export default function App() {
   }, [query, group, platform, filter, type, connectionKey]);
   useEffect(() => {
     closeDetail();
-    setSwitcherAnchor(null);
+    setSwitcherOpen(false);
   }, [page, connectionKey, eventTab]);
   useEffect(() => {
     setRemovedIds(new Set());
     showDialog(closedDialog);
     closeDetail();
     setConnectionModal(null);
-    setSwitcherAnchor(null);
+    setSwitcherOpen(false);
     schedulePending.current = false;
     setBusy(null);
     setGroupsOpen(false);
@@ -443,20 +415,17 @@ export default function App() {
   });
   useEffect(() => {
     let disposed = false;
-    let un: () => void = () => {},
-      unUpdate = () => {};
+    let un: () => void = () => {};
     void (async () => {
       un = await subscribe((s) => {
         if (!disposed) setState(s);
       });
-      unUpdate = await updates(setToast);
       const s = await command("get_state");
       if (!disposed) {
         setState(s);
         setReady(true);
       } else {
         un();
-        unUpdate();
       }
     })().catch(report);
     const online = () => void command("refresh").catch(report);
@@ -464,7 +433,6 @@ export default function App() {
     return () => {
       disposed = true;
       un();
-      unUpdate();
       window.removeEventListener("online", online);
     };
   }, []);
@@ -484,7 +452,7 @@ export default function App() {
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.isComposing || event.defaultPrevented)
         return;
-      if (switcherOpen) setSwitcherAnchor(null);
+      if (switcherOpen) setSwitcherOpen(false);
       else if (connectionModal) setConnectionModal(null);
       else if (testAccount) showDialog(closedDialog);
       else if (detail || detailBusy) {
@@ -582,10 +550,7 @@ export default function App() {
   async function prefs(patch: Partial<Preferences>) {
     try {
       await command("preferences", {
-        ...state.preferences,
-        ...patch,
-        launchAtLogin:
-          patch.launch_at_login ?? state.preferences.launch_at_login,
+        pinned: patch.pinned ?? state.preferences.pinned,
         recordColumns: patch.record_columns ?? state.preferences.record_columns,
         modelTestConcurrency:
           patch.model_test_concurrency ??
@@ -781,7 +746,7 @@ export default function App() {
       <>
         <div
           className="instance-switcher-backdrop"
-          onClick={() => setSwitcherAnchor(null)}
+          onClick={() => setSwitcherOpen(false)}
         />
         <div
           className="instance-switcher-menu"
@@ -795,7 +760,7 @@ export default function App() {
                 type="button"
                 className="text-button"
                 onClick={() => {
-                  setSwitcherAnchor(null);
+                  setSwitcherOpen(false);
                   setPage("settings");
                 }}
               >
@@ -837,7 +802,7 @@ export default function App() {
               type="button"
               className="instance-add-button"
               onClick={() => {
-                setSwitcherAnchor(null);
+                setSwitcherOpen(false);
                 setConnectionModal({ baseUrl: "", name: "", requireKey: true });
               }}
             >
@@ -862,10 +827,8 @@ export default function App() {
               type="button"
               className="instance-switcher-trigger"
               aria-label="切换 Sub2API 实例"
-              aria-expanded={switcherAnchor === "topbar"}
-              onClick={() =>
-                setSwitcherAnchor((cur) => (cur === "topbar" ? null : "topbar"))
-              }
+              aria-expanded={switcherOpen}
+              onClick={() => setSwitcherOpen((cur) => !cur)}
             >
               {switchingUrl ? (
                 <LoaderCircle size={13} className="spin" />
@@ -874,77 +837,26 @@ export default function App() {
               )}
               <span>{activeConnection?.name ?? "选择实例"}</span>
             </button>
-            {switcherAnchor === "topbar" && renderSwitcherMenu()}
+            {switcherOpen && renderSwitcherMenu()}
           </div>
         )}
       </div>
     );
   }
   const visibleGroups = useMemo(
-    () => (mobile && groupsOpen ? currentGroups(groups, accounts) : []),
-    [mobile, groupsOpen, groups, accounts],
+    () => (groupsOpen ? currentGroups(groups, accounts) : []),
+    [groupsOpen, groups, accounts],
   );
   const detailAccount = detail
     ? accounts.find((a) => a.id === detail.account_id)
     : undefined;
   return (
-    <div className={`app${mobile ? " mobile" : ""}`}>
-      {!mobile && (
-        <aside className="sidebar" data-tauri-drag-region>
-          <div className="brand">
-            <span className="brand-icon">
-              <Activity size={21} />
-            </span>
-            <strong>Sub2Ops</strong>
-          </div>
-          {(connections.length > 0 || state.connected) && (
-            <div className="sidebar-instance">
-              <button
-                type="button"
-                className="sidebar-instance-button"
-                aria-expanded={switcherAnchor === "sidebar"}
-                title={activeConnection?.base_url || "切换或新增 Sub2API 实例"}
-                onClick={() =>
-                  setSwitcherAnchor((cur) =>
-                    cur === "sidebar" ? null : "sidebar",
-                  )
-                }
-              >
-                <span
-                  className={`status-dot ${state.online ? "good" : state.connected ? "warning" : "muted"}`}
-                />
-                <div className="sidebar-instance-text">
-                  <strong>{activeConnection?.name ?? "未连接实例"}</strong>
-                  <small>
-                    {activeConnection?.base_url ?? "点击选择或新增"}
-                  </small>
-                </div>
-                <ChevronRight size={14} />
-              </button>
-              {switcherAnchor === "sidebar" && renderSwitcherMenu()}
-            </div>
-          )}
-          <nav>
-            {pages.map((p) => (
-              <button
-                key={p.id}
-                className={page === p.id ? "active" : ""}
-                onClick={() => setPage(p.id)}
-              >
-                <p.icon size={17} />
-                {p.label}
-              </button>
-            ))}
-          </nav>
-        </aside>
-      )}
+    <div className="app mobile">
       <main className="main">
         <header className="topbar" data-tauri-drag-region>
-          {
-            <div className="breadcrumb">
-              <strong>{pages.find((p) => p.id === page)?.label}</strong>
-            </div>
-          }
+          <div className="breadcrumb">
+            <strong>{pages.find((p) => p.id === page)?.label}</strong>
+          </div>
           <div className="top-actions">
             {preview && <span className="preview-label">预览</span>}
             {status()}
@@ -988,7 +900,7 @@ export default function App() {
         )}
         <div
           ref={contentRef}
-          key={mobile ? connectionKey : "content"}
+          key={connectionKey}
           className={`content ${page === "events" ? "events-content" : ""} ${page === "records" ? "records-content" : ""}`}
         >
           <div className="content-inner">
@@ -1000,7 +912,6 @@ export default function App() {
             ) : !state.connected ? (
               <Connection
                 state={state}
-
                 onError={report}
                 onSwitchSaved={(item) => void switchConnection(item)}
                 switchingUrl={switchingUrl}
@@ -1016,7 +927,6 @@ export default function App() {
                     <ConnectionStatusCard connectionKey={connectionKey} />
                     <Connection
                       state={state}
-
                       onError={report}
                       beforeChange={beforeConnectionChange}
                       onSwitchSaved={(item) => void switchConnection(item)}
@@ -1033,7 +943,6 @@ export default function App() {
                   active={page === "groups"}
                   accounts={accounts}
                   groups={groups}
-                  mobile={mobile}
                   online={state.online}
                   back={() => setPage("accounts")}
                   report={report}
@@ -1048,7 +957,6 @@ export default function App() {
                   connectionKey={connectionKey}
                   active={page === "priorities"}
                   accounts={accounts}
-                  mobile={mobile}
                   online={state.online}
                   back={() => setPage("accounts")}
                   schedule={schedule}
@@ -1074,16 +982,13 @@ export default function App() {
                   {page === "records" && (
                     <UsageRecords
                       key={connectionKey}
-                      mobile={mobile}
                       online={state.online}
                       foreground={state.foreground !== false}
-                      desktop={state.platform === "macos"}
                       accounts={accounts}
                       columns={state.preferences.record_columns}
                       saveColumns={async (columns) => {
                         await command("preferences", {
-                          ...state.preferences,
-                          launchAtLogin: state.preferences.launch_at_login,
+                          pinned: state.preferences.pinned,
                           recordColumns: columns,
                         });
                       }}
@@ -1097,62 +1002,18 @@ export default function App() {
                       active={state.foreground !== false}
                       enabled={hasApiKey}
                     >
-                      {!mobile && (
-                        <div className="account-toolbar">
-                          <LazyAccountCreationButton
-                            accounts={accounts}
-                            online={state.online}
-                            connectionKey={connectionKey}
-                            report={report}
-                          />
-                          {hasApiKey && (
-                            <KeyQuotaRefreshSettings online={state.online} />
-                          )}
-                          <QuotaRefresh
-                            key={connectionKey}
-                            connectionKey={connectionKey}
-                            online={state.online}
-                            active={state.foreground !== false}
-                            report={report}
-                          />
-                          <label className="account-sort">
-                            <span>排序</span>
-                            <select
-                              aria-label="账号排序"
-                              value={accountSort}
-                              onChange={(e) =>
-                                updateAccountSort(e.target.value)
-                              }
-                            >
-                              <option value="recent:desc">最近调用</option>
-                              <option value="recent:asc">最早调用</option>
-                              <option value="priority:asc">优先级 ↑</option>
-                              <option value="priority:desc">优先级 ↓</option>
-                            </select>
-                          </label>
-                          <button
-                            onClick={() => {
-                              showDialog({ kind: "templates", account: null });
-                            }}
-                          >
-                            账号模板
-                          </button>
-                        </div>
-                      )}
-                      {mobile && (
-                        <div className="mobile-group-entry">
-                          <button onClick={() => setPage("groups")}>
-                            <Layers3 size={18} />
-                            分组管理
-                            <ChevronRight size={16} />
-                          </button>
-                          <button onClick={() => setPage("priorities")}>
-                            <ListOrdered size={18} />
-                            优先级管理
-                            <ChevronRight size={16} />
-                          </button>
-                        </div>
-                      )}
+                      <div className="mobile-group-entry">
+                        <button onClick={() => setPage("groups")}>
+                          <Layers3 size={18} />
+                          分组管理
+                          <ChevronRight size={16} />
+                        </button>
+                        <button onClick={() => setPage("priorities")}>
+                          <ListOrdered size={18} />
+                          优先级管理
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
                       <div className="filters">
                         <label className="search">
                           <Search size={15} />
@@ -1162,16 +1023,14 @@ export default function App() {
                             onChange={(e) => setQuery(e.target.value)}
                           />
                         </label>
-                        {mobile && (
-                          <button
-                            aria-label="筛选账号"
-                            onClick={() => setFiltersOpen(true)}
-                          >
-                            <SlidersHorizontal size={18} />
-                            筛选
-                          </button>
-                        )}
-                        {mobile && filtersOpen && (
+                        <button
+                          aria-label="筛选账号"
+                          onClick={() => setFiltersOpen(true)}
+                        >
+                          <SlidersHorizontal size={18} />
+                          筛选
+                        </button>
+                        {filtersOpen && (
                           <div
                             className="filter-shade"
                             onClick={() => setFiltersOpen(false)}
@@ -1179,21 +1038,19 @@ export default function App() {
                         )}
                         <div
                           className={`filter-options${filtersOpen ? " open" : ""}`}
-                          role={mobile && filtersOpen ? "dialog" : undefined}
-                          aria-label={mobile ? "账号筛选" : undefined}
+                          role={filtersOpen ? "dialog" : undefined}
+                          aria-label="账号筛选"
                         >
-                          {mobile && (
-                            <header>
-                              <h2>筛选账号</h2>
-                              <button
-                                className="icon-button"
-                                aria-label="关闭筛选"
-                                onClick={() => setFiltersOpen(false)}
-                              >
-                                <X size={20} />
-                              </button>
-                            </header>
-                          )}
+                          <header>
+                            <h2>筛选账号</h2>
+                            <button
+                              className="icon-button"
+                              aria-label="关闭筛选"
+                              onClick={() => setFiltersOpen(false)}
+                            >
+                              <X size={20} />
+                            </button>
+                          </header>
                           <select
                             aria-label="分组筛选"
                             value={group}
@@ -1236,83 +1093,75 @@ export default function App() {
                             <option value="off">调度关闭</option>
                             <option value="error">曾有错误</option>
                           </select>
-                          {mobile && (
-                            <button
-                              className="primary"
-                              onClick={() => setFiltersOpen(false)}
-                            >
-                              完成
-                            </button>
-                          )}
+                          <button
+                            className="primary"
+                            onClick={() => setFiltersOpen(false)}
+                          >
+                            完成
+                          </button>
                         </div>
                       </div>
-                      {mobile && (
-                        <div className="account-toolbar">
-                          <LazyAccountCreationButton
-                            accounts={accounts}
-                            online={state.online}
-                            connectionKey={connectionKey}
-                            report={report}
+                      <div className="account-toolbar">
+                        <LazyAccountCreationButton
+                          accounts={accounts}
+                          online={state.online}
+                          connectionKey={connectionKey}
+                          report={report}
+                        />
+                        {hasApiKey && (
+                          <KeyQuotaRefreshSettings online={state.online} />
+                        )}
+                        <QuotaRefresh
+                          key={connectionKey}
+                          connectionKey={connectionKey}
+                          online={state.online}
+                          active={state.foreground !== false}
+                          report={report}
+                        />
+                        <button
+                          onClick={() => {
+                            showDialog({ kind: "templates", account: null });
+                          }}
+                        >
+                          账号模板
+                        </button>
+                        <button onClick={() => setGroupsOpen(true)}>
+                          <Layers3 size={17} />
+                          分组动态
+                        </button>
+                      </div>
+                      <div className="mobile-sort">
+                        <label className="mobile-select-all">
+                          <input
+                            type="checkbox"
+                            aria-label="全选当前筛选账号"
+                            checked={
+                              filteredAccounts.length > 0 &&
+                              filteredAccounts.every((a) => selected.has(a.id))
+                            }
+                            disabled={!state.online}
+                            onChange={(e) =>
+                              setSelected(
+                                e.target.checked
+                                  ? new Set(filteredAccounts.map((a) => a.id))
+                                  : new Set(),
+                              )
+                            }
                           />
-                          {hasApiKey && (
-                            <KeyQuotaRefreshSettings online={state.online} />
-                          )}
-                          <QuotaRefresh
-                            key={connectionKey}
-                            connectionKey={connectionKey}
-                            online={state.online}
-                            active={state.foreground !== false}
-                            report={report}
-                          />
-                          <button
-                            onClick={() => {
-                              showDialog({ kind: "templates", account: null });
-                            }}
-                          >
-                            账号模板
-                          </button>
-                          <button onClick={() => setGroupsOpen(true)}>
-                            <Layers3 size={17} />
-                            分组动态
-                          </button>
-                        </div>
-                      )}
-                      {mobile && (
-                        <div className="mobile-sort">
-                          <label className="mobile-select-all">
-                            <input
-                              type="checkbox"
-                              aria-label="全选当前筛选账号"
-                              checked={
-                                filteredAccounts.length > 0 &&
-                                filteredAccounts.every((a) =>
-                                  selected.has(a.id),
-                                )
-                              }
-                              disabled={!state.online}
-                              onChange={(e) =>
-                                setSelected(
-                                  e.target.checked
-                                    ? new Set(filteredAccounts.map((a) => a.id))
-                                    : new Set(),
-                                )
-                              }
-                            />
-                            全选
-                          </label>
-                          <span>{filteredAccounts.length} 个账号</span>
-                          <select
-                            aria-label="账号排序"
-                            value={accountSort}
-                            onChange={(e) => updateAccountSort(e.target.value)}
-                          >
-                            <option value="recent:desc">最近调用</option>
-                            <option value="recent:asc">最早调用</option>
-                            <option value="priority:asc">优先级 ↑</option>
-                            <option value="priority:desc">优先级 ↓</option>
-                          </select>
-                        </div>
-                      )}
+                          全选
+                        </label>
+                        <span>{filteredAccounts.length} 个账号</span>
+                        <select
+                          aria-label="账号排序"
+                          value={accountSort}
+                          onChange={(e) => updateAccountSort(e.target.value)}
+                        >
+                          <option value="recent:desc">最近调用</option>
+                          <option value="recent:asc">最早调用</option>
+                          <option value="priority:asc">优先级 ↑</option>
+                          <option value="priority:desc">优先级 ↓</option>
+                        </select>
+                      </div>
                       <div className="table-wrap">
                         {selected.size > 0 && (
                           <div className="selection-bar">
@@ -1414,256 +1263,25 @@ export default function App() {
                           </div>
                         )}
                         <ConnectionBatchResults control={connectionBatch} />
-                        {mobile ? (
-                          <MobileAccounts
-                            active={state.foreground !== false}
-                            connectionKey={connectionKey}
-                            accounts={filteredAccounts}
-                            online={state.online}
-                            selected={selected}
-                            select={(id, checked) =>
-                              setSelected((old) => {
-                                const next = new Set(old);
-                                if (checked) next.add(id);
-                                else next.delete(id);
-                                return next;
-                              })
-                            }
-                            schedule={schedule}
-                            accountActions={accountActions}
-                            error={(id) => void openError(id)}
-                            report={report}
-                          />
-                        ) : (
-                          <table
-                            className={`accounts-table${nameExpanded ? " name-expanded" : ""}`}
-                          >
-                            <colgroup>
-                              <col className="col-select" />
-                              <col className="col-name" />
-                              <col className="col-priority" />
-                              <col className="col-status" />
-                              <col className="col-usage" />
-                              <col className="col-error" />
-                              <col className="col-schedule" />
-                              <col className="col-actions" />
-                            </colgroup>
-                            <thead>
-                              <tr>
-                                <th className="select-cell">
-                                  <input
-                                    type="checkbox"
-                                    aria-label="全选当前筛选账号"
-                                    checked={
-                                      filteredAccounts.length > 0 &&
-                                      filteredAccounts.every((a) =>
-                                        selected.has(a.id),
-                                      )
-                                    }
-                                    ref={(element) => {
-                                      if (element)
-                                        element.indeterminate =
-                                          filteredAccounts.some((a) =>
-                                            selected.has(a.id),
-                                          ) &&
-                                          !filteredAccounts.every((a) =>
-                                            selected.has(a.id),
-                                          );
-                                    }}
-                                    disabled={
-                                      !state.online || !filteredAccounts.length
-                                    }
-                                    onChange={(e) =>
-                                      setSelected(
-                                        e.target.checked
-                                          ? new Set(
-                                              filteredAccounts.map((a) => a.id),
-                                            )
-                                          : new Set(),
-                                      )
-                                    }
-                                  />
-                                </th>
-                                <th>
-                                  <button
-                                    className="account-column-toggle"
-                                    aria-label={
-                                      nameExpanded ? "收起账号列" : "展开账号列"
-                                    }
-                                    aria-expanded={nameExpanded}
-                                    onClick={() => {
-                                      const value = !nameExpanded;
-                                      setNameExpanded(value);
-                                      try {
-                                        localStorage.setItem(
-                                          "sub2ops-account-name-expanded",
-                                          String(value),
-                                        );
-                                      } catch {
-                                        /* Preference is optional. */
-                                      }
-                                    }}
-                                  >
-                                    账号
-                                    {nameExpanded ? (
-                                      <ChevronLeft size={13} />
-                                    ) : (
-                                      <ChevronRight size={13} />
-                                    )}
-                                  </button>
-                                </th>
-                                <th
-                                  aria-sort={
-                                    sortBy === "priority"
-                                      ? ascending
-                                        ? "ascending"
-                                        : "descending"
-                                      : "none"
-                                  }
-                                >
-                                  <button
-                                    className="sort-button"
-                                    onClick={() => {
-                                      updateAccountSort(
-                                        sortBy === "priority" && ascending
-                                          ? "priority:desc"
-                                          : "priority:asc",
-                                      );
-                                    }}
-                                  >
-                                    调度参数{" "}
-                                    {sortBy === "priority"
-                                      ? ascending
-                                        ? "↑"
-                                        : "↓"
-                                      : ""}
-                                  </button>
-                                </th>
-                                <th>当前状态</th>
-                                <th>用量窗口</th>
-                                <th>最近报错</th>
-                                <th>允许调度</th>
-                                <th>操作</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {filteredAccounts.map((a) => (
-                                <tr key={`${connectionKey}:${a.id}`}>
-                                  <td className="select-cell">
-                                    <input
-                                      type="checkbox"
-                                      aria-label={`选择 ${a.name}`}
-                                      checked={selected.has(a.id)}
-                                      disabled={!state.online}
-                                      onChange={(e) =>
-                                        setSelected((old) => {
-                                          const next = new Set(old);
-                                          if (e.target.checked) next.add(a.id);
-                                          else next.delete(a.id);
-                                          return next;
-                                        })
-                                      }
-                                    />
-                                  </td>
-                                  <td className="account-name">
-                                    <strong title={a.name} tabIndex={0}>
-                                      {a.name}
-                                    </strong>
-                                    <small className="account-id">
-                                      #{a.id}
-                                    </small>
-                                    <small className="account-identity">
-                                      {a.platform === "openai"
-                                        ? "OpenAI"
-                                        : a.platform === "grok"
-                                          ? "Grok"
-                                          : a.platform}{" "}
-                                      ·{" "}
-                                      {a.type === "oauth"
-                                        ? "OAuth"
-                                        : a.type === "apikey"
-                                          ? "Key"
-                                          : a.type}
-                                    </small>
-                                    <DegradationBadge account={a} />
-                                    <AccountOperationStatus id={a.id} />
-                                  </td>
-                                  <td>
-                                    <SchedulingParameters
-                                      account={a}
-                                      online={state.online}
-                                      report={report}
-                                    />
-                                  </td>
-                                  <td>
-                                    <AccountStatus
-                                      account={a}
-                                      onError={(id) => void openError(id)}
-                                    />
-                                  </td>
-                                  <td>
-                                    <UsageCell
-                                      active={state.foreground !== false}
-                                      connectionKey={connectionKey}
-                                      account={a}
-                                      online={state.online}
-                                      refresh={() => command("refresh")}
-                                      report={report}
-                                    />
-                                  </td>
-                                  <td>
-                                    {a.last_error_id ? (
-                                      <button
-                                        className="error-time"
-                                        onClick={() =>
-                                          void openError(a.last_error_id!)
-                                        }
-                                      >
-                                        <span>
-                                          {a.last_error_code ||
-                                            a.last_error_status ||
-                                            "上游错误"}
-                                        </span>
-                                        <Time at={a.last_error_at} />
-                                        {a.success_after_error && (
-                                          <small className="good-text">
-                                            之后已有成功调用
-                                          </small>
-                                        )}
-                                      </button>
-                                    ) : a.error_message ? (
-                                      <span title={a.error_message}>
-                                        错误时间未知
-                                      </span>
-                                    ) : (
-                                      <span className="muted">暂无记录</span>
-                                    )}
-                                    <div className="account-last-success">
-                                      <span>最后成功</span>
-                                      <time
-                                        className={
-                                          a.success_after_error
-                                            ? "good-text"
-                                            : undefined
-                                        }
-                                      >
-                                        {fullTime(a.last_success_at)}
-                                      </time>
-                                    </div>
-                                  </td>
-                                  <td>{schedule(a)}</td>
-                                  <td>
-                                    <AccountActions
-                                      items={accountActions(a)}
-                                      label={`${a.name}更多操作`}
-                                      contextKey={connectionKey}
-                                    />
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        )}
+                        <MobileAccounts
+                          active={state.foreground !== false}
+                          connectionKey={connectionKey}
+                          accounts={filteredAccounts}
+                          online={state.online}
+                          selected={selected}
+                          select={(id, checked) =>
+                            setSelected((old) => {
+                              const next = new Set(old);
+                              if (checked) next.add(id);
+                              else next.delete(id);
+                              return next;
+                            })
+                          }
+                          schedule={schedule}
+                          accountActions={accountActions}
+                          error={(id) => void openError(id)}
+                          report={report}
+                        />
                       </div>
                       {!filteredAccounts.length && (
                         <Empty text="没有符合条件的账号" />
@@ -1791,13 +1409,10 @@ export default function App() {
                     (config ? (
                       <SettingsPage
                         page={page}
-                        mobile={mobile}
                         config={config}
                         accounts={accounts}
                         state={state}
                         runtimeVersion={runtimeVersion}
-                        prefs={prefs}
-
                         onChange={(key, value) =>
                           setConfig({ ...config, [key]: value })
                         }
@@ -1814,7 +1429,6 @@ export default function App() {
                       <section className="settings-card">
                         <Connection
                           state={state}
-
                           onError={report}
                           beforeChange={beforeConnectionChange}
                           onSwitchSaved={(item) => void switchConnection(item)}
@@ -1830,29 +1444,26 @@ export default function App() {
           </div>
         </div>
       </main>
-      {mobile && (
-        <nav className="bottom-nav" aria-label="主导航">
-          {pages
-            .filter((p) => p.id !== "groups" && p.id !== "priorities")
-            .map((p) => {
-              const selected =
-                page === p.id ||
-                (["groups", "priorities"].includes(page) &&
-                  p.id === "accounts");
-              return (
-                <button
-                  key={p.id}
-                  className={selected ? "active" : ""}
-                  aria-current={selected ? "page" : undefined}
-                  onClick={() => setPage(p.id)}
-                >
-                  <p.icon size={21} />
-                  <span>{p.label}</span>
-                </button>
-              );
-            })}
-        </nav>
-      )}
+      <nav className="bottom-nav" aria-label="主导航">
+        {pages
+          .filter((p) => p.id !== "groups" && p.id !== "priorities")
+          .map((p) => {
+            const selected =
+              page === p.id ||
+              (["groups", "priorities"].includes(page) && p.id === "accounts");
+            return (
+              <button
+                key={p.id}
+                className={selected ? "active" : ""}
+                aria-current={selected ? "page" : undefined}
+                onClick={() => setPage(p.id)}
+              >
+                <p.icon size={21} />
+                <span>{p.label}</span>
+              </button>
+            );
+          })}
+      </nav>
       {leaveGroups && (
         <div className="modal-backdrop">
           <section
@@ -1914,7 +1525,6 @@ export default function App() {
           >
             <Connection
               state={state}
-
               initialUrl={connectionModal.baseUrl}
               initialName={connectionModal.name}
               requireKey={Boolean(connectionModal.requireKey)}
@@ -1932,7 +1542,7 @@ export default function App() {
           </div>
         </div>
       )}
-      {mobile && groupsOpen && (
+      {groupsOpen && (
         <div
           className="mobile-groups-surface"
           role="dialog"
@@ -2478,12 +2088,10 @@ const oauthLabels: Record<string, string> = {
 };
 function SettingsPage({
   page,
-  mobile = false,
   config,
   accounts,
   state,
   runtimeVersion,
-  prefs,
   onChange,
   onMessage,
   onError,
@@ -2493,13 +2101,10 @@ function SettingsPage({
   switchingUrl = null,
 }: {
   page: Page;
-  mobile?: boolean;
   config: Config;
   accounts: Account[];
   state: ViewState;
   runtimeVersion: string | null;
-  prefs: (p: Partial<Preferences>) => Promise<void>;
-
   onChange: (k: string, c: ConfigSection) => void;
   onMessage: (m: string) => void;
   onError: (e: unknown) => void;
@@ -2707,7 +2312,6 @@ function SettingsPage({
                   connectionKey={connectionKey}
                   active={featureTab === "ip"}
                   online={state.online}
-                  mobile={mobile}
                 />
               </Suspense>
             )}
@@ -2819,13 +2423,6 @@ function SettingsPage({
           </section>
           <section className="settings-card">
             <h2>客户端</h2>
-            {state.platform !== "android" && (
-              <Field
-                label="开机启动"
-                value={state.preferences.launch_at_login}
-                set={(v) => void prefs({ launch_at_login: Boolean(v) })}
-              />
-            )}
             <div className="field">
               <span>当前版本</span>
               <button
@@ -2833,8 +2430,7 @@ function SettingsPage({
                   void command("check_updates").then(onMessage).catch(onError)
                 }
               >
-                {runtimeVersion ?? appVersion} ·{" "}
-                {state.platform === "android" ? "查看发布页" : "检查更新"}{" "}
+                {runtimeVersion ?? appVersion} · 查看发布页{" "}
                 <ExternalLink size={13} />
               </button>
             </div>

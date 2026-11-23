@@ -8,33 +8,8 @@ public struct Sub2ApiVersionCardView: View {
     public var embedded: Bool
     public var onRuntimeChanged: (() -> Void)?
 
-    private struct ReleaseInfo: Codable, Sendable, Equatable {
-        var name: String?
-        var html_url: String?
-        var published_at: String?
-        var body: String?
-    }
-
-    private struct UpdateInfo: Codable, Sendable, Equatable {
-        var current_version: String
-        var latest_version: String
-        var has_update: Bool
-        var cached: Bool
-        var build_type: String
-        var warning: String?
-        var release_info: ReleaseInfo?
-    }
-
-    private struct UpdateActionReply: Codable, Sendable, Equatable {
-        var message: String
-        var need_restart: Bool?
-        var already_up_to_date: Bool?
-        var current_version: String?
-        var latest_version: String?
-    }
-
     @State private var version: String = ""
-    @State private var info: UpdateInfo? = nil
+    @State private var info: UpdatesReply? = nil
     @State private var busy: Bool = false
     @State private var needRestart: Bool = false
     @State private var waitingRestart: Bool = false
@@ -173,7 +148,7 @@ public struct Sub2ApiVersionCardView: View {
         messageText = ""
         defer { busy = false }
         do {
-            let res: UpdateInfo = try await RustBridge.shared.api("GET", "/sub2api-system/check-updates?force=true")
+            let res: UpdatesReply = try await RustBridge.shared.api("GET", "/sub2api-system/check-updates?force=true")
             let prev = version
             info = res
             version = res.current_version
@@ -197,7 +172,7 @@ public struct Sub2ApiVersionCardView: View {
         messageText = ""
         defer { busy = false }
         do {
-            let res: UpdateActionReply = try await RustBridge.shared.api("POST", "/sub2api-system/\(action)")
+            let res: SystemUpdateReply = try await RustBridge.shared.api("POST", "/sub2api-system/\(action)")
             if action == "restart" {
                 waitingRestart = true
                 messageText = "正在等待重启生效"
@@ -209,11 +184,16 @@ public struct Sub2ApiVersionCardView: View {
                 version = cur
                 needRestart = false
                 messageText = "已是最新版本"
-                if var updated = info {
-                    updated.current_version = cur
-                    if let lat = res.latest_version { updated.latest_version = lat }
-                    updated.has_update = false
-                    info = updated
+                if let updated = info {
+                    info = UpdatesReply(
+                        current_version: cur,
+                        latest_version: res.latest_version ?? updated.latest_version,
+                        has_update: false,
+                        build_type: updated.build_type,
+                        cached: updated.cached,
+                        warning: updated.warning,
+                        release_info: updated.release_info
+                    )
                 }
             }
         } catch {
@@ -223,11 +203,10 @@ public struct Sub2ApiVersionCardView: View {
     }
 
     private func pollRestartVersion() async {
-        struct VerDTO: Decodable, Sendable { var version: String }
         try? await Task.sleep(for: .milliseconds(1500))
         for _ in 0..<20 {
             guard !Task.isCancelled, waitingRestart, active else { return }
-            if let cur: VerDTO = try? await RustBridge.shared.api("GET", "/sub2api-system/version") {
+            if let cur: SystemVersionReply = try? await RustBridge.shared.api("GET", "/sub2api-system/version") {
                 version = cur.version
                 if !targetVersion.isEmpty && normalize(cur.version) == normalize(targetVersion) {
                     waitingRestart = false

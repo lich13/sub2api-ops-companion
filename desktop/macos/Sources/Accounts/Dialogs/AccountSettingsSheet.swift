@@ -40,6 +40,11 @@ public struct AccountModelProfile: Codable, Sendable, Equatable {
         self.mappings = mappings
     }
 
+    public init(_ reply: ModelProfileReply) {
+        self.whitelist = reply.whitelist
+        self.mappings = reply.mappings.map { AccountModelMappingRule(source: $0.source, target: $0.target) }
+    }
+
     public static func validate(_ profile: AccountModelProfile) -> String {
         var seen = Set<String>()
         let exactRegex = try? NSRegularExpression(pattern: "^[A-Za-z0-9._:/-]{1,200}$")
@@ -80,24 +85,7 @@ public struct AccountModelProfile: Codable, Sendable, Equatable {
     }
 }
 
-private struct AccountSettingsCapabilityItem: Decodable, Sendable, Equatable {
-    var editable: Bool
-    var reason: String
-}
-
-private struct AccountSettingsResponse: Decodable, Sendable {
-    var account_id: Int
-    var priority: Int?
-    var concurrency: Int?
-    var load_factor: Int?
-    var effective_load_factor: Int?
-    var proxy_id: Int?
-    var model_config: AccountModelProfile
-    var capabilities: [String: AccountSettingsCapabilityItem]
-    var versions: [String: String]
-}
-
-private struct SyncModelsResponse: Decodable, Sendable {
+private struct SyncedModelCatalog: Sendable, Equatable {
     var models: [String]
     var warnings: [String]
     var synced_at: String?
@@ -110,11 +98,11 @@ public struct AccountSettingsSheet: View {
     public let onClose: () -> Void
 
     @State private var tab: AccountSettingsTab
-    @State private var settings: AccountSettingsResponse?
+    @State private var settings: AccountSettingsReply?
     @State private var profile = AccountModelProfile()
     @State private var selectedProxyId: Int? = nil
     @State private var proxyRefreshNonce: Int = 0
-    @State private var catalog: SyncModelsResponse?
+    @State private var catalog: SyncedModelCatalog?
     @State private var query: String = ""
     @State private var selectedCatalogModels: Set<String> = []
     @State private var loading: Bool = true
@@ -149,7 +137,7 @@ public struct AccountSettingsSheet: View {
         if isProxyMode {
             return selectedProxyId != settings.proxy_id
         }
-        return profile != settings.model_config
+        return profile != AccountModelProfile(settings.model_config)
     }
 
     private var validationMessage: String {
@@ -266,7 +254,7 @@ public struct AccountSettingsSheet: View {
             } footer: {
                 Button("放弃修改") {
                     if let settings {
-                        profile = settings.model_config
+                        profile = AccountModelProfile(settings.model_config)
                         selectedProxyId = settings.proxy_id
                         error = ""
                         notice = ""
@@ -371,7 +359,7 @@ public struct AccountSettingsSheet: View {
         }
     }
 
-    private func syncedCatalogSection(_ catalog: SyncModelsResponse) -> some View {
+    private func syncedCatalogSection(_ catalog: SyncedModelCatalog) -> some View {
         let present = Set(profile.whitelist)
         let sourceSet = Set(profile.mappings.map(\.source))
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -563,9 +551,9 @@ public struct AccountSettingsSheet: View {
         error = ""
         defer { loading = false }
         do {
-            let loaded: AccountSettingsResponse = try await RustBridge.shared.api("GET", "/accounts/\(account.id)/settings")
+            let loaded: AccountSettingsReply = try await RustBridge.shared.api("GET", "/accounts/\(account.id)/settings")
             settings = loaded
-            profile = loaded.model_config
+            profile = AccountModelProfile(loaded.model_config)
             selectedProxyId = loaded.proxy_id
         } catch {
             self.error = error.localizedDescription
@@ -587,8 +575,11 @@ public struct AccountSettingsSheet: View {
                 payload: [:],
                 expectedVersion: settings.versions["sync_models"]
             )
-            let data = try JSONEncoder().encode(JSONValue.object(result))
-            catalog = try JSONDecoder().decode(SyncModelsResponse.self, from: data)
+            catalog = SyncedModelCatalog(
+                models: result?.models ?? [],
+                warnings: result?.warnings ?? [],
+                synced_at: result?.synced_at
+            )
             notice = ""
         } catch {
             notice = ""
@@ -620,7 +611,7 @@ public struct AccountSettingsSheet: View {
                 payload: payload,
                 expectedVersion: settings.versions[currentAction]
             )
-            if result["verified"]?.boolValue == false {
+            if result?.verified == false {
                 throw RustBridgeError("保存尚未确认，请在待办中查看")
             }
             store.showToast("已保存 \(account.name) 设置")

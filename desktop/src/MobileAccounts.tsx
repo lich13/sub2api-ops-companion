@@ -11,6 +11,7 @@ import {
 } from "./AccountActions";
 import UsageCell from "./UsageCell";
 import { useBackAction } from "./mobile";
+import { supportsModelDetection } from "./modelTestTypes";
 import { DegradationBadge } from "./DegradationMark";
 import AccountStatus from "./AccountStatus";
 
@@ -115,17 +116,16 @@ export default function MobileAccounts(props: Props) {
               </div>
               <span className="priority-value">优先级 {a.priority}</span>
             </footer>
-            {a.platform === "openai" &&
-              ["oauth", "apikey"].includes(a.type) && (
-                <div className="mobile-primary-actions">
-                  {props
-                    .accountActions(a)
-                    .filter(isPrimaryAction)
-                    .map((item) => (
-                      <AccountActionButton key={item.id} item={item} />
-                    ))}
-                </div>
-              )}
+            {supportsModelDetection(a) && (
+              <div className="mobile-primary-actions">
+                {props
+                  .accountActions(a)
+                  .filter(isPrimaryAction)
+                  .map((item) => (
+                    <AccountActionButton key={item.id} item={item} />
+                  ))}
+              </div>
+            )}
           </article>
         ))}
       </div>

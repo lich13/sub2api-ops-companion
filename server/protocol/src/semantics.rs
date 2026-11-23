@@ -31,13 +31,9 @@ pub fn recoveries_valid(data: &Value) -> bool {
     })
 }
 
-fn scheduled_at_valid(value: &Value) -> bool {
-    let Some(s) = value.as_str() else {
-        return false;
-    };
+fn date_ymd_valid(s: &str) -> bool {
     let b = s.as_bytes();
-    if b.len() != 25
-        || !s.ends_with("+00:00")
+    if b.len() < 19
         || b[4] != b'-'
         || b[7] != b'-'
         || b[10] != b'T'
@@ -66,9 +62,78 @@ fn scheduled_at_valid(value: &Value) -> bool {
     };
     day > 0
         && day <= days
-        && s[17..19].parse::<u32>().unwrap() < 60
         && s[11..13].parse::<u32>().unwrap() < 24
         && s[14..16].parse::<u32>().unwrap() < 60
+        && s[17..19].parse::<u32>().unwrap() < 60
+}
+
+fn scheduled_at_valid(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|s| s.len() == 25 && s.ends_with("+00:00") && date_ymd_valid(s))
+}
+
+fn rfc3339_valid(value: &Value) -> bool {
+    let Some(s) = value.as_str() else {
+        return false;
+    };
+    if !date_ymd_valid(s) {
+        return false;
+    }
+    let mut rest = &s.as_bytes()[19..];
+    if let Some(after_dot) = rest.strip_prefix(b".") {
+        let digits = after_dot
+            .iter()
+            .take_while(|b| b.is_ascii_digit())
+            .count();
+        if digits == 0 {
+            return false;
+        }
+        rest = &after_dot[digits..];
+    }
+    match rest {
+        b"Z" | b"z" => true,
+        [sign @ (b'+' | b'-'), h1, h2, b':', m1, m2]
+            if h1.is_ascii_digit()
+                && h2.is_ascii_digit()
+                && m1.is_ascii_digit()
+                && m2.is_ascii_digit() =>
+        {
+            let _ = sign;
+            let hh = (h1 - b'0') * 10 + (h2 - b'0');
+            let mm = (m1 - b'0') * 10 + (m2 - b'0');
+            hh < 24 && mm < 60
+        }
+        _ => false,
+    }
+}
+
+pub fn keepalive_valid(data: &Value) -> bool {
+    let Some(generation) = data["generation"].as_u64() else {
+        return false;
+    };
+    let Some(restore_count) = data["restore_count"].as_u64() else {
+        return false;
+    };
+    let Some(budget_used) = data["budget_used"].as_u64() else {
+        return false;
+    };
+    generation <= 9_007_199_254_740_991
+        && data["version"].as_str().is_some_and(|v| {
+            v.len() == 64
+                && v.bytes()
+                    .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+        })
+        && matches!(
+            data["status"].as_str(),
+            Some("disabled" | "waiting" | "paused" | "running" | "needs_confirmation")
+        )
+        && restore_count <= 5
+        && budget_used >= restore_count
+        && budget_used <= 5
+        && ["last_restore_at", "next_allowed_at"]
+            .iter()
+            .all(|k| data[*k].is_null() || rfc3339_valid(&data[*k]))
 }
 
 pub fn operation_valid(data: &Value) -> bool {

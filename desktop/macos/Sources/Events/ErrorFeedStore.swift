@@ -59,9 +59,10 @@ public final class ErrorFeedStore {
             let base = replace ? [] : items
             var byId: [Int: OpsError] = [:]
             for item in base + res.items {
-                byId[item.id] = item
+                guard let itemId = item.id else { continue }
+                byId[itemId] = item
             }
-            items = byId.values.sorted { $0.id > $1.id }
+            items = byId.values.sorted { $0.recordId > $1.recordId }
             cursor = res.next_cursor
         } catch {
             if generation == capturedGen {

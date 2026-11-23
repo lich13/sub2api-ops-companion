@@ -1,6 +1,7 @@
 {
   "identifier": "desktop",
   "description": "Local app windows only",
-  "windows": ["main", "quick"],
+  "platforms": ["android"],
+  "windows": ["main"],
   "permissions": ["core:default"]
 }

@@ -1,6 +1,6 @@
 # Sub2Ops for macOS / Android
 
-Rust 核心运维客户端：macOS 端采用纯原生 Swift 6 + SwiftUI / AppKit（支持 macOS 14+ Apple Silicon），Android 端采用 Tauri 2 + React（支持 Android 12+ ARM64）。
+Rust 核心运维客户端：macOS 端采用纯原生 Swift 6 + SwiftUI / AppKit（支持 macOS 14+ Apple Silicon），Android 端与开发预览采用 React 移动视图（Android 支持 12+ ARM64，Tauri 2 承载）。
 
 ## 安装与连接
 
@@ -33,7 +33,7 @@ Mac 主窗口默认 1310×860，按屏幕可用区居中收缩，八列账号表
 
 Mac 可见时每 2 秒读取状态，驻留后台每 15 秒。Android 前台每 2 秒合并刷新，后台停止读取和进度轮询，取消未完成的只读请求，返回前台立即刷新；云端批次及自动化继续运行。离线保留最后快照并禁用写操作，已发出的写操作不重放。刷新不调用额度查询或模型测活。
 
-账号质量评分及其筛选、排序、详情已移除；首次按最近调用倒序，无调用账号置底。本机统一记住最后一次排序的字段和方向，重启和切换连接后沿用；桌面、移动端下拉和“调度参数”表头共用排序选择。筛选条件不保存，排序不跨设备同步。代理质量检测、慢首字检测线索和降智标记继续保留。
+账号质量评分及其筛选、排序、详情已移除；首次按最近调用倒序，无调用账号置底。两端各自在本机记住最后一次排序的字段和方向，重启和切换连接后沿用；Mac 原生工具栏下拉与“调度参数”表头联动，Android 与开发预览使用移动排序下拉。筛选条件不保存，排序不跨设备同步。代理质量检测、慢首字检测线索和降智标记继续保留。
 
 桌面记录表列宽进一步收窄，长账号、密钥和模型路由省略显示，完整内容见提示和详情；数值及类型徽章不裁切，多行自然撑高。移动端卡片和详情保持原有字号及触控尺寸。
 
@@ -83,7 +83,7 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D w
 pnpm bundle
 ```
 
-产物位于 `src-tauri/target/aarch64-apple-darwin/release/bundle/`。`pnpm dev` 提供明确标记为“预览”的开发数据，只在开发构建中存在；生产客户端只使用 Rust HTTP 通道。
+产物位于 `src-tauri/target/aarch64-apple-darwin/release/bundle/`。`pnpm dev` 提供明确标记为“预览”的 Android 移动视图与开发数据，只在开发构建中存在；macOS 生产包不含前端资源，两端生产客户端均只使用 Rust HTTP 通道。
 
 Android 工具链：JDK 27、SDK 37.2、Build Tools 37.0.0、NDK 30.0.16248370、Gradle 9.9.0、AGP 9.5.1、Kotlin 2.4.21，以及 Rust stable 的 `aarch64-linux-android` 标准库。后续通过官方工具成组更新 Android 版本记录。设好 `JAVA_HOME`、`ANDROID_HOME`、`NDK_HOME` 后：
 

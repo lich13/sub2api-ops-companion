@@ -3,38 +3,10 @@ import { useEffect, useId, useRef, useState } from "react";
 import { CircleCheck, LoaderCircle, ShieldCheck } from "lucide-react";
 import { api } from "./bridge";
 import { operationEpoch } from "./accountOperations";
+import type { ProxyChoiceReply as ProxyOption } from "./protocol";
+import type { ConnectionResult, QualityResult } from "./proxyData";
+export type { ProxyChoiceReply as ProxyOption } from "./protocol";
 
-export type ProxyOption = {
-  id: number;
-  name: string;
-  protocol: string;
-  status: string;
-};
-type ConnectionResult = {
-  success: boolean;
-  message: string;
-  latency_ms: number | null;
-  ip_address: string;
-  city: string;
-  region: string;
-  country: string;
-  country_code: string;
-};
-type QualityResult = {
-  score: number;
-  grade: string;
-  summary: string;
-  exit_ip: string;
-  country: string;
-  base_latency_ms: number | null;
-  items: {
-    target: string;
-    status: "pass" | "warn" | "fail" | "challenge";
-    http_status: number | null;
-    latency_ms: number | null;
-    message: string;
-  }[];
-};
 type Result = {
   busy?: boolean;
   error?: string;

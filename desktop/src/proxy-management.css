@@ -105,84 +105,6 @@
 .proxy-feedback button {
   margin-left: 8px;
 }
-.proxy-table-scroll {
-  width: 100%;
-  overflow-x: auto;
-  isolation: isolate;
-}
-.proxy-table {
-  width: 100%;
-  min-width: 1120px;
-  table-layout: fixed;
-  border-collapse: separate;
-  border-spacing: 0;
-  font-size: 12px;
-}
-.proxy-table th,
-.proxy-table td {
-  text-align: left;
-  padding: 8px 6px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-  vertical-align: middle;
-  white-space: nowrap;
-}
-.proxy-table th {
-  color: var(--muted);
-  font-weight: 500;
-  background: var(--hover);
-  height: 45px;
-  padding-top: 9px;
-  padding-bottom: 9px;
-}
-.proxy-table tr:last-child td {
-  border-bottom: 0;
-}
-.proxy-table tbody tr:hover td {
-  background: var(--hover);
-}
-.proxy-table tr.selected td {
-  background: color-mix(in srgb, var(--accent-bg) 65%, var(--surface));
-}
-.proxy-table .proxy-pin-select {
-  position: sticky;
-  left: 0;
-  width: 40px;
-  min-width: 40px;
-  padding-right: 6px;
-  z-index: 2;
-}
-.proxy-table .proxy-pin-name {
-  position: sticky;
-  left: 40px;
-  width: 120px;
-  min-width: 120px;
-  max-width: 120px;
-  z-index: 2;
-  box-shadow: 5px 0 8px -6px var(--shadow-sticky);
-}
-.proxy-pin-name b {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 13px;
-}
-.proxy-table .proxy-pin-actions {
-  position: sticky;
-  right: 0;
-  width: 144px;
-  z-index: 2;
-  box-shadow: -5px 0 8px -6px var(--shadow-sticky);
-}
-.proxy-sort {
-  min-height: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  padding: 0;
-  border-radius: 3px;
-  font-weight: inherit;
-}
 .proxy-badge {
   display: inline-flex;
   align-items: center;
@@ -309,9 +231,13 @@
   align-items: center;
   gap: 8px;
 }
-.proxy-mobile-list,
+.proxy-mobile-list {
+  display: block;
+}
 .proxy-mobile-select {
-  display: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .proxy-dialog {
   width: min(640px, calc(100vw - 40px));
@@ -549,9 +475,6 @@
   .proxy-primary-actions > .primary {
     margin-left: auto;
   }
-  .proxy-table-scroll {
-    display: none;
-  }
   .proxy-mobile-list {
     display: block;
   }
@@ -698,7 +621,8 @@
 }
 
 .proxy-mobile-sort {
-  display: none;
+  display: block;
+  flex: 1 1 100%;
 }
 .mobile .proxy-management {
   border-radius: 8px;
@@ -747,9 +671,6 @@
 }
 .mobile .proxy-primary-actions > .primary {
   margin-left: auto;
-}
-.mobile .proxy-table-scroll {
-  display: none;
 }
 .mobile .proxy-mobile-list {
   display: block;
@@ -900,69 +821,6 @@
 }
 .proxy-quality-link .bad {
   color: var(--bad);
-}
-
-/* Desktop density stays local to the proxy table. */
-.proxy-table col:nth-child(1) {
-  width: 40px;
-}
-.proxy-table col:nth-child(2) {
-  width: 120px;
-}
-.proxy-table col:nth-child(3) {
-  width: 64px;
-}
-.proxy-table col:nth-child(4) {
-  width: 144px;
-}
-.proxy-table col:nth-child(5) {
-  width: 64px;
-}
-.proxy-table col:nth-child(6) {
-  width: 88px;
-}
-.proxy-table col:nth-child(7) {
-  width: 56px;
-}
-.proxy-table col:nth-child(8) {
-  width: 108px;
-}
-.proxy-table col:nth-child(9) {
-  width: 128px;
-}
-.proxy-table col:nth-child(10) {
-  width: 64px;
-}
-.proxy-table col:nth-child(11) {
-  width: 144px;
-}
-.proxy-table .proxy-row-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-}
-.proxy-table .proxy-row-actions button {
-  justify-content: center;
-  padding: 5px 3px;
-  gap: 3px;
-  font-size: 11px;
-}
-.proxy-table .proxy-address {
-  min-width: 0;
-}
-.proxy-table .proxy-address code {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.proxy-table .proxy-address button {
-  flex-shrink: 0;
-}
-.proxy-table .proxy-location {
-  max-width: 100%;
-}
-.proxy-table .proxy-quality-cell {
-  min-width: 0;
 }
 
 .diagnostic-text {

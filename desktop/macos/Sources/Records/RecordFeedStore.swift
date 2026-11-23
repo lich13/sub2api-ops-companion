@@ -131,15 +131,6 @@ public final class RecordFeedStore {
         }
     }
 
-    public func loadDetail(id: Int) async throws -> UsageRecord {
-        let capturedEpoch = epoch
-        let row: UsageRecord = try await RustBridge.shared.api("GET", "/usage-records/\(id)")
-        guard epoch == capturedEpoch else {
-            throw RustBridgeError("读取已取消")
-        }
-        return row
-    }
-
     private func loadHead(capturedEpoch: UInt64, query: String, automatic: Bool = false) async -> Bool {
         loading = true
         defer {

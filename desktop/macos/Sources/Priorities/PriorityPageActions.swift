@@ -118,7 +118,7 @@ extension PrioritiesPageView {
             drafts.removeValue(forKey: group.platform)
             history[group.platform] = []
             if task.isPending {
-                view?.active_task = task
+                view = view?.withActiveTask(task)
             } else {
                 await readPriorities()
                 let label = Self.taskLabels[task.status] ?? "已完成"
@@ -143,7 +143,7 @@ extension PrioritiesPageView {
                     store.refresh()
                     return
                 }
-                view?.active_task = next
+                view = view?.withActiveTask(next)
             } catch {
                 self.error = error.localizedDescription
                 return
@@ -154,7 +154,7 @@ extension PrioritiesPageView {
     func cancelTask(_ task: PriorityTask) async {
         do {
             let updated: PriorityTask = try await RustBridge.shared.api("POST", "/account-priority-orders/\(task.id)/cancel?schema=2", body: .object([:]))
-            view?.active_task = updated.isPending ? updated : nil
+            view = view?.withActiveTask(updated.isPending ? updated : nil)
             if !updated.isPending {
                 await readPriorities()
             }

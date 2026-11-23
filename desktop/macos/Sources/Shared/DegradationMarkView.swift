@@ -46,10 +46,6 @@ public struct DegradationBadgeView: View {
 }
 
 public enum DegradationMarkActions {
-    public static func supportsDegradationMark(_ account: Account) -> Bool {
-        account.platform == "openai" && ["oauth", "apikey"].contains(account.type)
-    }
-
     @MainActor
     public static func toggle(account: Account, store: AppStore) async {
         guard store.state.online, let expectedVersion = account.degradation_mark?.version, !expectedVersion.isEmpty else { return }
@@ -61,7 +57,7 @@ public enum DegradationMarkActions {
                 payload: ["marked": .bool(targetMarked)],
                 expectedVersion: expectedVersion
             )
-            if res["verified"]?.boolValue == false {
+            if res?.verified == false {
                 throw RustBridgeError("降智标记保存未确认")
             }
             store.refresh()

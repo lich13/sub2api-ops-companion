@@ -101,7 +101,7 @@ public struct SchedulingParametersView: View {
             action: action,
             payload: [key: payloadVal]
         )
-        if res["verified"]?.boolValue == false {
+        if res?.verified == false {
             throw RustBridgeError("\(action == "concurrency" ? "并发" : "负载因子")写入未确认，请刷新核对")
         }
     }

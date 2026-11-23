@@ -36,7 +36,7 @@ public struct ModelDetectionSheet: View {
     @State private var globalModelId: String = ""
     @State private var loadedModelId: String = ""
     @State private var serverModelId: String = ""
-    @State private var candidateModels: [AccountModelItem] = []
+    @State private var candidateModels: [ModelOption] = []
     @State private var modelsReady: Bool = false
     @State private var loadingModels: Bool = false
     @State private var serverState: ModelDetectionReply?
@@ -194,7 +194,7 @@ public struct ModelDetectionSheet: View {
                     let currentLabel: String = {
                         if modelOverride.isEmpty { return defaultOptionLabel }
                         if let found = candidateModels.first(where: { $0.id == modelOverride }) {
-                            return found.display_name.isEmpty ? found.id : found.display_name
+                            return found.titleText
                         }
                         return "\(modelOverride)（当前不可用）"
                     }()
@@ -217,7 +217,7 @@ public struct ModelDetectionSheet: View {
                                 ] + (candidateModels.isEmpty ? [] : [.separator()]) + candidateModels.map { item in
                                     LinearMenuEntry(
                                         id: item.id,
-                                        title: item.display_name.isEmpty ? item.id : item.display_name,
+                                        title: item.titleText,
                                         checked: modelOverride == item.id
                                     ) {
                                         modelOverride = item.id
@@ -412,7 +412,7 @@ public struct ModelDetectionSheet: View {
         saving = true
         defer { saving = false }
         do {
-            let _: JSONValue = try await RustBridge.shared.api("POST", "/model-tests/\(jobId)/cancel", body: .object([:]))
+            try await RustBridge.shared.apiVoid("POST", "/model-tests/\(jobId)/cancel", body: .object([:]))
             await readAll(replaceDraft: false, refreshDirectory: false)
         } catch {
             store.report(error)
@@ -449,7 +449,7 @@ public struct ModelDetectionSheet: View {
         }
 
         do {
-            let _: JSONValue = try await RustBridge.shared.api(
+            try await RustBridge.shared.apiVoid(
                 "PUT",
                 "/accounts/\(account.id)/model-detection",
                 body: .object(body)

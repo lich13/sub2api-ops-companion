@@ -189,31 +189,23 @@ public struct ProxyBatchSheet: View {
         refreshNonce &+= 1
         defer { loading = false }
 
-        if let raw: JSONValue = try? await RustBridge.shared.api("GET", "/proxies"),
-           let data = try? JSONEncoder().encode(raw)
-        {
-            struct Env: Decodable { var items: [ProxyOptionItem]?; var proxies: [ProxyOptionItem]? }
-            if let list = try? JSONDecoder().decode([ProxyOptionItem].self, from: data) {
-                proxies = list
-            } else if let env = try? JSONDecoder().decode(Env.self, from: data) {
-                proxies = env.items ?? env.proxies ?? []
-            }
+        do {
+            proxies = try await RustBridge.shared.api("GET", "/proxies")
+        } catch {
+            proxies = []
         }
 
         var nextPreviews: [Int: AccountProxyPreview] = [:]
         var nextErrors: [Int: String] = [:]
         for acc in accounts {
             do {
-                let raw: [String: JSONValue] = try await RustBridge.shared.api("GET", "/accounts/\(acc.id)/settings")
-                let pid = raw["proxy_id"]?.intValue.map(Int.init)
-                let capObj = raw["capabilities"]?["proxy"]?.objectValue
-                let editable = capObj?["editable"]?.boolValue ?? true
-                let reason = capObj?["reason"]?.stringValue ?? ""
-                let ver = raw["versions"]?["proxy"]?.stringValue ?? acc.operation_versions["proxy"] ?? acc.version
+                let loaded: AccountSettingsReply = try await RustBridge.shared.api("GET", "/accounts/\(acc.id)/settings")
+                let cap = loaded.capabilities["proxy"]
+                let ver = loaded.versions["proxy"] ?? acc.operation_versions["proxy"] ?? acc.version
                 nextPreviews[acc.id] = AccountProxyPreview(
-                    proxyId: pid,
-                    editable: editable,
-                    reason: reason,
+                    proxyId: loaded.proxy_id,
+                    editable: cap?.editable == true,
+                    reason: cap?.reason ?? "",
                     expectedVersion: ver
                 )
             } catch {

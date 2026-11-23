@@ -2369,7 +2369,7 @@ async fn enable_keepalive(h: &Harness, id: i64) -> Value {
     let view = h.runtime.keepalive.view(id).await.unwrap();
     h.runtime
         .keepalive
-        .save(
+        .save_validated(
             id,
             &json!({"enabled":true,"expected_version":view["version"]}),
         )
@@ -2553,7 +2553,7 @@ async fn keepalive_defaults_off_persists_privately_and_preserves_corruption() {
     let saved = h
         .runtime
         .keepalive
-        .save(
+        .save_validated(
             id,
             &json!({"enabled":true,"expected_version":initial["version"]}),
         )
@@ -2569,7 +2569,7 @@ async fn keepalive_defaults_off_persists_privately_and_preserves_corruption() {
     let stale = h
         .runtime
         .keepalive
-        .save(
+        .save_validated(
             id,
             &json!({"enabled":false,"expected_version":initial["version"]}),
         )
@@ -2585,7 +2585,7 @@ async fn keepalive_defaults_off_persists_privately_and_preserves_corruption() {
     let corrupt = h
         .runtime
         .keepalive
-        .save(
+        .save_validated(
             id,
             &json!({"enabled":false,"expected_version":"a".repeat(64)}),
         )
@@ -2609,7 +2609,7 @@ async fn keepalive_save_failure_leaves_state_unwritten() {
     let failed = h
         .runtime
         .keepalive
-        .save(
+        .save_validated(
             id,
             &json!({"enabled":true,"expected_version":"b".repeat(64)}),
         )
@@ -3099,7 +3099,7 @@ async fn keepalive_dispatch_is_limited_to_eight_and_releases_capacity_and_locks(
         let view = h.runtime.keepalive.view(*id).await.unwrap();
         let saved = tokio::time::timeout(
             StdDuration::from_secs(5),
-            h.runtime.keepalive.save(
+            h.runtime.keepalive.save_validated(
                 *id,
                 &json!({"enabled":false,"expected_version":view["version"]}),
             ),

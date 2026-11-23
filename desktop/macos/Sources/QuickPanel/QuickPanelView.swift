@@ -204,7 +204,7 @@ public struct QuickPanelRootView: View {
                                 .font(DS.fontBadge)
                                 .foregroundStyle(DS.ink)
                                 .lineLimit(1)
-                            Text(verbatim: group.platform)
+                            Text(verbatim: group.platformText)
                                 .font(DS.fontResetTime)
                                 .foregroundStyle(DS.muted)
                                 .lineLimit(1)
@@ -219,16 +219,18 @@ public struct QuickPanelRootView: View {
                                 .foregroundStyle(DS.muted)
                                 .padding(.vertical, 10)
                         } else {
-                            ForEach(group.recent_accounts, id: \.account_id) { call in
-                                let acc = accountById[call.account_id]
+                            ForEach(Array(group.recent_accounts.enumerated()), id: \.offset) { _, call in
+                                let aid = call.account_id ?? 0
+                                let acc = call.account_id.flatMap { accountById[$0] }
+                                let cname = call.account_name ?? ""
                                 Rectangle().fill(DS.line).frame(height: 1)
                                 QuickAccountRowView(
                                     account: acc,
-                                    displayName: call.account_name.isEmpty ? (acc?.name ?? "账号 #\(call.account_id)") : call.account_name,
+                                    displayName: cname.isEmpty ? (acc?.name ?? "账号 #\(aid)") : cname,
                                     calledAt: call.called_at,
                                     online: store.state.online,
-                                    scheduleBusy: store.busyScheduleAccountId == call.account_id,
-                                    recoverBusy: store.busyRecoverAccountIds.contains(call.account_id),
+                                    scheduleBusy: store.busyScheduleAccountId == aid,
+                                    recoverBusy: store.busyRecoverAccountIds.contains(aid),
                                     onToggleSchedulable: {
                                         if let acc {
                                             Task { await store.toggleSchedulable(acc) }
@@ -262,16 +264,18 @@ public struct QuickPanelRootView: View {
         } else {
             let visibleErrors = Array(store.errors.prefix(12))
             VStack(spacing: 0) {
-                ForEach(Array(visibleErrors.enumerated()), id: \.element.id) { idx, err in
+                ForEach(Array(visibleErrors.enumerated()), id: \.element.recordId) { idx, err in
                     let acc = err.account_id.flatMap { accountById[$0] }
                     let restriction = QuickAccountStatusHelper.restriction(for: acc)
-                    let codeVal = err.upstream_status_code ?? err.status_code
+                    let codeVal = err.upstream_status_code ?? err.statusCodeValue
                     let isWarnCode = codeVal == 429
-                    let isCurrent = acc?.last_error_id == err.id
+                    let isCurrent = err.id != nil && acc?.last_error_id == err.id
 
                     HStack(alignment: .center, spacing: 8) {
                         Button {
-                            store.openErrorDetail(id: err.id)
+                            if let errId = err.id {
+                                store.openErrorDetail(id: errId)
+                            }
                         } label: {
                             HStack(alignment: .top, spacing: 10) {
                                 Text(codeVal > 0 ? "\(codeVal)" : "ERR")
@@ -285,7 +289,7 @@ public struct QuickPanelRootView: View {
 
                                 VStack(alignment: .leading, spacing: 4) {
                                     HStack(spacing: 4) {
-                                        Text(err.account_name.isEmpty ? (err.account_id.map { "账号 #\($0)" } ?? "未关联账号") : err.account_name)
+                                        Text(err.accountNameText.isEmpty ? (err.account_id.map { "账号 #\($0)" } ?? "未关联账号") : err.accountNameText)
                                             .font(DS.fontCompactSemibold)
                                             .foregroundStyle(restriction.isEmpty ? DS.ink : DS.warn)
                                             .lineLimit(1)
@@ -303,7 +307,7 @@ public struct QuickPanelRootView: View {
                                         Text(isCurrent ? "当前" : "历史")
                                             .font(DS.fontResetTimeSemibold)
                                             .foregroundStyle(isCurrent ? DS.warn : DS.muted)
-                                        Text(err.provider_error_code.isEmpty ? (err.message.isEmpty ? "查看错误详情" : err.message) : err.provider_error_code)
+                                        Text(err.providerErrorCodeText.isEmpty ? (err.messageText.isEmpty ? "查看错误详情" : err.messageText) : err.providerErrorCodeText)
                                             .font(DS.fontPriorityMeta)
                                             .foregroundStyle(DS.muted)
                                             .lineLimit(1)
@@ -382,7 +386,7 @@ public struct QuickPanelRootView: View {
     private func quickErrorOverlay(_ detail: OpsError) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(verbatim: "错误 #\(detail.id)")
+                Text(verbatim: "错误 #\(detail.recordId)")
                     .font(DS.fontSectionTitle)
                     .foregroundStyle(DS.ink)
                 Spacer()
@@ -390,14 +394,14 @@ public struct QuickPanelRootView: View {
                     store.closeDetail()
                 }
             }
-            Text("\(detail.account_name) · HTTP \(detail.upstream_status_code ?? detail.status_code) · \(BeijingTime.fullTime(detail.created_at))")
+            Text("\(detail.accountNameText) · HTTP \(detail.upstream_status_code ?? detail.statusCodeValue) · \(BeijingTime.fullTime(detail.created_at))")
                 .font(DS.fontResetTime)
                 .monospacedDigit()
                 .foregroundStyle(DS.muted)
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    if !detail.message.isEmpty {
-                        DiagnosticTextView(text: detail.message)
+                    if !detail.messageText.isEmpty {
+                        DiagnosticTextView(text: detail.messageText)
                     }
                     if let content = detail.content, !content.isEmpty {
                         DiagnosticTextView(text: content, monospaced: true)

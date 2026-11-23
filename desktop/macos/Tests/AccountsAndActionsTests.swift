@@ -39,8 +39,7 @@ struct AccountsAndActionsTests {
 
     @Test("AccountActionEntry matches React fixtureAccountActions matrix")
     func accountActionsMatchReactMatrix() {
-        var openaiOauth = Account(id: 101, name: "Codex", platform: "openai", type: "oauth")
-        openaiOauth.recoverable = true
+        let openaiOauth = Account(id: 101, name: "Codex", platform: "openai", type: "oauth", recoverable: true)
         let labels = AccountActionEntry.entries(for: openaiOauth).map(\.label)
         #expect(labels == [
             "模型测试", "标记降智", "定时检测", "测试连接", "账号保活",
@@ -172,9 +171,9 @@ struct AccountsAndActionsTests {
     @MainActor
     func testDialogAndTableMetricsAndQuickPanelGuards() {
         let grokModels = [
-            AccountModelItem(id: "grok-4.5", display_name: "Grok 4.5"),
-            AccountModelItem(id: "grok-imagine-image-v1", display_name: "Grok Imagine"),
-            AccountModelItem(id: "grok-video-v1", display_name: "Grok Video"),
+            ModelOption(id: "grok-4.5", display_name: "Grok 4.5"),
+            ModelOption(id: "grok-imagine-image-v1", display_name: "Grok Imagine"),
+            ModelOption(id: "grok-video-v1", display_name: "Grok Video"),
         ]
         #expect(TestDialogSheet.modelsForMode(grokModels, platform: "grok", mode: "text").map(\.id) == ["grok-4.5"])
         #expect(TestDialogSheet.modelsForMode(grokModels, platform: "grok", mode: "image").map(\.id) == ["grok-imagine-image-v1"])
@@ -332,15 +331,10 @@ struct AccountsAndActionsTests {
         }
 
         let stats = UsageStats(requests: 313, tokens: 46_900_000, cost: 76.8, standard_cost: 76.8, user_cost: 76.8)
-        var w5h = UsageWindow(key: "5h", label: "5h", used_percent: 38, reset_at: "2026-09-25T05:00:00+08:00")
-        w5h.stats = stats
-        w5h.color = "indigo"
-        var w7d = UsageWindow(key: "7d", label: "7d", used_percent: 81, reset_at: "2026-09-28T05:00:00+08:00")
-        w7d.stats = stats
-        w7d.color = "emerald"
-        w7d.estimated_total_cost = 94.81
+        let w5h = UsageWindow(key: "5h", label: "5h", used_percent: 38, reset_at: "2026-09-25T05:00:00+08:00", color: "indigo", stats: stats)
+        let w7d = UsageWindow(key: "7d", label: "7d", used_percent: 81, reset_at: "2026-09-28T05:00:00+08:00", color: "emerald", stats: stats, estimated_total_cost: 94.81)
 
-        var acc1 = Account(
+        let acc1 = Account(
             id: 101,
             name: "Codex · 主力",
             priority: 1,
@@ -350,22 +344,20 @@ struct AccountsAndActionsTests {
             schedulable: true,
             available: true,
             group_ids: [1],
+            concurrency: 2,
             last_success_at: "2026-11-17T08:22:11Z",
             last_called_at: "2026-11-17T08:22:11Z",
-            usage_windows: [w5h, w7d]
-        )
-        acc1.concurrency = 2
-        acc1.usage = UsageSummary(
-            branch: "openai_oauth",
-            windows: [w5h, w7d],
-            actions: ["query_usage", "query_reset_credits", "reset_quota"],
-            reset_credits: ResetCreditsInfo(available: 1, expires_at: ["2026-10-23T02:52:00+08:00"], observed_at: "2026-11-17T08:22:11Z")
+            usage_windows: [w5h, w7d],
+            usage: UsageSummary(
+                branch: "openai_oauth",
+                windows: [w5h, w7d],
+                actions: ["query_usage", "query_reset_credits", "reset_quota"],
+                reset_credits: ResetCreditsInfo(available: 1, expires_at: ["2026-10-23T02:52:00+08:00"], observed_at: "2026-11-17T08:22:11Z")
+            )
         )
 
-        var w24h = UsageWindow(key: "grok_24h", label: "24h", used_percent: 90, reset_at: nil)
-        w24h.stats = stats
-        w24h.color = "emerald"
-        var acc2 = Account(
+        let w24h = UsageWindow(key: "grok_24h", label: "24h", used_percent: 90, reset_at: nil, color: "emerald", stats: stats)
+        let acc2 = Account(
             id: 201,
             name: "Grok · Super",
             priority: 2,
@@ -376,17 +368,17 @@ struct AccountsAndActionsTests {
             available: false,
             group_ids: [2],
             blockers: [AccountBlocker(code: "rate_limit_reset_at", label: "限流中", until: "2026-11-29T03:00:00Z")],
+            concurrency: 2,
             last_success_at: "2026-11-17T08:15:11Z",
             last_error_at: "2026-11-17T08:22:11Z",
             last_error_id: 9002,
             last_error_code: "rate_limit_exceeded",
             last_error_status: 429,
-            usage_windows: [w24h]
+            usage_windows: [w24h],
+            usage: UsageSummary(branch: "grok_paid", windows: [w24h], actions: ["probe_quota"])
         )
-        acc2.concurrency = 2
-        acc2.usage = UsageSummary(branch: "grok_paid", windows: [w24h], actions: ["probe_quota"])
 
-        var acc3 = Account(
+        let acc3 = Account(
             id: 102,
             name: "Codex · 备用账号 · 用于验证长名称的显示与调度开关",
             priority: 5,
@@ -397,15 +389,15 @@ struct AccountsAndActionsTests {
             available: false,
             group_ids: [1],
             blockers: [AccountBlocker(code: "reauth", label: "需要重新认证")],
+            recoverable: true,
+            concurrency: 2,
             last_success_at: "2026-11-17T08:15:11Z",
             last_error_at: "2026-11-17T08:22:11Z",
             last_error_id: 9001,
             last_error_code: "invalid_grant",
-            last_error_status: 401
+            last_error_status: 401,
+            degradation_mark: DegradationMark(marked: true, version: String(repeating: "f", count: 64))
         )
-        acc3.concurrency = 2
-        acc3.recoverable = true
-        acc3.degradation_mark = DegradationMark(marked: true, version: String(repeating: "f", count: 64))
 
         let grp1 = Group(
             id: 1,

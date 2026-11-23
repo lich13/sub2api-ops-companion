@@ -22,7 +22,7 @@ public struct SettingsPageView: View {
     }
 
     private var serverBarkRevision: String {
-        serverBark["revision"]?.stringValue ?? "\(serverBark["revision"]?.intValue ?? 0)"
+        serverBark["revision"]?.stringValue ?? ""
     }
 
     private var clientVersionString: String {
@@ -233,7 +233,7 @@ public struct SettingsPageView: View {
                         }
                     }
                     .buttonStyle(LinearButtonStyle(variant: .primary, compact: true))
-                    .disabled(!store.state.online || barkBusy || barkChanges.isEmpty || barkConflict)
+                    .disabled(!store.state.online || barkBusy || barkChanges.isEmpty || barkConflict || serverBarkRevision.isEmpty)
                 }
                 .padding(.bottom, 12)
 
@@ -355,16 +355,16 @@ public struct SettingsPageView: View {
     }
 
     private func saveBark() async {
-        guard store.state.online, !barkBusy, !barkChanges.isEmpty, !barkConflict else { return }
+        let rev = barkDraft["revision"]?.stringValue ?? serverBarkRevision
+        guard store.state.online, !barkBusy, !barkChanges.isEmpty, !barkConflict, !rev.isEmpty else { return }
         barkBusy = true
         defer { barkBusy = false }
-        let revVal = barkDraft["revision"] ?? .int(0)
         do {
             let updated: [String: JSONValue] = try await RustBridge.shared.api(
                 "PUT",
                 "/config/bark",
                 body: .object([
-                    "expected_revision": revVal,
+                    "expected_revision": .string(rev),
                     "changes": .object(barkChanges),
                 ])
             )
@@ -385,10 +385,9 @@ public struct SettingsPageView: View {
     }
 
     private func sendBarkTest() async {
-        struct ActionReply: Decodable, Sendable { var message: String? }
         do {
-            let res: ActionReply = try await RustBridge.shared.api("POST", "/actions/bark-test")
-            store.showToast(res.message ?? "操作完成")
+            let res: MessageReply = try await RustBridge.shared.api("POST", "/actions/bark-test")
+            store.showToast(res.message.isEmpty ? "操作完成" : res.message)
         } catch {
             store.report(error)
         }
@@ -399,11 +398,10 @@ public struct SettingsPageView: View {
         removingUrl = item.base_url
         defer { removingUrl = nil }
         do {
-            let next: ViewState = try await RustBridge.shared.command(
+            try await RustBridge.shared.commandVoid(
                 "remove_connection",
                 args: .object(["baseUrl": .string(item.base_url)])
             )
-            store.applyViewState(next)
             store.showToast("已删除实例 \(item.name)")
         } catch {
             store.report(error)

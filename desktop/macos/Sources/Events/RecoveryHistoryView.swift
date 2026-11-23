@@ -69,7 +69,7 @@ public struct RecoveryHistoryView: View {
                     VStack(spacing: 0) {
                         headerRow
                         Rectangle().fill(DS.line).frame(height: 1)
-                        ForEach(Array(displayItems.enumerated()), id: \.element.id) { idx, row in
+                        ForEach(Array(displayItems.enumerated()), id: \.element.recordId) { idx, row in
                             tableRow(row)
                             if idx < displayItems.count - 1 {
                                 Rectangle().fill(DS.line).frame(height: 1)
@@ -166,7 +166,7 @@ public struct RecoveryHistoryView: View {
         }()
 
         return HStack(alignment: .center, spacing: 12) {
-            Text(row.account_name.isEmpty ? "账号 #\(row.account_id)" : row.account_name)
+            Text(row.accountNameText.isEmpty ? "账号 #\(row.account_id ?? 0)" : row.accountNameText)
                 .font(DS.fontCompactMedium)
                 .foregroundStyle(DS.ink)
                 .lineLimit(2)
@@ -182,9 +182,9 @@ public struct RecoveryHistoryView: View {
                 .foregroundStyle(verificationLabel == "—" ? DS.muted : DS.ink)
                 .frame(width: 84, alignment: .leading)
 
-            Text(verbatim: row.model_id.isEmpty ? "—" : row.model_id)
-                .font(row.model_id.isEmpty ? DS.fontCompact : DS.fontCompact)
-                .foregroundStyle(row.model_id.isEmpty ? DS.muted : DS.ink)
+            Text(verbatim: row.modelIdText.isEmpty ? "—" : row.modelIdText)
+                .font(DS.fontCompact)
+                .foregroundStyle(row.modelIdText.isEmpty ? DS.muted : DS.ink)
                 .lineLimit(1)
                 .frame(width: 132, alignment: .leading)
 
@@ -215,7 +215,7 @@ public struct RecoveryHistoryView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(hoveredRowId == row.id ? DS.rowHover : DS.clear)
+        .background(row.id != nil && hoveredRowId == row.id ? DS.rowHover : DS.clear)
         .onHover { hovering in
             if hovering {
                 hoveredRowId = row.id
@@ -236,8 +236,8 @@ public struct RecoveryHistoryView: View {
             if replace {
                 items = env.items
             } else {
-                let existing = Set(items.map(\.id))
-                items.append(contentsOf: env.items.filter { !existing.contains($0.id) })
+                let existing = Set(items.compactMap(\.id))
+                items.append(contentsOf: env.items.filter { $0.id.map { !existing.contains($0) } ?? true })
             }
             nextCursor = env.next_cursor
             error = ""

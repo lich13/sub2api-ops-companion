@@ -14,14 +14,28 @@ import type { Account, UsageSummary, UsageWindow } from "./types";
 vi.mock("./bridge", () => ({ api: vi.fn(), command: vi.fn() }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let container: HTMLDivElement, root: ReturnType<typeof createRoot>;
-const account = {
+const account: Account = {
   id: 42,
   name: "Fixture",
+  priority: 1,
   platform: "anthropic",
   type: "apikey",
+  status: "active",
+  schedulable: true,
+  available: true,
+  group_ids: [],
+  blockers: [],
   version: "a".repeat(64),
   operation_versions: { test: "b".repeat(64) },
-} as unknown as Account;
+  last_success_at: null,
+  last_error_at: null,
+  last_error_id: null,
+  last_error_code: null,
+  last_error_status: null,
+  error_message: "",
+  success_after_error: false,
+  usage_windows: [],
+};
 const models = [
   { id: "claude-custom-model", display_name: "Claude custom", type: "model" },
   { id: "upstream-extra", display_name: "Upstream extra", type: "model" },

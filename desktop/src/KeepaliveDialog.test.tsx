@@ -193,24 +193,6 @@ describe("account keepalive", () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
-  it.each([
-    ["a different account", { account_id: 43 }],
-    ["a malformed version", { version: "a".repeat(63) }],
-    ["a negative generation", { generation: -1 }],
-    ["a fractional generation", { generation: 1.5 }],
-    ["an unknown status", { status: "unknown" }],
-    ["a restore count above five", { restore_count: 6, budget_used: 6 }],
-    ["a budget above five", { restore_count: 1, budget_used: 6 }],
-    ["a budget below the restore count", { restore_count: 2, budget_used: 1 }],
-  ])("rejects a response with %s", async (_case, overrides) => {
-    vi.mocked(api).mockResolvedValueOnce(valueFor(42, overrides) as never);
-    await mount();
-
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "保活设置响应无效",
-    );
-  });
-
   it("does not read or enable controls while offline", async () => {
     await mount({ online: false });
 

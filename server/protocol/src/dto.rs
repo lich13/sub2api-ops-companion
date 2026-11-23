@@ -57,12 +57,23 @@ pub struct SystemVersionReply {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReleaseInfoReply {
+    pub name: Option<String>,
+    pub html_url: Option<String>,
+    pub published_at: Option<String>,
+    pub body: Option<String>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UpdatesReply {
     pub current_version: String,
     pub latest_version: String,
     pub has_update: bool,
     pub build_type: String,
     pub cached: bool,
+    pub warning: Option<String>,
+    pub release_info: Option<ReleaseInfoReply>,
 }
 
 #[typeshare]

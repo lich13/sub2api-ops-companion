@@ -6,16 +6,39 @@ import {
   platformGroups,
 } from "./groupDraft";
 import type { Account, Group } from "./types";
-const account = {
+const account: Account = {
   id: 7,
   name: "同名",
+  priority: 1,
   platform: "openai",
-  operation_versions: { groups: "v1" },
+  type: "oauth",
+  status: "active",
+  schedulable: true,
+  available: true,
   group_ids: [1, 9],
-} as unknown as Account;
-const groups = [1, 2, 9].map(
-  (id) => ({ id, name: "组", platform: "openai" }) as Group,
-);
+  blockers: [],
+  version: "a".repeat(64),
+  operation_versions: { groups: "v1" },
+  last_success_at: null,
+  last_error_at: null,
+  last_error_id: null,
+  last_error_code: null,
+  last_error_status: null,
+  error_message: "",
+  success_after_error: false,
+  usage_windows: [],
+};
+const groups: Group[] = [1, 2, 9].map((id): Group => ({
+  id,
+  name: "组",
+  platform: "openai",
+  account_id: null,
+  account_name: "",
+  model: "",
+  upstream_model: "",
+  called_at: null,
+  recent_accounts: [],
+}));
 describe("membership drafts", () => {
   it("moves among exact overlap regions and preserves memberships outside the pair", () => {
     let draft = moveAccount({}, account, [1, 2], "both");

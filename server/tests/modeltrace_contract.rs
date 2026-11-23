@@ -681,16 +681,23 @@ fn fingerprint_bank_cache_older_than_the_bundle_is_replaced_and_compatible_sourc
     let kept: Value = serde_json::from_slice(&fs::read(&current_path).unwrap()).unwrap();
     assert_eq!(kept, serde_json::from_slice::<Value>(&before).unwrap());
 
-    for (blob, accepted) in [
+    for (key, blob, accepted) in [
         (
+            "core_blob",
             manifest["files"]["core"]["compatibleGitBlobs"][0].clone(),
             true,
         ),
-        (json!("0".repeat(40)), false),
+        (
+            "challenge_blob",
+            manifest["files"]["challenge"]["compatibleGitBlobs"][0].clone(),
+            true,
+        ),
+        ("core_blob", json!("0".repeat(40)), false),
+        ("challenge_blob", json!("0".repeat(40)), false),
     ] {
         let directory = tempfile::tempdir().unwrap();
         let mut state = valid_cache_state();
-        state["active"]["version"]["core_blob"] = blob;
+        state["active"]["version"][key] = blob;
         fs::write(
             directory.path().join("modeltrace-bank-state.json"),
             serde_json::to_vec(&state).unwrap(),

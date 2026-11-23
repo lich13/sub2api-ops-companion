@@ -64,7 +64,7 @@ extension ProxyManagementTabView {
         case .quality(let row, let q):
             LinearModalCard(
                 title: "\(row.name) · 质量检测",
-                subtitle: "\(q.grade) · \(q.score)/100",
+                subtitle: "\(q.grade) · \(Int(q.score.rounded()))/100",
                 width: 600,
                 onClose: dismiss
             ) {
@@ -75,7 +75,7 @@ extension ProxyManagementTabView {
                     let metaParts = [
                         q.exit_ip,
                         q.country,
-                        q.base_latency_ms.map { "\($0) ms" } ?? "",
+                        q.base_latency_ms.map { "\(Int($0.rounded())) ms" } ?? "",
                     ].filter { !$0.isEmpty }
                     HStack(spacing: 8) {
                         if !metaParts.isEmpty {
@@ -86,7 +86,7 @@ extension ProxyManagementTabView {
                         }
                         Spacer()
                         if let ts = q.checked_at, ts > 0 {
-                            let iso = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: ts))
+                            let iso = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: TimeInterval(ts)))
                             Text(BeijingTime.fullTime(iso))
                                 .font(DS.fontResetTime)
                                 .monospacedDigit()
@@ -130,11 +130,10 @@ extension ProxyManagementTabView {
 
                                 Text(item.http_status.map(String.init) ?? "—")
                                     .font(DS.fontPriorityMeta).monospacedDigit()
-                                    .monospacedDigit()
                                     .foregroundStyle(DS.muted)
                                     .frame(width: 44, alignment: .trailing)
 
-                                Text(item.latency_ms.map { "\($0) ms" } ?? "—")
+                                Text(item.latency_ms.map { "\(Int($0.rounded())) ms" } ?? "—")
                                     .font(DS.fontResetTime)
                                     .monospacedDigit()
                                     .foregroundStyle(DS.muted)

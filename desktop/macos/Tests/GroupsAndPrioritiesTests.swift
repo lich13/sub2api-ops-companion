@@ -9,8 +9,7 @@ extension Sub2OpsMacOSTestRoot {
 struct GroupsAndPrioritiesTests {
     @Test("GroupDraftLogic moves accounts across left, both, right, none and clears when restored")
     func groupDraftMovesAndClearsWhenRestored() {
-        var acc = Account(id: 101, name: "Codex-01", platform: "openai", group_ids: [1, 9], version: "v1")
-        acc.operation_versions = ["groups": "v1"]
+        let acc = Account(id: 101, name: "Codex-01", platform: "openai", group_ids: [1, 9], version: "v1", operation_versions: ["groups": "v1"])
         let groups = [
             Group(id: 1, name: "codex羊毛", platform: "openai"),
             Group(id: 3, name: "codex爽用", platform: "openai"),
@@ -29,8 +28,7 @@ struct GroupsAndPrioritiesTests {
 
         // Version change triggers conflict
         drafts = GroupDraftLogic.moveAccount(drafts: drafts, account: acc, pair: [1, 3], zone: .right)
-        var mutated = acc
-        mutated.operation_versions["groups"] = "v2"
+        let mutated = Account(id: 101, name: "Codex-01", platform: "openai", group_ids: [1, 9], version: "v1", operation_versions: ["groups": "v2"])
         #expect(GroupDraftLogic.hasConflict(draft: drafts[101]!, accounts: [mutated], groups: groups))
     }
 
@@ -98,14 +96,12 @@ struct GroupsAndPrioritiesTests {
             return priorityMockJSON
         }
 
-        var acc1 = Account(id: 101, name: "Codex · 主力", priority: 1, platform: "openai", type: "oauth", group_ids: [1])
-        var acc2 = Account(id: 102, name: "Codex · 备用账号", priority: 2, platform: "openai", type: "oauth", group_ids: [1, 3])
-        acc2.degradation_mark = DegradationMark(marked: true)
+        let acc1 = Account(id: 101, name: "Codex · 主力", priority: 1, platform: "openai", type: "oauth", group_ids: [1], operation_versions: ["groups": "v1"])
+        let acc2 = Account(id: 102, name: "Codex · 备用账号", priority: 2, platform: "openai", type: "oauth", group_ids: [1, 3], degradation_mark: DegradationMark(marked: true))
         let acc3 = Account(id: 104, name: "Codex · 独立爽用", priority: 3, platform: "openai", type: "oauth", group_ids: [3])
         let acc4 = Account(id: 105, name: "Codex · 待分组池", priority: 4, platform: "openai", type: "apikey", group_ids: [])
         let acc5 = Account(id: 201, name: "Grok · Super", priority: 1, platform: "grok", type: "oauth", group_ids: [2])
         let acc6 = Account(id: 391, name: "Grok · Free", priority: 1, platform: "grok", type: "oauth", group_ids: [2])
-        acc1.operation_versions = ["groups": "v1"]
 
         let groups = [
             Group(id: 1, name: "codex羊毛", platform: "openai"),
