@@ -1,5 +1,141 @@
 import SwiftUI
 
+extension HostFieldIssue: Identifiable {
+    public var id: String { "\(path):\(message)" }
+}
+
+/// Pure concurrency and uncertainty state machine matching `Sub2ApiConfig.tsx:480-560`.
+public struct Sub2ApiConfigSession: Sendable, Equatable {
+    public var document: Sub2ApiConfigTabView.ConfigDocumentDTO? = nil
+    public var draft: [String: Sub2ApiConfigTabView.DraftChange] = [:]
+    public var issues: [HostFieldIssue] = []
+    public var errorText: String = ""
+    public var messageText: String = ""
+    public var hostOp: HostOperationReply? = nil
+    public var applyUncertain: Bool = false
+    public var conflicted: Bool = false
+
+    public init() {}
+
+    public static func isRunning(_ op: HostOperationReply?) -> Bool {
+        guard let s = op?.status else { return false }
+        return s == "saving" || s == "restarting" || s == "restoring"
+    }
+
+    public mutating func applyLoaded(_ next: Sub2ApiConfigTabView.ConfigDocumentDTO, resetDraft: Bool, protectDraft: Bool = true) {
+        if resetDraft || draft.isEmpty {
+            conflicted = false
+        } else if protectDraft,
+                  let prev = document,
+                  next.available,
+                  (prev.revision != next.revision || prev.runtime_revision != next.runtime_revision)
+        {
+            conflicted = true
+        }
+        if conflicted {
+            var locked = next
+            locked.editable = false
+            locked.reason = "远程配置或运行态已变更，请放弃本地更改或核对后重新编辑"
+            document = locked
+        } else {
+            document = next
+        }
+        if resetDraft {
+            draft.removeAll()
+            issues.removeAll()
+        }
+    }
+
+    public mutating func handleLoadFailure(_ message: String) {
+        errorText = message
+        if var existing = document {
+            existing.editable = false
+            existing.reason = message
+            document = existing
+        }
+    }
+
+    public mutating func handleApplyFailure(_ message: String) {
+        applyUncertain = true
+        errorText = message
+        hostOp = HostOperationReply(status: "restarting", message: "提交结果待确认，正在查询操作状态", updated_at: nil)
+    }
+
+    public enum PollResolution: Sendable, Equatable {
+        case keepPolling
+        case reloadKeepingDraft
+        case reloadResettingDraft
+    }
+
+    public mutating func handlePolledOperation(_ nextOp: HostOperationReply) -> PollResolution {
+        if !Self.isRunning(nextOp) && applyUncertain {
+            let hostDesc = (nextOp.message?.isEmpty == false)
+                ? nextOp.message!
+                : (nextOp.status == "idle" ? "无操作记录" : nextOp.status)
+            hostOp = HostOperationReply(
+                status: "failed",
+                message: "提交结果未确认；宿主机当前状态：\(hostDesc)。草稿已保留。",
+                updated_at: nil
+            )
+            applyUncertain = false
+            return .reloadKeepingDraft
+        }
+        hostOp = nextOp
+        errorText = ""
+        if !Self.isRunning(nextOp) {
+            applyUncertain = false
+            return nextOp.status == "succeeded" ? .reloadResettingDraft : .reloadKeepingDraft
+        }
+        return .keepPolling
+    }
+
+    public mutating func resetForConnection() {
+        self = Sub2ApiConfigSession()
+    }
+
+    private static func containsPath(_ parent: String, _ candidate: String) -> Bool {
+        parent == candidate || candidate.hasPrefix("\(parent).")
+    }
+
+    public mutating func removeField(_ path: String, configured: Bool) -> Bool {
+        if configured {
+            draft[path] = Sub2ApiConfigTabView.DraftChange(path: path, remove: true, value: nil)
+            issues.removeAll { Self.containsPath(path, $0.path) }
+            messageText = ""
+            return false
+        }
+        return undoField(path)
+    }
+
+    /// Removes a single field's local draft and returns `true` if the last draft item was
+    /// cleared while the document was locked by a conflict or load failure.
+    public mutating func undoField(_ path: String) -> Bool {
+        draft.removeValue(forKey: path)
+        issues.removeAll { Self.containsPath(path, $0.path) }
+        messageText = ""
+        guard draft.isEmpty else { return false }
+        let needsReload = conflicted || document?.editable == false || document == nil
+        conflicted = false
+        if needsReload {
+            errorText = ""
+        }
+        return needsReload
+    }
+
+    /// Returns `true` if a reload is required to clear a remote conflict or load-failure lock.
+    public mutating func discardAll() -> Bool {
+        let needsReload = conflicted || document?.editable == false || document == nil
+        draft.removeAll()
+        issues.removeAll()
+        messageText = ""
+        conflicted = false
+        if needsReload {
+            errorText = ""
+        }
+        return needsReload
+    }
+}
+
 /// Matches `Sub2ApiConfig` in `desktop/src/Sub2ApiConfig.tsx` (`features_sub2api_light.png`).
 public struct Sub2ApiConfigTabView: View {
     public var store: AppStore?
@@ -10,6 +146,11 @@ public struct Sub2ApiConfigTabView: View {
     public struct CatalogGroup: Codable, Sendable, Equatable, Identifiable {
         public var id: String
         public var label: String
+
+        public init(id: String, label: String) {
+            self.id = id
+            self.label = label
+        }
     }
 
     public struct CatalogField: Codable, Sendable, Equatable, Identifiable {
@@ -46,13 +187,16 @@ public struct Sub2ApiConfigTabView: View {
         public var revision: String
         public var groups: [CatalogGroup]
         public var fields: [CatalogField]
+
+        public init(version: String = "", revision: String = "", groups: [CatalogGroup] = [], fields: [CatalogField] = []) {
+            self.version = version
+            self.revision = revision
+            self.groups = groups
+            self.fields = fields
+        }
     }
 
-    public struct ConfigIssue: Codable, Sendable, Equatable, Identifiable {
-        public var id: String { "\(path):\(message)" }
-        public var path: String
-        public var message: String
-    }
+    public typealias ConfigIssue = HostFieldIssue
 
     public struct ConfigDocumentDTO: Codable, Sendable, Equatable {
         public var available: Bool
@@ -65,7 +209,48 @@ public struct Sub2ApiConfigTabView: View {
         public var runtime_revision: String
         public var catalog: CatalogPayload
         public var values: [String: FieldRuntimeValue]
-        public var unknown: [ConfigIssue]
+        public var unknown: [HostFieldIssue]
+
+        public init(
+            available: Bool = true,
+            editable: Bool = true,
+            reason: String = "",
+            version: String = "",
+            commit: String = "",
+            healthy: Bool = true,
+            revision: String = "",
+            runtime_revision: String = "",
+            catalog: CatalogPayload = CatalogPayload(),
+            values: [String: FieldRuntimeValue] = [:],
+            unknown: [HostFieldIssue] = []
+        ) {
+            self.available = available
+            self.editable = editable
+            self.reason = reason
+            self.version = version
+            self.commit = commit
+            self.healthy = healthy
+            self.revision = revision
+            self.runtime_revision = runtime_revision
+            self.catalog = catalog
+            self.values = values
+            self.unknown = unknown
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            available = try c.decodeIfPresent(Bool.self, forKey: .available) ?? false
+            editable = try c.decodeIfPresent(Bool.self, forKey: .editable) ?? false
+            reason = try c.decodeIfPresent(String.self, forKey: .reason) ?? ""
+            version = try c.decodeIfPresent(String.self, forKey: .version) ?? ""
+            commit = try c.decodeIfPresent(String.self, forKey: .commit) ?? ""
+            healthy = try c.decodeIfPresent(Bool.self, forKey: .healthy) ?? false
+            revision = try c.decodeIfPresent(String.self, forKey: .revision) ?? ""
+            runtime_revision = try c.decodeIfPresent(String.self, forKey: .runtime_revision) ?? ""
+            catalog = try c.decodeIfPresent(CatalogPayload.self, forKey: .catalog) ?? CatalogPayload()
+            values = try c.decodeIfPresent([String: FieldRuntimeValue].self, forKey: .values) ?? [:]
+            unknown = try c.decodeIfPresent([HostFieldIssue].self, forKey: .unknown) ?? []
+        }
     }
 
     public struct DraftChange: Sendable, Equatable {
@@ -73,6 +258,13 @@ public struct Sub2ApiConfigTabView: View {
         public var remove: Bool
         public var value: JSONValue?
         public var rawStructuredText: String?
+
+        public init(path: String, remove: Bool, value: JSONValue? = nil, rawStructuredText: String? = nil) {
+            self.path = path
+            self.remove = remove
+            self.value = value
+            self.rawStructuredText = rawStructuredText
+        }
 
         public var jsonObject: JSONValue {
             var obj: [String: JSONValue] = [
@@ -84,25 +276,51 @@ public struct Sub2ApiConfigTabView: View {
         }
     }
 
-    struct HostOperation: Codable, Sendable, Equatable {
-        var status: String
-        var message: String?
-    }
-
-    @State var document: ConfigDocumentDTO? = nil
-    @State var draft: [String: DraftChange] = [:]
+    @State var session = Sub2ApiConfigSession()
     @State var selectedGroup: String = "server"
     @State private var query: String = ""
     @State private var filterMode: String = "all"
     @State var busy: Bool = false
-    @State var errorText: String = ""
-    @State var messageText: String = ""
-    @State var issues: [ConfigIssue] = []
+    @State var loadSeq: UInt64 = 0
+    @State var boundConnectionKey: String = ""
+    @State var statusLoadedKey: String = ""
     @State private var fallbackShowConfirm: Bool = false
     @State private var showSourceLegend: Bool = false
     @State private var expandedDescriptions: Set<String> = []
-    @State var hostOp: HostOperation? = nil
     @State private var revealedPaths: Set<String> = []
+
+    func resetTransientViewState() {
+        query = ""
+        filterMode = "all"
+        fallbackShowConfirm = false
+        expandedDescriptions.removeAll()
+        revealedPaths.removeAll()
+    }
+
+    var document: ConfigDocumentDTO? {
+        get { session.document }
+        nonmutating set { session.document = newValue }
+    }
+    var draft: [String: DraftChange] {
+        get { session.draft }
+        nonmutating set { session.draft = newValue }
+    }
+    var errorText: String {
+        get { session.errorText }
+        nonmutating set { session.errorText = newValue }
+    }
+    var messageText: String {
+        get { session.messageText }
+        nonmutating set { session.messageText = newValue }
+    }
+    var issues: [HostFieldIssue] {
+        get { session.issues }
+        nonmutating set { session.issues = newValue }
+    }
+    var hostOp: HostOperationReply? {
+        get { session.hostOp }
+        nonmutating set { session.hostOp = newValue }
+    }
 
     public init(store: AppStore? = nil, active: Bool, online: Bool, connectionKey: String) {
         self.store = store
@@ -111,9 +329,8 @@ public struct Sub2ApiConfigTabView: View {
         self.connectionKey = connectionKey
     }
 
-    private var isOperationRunning: Bool {
-        guard let s = hostOp?.status else { return false }
-        return s == "saving" || s == "restarting" || s == "restoring"
+    var isOperationRunning: Bool {
+        Sub2ApiConfigSession.isRunning(hostOp)
     }
 
     var isBlocked: Bool {
@@ -179,7 +396,7 @@ public struct Sub2ApiConfigTabView: View {
 
                 Rectangle().fill(DS.line).frame(height: 1)
 
-                if let doc = document {
+                if let doc = document, doc.available {
                     HStack(alignment: .top, spacing: 0) {
                         groupSidebar(doc)
                         Rectangle().fill(DS.line).frame(width: 1)
@@ -189,9 +406,11 @@ public struct Sub2ApiConfigTabView: View {
                 } else {
                     VStack {
                         Spacer()
-                        Text(busy ? "正在读取 Sub2API 配置目录…" : (errorText.isEmpty ? "暂无可用配置数据" : errorText))
+                        let unavailableReason = document?.reason ?? ""
+                        let fallbackMsg = !errorText.isEmpty ? errorText : (!unavailableReason.isEmpty ? unavailableReason : "暂无可用配置数据")
+                        Text(busy ? "正在读取 Sub2API 配置目录…" : fallbackMsg)
                             .font(DS.fontCompact)
-                            .foregroundStyle(errorText.isEmpty ? DS.muted : DS.bad)
+                            .foregroundStyle((errorText.isEmpty && unavailableReason.isEmpty) ? DS.muted : DS.bad)
                         Spacer()
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -217,19 +436,56 @@ public struct Sub2ApiConfigTabView: View {
                 }
             }
         }
-        .task(id: "\(connectionKey):\(active):\(online)") {
-            guard active, online else { return }
-            await loadConfig(resetDraft: false)
+        .onChange(of: connectionKey) { _, _ in
+            bindConnectionIfNeeded()
         }
-        .task(id: isOperationRunning) {
+        .task(id: "\(connectionKey):\(active):\(online)") {
+            bindConnectionIfNeeded()
+            guard active, online else { return }
+            let capturedKey = connectionKey
+            if statusLoadedKey != capturedKey {
+                do {
+                    let op: HostOperationReply = try await RustBridge.shared.api("GET", "/sub2api-config/operation")
+                    guard !Task.isCancelled, connectionKey == capturedKey else { return }
+                    statusLoadedKey = capturedKey
+                    hostOp = op
+                } catch is CancellationError {
+                    return
+                } catch {
+                    guard !Task.isCancelled, connectionKey == capturedKey else { return }
+                    errorText = error.localizedDescription
+                }
+            }
+            guard !Task.isCancelled, connectionKey == capturedKey else { return }
+            if !isOperationRunning {
+                await loadConfig(resetDraft: false, protectDraft: true)
+            }
+        }
+        .task(id: "\(connectionKey):\(isOperationRunning)") {
             guard isOperationRunning else { return }
-            while !Task.isCancelled && isOperationRunning {
+            let capturedKey = connectionKey
+            while !Task.isCancelled && isOperationRunning && connectionKey == capturedKey {
                 try? await Task.sleep(for: .milliseconds(1500))
-                if let nextOp: HostOperation = try? await RustBridge.shared.api("GET", "/sub2api-config/operation") {
-                    hostOp = nextOp
-                    if !["saving", "restarting", "restoring"].contains(nextOp.status) {
-                        await loadConfig(resetDraft: nextOp.status == "succeeded")
+                guard !Task.isCancelled, connectionKey == capturedKey else { return }
+                do {
+                    let nextOp: HostOperationReply = try await RustBridge.shared.api("GET", "/sub2api-config/operation")
+                    guard !Task.isCancelled, connectionKey == capturedKey else { return }
+                    let resolution = session.handlePolledOperation(nextOp)
+                    switch resolution {
+                    case .keepPolling:
                         break
+                    case .reloadResettingDraft:
+                        Task { await loadConfig(resetDraft: true, protectDraft: false) }
+                        return
+                    case .reloadKeepingDraft:
+                        Task { await loadConfig(resetDraft: false, protectDraft: true) }
+                        return
+                    }
+                } catch is CancellationError {
+                    return
+                } catch {
+                    if !Task.isCancelled && connectionKey == capturedKey {
+                        errorText = "\(error.localizedDescription)；应用结果待确认，请保持此页或稍后查询状态"
                     }
                 }
             }
@@ -262,7 +518,7 @@ public struct Sub2ApiConfigTabView: View {
             Spacer()
 
             Button {
-                Task { await loadConfig(resetDraft: false) }
+                Task { await loadConfig(resetDraft: true, protectDraft: false) }
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "arrow.clockwise")
@@ -271,7 +527,7 @@ public struct Sub2ApiConfigTabView: View {
                 }
             }
             .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-            .disabled(busy || !online)
+            .disabled(busy || isOperationRunning || !online || !draft.isEmpty)
         }
     }
 
@@ -507,13 +763,19 @@ public struct Sub2ApiConfigTabView: View {
                     HStack(spacing: 8) {
                         if runtime?.configured == true && fieldEditable && change?.remove != true {
                             Button("恢复默认") {
-                                draft[field.path] = DraftChange(path: field.path, remove: true, value: nil)
+                                let shouldReload = session.removeField(field.path, configured: runtime?.configured == true)
+                                if shouldReload {
+                                    Task { await loadConfig(resetDraft: true, protectDraft: false) }
+                                }
                             }
                             .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
                         }
                         if change != nil {
                             Button("撤销修改") {
-                                draft.removeValue(forKey: field.path)
+                                let shouldReload = session.undoField(field.path)
+                                if shouldReload {
+                                    Task { await loadConfig(resetDraft: true, protectDraft: false) }
+                                }
                             }
                             .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
                         }
@@ -618,9 +880,10 @@ public struct Sub2ApiConfigTabView: View {
 
             if !draft.isEmpty {
                 Button("撤销全部") {
-                    draft.removeAll()
-                    issues.removeAll()
-                    messageText = ""
+                    let shouldReload = session.discardAll()
+                    if shouldReload {
+                        Task { await loadConfig(resetDraft: true, protectDraft: false) }
+                    }
                 }
                 .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
                 .disabled(busy || isOperationRunning)

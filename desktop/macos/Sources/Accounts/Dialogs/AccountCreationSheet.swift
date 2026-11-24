@@ -19,15 +19,6 @@ struct GeminiCatalogResponse: Decodable, Sendable {
     var ai_studio_oauth_enabled: Bool
 }
 
-struct MixedChannelCheckResponse: Decodable, Sendable {
-    var has_risk: Bool
-}
-
-struct PreviewModelsResponse: Decodable, Sendable {
-    var models: [String]
-    var warnings: [String]?
-}
-
 public struct AccountCreationSheet: View {
     @Bindable public var store: AppStore
     public let onClose: () -> Void
@@ -35,10 +26,10 @@ public struct AccountCreationSheet: View {
     @State var step: Int = 1
     @State var draft: AccountCreationFormDraft
     @State private var initialDraft: AccountCreationFormDraft?
-    @State var options: CreationOptionsResponse?
+    @State var options: CreationOptionsReply?
     @State var optionError: String = ""
     @State var aiStudioEnabled: Bool = false
-    @State var tlsProfiles: [CreationTLSProfileOption] = []
+    @State var tlsProfiles: [ChoiceRecord] = []
     @State var quotaNotifyEnabled: Bool = false
     @State var webSearchEnabled: Bool = false
     @State var sourceQuery: String = ""
@@ -47,7 +38,7 @@ public struct AccountCreationSheet: View {
     @State var reuseNotice: String = ""
     @State var authMethod: String = "manual"
     @State var authInput: String = ""
-    @State var oauthSession: OAuthAuthorizationSession?
+    @State var oauthSession: TokenAuthorization?
     @State var identity: ResolvedIdentity?
     @State var previewModels: [String] = []
     @State var previewSelected: Set<String> = []
@@ -98,7 +89,7 @@ public struct AccountCreationSheet: View {
                     || g.platform == "composite"
                     || (draft.platform == "antigravity"
                         && draft.values["extra.mixed_scheduling"]?.boolValue == true
-                        && ["anthropic", "gemini"].contains(g.platform))
+                        && ["anthropic", "gemini"].contains(g.platform ?? ""))
             }.map { ($0.id, $0.name) }
         }
         return store.groups.filter { $0.platform == draft.platform }.map { ($0.id, $0.name) }
@@ -106,7 +97,7 @@ public struct AccountCreationSheet: View {
 
     private var groupLongContext: Bool {
         !draft.groupIds.isEmpty && draft.groupIds.allSatisfy { id in
-            options?.groups?.contains(where: { $0.id == id && $0.long_context_pricing_enabled == true }) ?? false
+            options?.groups.contains(where: { $0.id == id && $0.long_context_pricing_enabled == true }) ?? false
         }
     }
 

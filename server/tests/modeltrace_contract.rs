@@ -1,3 +1,6 @@
+#[path = "common/harness.rs"]
+mod test_harness;
+
 use axum::{
     body::{to_bytes, Body},
     extract::State,
@@ -470,20 +473,11 @@ fn modeltrace_analysis_rejects_extreme_finite_results_and_malformed_bank_shapes(
 
 fn settings_at(directory: &Path) -> Arc<Settings> {
     Arc::new(Settings {
-        database_url: "postgres://example.invalid/sub2ops".into(),
-        bind: "127.0.0.1:0".into(),
-        base_path: "/".into(),
-        audit_path: directory.join("audit.jsonl"),
         usage_path: directory.join("modeltrace-bank-state.json"),
         oauth_path: directory.join("oauth.json"),
         bark_path: directory.join("bark.json"),
         connection_path: directory.join("connection.json"),
-        keepalive_path: directory.join("keepalive-state.json"),
-        oauth: json!({}),
-        bark: json!({}),
-        bark_valid: false,
-        base_url: String::new(),
-        verify_url: String::new(),
+        ..test_harness::offline_bank_settings(directory)
     })
 }
 

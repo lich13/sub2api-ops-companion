@@ -412,7 +412,11 @@ public struct TestDialogSheet: View {
                                         disabled: running || !store.state.online
                                     ) {
                                         Task {
-                                            _ = try? await store.operations.cancelJob(job)
+                                            do {
+                                                _ = try await store.operations.cancelJob(job)
+                                            } catch {
+                                                errorText = error.localizedDescription
+                                            }
                                         }
                                     }
                                 }

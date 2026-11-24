@@ -65,13 +65,13 @@ extension AccountCreationSheet {
         optionError = ""
         var partial = false
         do {
-            let opt: CreationOptionsResponse = try await RustBridge.shared.api("GET", "/account-creation/options")
+            let opt: CreationOptionsReply = try await RustBridge.shared.api("GET", "/account-creation/options")
             options = opt
         } catch {
             optionError = "账号选项读取失败，请重试"
         }
         do {
-            let tls: [CreationTLSProfileOption] = try await RustBridge.shared.api("GET", "/account-creation/catalog/tls")
+            let tls: [ChoiceRecord] = try await RustBridge.shared.api("GET", "/account-creation/catalog/tls")
             tlsProfiles = tls
         } catch { partial = true }
         do {
@@ -139,20 +139,20 @@ extension AccountCreationSheet {
         clearAuth()
         defer { if current == scope { busy = false } }
         do {
-            let res: OAuthAuthorizationSession = try await RustBridge.shared.api(
+            let res: TokenAuthorization = try await RustBridge.shared.api(
                 "POST",
                 "/account-creation/auth/\(draft.authProvider)/authorize",
                 body: .object(draft.authConfigBody)
             )
             guard current == scope else { return }
-            var resolved = res
-            if (resolved.state ?? "").isEmpty,
+            var resolvedState = res.state
+            if (resolvedState ?? "").isEmpty,
                let comps = URLComponents(string: res.auth_url),
                let st = comps.queryItems?.first(where: { $0.name == "state" })?.value
             {
-                resolved.state = st
+                resolvedState = st
             }
-            oauthSession = resolved
+            oauthSession = TokenAuthorization(auth_url: res.auth_url, session_id: res.session_id, state: resolvedState)
         } catch {
             if current == scope { self.error = error.localizedDescription }
         }
@@ -174,7 +174,7 @@ extension AccountCreationSheet {
             for key in ["base_url", "api_key", "model_mapping"] {
                 if let value = creds[key], value != .null { body[key] = value }
             }
-            let res: PreviewModelsResponse = try await RustBridge.shared.api(
+            let res: CreationModelsReply = try await RustBridge.shared.api(
                 "POST",
                 "/account-creation/models",
                 body: .object(body)
@@ -250,7 +250,7 @@ extension AccountCreationSheet {
 
     private func checkMixedChannel() async throws -> Bool {
         if mixedConfirmed || !["anthropic", "antigravity"].contains(draft.platform) { return true }
-        let check: MixedChannelCheckResponse = try await RustBridge.shared.api(
+        let check: CreationCheckReply = try await RustBridge.shared.api(
             "POST",
             "/account-creation/check-mixed-channel",
             body: .object([
@@ -342,7 +342,7 @@ extension AccountCreationSheet {
                             detail = "已创建 #\(first["account"]?["id"]?.intValue ?? 0)"
                         } else if authMethod == "codex-pat" {
                             body["access_token"] = .string(item)
-                            let res: CreationCreatedResponse = try await RustBridge.shared.api("POST", "/account-creation/import/codex-pat", body: .object(body))
+                            let res: CreatedAccountReply = try await RustBridge.shared.api("POST", "/account-creation/import/codex-pat", body: .object(body))
                             detail = "已创建 #\(res.account.id)"
                         } else {
                             body["content"] = .string(item)
@@ -376,8 +376,8 @@ extension AccountCreationSheet {
                         }
                         sent = true
                         let path = modelsPreviewed ? "/account-creation?sync_models=true" : "/account-creation"
-                        let created: CreationCreatedResponse = try await RustBridge.shared.api("POST", path, body: .object(payload))
-                        let warnings = created.warnings ?? []
+                        let created: CreatedAccountReply = try await RustBridge.shared.api("POST", path, body: .object(payload))
+                        let warnings = created.warnings
                         detail = "已创建 #\(created.account.id)\(warnings.isEmpty ? "" : "；\(warnings.joined(separator: "；"))")"
                     }
                     outcome = CreationOutcome(index: idx + 1, status: partial ? "unknown" : "success", message: detail)

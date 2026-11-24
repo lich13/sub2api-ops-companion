@@ -27,10 +27,9 @@ use tokio::{
 };
 
 mod cycle;
-mod retry;
 pub use cycle::{observe_cycle, repeat_open, CycleObservation};
 
-pub const PENDING: &[&str] = &["queued", "running", "checking", "needs_confirmation"];
+pub(crate) const PENDING: &[&str] = &["queued", "running", "checking", "needs_confirmation"];
 const SUPERSEDE: &[&str] = &[
     "priority",
     "concurrency",
@@ -41,7 +40,7 @@ const SUPERSEDE: &[&str] = &[
     "schedulable",
     "degradation_mark",
 ];
-pub fn short(job: &Value) -> bool {
+pub(crate) fn short(job: &Value) -> bool {
     matches!(string(&job["action"]), "schedulable" | "degradation_mark")
 }
 pub fn connection_test(job: &Value) -> bool {
@@ -687,7 +686,7 @@ impl Operations {
         }
         Ok(pick(row, &["id", "name", "platform", "type", "status"]))
     }
-    pub fn achieved(&self, row: Option<&Value>, job: &Value) -> Result<bool> {
+    fn achieved(&self, row: Option<&Value>, job: &Value) -> Result<bool> {
         let action = string(&job["action"]);
         let p = &job["payload"];
         if action == "delete" {
@@ -736,7 +735,7 @@ impl Operations {
             json!({"operation_id":job["id"],"account_id":job["account_id"],"action":job["action"],"result":result}),
         );
     }
-    pub async fn read_account(&self, id: i64) -> Result<Option<Value>> {
+    async fn read_account(&self, id: i64) -> Result<Option<Value>> {
         match self.actions.account(id, None).await {
             Ok(row) => Ok(Some(row)),
             Err(e) if e.status.as_u16() == 404 => Ok(None),
@@ -753,12 +752,7 @@ impl Operations {
         }
         Ok(())
     }
-    pub async fn submit(self: &Arc<Self>, aid: i64, request: &Value, key: &str) -> Result<Value> {
-        self.submit_validated(aid, crate::request_schema::submission(request)?, key)
-            .await
-    }
-
-    pub(crate) async fn submit_validated(
+    pub async fn submit_validated(
         self: &Arc<Self>,
         aid: i64,
         request: crate::request_schema::Submission<'_>,
@@ -911,13 +905,7 @@ impl Operations {
         }
         Ok(self.public(&job, false, 0))
     }
-    pub async fn submit_batch(&self, request: &Value, key: &str, template: bool) -> Result<Value> {
-        let mut request = request.clone();
-        crate::request_schema::batch(&mut request, template)?;
-        self.submit_batch_validated(&request, key, template).await
-    }
-
-    pub(crate) async fn submit_batch_validated(
+    pub async fn submit_batch_validated(
         &self,
         request: &Value,
         key: &str,
@@ -1980,6 +1968,28 @@ impl Operations {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clear();
+    }
+
+    fn needs_key(job: &Value) -> bool {
+        matches!(string(&job["status"]), "queued" | "running" | "checking")
+            || job["status"] == "completed" && job["repeat_state"] == "active"
+    }
+
+    fn retry_scheduled(&self, job: &Value, result: &Value) -> Result<bool> {
+        if !crate::connection_retry::retryable(result) {
+            return Ok(false);
+        }
+        let policy = crate::connection_retry::Policy::saved(job)?.ok_or_else(Error::internal)?;
+        let attempts = integer(&job["attempt_count"]).unwrap_or(1);
+        let Some(next) = policy.next(attempts, self.backend.now()) else {
+            return Ok(false);
+        };
+        self.update(
+            string(&job["id"]),
+            json!({"status":"queued","result":result,
+            "next_retry_at":next,"reason":"等待连接测试重试"}),
+        )?;
+        Ok(true)
     }
 }
 fn idempotency(message: &str) -> Error {

@@ -1,3 +1,5 @@
+#[path = "common/harness.rs"]
+mod test_harness;
 use axum::{
     body::{to_bytes, Body, Bytes},
     extract::{Request, State},
@@ -23,6 +25,10 @@ use sub2ops_server::{
     compat::account_version, fingerprint_bank::FingerprintBank, model_directory, model_target,
     model_test_stream, modeltrace, runtime::Runtime, settings::Settings,
 };
+use test_harness::{
+    offline_bank_settings, runtime_settings, spawn_loopback, write_loopback_config,
+    DetectionTestExt,
+};
 use tokio::{net::TcpListener, sync::Semaphore, task::JoinHandle};
 
 const FIXTURES: &str = include_str!("../../tests/contracts/modeltrace-runtime/fixtures.json");
@@ -34,22 +40,7 @@ fn runtime_fixtures() -> Value {
 }
 
 fn bank_settings(directory: &std::path::Path) -> Arc<Settings> {
-    Arc::new(Settings {
-        database_url: "postgres://example.invalid/sub2ops".into(),
-        bind: "127.0.0.1:0".into(),
-        base_path: "/".into(),
-        audit_path: directory.join("audit.jsonl"),
-        usage_path: directory.join("oauth-state.json"),
-        oauth_path: directory.join("oauth-config.json"),
-        bark_path: directory.join("bark-config.json"),
-        connection_path: directory.join("sub2api-config.json"),
-        keepalive_path: directory.join("keepalive-state.json"),
-        oauth: json!({}),
-        bark: json!({}),
-        bark_valid: false,
-        base_url: String::new(),
-        verify_url: String::new(),
-    })
+    Arc::new(offline_bank_settings(directory))
 }
 
 fn valid_bank_cache_state() -> Value {
@@ -839,7 +830,7 @@ async fn account_model_candidates_ignore_other_accounts_and_allowlists_but_retai
     let missing = harness
         .runtime
         .detection
-        .save(
+        .save_test(
             child,
             &json!({
                 "enabled":true,
@@ -1045,7 +1036,7 @@ async fn account_model_candidates_reject_malformed_directories_and_refresh_chang
     assert_eq!(error.detail, "上游模型列表格式无效");
     let before = harness.runtime.detection.control(id).unwrap();
     let detection = harness.runtime.detection.view(id).await.unwrap();
-    let error = harness.runtime.detection.save(id, &json!({"enabled":true,"interval_minutes":30,"model_id":"gpt-6-luna","expected_version":detection["version"]})).await.unwrap_err();
+    let error = harness.runtime.detection.save_test(id, &json!({"enabled":true,"interval_minutes":30,"model_id":"gpt-6-luna","expected_version":detection["version"]})).await.unwrap_err();
     assert_eq!(error.status.as_u16(), 502);
     assert_eq!(
         harness.runtime.detection.control(id).unwrap(),
@@ -1159,35 +1150,13 @@ impl RuntimeHarness {
             .expect("runtime parity runner must supply disposable PostgreSQL");
         let temp = tempfile::tempdir().expect("synthetic ModelTrace state directory");
         let state = MockState::new();
-        let listener = TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .expect("bind loopback-only model provider fixture");
-        let upstream_url = format!("http://{}", listener.local_addr().unwrap());
         let router = Router::new()
             .fallback(mock_model_upstream)
             .with_state(state.clone());
-        let server = tokio::spawn(async move {
-            axum::serve(listener, router)
-                .await
-                .expect("serve loopback ModelTrace fixture");
-        });
-
-        let connection_path = temp.path().join("sub2api-config.json");
-        fs::write(
-            &connection_path,
-            serde_json::to_vec(&json!({"base_url":upstream_url,"verify_base_url":""})).unwrap(),
-        )
-        .expect("write local fixture configuration");
+        let (upstream_url, server) = spawn_loopback(router).await;
+        let connection_path = write_loopback_config(temp.path(), &upstream_url);
         let settings = Settings {
-            database_url,
-            bind: "127.0.0.1:0".into(),
-            base_path: "/".into(),
-            audit_path: temp.path().join("audit.jsonl"),
-            usage_path: temp.path().join("oauth-state.json"),
-            oauth_path: temp.path().join("oauth-config.json"),
-            bark_path: temp.path().join("bark-config.json"),
             connection_path,
-            keepalive_path: temp.path().join("keepalive-state.json"),
             oauth: json!({
                 "oauth_auto_reset_credit_enabled":false,
                 "oauth_daily_test_enabled":false,
@@ -1204,9 +1173,7 @@ impl RuntimeHarness {
                 "device_key":"fixture-bark-device-key",
                 "server_url":upstream_url
             }),
-            bark_valid: true,
-            base_url: upstream_url.clone(),
-            verify_url: String::new(),
+            ..runtime_settings(database_url, temp.path(), upstream_url.clone())
         };
         let runtime = Runtime::new(settings)
             .await

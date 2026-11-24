@@ -30,7 +30,6 @@ pub const OAUTH_FIELDS: &[&str] = &[
 pub struct Settings {
     pub database_url: String,
     pub bind: String,
-    pub base_path: String,
     pub audit_path: PathBuf,
     pub usage_path: PathBuf,
     pub oauth_path: PathBuf,
@@ -44,9 +43,8 @@ pub struct Settings {
     pub verify_url: String,
 }
 
-pub const USAGE_CONCURRENCY: (&str, i64, i64, i64) = ("oauth_usage_refresh_concurrency", 4, 1, 16);
-pub const RECOVERY_CONCURRENCY: (&str, i64, i64, i64) =
-    ("oauth_recovery_test_concurrency", 2, 1, 8);
+const USAGE_CONCURRENCY: (&str, i64, i64, i64) = ("oauth_usage_refresh_concurrency", 4, 1, 16);
+const RECOVERY_CONCURRENCY: (&str, i64, i64, i64) = ("oauth_recovery_test_concurrency", 2, 1, 8);
 
 #[derive(Clone, Copy, Debug)]
 pub struct Concurrency {
@@ -75,7 +73,7 @@ impl Concurrency {
     }
 }
 
-pub const DEFAULT_DETECTION_MODEL: &str = "gpt-6-luna";
+pub use sub2ops_protocol::dto::DEFAULT_DETECTION_MODEL;
 
 pub fn detection_model(value: &Value) -> Result<String> {
     let model = if value.is_null() {
@@ -97,7 +95,7 @@ pub fn detection_model(value: &Value) -> Result<String> {
     Ok(model.to_owned())
 }
 
-pub fn bool_value(value: &Value, default: bool) -> bool {
+fn bool_value(value: &Value, default: bool) -> bool {
     if value.is_null() {
         return default;
     }
@@ -157,7 +155,7 @@ pub fn normalize_url(value: &str) -> Result<String> {
     Ok(value.to_owned())
 }
 
-pub fn env_map() -> BTreeMap<String, String> {
+fn env_map() -> BTreeMap<String, String> {
     std::env::vars_os()
         .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
         .collect()
@@ -287,9 +285,6 @@ impl Settings {
                     get("PORT", &get("APP_PORT", "18081"))
                 )
             }),
-            base_path: get("BASE_PATH", "/sub2ops")
-                .trim_end_matches('/')
-                .to_owned(),
             audit_path: get("AUDIT_PATH", "/data/audit.jsonl").into(),
             usage_path: get("USAGE_QUERY_STATE_PATH", "/data/usage-query-state.json").into(),
             oauth_path,

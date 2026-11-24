@@ -28,25 +28,44 @@ extension Sub2ApiConfigTabView {
         messageText = ""
     }
 
-    func loadConfig(resetDraft: Bool) async {
+    func bindConnectionIfNeeded() {
+        guard boundConnectionKey != connectionKey else { return }
+        boundConnectionKey = connectionKey
+        statusLoadedKey = ""
+        loadSeq &+= 1
+        busy = false
+        session.resetForConnection()
+        selectedGroup = "server"
+        resetTransientViewState()
+    }
+
+    func loadConfig(resetDraft: Bool, protectDraft: Bool = true) async {
+        bindConnectionIfNeeded()
         guard online else { return }
+        let capturedKey = connectionKey
+        loadSeq &+= 1
+        let seq = loadSeq
         busy = true
         errorText = ""
-        defer { busy = false }
+        defer {
+            if seq == loadSeq && connectionKey == capturedKey {
+                busy = false
+            }
+        }
         do {
             let next: ConfigDocumentDTO = try await RustBridge.shared.api("GET", "/sub2api-config")
-            document = next
+            guard !Task.isCancelled, seq == loadSeq, connectionKey == capturedKey else { return }
+            session.applyLoaded(next, resetDraft: resetDraft, protectDraft: protectDraft)
             if !next.catalog.groups.contains(where: { $0.id == selectedGroup }),
                let first = next.catalog.groups.first
             {
                 selectedGroup = first.id
             }
-            if resetDraft {
-                draft.removeAll()
-                issues.removeAll()
-            }
+        } catch is CancellationError {
+            return
         } catch {
-            errorText = error.localizedDescription
+            guard !Task.isCancelled, seq == loadSeq, connectionKey == capturedKey else { return }
+            session.handleLoadFailure(error.localizedDescription)
         }
     }
 
@@ -60,14 +79,14 @@ extension Sub2ApiConfigTabView {
 
     func validateChanges(openConfirm: Bool) async {
         guard let doc = document, !isBlocked, !draft.isEmpty else { return }
-        var localIssues: [ConfigIssue] = []
+        var localIssues: [HostFieldIssue] = []
         for change in draft.values where !change.remove {
             if let raw = change.rawStructuredText,
                let field = doc.catalog.fields.first(where: { $0.path == change.path })
             {
                 let res = LightYAML.parseStructured(raw, expectedType: field.type)
                 if !res.error.isEmpty {
-                    localIssues.append(ConfigIssue(path: change.path, message: res.error))
+                    localIssues.append(HostFieldIssue(path: change.path, message: res.error))
                 }
             }
         }
@@ -75,13 +94,12 @@ extension Sub2ApiConfigTabView {
             issues = localIssues
             return
         }
-        struct ValidateReply: Decodable, Sendable { var valid: Bool; var errors: [ConfigIssue] }
         busy = true
         errorText = ""
         messageText = ""
         defer { busy = false }
         do {
-            let res: ValidateReply = try await RustBridge.shared.api(
+            let res: HostValidationReply = try await RustBridge.shared.api(
                 "POST",
                 "/sub2api-config/validate",
                 body: buildPayload(doc)
@@ -100,9 +118,10 @@ extension Sub2ApiConfigTabView {
         guard let doc = document, !isBlocked else { return }
         busy = true
         errorText = ""
+        session.applyUncertain = false
         defer { busy = false }
         do {
-            let op: HostOperation = try await RustBridge.shared.api(
+            let op: HostOperationReply = try await RustBridge.shared.api(
                 "POST",
                 "/sub2api-config/apply",
                 body: buildPayload(doc)
@@ -112,8 +131,7 @@ extension Sub2ApiConfigTabView {
             messageText = ""
         } catch {
             dismissConfirmApply()
-            errorText = error.localizedDescription
-            hostOp = HostOperation(status: "restarting", message: "提交结果待确认，正在查询操作状态")
+            session.handleApplyFailure(error.localizedDescription)
         }
     }
 }

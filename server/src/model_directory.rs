@@ -193,7 +193,7 @@ async fn read_http_timeout(
     Ok((status, read_limited(response, MAX_BODY).await?))
 }
 
-pub async fn source_catalog_read(db: &Database, account: &Value) -> Result<Value> {
+async fn source_catalog_read(db: &Database, account: &Value) -> Result<Value> {
     let timeout = Duration::from_secs(8);
     let (url, headers) = catalog_request(db, account).await?;
     let client = catalog_client(db, account, timeout).await?;

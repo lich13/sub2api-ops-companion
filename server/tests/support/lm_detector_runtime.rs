@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_harness::DetectionTestExt;
 
 struct LmState {
     mode: usize,
@@ -356,7 +357,7 @@ async fn relaxed_lm_requires_complete_sampling_and_exact_target_without_manual_d
             let current = h.runtime.detection.view(id).await.unwrap();
             h.runtime
                 .detection
-                .save(
+                .save_test(
                     id,
                     &json!({"expected_version":current["version"],"verdict_mode":"strict"}),
                 )
@@ -604,7 +605,7 @@ async fn lm_retry_preserves_successes_and_original_probes_and_rejects_changed_co
     let current = h.runtime.detection.view(id).await.unwrap();
     h.runtime
         .detection
-        .save(
+        .save_test(
             id,
             &json!({"expected_version":current["version"],"verdict_mode":"strict"}),
         )
@@ -742,14 +743,14 @@ async fn api_key_platforms_use_their_protocol_auth_directory_and_scheduled_reche
             assert!(h
                 .runtime
                 .detection
-                .save(id, &request)
+                .save_test(id, &request)
                 .await
                 .unwrap_err()
                 .detail
                 .as_str()
                 .unwrap()
                 .contains("选择"));
-            let disabled = h.runtime.detection.save(id,&json!({"expected_version":view["version"],"enabled":false,"interval_minutes":15})).await.unwrap();
+            let disabled = h.runtime.detection.save_test(id,&json!({"expected_version":view["version"],"enabled":false,"interval_minutes":15})).await.unwrap();
             assert_eq!(disabled["model_id"], "");
             assert!(h
                 .runtime
@@ -763,7 +764,7 @@ async fn api_key_platforms_use_their_protocol_auth_directory_and_scheduled_reche
         }
         h.runtime.config.save("oauth", &json!({"model_detection_platforms":{platform:{"engine":"lm_detector","sample_count":1}}}), "fixture", None).await.unwrap();
         let current = h.runtime.detection.view(id).await.unwrap();
-        let saved = h.runtime.detection.save(id, &json!({"expected_version":current["version"],"enabled":true,"schedule_mode":"fixed","min_interval_minutes":5,"interval_minutes":15,"model_override":"gpt-6-luna"})).await.unwrap();
+        let saved = h.runtime.detection.save_test(id, &json!({"expected_version":current["version"],"enabled":true,"schedule_mode":"fixed","min_interval_minutes":5,"interval_minutes":15,"model_override":"gpt-6-luna"})).await.unwrap();
         assert_eq!(saved["model_source"], "account");
         assert_eq!(saved["enabled"], true);
         let mark = h.runtime.detection.mark(id).unwrap();

@@ -73,7 +73,14 @@ extension TestDialogSheet {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.allowedContentTypes = isAudio ? [.audio] : [.png, .jpeg, .webP, .gif, .image]
-        guard panel.runModal() == .OK, let url = panel.url, let data = try? Data(contentsOf: url) else { return }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            errorText = error.localizedDescription
+            return
+        }
         let maxBytes = (isAudio ? 6 : 4) * 1024 * 1024
         guard data.count <= maxBytes else {
             errorText = isAudio ? "音频不得超过 6 MiB" : "图片不得超过 4 MiB"
@@ -207,7 +214,11 @@ extension TestDialogSheet {
             // Stage 0 fix: if user clicked Cancel before job.id arrived, immediately cancel active job on server!
             if cancelled {
                 if !["completed", "failed", "cancelled", "needs_confirmation"].contains(job.status) {
-                    _ = try? await store.operations.cancelJobId(job.id)
+                    do {
+                        _ = try await store.operations.cancelJobId(job.id)
+                    } catch {
+                        store.report(error)
+                    }
                 }
                 return
             }
@@ -263,7 +274,11 @@ extension TestDialogSheet {
         cancelled = true
         if let id = operationId {
             operationId = nil
-            _ = try? await store.operations.cancelJobId(id)
+            do {
+                _ = try await store.operations.cancelJobId(id)
+            } catch {
+                store.report(error)
+            }
         }
     }
 }

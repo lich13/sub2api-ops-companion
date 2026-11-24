@@ -154,10 +154,14 @@ public struct ReauthorizeAccountSheet: View {
 
                         Button("浏览器授权") {
                             Task {
-                                try? await RustBridge.shared.commandVoid(
-                                    "open_authorization_url",
-                                    args: .object(["url": .string(session.auth_url)])
-                                )
+                                do {
+                                    try await RustBridge.shared.commandVoid(
+                                        "open_authorization_url",
+                                        args: .object(["url": .string(session.auth_url)])
+                                    )
+                                } catch {
+                                    self.error = error.localizedDescription
+                                }
                             }
                         }
                         .buttonStyle(LinearButtonStyle(variant: .primary, compact: true))

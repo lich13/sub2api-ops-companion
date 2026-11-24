@@ -174,10 +174,10 @@ impl Detection {
     pub fn held(&self, id: i64) -> bool {
         self.control(id).map(|v| v["hold"] == true).unwrap_or(true)
     }
-    pub fn recovery_held(&self, id: i64) -> bool {
+    pub(crate) fn recovery_held(&self, id: i64) -> bool {
         self.held(id) || self.mark(id).map(|v| v["marked"] == true).unwrap_or(true)
     }
-    pub fn credit_control_version(&self, id: i64) -> Result<Value> {
+    pub(crate) fn credit_control_version(&self, id: i64) -> Result<Value> {
         Ok(digest(&json!([
             self.control(id)?["generation"],
             self.mark(id)?["version"]
@@ -205,7 +205,7 @@ impl Detection {
         let row = model_target::account(&self.actions, id).await?;
         self.view_account(&row)
     }
-    pub fn view_account(&self, row: &Value) -> Result<Value> {
+    fn view_account(&self, row: &Value) -> Result<Value> {
         let data = self.store.read_shared()?;
         let config = self.monitor.config.current()?;
         Self::project_account(row, &data, &config)
@@ -297,12 +297,7 @@ impl Detection {
             Ok(())
         })
     }
-    pub async fn save(&self, id: i64, payload: &Value) -> Result<Value> {
-        let request = detection_request(payload)?;
-        self.save_validated(id, &request).await
-    }
-
-    pub(crate) async fn save_validated(&self, id: i64, request: &Value) -> Result<Value> {
+    pub async fn save_validated(&self, id: i64, request: &Value) -> Result<Value> {
         let row = model_target::account(&self.actions, id).await?;
         if request.get("model_override").is_some() && row["type"] != "apikey" {
             return Err(Error::new(422, "仅 API Key 账号可单独指定检测模型"));

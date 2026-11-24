@@ -1,3 +1,6 @@
+#[path = "common/harness.rs"]
+mod test_harness;
+
 use axum::{
     body::{to_bytes, Body},
     extract::{Request, State},
@@ -64,30 +67,10 @@ fn settings(
     base_url: String,
 ) -> Settings {
     Settings {
-        database_url,
-        bind: "127.0.0.1:0".into(),
-        base_path: String::new(),
-        audit_path: root.join("audit.jsonl"),
         usage_path: root.join("usage-query-state.json"),
-        oauth_path: root.join("oauth-config.json"),
-        bark_path: root.join("bark-config.json"),
-        connection_path: root.join("sub2api-config.json"),
-        keepalive_path: root.join("keepalive-state.json"),
-        oauth: json!({
-            "oauth_auto_reset_credit_enabled": false,
-            "oauth_daily_test_enabled": false,
-            "oauth_daily_test_time": "23:59",
-            "oauth_recovery_connection_account_ids": [],
-            "oauth_recovery_model_account_ids": [],
-            "oauth_recovery_monitor_enabled": false,
-            "oauth_recovery_test_concurrency": 1,
-            "oauth_recovery_test_model_id": "fixture-model",
-            "oauth_usage_refresh_concurrency": 1
-        }),
         bark: bark_value,
         bark_valid,
-        base_url,
-        verify_url: String::new(),
+        ..test_harness::runtime_settings(database_url, root, base_url)
     }
 }
 

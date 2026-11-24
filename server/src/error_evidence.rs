@@ -81,7 +81,7 @@ fn normalized(value: &str) -> String {
         ])
         .to_owned()
 }
-pub fn recorded_message(value: &Value, plain: bool) -> Option<&'static str> {
+fn recorded_message(value: &Value, plain: bool) -> Option<&'static str> {
     match value {
         Value::String(text) => match serde_json::from_str::<Value>(text) {
             Ok(value) => recorded_message(&value, false),

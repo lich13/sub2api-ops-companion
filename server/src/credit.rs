@@ -165,14 +165,19 @@ impl CreditController {
         }
         Ok(credit_rules::depletion_evidence(row, &saved, &evidence, at))
     }
-    pub fn positive_credit_reason(&self, row: &Value, at: DateTime<Utc>) -> &'static str {
+    pub(crate) fn positive_credit_reason(&self, row: &Value, at: DateTime<Utc>) -> &'static str {
         match available_credits(&row["extra"]["codex_reset_credit_snapshot"], at) {
             None => "credit_unconfirmed",
             Some(0) => "no_credit",
             Some(_) => "",
         }
     }
-    pub fn admit_episode(&self, row: &Value, evidence: &Value, at: DateTime<Utc>) -> Result<Value> {
+    pub(crate) fn admit_episode(
+        &self,
+        row: &Value,
+        evidence: &Value,
+        at: DateTime<Utc>,
+    ) -> Result<Value> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         let reason = self.positive_credit_reason(row, at);
         let Some(observed) = parse_datetime(&evidence["evidence_at"]) else {

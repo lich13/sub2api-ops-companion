@@ -1,3 +1,5 @@
+#[path = "common/harness.rs"]
+mod test_harness;
 use axum::{
     body::{to_bytes, Body},
     extract::{Request, State},
@@ -9,7 +11,6 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use serde_json::{json, Value};
 use sqlx::{types::Json as SqlJson, PgPool};
 use std::{
-    fs,
     sync::{
         atomic::{AtomicI64, Ordering},
         Arc, Mutex as StdMutex,
@@ -26,7 +27,11 @@ use sub2ops_server::{
     runtime::Runtime,
     settings::Settings,
 };
-use tokio::{net::TcpListener, sync::Notify, task::JoinHandle};
+use test_harness::{
+    account_path_id as path_id, default_account_credentials, json_ok as json_response, method_name,
+    runtime_settings, spawn_loopback, write_loopback_config, DetectionTestExt, Gate,
+};
+use tokio::task::JoinHandle;
 
 const ADMIN_KEY: &str = "fixture-admin-automation-contract";
 const SUCCESS_TEST_SSE: &str = "data: {\"type\":\"test_start\",\"model\":\"fixture-model\"}\n\ndata: {\"type\":\"test_complete\",\"success\":true}\n\n";
@@ -43,33 +48,10 @@ fn reference_time() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2031, 4, 5, 6, 7, 8).unwrap()
 }
 
-fn method_name(method: &Method) -> &'static str {
-    match *method {
-        Method::GET => "GET",
-        Method::POST => "POST",
-        _ => "OTHER",
-    }
-}
-
 #[derive(Clone)]
 struct Call {
     method: String,
     path: String,
-}
-
-#[derive(Clone)]
-struct Gate {
-    entered: Arc<Notify>,
-    release: Arc<Notify>,
-}
-
-impl Gate {
-    fn new() -> Self {
-        Self {
-            entered: Arc::new(Notify::new()),
-            release: Arc::new(Notify::new()),
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -148,17 +130,6 @@ impl MockUpstream {
         .await
         .expect("loopback mock did not receive the expected request");
     }
-}
-
-fn json_response(value: Value) -> Response {
-    (StatusCode::OK, Json(value)).into_response()
-}
-
-fn path_id(path: &str, suffix: &str) -> Option<i64> {
-    path.strip_prefix("/api/v1/admin/accounts/")?
-        .strip_suffix(suffix)?
-        .parse()
-        .ok()
 }
 
 async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> Response {
@@ -323,26 +294,14 @@ impl Harness {
             .expect("open runner-owned PostgreSQL for loopback mock");
         let temp = tempfile::tempdir().expect("create synthetic automation state directory");
         let clock = Arc::new(StdMutex::new(reference_time()));
-        let listener = TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .expect("bind loopback-only Sub2API/Bark fixture");
-        let base_url = format!("http://{}", listener.local_addr().unwrap());
         let mock = MockUpstream::new(db.pool.clone(), clock.clone());
-        let router = Router::new()
-            .fallback(mock_upstream)
-            .with_state(mock.clone());
-        let server = tokio::spawn(async move {
-            axum::serve(listener, router)
-                .await
-                .expect("serve loopback automation fixture");
-        });
-
-        let connection_path = temp.path().join("sub2api-config.json");
-        fs::write(
-            &connection_path,
-            serde_json::to_vec(&json!({"base_url":base_url,"verify_base_url":""})).unwrap(),
+        let (base_url, server) = spawn_loopback(
+            Router::new()
+                .fallback(mock_upstream)
+                .with_state(mock.clone()),
         )
-        .expect("write loopback upstream config");
+        .await;
+        let connection_path = write_loopback_config(temp.path(), &base_url);
         let oauth = json!({
             "oauth_auto_reset_credit_enabled": false,
             "oauth_daily_test_enabled": true,
@@ -355,24 +314,14 @@ impl Harness {
             "oauth_usage_refresh_concurrency": 1
         });
         let settings = Settings {
-            database_url,
-            bind: "127.0.0.1:0".into(),
-            base_path: String::new(),
-            audit_path: temp.path().join("audit.jsonl"),
-            usage_path: temp.path().join("oauth-state.json"),
-            oauth_path: temp.path().join("oauth-config.json"),
-            bark_path: temp.path().join("bark-config.json"),
             connection_path,
-            keepalive_path: temp.path().join("keepalive-state.json"),
             oauth,
             bark: json!({
                 "enabled": true,
                 "device_key": "fixture-bark-device-key",
                 "server_url": base_url.clone()
             }),
-            bark_valid: true,
-            base_url: base_url.clone(),
-            verify_url: String::new(),
+            ..runtime_settings(database_url, temp.path(), base_url.clone())
         };
         let monitor_clock = clock.clone();
         let runtime =
@@ -410,18 +359,12 @@ impl Harness {
     async fn seed_account(&self, kind: &str, schedulable: bool, rate_limited: bool) -> Value {
         let id = NEXT_ACCOUNT_ID.fetch_add(1, Ordering::Relaxed);
         let now = self.now();
-        let credentials = if kind == "apikey" {
-            json!({
-                "api_key": "fixture-model-api-key",
-                "base_url": format!("{}/v1", self.base_url)
-            })
+        let token = if kind == "apikey" {
+            "fixture-model-api-key"
         } else {
-            json!({
-                "plan_type": "plus",
-                "access_token": "fixture-access-token",
-                "refresh_token": "fixture-refresh-token"
-            })
+            "fixture-access-token"
         };
+        let credentials = default_account_credentials(kind, &self.base_url, token);
         sqlx::query("INSERT INTO accounts (id,name,platform,type,status,schedulable,credentials,extra,rate_limited_at,rate_limit_reset_at,updated_at) VALUES ($1,$2,'openai',$3,'active',$4,$5,$6,$7,$8,$9)")
             .bind(id)
             .bind(format!("fixture-automation-account-{id}"))
@@ -941,7 +884,7 @@ async fn prepare_detection_job(harness: &Harness) -> (Value, String, i64) {
     harness
         .runtime
         .detection
-        .save(
+        .save_test(
             id,
             &json!({
                 "enabled": true,

@@ -1,3 +1,5 @@
+#[path = "common/harness.rs"]
+mod test_harness;
 use axum::{
     body::{to_bytes, Body},
     extract::{Request, State},
@@ -29,7 +31,11 @@ use sub2ops_server::{
     runtime::Runtime,
     settings::Settings,
 };
-use tokio::{net::TcpListener, sync::Notify, task::JoinHandle};
+use test_harness::{
+    account_path_id as path_id, json_ok as json_response, method_name, runtime_settings,
+    spawn_loopback, write_loopback_config, Gate, OperationsSubmitExt,
+};
+use tokio::task::JoinHandle;
 
 const ADMIN_KEY: &str = "fixture-admin-manual-dispatch";
 const SUCCESS_TEST_SSE: &str =
@@ -38,29 +44,6 @@ static NEXT_ACCOUNT_ID: AtomicI64 = AtomicI64::new(98_000_000);
 
 fn reference_time() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2031, 4, 5, 6, 7, 8).unwrap()
-}
-
-fn method_name(method: &Method) -> &'static str {
-    match *method {
-        Method::GET => "GET",
-        Method::POST => "POST",
-        _ => "OTHER",
-    }
-}
-
-#[derive(Clone)]
-struct Gate {
-    entered: Arc<Notify>,
-    release: Arc<Notify>,
-}
-
-impl Gate {
-    fn new() -> Self {
-        Self {
-            entered: Arc::new(Notify::new()),
-            release: Arc::new(Notify::new()),
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -188,17 +171,6 @@ impl MockUpstream {
 fn enter(active: &AtomicUsize, maximum: &AtomicUsize) {
     let now = active.fetch_add(1, Ordering::AcqRel) + 1;
     maximum.fetch_max(now, Ordering::AcqRel);
-}
-
-fn json_response(value: Value) -> Response {
-    (StatusCode::OK, Json(value)).into_response()
-}
-
-fn path_id(path: &str, suffix: &str) -> Option<i64> {
-    path.strip_prefix("/api/v1/admin/accounts/")?
-        .strip_suffix(suffix)?
-        .parse()
-        .ok()
 }
 
 fn move_state_file(state: PathBuf, backup: PathBuf) -> Result<(), String> {
@@ -391,39 +363,16 @@ impl Harness {
         let pool = database.pool.clone();
         let temp = tempfile::tempdir().expect("create synthetic manual dispatch state directory");
         let clock = Arc::new(StdMutex::new(reference_time()));
-        let listener = TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .expect("bind a loopback-only Sub2API fixture");
-        let base_url = format!("http://{}", listener.local_addr().unwrap());
         let mock = MockUpstream::new(pool.clone(), clock.clone());
-        let server_state = mock.clone();
-        let server = tokio::spawn(async move {
-            axum::serve(
-                listener,
-                Router::new()
-                    .fallback(mock_upstream)
-                    .with_state(server_state),
-            )
-            .await
-            .expect("serve synthetic loopback Sub2API fixture");
-        });
-
-        let connection_path = temp.path().join("sub2api-config.json");
-        fs::write(
-            &connection_path,
-            serde_json::to_vec(&json!({"base_url":base_url,"verify_base_url":""})).unwrap(),
+        let (base_url, server) = spawn_loopback(
+            Router::new()
+                .fallback(mock_upstream)
+                .with_state(mock.clone()),
         )
-        .expect("write synthetic loopback upstream configuration");
+        .await;
+        let connection_path = write_loopback_config(temp.path(), &base_url);
         let settings = Settings {
-            database_url,
-            bind: "127.0.0.1:0".into(),
-            base_path: String::new(),
-            audit_path: temp.path().join("audit.jsonl"),
-            usage_path: temp.path().join("oauth-state.json"),
-            oauth_path: temp.path().join("oauth-config.json"),
-            bark_path: temp.path().join("bark-config.json"),
             connection_path,
-            keepalive_path: temp.path().join("keepalive-state.json"),
             oauth: json!({
                 "oauth_auto_reset_credit_enabled": false,
                 "oauth_daily_test_enabled": false,
@@ -436,9 +385,7 @@ impl Harness {
                 "oauth_usage_refresh_concurrency": 1
             }),
             bark: json!({"enabled":false,"device_key":"fixture-only","server_url":base_url.clone()}),
-            bark_valid: true,
-            base_url: base_url.clone(),
-            verify_url: String::new(),
+            ..runtime_settings(database_url, temp.path(), base_url.clone())
         };
         let runtime_clock = clock.clone();
         let runtime = Runtime::new_with_clock(
@@ -2231,7 +2178,7 @@ async fn continuous_appointment_uses_real_runtime_quota_refresh_and_stops_indepe
     let job = harness
         .runtime
         .operations
-        .submit(id, &request, ADMIN_KEY)
+        .submit_test(id, &request, ADMIN_KEY)
         .await
         .unwrap();
     assert_eq!(job["status"], "queued", "{}", job["reason"]);
@@ -2291,7 +2238,7 @@ async fn continuous_appointment_uses_real_runtime_quota_refresh_and_stops_indepe
     let pending = harness
         .runtime
         .operations
-        .submit(second_id, &request, ADMIN_KEY)
+        .submit_test(second_id, &request, ADMIN_KEY)
         .await
         .unwrap();
     assert_eq!(pending["status"], "queued");
@@ -2348,7 +2295,7 @@ async fn continuous_appointment_after_authorization_update_keeps_plan_windows_an
         let job = h
             .runtime
             .operations
-            .submit(id, &request, ADMIN_KEY)
+            .submit_test(id, &request, ADMIN_KEY)
             .await
             .unwrap();
         assert_eq!(job["status"], "queued", "{plan}: {job}");
@@ -2401,8 +2348,12 @@ async fn continuous_appointment_and_client_query_share_the_execution_result() {
     let request = json!({"action":"test","payload":{"confirmed":true,"mode":"default","model_id":""},
         "repeat":"quota_cycle","expected_version":sub2ops_server::compat::operation_versions(&account)["test"],
         "request_id":"fixture-shared-query","client_id":"fixture-shared-client"});
-    let appointment =
-        tokio::spawn(async move { runtime.operations.submit(id, &request, ADMIN_KEY).await });
+    let appointment = tokio::spawn(async move {
+        runtime
+            .operations
+            .submit_test(id, &request, ADMIN_KEY)
+            .await
+    });
     tokio::time::sleep(StdDuration::from_millis(100)).await;
     gate.release.notify_one();
     let response = query.await.unwrap().unwrap();

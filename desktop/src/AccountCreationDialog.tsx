@@ -4,7 +4,12 @@ import { Copy, ExternalLink, LoaderCircle, Plus, X } from "lucide-react";
 import { api, command } from "./bridge";
 import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
-import type { TokenAuthorization as Authorization } from "./protocol";
+import type {
+  ChoiceRecord,
+  CreationCheckReply,
+  CreationModelsReply,
+  TokenAuthorization as Authorization,
+} from "./protocol";
 import type { Account } from "./types";
 import AccountCreationFields from "./AccountCreationFields";
 import {
@@ -81,8 +86,7 @@ type Outcome = {
   message: string;
 };
 const message = (error: unknown) => String(error).replace(/^Error: /, "");
-export const uncertainCreation = (error: unknown) =>
-  !/\[4\d\d\]/.test(message(error));
+const uncertainCreation = (error: unknown) => !/\[4\d\d\]/.test(message(error));
 
 export default function AccountCreationDialog({
   accounts,
@@ -106,7 +110,7 @@ export default function AccountCreationDialog({
     [error, setError] = useState(""),
     [optionError, setOptionError] = useState(""),
     [editorErrors, setEditorErrors] = useState<Record<string, string>>({});
-  const [tls, setTls] = useState<{ id: number; name: string }[]>([]),
+  const [tls, setTls] = useState<ChoiceRecord[]>([]),
     [aiStudio, setAiStudio] = useState(false),
     [quotaNotify, setQuotaNotify] = useState(false),
     [webSearch, setWebSearch] = useState(false);
@@ -194,10 +198,7 @@ export default function AccountCreationDialog({
     setOptionError("");
     const requests = await Promise.allSettled([
       api<CreationOptions>("GET", "/account-creation/options"),
-      api<{ id: number; name: string }[]>(
-        "GET",
-        "/account-creation/catalog/tls",
-      ),
+      api<ChoiceRecord[]>("GET", "/account-creation/catalog/tls"),
       api<{ ai_studio_oauth_enabled: boolean }>(
         "GET",
         "/account-creation/catalog/gemini",
@@ -385,7 +386,7 @@ export default function AccountCreationDialog({
   async function checkMixed() {
     if (confirmed || !["anthropic", "antigravity"].includes(draft.platform))
       return true;
-    const result = await api<{ has_risk: boolean }>(
+    const result = await api<CreationCheckReply>(
       "POST",
       "/account-creation/check-mixed-channel",
       { platform: draft.platform, group_ids: draft.group_ids },
@@ -443,7 +444,7 @@ export default function AccountCreationDialog({
     const current = scope.current;
     try {
       const body = buildPayload(draft);
-      const value = await api<{ models: string[]; warnings: string[] }>(
+      const value = await api<CreationModelsReply>(
         "POST",
         "/account-creation/models",
         {

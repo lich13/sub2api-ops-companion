@@ -299,10 +299,10 @@ public struct RecordsPageView: View {
 
     private var recordsTableSurface: some View {
         let cols = shownColumns
-        let hasApiKeyCol = cols.contains(.api_key)
+        let hasApiKeyCol = cols.contains(.apiKey)
         let hasModelCol = cols.contains(.model)
         let hasLatencyCol = cols.contains(.latency)
-        let trailingCols = cols.filter { $0 != .api_key }
+        let trailingCols = cols.filter { $0 != .apiKey }
         let userColWidth = RecordColumnSpec.userColumnWidth
         let userCellPad: CGFloat = 6
         let timeColWidth = RecordColumnSpec.timeColumnWidth
@@ -328,7 +328,7 @@ public struct RecordsPageView: View {
                     .overlay(alignment: .leading) {
                         HStack(spacing: colSpacing) {
                             if hasApiKeyCol {
-                                headerCell("API 密钥", width: RecordColumnSpec.api_key.width)
+                                headerCell("API 密钥", width: RecordColumnSpec.apiKey.width)
                             }
                             headerCell("时间", width: timeColWidth)
                             ForEach(trailingCols, id: \.rawValue) { col in
@@ -416,7 +416,7 @@ public struct RecordsPageView: View {
                                             let rh = item.height(model: hasModelCol, latency: hasLatencyCol)
                                             HStack(spacing: colSpacing) {
                                                 if hasApiKeyCol {
-                                                    cellView(.api_key, row: row, route: item.route)
+                                                    cellView(.apiKey, row: row, route: item.route)
                                                 }
                                                 Text(BeijingTime.fullTime(row.created_at))
                                                     .font(DS.fontPriorityMeta)
@@ -525,7 +525,7 @@ public struct RecordsPageView: View {
     @ViewBuilder
     private func cellView(_ col: RecordColumnSpec, row: UsageRecord, route steps: [ModelRouteStep]) -> some View {
         switch col {
-        case .api_key:
+        case .apiKey:
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.api_key_name ?? "API 密钥")
                     .font(DS.fontCompact)
@@ -696,7 +696,7 @@ public struct RecordsPageView: View {
             }
             .frame(width: col.width, alignment: .trailing)
 
-        case .user_agent:
+        case .userAgent:
             Text(verbatim: row.user_agent ?? "—")
                 .font(DS.fontCompact)
                 .foregroundStyle(DS.muted)
@@ -739,14 +739,14 @@ public struct RecordsPageView: View {
                 .foregroundStyle(DS.muted)
                 .frame(width: col.width, alignment: .leading)
 
-        case .request_id:
+        case .requestId:
             Text(verbatim: row.request_id ?? "—")
                 .font(DS.fontMono11)
                 .foregroundStyle(DS.muted)
                 .lineLimit(1)
                 .frame(width: col.width, alignment: .leading)
 
-        case .upstream_id:
+        case .upstreamId:
             Text(verbatim: row.upstream_request_id ?? "—")
                 .font(DS.fontMono11)
                 .foregroundStyle(DS.muted)

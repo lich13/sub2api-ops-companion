@@ -429,8 +429,6 @@ let state: ViewState = {
         base_url: previewBaseUrl,
       },
     ],
-    pinned: false,
-    launch_at_login: false,
   },
   snapshot: {
     observed_at: now,
@@ -725,17 +723,18 @@ export async function run(
     return;
   }
   if (name === "preferences") {
-    state.preferences = { ...state.preferences, ...args };
-    if (args.recordColumns)
-      state.preferences.record_columns = args.recordColumns as string[];
-    if (args.modelTestPreferences)
+    state.preferences = { ...state.preferences };
+    if (args.recordColumns !== undefined)
+      state.preferences.record_columns = args.recordColumns as string[] | null;
+    if (args.modelTestPreferences !== undefined)
       state.preferences.model_test_preferences = structuredClone(
         args.modelTestPreferences,
       ) as Preferences["model_test_preferences"];
-    if (args.modelTestConcurrency)
-      state.preferences.model_test_concurrency = Number(
-        args.modelTestConcurrency,
-      );
+    if (args.modelTestConcurrency !== undefined)
+      state.preferences.model_test_concurrency =
+        args.modelTestConcurrency === null
+          ? null
+          : Number(args.modelTestConcurrency);
     emit();
     return;
   }

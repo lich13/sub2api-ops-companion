@@ -1,5 +1,7 @@
 #![cfg(feature = "test-fixtures")]
 
+#[path = "common/harness.rs"]
+mod test_harness;
 use axum::{
     body::{to_bytes, Body},
     extract::{Request, State},
@@ -27,7 +29,11 @@ use sub2ops_server::{
     runtime::Runtime,
     settings::Settings,
 };
-use tokio::{net::TcpListener, sync::Notify, task::JoinHandle};
+use test_harness::{
+    account_path_id as path_id, default_account_credentials, json_ok as json_response, method_name,
+    runtime_settings, spawn_loopback, write_loopback_config, DetectionTestExt, Gate,
+};
+use tokio::{net::TcpListener, task::JoinHandle};
 
 const ADMIN_KEY: &str = "fixture-only";
 const DETECTION_FIXTURE: &str =
@@ -78,21 +84,6 @@ fn response_sse(text: &str) -> String {
     });
     let event = json!({"type":"response.completed","response":response});
     format!("data: {created}\n\ndata: {event}\n\n")
-}
-
-#[derive(Clone)]
-struct Gate {
-    entered: Arc<Notify>,
-    release: Arc<Notify>,
-}
-
-impl Gate {
-    fn new() -> Self {
-        Self {
-            entered: Arc::new(Notify::new()),
-            release: Arc::new(Notify::new()),
-        }
-    }
 }
 
 #[cfg(unix)]
@@ -338,25 +329,6 @@ impl MockUpstream {
     }
 }
 
-fn json_response(value: Value) -> Response {
-    (StatusCode::OK, Json(value)).into_response()
-}
-
-fn method_name(method: &Method) -> &'static str {
-    match *method {
-        Method::GET => "GET",
-        Method::POST => "POST",
-        _ => "OTHER",
-    }
-}
-
-fn path_id(path: &str, suffix: &str) -> Option<i64> {
-    path.strip_prefix("/api/v1/admin/accounts/")?
-        .strip_suffix(suffix)?
-        .parse()
-        .ok()
-}
-
 fn take_failure(counter: &AtomicUsize) -> bool {
     let mut current = counter.load(Ordering::Acquire);
     while current > 0 {
@@ -581,36 +553,16 @@ impl Harness {
         let temp = tempfile::tempdir().expect("create private detection state directory");
         let clock = Arc::new(StdMutex::new(reference_time()));
         let monotonic_origin = std::time::Instant::now();
-        let listener = TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .expect("bind loopback-only upstream fixture");
-        let base_url = format!("http://{}", listener.local_addr().unwrap());
         let mock = MockUpstream::new(fixture_db.pool.clone(), clock.clone(), output);
-        let router = Router::new()
-            .fallback(mock_upstream)
-            .with_state(mock.clone());
-        let server = tokio::spawn(async move {
-            axum::serve(listener, router)
-                .await
-                .expect("serve detection loopback fixture");
-        });
-
-        let connection_path = temp.path().join("sub2api-config.json");
-        fs::write(
-            &connection_path,
-            serde_json::to_vec(&json!({"base_url":base_url,"verify_base_url":""})).unwrap(),
+        let (base_url, server) = spawn_loopback(
+            Router::new()
+                .fallback(mock_upstream)
+                .with_state(mock.clone()),
         )
-        .expect("write synthetic loopback connection config");
+        .await;
+        let connection_path = write_loopback_config(temp.path(), &base_url);
         let settings = Settings {
-            database_url,
-            bind: "127.0.0.1:0".into(),
-            base_path: String::new(),
-            audit_path: temp.path().join("audit.jsonl"),
-            usage_path: temp.path().join("oauth-state.json"),
-            oauth_path: temp.path().join("oauth-config.json"),
-            bark_path: temp.path().join("bark-config.json"),
             connection_path,
-            keepalive_path: temp.path().join("keepalive-state.json"),
             oauth: json!({
                 "oauth_auto_reset_credit_enabled":false,
                 "oauth_daily_test_enabled":true,
@@ -627,9 +579,7 @@ impl Harness {
                 "device_key":"fixture-only",
                 "server_url":base_url.clone()
             }),
-            bark_valid: true,
-            base_url: base_url.clone(),
-            verify_url: String::new(),
+            ..runtime_settings(database_url, temp.path(), base_url.clone())
         };
         let runtime =
             Self::open_runtime(settings.clone(), clock.clone(), monotonic_origin, &base_url).await;
@@ -700,18 +650,7 @@ impl Harness {
 
     async fn seed_account(&self, kind: &str, schedulable: bool, extra: Value) -> Value {
         let id = NEXT_ACCOUNT_ID.fetch_add(1, Ordering::Relaxed);
-        let credentials = if kind == "apikey" {
-            json!({
-                "api_key":"fixture-only",
-                "base_url":format!("{}/v1", self.base_url)
-            })
-        } else {
-            json!({
-                "plan_type":"plus",
-                "access_token":"fixture-only",
-                "refresh_token":"fixture-only"
-            })
-        };
+        let credentials = default_account_credentials(kind, &self.base_url, "fixture-only");
         sqlx::query("INSERT INTO accounts (id,name,platform,type,status,schedulable,credentials,extra,updated_at) VALUES ($1,$2,'openai',$3,'active',$4,$5,$6,$7)")
             .bind(id)
             .bind(format!("fixture-detection-account-{id}"))
@@ -803,7 +742,7 @@ impl Harness {
         let control = self.runtime().detection.view(id).await.unwrap();
         self.runtime()
             .detection
-            .save(
+            .save_test(
                 id,
                 &json!({
                     "enabled":true,
@@ -1098,7 +1037,7 @@ async fn global_detection_model_overlays_legacy_fields_and_keeps_put_validation(
         let saved = harness
             .runtime()
             .detection
-            .save(
+            .save_test(
                 id,
                 &json!({
                     "enabled":true,
@@ -1143,7 +1082,7 @@ async fn global_detection_model_overlays_legacy_fields_and_keeps_put_validation(
             harness
                 .runtime()
                 .detection
-                .save(id, &payload)
+                .save_test(id, &payload)
                 .await
                 .unwrap_err()
                 .status
@@ -1155,7 +1094,7 @@ async fn global_detection_model_overlays_legacy_fields_and_keeps_put_validation(
     let stale = harness
         .runtime()
         .detection
-        .save(
+        .save_test(
             id,
             &json!({
                 "enabled":false,
@@ -1187,7 +1126,7 @@ async fn key_detection_override_uses_shared_candidates_and_survives_global_chang
     let saved = harness
         .runtime()
         .detection
-        .save(
+        .save_test(
             id,
             &json!({
                 "expected_version":initial["version"], "enabled":true, "interval_minutes":1,
@@ -1209,7 +1148,7 @@ async fn key_detection_override_uses_shared_candidates_and_survives_global_chang
     let missing = harness
         .runtime()
         .detection
-        .save(
+        .save_test(
             id,
             &json!({
                 "expected_version":current["version"], "enabled":true, "interval_minutes":1,
@@ -1226,7 +1165,7 @@ async fn key_detection_override_uses_shared_candidates_and_survives_global_chang
     let stale = harness
         .runtime()
         .detection
-        .save(
+        .save_test(
             id,
             &json!({
                 "expected_version":initial["version"], "enabled":false, "interval_minutes":1,
@@ -1273,7 +1212,7 @@ async fn key_detection_override_uses_shared_candidates_and_survives_global_chang
     let following = harness
         .runtime()
         .detection
-        .save(
+        .save_test(
             id,
             &json!({
                 "expected_version":current["version"], "enabled":false, "interval_minutes":1,
@@ -1290,7 +1229,7 @@ async fn key_detection_override_uses_shared_candidates_and_survives_global_chang
     let error = harness
         .runtime()
         .detection
-        .save(
+        .save_test(
             oauth,
             &json!({
                 "expected_version":current["version"], "enabled":false, "interval_minutes":1,
@@ -1361,7 +1300,7 @@ async fn global_detection_model_normalizes_and_changed_model_rejects_pending_can
         "model_id":"ignored-legacy-model",
         "expected_version":before_view["version"]
     });
-    let pending = tokio::spawn(async move { runtime.detection.save(id, &payload).await });
+    let pending = tokio::spawn(async move { runtime.detection.save_test(id, &payload).await });
     tokio::time::timeout(StdDuration::from_secs(10), gate.entered.notified())
         .await
         .expect("candidate model directory request reaches the held fixture");
@@ -5757,7 +5696,7 @@ async fn disabling_generation_drops_old_marked_clue_without_model_recheck() {
     let disabled = harness
         .runtime()
         .detection
-        .save(
+        .save_test(
             id,
             &json!({
                 "enabled":false,
@@ -7001,7 +6940,7 @@ impl Harness {
     async fn smart_detection(&self, id: i64, minimum: i64) -> Value {
         self.set_detection_model("gpt-6-luna").await;
         let value = self.runtime().detection.view(id).await.unwrap();
-        self.runtime().detection.save(id, &json!({"enabled":true,"interval_minutes":37,"schedule_mode":"smart","min_interval_minutes":minimum,"expected_version":value["version"]})).await.unwrap()
+        self.runtime().detection.save_test(id, &json!({"enabled":true,"interval_minutes":37,"schedule_mode":"smart","min_interval_minutes":minimum,"expected_version":value["version"]})).await.unwrap()
     }
 }
 
@@ -7199,7 +7138,7 @@ async fn smart_settings_survive_restart_and_old_clients_preserve_mode_and_floor(
     let old_client = h
         .runtime()
         .detection
-        .save(
+        .save_test(
             id,
             &json!({"enabled":true,"interval_minutes":37,"expected_version":configured["version"]}),
         )
@@ -7222,7 +7161,7 @@ async fn smart_settings_survive_restart_and_old_clients_preserve_mode_and_floor(
         assert_eq!(
             h.runtime()
                 .detection
-                .save(id, &request)
+                .save_test(id, &request)
                 .await
                 .unwrap_err()
                 .status
@@ -7230,14 +7169,14 @@ async fn smart_settings_survive_restart_and_old_clients_preserve_mode_and_floor(
             422
         );
     }
-    let fixed = h.runtime().detection.save(id,&json!({"enabled":true,"interval_minutes":37,"schedule_mode":"fixed","expected_version":old_client["version"]})).await.unwrap();
+    let fixed = h.runtime().detection.save_test(id,&json!({"enabled":true,"interval_minutes":37,"schedule_mode":"fixed","expected_version":old_client["version"]})).await.unwrap();
     assert_eq!(fixed["effective_interval_minutes"], 37);
     assert_eq!(
         parse_datetime(&fixed["next_at"]),
         Some(h.now() + Duration::minutes(37))
     );
     assert_ne!(fixed["version"], old_client["version"]);
-    assert_eq!(h.runtime().detection.save(id,&json!({"enabled":true,"interval_minutes":37,"expected_version":old_client["version"]})).await.unwrap_err().status.as_u16(),409);
+    assert_eq!(h.runtime().detection.save_test(id,&json!({"enabled":true,"interval_minutes":37,"expected_version":old_client["version"]})).await.unwrap_err().status.as_u16(),409);
     h.restart_runtime().await;
     assert_eq!(
         h.runtime().detection.view(id).await.unwrap()["schedule_mode"],
@@ -7366,7 +7305,7 @@ async fn verdict_policy_partial_saves_preserve_schedule_and_legacy_clients_prese
     let initial = h.enable_detection(id, 17).await;
     assert_eq!(initial["verdict_mode"], "strict");
     assert_eq!(initial["degraded_model_id"], "gpt-5.6-luna");
-    let changed = h.runtime().detection.save(id, &json!({"expected_version":initial["version"],"verdict_mode":"relaxed","degraded_model_id":" GPT-6-LUNA "})).await.unwrap();
+    let changed = h.runtime().detection.save_test(id, &json!({"expected_version":initial["version"],"verdict_mode":"relaxed","degraded_model_id":" GPT-6-LUNA "})).await.unwrap();
     for field in [
         "enabled",
         "interval_minutes",
@@ -7385,7 +7324,7 @@ async fn verdict_policy_partial_saves_preserve_schedule_and_legacy_clients_prese
     assert_eq!(
         h.runtime()
             .detection
-            .save(
+            .save_test(
                 id,
                 &json!({"expected_version":initial["version"],"verdict_mode":"strict"})
             )
@@ -7398,7 +7337,7 @@ async fn verdict_policy_partial_saves_preserve_schedule_and_legacy_clients_prese
     let saved = h
         .runtime()
         .detection
-        .save(
+        .save_test(
             id,
             &json!({"expected_version":changed["version"],"enabled":false,"interval_minutes":20}),
         )
@@ -7416,7 +7355,7 @@ async fn relaxed_modeltrace_waits_for_all_samples_and_only_aggregate_target_disp
         let row = h.seed_account("apikey", true, json!({})).await;
         let id = integer(&row["id"]).unwrap();
         let initial = h.enable_detection(id, 1).await;
-        h.runtime().detection.save(id, &json!({"expected_version":initial["version"],"verdict_mode":"relaxed","degraded_model_id":target})).await.unwrap();
+        h.runtime().detection.save_test(id, &json!({"expected_version":initial["version"],"verdict_mode":"relaxed","degraded_model_id":target})).await.unwrap();
         let job = h
             .runtime()
             .detection
@@ -7451,7 +7390,7 @@ async fn policy_change_during_automatic_sampling_keeps_snapshot_and_prevents_sta
     let saved = h
         .runtime()
         .detection
-        .save(
+        .save_test(
             id,
             &json!({"expected_version":initial["version"],"verdict_mode":"relaxed"}),
         )
@@ -7470,7 +7409,7 @@ async fn policy_change_during_automatic_sampling_keeps_snapshot_and_prevents_sta
         .unwrap();
     h.runtime()
         .detection
-        .save(
+        .save_test(
             id,
             &json!({"expected_version":saved["version"],"verdict_mode":"strict"}),
         )

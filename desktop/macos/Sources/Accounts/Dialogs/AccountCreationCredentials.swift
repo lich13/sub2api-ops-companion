@@ -61,10 +61,14 @@ extension AccountCreationSheet {
                             HStack(spacing: 8) {
                                 Button {
                                     Task {
-                                        try? await RustBridge.shared.commandVoid(
-                                            "open_authorization_url",
-                                            args: .object(["url": .string(session.auth_url)])
-                                        )
+                                        do {
+                                            try await RustBridge.shared.commandVoid(
+                                                "open_authorization_url",
+                                                args: .object(["url": .string(session.auth_url)])
+                                            )
+                                        } catch {
+                                            self.error = error.localizedDescription
+                                        }
                                     }
                                 } label: {
                                     Label("系统浏览器授权", systemImage: "safari")

@@ -61,55 +61,30 @@ fn family(model: &str) -> Option<u8> {
         .find_map(|(pattern, rank)| pattern.is_match(model).then_some(*rank))
 }
 fn tier(model: &str) -> Option<(String, u8)> {
+    if let Some((version, rank)) = model_downgrade::parse_gpt(model) {
+        return Some((version.into(), rank));
+    }
     static MODEL: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"^(?:gpt-([0-9]+(?:\.[0-9]+)*)-(astra|sol|luna)|claude-(opus|sonnet|haiku)-([0-9]+(?:\.[0-9]+)*)(?:-[0-9]{8})?|grok-([0-9]+(?:\.[0-9]+)*)|deepseek-v([0-9]+(?:\.[0-9]+)*)-(pro|flash)(?:-[0-9]{4,8})?)$").unwrap()
+        Regex::new(r"^(?:claude-(opus|sonnet|haiku)-([0-9]+(?:\.[0-9]+)*)(?:-[0-9]{8})?|grok-([0-9]+(?:\.[0-9]+)*)|deepseek-v([0-9]+(?:\.[0-9]+)*)-(pro|flash)(?:-[0-9]{4,8})?)$").unwrap()
     });
     let c = MODEL.captures(model)?;
-    if let Some(v) = c.get(1) {
+    if let Some(v) = c.get(2) {
         return Some((
             v.as_str().into(),
-            match &c[2] {
-                "astra" => 3,
-                "sol" => 2,
-                _ => 0,
-            },
-        ));
-    }
-    if let Some(v) = c.get(4) {
-        return Some((
-            v.as_str().into(),
-            match &c[3] {
+            match &c[1] {
                 "opus" => 3,
                 "sonnet" => 2,
                 _ => 1,
             },
         ));
     }
-    if let Some(v) = c.get(5) {
+    if let Some(v) = c.get(3) {
         return Some((v.as_str().into(), 0));
     }
     Some((
-        c[6].split('.').take(2).collect::<Vec<_>>().join("."),
-        if &c[7] == "pro" { 2 } else { 1 },
+        c[4].split('.').take(2).collect::<Vec<_>>().join("."),
+        if &c[5] == "pro" { 2 } else { 1 },
     ))
-}
-fn compare_versions(left: &str, right: &str) -> Ordering {
-    let mut left = left.split('.');
-    let mut right = right.split('.');
-    loop {
-        let (a, b) = (left.next(), right.next());
-        if a.is_none() && b.is_none() {
-            return Ordering::Equal;
-        }
-        // Compare unsigned decimal segments without a machine-integer limit.
-        // Missing trailing segments and all-zero segments are equivalent.
-        let a = a.unwrap_or("0").trim_start_matches('0');
-        let b = b.unwrap_or("0").trim_start_matches('0');
-        let order = a.len().cmp(&b.len()).then_with(|| a.cmp(b));
-        if order != Ordering::Equal {
-            return order;
-        }
-    }
 }
 
 /// None is unclassified, not a successful recovery check.
@@ -130,14 +105,14 @@ fn compare_models(requested: &str, predicted: &str) -> Option<bool> {
         if r.get(2).map(|m| m.as_str()) != p.get(2).map(|m| m.as_str()) {
             return None;
         }
-        return Some(compare_versions(&p[1], &r[1]) == Ordering::Less);
+        return Some(model_downgrade::compare_versions(&p[1], &r[1]) == Ordering::Less);
     }
     let ((rv, rt), (pv, pt)) = (tier(&requested)?, tier(&predicted)?);
     Some(match pt.cmp(&rt) {
         Ordering::Less => true,
         Ordering::Greater => false,
         Ordering::Equal if a == 3 && rt == 2 => false,
-        Ordering::Equal => compare_versions(&pv, &rv) == Ordering::Less,
+        Ordering::Equal => model_downgrade::compare_versions(&pv, &rv) == Ordering::Less,
     })
 }
 fn compare(requested: &str, report: &Value) -> Option<bool> {
@@ -244,52 +219,18 @@ mod tests {
     }
 
     #[test]
-    fn downgrade_vectors_preserve_legacy_exception_and_rank_tiers_first() {
-        let vectors = [
-            ("gpt-6.1-sol", "gpt-6-astra", false),
-            ("gpt-6-luna", "gpt-5.6-luna", true),
-            ("gpt-6-astra", "gpt-5.6-luna", true),
-            ("gpt-5.6-luna", "gpt-5.6-luna", true),
-            ("gpt-6-astra", "gpt-6-sol", true),
-            ("gpt-6-sol", "gpt-6-luna", true),
-            ("gpt-6-sol", "gpt-6-astra", false),
-            ("gpt-6-sol", "gpt-5.6-sol", false),
-            ("gpt-6.1-sol", "gpt-6-sol", false),
-            ("gpt-6-sol", "gpt-6.1-sol", false),
-            ("gpt-6.1-sol", "gpt-5.6-sol", false),
-            ("gpt-5.6-sol", "gpt-6-sol", false),
-            ("gpt-6-luna", "gpt-5.9-sol", false),
-            ("gpt-6.1-astra", "gpt-6-astra", true),
-            ("gpt-6-astra", "gpt-6.0-astra", false),
-            ("gpt-5.10-sol", "gpt-5.9-sol", false),
-            ("  GPT-6-Sol \t", "gpt-6-sol", false),
-            ("gpt-6-sol", "claude-sonnet-5", false),
-            ("gpt-6-sol", "", false),
-            ("gpt-6-sol", "gpt-5.6-terra", false),
-            ("gpt-6-terra", "gpt-6-luna", false),
-            ("gpt-6-sol", "gpt-5.5", false),
-            ("gpt-6", "gpt-6-luna", false),
-            ("gpt-6-unknown", "gpt-6-luna", false),
-            ("gpt-6-sol", "gpt-6-unknown", false),
-            ("gpt-6-sol", " \n\t", false),
-            ("", " GPT-5.6-LUNA ", false),
-            ("claude-sonnet-5", "gpt-5.6-luna", true),
-            ("gpt-6.0.0-sol", "gpt-06-sol", false),
-            ("gpt-6-sol", "gpt-6.0.1-sol", false),
-            ("gpt-6.-sol", "gpt-5-sol", false),
-            ("gpt-6-sol", "gpt--5-sol", false),
-            ("gpt-6-sol", "gpt-５-sol", false),
-            ("gpt-6-sol", "prefix-gpt-5-sol", false),
-            ("gpt-6-sol", "gpt-5-sol-extra", false),
-            (
-                "gpt-184467440737095516160-sol",
-                "gpt-184467440737095516159-sol",
-                false,
-            ),
-        ];
-        for (requested, predicted, expected) in vectors {
+    fn gpt_and_cross_family_boundaries_delegate_to_shared_rules() {
+        for (requested, predicted, expected) in [
+            ("gpt-6-astra", "gpt-5.6-luna", Some(true)),
+            ("gpt-6-astra", "gpt-6-sol", Some(true)),
+            ("gpt-6.1-sol", "gpt-6-sol", Some(false)),
+            ("gpt-6-sol", "gpt-5.6-terra", None),
+            ("", " GPT-5.6-LUNA ", None),
+            ("claude-sonnet-5", "gpt-5.6-luna", Some(true)),
+            ("gpt-6-sol", "claude-sonnet-5", Some(false)),
+        ] {
             assert_eq!(
-                compare_models(requested, predicted) == Some(true),
+                compare_models(requested, predicted),
                 expected,
                 "{requested} / {predicted}"
             );

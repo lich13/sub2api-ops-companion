@@ -345,6 +345,9 @@ struct FeaturesAndSettingsTests {
             if payload.contains("/proxy-management") {
                 return proxiesJSON
             }
+            if payload.contains("/sub2api-config/operation") {
+                return "{\"status\":\"idle\"}"
+            }
             if payload.contains("/sub2api-config") {
                 return sub2apiCfgJSON
             }
@@ -435,6 +438,118 @@ struct FeaturesAndSettingsTests {
                 outputURL: baseURL.appendingPathComponent("m5_settings_\(suffix).png")
             )
         }
+    }
+
+    @Test("Sub2ApiConfigSession locks draft on remote revision change, load failure, and uncertain apply")
+    func sub2ApiConfigConcurrencyAndUncertainApplyProtection() throws {
+        var session = Sub2ApiConfigSession()
+        let initial = Sub2ApiConfigTabView.ConfigDocumentDTO(
+            available: true,
+            editable: true,
+            revision: "rev-1",
+            runtime_revision: "run-1"
+        )
+        session.applyLoaded(initial, resetDraft: false)
+        #expect(session.document?.editable == true)
+
+        // User edits a field locally
+        session.draft["server.port"] = Sub2ApiConfigTabView.DraftChange(path: "server.port", remove: false, value: .int(8088))
+
+        // Tab switch reloads a newer remote revision while local draft exists -> lock editable & preserve draft
+        let remoteChanged = Sub2ApiConfigTabView.ConfigDocumentDTO(
+            available: true,
+            editable: true,
+            revision: "rev-2",
+            runtime_revision: "run-1"
+        )
+        session.applyLoaded(remoteChanged, resetDraft: false)
+        #expect(session.conflicted == true)
+        #expect(session.document?.editable == false)
+        #expect(session.document?.reason.contains("远程配置或运行态已变更") == true)
+        #expect(session.draft["server.port"] != nil)
+
+        // Discarding local draft requests reload and clears conflict
+        let needsReload = session.discardAll()
+        #expect(needsReload == true)
+        #expect(session.draft.isEmpty)
+        session.applyLoaded(remoteChanged, resetDraft: true, protectDraft: false)
+        #expect(session.document?.editable == true)
+
+        // Load failure locks stale document editable = false, and discardAll() recovers via reload
+        session.draft["server.port"] = Sub2ApiConfigTabView.DraftChange(path: "server.port", remove: false, value: .int(8091))
+        session.handleLoadFailure("连接超时")
+        #expect(session.document?.editable == false)
+        #expect(session.errorText == "连接超时")
+        #expect(session.discardAll() == true)
+        #expect(session.errorText.isEmpty)
+
+        // Per-field undo of the last draft item also clears conflict lock & path-scoped issues
+        session.applyLoaded(remoteChanged, resetDraft: true, protectDraft: false)
+        session.draft["server.port"] = Sub2ApiConfigTabView.DraftChange(path: "server.port", remove: false, value: .int(8092))
+        session.issues = [HostFieldIssue(path: "server.port", message: "端口冲突")]
+        session.applyLoaded(
+            Sub2ApiConfigTabView.ConfigDocumentDTO(available: true, editable: true, revision: "rev-3", runtime_revision: "run-1"),
+            resetDraft: false
+        )
+        #expect(session.conflicted == true)
+        #expect(session.undoField("server.port") == true)
+        #expect(session.conflicted == false)
+        #expect(session.issues.isEmpty)
+
+        // Restore clean editable state with draft, then simulate apply network error -> applyUncertain
+        session.applyLoaded(remoteChanged, resetDraft: true, protectDraft: false)
+        session.draft["server.port"] = Sub2ApiConfigTabView.DraftChange(path: "server.port", remove: false, value: .int(8090))
+        session.handleApplyFailure("请求中断")
+        #expect(session.applyUncertain == true)
+        #expect(Sub2ApiConfigSession.isRunning(session.hostOp) == true)
+
+        // Polling encounters historical "succeeded" while uncertain -> MUST NOT reset draft!
+        let resolution = session.handlePolledOperation(HostOperationReply(status: "succeeded", message: "上次重启完成", updated_at: nil))
+        #expect(resolution == .reloadKeepingDraft)
+        #expect(session.applyUncertain == false)
+        #expect(session.hostOp?.status == "failed")
+        #expect(session.hostOp?.message?.contains("草稿已保留") == true)
+        #expect(session.draft["server.port"] != nil)
+
+        // Switching connection resets session completely so cross-server drafts cannot leak or lock
+        session.resetForConnection()
+        #expect(session.document == nil)
+        #expect(session.draft.isEmpty)
+        #expect(session.hostOp == nil)
+        #expect(session.conflicted == false)
+        #expect(session.applyUncertain == false)
+
+        // Also verify unavailable wire payload decodes without missing-key failure
+        let unavailableData = Data("{\"available\":false,\"editable\":false,\"reason\":\"此服务尚未配置宿主机配置接口\"}".utf8)
+        let unavailableDoc = try JSONDecoder().decode(Sub2ApiConfigTabView.ConfigDocumentDTO.self, from: unavailableData)
+        #expect(unavailableDoc.available == false)
+        #expect(unavailableDoc.editable == false)
+        #expect(unavailableDoc.reason == "此服务尚未配置宿主机配置接口")
+    }
+
+    @Test("ModelTestSheet gates test start until policy version is loaded and clean")
+    func modelTestPolicyReadinessGate() {
+        let models = [ModelOption(id: "gpt-6-luna", display_name: "GPT-6 Luna")]
+        // Loading policy -> blocked
+        #expect(ModelTestSheet.canStartTest(
+            online: true, loadingModels: false, isRunning: false,
+            policyLoading: true, policySaving: false, policyVersion: "",
+            policyDirty: false, policyError: "", selectedModel: "gpt-6-luna", models: models
+        ) == false)
+
+        // Policy load failed (empty version) -> blocked
+        #expect(ModelTestSheet.canStartTest(
+            online: true, loadingModels: false, isRunning: false,
+            policyLoading: false, policySaving: false, policyVersion: "",
+            policyDirty: false, policyError: "读取失败", selectedModel: "gpt-6-luna", models: models
+        ) == false)
+
+        // Policy loaded, clean, model valid -> allowed
+        #expect(ModelTestSheet.canStartTest(
+            online: true, loadingModels: false, isRunning: false,
+            policyLoading: false, policySaving: false, policyVersion: String(repeating: "a", count: 64),
+            policyDirty: false, policyError: "", selectedModel: "gpt-6-luna", models: models
+        ) == true)
     }
 }
 }

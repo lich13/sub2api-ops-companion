@@ -3,7 +3,7 @@ import SwiftUI
 /// Matches `desktop/src/ConnectionStatusCard.tsx`.
 public struct ConnectionStatusCardView: View {
     public let connectionKey: String
-    @State private var status: UpstreamConnectionStatus?
+    @State private var status: ConnectionReply?
     @State private var error: String = ""
     @State private var loading: Bool = false
     @State private var revision: Int = 0
@@ -89,7 +89,7 @@ public struct ConnectionStatusCardView: View {
             status = nil
             error = ""
             do {
-                let fetched: UpstreamConnectionStatus = try await RustBridge.shared.api("GET", "/connection-status")
+                let fetched: ConnectionReply = try await RustBridge.shared.api("GET", "/connection-status")
                 if !Task.isCancelled {
                     status = fetched
                 }

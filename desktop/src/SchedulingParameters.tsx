@@ -13,9 +13,9 @@ import { useDialogFocus } from "./dialogFocus";
 import type { Account } from "./types";
 import "./account-settings.css";
 
-export type SchedulingField = "concurrency" | "load_factor";
+type SchedulingField = "concurrency" | "load_factor";
 const labels = { concurrency: "并发", load_factor: "负载因子" };
-export function NumericEditor({
+function NumericEditor({
   account,
   field,
   online,

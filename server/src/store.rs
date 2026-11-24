@@ -102,17 +102,14 @@ impl Store {
         defaults: Value,
         validate: Validator,
     ) -> Self {
-        Self::with_loader(path, lock_path, defaults, validate, |_| Ok(false))
-    }
-
-    pub(crate) fn with_loader(
-        path: PathBuf,
-        lock_path: PathBuf,
-        defaults: Value,
-        validate: Validator,
-        load: Loader,
-    ) -> Self {
-        Self::typed(path, lock_path, defaults, validate, load, |_| Ok(()))
+        Self::typed(
+            path,
+            lock_path,
+            defaults,
+            validate,
+            |_| Ok(false),
+            |_| Ok(()),
+        )
     }
 
     pub fn policy(path: impl Into<PathBuf>, mut defaults: Value) -> Self {

@@ -424,18 +424,20 @@ public final class AppStore {
         modelTestConcurrency: Int? = nil,
         modelTestPreferences: [String: ModelTestPreference]? = nil
     ) async {
-        let p = state.preferences
-        var args: [String: JSONValue] = [
-            "pinned": .bool(pinned ?? p.pinned),
-            "launchAtLogin": .bool(launchAtLogin ?? p.launch_at_login),
-        ]
-        if let cols = recordColumns ?? p.record_columns {
+        var args: [String: JSONValue] = [:]
+        if let pinned {
+            args["pinned"] = .bool(pinned)
+        }
+        if let launchAtLogin {
+            args["launchAtLogin"] = .bool(launchAtLogin)
+        }
+        if let cols = recordColumns {
             args["recordColumns"] = .array(cols.map(JSONValue.string))
         }
-        if let conc = modelTestConcurrency ?? p.model_test_concurrency {
+        if let conc = modelTestConcurrency {
             args["modelTestConcurrency"] = .int(Int64(conc))
         }
-        if let prefsMap = modelTestPreferences ?? p.model_test_preferences {
+        if let prefsMap = modelTestPreferences {
             args["modelTestPreferences"] = .object(
                 prefsMap.mapValues { pref in
                     .object([

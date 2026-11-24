@@ -182,7 +182,7 @@ public struct PrioritiesPageView: View {
                 await readPriorities()
             }
         }
-        .task(id: activeTask?.id ?? "") {
+        .task(id: "\(store.connectionKey):\(activeTask?.id ?? ""):\(store.state.online)") {
             guard let task = activeTask, task.isPending, store.state.online else { return }
             await pollActiveTask(id: task.id)
         }

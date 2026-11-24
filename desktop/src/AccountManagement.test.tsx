@@ -102,8 +102,6 @@ async function openAutoResetSettings(
     error: "",
     preferences: {
       base_url: "https://settings.invalid",
-      pinned: false,
-      launch_at_login: false,
     },
     snapshot: {
       observed_at: "2026-09-30T04:00:00Z",
@@ -443,8 +441,6 @@ it("selects current filters, preserves live selections on polling and clears on 
     error: "",
     preferences: {
       base_url: "https://qa.invalid",
-      pinned: false,
-      launch_at_login: false,
     },
     snapshot: {
       observed_at: "2026-09-26T00:00:00Z",
@@ -521,8 +517,6 @@ it("keeps batch actions adjacent and requires confirmation before deleting selec
     error: "",
     preferences: {
       base_url: "https://qa.invalid",
-      pinned: false,
-      launch_at_login: false,
     },
     snapshot: {
       observed_at: "2026-09-26T00:00:00Z",
@@ -768,8 +762,6 @@ it("offers batch reset cards only for a selection holding one and spends nothing
     error: "",
     preferences: {
       base_url: "https://qa.invalid",
-      pinned: false,
-      launch_at_login: false,
     },
     snapshot: {
       observed_at: "2026-09-26T00:00:00Z",

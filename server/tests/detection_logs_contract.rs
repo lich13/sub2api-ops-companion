@@ -1,3 +1,6 @@
+#[path = "common/harness.rs"]
+mod test_harness;
+
 use serde_json::{json, Value};
 use std::{fs, path::PathBuf, sync::Arc};
 use sub2ops_server::{
@@ -176,15 +179,7 @@ impl Harness {
         .unwrap();
         let database_url = std::env::var("DATABASE_URL").expect("isolated test DATABASE_URL");
         let settings = Settings {
-            database_url,
-            bind: "127.0.0.1:0".into(),
-            base_path: String::new(),
-            audit_path: root.path().join("audit.jsonl"),
-            usage_path: root.path().join("oauth-state.json"),
-            oauth_path: root.path().join("oauth-config.json"),
-            bark_path: root.path().join("bark-config.json"),
             connection_path,
-            keepalive_path: root.path().join("keepalive-state.json"),
             oauth: json!({
                 "model_detection_model_id":"gpt-6-luna",
                 "oauth_auto_reset_credit_enabled":false,
@@ -197,10 +192,7 @@ impl Harness {
                 "oauth_recovery_test_model_id":"gpt-6-luna",
                 "oauth_usage_refresh_concurrency":1
             }),
-            bark: json!({"enabled":false}),
-            bark_valid: true,
-            base_url: "http://127.0.0.1:9".into(),
-            verify_url: String::new(),
+            ..test_harness::runtime_settings(database_url, root.path(), "http://127.0.0.1:9")
         };
         let runtime = Runtime::new(settings).await.unwrap();
         Self {

@@ -118,10 +118,7 @@ export function setField(
       }
     : { ...draft, [section]: value };
 }
-export function applicable(
-  f: Field,
-  draft: Pick<CreationDraft, "platform" | "type">,
-) {
+function applicable(f: Field, draft: Pick<CreationDraft, "platform" | "type">) {
   return (
     (!f.platforms || f.platforms.includes(draft.platform)) &&
     (!f.types || f.types.includes(draft.type))
@@ -217,11 +214,11 @@ const providerMode = (platform: string, mode?: string) => {
     profile?.modes.find((value) => value.mode === profile.default_mode)
   );
 };
-export const multiProtocol = (platform: string) => !!providerProfile(platform);
+const multiProtocol = (platform: string) => !!providerProfile(platform);
 export function protocols(platform: string, mode?: string) {
   return Object.keys(providerMode(platform, mode)?.base_urls ?? {});
 }
-export function officialGemini(value: unknown) {
+function officialGemini(value: unknown) {
   if (!String(value ?? "").trim()) return true;
   try {
     const url = new URL(String(value));

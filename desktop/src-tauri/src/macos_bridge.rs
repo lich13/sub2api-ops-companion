@@ -235,9 +235,9 @@ struct ApiRequestArgs {
 #[derive(Deserialize)]
 struct PreferencesArgs {
     #[serde(default)]
-    pinned: bool,
+    pinned: Option<bool>,
     #[serde(default, alias = "launchAtLogin")]
-    launch_at_login: bool,
+    launch_at_login: Option<bool>,
     #[serde(default, alias = "recordColumns")]
     record_columns: Option<Vec<String>>,
     #[serde(default, alias = "modelTestConcurrency")]

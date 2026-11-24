@@ -18,7 +18,11 @@ import {
   type Operation,
   type OperationBatch as Batch,
 } from "./accountOperations";
-import type { ModelProfileReply as Profile } from "./protocol";
+import type {
+  ModelProfileReply as Profile,
+  TemplateMetaEntry,
+  TemplatesHeader,
+} from "./protocol";
 import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
 import type { Account } from "./types";
@@ -27,13 +31,9 @@ export type {
   ModelMappingRule,
   ModelProfileReply as Profile,
 } from "./protocol";
-type Config = {
-  version: string;
-  configured: boolean;
-  templates: Record<string, Profile>;
-  template_meta: Record<string, { name: string }>;
+type Config = Omit<TemplatesHeader, "template_meta" | "template_order"> & {
+  template_meta: Record<string, TemplateMetaEntry>;
   template_order: string[];
-  template_versions?: Record<string, string>;
 };
 type Draft = Profile & { name: string };
 type AccountConfig = {

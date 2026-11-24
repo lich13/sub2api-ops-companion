@@ -211,7 +211,7 @@ pub fn quota_windows(row: &Value, at: Option<DateTime<Utc>>) -> Value {
     )
 }
 
-pub fn sanitize_summary(row: &Value, summary: &Value) -> Value {
+fn sanitize_summary(row: &Value, summary: &Value) -> Value {
     let mut summary = summary.clone();
     let plan = account_plan(row);
     summary["plan_type"] = plan.clone().into();

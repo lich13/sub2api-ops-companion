@@ -146,17 +146,17 @@ pub fn batch(value: &mut Value, template: bool) -> Result<()> {
     Ok(())
 }
 
-pub(crate) struct Submission<'a> {
-    pub action: &'a str,
-    pub rid: &'a str,
-    pub client: &'a str,
-    pub expected: &'a str,
-    pub payload: Option<&'a Value>,
-    pub scheduled: Option<chrono::DateTime<chrono::Utc>>,
-    pub repeat: Option<&'a Value>,
+pub struct Submission<'a> {
+    pub(crate) action: &'a str,
+    pub(crate) rid: &'a str,
+    pub(crate) client: &'a str,
+    pub(crate) expected: &'a str,
+    pub(crate) payload: Option<&'a Value>,
+    pub(crate) scheduled: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) repeat: Option<&'a Value>,
 }
 
-pub(crate) fn submission(value: &Value) -> Result<Submission<'_>> {
+pub fn submission(value: &Value) -> Result<Submission<'_>> {
     fields(
         value,
         &[

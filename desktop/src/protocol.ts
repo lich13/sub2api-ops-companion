@@ -914,11 +914,21 @@ export interface ProxyTestReply {
 }
 
 export interface QuotaRefreshEntry {
+  account_id?: number;
+  account_name?: string;
+  platform?: string;
+  status?: string;
+  error?: string;
   usage?: UsageSummaryRecord;
 }
 
 export interface QuotaRefreshHeader {
+  id?: string;
   status: string;
+  total?: number;
+  completed?: number;
+  started_at?: string;
+  completed_at?: string;
   items: QuotaRefreshEntry[];
 }
 
@@ -984,10 +994,18 @@ export interface SystemVersionReply {
   version: string;
 }
 
+export interface TemplateMetaEntry {
+  name: string;
+  builtin?: boolean;
+}
+
 export interface TemplatesHeader {
   version: string;
   configured: boolean;
   templates: Record<string, ModelProfileReply>;
+  template_meta?: Record<string, TemplateMetaEntry>;
+  template_order?: string[];
+  template_versions?: Record<string, string>;
 }
 
 export interface TokenAuthorization {
@@ -1015,4 +1033,27 @@ export interface VerifiedAccountReply {
   account_id: number;
   verified: boolean;
   status: string;
+}
+
+export enum DefaultModelId {
+  Detection = "gpt-6-luna",
+  LegacyDegraded = "gpt-5.6-luna",
+}
+
+export enum RecordColumnId {
+  ApiKey = "api_key",
+  Account = "account",
+  Model = "model",
+  Type = "type",
+  Reasoning = "reasoning",
+  Tokens = "tokens",
+  Cost = "cost",
+  Latency = "latency",
+  UserAgent = "user_agent",
+  Ip = "ip",
+  Endpoint = "endpoint",
+  Group = "group",
+  Billing = "billing",
+  RequestId = "request_id",
+  UpstreamId = "upstream_id",
 }

@@ -168,44 +168,4 @@ public struct AccountCreationCatalog: Codable, Sendable {
     }()
 }
 
-public struct OAuthAuthorizationSession: Codable, Sendable, Equatable {
-    public var auth_url: String
-    public var session_id: String
-    public var state: String?
-}
-
-public struct CreationOptionsResponse: Codable, Sendable, Equatable {
-    public struct GroupOption: Codable, Sendable, Equatable, Identifiable {
-        public var id: Int
-        public var name: String
-        public var platform: String
-        public var status: String?
-        public var long_context_pricing_enabled: Bool?
-    }
-
-    public struct ProxyOption: Codable, Sendable, Equatable, Identifiable {
-        public var id: Int
-        public var name: String
-        public var status: String?
-    }
-
-    public var groups: [GroupOption]?
-    public var proxies: [ProxyOption]?
-}
-
-public struct CreationCreatedResponse: Codable, Sendable, Equatable {
-    public struct CreatedAccount: Codable, Sendable, Equatable {
-        public var id: Int
-        public var name: String
-        public var platform: String
-        public var type: String
-    }
-
-    public var account: CreatedAccount
-    public var warnings: [String]?
-}
-
-public struct CreationTLSProfileOption: Codable, Sendable, Equatable, Identifiable {
-    public var id: Int
-    public var name: String
-}
+extension ChoiceRecord: Identifiable {}

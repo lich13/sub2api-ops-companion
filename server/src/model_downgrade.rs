@@ -3,21 +3,21 @@ use crate::compat::{integer, string};
 use serde_json::Value;
 use std::cmp::Ordering;
 
-pub const LEGACY_TARGET: &str = "gpt-5.6-luna";
+pub use sub2ops_protocol::dto::LEGACY_DEGRADED_MODEL as LEGACY_TARGET;
 pub const DEFAULT_TEST_MODEL: &str = LEGACY_TARGET;
 
-pub fn valid_report(report: &Value) -> bool {
+pub(crate) fn valid_report(report: &Value) -> bool {
     integer(&report["used_outputs"]).is_some_and(|used| used >= 1)
         && !string(&report["prediction"]).trim().is_empty()
 }
 
-pub fn bank_contains(bank: &Value, model: &str) -> bool {
+pub(crate) fn bank_contains(bank: &Value, model: &str) -> bool {
     bank["models"]
         .as_array()
         .is_some_and(|models| models.iter().any(|entry| entry["id"] == model))
 }
 
-fn parse(model: &str) -> Option<(&str, u8)> {
+pub(crate) fn parse_gpt(model: &str) -> Option<(&str, u8)> {
     let (version, tier) = model.strip_prefix("gpt-")?.rsplit_once('-')?;
     let tier = match tier {
         "astra" => 3,
@@ -33,7 +33,7 @@ fn parse(model: &str) -> Option<(&str, u8)> {
         .then_some((version, tier))
 }
 
-fn compare_versions(left: &str, right: &str) -> Ordering {
+pub(crate) fn compare_versions(left: &str, right: &str) -> Ordering {
     let mut left = left.split('.');
     let mut right = right.split('.');
     loop {
@@ -67,7 +67,7 @@ pub fn is_downgrade(requested: &str, predicted: &str) -> bool {
         return false;
     }
     let (Some((requested_version, requested_tier)), Some((predicted_version, predicted_tier))) =
-        (parse(&requested), parse(&predicted))
+        (parse_gpt(&requested), parse_gpt(&predicted))
     else {
         return false;
     };
@@ -87,7 +87,7 @@ pub(crate) fn diagnose_prediction(requested: &str, predicted: &str) {
     if !predicted.is_empty()
         && predicted != LEGACY_TARGET
         && predicted != requested
-        && (parse(&requested).is_none() || parse(&predicted).is_none())
+        && (parse_gpt(&requested).is_none() || parse_gpt(&predicted).is_none())
     {
         eprintln!("model_detection_diagnostic level=debug reason=unsupported_model");
     }

@@ -13,7 +13,7 @@ public struct AccountsPageView: View {
     @State private var statusFilter: String = ""
     @State private var selectedIds: Set<Int> = []
     @State private var nameExpanded: Bool = UserDefaults.standard.bool(forKey: "sub2ops-account-name-expanded")
-    @State private var quotaJob: QuotaRefreshJob? = nil
+    @State private var quotaJob: QuotaRefreshHeader? = nil
     @State private var connectionBatch: OperationBatch? = nil
     @State private var batchBusy: Bool = false
     @State private var measuredWidth: CGFloat = 1085
@@ -558,12 +558,12 @@ public struct AccountsPageView: View {
         guard store.state.online else { return }
         nativeUsage.refreshAll(accounts: store.accounts)
         do {
-            let started: QuotaRefreshJob = try await RustBridge.shared.api("POST", "/quota-refresh", body: .object([:]))
+            let started: QuotaRefreshHeader = try await RustBridge.shared.api("POST", "/quota-refresh", body: .object([:]))
             quotaJob = started
             while quotaJob?.status == "running" || quotaJob?.status == "queued" {
                 try? await Task.sleep(for: .milliseconds(800))
                 guard !Task.isCancelled, store.state.online else { return }
-                let polled: QuotaRefreshJob = try await RustBridge.shared.api("GET", "/quota-refresh")
+                let polled: QuotaRefreshHeader = try await RustBridge.shared.api("GET", "/quota-refresh")
                 quotaJob = polled
             }
             store.refresh()

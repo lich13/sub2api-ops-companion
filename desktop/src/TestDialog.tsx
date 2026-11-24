@@ -23,7 +23,7 @@ import {
 import { readAccountModels, modelDirectoryRevoked } from "./accountModels";
 import { useBackAction } from "./mobile";
 
-export type TestMode =
+type TestMode =
   | "default"
   | "compact"
   | "text"
@@ -33,7 +33,7 @@ export type TestMode =
   | "tts"
   | "stt"
   | "realtime";
-export type TestModel = { id: string; display_name: string; type: string };
+type TestModel = { id: string; display_name: string; type: string };
 const defaults: Partial<Record<TestMode, string>> = {
   image:
     "Generate a cute orange cat astronaut sticker on a clean pastel background.",
@@ -41,11 +41,7 @@ const defaults: Partial<Record<TestMode, string>> = {
   search: "xAI Grok",
   tts: "Hello from Sub2API account connectivity test.",
 };
-export function modelsForMode(
-  models: TestModel[],
-  platform: string,
-  mode: TestMode,
-) {
+function modelsForMode(models: TestModel[], platform: string, mode: TestMode) {
   if (platform !== "grok") return models;
   if (["search", "tts", "stt", "realtime"].includes(mode)) return [];
   const image = (id: string) =>
@@ -62,11 +58,7 @@ export function modelsForMode(
         : !image(m.id) && !video(m.id),
   );
 }
-export function preferredModel(
-  models: TestModel[],
-  platform: string,
-  mode: TestMode,
-) {
+function preferredModel(models: TestModel[], platform: string, mode: TestMode) {
   const options = modelsForMode(models, platform, mode);
   return (
     (platform === "grok"

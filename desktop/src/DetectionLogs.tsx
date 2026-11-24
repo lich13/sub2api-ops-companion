@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { api } from "./bridge";
+import { DefaultModelId } from "./protocol";
 import { engineName } from "./modelTestTypes";
 import { fullTime } from "./types";
 import { useBackAction } from "./mobile";
@@ -211,7 +212,7 @@ function Facts({ row }: { row: DetectionLog }) {
       <dt>判定模式</dt>
       <dd>
         {summary.verdict_mode === "relaxed"
-          ? `宽松模式 · ${summary.degraded_model_id ?? "gpt-5.6-luna"}`
+          ? `宽松模式 · ${summary.degraded_model_id ?? DefaultModelId.LegacyDegraded}`
           : "严格模式"}
       </dd>
       <dt>执行状态</dt>

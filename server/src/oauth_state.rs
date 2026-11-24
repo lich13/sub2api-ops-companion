@@ -15,7 +15,7 @@ use std::{
 fn invalid(message: &str) -> Error {
     Error::new(503, message)
 }
-pub fn hex_digest(value: &Value) -> bool {
+fn hex_digest(value: &Value) -> bool {
     string(value).len() == 64
         && string(value)
             .bytes()

@@ -1,6 +1,6 @@
 import type { Account, Group } from "./types";
 
-export type GroupDraft = {
+type GroupDraft = {
   id: number;
   name: string;
   version: string;
@@ -12,7 +12,7 @@ export type Drafts = Record<number, GroupDraft>;
 export type Zone = "left" | "both" | "right" | "none";
 export const ids = (values: number[]) =>
   [...new Set(values)].sort((a, b) => a - b);
-export const sameIds = (a: number[], b: number[]) =>
+const sameIds = (a: number[], b: number[]) =>
   JSON.stringify(ids(a)) === JSON.stringify(ids(b));
 export function platformGroups(groups: Group[], platform: string) {
   return groups

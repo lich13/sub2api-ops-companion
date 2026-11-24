@@ -565,7 +565,6 @@ impl Harness {
         let settings = Settings {
             database_url,
             bind: "127.0.0.1:0".into(),
-            base_path: String::new(),
             audit_path: temp.path().join("audit.jsonl"),
             usage_path: temp.path().join("oauth-state.json"),
             oauth_path: temp.path().join("oauth-config.json"),

@@ -56,7 +56,7 @@ pub mod oauth_state;
 pub mod operations;
 pub mod priority_orders;
 pub mod proxy_diagnostics;
-pub mod proxy_management;
+pub(crate) mod proxy_management;
 pub mod queries;
 pub mod quota;
 mod quota_refresh;
@@ -65,7 +65,8 @@ pub(crate) mod recovery_models;
 pub mod recovery_policy;
 pub mod recovery_rules;
 pub(crate) mod recovery_verification;
-mod request_schema;
+#[doc(hidden)]
+pub mod request_schema;
 pub mod reset_credit_observation;
 pub mod runtime;
 mod runtime_hooks;

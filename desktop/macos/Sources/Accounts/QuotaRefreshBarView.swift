@@ -1,16 +1,18 @@
 import SwiftUI
 
 public struct QuotaRefreshBarView: View {
-    public let job: QuotaRefreshJob?
+    public let job: QuotaRefreshHeader?
 
-    public init(job: QuotaRefreshJob?) {
+    public init(job: QuotaRefreshHeader?) {
         self.job = job
     }
 
     public var body: some View {
-        if let job, job.status != "idle", job.total > 0 {
+        let total = job?.total ?? 0
+        let completed = job?.completed ?? 0
+        if let job, job.status != "idle", total > 0 {
             let active = job.status == "running" || job.status == "queued"
-            let ratio = min(1.0, max(0.0, Double(job.completed) / Double(max(1, job.total))))
+            let ratio = min(1.0, max(0.0, Double(completed) / Double(max(1, total))))
             HStack(spacing: 10) {
                 if active {
                     ProgressView().controlSize(.small)
@@ -31,7 +33,7 @@ public struct QuotaRefreshBarView: View {
                 }
                 .frame(width: 120, height: 6)
 
-                Text("\(job.completed) / \(job.total)")
+                Text("\(completed) / \(total)")
                     .font(DS.fontCompact)
                     .monospacedDigit()
                     .foregroundStyle(DS.muted)

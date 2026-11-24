@@ -36,7 +36,7 @@ export type ProxyPage = Omit<ProxyPageReply, "items"> & {
 export type ConnectionResult = Omit<ProxyTestReply, "latency_ms"> & {
   latency_ms: number | null;
 };
-export type QualityCheck = Omit<
+type QualityCheck = Omit<
   ProxyQualityCheck,
   "status" | "latency_ms" | "http_status"
 > & {

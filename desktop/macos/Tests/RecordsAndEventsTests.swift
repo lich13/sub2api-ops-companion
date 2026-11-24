@@ -96,7 +96,7 @@ struct RecordsAndEventsTests {
     func recordReadingPosition() async {
         let heads = OSAllocatedUnfairLock(initialState: 9)
         RustBridge.shared.setMockHandler { _, payload in
-            if payload.contains("after_id=") { return #"{"new_count":1}"# }
+            if payload.contains("after_id=") { return #"{"new_count":1,"latest_id":11}"# }
             let page = payload.contains("cursor=more")
             let id = page ? 8 : heads.withLock { $0 += 1; return $0 }
             let cursor = page ? "null" : #""more""#

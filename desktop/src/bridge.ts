@@ -15,7 +15,6 @@ type Commands = {
   preferences: [
     [
       {
-        pinned?: boolean;
         recordColumns?: string[] | null;
         modelTestConcurrency?: number | null;
         modelTestPreferences?: Preferences["model_test_preferences"];
@@ -35,11 +34,7 @@ export async function command<K extends CommandName>(
   name: K,
   ...parameters: Commands[K][0]
 ): Promise<Commands[K][1]> {
-  const rawArgs = parameters[0] ?? {};
-  const args =
-    name === "preferences"
-      ? { pinned: false, launchAtLogin: false, ...rawArgs }
-      : rawArgs;
+  const args = parameters[0] ?? {};
   try {
     if (native) return await invoke<Commands[K][1]>(name, args);
     if (import.meta.env.DEV && preview) {

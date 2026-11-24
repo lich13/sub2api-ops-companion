@@ -9,6 +9,10 @@ public struct KeyQuotaView: View {
         self.onOpenSettings = onOpenSettings
     }
 
+    static func todayRequestsLabel(_ requests: Double?) -> String {
+        "今日 \(UsageFormatting.compactTokens(requests ?? 0)) req"
+    }
+
     public var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             ForEach(Array(quota.plans.enumerated()), id: \.offset) { _, plan in
@@ -34,9 +38,11 @@ public struct KeyQuotaView: View {
                 }
             }
 
-            if let today = quota.today, (today.requests ?? 0) > 0 || (today.cost ?? 0) > 0 {
+            if let today = quota.today,
+               (today.requests ?? 0) > 0 || (today.tokens ?? 0) > 0 || (today.cost ?? 0) > 0
+            {
                 HStack(spacing: 6) {
-                    Text("今日 \(today.requests ?? 0) req")
+                    Text(verbatim: Self.todayRequestsLabel(today.requests))
                     if let tok = today.tokens {
                         Text(UsageFormatting.compactTokens(tok))
                     }

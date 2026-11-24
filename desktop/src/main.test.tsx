@@ -69,8 +69,6 @@ const state = (): ViewState => ({
   error: "",
   preferences: {
     base_url: "https://fixture.invalid",
-    pinned: false,
-    launch_at_login: false,
   },
   snapshot: {
     observed_at: "2026-10-01T03:00:00Z",
@@ -1126,8 +1124,6 @@ describe("main account selection surface", () => {
     ...state(),
     preferences: {
       base_url: "https://main-041.example.invalid",
-      pinned: false,
-      launch_at_login: false,
     },
     snapshot: {
       observed_at: "2026-10-14T00:00:00Z",

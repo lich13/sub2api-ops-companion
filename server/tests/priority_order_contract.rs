@@ -1,13 +1,15 @@
 #[path = "support/fingerprint_cache.rs"]
 mod fingerprint_cache;
+#[path = "common/harness.rs"]
+mod test_harness;
 
 use axum::{
     body::to_bytes,
     extract::{Request, State},
     http::{Method, StatusCode},
-    response::{IntoResponse, Response},
+    response::Response,
     routing::any,
-    Json, Router,
+    Router,
 };
 use serde_json::{json, Value};
 use sqlx::{postgres::PgPoolOptions, Connection, PgConnection, PgPool};
@@ -26,7 +28,11 @@ use sub2ops_server::{
     runtime::Runtime,
     settings::Settings,
 };
-use tokio::{net::TcpListener, sync::Notify, task::JoinHandle};
+use test_harness::{
+    account_path_id, operation_settings, spawn_loopback, status_json as response,
+    write_loopback_config, Gate as WriteGate, PriorityOrdersTestExt,
+};
+use tokio::task::JoinHandle;
 
 const FIXTURES_V2: &str = include_str!("../../tests/contracts/priority-order/fixtures-v2.json");
 const ADMIN_KEY: &str = "fixture-priority-order-admin";
@@ -42,12 +48,6 @@ enum WriteMode {
     Confirmed,
     UnknownApplied,
     UnknownNotApplied,
-}
-
-#[derive(Default)]
-struct WriteGate {
-    entered: Notify,
-    release: Notify,
 }
 
 #[derive(Clone, Debug)]
@@ -133,12 +133,8 @@ impl MockUpstream {
     }
 }
 
-fn response(status: StatusCode, value: Value) -> Response {
-    (status, Json(value)).into_response()
-}
-
 fn account_id(path: &str) -> Option<i64> {
-    path.strip_prefix("/api/v1/admin/accounts/")?.parse().ok()
+    account_path_id(path, "")
 }
 
 async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> Response {
@@ -259,26 +255,21 @@ impl Harness {
 
         let temp = tempfile::tempdir().expect("create priority-order state directory");
         fingerprint_cache::seed(temp.path(), chrono::Utc::now());
-        let upstream_listener = TcpListener::bind(("127.0.0.1", 0))
+        let database_pool = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(database_url.as_str())
             .await
-            .expect("bind priority-order upstream fixture");
-        let upstream_url = format!("http://{}", upstream_listener.local_addr().unwrap());
-        let connection_path = temp.path().join("sub2api-config.json");
-        fs::write(
-            &connection_path,
-            serde_json::to_vec(&json!({"base_url":upstream_url,"verify_base_url":""})).unwrap(),
+            .expect("open fixture pool for upstream mock");
+        let upstream = MockUpstream::new(database_pool);
+        let (upstream_url, upstream_task) = spawn_loopback(
+            Router::new()
+                .fallback(any(mock_upstream))
+                .with_state(upstream.clone()),
         )
-        .expect("write priority-order connection config");
+        .await;
+        let connection_path = write_loopback_config(temp.path(), &upstream_url);
         let settings = Settings {
-            database_url: database_url.to_string(),
-            bind: "127.0.0.1:0".into(),
-            base_path: String::new(),
-            audit_path: temp.path().join("audit.jsonl"),
-            usage_path: temp.path().join("usage-state.json"),
-            oauth_path: temp.path().join("oauth-state.json"),
-            bark_path: temp.path().join("bark-state.json"),
             connection_path,
-            keepalive_path: temp.path().join("keepalive-state.json"),
             oauth: json!({
                 "oauth_recovery_monitor_enabled":false,
                 "oauth_daily_test_enabled":false,
@@ -290,41 +281,12 @@ impl Harness {
                 "oauth_recovery_connection_account_ids":[],
                 "oauth_recovery_model_account_ids":[]
             }),
-            bark: json!({"enabled":false}),
-            bark_valid: true,
-            base_url: upstream_url,
-            verify_url: String::new(),
+            ..operation_settings(database_url.to_string(), temp.path(), upstream_url)
         };
-        let database_pool = PgPoolOptions::new()
-            .max_connections(2)
-            .connect(database_url.as_str())
-            .await
-            .expect("open fixture pool for upstream mock");
-        let upstream = MockUpstream::new(database_pool);
-        let upstream_state = upstream.clone();
-        let upstream_task = tokio::spawn(async move {
-            axum::serve(
-                upstream_listener,
-                Router::new()
-                    .fallback(any(mock_upstream))
-                    .with_state(upstream_state),
-            )
-            .await
-            .expect("serve priority-order upstream fixture");
-        });
         let runtime = Runtime::new(settings)
             .await
             .expect("construct priority-order runtime");
-        let app_listener = TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .expect("bind priority-order desktop API");
-        let base_url = format!("http://{}", app_listener.local_addr().unwrap());
-        let api_runtime = runtime.clone();
-        let app_task = tokio::spawn(async move {
-            axum::serve(app_listener, api::router(api_runtime))
-                .await
-                .expect("serve priority-order desktop API");
-        });
+        let (base_url, app_task) = spawn_loopback(api::router(runtime.clone())).await;
         let client = reqwest::Client::builder()
             .no_proxy()
             .build()
@@ -579,16 +541,9 @@ impl Harness {
             .start()
             .await
             .expect("startup recovery should validate persisted priority state");
-        let app_listener = TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .expect("bind restarted priority-order desktop API");
-        self.base_url = format!("http://{}", app_listener.local_addr().unwrap());
-        let api_runtime = runtime.clone();
-        self.app_task = Some(tokio::spawn(async move {
-            axum::serve(app_listener, api::router(api_runtime))
-                .await
-                .expect("serve restarted priority-order desktop API");
-        }));
+        let (base_url, app_task) = spawn_loopback(api::router(runtime.clone())).await;
+        self.base_url = base_url;
+        self.app_task = Some(app_task);
         self.runtime = runtime;
     }
 
@@ -1120,7 +1075,7 @@ async fn restart_reconciles_a_dispatched_applied_write_without_replay() {
     let accepted = harness
         .runtime
         .priorities
-        .submit(&json!({
+        .submit_test(&json!({
             "platform":"openai","ordered_account_ids":[id],
             "expected_version":view["version"],"request_id":"fixture-priority-restart-applied-0001",
             "client_id":CLIENT_ID
@@ -1167,7 +1122,7 @@ async fn restart_marks_an_unapplied_dispatched_write_for_confirmation_without_re
     let accepted = harness
         .runtime
         .priorities
-        .submit(&json!({
+        .submit_test(&json!({
             "platform":"openai","ordered_account_ids":[id],
             "expected_version":view["version"],"request_id":"fixture-priority-restart-unapplied-0001",
             "client_id":CLIENT_ID
@@ -1207,7 +1162,7 @@ async fn restart_continues_only_the_never_dispatched_remaining_item() {
     let accepted = harness
         .runtime
         .priorities
-        .submit(&json!({
+        .submit_test(&json!({
             "platform":"openai","ordered_account_ids":[second, first],
             "expected_version":view["version"],"request_id":"fixture-priority-restart-remaining-0001",
             "client_id":CLIENT_ID

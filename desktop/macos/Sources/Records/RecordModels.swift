@@ -137,10 +137,6 @@ public struct RecordPageEnvelope: Codable, Sendable, Equatable {
     public var summary: RecordSummaryEnvelope?
 }
 
-public struct RecordNewCountEnvelope: Codable, Sendable, Equatable {
-    public var new_count: Int
-}
-
 public struct RecordOption: Codable, Sendable, Equatable, Identifiable {
     public var id: Int
     public var name: String?
@@ -166,26 +162,12 @@ public struct RecordOptionPage: Codable, Sendable, Equatable {
     public var next_cursor: String?
 }
 
-public enum RecordColumnSpec: String, CaseIterable, Sendable {
-    case api_key
-    case account
-    case model
-    case type
-    case reasoning
-    case tokens
-    case cost
-    case latency
-    case user_agent
-    case ip
-    case endpoint
-    case group
-    case billing
-    case request_id
-    case upstream_id
+public typealias RecordColumnSpec = RecordColumnId
 
+extension RecordColumnId {
     public var label: String {
         switch self {
-        case .api_key: return "API 密钥"
+        case .apiKey: return "API 密钥"
         case .account: return "账户"
         case .model: return "模型"
         case .type: return "类型"
@@ -193,19 +175,19 @@ public enum RecordColumnSpec: String, CaseIterable, Sendable {
         case .tokens: return "Token"
         case .cost: return "费用"
         case .latency: return "延迟"
-        case .user_agent: return "User-Agent"
+        case .userAgent: return "User-Agent"
         case .ip: return "IP"
         case .endpoint: return "端点"
         case .group: return "分组"
         case .billing: return "计费模式"
-        case .request_id: return "请求 ID"
-        case .upstream_id: return "上游 ID"
+        case .requestId: return "请求 ID"
+        case .upstreamId: return "上游 ID"
         }
     }
 
     public var width: CGFloat {
         switch self {
-        case .api_key: return 74
+        case .apiKey: return 74
         case .account: return 70
         case .model: return 116
         case .type: return 64
@@ -213,13 +195,13 @@ public enum RecordColumnSpec: String, CaseIterable, Sendable {
         case .tokens: return 112
         case .cost: return 86
         case .latency: return 114
-        case .user_agent: return 104
+        case .userAgent: return 104
         case .ip: return 98
         case .endpoint: return 112
         case .group: return 76
         case .billing: return 48
-        case .request_id: return 122
-        case .upstream_id: return 122
+        case .requestId: return 122
+        case .upstreamId: return 122
         }
     }
 
@@ -234,16 +216,15 @@ public enum RecordColumnSpec: String, CaseIterable, Sendable {
         return widths + CGFloat(columns.count) * columnSpacing + cellPadding * 2
     }
 
-    public static let defaultKeys: [String] = [
-        "api_key", "account", "model", "type", "reasoning",
-        "tokens", "cost", "latency", "user_agent", "ip",
-    ]
+    public static var defaultKeys: [String] {
+        Array(allCases.prefix(10)).map(\.rawValue)
+    }
 
     public static func normalize(_ columns: [String]?) -> [RecordColumnSpec] {
         guard let columns else {
-            return defaultKeys.compactMap(RecordColumnSpec.init(rawValue:))
+            return Array(allCases.prefix(10))
         }
-        return columns.compactMap(RecordColumnSpec.init(rawValue:))
+        return allCases.filter { columns.contains($0.rawValue) }
     }
 }
 

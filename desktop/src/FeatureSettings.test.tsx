@@ -61,8 +61,6 @@ beforeEach(() => {
     error: "",
     preferences: {
       base_url: "https://example.invalid",
-      pinned: false,
-      launch_at_login: false,
     },
     snapshot: {
       observed_at: "2026-10-08T00:00:00Z",

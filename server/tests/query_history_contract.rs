@@ -1,3 +1,6 @@
+#[path = "common/harness.rs"]
+mod test_harness;
+
 use axum::{
     body::Body,
     extract::{Request, State},
@@ -180,40 +183,7 @@ fn transactions(statements: &[String]) -> Vec<Vec<String>> {
 }
 
 fn settings(root: &Path, database_url: String, base_url: &str) -> Arc<Settings> {
-    fs::create_dir_all(root).expect("create owned settings directory");
-    let connection_path = root.join("sub2api-config.json");
-    fs::write(
-        &connection_path,
-        serde_json::to_vec(&json!({"base_url":base_url,"verify_base_url":base_url}))
-            .expect("serialize synthetic loopback connection"),
-    )
-    .expect("write synthetic loopback connection");
-    Arc::new(Settings {
-        database_url,
-        bind: "127.0.0.1:0".into(),
-        base_path: String::new(),
-        audit_path: root.join("audit.jsonl"),
-        usage_path: root.join("oauth-state.json"),
-        oauth_path: root.join("oauth-config.json"),
-        bark_path: root.join("bark-config.json"),
-        connection_path,
-        keepalive_path: root.join("keepalive-state.json"),
-        oauth: json!({
-            "oauth_auto_reset_credit_enabled": false,
-            "oauth_daily_test_enabled": false,
-            "oauth_daily_test_time": "23:59",
-            "oauth_recovery_connection_account_ids": [],
-            "oauth_recovery_model_account_ids": [],
-            "oauth_recovery_monitor_enabled": false,
-            "oauth_recovery_test_concurrency": 1,
-            "oauth_recovery_test_model_id": "fixture-model",
-            "oauth_usage_refresh_concurrency": 1
-        }),
-        bark: json!({"enabled":false,"device_key":"","server_url":""}),
-        bark_valid: true,
-        base_url: base_url.into(),
-        verify_url: base_url.into(),
-    })
+    test_harness::verified_runtime_settings(root, database_url, base_url)
 }
 
 async fn pool(application_name: &str) -> PgPool {

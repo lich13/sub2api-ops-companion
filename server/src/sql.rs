@@ -201,10 +201,7 @@ macro_rules! sql_degradation_candidate {
     };
 }
 
-pub const DESKTOP_SUPPORTED: &str =
-    r####"deleted_at IS NULL AND platform IN ('openai','grok') AND type IN ('oauth','apikey')"####;
-
-pub const DESKTOP_ERROR_WHERE: &str = sql_desktop_error_where!();
+pub(crate) const DESKTOP_ERROR_WHERE: &str = sql_desktop_error_where!();
 
 pub const DESKTOP_ERROR_FIELDS: &str = r####"e.id, e.account_id, e.group_id, e.created_at, e.platform, e.model,
  e.requested_model, e.upstream_model, e.status_code, e.upstream_status_code,
@@ -371,12 +368,6 @@ mod tests {
                 DESKTOP_ACCOUNT_SQL,
                 23898,
                 "c651f4ca508c273df2364e8c953d2c8337ad014a499fc9dff1beb6f8931db940",
-            ),
-            (
-                "DESKTOP_SUPPORTED",
-                DESKTOP_SUPPORTED,
-                83,
-                "17813ec7dcc6a164715366f107c2b33c59e578526ec9387682912dee6e5d75a1",
             ),
             (
                 "DESKTOP_ERROR_WHERE",

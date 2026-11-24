@@ -21,31 +21,53 @@ public enum AccountSettingsTab: String, CaseIterable, Sendable {
     }
 }
 
-public struct AccountModelMappingRule: Codable, Sendable, Equatable {
-    public var source: String
-    public var target: String
+extension ModelProfileReply {
+    public static let empty = ModelProfileReply(whitelist: [], mappings: [])
 
-    public init(source: String = "", target: String = "") {
-        self.source = source
-        self.target = target
-    }
-}
-
-public struct AccountModelProfile: Codable, Sendable, Equatable {
-    public var whitelist: [String]
-    public var mappings: [AccountModelMappingRule]
-
-    public init(whitelist: [String] = [], mappings: [AccountModelMappingRule] = []) {
-        self.whitelist = whitelist
-        self.mappings = mappings
+    public mutating func appendWhitelist(_ items: [String]) {
+        self = ModelProfileReply(whitelist: whitelist + items, mappings: mappings)
     }
 
-    public init(_ reply: ModelProfileReply) {
-        self.whitelist = reply.whitelist
-        self.mappings = reply.mappings.map { AccountModelMappingRule(source: $0.source, target: $0.target) }
+    public mutating func setWhitelist(at idx: Int, _ value: String) {
+        guard whitelist.indices.contains(idx) else { return }
+        var copy = whitelist
+        copy[idx] = value
+        self = ModelProfileReply(whitelist: copy, mappings: mappings)
     }
 
-    public static func validate(_ profile: AccountModelProfile) -> String {
+    public mutating func removeWhitelist(at idx: Int) {
+        guard whitelist.indices.contains(idx) else { return }
+        var copy = whitelist
+        copy.remove(at: idx)
+        self = ModelProfileReply(whitelist: copy, mappings: mappings)
+    }
+
+    public mutating func appendMapping(_ rule: ModelMappingRule = ModelMappingRule(source: "", target: "")) {
+        self = ModelProfileReply(whitelist: whitelist, mappings: mappings + [rule])
+    }
+
+    public mutating func setMappingSource(at idx: Int, _ value: String) {
+        guard mappings.indices.contains(idx) else { return }
+        var copy = mappings
+        copy[idx] = ModelMappingRule(source: value, target: copy[idx].target)
+        self = ModelProfileReply(whitelist: whitelist, mappings: copy)
+    }
+
+    public mutating func setMappingTarget(at idx: Int, _ value: String) {
+        guard mappings.indices.contains(idx) else { return }
+        var copy = mappings
+        copy[idx] = ModelMappingRule(source: copy[idx].source, target: value)
+        self = ModelProfileReply(whitelist: whitelist, mappings: copy)
+    }
+
+    public mutating func removeMapping(at idx: Int) {
+        guard mappings.indices.contains(idx) else { return }
+        var copy = mappings
+        copy.remove(at: idx)
+        self = ModelProfileReply(whitelist: whitelist, mappings: copy)
+    }
+
+    public static func validate(_ profile: ModelProfileReply) -> String {
         var seen = Set<String>()
         let exactRegex = try? NSRegularExpression(pattern: "^[A-Za-z0-9._:/-]{1,200}$")
         let sourceRegex = try? NSRegularExpression(pattern: "^(?:[A-Za-z0-9._:/-]{1,199}\\*?|\\*)$")
@@ -99,7 +121,7 @@ public struct AccountSettingsSheet: View {
 
     @State private var tab: AccountSettingsTab
     @State private var settings: AccountSettingsReply?
-    @State private var profile = AccountModelProfile()
+    @State private var profile = ModelProfileReply.empty
     @State private var selectedProxyId: Int? = nil
     @State private var proxyRefreshNonce: Int = 0
     @State private var catalog: SyncedModelCatalog?
@@ -137,11 +159,11 @@ public struct AccountSettingsSheet: View {
         if isProxyMode {
             return selectedProxyId != settings.proxy_id
         }
-        return profile != AccountModelProfile(settings.model_config)
+        return profile != settings.model_config
     }
 
     private var validationMessage: String {
-        isProxyMode ? "" : AccountModelProfile.validate(profile)
+        isProxyMode ? "" : ModelProfileReply.validate(profile)
     }
 
     public var body: some View {
@@ -254,7 +276,7 @@ public struct AccountSettingsSheet: View {
             } footer: {
                 Button("放弃修改") {
                     if let settings {
-                        profile = AccountModelProfile(settings.model_config)
+                        profile = settings.model_config
                         selectedProxyId = settings.proxy_id
                         error = ""
                         notice = ""
@@ -300,7 +322,7 @@ public struct AccountSettingsSheet: View {
                     .foregroundStyle(DS.ink)
                 Spacer()
                 Button {
-                    profile.whitelist.append("")
+                    profile.appendWhitelist([""])
                 } label: {
                     Label("添加模型", systemImage: "plus")
                 }
@@ -331,9 +353,7 @@ public struct AccountSettingsSheet: View {
                                     cornerRadius: 6,
                                     disabled: !writable || saving
                                 ) { trimmed in
-                                    if profile.whitelist.indices.contains(idx) {
-                                        profile.whitelist[idx] = trimmed
-                                    }
+                                    profile.setWhitelist(at: idx, trimmed)
                                 }
 
                                 LinearIconButton(
@@ -343,9 +363,7 @@ public struct AccountSettingsSheet: View {
                                     boxSize: 28,
                                     disabled: !writable || saving
                                 ) {
-                                    if profile.whitelist.indices.contains(idx) {
-                                        profile.whitelist.remove(at: idx)
-                                    }
+                                    profile.removeWhitelist(at: idx)
                                 }
                             }
                         }
@@ -387,7 +405,7 @@ public struct AccountSettingsSheet: View {
                         error = "白名单最多 300 项"
                         return
                     }
-                    profile.whitelist.append(contentsOf: additions)
+                    profile.appendWhitelist(additions)
                     selectedCatalogModels.removeAll()
                 }
                 .buttonStyle(LinearButtonStyle(variant: .primary, compact: true))
@@ -440,7 +458,7 @@ public struct AccountSettingsSheet: View {
                     .foregroundStyle(DS.ink)
                 Spacer()
                 Button {
-                    profile.mappings.append(AccountModelMappingRule())
+                    profile.appendMapping()
                 } label: {
                     Label("添加映射", systemImage: "plus")
                 }
@@ -462,9 +480,7 @@ public struct AccountSettingsSheet: View {
                                     cornerRadius: 6,
                                     disabled: !writable || saving
                                 ) { trimmed in
-                                    if profile.mappings.indices.contains(idx) {
-                                        profile.mappings[idx].source = trimmed
-                                    }
+                                    profile.setMappingSource(at: idx, trimmed)
                                 }
 
                                 Image(systemName: "arrow.right")
@@ -480,9 +496,7 @@ public struct AccountSettingsSheet: View {
                                     cornerRadius: 6,
                                     disabled: !writable || saving
                                 ) { trimmed in
-                                    if profile.mappings.indices.contains(idx) {
-                                        profile.mappings[idx].target = trimmed
-                                    }
+                                    profile.setMappingTarget(at: idx, trimmed)
                                 }
 
                                 LinearIconButton(
@@ -492,9 +506,7 @@ public struct AccountSettingsSheet: View {
                                     boxSize: 28,
                                     disabled: !writable || saving
                                 ) {
-                                    if profile.mappings.indices.contains(idx) {
-                                        profile.mappings.remove(at: idx)
-                                    }
+                                    profile.removeMapping(at: idx)
                                 }
                             }
                         }
@@ -553,7 +565,7 @@ public struct AccountSettingsSheet: View {
         do {
             let loaded: AccountSettingsReply = try await RustBridge.shared.api("GET", "/accounts/\(account.id)/settings")
             settings = loaded
-            profile = AccountModelProfile(loaded.model_config)
+            profile = loaded.model_config
             selectedProxyId = loaded.proxy_id
         } catch {
             self.error = error.localizedDescription

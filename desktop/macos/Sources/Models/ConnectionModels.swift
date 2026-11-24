@@ -87,34 +87,6 @@ public func normalizedSavedConnections(_ preferences: Preferences) -> [SavedConn
     return list
 }
 
-public struct UpstreamConnectionStatus: Codable, Sendable, Equatable {
-    public var state: String
-    public var endpoint: String
-    public var http_status: Int?
-    public var message: String
-    public var retryable: Bool
-    public var checked_at: String?
-
-    public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        state = try c.decodeIfPresent(String.self, forKey: .state) ?? ""
-        endpoint = try c.decodeIfPresent(String.self, forKey: .endpoint) ?? ""
-        http_status = try c.decodeIfPresent(Int.self, forKey: .http_status)
-        message = try c.decodeIfPresent(String.self, forKey: .message) ?? ""
-        retryable = try c.decodeIfPresent(Bool.self, forKey: .retryable) ?? false
-        checked_at = try c.decodeIfPresent(String.self, forKey: .checked_at)
-    }
-
-    public init(state: String, endpoint: String = "", http_status: Int? = nil, message: String = "", retryable: Bool = false, checked_at: String? = nil) {
-        self.state = state
-        self.endpoint = endpoint
-        self.http_status = http_status
-        self.message = message
-        self.retryable = retryable
-        self.checked_at = checked_at
-    }
-}
-
 public struct ViewState: Codable, Sendable, Equatable {
     public var platform: String?
     public var foreground: Bool?
@@ -123,7 +95,7 @@ public struct ViewState: Codable, Sendable, Equatable {
     public var connected: Bool
     public var online: Bool
     public var error: String
-    public var upstream_connection: UpstreamConnectionStatus?
+    public var upstream_connection: ConnectionReply?
     public var snapshot: Snapshot?
     public var preferences: Preferences
 
@@ -135,7 +107,7 @@ public struct ViewState: Codable, Sendable, Equatable {
         connected: Bool = false,
         online: Bool = false,
         error: String = "",
-        upstream_connection: UpstreamConnectionStatus? = nil,
+        upstream_connection: ConnectionReply? = nil,
         snapshot: Snapshot? = nil,
         preferences: Preferences = Preferences()
     ) {

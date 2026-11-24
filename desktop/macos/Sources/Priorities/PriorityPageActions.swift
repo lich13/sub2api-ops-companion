@@ -131,11 +131,17 @@ extension PrioritiesPageView {
     }
 
     func pollActiveTask(id: String) async {
-        while !Task.isCancelled && store.state.online {
-            try? await Task.sleep(for: .seconds(1))
-            guard !Task.isCancelled, store.state.online else { return }
+        let capturedKey = store.connectionKey
+        var failures = 0
+        while !Task.isCancelled && store.state.online && store.connectionKey == capturedKey {
+            let delaySec = min(4, 1 << min(failures, 2))
+            try? await Task.sleep(for: .seconds(delaySec))
+            guard !Task.isCancelled, store.state.online, store.connectionKey == capturedKey else { return }
             do {
                 let next: PriorityTask = try await RustBridge.shared.api("GET", "/account-priority-orders/\(id)?schema=2&details=0")
+                guard !Task.isCancelled, store.connectionKey == capturedKey else { return }
+                failures = 0
+                self.error = ""
                 if !next.isPending {
                     await readPriorities()
                     let label = Self.taskLabels[next.status] ?? "已完成"
@@ -144,9 +150,12 @@ extension PrioritiesPageView {
                     return
                 }
                 view = view?.withActiveTask(next)
-            } catch {
-                self.error = error.localizedDescription
+            } catch is CancellationError {
                 return
+            } catch {
+                guard !Task.isCancelled, store.connectionKey == capturedKey else { return }
+                failures += 1
+                self.error = error.localizedDescription
             }
         }
     }

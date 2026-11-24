@@ -1822,19 +1822,39 @@ public struct ProxyTestReply: Codable, Sendable, Equatable {
 }
 
 public struct QuotaRefreshEntry: Codable, Sendable, Equatable {
+	public let account_id: Int?
+	public let account_name: String?
+	public let platform: String?
+	public let status: String?
+	public let error: String?
 	public let usage: UsageSummaryRecord?
 
-	public init(usage: UsageSummaryRecord?) {
+	public init(account_id: Int?, account_name: String?, platform: String?, status: String?, error: String?, usage: UsageSummaryRecord?) {
+		self.account_id = account_id
+		self.account_name = account_name
+		self.platform = platform
+		self.status = status
+		self.error = error
 		self.usage = usage
 	}
 }
 
 public struct QuotaRefreshHeader: Codable, Sendable, Equatable {
+	public let id: String?
 	public let status: String
+	public let total: Int?
+	public let completed: Int?
+	public let started_at: String?
+	public let completed_at: String?
 	public let items: [QuotaRefreshEntry]
 
-	public init(status: String, items: [QuotaRefreshEntry]) {
+	public init(id: String?, status: String, total: Int?, completed: Int?, started_at: String?, completed_at: String?, items: [QuotaRefreshEntry]) {
+		self.id = id
 		self.status = status
+		self.total = total
+		self.completed = completed
+		self.started_at = started_at
+		self.completed_at = completed_at
 		self.items = items
 	}
 }
@@ -1963,15 +1983,31 @@ public struct SystemVersionReply: Codable, Sendable, Equatable {
 	}
 }
 
+public struct TemplateMetaEntry: Codable, Sendable, Equatable {
+	public let name: String
+	public let builtin: Bool?
+
+	public init(name: String, builtin: Bool?) {
+		self.name = name
+		self.builtin = builtin
+	}
+}
+
 public struct TemplatesHeader: Codable, Sendable, Equatable {
 	public let version: String
 	public let configured: Bool
 	public let templates: [String: ModelProfileReply]
+	public let template_meta: [String: TemplateMetaEntry]?
+	public let template_order: [String]?
+	public let template_versions: [String: String]?
 
-	public init(version: String, configured: Bool, templates: [String: ModelProfileReply]) {
+	public init(version: String, configured: Bool, templates: [String: ModelProfileReply], template_meta: [String: TemplateMetaEntry]?, template_order: [String]?, template_versions: [String: String]?) {
 		self.version = version
 		self.configured = configured
 		self.templates = templates
+		self.template_meta = template_meta
+		self.template_order = template_order
+		self.template_versions = template_versions
 	}
 }
 
@@ -2027,4 +2063,27 @@ public struct VerifiedAccountReply: Codable, Sendable, Equatable {
 		self.verified = verified
 		self.status = status
 	}
+}
+
+public enum DefaultModelId: String, Codable, Sendable, Equatable {
+	case detection = "gpt-6-luna"
+	case legacyDegraded = "gpt-5.6-luna"
+}
+
+public enum RecordColumnId: String, Codable, Sendable, Equatable, CaseIterable {
+	case apiKey = "api_key"
+	case account
+	case model
+	case type
+	case reasoning
+	case tokens
+	case cost
+	case latency
+	case userAgent = "user_agent"
+	case ip
+	case endpoint
+	case group
+	case billing
+	case requestId = "request_id"
+	case upstreamId = "upstream_id"
 }

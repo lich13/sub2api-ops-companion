@@ -16,17 +16,43 @@ public struct ModelTestSheet: View {
     @State private var modelError: String = ""
 
     @State private var verdictMode: String = "strict"
-    @State private var degradedTarget: String = "gpt-5.6-luna"
+    @State private var degradedTarget: String = DefaultModelId.legacyDegraded.rawValue
     @State private var savedVerdictMode: String = "strict"
-    @State private var savedDegradedTarget: String = "gpt-5.6-luna"
+    @State private var savedDegradedTarget: String = DefaultModelId.legacyDegraded.rawValue
     @State private var policyVersion: String = ""
+    @State private var policyLoading: Bool = true
     @State private var policySaving: Bool = false
     @State private var policyError: String = ""
     @FocusState private var degradedFocused: Bool
 
     @State private var job: ModelTestJob? = nil
+    @State private var pollTask: Task<Void, Never>? = nil
     @State private var submitting: Bool = false
     @State private var error: String = ""
+
+    nonisolated public static func canStartTest(
+        online: Bool,
+        loadingModels: Bool,
+        isRunning: Bool,
+        policyLoading: Bool,
+        policySaving: Bool,
+        policyVersion: String,
+        policyDirty: Bool,
+        policyError: String,
+        selectedModel: String,
+        models: [ModelOption]
+    ) -> Bool {
+        online
+            && !loadingModels
+            && !isRunning
+            && !policyLoading
+            && !policySaving
+            && !policyVersion.isEmpty
+            && !policyDirty
+            && policyError.isEmpty
+            && !selectedModel.isEmpty
+            && models.contains(where: { $0.id == selectedModel })
+    }
 
     public init(account: Account, store: AppStore, onClose: @escaping () -> Void) {
         self.account = account
@@ -202,7 +228,7 @@ public struct ModelTestSheet: View {
                                 accessibilityTitle: "判定模式",
                                 height: DS.controlHeightField,
                                 expandWidth: true,
-                                disabled: isRunning || policySaving || !store.state.online,
+                                disabled: isRunning || policyLoading || policySaving || !store.state.online,
                                 entries: [
                                     LinearMenuEntry(id: "strict", title: "严格模式", checked: verdictMode == "strict") {
                                         verdictMode = "strict"
@@ -222,7 +248,7 @@ public struct ModelTestSheet: View {
                                 Text("降智模型")
                                     .font(DS.fontBody)
                                     .foregroundStyle(DS.muted)
-                                TextField(text: $degradedTarget, prompt: Text(verbatim: "gpt-5.6-luna")) { EmptyView() }
+                                TextField(text: $degradedTarget, prompt: Text(verbatim: DefaultModelId.legacyDegraded.rawValue)) { EmptyView() }
                                     .textFieldStyle(.plain)
                                     .font(DS.fontBody)
                                     .focused($degradedFocused)
@@ -231,7 +257,7 @@ public struct ModelTestSheet: View {
                                     .background(DS.surface)
                                     .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
                                     .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-                                    .disabled(isRunning || policySaving || !store.state.online)
+                                    .disabled(isRunning || policyLoading || policySaving || !store.state.online)
                                     .onSubmit {
                                         Task { await savePolicy() }
                                     }
@@ -257,7 +283,13 @@ public struct ModelTestSheet: View {
                                 .font(DS.fontBody)
                                 .foregroundStyle(DS.bad)
                             Button("重试") {
-                                Task { await savePolicy(refreshVersion: true) }
+                                Task {
+                                    if policyVersion.isEmpty {
+                                        await loadDefaultsAndPolicy()
+                                    } else {
+                                        await savePolicy(refreshVersion: true)
+                                    }
+                                }
                             }
                             .font(DS.fontBodyMedium)
                             .foregroundStyle(DS.accent)
@@ -324,18 +356,26 @@ public struct ModelTestSheet: View {
                 }
                 .buttonStyle(LinearButtonStyle(variant: .secondary))
                 .disabled(
-                    !store.state.online
-                        || loadingModels
-                        || isRunning
-                        || policySaving
-                        || policyDirty
-                        || !policyError.isEmpty
-                        || selectedModel.isEmpty
-                        || !models.contains(where: { $0.id == selectedModel })
+                    !Self.canStartTest(
+                        online: store.state.online,
+                        loadingModels: loadingModels,
+                        isRunning: isRunning,
+                        policyLoading: policyLoading,
+                        policySaving: policySaving,
+                        policyVersion: policyVersion,
+                        policyDirty: policyDirty,
+                        policyError: policyError,
+                        selectedModel: selectedModel,
+                        models: models
+                    )
                 )
             }
         }
         .sub2opsDialogFocus(onEscape: onClose)
+        .onDisappear {
+            pollTask?.cancel()
+            pollTask = nil
+        }
         .task {
             initializeFromPreferences()
             await loadModels(refresh: false)
@@ -393,27 +433,48 @@ public struct ModelTestSheet: View {
     }
 
     private func loadDefaultsAndPolicy() async {
-        guard store.state.online else { return }
-        if let policy: [String: JSONValue] = try? await RustBridge.shared.api("GET", "/accounts/\(account.id)/model-detection") {
-            policyVersion = policy["version"]?.stringValue ?? ""
-            let loadedMode = policy["verdict_mode"]?.stringValue ?? "strict"
-            let loadedTarget = policy["degraded_model_id"]?.stringValue ?? "gpt-5.6-luna"
+        guard store.state.online else {
+            policyLoading = false
+            return
+        }
+        policyLoading = true
+        policyError = ""
+        do {
+            let policy: ModelDetectionReply = try await RustBridge.shared.api("GET", "/accounts/\(account.id)/model-detection")
+            policyVersion = policy.version
+            let loadedMode = policy.verdict_mode ?? "strict"
+            let loadedTarget = policy.degraded_model_id ?? DefaultModelId.legacyDegraded.rawValue
             verdictMode = loadedMode
             degradedTarget = loadedTarget
             savedVerdictMode = loadedMode
             savedDegradedTarget = loadedTarget
-            if let preferred = policy["model_override"]?.stringValue, !preferred.isEmpty, models.contains(where: { $0.id == preferred }) {
+            if let preferred = policy.model_override, !preferred.isEmpty, models.contains(where: { $0.id == preferred }) {
                 selectedModel = preferred
             }
+        } catch {
+            policyError = error.localizedDescription
         }
-        if let latest: ModelTestJob = try? await RustBridge.shared.api("GET", "/accounts/\(account.id)/model-tests/latest") {
-            job = latest
-            if let reqModel = latest.requested_model ?? latest.model_id, !reqModel.isEmpty, models.contains(where: { $0.id == reqModel }) {
-                selectedModel = reqModel
+        policyLoading = false
+        do {
+            let latest: ModelTestJob? = try await RustBridge.shared.api("GET", "/accounts/\(account.id)/model-tests/latest")
+            if let latest {
+                job = latest
+                if let reqModel = latest.requested_model ?? latest.model_id, !reqModel.isEmpty, models.contains(where: { $0.id == reqModel }) {
+                    selectedModel = reqModel
+                }
+                if !latest.isTerminal {
+                    startPollingJob(id: latest.id)
+                }
             }
-            if !latest.isTerminal {
-                await pollJob(id: latest.id)
-            }
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func startPollingJob(id: String) {
+        pollTask?.cancel()
+        pollTask = Task {
+            await pollJob(id: id)
         }
     }
 
@@ -424,25 +485,29 @@ public struct ModelTestSheet: View {
         defer { policySaving = false }
         do {
             if refreshVersion || policyVersion.isEmpty {
-                let cur: [String: JSONValue] = try await RustBridge.shared.api("GET", "/accounts/\(account.id)/model-detection")
-                policyVersion = cur["version"]?.stringValue ?? ""
+                let cur: ModelDetectionReply = try await RustBridge.shared.api("GET", "/accounts/\(account.id)/model-detection")
+                policyVersion = cur.version
             }
             let trimmedTarget = degradedTarget.trimmingCharacters(in: .whitespacesAndNewlines)
-            var body: [String: JSONValue] = [
-                "expected_version": .string(policyVersion),
-                "verdict_mode": .string(verdictMode),
-            ]
-            if verdictMode == "relaxed" {
-                body["degraded_model_id"] = .string(trimmedTarget)
-            }
-            let updated: [String: JSONValue] = try await RustBridge.shared.api(
+            let body = DetectionUpdateBody(
+                expected_version: policyVersion,
+                enabled: nil,
+                schedule_mode: nil,
+                interval_minutes: nil,
+                min_interval_minutes: nil,
+                model_id: nil,
+                model_override: nil,
+                verdict_mode: verdictMode,
+                degraded_model_id: verdictMode == "relaxed" ? trimmedTarget : nil
+            )
+            let updated: ModelDetectionReply = try await RustBridge.shared.api(
                 "PUT",
                 "/accounts/\(account.id)/model-detection",
-                body: .object(body)
+                encodable: body
             )
-            policyVersion = updated["version"]?.stringValue ?? policyVersion
-            savedVerdictMode = updated["verdict_mode"]?.stringValue ?? verdictMode
-            savedDegradedTarget = updated["degraded_model_id"]?.stringValue ?? trimmedTarget
+            policyVersion = updated.version
+            savedVerdictMode = updated.verdict_mode ?? verdictMode
+            savedDegradedTarget = updated.degraded_model_id ?? trimmedTarget
         } catch {
             policyError = error.localizedDescription
         }
@@ -452,19 +517,21 @@ public struct ModelTestSheet: View {
         guard store.state.online, !submitting, !policySaving else { return }
         submitting = true
         error = ""
-        defer { submitting = false }
         do {
             let next: ModelTestJob = try await RustBridge.shared.api(
                 "POST",
                 "/model-tests/\(id)/retry",
                 body: .object(["request_id": .string(UUID().uuidString.lowercased())])
             )
+            submitting = false
             job = next
             if !next.isTerminal {
-                await pollJob(id: next.id)
+                startPollingJob(id: next.id)
+            } else {
+                store.refresh()
             }
-            store.refresh()
         } catch {
+            submitting = false
             self.error = error.localizedDescription
         }
     }
@@ -496,9 +563,10 @@ public struct ModelTestSheet: View {
             submitting = false
             job = created
             if !created.isTerminal {
-                await pollJob(id: created.id)
+                startPollingJob(id: created.id)
+            } else {
+                store.refresh()
             }
-            store.refresh()
         } catch {
             submitting = false
             self.error = error.localizedDescription
@@ -506,18 +574,27 @@ public struct ModelTestSheet: View {
     }
 
     private func pollJob(id: String) async {
-        while !Task.isCancelled {
-            try? await Task.sleep(for: .milliseconds(700))
+        var failures = 0
+        while !Task.isCancelled && store.state.online {
+            let delayMs = min(3000, 700 * max(1, 1 << min(failures, 2)))
+            try? await Task.sleep(for: .milliseconds(delayMs))
             guard !Task.isCancelled, store.state.online else { return }
             do {
                 let updated: ModelTestJob = try await RustBridge.shared.api("GET", "/model-tests/\(id)")
+                guard !Task.isCancelled else { return }
+                failures = 0
+                self.error = ""
                 job = updated
                 if updated.isTerminal {
                     store.refresh()
                     return
                 }
-            } catch {
+            } catch is CancellationError {
                 return
+            } catch {
+                guard !Task.isCancelled else { return }
+                failures += 1
+                self.error = error.localizedDescription
             }
         }
     }
@@ -526,6 +603,10 @@ public struct ModelTestSheet: View {
         do {
             let updated: ModelTestJob = try await RustBridge.shared.api("POST", "/model-tests/\(id)/cancel", body: .object([:]))
             job = updated
+            if updated.isTerminal {
+                pollTask?.cancel()
+                pollTask = nil
+            }
             store.refresh()
         } catch {
             self.error = error.localizedDescription

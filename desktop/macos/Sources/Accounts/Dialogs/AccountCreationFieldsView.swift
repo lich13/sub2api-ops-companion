@@ -2,7 +2,7 @@ import SwiftUI
 
 public struct AccountCreationFieldsView: View {
     @Binding public var draft: AccountCreationFormDraft
-    public var tlsProfiles: [CreationTLSProfileOption]
+    public var tlsProfiles: [ChoiceRecord]
     public var quotaNotifyEnabled: Bool
     public var webSearchEnabled: Bool
     public var aiStudioEnabled: Bool
@@ -12,7 +12,7 @@ public struct AccountCreationFieldsView: View {
 
     public init(
         draft: Binding<AccountCreationFormDraft>,
-        tlsProfiles: [CreationTLSProfileOption] = [],
+        tlsProfiles: [ChoiceRecord] = [],
         quotaNotifyEnabled: Bool = false,
         webSearchEnabled: Bool = false,
         aiStudioEnabled: Bool = false,

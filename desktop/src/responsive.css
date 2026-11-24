@@ -29,18 +29,6 @@
   font-size: 12px;
   line-height: 20px;
 }
-.content {
-  padding: 20px;
-}
-@media (max-width: 1360px) {
-  .content {
-    padding: 18px 12px;
-  }
-  .topbar {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-}
 
 /* Android uses the same controls in a touch-sized, single-column surface. */
 .app.mobile {

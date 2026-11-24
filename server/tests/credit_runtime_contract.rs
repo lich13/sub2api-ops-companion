@@ -1,14 +1,21 @@
+#[path = "common/harness.rs"]
+mod test_harness;
+use test_harness::{
+    json_status as json_response, operation_settings, path_id_between as path_id,
+    seed_credit_account, spawn_loopback, sse_response, write_loopback_config,
+};
+
 use axum::{
-    body::{to_bytes, Body},
+    body::to_bytes,
     extract::{Request, State},
-    http::{header, Method, StatusCode},
-    response::{IntoResponse, Response},
-    Json, Router,
+    http::Method,
+    response::Response,
+    Router,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use futures_util::future::BoxFuture;
 use serde_json::{json, Value};
-use sqlx::{types::Json as SqlJson, PgPool};
+use sqlx::PgPool;
 use std::os::unix::fs::PermissionsExt;
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -39,7 +46,6 @@ use sub2ops_server::{
     upstream::Upstream,
 };
 use tokio::{
-    net::TcpListener,
     sync::{Notify, Semaphore},
     task::JoinHandle,
 };
@@ -236,21 +242,6 @@ impl MockUpstream {
     }
 }
 
-fn path_id(path: &str, prefix: &str, suffix: &str) -> Option<i64> {
-    path.strip_prefix(prefix)?
-        .strip_suffix(suffix)?
-        .parse()
-        .ok()
-}
-
-fn json_response(status: u16, body: Value) -> Response {
-    (
-        StatusCode::from_u16(status).expect("fixture status code"),
-        Json(body),
-    )
-        .into_response()
-}
-
 async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
     let method = parts.method;
@@ -352,11 +343,7 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
             .get(&id)
             .cloned()
             .unwrap_or_else(|| "data: {\"type\":\"test_complete\",\"success\":true}\n\n".into());
-        return Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "text/event-stream")
-            .body(Body::from(sse))
-            .expect("fixture SSE response");
+        return sse_response(sse);
     }
 
     if method == Method::POST && path == "/push" {
@@ -488,45 +475,24 @@ impl Harness {
         let temp = tempfile::tempdir().expect("create test state directory");
         let clock = Arc::new(StdMutex::new(fixed_now()));
         let mock = MockUpstream::new(db.pool.clone(), clock.clone());
-        let listener = TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .expect("bind loopback upstream fixture");
-        let base_url = format!("http://{}", listener.local_addr().unwrap());
-        let router = Router::new()
-            .fallback(mock_upstream)
-            .with_state(mock.clone());
-        let server = tokio::spawn(async move {
-            axum::serve(listener, router)
-                .await
-                .expect("serve loopback upstream fixture");
-        });
-
-        let state_path = temp.path().join("oauth-state.json");
-        let connection_path = temp.path().join("sub2api-config.json");
-        fs::write(
-            &connection_path,
-            serde_json::to_vec(&json!({"base_url": base_url, "verify_base_url": ""})).unwrap(),
+        let (base_url, server) = spawn_loopback(
+            Router::new()
+                .fallback(mock_upstream)
+                .with_state(mock.clone()),
         )
-        .expect("write loopback upstream config");
+        .await;
+        let state_path = temp.path().join("oauth-state.json");
+        let connection_path = write_loopback_config(temp.path(), &base_url);
         let settings = Arc::new(Settings {
-            database_url,
-            bind: "127.0.0.1:0".into(),
-            base_path: String::new(),
-            audit_path: temp.path().join("audit.jsonl"),
-            usage_path: temp.path().join("usage-state.json"),
-            oauth_path: state_path,
+            oauth_path: state_path.clone(),
             bark_path: temp.path().join("bark-config.json"),
             connection_path,
-            keepalive_path: temp.path().join("keepalive-state.json"),
-            oauth: json!({}),
             bark: json!({
                 "enabled": true,
                 "device_key": "fixture-bark-device-key",
                 "server_url": base_url
             }),
-            bark_valid: true,
-            base_url,
-            verify_url: String::new(),
+            ..operation_settings(database_url, temp.path(), base_url)
         });
         let upstream = Upstream::new(settings.clone()).expect("construct fixture upstream");
         let hooks = Arc::new(HookShared {
@@ -624,33 +590,7 @@ impl Harness {
 
     async fn seed_account(&self, schedulable: bool, depleted: bool) -> Value {
         let id = NEXT_ACCOUNT_ID.fetch_add(1, Ordering::Relaxed);
-        let now = fixed_now();
-        let limited_at = depleted.then_some(now - Duration::hours(1));
-        let reset_at = depleted.then_some(now + Duration::days(5));
-        let snapshot = json!({
-            "available_count": 1,
-            "credits": [{"expires_at": datetime(now + Duration::days(2))}]
-        });
-        let extra = json!({"codex_reset_credit_snapshot": snapshot});
-        sqlx::query(
-            "INSERT INTO accounts \
-             (id,name,platform,type,status,schedulable,credentials,extra,rate_limited_at,rate_limit_reset_at,updated_at) \
-             VALUES ($1,$2,'openai','oauth','active',$3,$4,$5,$6,$7,$8)",
-        )
-        .bind(id)
-        .bind(format!("fixture-credit-account-{id}"))
-        .bind(schedulable)
-        .bind(SqlJson(json!({"plan_type": "plus"})))
-        .bind(SqlJson(extra))
-        .bind(limited_at)
-        .bind(reset_at)
-        .bind(now - Duration::minutes(1))
-        .execute(&self.db.pool)
-        .await
-        .expect("insert synthetic OAuth account");
-        credit_ownership::account(&self.db, id)
-            .await
-            .expect("read synthetic OAuth account")
+        seed_credit_account(&self.db, id, fixed_now(), schedulable, depleted).await
     }
 
     async fn seed_depletion(&self, controller: &CreditController) -> (Value, Value) {

@@ -1,3 +1,6 @@
+#[path = "common/harness.rs"]
+mod test_harness;
+
 use axum::{
     body::Body,
     extract::{Request, State},
@@ -751,54 +754,11 @@ async fn auth_mock(State(mock): State<AuthMock>, request: Request<Body>) -> Resp
 }
 
 async fn spawn_auth_mock(mock: AuthMock) -> (String, JoinHandle<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind a loopback-only auth mock");
-    let address = listener.local_addr().unwrap();
-    let application = Router::new().fallback(any(auth_mock)).with_state(mock);
-    let server = tokio::spawn(async move {
-        axum::serve(listener, application)
-            .await
-            .expect("serve the synthetic loopback auth endpoint");
-    });
-    (format!("http://{address}"), server)
+    test_harness::spawn_loopback(Router::new().fallback(any(auth_mock)).with_state(mock)).await
 }
 
 fn settings(root: &Path, database_url: String, base_url: &str) -> Arc<Settings> {
-    fs::create_dir_all(root).expect("create owned usage route state directory");
-    let connection_path = root.join("sub2api-config.json");
-    fs::write(
-        &connection_path,
-        serde_json::to_vec(&json!({"base_url":base_url,"verify_base_url":base_url}))
-            .expect("serialize loopback-only upstream fixture"),
-    )
-    .expect("write synthetic loopback upstream configuration");
-    Arc::new(Settings {
-        database_url,
-        bind: "127.0.0.1:0".into(),
-        base_path: String::new(),
-        audit_path: root.join("audit.jsonl"),
-        usage_path: root.join("oauth-state.json"),
-        oauth_path: root.join("oauth-config.json"),
-        bark_path: root.join("bark-config.json"),
-        connection_path,
-        keepalive_path: root.join("keepalive-state.json"),
-        oauth: json!({
-            "oauth_auto_reset_credit_enabled": false,
-            "oauth_daily_test_enabled": false,
-            "oauth_daily_test_time": "23:59",
-            "oauth_recovery_connection_account_ids": [],
-            "oauth_recovery_model_account_ids": [],
-            "oauth_recovery_monitor_enabled": false,
-            "oauth_recovery_test_concurrency": 1,
-            "oauth_recovery_test_model_id": "fixture-model",
-            "oauth_usage_refresh_concurrency": 1
-        }),
-        bark: json!({"enabled":false,"device_key":"","server_url":""}),
-        bark_valid: true,
-        base_url: base_url.into(),
-        verify_url: base_url.into(),
-    })
+    test_harness::verified_runtime_settings(root, database_url, base_url)
 }
 
 fn stable_response(value: &Value) -> Value {

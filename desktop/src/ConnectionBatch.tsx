@@ -369,7 +369,7 @@ export function useConnectionBatch({
     close: () => close(),
   };
 }
-export type ConnectionBatchControl = ReturnType<typeof useConnectionBatch>;
+type ConnectionBatchControl = ReturnType<typeof useConnectionBatch>;
 
 function progress(control: ConnectionBatchControl) {
   if (control.starting) return "正在提交";

@@ -545,12 +545,7 @@ impl PriorityOrders {
             .map(|job| public_job(job, details))
             .ok_or_else(missing)
     }
-    pub async fn submit(&self, request: &Value) -> Result<Value> {
-        validate_request(request)?;
-        self.submit_validated(request).await
-    }
-
-    pub(crate) async fn submit_validated(&self, request: &Value) -> Result<Value> {
+    pub async fn submit_validated(&self, request: &Value) -> Result<Value> {
         let _submit = self.operations.submit_lock.lock().await;
         let _gate = self.actions.priorities.admission.write().await;
         let data = self.store.read_shared()?;

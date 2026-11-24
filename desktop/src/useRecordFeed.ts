@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./bridge";
+import type { UsageDeltaReply } from "./protocol";
 import type { RecordPage, UsageRecord } from "./records";
 
 type Feed = {
@@ -95,7 +96,7 @@ export function useRecordFeed(
         if (mode !== "poll") update({ loading: true });
         try {
           if (mode === "poll" && current.current.latest !== null) {
-            const check = await api<{ new_count: number }>(
+            const check = await api<UsageDeltaReply>(
               "GET",
               `/usage-records?${query}&after_id=${current.current.latest}`,
             );

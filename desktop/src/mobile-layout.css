@@ -492,7 +492,6 @@
   gap: 8px;
   align-items: start;
 }
-.mobile-record-tokens,
 .mobile-record-latency {
   grid-column: auto;
   display: flex;
@@ -653,11 +652,8 @@
   flex-wrap: wrap;
 }
 @media (max-width: 379px) {
-  .mobile-record-tokens,
   .mobile-record-latency {
     grid-column: 1 / -1;
-  }
-  .mobile-record-latency {
     border-top: 0;
     padding-top: 0;
   }

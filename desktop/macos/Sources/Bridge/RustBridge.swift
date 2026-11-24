@@ -191,6 +191,16 @@ public final class RustBridge: Sendable {
         )
     }
 
+    public func api<T: Decodable & Sendable, B: Encodable & Sendable>(
+        _ method: String,
+        _ path: String,
+        encodable body: B
+    ) async throws -> T {
+        let encoded = try JSONEncoder().encode(body)
+        let jsonBody = try JSONDecoder().decode(JSONValue.self, from: encoded)
+        return try await api(method, path, body: jsonBody)
+    }
+
     public func apiVoid(
         _ method: String,
         _ path: String,

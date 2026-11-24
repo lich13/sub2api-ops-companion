@@ -2,6 +2,7 @@ import DiagnosticText from "./DiagnosticText";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Eye, EyeOff, LoaderCircle, X } from "lucide-react";
 import { api } from "./bridge";
+import type { CreateProxyBatchReply } from "./protocol";
 import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
 import { fullTime } from "./types";
@@ -452,7 +453,7 @@ export function ProxyBatchAdd({
           let ok = false,
             message = "";
           try {
-            const r = await api<{ created: number; skipped: number }>(
+            const r = await api<CreateProxyBatchReply>(
               "POST",
               "/proxy-management/batch",
               { proxies: [proxy] },

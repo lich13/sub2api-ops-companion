@@ -1,4 +1,4 @@
-export type AccountSort =
+type AccountSort =
   "recent:desc" | "recent:asc" | "priority:asc" | "priority:desc";
 const storageKey = "sub2ops-account-sort";
 

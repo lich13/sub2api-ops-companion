@@ -29,21 +29,21 @@ pub struct Plan {
     pub reset_at: Option<String>,
 }
 #[derive(Clone, Serialize, PartialEq)]
-pub struct Subscription {
-    pub name: Option<String>,
-    pub status: Option<String>,
-    pub expires_at: Option<String>,
-    pub active: Option<bool>,
-    pub plans: Vec<Plan>,
+pub(crate) struct Subscription {
+    name: Option<String>,
+    status: Option<String>,
+    expires_at: Option<String>,
+    active: Option<bool>,
+    plans: Vec<Plan>,
 }
 #[derive(Clone, Serialize, Default)]
-pub struct Usage {
+pub(crate) struct Usage {
     pub requests: Option<f64>,
     pub tokens: Option<f64>,
     pub cost: Option<f64>,
 }
 #[derive(Clone, Serialize)]
-pub struct QuotaView {
+pub(crate) struct QuotaView {
     #[serde(skip_serializing)]
     pub version: String,
     pub state: String,
@@ -316,7 +316,7 @@ impl Service {
         view.stale =
             view.success_at.is_some() && (view.state == "error" || view.state == "unsupported");
     }
-    pub async fn query(&self, input: Query, force: bool) -> Result<QuotaView> {
+    pub(crate) async fn query(&self, input: Query, force: bool) -> Result<QuotaView> {
         if self.tasks.is_closed() {
             return Err(Error::new(503, "服务正在停止"));
         }

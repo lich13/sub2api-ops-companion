@@ -1,9 +1,11 @@
+#[path = "common/harness.rs"]
+mod test_harness;
 use axum::{
     body::{to_bytes, Body},
     extract::{Request, State},
     http::{header, Method, StatusCode},
     response::{IntoResponse, Response},
-    Json, Router,
+    Router,
 };
 use futures_util::future::BoxFuture;
 use serde_json::{json, Value};
@@ -31,8 +33,11 @@ use sub2ops_server::{
     settings::Settings,
     upstream::Upstream,
 };
+use test_harness::{
+    account_path_id, json_ok as json_response, operation_settings, spawn_loopback, status_json,
+    write_loopback_config, OperationsBatchExt, OperationsSubmitExt,
+};
 use tokio::{
-    net::TcpListener,
     sync::{Notify, Semaphore},
     task::JoinHandle,
 };
@@ -204,23 +209,12 @@ impl Drop for ActiveRequest {
     }
 }
 
-fn json_response(value: Value) -> Response {
-    Json(value).into_response()
-}
-
-fn status_json(status: StatusCode, value: Value) -> Response {
-    (status, Json(value)).into_response()
-}
-
 fn sse_event(value: Value) -> String {
     format!("data: {value}\n\n")
 }
 
 fn account_id_from_test_path(path: &str) -> Option<i64> {
-    path.strip_prefix("/api/v1/admin/accounts/")?
-        .strip_suffix("/test")?
-        .parse()
-        .ok()
+    account_path_id(path, "/test")
 }
 
 async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> Response {
@@ -552,40 +546,14 @@ impl Harness {
             .expect("connect to runner-owned PostgreSQL");
         let temp = tempfile::tempdir().expect("create test state directory");
         let mock = MockUpstream::new(db.pool.clone());
-        let listener = TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .expect("bind loopback mock");
-        let base_url = format!("http://{}", listener.local_addr().unwrap());
         let router = Router::new()
             .fallback(mock_upstream)
             .with_state(mock.clone());
-        let server = tokio::spawn(async move {
-            axum::serve(listener, router)
-                .await
-                .expect("serve loopback fixture");
-        });
-
-        let connection_path = temp.path().join("sub2api-config.json");
-        fs::write(
-            &connection_path,
-            serde_json::to_vec(&json!({"base_url": base_url, "verify_base_url": ""})).unwrap(),
-        )
-        .expect("write loopback upstream config");
+        let (base_url, server) = spawn_loopback(router).await;
+        let connection_path = write_loopback_config(temp.path(), &base_url);
         let settings = Arc::new(Settings {
-            database_url: database_url.clone(),
-            bind: "127.0.0.1:0".into(),
-            base_path: String::new(),
-            audit_path: temp.path().join("audit.jsonl"),
-            usage_path: temp.path().join("usage-state.json"),
-            oauth_path: temp.path().join("oauth-state.json"),
-            bark_path: temp.path().join("bark-state.json"),
             connection_path,
-            keepalive_path: temp.path().join("keepalive-state.json"),
-            oauth: json!({}),
-            bark: json!({"enabled": false}),
-            bark_valid: true,
-            base_url,
-            verify_url: String::new(),
+            ..operation_settings(database_url, temp.path(), base_url)
         });
         let upstream = Upstream::new(settings.clone()).expect("construct fixture upstream");
         let queries = Queries {
@@ -851,7 +819,7 @@ async fn strict_fields_and_single_test_defaults_match_reference() {
     invalid["unexpected_field"] = true.into();
     let error = harness
         .operations
-        .submit(id, &invalid, ADMIN_KEY)
+        .submit_test(id, &invalid, ADMIN_KEY)
         .await
         .unwrap_err();
     assert_eq!(error.status.as_u16(), 422);
@@ -865,7 +833,7 @@ async fn strict_fields_and_single_test_defaults_match_reference() {
     });
     let accepted = harness
         .operations
-        .submit(id, &valid, ADMIN_KEY)
+        .submit_test(id, &valid, ADMIN_KEY)
         .await
         .expect("valid single test request");
     assert_eq!(accepted["status"], "queued");
@@ -885,7 +853,7 @@ async fn strict_fields_and_single_test_defaults_match_reference() {
     invalid_batch["unexpected_field"] = true.into();
     let error = harness
         .operations
-        .submit_batch(&invalid_batch, ADMIN_KEY, false)
+        .submit_batch_test(&invalid_batch, ADMIN_KEY, false)
         .await
         .unwrap_err();
     assert_eq!(error.status.as_u16(), 422);
@@ -905,7 +873,7 @@ async fn strict_fields_and_single_test_defaults_match_reference() {
         assert_eq!(
             harness
                 .operations
-                .submit_batch(&invalid_batch, ADMIN_KEY, false)
+                .submit_batch_test(&invalid_batch, ADMIN_KEY, false)
                 .await
                 .unwrap_err()
                 .status
@@ -939,8 +907,12 @@ async fn batch_acceptance_is_idempotent_conflicts_are_rejected_and_dispatch_is_d
         )
         .await;
     let (first, replay) = tokio::join!(
-        harness.operations.submit_batch(&request, ADMIN_KEY, false),
-        harness.operations.submit_batch(&request, ADMIN_KEY, false)
+        harness
+            .operations
+            .submit_batch_test(&request, ADMIN_KEY, false),
+        harness
+            .operations
+            .submit_batch_test(&request, ADMIN_KEY, false)
     );
     let first = first.expect("accept complete batch");
     let replay = replay.expect("idempotent concurrent replay");
@@ -948,7 +920,7 @@ async fn batch_acceptance_is_idempotent_conflicts_are_rejected_and_dispatch_is_d
     reversed["accounts"].as_array_mut().unwrap().reverse();
     let reordered = harness
         .operations
-        .submit_batch(&reversed, ADMIN_KEY, false)
+        .submit_batch_test(&reversed, ADMIN_KEY, false)
         .await
         .unwrap();
     assert_eq!(first["batch_id"], reordered["batch_id"]);
@@ -1004,7 +976,7 @@ async fn batch_acceptance_is_idempotent_conflicts_are_rejected_and_dispatch_is_d
         .await;
     assert!(harness
         .operations
-        .submit_batch(&failed_request, ADMIN_KEY, false)
+        .submit_batch_test(&failed_request, ADMIN_KEY, false)
         .await
         .is_err());
     assert_eq!(fs::read(original.0.path()).unwrap(), before);
@@ -1016,7 +988,7 @@ async fn batch_acceptance_is_idempotent_conflicts_are_rejected_and_dispatch_is_d
     changed["accounts"].as_array_mut().unwrap().pop();
     let error = harness
         .operations
-        .submit_batch(&changed, ADMIN_KEY, false)
+        .submit_batch_test(&changed, ADMIN_KEY, false)
         .await
         .unwrap_err();
     assert_eq!(error.status.as_u16(), 409);
@@ -1030,7 +1002,7 @@ async fn batch_acceptance_is_idempotent_conflicts_are_rejected_and_dispatch_is_d
         assert_eq!(
             harness
                 .operations
-                .submit_batch(&changed, ADMIN_KEY, false)
+                .submit_batch_test(&changed, ADMIN_KEY, false)
                 .await
                 .unwrap_err()
                 .status
@@ -1048,7 +1020,7 @@ async fn batch_acceptance_is_idempotent_conflicts_are_rejected_and_dispatch_is_d
     });
     let error = harness
         .operations
-        .submit(ids[0], &single, ADMIN_KEY)
+        .submit_test(ids[0], &single, ADMIN_KEY)
         .await
         .unwrap_err();
     assert_eq!(error.status.as_u16(), 409);
@@ -1063,7 +1035,7 @@ async fn batch_acceptance_is_idempotent_conflicts_are_rejected_and_dispatch_is_d
         .await;
     let error = harness
         .operations
-        .submit_batch(&duplicate, ADMIN_KEY, false)
+        .submit_batch_test(&duplicate, ADMIN_KEY, false)
         .await
         .unwrap_err();
     assert_eq!(error.status.as_u16(), 422);
@@ -1072,7 +1044,7 @@ async fn batch_acceptance_is_idempotent_conflicts_are_rejected_and_dispatch_is_d
         "expected_version":harness.expected_versions(&[extra[0]],"test").await[&extra[0]],"payload":{"confirmed":true}});
     harness
         .operations
-        .submit(extra[0], &single_request, ADMIN_KEY)
+        .submit_test(extra[0], &single_request, ADMIN_KEY)
         .await
         .unwrap();
     let mut single_conflict = failed_request;
@@ -1080,7 +1052,7 @@ async fn batch_acceptance_is_idempotent_conflicts_are_rejected_and_dispatch_is_d
     assert_eq!(
         harness
             .operations
-            .submit_batch(&single_conflict, ADMIN_KEY, false)
+            .submit_batch_test(&single_conflict, ADMIN_KEY, false)
             .await
             .unwrap_err()
             .status
@@ -1114,7 +1086,7 @@ async fn one_thousand_account_batch_boundary_and_listing_are_complete() {
         .await;
     let accepted = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .expect("accept batch at configured limit");
     assert_eq!(accepted["items"].as_array().unwrap().len(), max);
@@ -1139,7 +1111,7 @@ async fn one_thousand_account_batch_boundary_and_listing_are_complete() {
     });
     let error = harness
         .operations
-        .submit_batch(&over_limit, ADMIN_KEY, false)
+        .submit_batch_test(&over_limit, ADMIN_KEY, false)
         .await
         .unwrap_err();
     assert_eq!(
@@ -1157,7 +1129,7 @@ async fn one_thousand_account_batch_boundary_and_listing_are_complete() {
         assert_eq!(
             harness
                 .operations
-                .submit_batch(&invalid, ADMIN_KEY, false)
+                .submit_batch_test(&invalid, ADMIN_KEY, false)
                 .await
                 .unwrap_err()
                 .status
@@ -1207,7 +1179,7 @@ async fn absent_allowlisted_model_does_not_block_batch_and_reports_native_mappin
         .await;
     let accepted = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .expect("accept model test despite unrelated allowlist");
     assert_eq!(accepted["items"][0]["requested"]["model_id"], requested);
@@ -1270,7 +1242,7 @@ async fn truncated_missing_terminal_and_explicit_failure_never_report_success() 
         .await;
     let accepted = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .expect("accept SSE boundary batch");
     harness.operations.tick().await.unwrap();
@@ -1312,7 +1284,7 @@ async fn a_busy_account_does_not_block_other_items_and_account_lock_is_respected
         .await;
     let accepted = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     let busy_id = ids[0];
@@ -1379,7 +1351,7 @@ async fn shared_parent_credential_lock_blocks_child_without_blocking_independent
         .await;
     let accepted = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     let parent_lease = harness.actions.locks.account(parent_id).await;
@@ -1437,7 +1409,7 @@ async fn cancelling_batch_stops_only_undispatched_items() {
     request["accounts"][2]["expected_version"] = "f".repeat(64).into();
     let accepted = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     for id in &ids {
@@ -1507,7 +1479,7 @@ async fn running_job_restarts_as_checking_and_never_retests_automatically() {
         .await;
     let accepted = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     let job_id = accepted["items"][0]["id"].as_str().unwrap().to_owned();
@@ -1580,7 +1552,7 @@ async fn dispatch_state_save_failure_never_sends_the_native_test_request() {
         .await;
     let accepted = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     let job_id = accepted["items"][0]["id"].as_str().unwrap().to_owned();
@@ -1642,7 +1614,7 @@ async fn native_bulk_result_partitions_success_and_failure_after_readback() {
         .await;
     let accepted = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .expect("accept native proxy batch");
     assert_eq!(harness.mock.bulk_calls().len(), 0);
@@ -1690,7 +1662,7 @@ async fn unknown_native_bulk_result_is_not_replayed() {
         .await;
     let accepted = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     harness.operations.tick().await.unwrap();
@@ -1730,13 +1702,13 @@ async fn connection_model_is_frozen_per_batch_and_new_batches_use_current_config
         .await;
     let first = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     *harness.backend.test_model.lock().unwrap() = "fixture-later-model".into();
     let replay = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     assert_eq!(first, replay);
@@ -1759,7 +1731,7 @@ async fn connection_model_is_frozen_per_batch_and_new_batches_use_current_config
         .await;
     let second = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     let final_second = harness
@@ -1837,7 +1809,7 @@ async fn connection_mixed_platforms_missing_deleted_unsupported_and_stale_items_
     request["accounts"][5]["expected_version"] = "f".repeat(64).into();
     let accepted = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     let finished = harness
@@ -1888,7 +1860,7 @@ async fn connection_dispatch_detects_credential_changes_but_ignores_passive_obse
         .await;
     let accepted = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     sqlx::query("UPDATE accounts SET credentials=credentials||'{\"access_token\":\"fixture-replaced-credential\"}'::jsonb WHERE id=$1").bind(ids[0]).execute(&harness.db.pool).await.unwrap();
@@ -1933,7 +1905,7 @@ async fn connection_concurrency_defaults_to_two_and_clamps_to_one_or_eight() {
             .await;
         let accepted = harness
             .operations
-            .submit_batch(&request, ADMIN_KEY, false)
+            .submit_batch_test(&request, ADMIN_KEY, false)
             .await
             .unwrap();
         harness.operations.tick().await.unwrap();
@@ -1991,7 +1963,7 @@ async fn connection_batch_shares_eight_global_slots_with_existing_single_operati
         singles.push(
             harness
                 .operations
-                .submit(*id, &request, ADMIN_KEY)
+                .submit_test(*id, &request, ADMIN_KEY)
                 .await
                 .unwrap(),
         );
@@ -2008,7 +1980,7 @@ async fn connection_batch_shares_eight_global_slots_with_existing_single_operati
         .await;
     let accepted = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     harness.operations.tick().await.unwrap();
@@ -2064,7 +2036,7 @@ async fn connection_parent_siblings_and_duplicate_account_never_overlap() {
         .await;
     let first = harness
         .operations
-        .submit_batch(&first_request, ADMIN_KEY, false)
+        .submit_batch_test(&first_request, ADMIN_KEY, false)
         .await
         .unwrap();
     let second_request = harness
@@ -2077,7 +2049,7 @@ async fn connection_parent_siblings_and_duplicate_account_never_overlap() {
         .await;
     let second = harness
         .operations
-        .submit_batch(&second_request, ADMIN_KEY, false)
+        .submit_batch_test(&second_request, ADMIN_KEY, false)
         .await
         .unwrap();
     harness.operations.tick().await.unwrap();
@@ -2151,7 +2123,7 @@ async fn connection_restart_resumes_queued_peer_once_and_retains_unknown_dispatc
         .await;
     let accepted = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     let lease = harness.actions.locks.account(ids[0]).await;
@@ -2167,7 +2139,7 @@ async fn connection_restart_resumes_queued_peer_once_and_retains_unknown_dispatc
     drop(lease);
     let replay = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     assert_eq!(replay["batch_id"], accepted["batch_id"]);
@@ -2235,7 +2207,7 @@ async fn connection_eof_truncation_and_transport_disconnect_remain_unknown_after
         .await;
     let accepted = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     let finished = harness
@@ -2282,7 +2254,7 @@ async fn connection_only_native_success_terminal_passes_and_actual_model_is_neve
         .await;
     let accepted = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     let finished = harness
@@ -2323,7 +2295,7 @@ async fn connection_batch_keeps_sanitized_summary_and_single_test_keeps_ephemera
         .await;
     let accepted = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     let finished = harness
@@ -2367,7 +2339,7 @@ async fn connection_batch_keeps_sanitized_summary_and_single_test_keeps_ephemera
         "expected_version":harness.expected_versions(&ids[2..],"test").await[&ids[2]],"payload":{"confirmed":true,"model_id":"fixture-single-model"}});
     let single = harness
         .operations
-        .submit(ids[2], &single_request, ADMIN_KEY)
+        .submit_test(ids[2], &single_request, ADMIN_KEY)
         .await
         .unwrap();
     harness.operations.tick().await.unwrap();
@@ -2431,12 +2403,12 @@ async fn recover_batch_dispatches_recovery_with_partial_results_and_never_replay
         .push(json!({"account_id":missing,"expected_version":"0".repeat(64)}));
     let initial = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     let replay = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     assert_eq!(initial["batch_id"], replay["batch_id"]);
@@ -2471,7 +2443,7 @@ async fn recover_batch_dispatches_recovery_with_partial_results_and_never_replay
     harness.restart().await;
     let replay = harness
         .operations
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     assert_eq!(replay["batch_id"], initial["batch_id"]);
@@ -2487,7 +2459,7 @@ async fn recover_batch_dispatches_recovery_with_partial_results_and_never_replay
         assert_eq!(
             harness
                 .operations
-                .submit_batch(&invalid, ADMIN_KEY, false)
+                .submit_batch_test(&invalid, ADMIN_KEY, false)
                 .await
                 .unwrap_err()
                 .status
@@ -2500,7 +2472,7 @@ async fn recover_batch_dispatches_recovery_with_partial_results_and_never_replay
     assert_eq!(
         harness
             .operations
-            .submit_batch(&conflict, ADMIN_KEY, false)
+            .submit_batch_test(&conflict, ADMIN_KEY, false)
             .await
             .unwrap_err()
             .status
@@ -2522,7 +2494,7 @@ async fn scheduled_connection_runs_once_at_the_second_and_keeps_history_across_r
     let request = json!({"action":"test","payload":{"mode":"default","confirmed":true,"model_id":"fixture-model"},"scheduled_at":"2030-01-02T09:31:38+08:00","expected_version":versions[&ids[0]],"request_id":"fixture-scheduled-connection-0001","client_id":CLIENT_ID});
     let job = harness
         .operations
-        .submit(ids[0], &request, ADMIN_KEY)
+        .submit_test(ids[0], &request, ADMIN_KEY)
         .await
         .unwrap();
     assert_eq!(
@@ -2544,7 +2516,7 @@ async fn scheduled_connection_runs_once_at_the_second_and_keeps_history_across_r
     harness.restart().await;
     let replay = harness
         .operations
-        .submit(ids[0], &request, ADMIN_KEY)
+        .submit_test(ids[0], &request, ADMIN_KEY)
         .await
         .unwrap();
     assert_eq!(replay["id"], job["id"]);
@@ -2573,7 +2545,7 @@ async fn scheduled_connection_runs_once_at_the_second_and_keeps_history_across_r
     cancelled["scheduled_at"] = "2030-01-02T09:32:38+08:00".into();
     let queued = harness
         .operations
-        .submit(ids[1], &cancelled, ADMIN_KEY)
+        .submit_test(ids[1], &cancelled, ADMIN_KEY)
         .await
         .unwrap();
     harness
@@ -2618,13 +2590,13 @@ async fn scheduled_connection_runs_once_at_the_second_and_keeps_history_across_r
     invalid["request_id"] = "fixture-scheduled-invalid-0001".into();
     assert!(harness
         .operations
-        .submit(ids[0], &invalid, ADMIN_KEY)
+        .submit_test(ids[0], &invalid, ADMIN_KEY)
         .await
         .is_err());
     invalid["scheduled_at"] = "2031-01-01T01:00:01.001Z".into();
     assert!(harness
         .operations
-        .submit(ids[0], &invalid, ADMIN_KEY)
+        .submit_test(ids[0], &invalid, ADMIN_KEY)
         .await
         .is_err());
     harness.finish().await;
@@ -2653,7 +2625,7 @@ async fn single_default_test_model_is_frozen_for_immediate_and_scheduled_request
         }
         let job = harness
             .operations
-            .submit(*id, &request, ADMIN_KEY)
+            .submit_test(*id, &request, ADMIN_KEY)
             .await
             .unwrap();
         assert_eq!(
@@ -2682,7 +2654,7 @@ async fn single_default_test_model_is_frozen_for_immediate_and_scheduled_request
     for (id, (request, job)) in ids.iter().zip(&jobs) {
         let replay = harness
             .operations
-            .submit(*id, request, ADMIN_KEY)
+            .submit_test(*id, request, ADMIN_KEY)
             .await
             .unwrap();
         assert_eq!(replay["id"], job["id"]);
@@ -2780,7 +2752,7 @@ async fn continuous_cycle_chains_once_after_reset_and_restart_with_frozen_model(
     let request = cycle_request(&harness, id, "first").await;
     let first = harness
         .operations
-        .submit(id, &request, ADMIN_KEY)
+        .submit_test(id, &request, ADMIN_KEY)
         .await
         .unwrap();
     let first_id = first["id"].as_str().unwrap();
@@ -2792,7 +2764,7 @@ async fn continuous_cycle_chains_once_after_reset_and_restart_with_frozen_model(
     assert_eq!(first["repeat_state"], "active");
     let replay = harness
         .operations
-        .submit(id, &request, ADMIN_KEY)
+        .submit_test(id, &request, ADMIN_KEY)
         .await
         .unwrap();
     assert_eq!(replay["id"], first["id"]);
@@ -2811,7 +2783,7 @@ async fn continuous_cycle_chains_once_after_reset_and_restart_with_frozen_model(
     assert_eq!(
         harness
             .operations
-            .submit(id, &duplicate, ADMIN_KEY)
+            .submit_test(id, &duplicate, ADMIN_KEY)
             .await
             .err()
             .unwrap()
@@ -2902,7 +2874,7 @@ async fn continuous_cycle_pauses_when_predispatch_quota_refresh_fails() {
     cycle_quota(&harness, id, reset, 20.0, false).await;
     let job = harness
         .operations
-        .submit(
+        .submit_test(
             id,
             &cycle_request(&harness, id, "dispatch-refresh-failed").await,
             ADMIN_KEY,
@@ -2941,7 +2913,7 @@ async fn continuous_cycle_requires_both_weekly_depletion_and_current_nonlocal_42
         jobs.push(
             harness
                 .operations
-                .submit(
+                .submit_test(
                     *id,
                     &cycle_request(&harness, *id, &format!("stop-{index}")).await,
                     ADMIN_KEY,
@@ -3005,7 +2977,7 @@ async fn continuous_cycle_stops_after_a_confirmed_test_without_losing_its_result
     cycle_quota(&harness, id, reset, 90.0, false).await;
     let job = harness
         .operations
-        .submit(
+        .submit_test(
             id,
             &cycle_request(&harness, id, "after-test").await,
             ADMIN_KEY,
@@ -3054,7 +3026,7 @@ async fn continuous_cycle_pauses_unknown_results_and_unavailable_cycles_without_
     *harness.backend.now.lock().unwrap() = cycle_start();
     let missing = harness
         .operations
-        .submit(
+        .submit_test(
             ids[0],
             &cycle_request(&harness, ids[0], "missing").await,
             ADMIN_KEY,
@@ -3067,7 +3039,7 @@ async fn continuous_cycle_pauses_unknown_results_and_unavailable_cycles_without_
     cycle_quota(&harness, ids[1], reset, 20.0, false).await;
     let unknown = harness
         .operations
-        .submit(
+        .submit_test(
             ids[1],
             &cycle_request(&harness, ids[1], "unknown").await,
             ADMIN_KEY,
@@ -3100,7 +3072,7 @@ async fn continuous_cycle_pauses_unknown_results_and_unavailable_cycles_without_
     .await;
     let changed = harness
         .operations
-        .submit(
+        .submit_test(
             ids[2],
             &cycle_request(&harness, ids[2], "changed").await,
             ADMIN_KEY,
@@ -3134,7 +3106,7 @@ async fn continuous_cycle_cancellation_wins_during_dispatch_and_successor_refres
         cycle_quota(&harness, *id, reset, 20.0, false).await;
         let job = harness
             .operations
-            .submit(
+            .submit_test(
                 *id,
                 &cycle_request(&harness, *id, &format!("cancel-{index}")).await,
                 ADMIN_KEY,
@@ -3216,7 +3188,7 @@ async fn continuous_cycle_validates_mode_account_and_request_identity() {
         assert_eq!(
             harness
                 .operations
-                .submit(id, &invalid, ADMIN_KEY)
+                .submit_test(id, &invalid, ADMIN_KEY)
                 .await
                 .err()
                 .unwrap()
@@ -3231,7 +3203,7 @@ async fn continuous_cycle_validates_mode_account_and_request_identity() {
         assert_eq!(
             harness
                 .operations
-                .submit(id, &invalid, ADMIN_KEY)
+                .submit_test(id, &invalid, ADMIN_KEY)
                 .await
                 .err()
                 .unwrap()
@@ -3242,7 +3214,7 @@ async fn continuous_cycle_validates_mode_account_and_request_identity() {
     }
     let first = harness
         .operations
-        .submit(id, &request, ADMIN_KEY)
+        .submit_test(id, &request, ADMIN_KEY)
         .await
         .unwrap();
     let mut invalid = request.clone();
@@ -3250,7 +3222,7 @@ async fn continuous_cycle_validates_mode_account_and_request_identity() {
     assert_eq!(
         harness
             .operations
-            .submit(id, &invalid, ADMIN_KEY)
+            .submit_test(id, &invalid, ADMIN_KEY)
             .await
             .err()
             .unwrap()
@@ -3272,7 +3244,7 @@ async fn continuous_cycle_validates_mode_account_and_request_identity() {
     assert_eq!(
         harness
             .operations
-            .submit(id, &invalid, ADMIN_KEY)
+            .submit_test(id, &invalid, ADMIN_KEY)
             .await
             .err()
             .unwrap()
@@ -3291,7 +3263,7 @@ async fn scheduled_fixture(
 ) -> Value {
     h.actions.queries.oauth.save_admin_token(ADMIN_KEY).unwrap();
     *h.backend.now.lock().unwrap() = due - chrono::Duration::seconds(1);
-    h.operations.submit(id,&json!({"action":"test","payload":{"mode":"default","confirmed":true,"model_id":"fixture-model"},
+    h.operations.submit_test(id,&json!({"action":"test","payload":{"mode":"default","confirmed":true,"model_id":"fixture-model"},
         "scheduled_at":due.to_rfc3339(),"expected_version":h.expected_versions(&[id],"test").await[&id],
         "request_id":format!("fixture-retry-{suffix}"),"client_id":CLIENT_ID}),ADMIN_KEY).await.unwrap()
 }
@@ -3439,7 +3411,7 @@ async fn continuous_retry_finishes_the_round_before_handing_authorization_to_suc
     cycle_quota(&h, id, reset, 20.0, false).await;
     let job = h
         .operations
-        .submit(id, &cycle_request(&h, id, "retry-handoff").await, ADMIN_KEY)
+        .submit_test(id, &cycle_request(&h, id, "retry-handoff").await, ADMIN_KEY)
         .await
         .unwrap();
     let jid = job["id"].as_str().unwrap();

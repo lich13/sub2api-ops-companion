@@ -12,7 +12,7 @@ extension AccountTemplatesSheet {
         error = ""
         defer { busy = false }
         do {
-            let loaded: AccountTemplatesConfig = try await RustBridge.shared.api("GET", "/account-templates")
+            let loaded: TemplatesHeader = try await RustBridge.shared.api("GET", "/account-templates")
             saved = loaded
             resetDrafts(from: loaded)
         } catch {
@@ -50,7 +50,7 @@ extension AccountTemplatesSheet {
                 return
             }
             if let prof = draftValue?.profile {
-                let invalid = AccountModelProfile.validate(prof)
+                let invalid = ModelProfileReply.validate(prof)
                 if !invalid.isEmpty {
                     error = invalid
                     return
@@ -72,12 +72,12 @@ extension AccountTemplatesSheet {
         }
         do {
             let path = id.map { "/account-templates/\($0)" } ?? "/account-templates"
-            let updated: AccountTemplatesConfig = try await RustBridge.shared.api(method, path, body: .object(payload))
-            let previousIds = Set(currentSaved.template_order)
+            let updated: TemplatesHeader = try await RustBridge.shared.api(method, path, body: .object(payload))
+            let previousIds = Set(currentSaved.orderList)
             saved = updated
             resetDrafts(from: updated)
             if method == "POST" {
-                if let createdId = updated.template_order.first(where: { !previousIds.contains($0) }) {
+                if let createdId = updated.orderList.first(where: { !previousIds.contains($0) }) {
                     selectedTemplateId = createdId
                 }
                 creating = nil
@@ -91,7 +91,7 @@ extension AccountTemplatesSheet {
         }
     }
 
-    func applySelectedTemplate(saved: AccountTemplatesConfig) async {
+    func applySelectedTemplate(saved: TemplatesHeader) async {
         guard !busy, store.state.online, readyToApply, !selectedTemplateId.isEmpty else { return }
         busy = true
         error = ""

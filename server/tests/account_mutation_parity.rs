@@ -1,3 +1,9 @@
+#[path = "common/harness.rs"]
+mod test_harness;
+use test_harness::{
+    operation_settings, spawn_loopback, write_loopback_config, OperationsBatchExt,
+    OperationsSubmitExt,
+};
 #[path = "support/fingerprint_cache.rs"]
 mod fingerprint_cache;
 
@@ -869,22 +875,9 @@ impl Harness {
             .expect("bind loopback upstream");
         let upstream_url = format!("http://{}", upstream_listener.local_addr().unwrap());
         let directory_endpoint = format!("{upstream_url}/fixture-models");
-        let connection_path = temp.path().join("sub2api-config.json");
-        fs::write(
-            &connection_path,
-            serde_json::to_vec(&json!({"base_url":upstream_url,"verify_base_url":""})).unwrap(),
-        )
-        .expect("write loopback connection config");
+        let connection_path = write_loopback_config(temp.path(), &upstream_url);
         let runtime = Runtime::new(Settings {
-            database_url,
-            bind: "127.0.0.1:0".into(),
-            base_path: String::new(),
-            audit_path: temp.path().join("audit.jsonl"),
-            usage_path: temp.path().join("usage-state.json"),
-            oauth_path: temp.path().join("oauth-state.json"),
-            bark_path: temp.path().join("bark-state.json"),
             connection_path,
-            keepalive_path: temp.path().join("keepalive-state.json"),
             oauth: {
                 let mut config = json!({
                 "oauth_recovery_monitor_enabled":false,"oauth_daily_test_enabled":false,
@@ -903,10 +896,7 @@ impl Harness {
                 }
                 config
             },
-            bark: json!({"enabled":false}),
-            bark_valid: true,
-            base_url: upstream_url.clone(),
-            verify_url: String::new(),
+            ..operation_settings(database_url, temp.path(), upstream_url.clone())
         })
         .await
         .expect("construct Rust runtime against temporary PostgreSQL");
@@ -926,16 +916,7 @@ impl Harness {
             .await
             .expect("serve loopback upstream fixture");
         });
-        let app_listener = TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .expect("bind Rust desktop API");
-        let app_url = format!("http://{}", app_listener.local_addr().unwrap());
-        let api_runtime = runtime.clone();
-        let app_task = tokio::spawn(async move {
-            axum::serve(app_listener, api::router(api_runtime))
-                .await
-                .expect("serve Rust desktop API");
-        });
+        let (app_url, app_task) = spawn_loopback(api::router(runtime.clone())).await;
         let client = reqwest::Client::builder()
             .no_proxy()
             .build()
@@ -1713,7 +1694,7 @@ async fn settings_queue_waits_for_parent_lock_then_writes_once_and_supersedes_id
     )
     .expect("reopen the persisted Rust operation service");
     let recovered_duplicate = reopened
-        .submit(
+        .submit_test(
             child_id,
             &child_request(child_version.clone(), 5, request_id),
             ADMIN_KEY,
@@ -1736,7 +1717,7 @@ async fn settings_queue_waits_for_parent_lock_then_writes_once_and_supersedes_id
         .await;
     assert_eq!(status, 202);
     let resumed_independent = reopened
-        .submit(
+        .submit_test(
             independent_id,
             &child_request(
                 operation_version(&independent_row, "priority"),
@@ -1953,7 +1934,7 @@ async fn settings_queue_waits_for_parent_lock_then_writes_once_and_supersedes_id
         .expect("change the versioned priority before releasing its parent lease");
     drop(stale_lease);
     let reopened_stale = reopened
-        .submit(stale_child_id, &stale_request, ADMIN_KEY)
+        .submit_test(stale_child_id, &stale_request, ADMIN_KEY)
         .await
         .unwrap();
     assert_eq!(reopened_stale["id"], stale["id"]);
@@ -3533,7 +3514,7 @@ async fn native_template_batch_is_atomic_secret_free_idempotent_and_skips_busy_c
     )
     .expect("reopen the real queued native template batch");
     let restarted_duplicate = reopened
-        .submit_batch(&request, ADMIN_KEY, true)
+        .submit_batch_test(&request, ADMIN_KEY, true)
         .await
         .unwrap();
     assert_eq!(restarted_duplicate["batch_id"], accepted["batch_id"]);
@@ -4938,7 +4919,7 @@ async fn proxy_batch_restart_checks_a_dispatched_chunk_without_replaying_it() {
         "checking"
     );
     let duplicate = reopened
-        .submit_batch(&request, ADMIN_KEY, false)
+        .submit_batch_test(&request, ADMIN_KEY, false)
         .await
         .unwrap();
     assert_eq!(duplicate["batch_id"], batch_id);
@@ -6921,7 +6902,7 @@ async fn key_quota_http_auth_settings_and_parent_credential_isolation() {
     assert_eq!(value["key_quota"]["plans"][0]["remaining"], 5.0);
     assert!(value["native_read"].as_bool().unwrap());
     let row = harness.account(child).await;
-    let job = harness.runtime.operations.submit(child, &json!({"action":"usage","payload":{"action":"query_usage"},"expected_version":operation_version(&row,"usage"),"client_id":CLIENT_ID,"request_id":"fixture-key-quota-operation-0001"}), ADMIN_KEY).await.unwrap();
+    let job = harness.runtime.operations.submit_test(child, &json!({"action":"usage","payload":{"action":"query_usage"},"expected_version":operation_version(&row,"usage"),"client_id":CLIENT_ID,"request_id":"fixture-key-quota-operation-0001"}), ADMIN_KEY).await.unwrap();
     harness.runtime.operations.tick().await.unwrap();
     let done = harness
         .wait_job(job["id"].as_str().unwrap(), &["completed"])
@@ -7264,7 +7245,7 @@ async fn failed_usage_query_ends_failed_instead_of_waiting_for_confirmation() {
     let job = h
         .runtime
         .operations
-        .submit(
+        .submit_test(
             id,
             &json!({"action":"usage","payload":{"action":"query_reset_credits"},"expected_version":operation_version(&row,"usage"),"client_id":CLIENT_ID,"request_id":"fixture-failed-count-query-0001"}),
             ADMIN_KEY,

@@ -547,18 +547,22 @@ export default function App() {
     () => [...new Set(accounts.map((a) => a.type))],
     [accounts],
   );
+  function savePrefs(patch: Partial<Preferences>) {
+    return command("preferences", {
+      ...(patch.record_columns !== undefined
+        ? { recordColumns: patch.record_columns }
+        : {}),
+      ...(patch.model_test_concurrency !== undefined
+        ? { modelTestConcurrency: patch.model_test_concurrency }
+        : {}),
+      ...(patch.model_test_preferences !== undefined
+        ? { modelTestPreferences: patch.model_test_preferences }
+        : {}),
+    });
+  }
   async function prefs(patch: Partial<Preferences>) {
     try {
-      await command("preferences", {
-        pinned: patch.pinned ?? state.preferences.pinned,
-        recordColumns: patch.record_columns ?? state.preferences.record_columns,
-        modelTestConcurrency:
-          patch.model_test_concurrency ??
-          state.preferences.model_test_concurrency,
-        modelTestPreferences:
-          patch.model_test_preferences ??
-          state.preferences.model_test_preferences,
-      });
+      await savePrefs(patch);
     } catch (e) {
       report(e);
     }
@@ -853,7 +857,7 @@ export default function App() {
   return (
     <div className="app mobile">
       <main className="main">
-        <header className="topbar" data-tauri-drag-region>
+        <header className="topbar">
           <div className="breadcrumb">
             <strong>{pages.find((p) => p.id === page)?.label}</strong>
           </div>
@@ -986,12 +990,9 @@ export default function App() {
                       foreground={state.foreground !== false}
                       accounts={accounts}
                       columns={state.preferences.record_columns}
-                      saveColumns={async (columns) => {
-                        await command("preferences", {
-                          pinned: state.preferences.pinned,
-                          recordColumns: columns,
-                        });
-                      }}
+                      saveColumns={(columns) =>
+                        savePrefs({ record_columns: columns })
+                      }
                     />
                   )}
                   {page === "accounts" && (

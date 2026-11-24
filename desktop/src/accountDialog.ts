@@ -4,7 +4,7 @@ import type { SettingsSection } from "./AccountSettingsDialog";
 type Single = "test" | "modelTest" | "detection" | "keepalive";
 type Batch = "delete" | "reset" | "proxy";
 
-export type AccountDialog =
+type AccountDialog =
   | { kind: "closed" }
   | { kind: Single; account: Account }
   | { kind: Batch; accounts: Account[] }

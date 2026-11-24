@@ -188,7 +188,7 @@ fn parse_id(id: &str) -> Result<i64> {
         .filter(|v| *v > 0)
         .ok_or_else(Error::invalid)
 }
-pub fn query_string(query: &BTreeMap<String, String>, export: bool) -> Result<String> {
+fn query_string(query: &BTreeMap<String, String>, export: bool) -> Result<String> {
     let mut url = reqwest::Url::parse("http://127.0.0.1").expect("static URL");
     for (k, v) in query {
         let valid = match k.as_str() {
@@ -216,7 +216,7 @@ pub fn query_string(query: &BTreeMap<String, String>, export: bool) -> Result<St
         format!("?{encoded}")
     })
 }
-pub fn safe_proxy(value: &Value) -> Result<Value> {
+fn safe_proxy(value: &Value) -> Result<Value> {
     validation::integer_in_range(&value["id"], 1, i64::MAX)
         .map_err(|_| Error::new(502, "代理响应格式无效"))?;
     for key in ["name", "protocol", "host", "status"] {

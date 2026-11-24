@@ -53,24 +53,7 @@ struct ModelTestPreference {
 }
 
 fn normalize_record_columns(columns: Vec<String>) -> Vec<String> {
-    let allowed = [
-        "api_key",
-        "account",
-        "model",
-        "type",
-        "reasoning",
-        "tokens",
-        "cost",
-        "latency",
-        "user_agent",
-        "ip",
-        "endpoint",
-        "group",
-        "billing",
-        "request_id",
-        "upstream_id",
-    ];
-    allowed
+    sub2ops_protocol::dto::RECORD_COLUMNS
         .iter()
         .filter(|c| columns.iter().any(|v| v == **c))
         .map(|c| c.to_string())
@@ -595,22 +578,24 @@ async fn api_request(
 async fn preferences(
     app: tauri::AppHandle,
     state: State<'_, Arc<Runtime>>,
-    pinned: bool,
-    launch_at_login: bool,
+    pinned: Option<bool>,
+    launch_at_login: Option<bool>,
     record_columns: Option<Vec<String>>,
     model_test_concurrency: Option<u8>,
     model_test_preferences: Option<std::collections::BTreeMap<String, ModelTestPreference>>,
 ) -> Result<(), HttpFailure> {
     let mut view = state.view.lock().await;
     #[cfg(desktop)]
-    if launch_at_login != view.preferences.launch_at_login {
-        let launch = app.autolaunch();
-        if launch_at_login {
-            launch.enable()
-        } else {
-            launch.disable()
+    if let Some(next_launch) = launch_at_login {
+        if next_launch != view.preferences.launch_at_login {
+            let launch = app.autolaunch();
+            if next_launch {
+                launch.enable()
+            } else {
+                launch.disable()
+            }
+            .map_err(|_| "无法更改开机启动")?;
         }
-        .map_err(|_| "无法更改开机启动")?;
     }
     let mut prefs = view.preferences.clone();
     if let Some(concurrency) = model_test_concurrency {
@@ -628,8 +613,21 @@ async fn preferences(
         }
         prefs.model_test_preferences = selections;
     }
-    prefs.pinned = cfg!(desktop) && pinned;
-    prefs.launch_at_login = cfg!(desktop) && launch_at_login;
+    #[cfg(desktop)]
+    {
+        if let Some(next_pinned) = pinned {
+            prefs.pinned = next_pinned;
+        }
+        if let Some(next_launch) = launch_at_login {
+            prefs.launch_at_login = next_launch;
+        }
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (pinned, launch_at_login);
+        prefs.pinned = false;
+        prefs.launch_at_login = false;
+    }
     if let Some(columns) = record_columns {
         prefs.record_columns = Some(normalize_record_columns(columns));
     }

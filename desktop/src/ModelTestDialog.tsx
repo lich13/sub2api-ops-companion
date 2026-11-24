@@ -9,6 +9,11 @@ import {
   X,
 } from "lucide-react";
 import { api } from "./bridge";
+import {
+  DefaultModelId,
+  type ModelDetectionReply,
+  type ModelOption,
+} from "./protocol";
 import { readAccountModels, modelDirectoryRevoked } from "./accountModels";
 import type { Account } from "./types";
 import FingerprintBankStatus from "./FingerprintBankStatus";
@@ -26,14 +31,12 @@ import {
 import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
 
-type Model = { id: string; display_name?: string; type?: string };
-type Policy = {
-  version: string;
+type Model = ModelOption & { type?: string };
+type Policy = Omit<ModelDetectionReply, "verdict_mode" | "model_override"> & {
   verdict_mode?: VerdictMode;
-  degraded_model_id?: string;
   model_override?: string | null;
 };
-const defaultTarget = "gpt-5.6-luna";
+const defaultTarget: string = DefaultModelId.LegacyDegraded;
 const terminal = new Set([
   "completed",
   "failed",

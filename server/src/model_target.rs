@@ -13,7 +13,7 @@ static VERSION: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\A[0-9]+(?:\.[0-9]+){1,3}(?:-[0-9A-Za-z.]+)?\z").unwrap());
 static TRAILER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\(([^();/]+);\s*[^()]*\)\s*$").unwrap());
-pub fn valid_version(value: &Value) -> Option<String> {
+fn valid_version(value: &Value) -> Option<String> {
     let text = if truthy(value) {
         crate::compat::text(value)
     } else {

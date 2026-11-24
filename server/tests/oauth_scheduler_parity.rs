@@ -1,9 +1,16 @@
+#[path = "common/harness.rs"]
+mod test_harness;
+use test_harness::{
+    account_path_id as account_id, json_status as json_response, method_name, runtime_settings,
+    spawn_loopback, write_loopback_config, Gate,
+};
+
 use axum::{
     body::{to_bytes, Body},
     extract::{Request, State},
     http::{header, Method, StatusCode},
-    response::{IntoResponse, Response},
-    Json, Router,
+    response::Response,
+    Router,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use serde_json::{json, Value};
@@ -30,7 +37,7 @@ use sub2ops_server::{
     runtime::Runtime,
     settings::{daily_time, Settings},
 };
-use tokio::{net::TcpListener, sync::Notify, task::JoinHandle};
+use tokio::task::JoinHandle;
 
 const ADMIN_KEY: &str = "fixture-admin-oauth-scheduler";
 static NEXT_ACCOUNT_ID: AtomicI64 = AtomicI64::new(9_600_000);
@@ -116,30 +123,6 @@ fn fixture() -> Value {
 
 fn reference_time() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 9, 29, 20, 0, 0).unwrap()
-}
-
-fn method_name(method: &Method) -> &'static str {
-    match *method {
-        Method::GET => "GET",
-        Method::POST => "POST",
-        Method::DELETE => "DELETE",
-        _ => "OTHER",
-    }
-}
-
-#[derive(Clone)]
-struct Gate {
-    entered: Arc<Notify>,
-    release: Arc<Notify>,
-}
-
-impl Gate {
-    fn new() -> Self {
-        Self {
-            entered: Arc::new(Notify::new()),
-            release: Arc::new(Notify::new()),
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -291,21 +274,6 @@ fn default_usage(at: DateTime<Utc>) -> Value {
             "window_minutes": 10080
         }
     })
-}
-
-fn json_response(status: u16, value: Value) -> Response {
-    (
-        StatusCode::from_u16(status).expect("fixture HTTP status"),
-        Json(value),
-    )
-        .into_response()
-}
-
-fn account_id(path: &str, suffix: &str) -> Option<i64> {
-    path.strip_prefix("/api/v1/admin/accounts/")?
-        .strip_suffix(suffix)?
-        .parse()
-        .ok()
 }
 
 async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> Response {
@@ -521,29 +489,14 @@ impl Harness {
         let temp = tempfile::tempdir().expect("create synthetic OAuth scheduler state directory");
         let clock = Arc::new(StdMutex::new(reference_time()));
         let account_ids = Arc::new(StdMutex::new(Vec::new()));
-        let listener = TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .expect("bind loopback only Sub2API fixture");
-        let base_url = format!("http://{}", listener.local_addr().unwrap());
         let mock = MockUpstream::new(database.pool.clone(), clock.clone());
-        let server_state = mock.clone();
-        let server = tokio::spawn(async move {
-            axum::serve(
-                listener,
-                Router::new()
-                    .fallback(mock_upstream)
-                    .with_state(server_state),
-            )
-            .await
-            .expect("serve loopback OAuth scheduler fixture");
-        });
-
-        let connection_path = temp.path().join("sub2api-config.json");
-        fs::write(
-            &connection_path,
-            serde_json::to_vec(&json!({"base_url":base_url,"verify_base_url":""})).unwrap(),
+        let (base_url, server) = spawn_loopback(
+            Router::new()
+                .fallback(mock_upstream)
+                .with_state(mock.clone()),
         )
-        .expect("write synthetic loopback upstream config");
+        .await;
+        let connection_path = write_loopback_config(temp.path(), &base_url);
         let oauth = json!({
             "oauth_auto_reset_credit_enabled": false,
             "oauth_daily_test_enabled": false,
@@ -556,20 +509,10 @@ impl Harness {
             "oauth_usage_refresh_concurrency": 1
         });
         let settings = Settings {
-            database_url,
-            bind: "127.0.0.1:0".into(),
-            base_path: String::new(),
-            audit_path: temp.path().join("audit.jsonl"),
-            usage_path: temp.path().join("oauth-state.json"),
-            oauth_path: temp.path().join("oauth-config.json"),
-            bark_path: temp.path().join("bark-config.json"),
             connection_path,
-            keepalive_path: temp.path().join("keepalive-state.json"),
             oauth,
             bark: json!({"enabled":false,"device_key":"fixture-bark-only","server_url":base_url}),
-            bark_valid: true,
-            base_url: base_url.clone(),
-            verify_url: String::new(),
+            ..runtime_settings(database_url, temp.path(), base_url.clone())
         };
         let runtime_clock = clock.clone();
         let runtime =

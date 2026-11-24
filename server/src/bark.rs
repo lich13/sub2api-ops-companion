@@ -320,7 +320,7 @@ pub fn credit_message(event: &Value) -> (String, String) {
     ));
     (title, lines.join("\n"))
 }
-pub fn result_label(outcome: &str) -> Option<&'static str> {
+fn result_label(outcome: &str) -> Option<&'static str> {
     match outcome {
         "restored" => Some("用卡成功，已恢复调度"),
         "not_executed" => Some("未执行用卡"),
@@ -410,7 +410,7 @@ impl Bark {
         self.push_with_config(title, body, seconds, options, &self.runtime())
             .await
     }
-    pub async fn push_with_config(
+    pub(crate) async fn push_with_config(
         &self,
         title: &str,
         body: &str,

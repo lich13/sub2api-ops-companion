@@ -43,7 +43,7 @@ impl ConfigService {
             cached_current: Arc::new(std::sync::Mutex::new(None)),
         }
     }
-    pub fn oauth_values(&self, raw: &Value) -> Result<Value> {
+    fn oauth_values(&self, raw: &Value) -> Result<Value> {
         self.effective(raw).map(|(value, _)| value)
     }
     fn effective(&self, raw: &Value) -> Result<(Value, Concurrency)> {

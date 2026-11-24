@@ -229,13 +229,25 @@ public struct OperationPanelSheet: View {
 
                 if OperationStore.isRepeating(job) {
                     Button("停止连续预约") {
-                        Task { try? await ops.cancelJob(job) }
+                        Task {
+                            do {
+                                _ = try await ops.cancelJob(job)
+                            } catch {
+                                store.report(error)
+                            }
+                        }
                     }
                     .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
                     .disabled(!store.state.online)
                 } else if canCancelSingle(job) {
                     Button("取消") {
-                        Task { try? await ops.cancelJob(job) }
+                        Task {
+                            do {
+                                _ = try await ops.cancelJob(job)
+                            } catch {
+                                store.report(error)
+                            }
+                        }
                     }
                     .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
                     .disabled(!store.state.online)

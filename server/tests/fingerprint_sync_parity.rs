@@ -1,3 +1,6 @@
+#[path = "common/harness.rs"]
+mod test_harness;
+
 use axum::http::{Response as HttpResponse, StatusCode};
 use futures_util::future::BoxFuture;
 use reqwest::{Response, Url};
@@ -239,22 +242,7 @@ impl Clock {
 }
 
 fn settings_for_data_directory(data: &Path) -> Arc<Settings> {
-    Arc::new(Settings {
-        database_url: "postgres://example.invalid/sub2ops".into(),
-        bind: "127.0.0.1:0".into(),
-        base_path: "/".into(),
-        audit_path: data.join("audit.jsonl"),
-        usage_path: data.join("oauth-state.json"),
-        oauth_path: data.join("oauth-config.json"),
-        bark_path: data.join("bark-config.json"),
-        connection_path: data.join("sub2api-config.json"),
-        keepalive_path: data.join("keepalive-state.json"),
-        oauth: json!({}),
-        bark: json!({}),
-        bark_valid: false,
-        base_url: String::new(),
-        verify_url: String::new(),
-    })
+    Arc::new(test_harness::offline_bank_settings(data))
 }
 
 fn new_bank(directory: &Path, transport: Arc<dyn Transport>, clock: &Clock) -> FingerprintBank {

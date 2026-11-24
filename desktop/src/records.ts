@@ -77,40 +77,36 @@ export type RecordOption = {
   platform?: string | null;
   deleted: boolean;
 };
+import { RecordColumnId } from "./protocol";
+
 export type RecordOptionPage = {
   items: RecordOption[];
   next_cursor: string | null;
 };
-export const recordColumns = [
-  ["api_key", "API 密钥"],
-  ["account", "账户"],
-  ["model", "模型"],
-  ["type", "类型"],
-  ["reasoning", "推理强度"],
-  ["tokens", "Token"],
-  ["cost", "费用"],
-  ["latency", "延迟"],
-  ["user_agent", "User-Agent"],
-  ["ip", "IP"],
-  ["endpoint", "端点"],
-  ["group", "分组"],
-  ["billing", "计费模式"],
-  ["request_id", "请求 ID"],
-  ["upstream_id", "上游 ID"],
-] as const;
-export type RecordColumn = (typeof recordColumns)[number][0];
-export const defaultRecordColumns: string[] = [
-  "api_key",
-  "account",
-  "model",
-  "type",
-  "reasoning",
-  "tokens",
-  "cost",
-  "latency",
-  "user_agent",
-  "ip",
-];
+const recordColumnLabels: Record<RecordColumnId, string> = {
+  [RecordColumnId.ApiKey]: "API 密钥",
+  [RecordColumnId.Account]: "账户",
+  [RecordColumnId.Model]: "模型",
+  [RecordColumnId.Type]: "类型",
+  [RecordColumnId.Reasoning]: "推理强度",
+  [RecordColumnId.Tokens]: "Token",
+  [RecordColumnId.Cost]: "费用",
+  [RecordColumnId.Latency]: "延迟",
+  [RecordColumnId.UserAgent]: "User-Agent",
+  [RecordColumnId.Ip]: "IP",
+  [RecordColumnId.Endpoint]: "端点",
+  [RecordColumnId.Group]: "分组",
+  [RecordColumnId.Billing]: "计费模式",
+  [RecordColumnId.RequestId]: "请求 ID",
+  [RecordColumnId.UpstreamId]: "上游 ID",
+};
+export type RecordColumn = `${RecordColumnId}`;
+export const recordColumns = (
+  Object.values(RecordColumnId) as RecordColumnId[]
+).map((id) => [id as RecordColumn, recordColumnLabels[id]] as const);
+export const defaultRecordColumns: string[] = Object.values(
+  RecordColumnId,
+).slice(0, 10);
 export function normalizeRecordColumns(columns: string[] | null | undefined) {
   return columns == null
     ? [...defaultRecordColumns]
@@ -124,7 +120,7 @@ export const requestTypes = {
   live: "Live",
   unknown: "未知",
 } as const;
-export type RequestType = keyof typeof requestTypes;
+type RequestType = keyof typeof requestTypes;
 export function requestType(record: {
   native_request_type?: string | null;
   request_type?: string | null;

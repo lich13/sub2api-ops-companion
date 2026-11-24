@@ -6,7 +6,7 @@ import type {
   PriorityTaskReply,
 } from "./protocol";
 export type { PriorityAccountReply as PriorityAccount } from "./protocol";
-export type PriorityItem = Omit<
+type PriorityItem = Omit<
   PriorityItemReply,
   "platform" | "observed_priority" | "status"
 > & {
@@ -32,7 +32,7 @@ export type PriorityView = Omit<
   platforms: PriorityPlatform[];
   active_task: PriorityTask | null;
 };
-export type PrioritySlot = { priority: number; id: number | null };
+type PrioritySlot = { priority: number; id: number | null };
 export type PriorityDraft = {
   ids: number[];
   version: string;

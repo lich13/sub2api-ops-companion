@@ -348,7 +348,7 @@ public struct DetectionLogDetailModal: View {
                 VStack(alignment: .leading, spacing: 6) {
                     fact("请求模型", row.model_id)
                     fact("检测源", "\(ModelTestEngine.name(for: row.summary.engine)) · \(row.summary.sample_count ?? 3) 组")
-                    fact("判定模式", row.summary.verdict_mode == "relaxed" ? "宽松模式 · \(row.summary.degraded_model_id ?? "gpt-5.6-luna")" : "严格模式")
+                    fact("判定模式", row.summary.verdict_mode == "relaxed" ? "宽松模式 · \(row.summary.degraded_model_id ?? DefaultModelId.legacyDegraded.rawValue)" : "严格模式")
                     fact("首组预测", row.summary.first_prediction.isEmpty ? "暂无记录" : row.summary.first_prediction)
                     fact("汇总预测", (row.summary.prediction_name ?? row.summary.prediction).isEmpty ? "暂无记录" : (row.summary.prediction_name ?? row.summary.prediction))
                     fact("开始时间", BeijingTime.fullTime(row.started_at))

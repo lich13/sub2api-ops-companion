@@ -1,26 +1,17 @@
-use futures_util::future::BoxFuture;
+#[path = "common/harness.rs"]
+mod test_harness;
+
 use serde_json::{json, Value};
 use std::{
     env, fs,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::{atomic::Ordering, Arc},
 };
 use sub2ops_server::{
-    account_locks::AccountLocks,
-    account_templates::Templates,
-    actions::Actions,
-    compat::digest,
-    db::Database,
-    error::{Error, Result},
-    oauth_state::OAuthState,
-    operations::{Backend, Operations},
-    queries::Queries,
-    settings::Settings,
-    store::write_json,
-    upstream::Upstream,
+    account_locks::AccountLocks, account_templates::Templates, actions::Actions, compat::digest,
+    db::Database, error::Result, oauth_state::OAuthState, operations::Operations, queries::Queries,
+    store::write_json, upstream::Upstream,
 };
+use test_harness::{operation_settings, CountingOperationBackend, OperationsBatchExt};
 use tokio::sync::Semaphore;
 
 const BATCH_ID: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -34,45 +25,7 @@ struct Fixture {
     _temp: tempfile::TempDir,
     db: Database,
     operations: Arc<Operations>,
-    backend: Arc<FixtureBackend>,
-}
-
-struct FixtureBackend {
-    dispatch_calls: Arc<AtomicUsize>,
-    test_config_reads: AtomicUsize,
-}
-
-impl Backend for FixtureBackend {
-    fn mark(&self, _id: i64) -> Result<Value> {
-        Ok(json!({"version":"0".repeat(64)}))
-    }
-
-    fn dispatch<'a>(
-        &'a self,
-        _row: &'a Value,
-        _job: &'a Value,
-        _key: &'a str,
-    ) -> BoxFuture<'a, Result<Value>> {
-        self.dispatch_calls.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async { Ok(json!({"fixture":true})) })
-    }
-
-    fn model_get(&self, _id: &str) -> Result<Value> {
-        Err(Error::new(404, "fixture model operation absent"))
-    }
-
-    fn model_jobs(&self) -> Result<Vec<Value>> {
-        Ok(Vec::new())
-    }
-
-    fn model_cancel<'a>(&'a self, _id: &'a str) -> BoxFuture<'a, Result<Value>> {
-        Box::pin(async { Err(Error::new(404, "fixture model operation absent")) })
-    }
-
-    fn test_config(&self) -> Result<(String, usize)> {
-        self.test_config_reads.fetch_add(1, Ordering::SeqCst);
-        Ok(("fixture-test-model".into(), 1))
-    }
+    backend: Arc<CountingOperationBackend>,
 }
 
 impl Fixture {
@@ -83,22 +36,7 @@ impl Fixture {
             .await
             .expect("connect to runner-owned PostgreSQL");
         let temp = tempfile::tempdir().expect("create operation state fixture directory");
-        let settings = Arc::new(Settings {
-            database_url,
-            bind: "127.0.0.1:0".into(),
-            base_path: String::new(),
-            audit_path: temp.path().join("audit.jsonl"),
-            usage_path: temp.path().join("usage-state.json"),
-            oauth_path: temp.path().join("oauth-state.json"),
-            bark_path: temp.path().join("bark-state.json"),
-            connection_path: temp.path().join("sub2api-config.json"),
-            keepalive_path: temp.path().join("keepalive-state.json"),
-            oauth: json!({}),
-            bark: json!({"enabled":false}),
-            bark_valid: true,
-            base_url: String::new(),
-            verify_url: String::new(),
-        });
+        let settings = Arc::new(operation_settings(database_url, temp.path(), ""));
         let upstream = Upstream::new(settings.clone()).expect("construct fixture upstream");
         let queries = Queries {
             db: db.clone(),
@@ -112,10 +50,7 @@ impl Fixture {
             settings,
         )
         .expect("construct operation actions");
-        let backend = Arc::new(FixtureBackend {
-            test_config_reads: AtomicUsize::new(0),
-            dispatch_calls: Arc::new(AtomicUsize::new(0)),
-        });
+        let backend = Arc::new(CountingOperationBackend::default());
         let operations = Operations::new(actions, backend.clone(), Arc::new(Semaphore::new(8)))
             .expect("construct durable operation queue");
         Self {
@@ -277,7 +212,7 @@ async fn corrupted_operation_state_returns_503_without_rewrite_or_dispatch() {
         assert_read_error(
             fixture
                 .operations
-                .submit_batch(&request, ADMIN_KEY, false)
+                .submit_batch_test(&request, ADMIN_KEY, false)
                 .await,
             case,
         );
@@ -347,7 +282,7 @@ async fn idempotent_replay_returns_existing_batch_without_duplicate_dispatch() {
 
     let replayed = fixture
         .operations
-        .submit_batch(&replay_request(), ADMIN_KEY, false)
+        .submit_batch_test(&replay_request(), ADMIN_KEY, false)
         .await
         .expect("matching batch request id replays the existing batch");
     assert_eq!(replayed["batch_id"], BATCH_ID);

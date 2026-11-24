@@ -3,12 +3,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Eye, EyeOff, RefreshCw, Search, X } from "lucide-react";
 import { parseDocument, stringify } from "yaml";
 import { api } from "./bridge";
-import type { HostConfigHeader } from "./protocol";
+import type {
+  HostConfigHeader,
+  HostFieldIssue,
+  HostOperationReply,
+  HostValidationReply,
+} from "./protocol";
 import Sub2ApiVersion from "./Sub2ApiVersion";
 import { ProxyDialog } from "./ProxyDialogs";
 import "./sub2api-config.css";
 
-export type ConfigField = {
+type ConfigField = {
   path: string;
   group: string;
   type: string;
@@ -48,12 +53,14 @@ export type ConfigDocument = HostConfigHeader & {
     fields: ConfigField[];
   };
   values: Record<string, FieldValue>;
-  unknown: { path: string; message: string }[];
+  unknown: HostFieldIssue[];
 };
 type ConfigRead = ConfigDocument | (HostConfigHeader & { available: false });
 type Change = { path: string; remove: boolean; value?: unknown };
-type Issue = { path: string; message: string };
-type Operation = { status: string; message?: string };
+type Issue = HostFieldIssue;
+type Operation = Omit<HostOperationReply, "message"> & {
+  message?: string | null;
+};
 const running = (operation: Operation | null) =>
   !!operation &&
   ["saving", "restarting", "restoring"].includes(operation.status);
@@ -618,7 +625,7 @@ export default function Sub2ApiConfig({
     setError("");
     setMessage("");
     try {
-      const result = await api<{ valid: boolean; errors: Issue[] }>(
+      const result = await api<HostValidationReply>(
         "POST",
         "/sub2api-config/validate",
         payload(),
@@ -879,33 +886,6 @@ export default function Sub2ApiConfig({
               </select>
             </div>
             <div className="config-layout">
-              <nav className="config-groups" aria-label="配置分组">
-                {aggregate && (
-                  <button
-                    type="button"
-                    aria-current={!selectedGroup ? "true" : undefined}
-                    onClick={() => chooseGroup("")}
-                  >
-                    <span>全部分组</span>
-                    <small>{fields.length}</small>
-                  </button>
-                )}
-                {groups.map((g) => (
-                  <button
-                    type="button"
-                    key={g.id}
-                    aria-label={g.label}
-                    aria-current={g.id === selectedGroup ? "true" : undefined}
-                    onClick={() => chooseGroup(g.id)}
-                  >
-                    <span>{g.label}</span>
-                    <small>{count(g.id)}</small>
-                  </button>
-                ))}
-                {!groups.length && (
-                  <p className="config-notice muted">没有匹配分组</p>
-                )}
-              </nav>
               <div
                 ref={fieldsRef}
                 className="config-fields"

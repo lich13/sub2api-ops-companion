@@ -41,11 +41,8 @@ export type AccountKeepalive = Omit<
   last_restore_at: string | null;
   next_allowed_at: string | null;
 };
-export type AccountBlocker = WithRequired<
-  AccountBlockerRecord,
-  "code" | "label"
->;
-export type ModelDetectionSummary = Omit<
+type AccountBlocker = WithRequired<AccountBlockerRecord, "code" | "label">;
+type ModelDetectionSummary = Omit<
   WithNull<
     WithRequired<
       ModelDetectionSummaryRecord,
@@ -344,7 +341,7 @@ export type Recovery = Omit<
     verification_method: "connection" | "model";
   };
 };
-export type Snapshot = Omit<
+type Snapshot = Omit<
   SnapshotRecord,
   "accounts" | "groups" | "errors" | "recoveries"
 > & {
@@ -364,8 +361,6 @@ export type Preferences = {
   >;
   base_url: string;
   connections?: SavedConnection[];
-  pinned: boolean;
-  launch_at_login: boolean;
   record_columns?: string[] | null;
   model_test_concurrency?: number | null;
 };
@@ -424,8 +419,6 @@ export const initialState: ViewState = {
   preferences: {
     base_url: "",
     connections: [],
-    pinned: false,
-    launch_at_login: false,
   },
 };
 const timeFormatter = new Intl.DateTimeFormat("en-GB", {
@@ -451,21 +444,22 @@ export function sortPriority(accounts: Account[], ascending = true): Account[] {
     (a, b) => (ascending ? 1 : -1) * (a.priority - b.priority) || a.id - b.id,
   );
 }
-export type QuotaBatch = {
-  id: string;
-  status: string;
-  total: number;
-  completed: number;
-  started_at: string;
-  completed_at: string | null;
-  items: {
-    account_id: number;
-    account_name: string;
-    platform: string;
-    status: string;
-    error?: string;
+export type QuotaBatch = Omit<
+  WithRequired<
+    WithNull<import("./protocol").QuotaRefreshHeader, "completed_at">,
+    "id" | "total" | "completed" | "started_at" | "completed_at"
+  >,
+  "items"
+> & {
+  items: (Omit<
+    WithRequired<
+      import("./protocol").QuotaRefreshEntry,
+      "account_id" | "account_name" | "platform" | "status"
+    >,
+    "usage"
+  > & {
     usage?: UsageSummary;
-  }[];
+  })[];
 };
 export function filterAccounts(
   accounts: Account[],

@@ -639,22 +639,42 @@ pub struct BarkSettingsReply {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TemplateMetaEntry {
+    pub name: String,
+    pub builtin: Option<bool>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TemplatesHeader {
     pub version: String,
     pub configured: bool,
     pub templates: HashMap<String, ModelProfileReply>,
+    pub template_meta: Option<HashMap<String, TemplateMetaEntry>>,
+    pub template_order: Option<Vec<String>>,
+    pub template_versions: Option<HashMap<String, String>>,
 }
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QuotaRefreshHeader {
+    pub id: Option<String>,
     pub status: String,
+    pub total: Option<Integer>,
+    pub completed: Option<Integer>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
     pub items: Vec<QuotaRefreshEntry>,
 }
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QuotaRefreshEntry {
+    pub account_id: Option<Integer>,
+    pub account_name: Option<String>,
+    pub platform: Option<String>,
+    pub status: Option<String>,
+    pub error: Option<String>,
     pub usage: Option<UsageSummaryRecord>,
 }
 

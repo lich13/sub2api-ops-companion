@@ -68,8 +68,6 @@ const state = (accounts: Account[] = [account(1)]): ViewState => ({
   error: "",
   preferences: {
     base_url: "https://example.invalid",
-    pinned: false,
-    launch_at_login: false,
   },
   snapshot: {
     observed_at: "2026-10-01T03:00:00Z",

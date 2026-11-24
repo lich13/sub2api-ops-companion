@@ -165,7 +165,7 @@ public final class RecordFeedStore {
     private func pollNewRecords(capturedEpoch: UInt64, query: String) async -> Bool {
         guard let latest = latestId else { return false }
         do {
-            let check: RecordNewCountEnvelope = try await RustBridge.shared.api(
+            let check: UsageDeltaReply = try await RustBridge.shared.api(
                 "GET",
                 "/usage-records?\(query)&after_id=\(latest)"
             )

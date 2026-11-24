@@ -1,40 +1,6 @@
 import Foundation
 import Observation
 
-public struct QuotaRefreshItem: Codable, Sendable, Equatable {
-    public var account_id: Int?
-    public var status: String?
-    public var error: String?
-}
-
-public struct QuotaRefreshJob: Codable, Sendable, Equatable {
-    public var id: String?
-    public var status: String
-    public var total: Int
-    public var completed: Int
-    public var items: [QuotaRefreshItem]
-    public var started_at: String?
-    public var completed_at: String?
-
-    public init(status: String = "idle", total: Int = 0, completed: Int = 0, items: [QuotaRefreshItem] = []) {
-        self.status = status
-        self.total = total
-        self.completed = completed
-        self.items = items
-    }
-
-    public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decodeIfPresent(String.self, forKey: .id)
-        status = try c.decodeIfPresent(String.self, forKey: .status) ?? "idle"
-        total = try c.decodeIfPresent(Int.self, forKey: .total) ?? 0
-        completed = try c.decodeIfPresent(Int.self, forKey: .completed) ?? 0
-        items = try c.decodeIfPresent([QuotaRefreshItem].self, forKey: .items) ?? []
-        started_at = try c.decodeIfPresent(String.self, forKey: .started_at)
-        completed_at = try c.decodeIfPresent(String.self, forKey: .completed_at)
-    }
-}
-
 public typealias KeyQuotaGlobalConfig = GlobalQuotaReply
 public typealias AccountKeyQuotaSettings = AccountQuotaReply
 public typealias AccountKeyQuotaTokenResponse = AccountTokenReply
@@ -135,13 +101,22 @@ public enum UsageFormatting {
     }
 
     public static func compactTokens(_ tokens: Double) -> String {
-        if tokens >= 1_000_000 {
-            return String(format: "%.1fM", tokens / 1_000_000.0)
+        guard tokens.isFinite else { return "0" }
+        let clamped = max(0, tokens)
+        let rounded = clamped.rounded()
+        if rounded < 1_000 {
+            return "\(Int(rounded))"
         }
-        if tokens >= 1_000 {
-            return String(format: "%.1fK", tokens / 1_000.0)
+        let tenthsK = max(10, (clamped / 100.0).rounded())
+        if tenthsK < 10_000 {
+            return String(format: "%.1fK", tenthsK / 10.0)
         }
-        return "\(Int(tokens.rounded()))"
+        let tenthsM = max(10, (clamped / 100_000.0).rounded())
+        if tenthsM < 10_000 {
+            return String(format: "%.1fM", tenthsM / 10.0)
+        }
+        let tenthsB = max(10, (clamped / 100_000_000.0).rounded())
+        return String(format: "%.1fB", tenthsB / 10.0)
     }
 
     public static func money(_ amount: Double) -> String {

@@ -302,16 +302,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.record-col-account,
-.record-col-api_key {
-  min-width: 116px;
-}
-.record-col-model {
-  min-width: 156px;
-}
-.record-col-type {
-  min-width: 88px;
-}
 .record-type-badges {
   display: inline-flex;
   flex-wrap: wrap;
@@ -500,22 +490,6 @@
 }
 .record-tps small {
   display: inline;
-}
-.record-time {
-  white-space: nowrap;
-  min-width: 140px;
-  font-size: 11px;
-  color: var(--muted);
-}
-.record-col-user_agent {
-  min-width: 165px;
-}
-.record-col-ip {
-  min-width: 140px;
-}
-.record-col-request_id,
-.record-col-upstream_id {
-  min-width: 170px;
 }
 .records-error {
   padding: 8px 10px;

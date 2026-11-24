@@ -1,16 +1,8 @@
 import SwiftUI
 
-struct AccountTemplatesConfig: Decodable, Sendable, Equatable {
-    var version: String
-    var configured: Bool
-    var templates: [String: AccountModelProfile]
-    var template_meta: [String: TemplateMeta]
-    var template_order: [String]
-    var template_versions: [String: String]?
-
-    struct TemplateMeta: Decodable, Sendable, Equatable {
-        var name: String
-    }
+extension TemplatesHeader {
+    var orderList: [String] { template_order ?? [] }
+    var metaMap: [String: TemplateMetaEntry] { template_meta ?? [:] }
 }
 
 struct AccountTemplateTargetPreview: Decodable, Sendable {
@@ -21,14 +13,14 @@ struct AccountTemplateTargetPreview: Decodable, Sendable {
         var eligible: Bool
         var passthrough: Bool
         var version: String
-        var config: AccountModelProfile
+        var config: ModelProfileReply
         var reason: String?
     }
 }
 
 struct TemplateDraft: Sendable, Equatable {
     var name: String
-    var profile: AccountModelProfile
+    var profile: ModelProfileReply
 }
 
 public struct AccountTemplatesSheet: View {
@@ -37,7 +29,7 @@ public struct AccountTemplatesSheet: View {
     public let targetAccounts: [Account]?
     public let onClose: () -> Void
 
-    @State var saved: AccountTemplatesConfig?
+    @State var saved: TemplatesHeader?
     @State var drafts: [String: TemplateDraft] = [:]
     @State var creating: TemplateDraft?
     @State var deleteId: String?
@@ -87,7 +79,7 @@ public struct AccountTemplatesSheet: View {
     private func isDirty(_ id: String) -> Bool {
         guard let saved,
               let draft = drafts[id],
-              let meta = saved.template_meta[id],
+              let meta = saved.metaMap[id],
               let orig = saved.templates[id]
         else { return false }
         return draft.name != meta.name || draft.profile != orig
@@ -142,7 +134,7 @@ public struct AccountTemplatesSheet: View {
                                 alignment: .leading,
                                 spacing: 12
                             ) {
-                                ForEach(saved.template_order, id: \.self) { id in
+                                ForEach(saved.orderList, id: \.self) { id in
                                     if drafts[id] != nil {
                                         templateCard(id: id, saved: saved)
                                     }
@@ -163,12 +155,12 @@ public struct AccountTemplatesSheet: View {
                                 .disabled(!dirtyAny || busy || !store.state.online)
 
                                 Button {
-                                    creating = TemplateDraft(name: "", profile: AccountModelProfile())
+                                    creating = TemplateDraft(name: "", profile: .empty)
                                 } label: {
                                     Label("新增模板", systemImage: "plus")
                                 }
                                 .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                                .disabled(busy || !store.state.online || saved.template_order.count >= 32 || creating != nil)
+                                .disabled(busy || !store.state.online || saved.orderList.count >= 32 || creating != nil)
 
                                 Spacer()
                             }
@@ -237,8 +229,8 @@ public struct AccountTemplatesSheet: View {
         }
     }
 
-    private func templateCard(id: String, saved: AccountTemplatesConfig) -> some View {
-        let currentDraft = drafts[id] ?? TemplateDraft(name: "", profile: AccountModelProfile())
+    private func templateCard(id: String, saved: TemplatesHeader) -> some View {
+        let currentDraft = drafts[id] ?? TemplateDraft(name: "", profile: .empty)
         let dirty = isDirty(id)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
@@ -318,7 +310,7 @@ public struct AccountTemplatesSheet: View {
     }
 
     private var creatingCard: some View {
-        let currentDraft = creating ?? TemplateDraft(name: "", profile: AccountModelProfile())
+        let currentDraft = creating ?? TemplateDraft(name: "", profile: .empty)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 TrimmedEntryField(
@@ -377,9 +369,9 @@ public struct AccountTemplatesSheet: View {
     }
 
     private func profileFieldsEditor(
-        profile: AccountModelProfile,
+        profile: ModelProfileReply,
         labelPrefix: String,
-        onUpdate: @escaping (AccountModelProfile) -> Void
+        onUpdate: @escaping (ModelProfileReply) -> Void
     ) -> some View {
         let itemCount = profile.whitelist.count + profile.mappings.count
         return VStack(alignment: .leading, spacing: 8) {
@@ -395,7 +387,7 @@ public struct AccountTemplatesSheet: View {
                 Spacer()
                 Button("+ 添加") {
                     var next = profile
-                    next.whitelist.append("")
+                    next.appendWhitelist([""])
                     onUpdate(next)
                 }
                 .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
@@ -413,19 +405,15 @@ public struct AccountTemplatesSheet: View {
                         cornerRadius: 5,
                         disabled: busy || !store.state.online
                     ) { trimmed in
-                        if profile.whitelist.indices.contains(idx) {
-                            var next = profile
-                            next.whitelist[idx] = trimmed
-                            onUpdate(next)
-                        }
+                        var next = profile
+                        next.setWhitelist(at: idx, trimmed)
+                        onUpdate(next)
                     }
 
                     LinearIconButton(systemName: "xmark", label: "删除白名单 \(idx + 1)", size: 11, boxSize: 24, disabled: busy) {
-                        if profile.whitelist.indices.contains(idx) {
-                            var next = profile
-                            next.whitelist.remove(at: idx)
-                            onUpdate(next)
-                        }
+                        var next = profile
+                        next.removeWhitelist(at: idx)
+                        onUpdate(next)
                     }
                 }
             }
@@ -437,7 +425,7 @@ public struct AccountTemplatesSheet: View {
                 Spacer()
                 Button("+ 添加") {
                     var next = profile
-                    next.mappings.append(AccountModelMappingRule())
+                    next.appendMapping()
                     onUpdate(next)
                 }
                 .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
@@ -455,11 +443,9 @@ public struct AccountTemplatesSheet: View {
                         cornerRadius: 5,
                         disabled: busy || !store.state.online
                     ) { trimmed in
-                        if profile.mappings.indices.contains(idx) {
-                            var next = profile
-                            next.mappings[idx].source = trimmed
-                            onUpdate(next)
-                        }
+                        var next = profile
+                        next.setMappingSource(at: idx, trimmed)
+                        onUpdate(next)
                     }
 
                     Image(systemName: "arrow.right")
@@ -475,26 +461,22 @@ public struct AccountTemplatesSheet: View {
                         cornerRadius: 5,
                         disabled: busy || !store.state.online
                     ) { trimmed in
-                        if profile.mappings.indices.contains(idx) {
-                            var next = profile
-                            next.mappings[idx].target = trimmed
-                            onUpdate(next)
-                        }
+                        var next = profile
+                        next.setMappingTarget(at: idx, trimmed)
+                        onUpdate(next)
                     }
 
                     LinearIconButton(systemName: "xmark", label: "删除映射 \(idx + 1)", size: 11, boxSize: 24, disabled: busy) {
-                        if profile.mappings.indices.contains(idx) {
-                            var next = profile
-                            next.mappings.remove(at: idx)
-                            onUpdate(next)
-                        }
+                        var next = profile
+                        next.removeMapping(at: idx)
+                        onUpdate(next)
                     }
                 }
             }
         }
     }
 
-    private func applySection(saved: AccountTemplatesConfig) -> some View {
+    private func applySection(saved: TemplatesHeader) -> some View {
         let selectedProfile = saved.templates[selectedTemplateId]
         let accountMenuLabel: String = {
             if targetAccounts != nil {
@@ -550,16 +532,16 @@ public struct AccountTemplatesSheet: View {
                 )
 
                 LinearSelect(
-                    label: saved.template_meta[selectedTemplateId]?.name ?? "选择账号模板",
+                    label: saved.metaMap[selectedTemplateId]?.name ?? "选择账号模板",
                     accessibilityTitle: "选择账号模板",
                     height: DS.controlHeightCompact,
                     width: 200,
                     compactFont: true,
-                    disabled: busy || !store.state.online || isBatchRunning || saved.template_order.isEmpty,
-                    entries: saved.template_order.map { tplId in
+                    disabled: busy || !store.state.online || isBatchRunning || saved.orderList.isEmpty,
+                    entries: saved.orderList.map { tplId in
                         LinearMenuEntry(
                             id: tplId,
-                            title: saved.template_meta[tplId]?.name ?? tplId,
+                            title: saved.metaMap[tplId]?.name ?? tplId,
                             checked: selectedTemplateId == tplId
                         ) {
                             selectedTemplateId = tplId
@@ -656,16 +638,16 @@ public struct AccountTemplatesSheet: View {
         onClose()
     }
 
-    func resetDrafts(from value: AccountTemplatesConfig) {
+    func resetDrafts(from value: TemplatesHeader) {
         var map: [String: TemplateDraft] = [:]
-        for id in value.template_order {
-            if let meta = value.template_meta[id], let prof = value.templates[id] {
+        for id in value.orderList {
+            if let meta = value.metaMap[id], let prof = value.templates[id] {
                 map[id] = TemplateDraft(name: meta.name, profile: prof)
             }
         }
         drafts = map
         if value.templates[selectedTemplateId] == nil {
-            selectedTemplateId = value.template_order.first ?? ""
+            selectedTemplateId = value.orderList.first ?? ""
         }
     }
 }

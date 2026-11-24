@@ -88,7 +88,7 @@ pub async fn set_schedulable(
     }
 }
 
-pub const EDIT_ACTIONS: &[&str] = &[
+pub(crate) const EDIT_ACTIONS: &[&str] = &[
     "priority",
     "concurrency",
     "load_factor",
@@ -96,15 +96,15 @@ pub const EDIT_ACTIONS: &[&str] = &[
     "proxy",
     "sync_models",
 ];
-pub const TEST_MODES: &[&str] = &[
+pub(crate) const TEST_MODES: &[&str] = &[
     "default", "compact", "text", "image", "video", "search", "tts", "stt", "realtime",
 ];
-pub struct OperationContext {
+pub(crate) struct OperationContext {
     pub action: String,
     pub expected: String,
 }
-tokio::task_local! {pub static OPERATION: OperationContext;}
-pub fn version_matches(row: &Value, expected: &str) -> bool {
+tokio::task_local! {pub(crate) static OPERATION: OperationContext;}
+pub(crate) fn version_matches(row: &Value, expected: &str) -> bool {
     OPERATION
         .try_with(|context| operation_versions(row)[&context.action] == context.expected)
         .unwrap_or_else(|_| account_version(row) == expected)
@@ -124,12 +124,12 @@ pub struct Actions {
     #[cfg(any(test, feature = "test-fixtures"))]
     pub(crate) directory_endpoint: Arc<std::sync::Mutex<Option<String>>>,
 }
-pub struct TestRun {
+pub(crate) struct TestRun {
     receiver: mpsc::Receiver<Value>,
     task: JoinHandle<()>,
 }
 impl TestRun {
-    pub async fn recv(&mut self) -> Option<Value> {
+    pub(crate) async fn recv(&mut self) -> Option<Value> {
         self.receiver.recv().await
     }
 }
@@ -139,7 +139,7 @@ impl Drop for TestRun {
     }
 }
 
-pub fn current_value(row: &Value, action: &str) -> Result<Value> {
+pub(crate) fn current_value(row: &Value, action: &str) -> Result<Value> {
     match action {
         "model_config" => account_templates::split(&row["model_mapping"]),
         "proxy" => Ok(json!({"proxy_id":row["proxy_id"]})),
@@ -147,7 +147,7 @@ pub fn current_value(row: &Value, action: &str) -> Result<Value> {
         _ => Ok(json!({action:row[action]})),
     }
 }
-pub fn target_reached(row: &Value, action: &str, payload: &Value) -> bool {
+pub(crate) fn target_reached(row: &Value, action: &str, payload: &Value) -> bool {
     if action == "sync_models" || settings_capabilities(row)[action]["editable"] != true {
         return false;
     }
@@ -167,7 +167,7 @@ pub fn target_reached(row: &Value, action: &str, payload: &Value) -> bool {
     };
     row[field] == payload[field]
 }
-pub fn text_model(id: &str) -> bool {
+pub(crate) fn text_model(id: &str) -> bool {
     account_templates::MODEL_ID.is_match(id)
         && ![
             "image",
@@ -182,7 +182,7 @@ pub fn text_model(id: &str) -> bool {
         .iter()
         .any(|s| id.to_lowercase().contains(s))
 }
-pub fn filter_models(items: &[Value], allowlists: &[Value]) -> Vec<Value> {
+pub(crate) fn filter_models(items: &[Value], allowlists: &[Value]) -> Vec<Value> {
     let mut seen = BTreeSet::new();
     let unrestricted = allowlists.is_empty() || allowlists.iter().any(|v| !truthy(&v["enabled"]));
     let allowlists: Vec<_> = if unrestricted {
@@ -196,7 +196,7 @@ pub fn filter_models(items: &[Value], allowlists: &[Value]) -> Vec<Value> {
         Some(json!({"id":clean(&item["id"],200),"display_name":clean(&item["display_name"],200),"type":clean(&item["type"],200)}))
     }).collect()
 }
-pub fn validate_media(value: &str, kind: &str) -> Result<()> {
+fn validate_media(value: &str, kind: &str) -> Result<()> {
     if value.is_empty() {
         return Ok(());
     }
@@ -909,7 +909,7 @@ impl Actions {
         }
         Ok(lease)
     }
-    pub fn test_stream(
+    pub(crate) fn test_stream(
         &self,
         id: i64,
         payload: Value,

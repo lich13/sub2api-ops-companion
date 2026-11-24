@@ -3,6 +3,58 @@ use typeshare::typeshare;
 
 pub type Integer = i64;
 
+pub const DEFAULT_DETECTION_MODEL: &str = "gpt-6-luna";
+pub const LEGACY_DEGRADED_MODEL: &str = "gpt-5.6-luna";
+pub const DEFAULT_RECORD_COLUMN_COUNT: usize = 10;
+
+#[typeshare]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DefaultModelId {
+    #[serde(rename = "gpt-6-luna")]
+    Detection,
+    #[serde(rename = "gpt-5.6-luna")]
+    LegacyDegraded,
+}
+
+pub const RECORD_COLUMNS: &[&str] = &[
+    "api_key",
+    "account",
+    "model",
+    "type",
+    "reasoning",
+    "tokens",
+    "cost",
+    "latency",
+    "user_agent",
+    "ip",
+    "endpoint",
+    "group",
+    "billing",
+    "request_id",
+    "upstream_id",
+];
+
+#[typeshare(swift = "CaseIterable")]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordColumnId {
+    ApiKey,
+    Account,
+    Model,
+    Type,
+    Reasoning,
+    Tokens,
+    Cost,
+    Latency,
+    UserAgent,
+    Ip,
+    Endpoint,
+    Group,
+    Billing,
+    RequestId,
+    UpstreamId,
+}
+
 #[typeshare]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

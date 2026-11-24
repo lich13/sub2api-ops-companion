@@ -89,14 +89,7 @@ public struct FingerprintBankStatusInfo: Codable, Sendable, Equatable {
         checked_at = try Self.decodeFlexibleTimestamp(c, key: .checked_at)
         synced_at = try Self.decodeFlexibleTimestamp(c, key: .synced_at)
         cooldown_until = try Self.decodeFlexibleTimestamp(c, key: .cooldown_until)
-        if try (!c.contains(.error) || c.decodeNil(forKey: .error)) {
-            error = nil
-        } else if let s = try? c.decode(String.self, forKey: .error) {
-            error = s
-        } else {
-            let obj = try c.decode([String: JSONValue].self, forKey: .error)
-            error = obj["message"]?.stringValue
-        }
+        error = try c.decodeIfPresent(String.self, forKey: .error)
     }
 }
 

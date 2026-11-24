@@ -11,7 +11,7 @@ import {
 import type { Account } from "./types";
 import { useBackAction } from "./mobile";
 
-export type DeleteResult = {
+type DeleteResult = {
   id: number;
   status: "waiting" | "running" | "deleted" | "failed";
   message?: string;

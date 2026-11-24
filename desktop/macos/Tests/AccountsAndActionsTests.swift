@@ -54,40 +54,42 @@ struct AccountsAndActionsTests {
         ])
     }
 
-    @Test("AccountModelProfile validates exact IDs, trailing wildcards, duplicates, and conflicts")
+    @Test("ModelProfileReply validates exact IDs, trailing wildcards, duplicates, and conflicts")
     func accountModelProfileValidationEdgeCases() {
-        let empty = AccountModelProfile()
-        #expect(AccountModelProfile.validate(empty) == "")
+        let empty = ModelProfileReply.empty
+        #expect(ModelProfileReply.validate(empty) == "")
         #expect(empty.policySummary == "不限制模型")
 
-        let valid = AccountModelProfile(
+        let valid = ModelProfileReply(
             whitelist: ["gpt-5.4", "claude-opus-4-6"],
-            mappings: [AccountModelMappingRule(source: "gpt-4o-*", target: "gpt-5.4")]
+            mappings: [ModelMappingRule(source: "gpt-4o-*", target: "gpt-5.4")]
         )
-        #expect(AccountModelProfile.validate(valid) == "")
+        #expect(ModelProfileReply.validate(valid) == "")
         #expect(valid.policySummary == "gpt-5.4、claude-opus-4-6、gpt-4o-* → gpt-5.4")
 
-        let badWhitelist = AccountModelProfile(whitelist: ["gpt 5*"])
-        #expect(AccountModelProfile.validate(badWhitelist) == "白名单必须是精确模型 ID")
+        let badWhitelist = ModelProfileReply(whitelist: ["gpt 5*"], mappings: [])
+        #expect(ModelProfileReply.validate(badWhitelist) == "白名单必须是精确模型 ID")
 
-        let dupWhitelist = AccountModelProfile(whitelist: ["gpt-5.4", "gpt-5.4"])
-        #expect(AccountModelProfile.validate(dupWhitelist) == "重复的模型：gpt-5.4")
+        let dupWhitelist = ModelProfileReply(whitelist: ["gpt-5.4", "gpt-5.4"], mappings: [])
+        #expect(ModelProfileReply.validate(dupWhitelist) == "重复的模型：gpt-5.4")
 
-        let badTargetWildcard = AccountModelProfile(
-            mappings: [AccountModelMappingRule(source: "gpt-4o", target: "gpt-5*")]
+        let badTargetWildcard = ModelProfileReply(
+            whitelist: [],
+            mappings: [ModelMappingRule(source: "gpt-4o", target: "gpt-5*")]
         )
-        #expect(AccountModelProfile.validate(badTargetWildcard) == "映射源只允许末尾通配符，目标必须是精确模型 ID")
+        #expect(ModelProfileReply.validate(badTargetWildcard) == "映射源只允许末尾通配符，目标必须是精确模型 ID")
 
-        let selfMap = AccountModelProfile(
-            mappings: [AccountModelMappingRule(source: "gpt-5.4", target: "gpt-5.4")]
+        let selfMap = ModelProfileReply(
+            whitelist: [],
+            mappings: [ModelMappingRule(source: "gpt-5.4", target: "gpt-5.4")]
         )
-        #expect(AccountModelProfile.validate(selfMap) == "模型条目冲突：gpt-5.4")
+        #expect(ModelProfileReply.validate(selfMap) == "模型条目冲突：gpt-5.4")
 
-        let crossConflict = AccountModelProfile(
+        let crossConflict = ModelProfileReply(
             whitelist: ["gpt-5.4"],
-            mappings: [AccountModelMappingRule(source: "gpt-5.4", target: "gpt-5.4-mini")]
+            mappings: [ModelMappingRule(source: "gpt-5.4", target: "gpt-5.4-mini")]
         )
-        #expect(AccountModelProfile.validate(crossConflict) == "模型条目冲突：gpt-5.4")
+        #expect(ModelProfileReply.validate(crossConflict) == "模型条目冲突：gpt-5.4")
     }
 
     @Test("AccountCreationFormDraft validates boundaries, reuses source config, and normalizes token identity")
@@ -218,6 +220,279 @@ struct AccountsAndActionsTests {
         #expect(!controller.isPanelOrAttachedWindowActive())
     }
 
+    @Test("KeyQuotaView formats today.requests without float decimals and renders Light/Dark glyphs")
+    @MainActor
+    func keyQuotaTodayRequestsFormattingAndRendering() throws {
+        let quotaJSON = """
+        {
+          "state": "ok",
+          "source": "sub2api",
+          "checked_at": 1795491400,
+          "success_at": 1795491400,
+          "retry_at": null,
+          "next_refresh_at": 1795491460,
+          "stale": false,
+          "error": null,
+          "key_status": null,
+          "plans": [
+            {
+              "name": "钱包余额",
+              "remaining": 4.75,
+              "used": null,
+              "total": null,
+              "unit": "USD",
+              "unlimited": false,
+              "reset_at": null
+            }
+          ],
+          "subscriptions": [
+            {
+              "name": "钱包余额",
+              "status": null,
+              "active": null,
+              "expires_at": null,
+              "plans": []
+            }
+          ],
+          "expires_at": null,
+          "expires_at_unix": null,
+          "today": {
+            "requests": 2.0,
+            "tokens": 261900.0,
+            "cost": 0.07
+          },
+          "total_usage": null
+        }
+        """
+        let decoded = try JSONDecoder().decode(KeyQuota.self, from: Data(quotaJSON.utf8))
+        #expect(decoded.today?.requests == 2.0)
+        #expect(KeyQuotaView.todayRequestsLabel(decoded.today?.requests) == "今日 2 req")
+        #expect(KeyQuotaView.todayRequestsLabel(nil) == "今日 0 req")
+        #expect(KeyQuotaView.todayRequestsLabel(0.0) == "今日 0 req")
+        #expect(KeyQuotaView.todayRequestsLabel(999.0) == "今日 999 req")
+        #expect(KeyQuotaView.todayRequestsLabel(999.6) == "今日 1.0K req")
+        #expect(KeyQuotaView.todayRequestsLabel(1_500.0) == "今日 1.5K req")
+        #expect(UsageFormatting.compactTokens(999_949) == "999.9K")
+        #expect(UsageFormatting.compactTokens(999_950) == "1.0M")
+        #expect(UsageFormatting.compactTokens(999_960) == "1.0M")
+        #expect(KeyQuotaView.todayRequestsLabel(2_500_000.0) == "今日 2.5M req")
+        #expect(UsageFormatting.compactTokens(999_949_999) == "999.9M")
+        #expect(UsageFormatting.compactTokens(999_950_000) == "1.0B")
+        #expect(UsageFormatting.compactTokens(1_500_000_000) == "1.5B")
+        #expect(KeyQuotaView.todayRequestsLabel(-3.0) == "今日 0 req")
+        #expect(KeyQuotaView.todayRequestsLabel(.nan) == "今日 0 req")
+        #expect(KeyQuotaView.todayRequestsLabel(.infinity) == "今日 0 req")
+        #expect(KeyQuotaView.todayRequestsLabel(-.infinity) == "今日 0 req")
+
+        let account = Account(
+            id: 301,
+            name: "Sub2API · 钱包 Key",
+            priority: 1,
+            platform: "openai",
+            type: "apikey",
+            status: "active",
+            schedulable: true,
+            available: true,
+            usage: UsageSummary(
+                branch: "apikey",
+                today: UsageStats(requests: 2, tokens: 261_900, cost: 0.28, standard_cost: 0.28, user_cost: 0.28),
+                actions: ["query_usage"],
+                key_quota: decoded,
+                native_read: true
+            )
+        )
+        let store = AppStore()
+        store.ready = true
+        store.applyViewState(
+            ViewState(
+                connected: true,
+                online: true,
+                snapshot: Snapshot(observed_at: "2026-11-24T04:00:00Z", accounts: [account])
+            )
+        )
+
+        SnapshotRenderUtility.ensureAppKit()
+        let size = CGSize(width: 280, height: 140)
+        for dark in [false, true] {
+            let appearance = try #require(NSAppearance(named: dark ? .darkAqua : .aqua))
+            let window = NSWindow(
+                contentRect: CGRect(origin: .zero, size: size),
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            window.appearance = appearance
+            window.isReleasedWhenClosed = false
+            defer { window.orderOut(nil) }
+
+            let cell = ZStack(alignment: .topLeading) {
+                DS.surface
+                UsageCellView(
+                    account: account,
+                    store: store,
+                    nativeUsage: NativeUsageReader(),
+                    onOpenKeyQuotaSettings: { _ in }
+                )
+                .padding(14)
+            }
+            .environment(\.colorScheme, dark ? .dark : .light)
+            .frame(width: size.width, height: size.height)
+
+            let hosting = NSHostingView(rootView: cell)
+            hosting.appearance = appearance
+            hosting.frame = CGRect(origin: .zero, size: size)
+            window.contentView = hosting
+            hosting.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.03))
+            hosting.layoutSubtreeIfNeeded()
+
+            let rep = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+            appearance.performAsCurrentDrawingAppearance {
+                hosting.cacheDisplay(in: hosting.bounds, to: rep)
+            }
+
+            let bytes = try #require(rep.bitmapData)
+            let bpr = rep.bytesPerRow
+            let bpp = rep.bitsPerPixel / 8
+            let baseOffset = 2 * bpr + 2 * bpp
+            let bgR = Int(bytes[baseOffset])
+            let bgG = Int(bytes[baseOffset + 1])
+            let bgB = Int(bytes[baseOffset + 2])
+            var foregroundPixels = 0
+            for y in 0..<rep.pixelsHigh {
+                let rowStart = y * bpr
+                for x in 0..<rep.pixelsWide {
+                    let off = rowStart + x * bpp
+                    let dr = abs(Int(bytes[off]) - bgR)
+                    let dg = abs(Int(bytes[off + 1]) - bgG)
+                    let db = abs(Int(bytes[off + 2]) - bgB)
+                    if dr + dg + db > 20 {
+                        foregroundPixels += 1
+                    }
+                }
+            }
+            #expect(foregroundPixels > 500)
+
+            // Rasterized glyph span check: "今日 2 req" alone fits well under 75pt (vs >95pt for "今日 2.000000 req")
+            let lineOnlyQuota = KeyQuota(
+                state: "ok",
+                source: "sub2api",
+                checked_at: nil,
+                success_at: nil,
+                retry_at: nil,
+                next_refresh_at: nil,
+                stale: false,
+                error: nil,
+                key_status: nil,
+                plans: [],
+                subscriptions: [],
+                expires_at: nil,
+                expires_at_unix: nil,
+                today: KeyQuotaUsage(requests: 2.0, tokens: nil, cost: nil),
+                total_usage: nil,
+                version: nil,
+                error_code: nil
+            )
+            let lineSize = CGSize(width: 180, height: 28)
+            let lineHosting = NSHostingView(
+                rootView: ZStack(alignment: .topLeading) {
+                    DS.surface
+                    KeyQuotaView(quota: lineOnlyQuota, onOpenSettings: {})
+                }
+                .environment(\.colorScheme, dark ? .dark : .light)
+                .frame(width: lineSize.width, height: lineSize.height)
+            )
+            lineHosting.appearance = appearance
+            lineHosting.frame = CGRect(origin: .zero, size: lineSize)
+            window.setContentSize(lineSize)
+            window.contentView = lineHosting
+            lineHosting.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            lineHosting.layoutSubtreeIfNeeded()
+
+            let lineRep = try #require(lineHosting.bitmapImageRepForCachingDisplay(in: lineHosting.bounds))
+            appearance.performAsCurrentDrawingAppearance {
+                lineHosting.cacheDisplay(in: lineHosting.bounds, to: lineRep)
+            }
+            let lineBytes = try #require(lineRep.bitmapData)
+            let lineBpr = lineRep.bytesPerRow
+            let lineBpp = lineRep.bitsPerPixel / 8
+            let lineCorner = (lineRep.pixelsHigh - 2) * lineBpr + (lineRep.pixelsWide - 2) * lineBpp
+            let lBgR = Int(lineBytes[lineCorner])
+            let lBgG = Int(lineBytes[lineCorner + 1])
+            let lBgB = Int(lineBytes[lineCorner + 2])
+            let xScale = Double(lineRep.pixelsWide) / Double(lineSize.width)
+            var maxGlyphXPt = 0.0
+            for y in 0..<lineRep.pixelsHigh {
+                let rowStart = y * lineBpr
+                for x in 0..<lineRep.pixelsWide {
+                    let off = rowStart + x * lineBpp
+                    let diff = abs(Int(lineBytes[off]) - lBgR)
+                        + abs(Int(lineBytes[off + 1]) - lBgG)
+                        + abs(Int(lineBytes[off + 2]) - lBgB)
+                    if diff > 20 {
+                        maxGlyphXPt = max(maxGlyphXPt, Double(x) / xScale)
+                    }
+                }
+            }
+            #expect(maxGlyphXPt > 30 && maxGlyphXPt < 75)
+
+            // Free-tier / zero-cost today summary with tokens > 0 and requests == nil still renders
+            let tokensOnlyQuota = KeyQuota(
+                state: "ok",
+                source: "sub2api",
+                checked_at: nil,
+                success_at: nil,
+                retry_at: nil,
+                next_refresh_at: nil,
+                stale: false,
+                error: nil,
+                key_status: nil,
+                plans: [],
+                subscriptions: [],
+                expires_at: nil,
+                expires_at_unix: nil,
+                today: KeyQuotaUsage(requests: nil, tokens: 999_960.0, cost: 0.0),
+                total_usage: nil,
+                version: nil,
+                error_code: nil
+            )
+            let tokHosting = NSHostingView(
+                rootView: ZStack(alignment: .topLeading) {
+                    DS.surface
+                    KeyQuotaView(quota: tokensOnlyQuota, onOpenSettings: {})
+                }
+                .environment(\.colorScheme, dark ? .dark : .light)
+                .frame(width: lineSize.width, height: lineSize.height)
+            )
+            tokHosting.appearance = appearance
+            tokHosting.frame = CGRect(origin: .zero, size: lineSize)
+            window.contentView = tokHosting
+            tokHosting.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            tokHosting.layoutSubtreeIfNeeded()
+            let tokRep = try #require(tokHosting.bitmapImageRepForCachingDisplay(in: tokHosting.bounds))
+            appearance.performAsCurrentDrawingAppearance {
+                tokHosting.cacheDisplay(in: tokHosting.bounds, to: tokRep)
+            }
+            let tokBytes = try #require(tokRep.bitmapData)
+            var tokForeground = 0
+            for y in 0..<tokRep.pixelsHigh {
+                let rowStart = y * tokRep.bytesPerRow
+                for x in 0..<tokRep.pixelsWide {
+                    let off = rowStart + x * lineBpp
+                    let diff = abs(Int(tokBytes[off]) - lBgR)
+                        + abs(Int(tokBytes[off + 1]) - lBgG)
+                        + abs(Int(tokBytes[off + 2]) - lBgB)
+                    if diff > 20 {
+                        tokForeground += 1
+                    }
+                }
+            }
+            #expect(tokForeground > 100)
+        }
+    }
+
     @Test("Render AccountsAndActions Light & Dark PNG snapshots when SUB2OPS_SNAPSHOT_DIR is set")
     @MainActor
     func renderM2Snapshots() async throws {
@@ -274,6 +549,7 @@ struct AccountsAndActionsTests {
         """
         let detectionJSON = """
         {
+          "account_id": 101,
           "version": "det-v1",
           "enabled": true,
           "schedule_mode": "smart",
@@ -281,6 +557,7 @@ struct AccountsAndActionsTests {
           "min_interval_minutes": 5,
           "global_model_id": "gpt-5.4",
           "model_id": "gpt-5.4",
+          "model_source": "global",
           "status": "waiting",
           "engine": "modeltrace",
           "sample_count": 3,
@@ -292,10 +569,13 @@ struct AccountsAndActionsTests {
         """
         let keepaliveJSON = """
         {
+          "account_id": 101,
           "enabled": true,
+          "generation": 1,
           "version": "ka-v1",
           "status": "waiting",
           "restore_count": 1,
+          "budget_used": 0,
           "last_restore_at": "2026-11-17T07:55:00Z",
           "reason": "",
           "paused_reason": ""
@@ -307,12 +587,15 @@ struct AccountsAndActionsTests {
                 return "{\"version\":{\"revision\":\"8f31c2a09b1e4d00\",\"sha256\":\"0123456789abcdef\",\"built_at\":\"2026-11-17T06:00:00Z\",\"analyzer_version\":\"0.2.0\"},\"source\":\"cache\",\"status\":\"idle\",\"result\":\"up-to-date\",\"checked_at\":\"2026-11-17T08:00:00Z\",\"synced_at\":\"2026-11-17T08:00:00Z\"}"
             }
             if payload.contains("/accounts/101/models") {
-                return "{\"models\":[{\"id\":\"gpt-5.4\",\"display_name\":\"GPT-5.4\"},{\"id\":\"gpt-5.4-mini\",\"display_name\":\"GPT-5.4 Mini\"}]}"
+                return "[{\"id\":\"gpt-5.4\",\"display_name\":\"GPT-5.4\"},{\"id\":\"gpt-5.4-mini\",\"display_name\":\"GPT-5.4 Mini\"}]"
+            }
+            if payload.contains("/accounts/101/model-tests/latest") {
+                return "null"
             }
             if payload.contains("/accounts/101/settings") {
                 return accountSettingsJSON
             }
-            if payload.contains("/account-templates/accounts/101") {
+            if payload.contains("/account-templates?account_id=101") {
                 return templatePreviewJSON
             }
             if payload.contains("/account-templates") {
@@ -324,11 +607,15 @@ struct AccountsAndActionsTests {
             if payload.contains("/accounts/101/keepalive") {
                 return keepaliveJSON
             }
+            if payload.contains("/config/key-quota") {
+                return "{\"seconds\":60,\"revision\":\"kq-v1\"}"
+            }
             if payload.contains("/account-operations") {
                 return "{\"items\":[]}"
             }
             return "{}"
         }
+        defer { RustBridge.shared.setMockHandler(nil) }
 
         let stats = UsageStats(requests: 313, tokens: 46_900_000, cost: 76.8, standard_cost: 76.8, user_cost: 76.8)
         let w5h = UsageWindow(key: "5h", label: "5h", used_percent: 38, reset_at: "2026-09-25T05:00:00+08:00", color: "indigo", stats: stats)
@@ -399,6 +686,47 @@ struct AccountsAndActionsTests {
             degradation_mark: DegradationMark(marked: true, version: String(repeating: "f", count: 64))
         )
 
+        let walletQuota = KeyQuota(
+            state: "ok",
+            source: "sub2api",
+            checked_at: 1_795_491_400,
+            success_at: 1_795_491_400,
+            retry_at: nil,
+            next_refresh_at: 1_795_491_460,
+            stale: false,
+            error: nil,
+            key_status: nil,
+            plans: [QuotaPlan(name: "钱包余额", remaining: 4.75, used: nil, total: nil, unit: "USD", unlimited: false, reset_at: nil)],
+            subscriptions: [QuotaSubscription(name: "钱包余额", status: nil, active: nil, expires_at: nil, plans: [])],
+            expires_at: nil,
+            expires_at_unix: nil,
+            today: KeyQuotaUsage(requests: 2.0, tokens: 261_900.0, cost: 0.07),
+            total_usage: nil,
+            version: nil,
+            error_code: nil
+        )
+        let acc4 = Account(
+            id: 301,
+            name: "Sub2API · 钱包 Key",
+            priority: 3,
+            platform: "openai",
+            type: "apikey",
+            status: "active",
+            schedulable: true,
+            available: true,
+            group_ids: [1],
+            concurrency: 5,
+            last_success_at: "2026-11-17T08:22:11Z",
+            last_called_at: "2026-11-17T08:22:11Z",
+            usage: UsageSummary(
+                branch: "apikey",
+                today: UsageStats(requests: 2, tokens: 261_900, cost: 0.28, standard_cost: 0.28, user_cost: 0.28),
+                actions: ["query_usage"],
+                key_quota: walletQuota,
+                native_read: true
+            )
+        )
+
         let grp1 = Group(
             id: 1,
             name: "Codex",
@@ -428,7 +756,7 @@ struct AccountsAndActionsTests {
                 online: true,
                 snapshot: Snapshot(
                     observed_at: "2026-11-17T08:22:11Z",
-                    accounts: [acc1, acc2, acc3],
+                    accounts: [acc1, acc2, acc3, acc4],
                     groups: [grp1, grp2]
                 ),
                 preferences: Preferences(
@@ -445,6 +773,21 @@ struct AccountsAndActionsTests {
                 size: CGSize(width: 1310, height: 860),
                 dark: dark,
                 outputURL: baseURL.appendingPathComponent("m2_accounts_\(suffix).png")
+            )
+            try SnapshotRenderUtility.renderPNG(
+                view: ZStack(alignment: .topLeading) {
+                    DS.surface
+                    UsageCellView(
+                        account: acc4,
+                        store: store,
+                        nativeUsage: NativeUsageReader(),
+                        onOpenKeyQuotaSettings: { _ in }
+                    )
+                    .padding(14)
+                },
+                size: CGSize(width: 280, height: 140),
+                dark: dark,
+                outputURL: baseURL.appendingPathComponent("m2_key_quota_cell_\(suffix).png")
             )
             try SnapshotRenderUtility.renderPNG(
                 view: QuickPanelRootView(store: store),

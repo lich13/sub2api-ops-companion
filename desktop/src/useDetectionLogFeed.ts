@@ -3,7 +3,7 @@ import { api } from "./bridge";
 
 type DetectionLogPage = { items: DetectionLog[]; next_cursor: string | null };
 
-export type DetectionReceipt = {
+type DetectionReceipt = {
   status: string;
   basis?: "first_group" | "aggregate" | "sample_family" | null;
   group_indexes?: number[];

@@ -1,3 +1,6 @@
+#[path = "common/harness.rs"]
+mod test_harness;
+use test_harness::{runtime_settings, spawn_loopback, write_loopback_config, OperationsSubmitExt};
 #[path = "support/fingerprint_cache.rs"]
 mod fingerprint_cache;
 
@@ -89,22 +92,9 @@ fn fixture_settings(
     upstream_url: String,
     daily_enabled: bool,
 ) -> Settings {
-    let connection_path = directory.join("sub2api-config.json");
-    std::fs::write(
-        &connection_path,
-        serde_json::to_vec(&json!({"base_url":upstream_url,"verify_base_url":""})).unwrap(),
-    )
-    .unwrap();
+    let connection_path = write_loopback_config(directory, &upstream_url);
     Settings {
-        database_url,
-        bind: "127.0.0.1:0".into(),
-        base_path: "/".into(),
-        audit_path: directory.join("audit.jsonl"),
-        usage_path: directory.join("oauth-state.json"),
-        oauth_path: directory.join("oauth-config.json"),
-        bark_path: directory.join("bark-config.json"),
         connection_path,
-        keepalive_path: directory.join("keepalive-state.json"),
         oauth: json!({
             "oauth_auto_reset_credit_enabled":false,
             "oauth_daily_test_enabled":daily_enabled,
@@ -116,10 +106,7 @@ fn fixture_settings(
             "oauth_recovery_test_model_id":"gpt-6-luna",
             "oauth_usage_refresh_concurrency":1
         }),
-        bark: json!({"enabled":false}),
-        bark_valid: true,
-        base_url: upstream_url,
-        verify_url: String::new(),
+        ..runtime_settings(database_url, directory, upstream_url)
     }
 }
 
@@ -129,12 +116,7 @@ async fn runtime_fixture(
     daily_enabled: bool,
 ) -> RuntimeFixture {
     let database_url = std::env::var("DATABASE_URL").expect("isolated test DATABASE_URL");
-    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
-    let upstream_url = format!("http://{}", listener.local_addr().unwrap());
-    let router = Router::new().fallback(fixture_upstream);
-    let upstream = tokio::spawn(async move {
-        axum::serve(listener, router).await.unwrap();
-    });
+    let (upstream_url, upstream) = spawn_loopback(Router::new().fallback(fixture_upstream)).await;
     let directory_endpoint = format!("{upstream_url}/fixture-models");
     let settings = fixture_settings(directory, database_url, upstream_url, daily_enabled);
     fingerprint_cache::seed(directory, clock());
@@ -363,7 +345,7 @@ async fn operation_panic_closes_runtime_and_restart_checks_dispatched_work_once(
             json!({"action":"query_usage"}),
         );
         let accepted = queue
-            .submit(*account_id, &request, "fixture-admin-key")
+            .submit_test(*account_id, &request, "fixture-admin-key")
             .await
             .unwrap();
         ids.push(accepted["id"].as_str().unwrap().to_owned());

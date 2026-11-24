@@ -1,16 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Copy, ExternalLink, Link2, LoaderCircle, X } from "lucide-react";
 import { api, command } from "./bridge";
+import type { TokenAuthorization, VerifiedAccountReply } from "./protocol";
 import { tokenIdentity, type RecordValue } from "./accountCreation";
 import { useBackAction } from "./mobile";
 import { useDialogFocus } from "./dialogFocus";
 import type { Account } from "./types";
 import "./reauthorize-account.css";
 
-type Authorization = {
-  auth_url: string;
-  session_id: string;
-  state?: string;
+type Authorization = TokenAuthorization & {
   proxy_id?: number;
 };
 
@@ -183,7 +181,7 @@ export default function ReauthorizeAccountDialog({
       const identity = tokenIdentity("openai", token);
       if (!identity.credentials.access_token) throw new Error("missing_token");
       applying = true;
-      const result = await api<{ verified: boolean; status: string }>(
+      const result = await api<VerifiedAccountReply>(
         "POST",
         `/accounts/${account.id}/apply-oauth-credentials`,
         identity,

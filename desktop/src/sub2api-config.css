@@ -124,54 +124,16 @@
   max-width: 210px;
 }
 .sub2api-config .config-mobile-group {
-  display: none;
+  display: block;
 }
 .config-layout {
   display: grid;
   flex: 1;
-  grid-template-columns: 188px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-}
-.config-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-height: 0;
-  min-width: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 8px;
-  border-right: 1px solid var(--line);
-}
-.sub2api-config .config-groups button {
-  display: flex;
-  flex-shrink: 0;
-  justify-content: space-between;
-  gap: 8px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  padding: 9px 8px;
-  text-align: left;
-  white-space: normal;
-  font-size: 12px;
-  line-height: 1.45;
-}
-.config-groups button > span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.config-groups button > small {
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-  font-size: 11px;
-}
-.sub2api-config .config-groups button[aria-current="true"] {
-  color: var(--accent);
-  background: var(--accent-bg);
 }
 .config-fields {
   min-width: 0;
@@ -556,15 +518,6 @@
   overflow-wrap: anywhere;
 }
 @media (max-width: 1050px) {
-  .config-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .config-groups {
-    display: none;
-  }
-  .sub2api-config .config-mobile-group {
-    display: block;
-  }
   .config-heading-main {
     display: block;
   }
@@ -619,15 +572,6 @@
   .config-diff dl {
     grid-template-columns: minmax(0, 1fr);
   }
-}
-.mobile .config-layout {
-  grid-template-columns: minmax(0, 1fr);
-}
-.mobile .config-groups {
-  display: none;
-}
-.mobile .sub2api-config .config-mobile-group {
-  display: block;
 }
 .mobile .config-field {
   grid-template-columns: minmax(0, 1fr);
@@ -735,12 +679,6 @@
   }
   .config-fields {
     overflow: visible;
-  }
-  .config-groups {
-    display: none;
-  }
-  .sub2api-config .config-mobile-group {
-    display: block;
   }
 }
 
