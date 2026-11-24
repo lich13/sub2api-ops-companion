@@ -572,3 +572,29 @@ it("round trips the shared structured configuration fixtures", () => {
   for (const invalid of sharedYaml.invalid)
     expect(structuredValue(invalid, "array").error).toBeTruthy();
 });
+
+it("clears unconfigured empty numeric drafts and blocks empty configured non-nullable numbers", async () => {
+  fixture.values["gateway.scheduling.load_batch_cache_ttl_ms"] = {
+    configured: true,
+    yaml: 300,
+    effective: 300,
+    source: "yaml",
+    environment: null,
+    editable: true,
+  };
+  await act(async () => root.render(<Sub2ApiConfig active online />));
+  await fill(input("搜索配置字段"), "request_body_memory_budget_bytes");
+  const unconfigured = input("gateway.request_body_memory_budget_bytes");
+  await fill(unconfigured, "1073741824");
+  expect(container.querySelectorAll(".config-field.changed")).toHaveLength(1);
+  await fill(unconfigured, "");
+  expect(container.querySelectorAll(".config-field.changed")).toHaveLength(0);
+  expect(button("应用并重启").disabled).toBe(true);
+
+  await fill(input("搜索配置字段"), "load_batch_cache_ttl_ms");
+  const configured = input("gateway.scheduling.load_batch_cache_ttl_ms");
+  await fill(configured, "");
+  await act(async () => button("检查配置").click());
+  expect(container.textContent).toContain("使用恢复默认移除配置或填写有效数值");
+  expect(changesSent()).toBeUndefined();
+});

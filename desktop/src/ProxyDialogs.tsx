@@ -2,6 +2,7 @@ import DiagnosticText from "./DiagnosticText";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Eye, EyeOff, LoaderCircle, X } from "lucide-react";
 import { api } from "./bridge";
+import { errorMessage } from "./bridgeError";
 import type { CreateProxyBatchReply } from "./protocol";
 import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
@@ -203,7 +204,7 @@ export function ProxyEditor({
       );
       if (alive.current) saved();
     } catch (e) {
-      if (alive.current) setError(String(e).replace(/^Error: /, ""));
+      if (alive.current) setError(errorMessage(e));
     } finally {
       lock.current = false;
       if (alive.current) setBusy(false);

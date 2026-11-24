@@ -53,6 +53,7 @@ enum SnapshotRenderUtility {
         appearance.performAsCurrentDrawingAppearance {
             hosting.cacheDisplay(in: hosting.bounds, to: rep)
         }
+        assertNonBlankBitmap(rep, outputURL: outputURL)
         if let pngData = rep.representation(using: .png, properties: [:]) {
             try FileManager.default.createDirectory(
                 at: outputURL.deletingLastPathComponent(),
@@ -115,6 +116,7 @@ enum SnapshotRenderUtility {
         appearance.performAsCurrentDrawingAppearance {
             hosting.cacheDisplay(in: hosting.bounds, to: rep)
         }
+        assertNonBlankBitmap(rep, outputURL: outputURL)
         if let pngData = rep.representation(using: .png, properties: [:]) {
             try FileManager.default.createDirectory(
                 at: outputURL.deletingLastPathComponent(),
@@ -123,6 +125,30 @@ enum SnapshotRenderUtility {
             try pngData.write(to: outputURL)
         }
         window.orderOut(nil)
+    }
+
+    private static func assertNonBlankBitmap(_ rep: NSBitmapImageRep, outputURL: URL) {
+        let w = rep.pixelsWide
+        let h = rep.pixelsHigh
+        #expect(w > 0 && h > 0, "Empty bitmap for \(outputURL.lastPathComponent)")
+        guard w > 4, h > 4, let baseColor = rep.colorAt(x: 2, y: 2)?.usingColorSpace(.sRGB) else {
+            return
+        }
+        var foregroundSamples = 0
+        let stepX = max(1, w / 80)
+        let stepY = max(1, h / 80)
+        for y in stride(from: 0, to: h, by: stepY) {
+            for x in stride(from: 0, to: w, by: stepX) {
+                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                let diff = abs(c.redComponent - baseColor.redComponent)
+                    + abs(c.greenComponent - baseColor.greenComponent)
+                    + abs(c.blueComponent - baseColor.blueComponent)
+                if diff > 0.08 {
+                    foregroundSamples += 1
+                }
+            }
+        }
+        #expect(foregroundSamples >= 12, "Blank or uniform render in \(outputURL.lastPathComponent)")
     }
 }
 

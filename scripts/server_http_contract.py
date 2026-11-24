@@ -880,7 +880,6 @@ class ServiceProcess:
             "SUB2API_BASE_URL": self.mocks.url,
             "SUB2API_VERIFY_BASE_URL": "",
             "SUB2API_CONFIG_PATH": str(state / "sub2api-config.json"),
-            "BASE_PATH": "",
             "HOST": "127.0.0.1",
             "PORT": str(self.port),
             "APP_PORT": str(self.port),

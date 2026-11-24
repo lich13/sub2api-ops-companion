@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 extension HostFieldIssue: Identifiable {
@@ -164,6 +165,7 @@ public struct Sub2ApiConfigTabView: View {
         public var default_text: String
         public var default_value: JSONValue?
         public var has_default: Bool
+        public var nullable: Bool?
         public var sensitive: Bool
         public var `internal`: Bool
         public var editable: Bool
@@ -258,12 +260,20 @@ public struct Sub2ApiConfigTabView: View {
         public var remove: Bool
         public var value: JSONValue?
         public var rawStructuredText: String?
+        public var rawScalarText: String?
 
-        public init(path: String, remove: Bool, value: JSONValue? = nil, rawStructuredText: String? = nil) {
+        public init(
+            path: String,
+            remove: Bool,
+            value: JSONValue? = nil,
+            rawStructuredText: String? = nil,
+            rawScalarText: String? = nil
+        ) {
             self.path = path
             self.remove = remove
             self.value = value
             self.rawStructuredText = rawStructuredText
+            self.rawScalarText = rawScalarText
         }
 
         public var jsonObject: JSONValue {
@@ -369,6 +379,7 @@ public struct Sub2ApiConfigTabView: View {
                 Sub2ApiVersionCardView(
                     active: active,
                     online: online,
+                    connectionKey: connectionKey,
                     knownVersion: document?.version ?? "",
                     embedded: true
                 ) {
@@ -565,34 +576,36 @@ public struct Sub2ApiConfigTabView: View {
             VStack(alignment: .leading, spacing: 3) {
                 ForEach(doc.catalog.groups) { g in
                     let groupFields = doc.catalog.fields.filter { !$0.internal && $0.group == g.id }
-                    let changedCount = groupFields.filter { draft[$0.path] != nil }.count
-                    let isSelected = query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedGroup == g.id
-                    Button {
-                        selectedGroup = g.id
-                        query = ""
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text(g.label)
-                                .font(isSelected ? DS.fontCompactSemibold : DS.fontCompact)
-                                .foregroundStyle(isSelected ? DS.accent : DS.ink)
-                                .lineLimit(1)
-                            Spacer(minLength: 4)
-                            if changedCount > 0 {
-                                Circle()
-                                    .fill(DS.accent)
-                                    .frame(width: 5, height: 5)
+                    if !groupFields.isEmpty {
+                        let changedCount = groupFields.filter { draft[$0.path] != nil }.count
+                        let isSelected = query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedGroup == g.id
+                        Button {
+                            selectedGroup = g.id
+                            query = ""
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(g.label)
+                                    .font(isSelected ? DS.fontCompactSemibold : DS.fontCompact)
+                                    .foregroundStyle(isSelected ? DS.accent : DS.ink)
+                                    .lineLimit(1)
+                                Spacer(minLength: 4)
+                                if changedCount > 0 {
+                                    Circle()
+                                        .fill(DS.accent)
+                                        .frame(width: 5, height: 5)
+                                }
+                                Text("\(groupFields.count)")
+                                    .font(DS.fontResetTime)
+                                    .monospacedDigit()
+                                    .foregroundStyle(isSelected ? DS.accent : DS.muted)
                             }
-                            Text("\(groupFields.count)")
-                                .font(DS.fontResetTime)
-                                .monospacedDigit()
-                                .foregroundStyle(isSelected ? DS.accent : DS.muted)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(isSelected ? DS.accentBg : DS.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 7))
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(isSelected ? DS.accentBg : DS.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                        .buttonStyle(.linearPlain)
                     }
-                    .buttonStyle(.linearPlain)
                 }
             }
             .padding(10)
@@ -671,26 +684,43 @@ public struct Sub2ApiConfigTabView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    nonisolated static func effectiveFieldValue(
+        field: CatalogField,
+        runtime: FieldRuntimeValue?,
+        change: DraftChange?
+    ) -> JSONValue? {
+        if let c = change {
+            return c.remove ? field.default_value : c.value
+        }
+        if runtime?.environment != nil {
+            return runtime?.effective ?? field.default_value
+        }
+        if runtime?.configured == true {
+            return runtime?.yaml
+        }
+        return runtime?.effective ?? field.default_value
+    }
+
     private func fieldRow(_ field: CatalogField, doc: ConfigDocumentDTO) -> some View {
         let runtime = doc.values[field.path]
         let change = draft[field.path]
+        let configured = change != nil ? (change?.remove != true) : (runtime?.configured == true)
         let overridden = runtime?.environment != nil
         let fieldEditable = !isBlocked && field.editable && runtime?.editable != false && !overridden
-        let effectiveVal: JSONValue? = if let c = change {
-            c.remove ? field.default_value : c.value
-        } else if runtime?.configured == true {
-            runtime?.yaml
-        } else {
-            runtime?.effective ?? field.default_value
-        }
+        let effectiveVal = Self.effectiveFieldValue(field: field, runtime: runtime, change: change)
         let fieldIssues = issues.filter { $0.path == field.path }
         let summaryLine = field.description.components(separatedBy: CharacterSet(charactersIn: "。\n")).first ?? field.description
-        let hasExtraNote = field.description.trimmingCharacters(in: .whitespacesAndNewlines).count > summaryLine.count + 1
+        let children = doc.catalog.fields.filter { c in
+            c.internal && c.status == "internal"
+                && (c.path == field.path || c.path.hasPrefix("\(field.path).") || c.path.hasPrefix("\(field.path)["))
+        }
         let isNoteOpen = expandedDescriptions.contains(field.path)
         let sourceText: String = {
             if let envName = runtime?.environment { return "环境变量 \(envName)" }
-            if runtime?.configured == true { return "config.yaml 已配置" }
-            return "使用默认值"
+            if field.status == "reserved" { return "保留字段 · 只读" }
+            if !field.editable || runtime?.editable == false { return "只读" }
+            if configured { return "config.yaml 已配置" }
+            return field.has_default ? "使用默认值" : "未配置"
         }()
 
         return HStack(alignment: .top, spacing: 24) {
@@ -717,34 +747,78 @@ public struct Sub2ApiConfigTabView: View {
                 }
                 .font(DS.fontResetTime)
 
-                if hasExtraNote {
-                    Button {
-                        if isNoteOpen {
-                            expandedDescriptions.remove(field.path)
-                        } else {
-                            expandedDescriptions.insert(field.path)
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: isNoteOpen ? "chevron.down" : "chevron.right")
-                                .font(DS.iconFont(9, weight: .semibold))
-                            Text("完整说明")
-                                .font(DS.fontResetTime)
-                        }
-                        .foregroundStyle(DS.muted)
-                        .padding(.top, 2)
-                    }
-                    .buttonStyle(.linearPlain)
-
+                Button {
                     if isNoteOpen {
+                        expandedDescriptions.remove(field.path)
+                    } else {
+                        expandedDescriptions.insert(field.path)
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: isNoteOpen ? "chevron.down" : "chevron.right")
+                            .font(DS.iconFont(9, weight: .semibold))
+                        Text(children.isEmpty ? "完整说明" : "完整说明与内部字段（\(children.count)）")
+                            .font(DS.fontResetTime)
+                    }
+                    .foregroundStyle(DS.muted)
+                    .padding(.top, 2)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.linearPlain)
+
+                if isNoteOpen {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text(field.description)
                             .font(DS.fontResetTime)
                             .foregroundStyle(DS.muted)
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(8)
-                            .background(DS.surfaceSubtle)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                        Text("允许范围：\(field.range.isEmpty ? "官方未声明额外范围" : field.range)")
+                            .font(DS.fontResetTime)
+                            .foregroundStyle(DS.muted)
+
+                        ForEach(children) { child in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(verbatim: child.path)
+                                    .font(DS.fontMono11)
+                                    .foregroundStyle(DS.ink)
+                                Text(child.description)
+                                    .font(DS.fontResetTime)
+                                    .foregroundStyle(DS.muted)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Text("\(child.type_label) · \(child.range)")
+                                    .font(DS.fontUsageStat)
+                                    .foregroundStyle(DS.muted)
+                            }
+                            .padding(6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(DS.surface)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+
+                        HStack(spacing: 12) {
+                            if let url = URL(string: field.source_url), !field.source_url.isEmpty {
+                                Button {
+                                    NSWorkspace.shared.open(url)
+                                } label: {
+                                    Text("官方源码")
+                                        .font(DS.fontResetTimeSemibold)
+                                        .foregroundStyle(DS.accent)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.linearPlain)
+                            }
+                            if fieldEditable, !configured, field.has_default, let defVal = field.default_value {
+                                Button("写入默认值") {
+                                    setFieldValue(field, defVal, explicit: true)
+                                }
+                                .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
+                            }
+                        }
                     }
+                    .padding(8)
+                    .background(DS.surfaceSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -839,9 +913,15 @@ public struct Sub2ApiConfigTabView: View {
                 )
             }
         } else {
-            let str = scalarString(value)
+            let str = change?.rawScalarText ?? scalarString(value)
             let isSecret = field.sensitive && !revealedPaths.contains(field.path)
-            let promptText = field.default_text == "\"\"" || field.default_text.isEmpty ? "空字符串" : field.default_text
+            let promptText: String = if value == nil {
+                "未配置"
+            } else if field.default_text == "\"\"" || field.default_text.isEmpty {
+                "空字符串"
+            } else {
+                field.default_text
+            }
             ConfigScalarEditorView(
                 textValue: str,
                 prompt: promptText,

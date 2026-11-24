@@ -102,7 +102,7 @@ python ../scripts/verify_android.py src-tauri/gen/android/app/build/outputs/apk/
 
 `/api/desktop/v1` 只接受 `x-api-key` 管理员认证；服务端使用已配置的 Sub2API 内网地址验证权限。读取验证缓存 15 秒，写操作重新验证。账号 DTO 排除 credentials / extra，错误详情按需读取并移除请求正文。不存在桌面免认证模式。
 
-配置通过 `ConfigService` 保存，以 revision 防止覆盖并发修改。部署保持单个 Companion worker，与现有回退控制器共用进程内锁。接口不改变 Sub2API 表结构或源码。
+配置通过 `ConfigService` 保存，以 revision 防止覆盖并发修改。部署保持单个 Companion worker，接口不改变 Sub2API 表结构或源码。
 
 菜单栏阶段诊断保存在应用配置目录的 `panel-diagnostics.log`，最多约 64 KiB，只包含点击、定位、显示、聚焦与隐藏状态，不包含连接或账号资料。
 
@@ -112,4 +112,4 @@ python ../scripts/verify_android.py src-tauri/gen/android/app/build/outputs/apk/
 
 “功能 → IP 管理”操作当前连接的 Sub2API 代理目录，支持搜索、协议与状态筛选、排序分页、增删改与启停、批量添加和删除、JSON 导入导出、关联账号、连接测试及质量检测。编辑密码留空保留原值，清除认证需明确勾选；有效期、到期处理及备用代理由上游执行。认证信息仅在显式查看、复制或导出时读取，不进入快照。写请求结果不明时刷新核对，不自动重试。
 
-账号页支持[添加账号与复用配置](../docs/account-creation.md)，授权与批量导入对齐 Sub2API 0.2.11。余额查询设置可按需显示并复制 New API 账户访问令牌，留空保存保留原值。
+账号页支持[添加账号与复用配置](../docs/account-creation.md)（基线版本见该文档说明）。余额查询设置可按需显示并复制 New API 账户访问令牌，留空保存保留原值。

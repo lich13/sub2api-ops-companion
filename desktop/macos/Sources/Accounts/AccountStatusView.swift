@@ -20,7 +20,7 @@ public struct AccountStatusView: View {
                 }
             } else if let rateBlocker = account.blockers.first(where: { $0.code == "rate_limit_reset_at" }) {
                 HStack(spacing: 5) {
-                    Text(rateBlocker.label ?? "限流中")
+                    Text(rateBlocker.label.isEmpty ? "限流中" : rateBlocker.label)
                         .font(DS.fontBadge)
                         .foregroundStyle(DS.warn)
                         .padding(.horizontal, 6)
@@ -66,7 +66,7 @@ public struct AccountStatusView: View {
             } else if let primaryBlocker = account.blockers.first {
                 HStack(spacing: 6) {
                     StatusDot(primaryBlocker.code == "disabled" ? .muted : .warning, size: 6)
-                    Text(primaryBlocker.label ?? "不可调度")
+                    Text(primaryBlocker.label.isEmpty ? "不可调度" : primaryBlocker.label)
                         .font(DS.fontCompactMedium)
                         .foregroundStyle(primaryBlocker.code == "disabled" ? DS.muted : DS.ink)
                 }

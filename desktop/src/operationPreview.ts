@@ -1,4 +1,5 @@
 import type { Account, Recovery } from "./types";
+import { errorMessage } from "./bridgeError";
 import type { Operation } from "./accountOperations";
 import {
   applySettingsPreview,
@@ -227,7 +228,7 @@ export async function operationPreview(
               job.reason = "";
             } catch (e) {
               job.status = "needs_confirmation";
-              job.reason = String(e).replace(/^Error: /, "");
+              job.reason = errorMessage(e);
             }
             emit();
           }, 1200);
@@ -370,7 +371,7 @@ export async function operationPreview(
           );
         } catch (e) {
           job.status = "needs_confirmation";
-          job.reason = String(e).replace(/^Error: /, "");
+          job.reason = errorMessage(e);
           emit();
           return;
         }

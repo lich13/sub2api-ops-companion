@@ -86,7 +86,6 @@ docker compose up -d --build
 | `SUB2API_VERIFY_BASE_URL` | 可选的服务端内网校验根地址。 |
 | `KEEPALIVE_CONFIG_PATH` | 账号保活设置、恢复预算与待核对记录，默认 `/data/keepalive-state.json`（默认全部关闭）。 |
 | `DATABASE_URL` | Sub2API PostgreSQL 连接串。 |
-| `BASE_PATH` | 历史兼容环境变量（默认 `/sub2ops`）；外部前缀由 Nginx 配置并剥离，Rust 服务静默忽略该变量、不据此挂载路由。 |
 | `USAGE_QUERY_STATE_PATH` | OAuth 快照、管理员 API Key 与调度元数据，默认 `/data/usage-query-state.json`。 |
 | `OAUTH_CONFIG_PATH` | OAuth 自动化配置文件，默认 `/data/oauth-config.json`；优先级：JSON > 环境变量 > 默认值。 |
 | `BARK_CONFIG_PATH` | Bark 配置文件，默认 `/data/bark-config.json`。 |

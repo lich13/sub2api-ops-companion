@@ -2,17 +2,17 @@ import { useEffectEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { api } from "./bridge";
+import type {
+  BankStatusReply,
+  BankVersionReply,
+  ModelTestJob,
+} from "./protocol";
 import { fullTime } from "./types";
-export type BankVersion = {
-  revision: string;
-  sha256: string;
+export type BankVersion = BankVersionReply<number | string> & {
   built_at: string;
-  analyzer_version: number | string;
 };
-type Bank = {
+type Bank = Omit<BankStatusReply<number | string>, "version"> & {
   version: BankVersion;
-  source: string;
-  status: string;
   result?: string;
   checked_at?: number | string;
   synced_at?: number | string;
@@ -41,7 +41,7 @@ export default function FingerprintBankStatus({
   engine = "modeltrace",
 }: {
   online: boolean;
-  taskVersion?: BankVersion | null;
+  taskVersion?: NonNullable<ModelTestJob["bank_version"]> | null;
   engine?: string;
 }) {
   const path =

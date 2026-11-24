@@ -147,6 +147,9 @@ pub fn reusable(row: &Value) -> Option<Value> {
             out["upstream_billing_probe_enabled"] = v.clone();
         }
     }
+    out.as_object_mut()
+        .unwrap()
+        .remove("upstream_billing_group_sync_enabled");
     Some(out)
 }
 

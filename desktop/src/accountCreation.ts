@@ -19,6 +19,7 @@ export type CreationDraft = {
   extra: RecordValue;
   auto_pause_on_expired?: boolean;
   upstream_billing_probe_enabled?: boolean;
+  upstream_billing_group_sync_enabled?: boolean;
 };
 export type Field = {
   path: string;
@@ -108,7 +109,7 @@ export function setField(
   value: unknown,
 ): CreationDraft {
   const [section, key] = path.split(".");
-  return key
+  let next: CreationDraft = key
     ? {
         ...draft,
         [section]: {
@@ -117,6 +118,12 @@ export function setField(
         },
       }
     : { ...draft, [section]: value };
+  if (path === "upstream_billing_group_sync_enabled" && value === true) {
+    next = { ...next, upstream_billing_probe_enabled: true };
+  } else if (path === "upstream_billing_probe_enabled" && value === false) {
+    next = { ...next, upstream_billing_group_sync_enabled: false };
+  }
+  return next;
 }
 function applicable(f: Field, draft: Pick<CreationDraft, "platform" | "type">) {
   return (
@@ -140,7 +147,8 @@ export function fieldVisible(f: Field, draft: CreationDraft) {
   if (
     f.path === "credentials.model_mapping" &&
     draft.platform === "openai" &&
-    draft.extra.openai_passthrough === true
+    draft.extra.openai_passthrough === true &&
+    draft.extra.openai_passthrough_model_filter !== true
   )
     return false;
   if (
@@ -387,6 +395,7 @@ export function reuseDraft(
       value === undefined ? undefined : structuredClone(value),
     );
   }
+  delete result.upstream_billing_group_sync_enabled;
   if (
     current.platform === "openai" &&
     (!Array.isArray(result.extra.openai_image_size_tiers) ||
@@ -517,7 +526,14 @@ export function buildPayload(
     if (!tiers.length || tiers.length === 3)
       delete value.extra.openai_image_size_tiers;
     else value.extra.openai_image_size_tiers = tiers;
+    if (
+      value.extra.openai_passthrough !== true ||
+      value.extra.openai_passthrough_model_filter !== true
+    )
+      delete value.extra.openai_passthrough_model_filter;
   }
+  if (value.upstream_billing_group_sync_enabled !== true)
+    delete value.upstream_billing_group_sync_enabled;
   if (draft.type === "bedrock" && value.credentials.auth_mode === "sigv4")
     delete value.credentials.api_key;
   if (draft.type === "bedrock" && value.credentials.auth_mode === "apikey")
@@ -544,6 +560,41 @@ export function buildPayload(
   }
   return value;
 }
+export const headerOverrideVariables = [
+  "user_id",
+  "api_key_id",
+  "group_id",
+  "request_id",
+] as const;
+export const headerOverrideSuggestedNames: Record<
+  (typeof headerOverrideVariables)[number],
+  string
+> = {
+  user_id: "x-gateway-user-id",
+  api_key_id: "x-gateway-api-key-id",
+  group_id: "x-gateway-group-id",
+  request_id: "x-gateway-request-id",
+};
+
+function headerOverrideValueValid(
+  raw: string,
+  allowVariables: boolean,
+): boolean {
+  if (!allowVariables) return !raw.includes("{{");
+  let rest = raw;
+  for (;;) {
+    const start = rest.indexOf("{{");
+    if (start < 0) return true;
+    const afterOpen = rest.slice(start + 2);
+    const end = afterOpen.indexOf("}}");
+    if (end < 0) return false;
+    const name = afterOpen.slice(0, end).trim();
+    if (!(headerOverrideVariables as readonly string[]).includes(name))
+      return false;
+    rest = afterOpen.slice(end + 2);
+  }
+}
+
 export function validateDraft(
   draft: CreationDraft,
   requireCredentials = true,
@@ -561,6 +612,11 @@ export function validateDraft(
     (!Number.isInteger(draft.load_factor) || draft.load_factor < 1)
   )
     return "负载因子需为正整数";
+  if (
+    draft.upstream_billing_group_sync_enabled === true &&
+    (draft.type !== "apikey" || draft.upstream_billing_probe_enabled === false)
+  )
+    return "自动同步上游分组名称与备注需开启自动探测上游倍率";
   for (const f of fields.filter((f) => fieldVisible(f, draft))) {
     const v = getField(draft, f.path);
     if (v === undefined || v === null || v === "") continue;
@@ -625,6 +681,8 @@ export function validateDraft(
           new TextEncoder().encode(b).length > 8192
         )
           return "请求头名称、值或重复项无效，认证头不能覆写";
+        if (!headerOverrideValueValid(b, draft.type === "apikey"))
+          return "请求头模板变量无效；仅 API Key 账号支持 {{user_id}}、{{api_key_id}}、{{group_id}}、{{request_id}}";
         seen.add(key);
       }
       if (a.length > 64) return "请求头最多 64 项";

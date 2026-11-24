@@ -131,7 +131,6 @@ def service_environment(database_url: str) -> dict[str, str]:
         "DATABASE_URL": database_url,
         "HOST": "127.0.0.1",
         "PORT": str(PORT),
-        "BASE_PATH": "",
         "BARK_ENABLED": "false",
         "BARK_DEVICE_KEY": "",
         "OAUTH_RECOVERY_MONITOR_ENABLED": "false",

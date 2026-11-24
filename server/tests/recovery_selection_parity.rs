@@ -1,12 +1,16 @@
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, fs, path::Path, sync::Arc};
-use sub2ops_server::{compat::config_revision, db::Database, runtime::Runtime, settings::Settings};
+use sub2ops_server::{
+    compat::config_revision,
+    db::Database,
+    runtime::Runtime,
+    settings::{Settings, DEFAULT_DETECTION_MODEL},
+};
 
 const C: &str = "oauth_recovery_connection_account_ids";
 const M: &str = "oauth_recovery_model_account_ids";
 const S: &str = "oauth_recovery_seen_account_ids";
 const D: &str = "model_detection_model_id";
-const DEFAULT_DETECTION_MODEL: &str = "gpt-6-luna";
 
 fn fixture() -> Value {
     serde_json::from_str(include_str!(
@@ -19,7 +23,6 @@ fn environment(root: &Path, url: &str) -> BTreeMap<String, String> {
     let mut env = BTreeMap::from([
         ("DATABASE_URL".into(), url.into()),
         ("SUB2API_BASE_URL".into(), "http://127.0.0.1:1".into()),
-        ("BASE_PATH".into(), String::new()),
     ]);
     for (key, file) in [
         ("AUDIT_PATH", "audit.jsonl"),

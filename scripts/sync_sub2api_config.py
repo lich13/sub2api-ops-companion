@@ -20,22 +20,30 @@ CATALOG = ROOT / "server/resources/sub2api-config.json"
 SOURCES = ("backend/internal/config/config.go", "backend/internal/config/validate_dingtalk.go", "deploy/config.example.yaml")
 
 
-def inventory(source: str) -> dict[str, str]:
+def inventory(source: str) -> dict[str, tuple[str, int]]:
     structs = {}
     for match in re.finditer(r"type\s+(\w+)\s+struct\s*\{(.*?)^\}", source, re.S | re.M):
-        fields = re.findall(r'^\s*(\w+)\s+([^`\n]+)\s+`[^`]*mapstructure:"([^"-]+)"[^`]*`', match[2], re.M)
-        structs[match[1]] = [(tag, kind.strip()) for _, kind, tag in fields]
-    result = {}
+        body_offset = match.start(2)
+        fields = []
+        for field_match in re.finditer(
+            r'^[ \t]*(\w+)[ \t]+([^`\n]+)[ \t]+`[^`]*mapstructure:"([^"-]+)"[^`]*`',
+            match.group(2),
+            re.M,
+        ):
+            line = 1 + source.count("\n", 0, body_offset + field_match.start())
+            fields.append((field_match.group(3), field_match.group(2).strip(), line))
+        structs[match.group(1)] = fields
+    result: dict[str, tuple[str, int]] = {}
 
     def walk(name: str, prefix: str = "", parents: tuple[str, ...] = ()) -> None:
         if name in parents:
             raise ValueError("recursive configuration structure")
-        for tag, kind in structs.get(name, []):
+        for tag, kind, line in structs.get(name, []):
             path = f"{prefix}.{tag}".lstrip(".")
             if kind in structs:
                 walk(kind, path, (*parents, name))
             else:
-                result[path] = kind
+                result[path] = (kind, line)
                 inner = kind.removeprefix("[]").removeprefix("map[string]")
                 if inner in structs:
                     walk(inner, path + ("[]" if kind.startswith("[]") else ".*"), (*parents, name))
@@ -97,7 +105,7 @@ def main() -> int:
     reviewed = {normalize(f["path"]): f.get("go_type") for f in catalog["fields"]}
     added = sorted(discovered.keys() - reviewed.keys())
     removed = sorted(reviewed.keys() - discovered.keys())
-    changed = sorted(k for k in discovered.keys() & reviewed.keys() if reviewed[k] != discovered[k])
+    changed = sorted(k for k in discovered.keys() & reviewed.keys() if reviewed[k] != discovered[k][0])
     fingerprints = {k: hashlib.sha256(v).hexdigest() for k, v in sources.items()}
     source_changes = [k for k, v in fingerprints.items() if catalog.get("sources", {}).get(k) != v]
     source_defaults = defaults(sources[SOURCES[0]].decode())
@@ -105,8 +113,16 @@ def main() -> int:
     default_changes = {k: {"before": previous_defaults.get(k), "after": source_defaults.get(k)}
                        for k in sorted(source_defaults.keys() | previous_defaults.keys())
                        if source_defaults.get(k) != previous_defaults.get(k)}
+    stale_anchors = sorted(
+        f["path"]
+        for f in catalog["fields"]
+        if normalize(f["path"]) in discovered
+        and "/backend/internal/config/config.go#L" in f.get("source_url", "")
+        and not f["source_url"].endswith(f"#L{discovered[normalize(f['path'])][1]}")
+    )
     print(json.dumps({"revision": revision, "added": added, "removed": removed, "changed_types": changed,
-                      "changed_defaults": default_changes, "changed_sources": source_changes}, ensure_ascii=False, indent=2))
+                      "changed_defaults": default_changes, "changed_sources": source_changes,
+                      "stale_anchors": len(stale_anchors)}, ensure_ascii=False, indent=2))
     if added or removed or changed:
         print("Review field types, explanations, defaults and constraints before accepting.")
         return 1
@@ -120,10 +136,14 @@ def main() -> int:
         catalog["sources"] = fingerprints
         catalog["source_defaults"] = source_defaults
         for field in catalog["fields"]:
-            field["source_url"] = re.sub(r"/blob/[a-f0-9]{40}/", f"/blob/{revision}/", field["source_url"])
+            url = re.sub(r"/blob/[a-f0-9]{40}/", f"/blob/{revision}/", field["source_url"])
+            line = discovered.get(normalize(field["path"]), (None, None))[1]
+            if line is not None and "/backend/internal/config/config.go#L" in url:
+                url = re.sub(r"#L\d+$", f"#L{line}", url)
+            field["source_url"] = url
         CATALOG.write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n")
         return 0
-    return int(bool(source_changes or default_changes))
+    return int(bool(source_changes or default_changes or stale_anchors))
 
 
 if __name__ == "__main__":

@@ -3,8 +3,8 @@
 */
 
 export interface AccountBlockerRecord {
-  code?: string;
-  label?: string;
+  code: string;
+  label: string;
   until?: string;
 }
 
@@ -44,7 +44,7 @@ export interface ModelDetectionLastResultRecord {
 }
 
 export interface ModelDetectionSummaryRecord {
-  schedule_mode?: string;
+  schedule_mode?: "fixed" | "smart";
   min_interval_minutes?: number;
   effective_interval_minutes?: number;
   recent_request_count?: number;
@@ -80,12 +80,12 @@ export interface UsageWindowRecord {
   used_percent?: number;
   reset_at?: string;
   observed_at?: string;
-  status: string;
+  status: "known" | "unknown" | "stale" | "error";
   source: string;
   used?: number;
   limit?: number;
   remaining?: number;
-  color?: string;
+  color?: "indigo" | "emerald" | "purple";
   stats?: UsageStatsRecord;
   estimated_total_cost?: number;
 }
@@ -115,8 +115,8 @@ export interface KeyQuotaUsageRecord {
 }
 
 export interface KeyQuotaRecord {
-  state: string;
-  source?: string;
+  state: "idle" | "loading" | "ok" | "error" | "unsupported";
+  source?: "sub2api" | "newapi";
   checked_at?: number;
   success_at?: number;
   retry_at?: number;
@@ -138,7 +138,7 @@ export interface UsageBalanceRecord {
   currency: string;
   balance: number;
   observed_at?: string;
-  status?: string;
+  status?: "known" | "unknown" | "stale" | "error";
 }
 
 export interface ResetCreditsInfoRecord {
@@ -148,16 +148,19 @@ export interface ResetCreditsInfoRecord {
 }
 
 export interface UsageSummaryRecord {
-  stats_status?: string;
+  stats_status?: "ok" | "error";
   key_quota?: KeyQuotaRecord;
-  branch: string;
+  branch:
+    "none" | "apikey" | "openai_oauth" | "grok_free" | "grok_paid" | "native";
   native_read?: boolean;
-  status?: string;
+  status?: "known" | "unavailable" | "error" | "authorization_required";
   message?: string;
   balances?: UsageBalanceRecord[];
   windows: UsageWindowRecord[];
   today?: UsageStatsRecord;
-  actions: string[];
+  actions: (
+    "query_usage" | "query_reset_credits" | "reset_quota" | "probe_quota"
+  )[];
   reset_credits?: ResetCreditsInfoRecord;
   prepaid_balance?: number;
   monthly_limit?: number;
@@ -181,7 +184,7 @@ export interface AutoResetCreditStateRecord {
   outcome?: string;
   notification_status?: string;
   notification_attempts?: number;
-  evidence_source?: string;
+  evidence_source?: "upstream_error" | "account_rate_limit";
   evidence_at?: string;
   stage: string;
   label: string;
@@ -494,6 +497,11 @@ export interface CreationCheckReply {
   has_risk: boolean;
 }
 
+export interface CreationGroupPreviewReply {
+  group_name: string;
+  group_description: string;
+}
+
 export interface CreationModelsReply {
   models: string[];
   warnings?: string[];
@@ -516,6 +524,88 @@ export interface DeleteProxyBatchReply {
 
 export interface DeletedProxyReply {
   deleted: boolean;
+}
+
+export interface DetectionClassificationInfo {
+  outcome?: string;
+  reason?: string;
+  basis?: string;
+  group_indexes?: number[];
+}
+
+export interface DetectionGroupPredictionItem {
+  index: number;
+  prediction?: string;
+}
+
+export interface DetectionReceipt {
+  status: string;
+  basis?: "first_group" | "aggregate" | "sample_family";
+  group_indexes?: number[];
+  marked?: boolean;
+  schedule_verified?: boolean;
+  mark_cleared?: boolean;
+  reason: string;
+  completed_at?: string;
+}
+
+export interface DetectionLogSummary {
+  verdict_mode?: "strict" | "relaxed";
+  degraded_model_id?: string;
+  engine?: string;
+  sample_count?: number;
+  decision?: string;
+  reason?: string;
+  prediction_name?: string;
+  classification?: DetectionClassificationInfo;
+  bank_version?: {
+    revision: string;
+    sha256?: string;
+    built_at?: string;
+    analyzer_version?: number | string;
+  };
+  group_predictions?: DetectionGroupPredictionItem[];
+  outcome: string;
+  analysis_available: boolean;
+  first_prediction: string;
+  prediction: string;
+  probability?: number;
+  first_probability?: number;
+  used_outputs?: number;
+  first_downgrade?: boolean;
+  aggregate_downgrade?: boolean;
+  disposition?: DetectionReceipt;
+  recovery?: DetectionReceipt;
+  verification?: DetectionReceipt;
+  restoration?: DetectionReceipt;
+}
+
+export interface DetectionLogNotification {
+  status: string;
+  merged: boolean;
+  delivered_at?: string;
+  reason: string;
+}
+
+export interface DetectionLog {
+  job_id: string;
+  account_id: number;
+  account_name: string;
+  model_id: string;
+  status: string;
+  created_at: string;
+  started_at?: string;
+  completed_at?: string;
+  triggers: string[];
+  error: string;
+  details_available: boolean;
+  summary: DetectionLogSummary;
+  notification?: DetectionLogNotification;
+}
+
+export interface DetectionLogPageReply {
+  items: DetectionLog[];
+  next_cursor?: string;
 }
 
 export interface DetectionRecovery {
@@ -610,11 +700,11 @@ export interface GrokImportReply {
 }
 
 export interface RecentAccountRecord {
-  log_id?: number;
-  account_id?: number;
-  account_name?: string;
-  model?: string;
-  upstream_model?: string;
+  log_id: number;
+  account_id: number;
+  account_name: string;
+  model: string;
+  upstream_model: string;
   called_at?: string;
 }
 
@@ -622,11 +712,11 @@ export interface GroupRecord {
   id: number;
   sort_order?: number;
   name: string;
-  platform?: string;
+  platform: string;
   account_id?: number;
-  account_name?: string;
-  model?: string;
-  upstream_model?: string;
+  account_name: string;
+  model: string;
+  upstream_model: string;
   called_at?: string;
   recent_accounts: RecentAccountRecord[];
 }
@@ -715,15 +805,146 @@ export interface ModelDetectionReply {
   last_result?: DetectionResult;
 }
 
+export interface ModelFingerprintCandidateScore {
+  model: string;
+  display_name?: string;
+  probability?: number;
+  score?: number;
+}
+
+export interface ModelFingerprintReport {
+  prediction?: string;
+  prediction_name?: string;
+  probability?: number;
+  used_outputs?: number;
+  decision?: string;
+  merged_class?: boolean;
+  ranking_score?: number;
+  results?: ModelFingerprintCandidateScore[];
+  bank_version?: {
+    revision: string;
+    sha256?: string;
+    built_at?: string;
+    analyzer_version?: number | string;
+  };
+}
+
 export interface ModelOption {
   id: string;
   display_name?: string;
 }
 
-export interface ModelTestHeader {
-  id: string;
-  account_id: number;
+export interface ModelTestAutomaticDisposition {
+  basis?: "first_group" | "aggregate" | "sample_family";
+  group_indexes?: number[];
+  kind?: string;
+  status?: string;
+  marked?: boolean;
+  schedule_verified?: boolean;
+  reason?: string;
+}
+
+export interface ModelTestClassification {
+  outcome: string;
+  reason?: string;
+  basis?: string;
+  group_indexes?: number[];
+}
+
+export interface ModelTestGroupDiagnostics {
+  protocol?: string;
+  response_protocol?: string;
+  http_status?: number;
+  content_type?: string;
+  first_event_ms?: number;
+  first_event_type?: string;
+  last_event_type?: string;
+  headers_ms?: number;
+  bytes?: number;
+  end_reason?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  reasoning_tokens?: number;
+  max_output_tokens?: number;
+}
+
+export interface ModelTestGroupStatus {
+  index: number;
   status: string;
+  attempts?: number;
+  ttft_ms?: number;
+  duration_ms?: number;
+  error?: string;
+  report?: ModelFingerprintReport;
+  diagnostics?: ModelTestGroupDiagnostics;
+}
+
+export interface ModelTestTokenizerClaim {
+  status: string;
+  probability: number;
+}
+
+export interface ModelTestTokenizerCandidate {
+  id: string;
+  name: string;
+  probability: number;
+}
+
+export interface ModelTestTokenizerReport {
+  kind: string;
+  name: string;
+  lab: string;
+  confidence: number;
+  unknown: number;
+  claim?: ModelTestTokenizerClaim;
+  candidates: ModelTestTokenizerCandidate[];
+}
+
+export interface ModelTestTokenizer {
+  status: string;
+  requests?: number;
+  baseline_drift?: boolean;
+  error?: string;
+  report?: ModelTestTokenizerReport;
+}
+
+export interface ModelTestJob {
+  id: string;
+  account_id?: number;
+  account_name?: string;
+  requested_model?: string;
+  forwarded_model?: string;
+  returned_models?: string[];
+  status: string;
+  phase?: string;
+  automatic?: boolean;
+  engine?: "modeltrace" | "lm_detector";
+  tokenizer_probe?: boolean;
+  planned_groups?: number;
+  completed_groups?: number;
+  valid_groups?: number;
+  concurrency?: number;
+  attempts?: number;
+  duration_ms?: number;
+  queued_at?: string;
+  started_at?: string;
+  completed_at?: string;
+  completion_reason?: string;
+  verdict_mode?: "strict" | "relaxed";
+  degraded_model_id?: string;
+  can_retry?: boolean;
+  error?: string;
+  groups?: ModelTestGroupStatus[];
+  report?: ModelFingerprintReport;
+  classification?: ModelTestClassification;
+  automatic_disposition?: ModelTestAutomaticDisposition;
+  tokenizer?: ModelTestTokenizer;
+  bank_version?: {
+    revision: string;
+    sha256?: string;
+    built_at?: string;
+    analyzer_version?: number | string;
+  };
 }
 
 export interface NamedMessage {
@@ -950,7 +1171,7 @@ export interface RecoveryRecord {
   test_completed_at?: string;
   recovered_at?: string;
   legacy?: boolean;
-  kind?: string;
+  kind?: "quota_recovery" | "reset_credit" | "connection_test";
   result_status?: string;
   attempt_count?: number;
   reset_credit?: RecoveryResetCreditRecord;

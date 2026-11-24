@@ -6,7 +6,8 @@ extension AccountCreationSheet {
     @ViewBuilder
     var stepTwoBody: some View {
         let pLabel = currentPlatformSpec?.label ?? draft.platform
-        Text("\(draft.name.isEmpty ? "未命名账号" : draft.name) · \(pLabel) · \(typeDisplayName(draft.type))")
+        let trimmedName = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        Text("\(trimmedName.isEmpty ? "未命名账号" : trimmedName) · \(pLabel) · \(typeDisplayName(draft.type))")
             .font(DS.fontCompactSemibold)
             .foregroundStyle(DS.ink)
             .padding(.horizontal, 12)
@@ -163,12 +164,19 @@ extension AccountCreationSheet {
                 labeledSecureField("API Key", text: $draft.apiKey)
 
                 if draft.type == "apikey" {
-                    HStack {
+                    HStack(spacing: 8) {
                         Button("读取上游模型") {
                             Task { await previewUpstreamModels() }
                         }
                         .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-                        .disabled(draft.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(busy || draft.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                        Button("同步上游分组名称与备注") {
+                            Task { await syncUpstreamGroup() }
+                        }
+                        .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
+                        .disabled(busy || draft.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
                         Spacer()
                     }
 

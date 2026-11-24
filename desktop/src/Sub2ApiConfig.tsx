@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Eye, EyeOff, RefreshCw, Search, X } from "lucide-react";
 import { parseDocument, stringify } from "yaml";
 import { api } from "./bridge";
+import { errorMessage as errorText } from "./bridgeError";
 import type {
   HostConfigHeader,
   HostFieldIssue,
@@ -23,6 +24,7 @@ type ConfigField = {
   default_text: string;
   default_value: unknown;
   has_default: boolean;
+  nullable?: boolean;
   sensitive: boolean;
   internal: boolean;
   editable: boolean;
@@ -70,7 +72,6 @@ const display = (value: unknown) =>
     : typeof value === "string"
       ? value || '""'
       : JSON.stringify(value);
-const errorText = (e: unknown) => String(e).replace(/^Error: /, "");
 const equal = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
 const containsPath = (parent: string, path: string) =>
@@ -122,7 +123,9 @@ function FieldEditor({
 }) {
   const [reveal, setReveal] = useState(false);
   const structured = field.type === "array" || field.type === "object";
+  const numeric = field.type === "integer" || field.type === "number";
   const [yaml, setYaml] = useState(() => structuredText(value));
+  const [raw, setRaw] = useState(() => (value == null ? "" : String(value)));
   const [error, setError] = useState(() =>
     structured && typeof value === "string"
       ? structuredValue(value, field.type).error
@@ -138,7 +141,11 @@ function FieldEditor({
           : "",
       );
     }
-  }, [value, structured, field.type]);
+    if (numeric && emitted.current !== value) {
+      setRaw(value == null ? "" : String(value));
+      emitted.current = value;
+    }
+  }, [value, structured, numeric, field.type]);
   const id = `config-${field.path}`;
   const a11y = {
     "aria-describedby": `${id}-help ${id}-errors${error && !invalid ? ` ${id}-syntax` : ""}`,
@@ -214,7 +221,6 @@ function FieldEditor({
         )}
       </div>
     );
-  const numeric = field.type === "integer" || field.type === "number";
   return (
     <div className="config-input">
       <input
@@ -226,7 +232,7 @@ function FieldEditor({
           field.sensitive && !reveal ? "password" : numeric ? "number" : "text"
         }
         step={field.type === "integer" ? 1 : "any"}
-        value={value == null ? "" : String(value)}
+        value={numeric ? raw : value == null ? "" : String(value)}
         autoComplete="off"
         spellCheck={false}
         placeholder={
@@ -236,15 +242,22 @@ function FieldEditor({
               ? "空字符串"
               : undefined
         }
-        onChange={(e) =>
-          change(
-            numeric
-              ? e.target.value === ""
-                ? null
-                : Number(e.target.value)
-              : e.target.value,
-          )
-        }
+        onChange={(e) => {
+          const text = e.target.value;
+          if (numeric) {
+            setRaw(text);
+            const next = text === "" ? null : Number(text);
+            emitted.current = next === null ? field.default_value : next;
+            change(next);
+          } else {
+            change(text);
+          }
+        }}
+        onBlur={() => {
+          if (numeric && raw === "" && value != null) {
+            setRaw(String(value));
+          }
+        }}
       />
       {field.sensitive && (
         <button
@@ -440,9 +453,11 @@ function ConfigFieldRow({
 export default function Sub2ApiConfig({
   active,
   online,
+  connectionKey = "",
 }: {
   active: boolean;
   online: boolean;
+  connectionKey?: string;
 }) {
   const [response, setResponse] = useState<ConfigRead | null>(null),
     [draft, setDraft] = useState<Record<string, Change>>({});
@@ -574,6 +589,7 @@ export default function Sub2ApiConfig({
   const changes = Object.values(draft),
     blocked = busy || applying || !online || !document?.editable;
   function edit(field: ConfigField, value: unknown, explicit = false) {
+    const numeric = field.type === "integer" || field.type === "number";
     setDraft((old) => {
       const next = { ...old },
         current = document?.values[field.path];
@@ -581,7 +597,9 @@ export default function Sub2ApiConfig({
         !explicit &&
         (current?.configured
           ? equal(current.yaml, value)
-          : field.has_default && equal(field.default_value, value))
+          : numeric && value === null && !field.nullable
+            ? true
+            : field.has_default && equal(field.default_value, value))
       )
         delete next[field.path];
       else next[field.path] = { path: field.path, remove: false, value };
@@ -612,6 +630,26 @@ export default function Sub2ApiConfig({
             message:
               structuredValue(c.value, field.type).error ||
               "需要有效的 YAML 结构",
+          },
+        ];
+      if (
+        !c.remove &&
+        (field.type === "integer" || field.type === "number") &&
+        !field.nullable &&
+        (c.value === null ||
+          typeof c.value !== "number" ||
+          !Number.isFinite(c.value) ||
+          (field.type === "integer" && !Number.isInteger(c.value)))
+      )
+        return [
+          {
+            path: c.path,
+            message:
+              c.value === null
+                ? "使用恢复默认移除配置或填写有效数值"
+                : field.type === "integer"
+                  ? "需要有效整数"
+                  : "需要有效数值",
           },
         ];
       return [];
@@ -835,6 +873,7 @@ export default function Sub2ApiConfig({
         <Sub2ApiVersion
           active={active}
           online={online}
+          connectionKey={connectionKey}
           knownVersion={document?.version}
           onRuntimeChanged={() => void load(false, true)}
         />

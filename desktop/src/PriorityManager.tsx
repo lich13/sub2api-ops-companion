@@ -20,6 +20,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { api, command } from "./bridge";
+import { errorMessage as cleanError } from "./bridgeError";
 import { clientId } from "./accountOperations";
 import {
   movePriority,
@@ -63,7 +64,6 @@ const taskLabels: Record<string, string> = {
   failed: "保存失败",
   cancelled: "已停止",
 };
-const cleanError = (error: unknown) => String(error).replace(/^Error: /, "");
 const taskPath = (id: string, summary = false) =>
   `/account-priority-orders/${id}?schema=2${summary ? "&details=0" : ""}`;
 export default function PriorityManager(props: Props) {

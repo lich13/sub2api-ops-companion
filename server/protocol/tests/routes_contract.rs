@@ -120,6 +120,12 @@ fn management_routes_and_credentials_are_explicit() {
 fn fixed_routes_and_response_boundaries() {
     assert!(allowed("POST", "/account-creation?sync_models=true"));
     assert!(!allowed("GET", "/account-creation?sync_models=true"));
+    assert!(allowed("POST", "/account-creation/upstream-group"));
+    assert!(!allowed("GET", "/account-creation/upstream-group"));
+    assert!(valid_get_or_post(
+        "/account-creation/upstream-group",
+        &json!({"group_name":"VIP Group","group_description":"Upstream remarks"})
+    ));
     for (provider, actions) in [
         ("anthropic", vec!["authorize", "exchange", "cookie"]),
         ("setup-token", vec!["authorize", "exchange", "cookie"]),

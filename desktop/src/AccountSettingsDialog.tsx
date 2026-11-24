@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { api, command } from "./bridge";
+import { errorMessage } from "./bridgeError";
 import {
   followOperation,
   operationEpoch,
@@ -125,8 +126,7 @@ export default function AccountSettingsDialog({
       setProfile(structuredClone(result.model_config));
       setProxyId(result.proxy_id);
     } catch (e) {
-      if (current === generation.current)
-        setError(String(e).replace(/^Error: /, ""));
+      if (current === generation.current) setError(errorMessage(e));
     } finally {
       if (current === generation.current) setLoading(false);
     }
@@ -150,7 +150,7 @@ export default function AccountSettingsDialog({
         }
       })
       .catch((e) => {
-        if (!cancelled) setError(String(e).replace(/^Error: /, ""));
+        if (!cancelled) setError(errorMessage(e));
       });
     return () => {
       cancelled = true;
@@ -215,7 +215,7 @@ export default function AccountSettingsDialog({
     } catch (e) {
       if (current === generation.current) {
         setNotice("");
-        setError(String(e).replace(/^Error: /, ""));
+        setError(errorMessage(e));
       }
     } finally {
       submitGuard.current = false;
@@ -259,7 +259,7 @@ export default function AccountSettingsDialog({
     } catch (e) {
       if (current === generation.current) {
         setNotice("");
-        setError(String(e).replace(/^Error: /, ""));
+        setError(errorMessage(e));
       }
     } finally {
       syncGuard.current = false;

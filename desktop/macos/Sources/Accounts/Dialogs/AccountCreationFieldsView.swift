@@ -9,6 +9,7 @@ public struct AccountCreationFieldsView: View {
     public var groupLongContext: Bool
 
     @State private var expandedGroups: Set<String>
+    @FocusState var focusedHeaderValueId: UUID?
 
     public init(
         draft: Binding<AccountCreationFormDraft>,
@@ -89,7 +90,10 @@ public struct AccountCreationFieldsView: View {
 
                         if !scalars.isEmpty {
                             LazyVGrid(
-                                columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
+                                columns: [
+                                    GridItem(.flexible(), spacing: 12, alignment: .bottomLeading),
+                                    GridItem(.flexible(), spacing: 12, alignment: .bottomLeading),
+                                ],
                                 alignment: .leading,
                                 spacing: 10
                             ) {
@@ -287,7 +291,7 @@ public struct AccountCreationFieldsView: View {
                 Text(label)
                     .font(DS.fontCompactMedium)
                     .foregroundStyle(DS.muted)
-                TextField(text: $text, prompt: Text(verbatim: "未设置")) { EmptyView() }
+                TextField(text: $text, prompt: Text(verbatim: "未设置").foregroundStyle(DS.placeholder)) { EmptyView() }
                     .textFieldStyle(.plain)
                     .font(DS.fontBody)
                     .monospacedDigit()

@@ -459,7 +459,7 @@ public struct ModelTestSheet: View {
             let latest: ModelTestJob? = try await RustBridge.shared.api("GET", "/accounts/\(account.id)/model-tests/latest")
             if let latest {
                 job = latest
-                if let reqModel = latest.requested_model ?? latest.model_id, !reqModel.isEmpty, models.contains(where: { $0.id == reqModel }) {
+                if let reqModel = latest.requested_model, !reqModel.isEmpty, models.contains(where: { $0.id == reqModel }) {
                     selectedModel = reqModel
                 }
                 if !latest.isTerminal {

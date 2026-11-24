@@ -17,8 +17,8 @@ pub(super) fn mock(state: &MockUpstream, path: &str) -> Option<Response> {
     }
     let status = state.update_status.load(Ordering::Acquire) as u16;
     let data = state.system_results.lock().unwrap().get(action).cloned().unwrap_or_else(|| match action {
-        "version" => json!({"version":"0.2.20"}),
-        "check-updates" => json!({"current_version":"0.2.20","latest_version":"0.2.21","has_update":true,"build_type":"release","cached":false}),
+        "version" => json!({"version":"0.2.25"}),
+        "check-updates" => json!({"current_version":"0.2.25","latest_version":"0.2.26","has_update":true,"build_type":"release","cached":false}),
         "update" => json!({"message":"Update completed. Please restart the service.","need_restart":true,"operation_id":"fixture-update"}),
         "restart" => json!({"message":"Service restart initiated","operation_id":"fixture-restart"}),
         _ => Value::Null,
@@ -51,7 +51,7 @@ async fn native_system_routes_authenticate_forward_cached_reads_and_never_repeat
         h.request(Method::GET, "sub2api-system/version", None)
             .await
             .1["version"],
-        "0.2.20"
+        "0.2.25"
     );
     assert_eq!(
         h.request(Method::GET, "sub2api-system/check-updates?force=true", None)
@@ -100,7 +100,7 @@ async fn native_system_routes_authenticate_forward_cached_reads_and_never_repeat
             1
         );
     }
-    h.upstream.system_results.lock().unwrap().insert("update".into(),json!({"message":"Already up to date","already_up_to_date":true,"current_version":"0.2.20","latest_version":"0.2.20"}));
+    h.upstream.system_results.lock().unwrap().insert("update".into(),json!({"message":"Already up to date","already_up_to_date":true,"current_version":"0.2.25","latest_version":"0.2.25"}));
     let latest = h.request(Method::POST, "sub2api-system/update", None).await;
     assert_eq!(latest.0, 200);
     assert_eq!(latest.1["already_up_to_date"], true);

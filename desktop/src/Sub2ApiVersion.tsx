@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, command } from "./bridge";
+import { errorMessage } from "./bridgeError";
 import type {
   SystemUpdateReply as Sub2ApiUpdateResult,
   SystemVersionReply,
@@ -15,11 +16,13 @@ const normalize = (version: string) => version.replace(/^v/, "");
 export default function Sub2ApiVersion({
   active,
   online,
+  connectionKey = "",
   knownVersion = "",
   onRuntimeChanged,
 }: {
   active: boolean;
   online: boolean;
+  connectionKey?: string;
   knownVersion?: string;
   onRuntimeChanged?: () => void;
 }) {
@@ -32,6 +35,8 @@ export default function Sub2ApiVersion({
     [message, setMessage] = useState("");
   const alive = useRef(true),
     guard = useRef(false),
+    scope = useRef(0),
+    boundConnection = useRef(connectionKey),
     target = useRef("");
   const refreshRuntime = useRef(onRuntimeChanged);
   refreshRuntime.current = onRuntimeChanged;
@@ -41,6 +46,20 @@ export default function Sub2ApiVersion({
       alive.current = false;
     };
   }, []);
+  useEffect(() => {
+    if (boundConnection.current === connectionKey) return;
+    boundConnection.current = connectionKey;
+    scope.current += 1;
+    guard.current = false;
+    target.current = "";
+    setBusy(false);
+    setVersion(knownVersion);
+    setInfo(null);
+    setNeedRestart(false);
+    setWaiting(false);
+    setMessage("");
+    setError("");
+  }, [connectionKey, knownVersion]);
   useEffect(() => {
     if (knownVersion) setVersion(knownVersion);
   }, [knownVersion]);
@@ -98,9 +117,10 @@ export default function Sub2ApiVersion({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [waiting, active, version]);
+  }, [waiting, active, version, connectionKey]);
   async function run(action: "check-updates" | "update" | "restart") {
     if (guard.current || !online) return;
+    const currentScope = scope.current;
     guard.current = true;
     setBusy(true);
     setError("");
@@ -111,7 +131,7 @@ export default function Sub2ApiVersion({
           "GET",
           "/sub2api-system/check-updates?force=true",
         );
-        if (!alive.current) return;
+        if (!alive.current || currentScope !== scope.current) return;
         setInfo(result);
         setVersion(result.current_version);
         if (
@@ -129,7 +149,7 @@ export default function Sub2ApiVersion({
           "POST",
           `/sub2api-system/${action}`,
         );
-        if (!alive.current) return;
+        if (!alive.current || currentScope !== scope.current) return;
         if (action === "restart") {
           setWaiting(true);
           setMessage("正在等待重启生效");
@@ -159,13 +179,15 @@ export default function Sub2ApiVersion({
         }
       }
     } catch (e) {
-      if (alive.current) {
-        setError(String(e));
+      if (alive.current && currentScope === scope.current) {
+        setError(errorMessage(e));
         if (action === "restart") setWaiting(true);
       }
     } finally {
-      guard.current = false;
-      if (alive.current) setBusy(false);
+      if (currentScope === scope.current) {
+        guard.current = false;
+        if (alive.current) setBusy(false);
+      }
     }
   }
   return (
@@ -193,7 +215,7 @@ export default function Sub2ApiVersion({
               url:
                 info?.release_info?.html_url ||
                 "https://github.com/Wei-Shaw/sub2api/releases",
-            }).catch((e) => setError(String(e)))
+            }).catch((e) => setError(errorMessage(e)))
           }
         >
           查看发布

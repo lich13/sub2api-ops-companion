@@ -80,6 +80,7 @@ pub enum Reply {
     CreationImport,
     CreationCheck,
     CreationModels,
+    CreationGroupPreview,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -205,6 +206,7 @@ routes! {
     CreationImport(kind:W) => ["account-creation", "import", kind] if import_route(kind).is_some(), Client, [POST Creation CreationImport];
     CreationCheck => ["account-creation", "check-mixed-channel"], Client, [POST Creation CreationCheck];
     CreationModels => ["account-creation", "models"], Client, [POST Creation CreationModels];
+    CreationGroupPreview => ["account-creation", "upstream-group"], Client, [POST Creation CreationGroupPreview];
 }
 
 pub fn auth_route(platform: &str, action: &str) -> Option<&'static str> {

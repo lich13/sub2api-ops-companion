@@ -272,6 +272,50 @@ fn detection_log_and_system_update_and_reauthorization_and_keepalive_guards() {
         "next_cursor":"eyJmaXh0dXJlIjoxfQ"
     });
     assert!(accepts_reply("/detection-logs", &valid_log));
+    let mut sample_family_log = valid_log.clone();
+    sample_family_log["items"][0]["summary"]["disposition"] = json!({
+        "status":"marked",
+        "basis":"sample_family",
+        "group_indexes":[1, 2],
+        "marked":true,
+        "schedule_verified":true,
+        "mark_cleared":null,
+        "reason":"",
+        "completed_at":"2026-10-20T12:00:00Z"
+    });
+    assert!(accepts_reply("/detection-logs", &sample_family_log));
+    let mut bad_basis = sample_family_log;
+    bad_basis["items"][0]["summary"]["disposition"]["basis"] = json!("unknown_basis");
+    assert!(!accepts_reply("/detection-logs", &bad_basis));
+
+    let model_test = json!({
+        "id":"0123456789abcdef0123456789abcdef",
+        "account_id":7,
+        "account_name":"fixture account",
+        "requested_model":"gpt-6-sol",
+        "forwarded_model":"gpt-6-sol",
+        "returned_models":["gpt-6-sol"],
+        "status":"completed",
+        "engine":"modeltrace",
+        "automatic_disposition":{
+            "basis":"sample_family",
+            "group_indexes":[1],
+            "status":"marked",
+            "marked":true,
+            "schedule_verified":true,
+            "reason":""
+        }
+    });
+    assert!(accepts_reply(
+        "/model-tests/0123456789abcdef0123456789abcdef",
+        &model_test
+    ));
+    let mut missing_account_id = model_test;
+    missing_account_id.as_object_mut().unwrap().remove("account_id");
+    assert!(!accepts_reply(
+        "/model-tests/0123456789abcdef0123456789abcdef",
+        &missing_account_id
+    ));
     for mut bad in [
         {
             let mut r = valid_log.clone();
@@ -300,7 +344,7 @@ fn detection_log_and_system_update_and_reauthorization_and_keepalive_guards() {
 
     assert!(accepts_reply(
         "/sub2api-system/update",
-        &json!({"message":"Already up to date","already_up_to_date":true,"current_version":"0.2.20","latest_version":"0.2.20"})
+        &json!({"message":"Already up to date","already_up_to_date":true,"current_version":"0.2.25","latest_version":"0.2.25"})
     ));
     assert!(accepts_reply(
         "/sub2api-system/update",
@@ -312,7 +356,7 @@ fn detection_log_and_system_update_and_reauthorization_and_keepalive_guards() {
     ));
     assert!(accepts_reply(
         "/sub2api-system/version",
-        &json!({"version":"0.2.20"})
+        &json!({"version":"0.2.25"})
     ));
 
     let reauth_path = "/accounts/7/apply-oauth-credentials";

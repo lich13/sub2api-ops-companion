@@ -30,7 +30,7 @@ async function render(
       <Sub2ApiVersion
         active={active}
         online
-        knownVersion="0.2.20"
+        knownVersion="0.2.25"
         onRuntimeChanged={refreshed}
         {...props}
       />,
@@ -40,7 +40,7 @@ async function render(
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
-  running = "0.2.20";
+  running = "0.2.25";
   hasUpdate = true;
   buildType = "release";
   update = { message: "Update completed", need_restart: true };
@@ -49,7 +49,7 @@ beforeEach(() => {
     if (path.endsWith("check-updates?force=true"))
       return {
         current_version: running,
-        latest_version: "0.2.21",
+        latest_version: "0.2.26",
         has_update: hasUpdate,
         build_type: buildType,
         cached: false,
@@ -70,13 +70,13 @@ afterEach(async () => {
 });
 it("checks updates and accepts the already latest response without requiring need_restart", async () => {
   await render();
-  expect(container.textContent).toContain("运行 0.2.20");
+  expect(container.textContent).toContain("运行 0.2.25");
   await click("检查更新");
   update = {
     message: "Already up to date",
     already_up_to_date: true,
-    current_version: "0.2.21",
-    latest_version: "0.2.21",
+    current_version: "0.2.26",
+    latest_version: "0.2.26",
   };
   await click("更新 Sub2API");
   expect(container.textContent).toContain("已经是最新版本");
@@ -101,7 +101,7 @@ it("restarts once and checks only the current page until the updated version run
   await click("重启生效");
   await act(async () => vi.advanceTimersByTimeAsync(1500));
   expect(container.textContent).toContain("正在等待重启生效");
-  running = "0.2.21";
+  running = "0.2.26";
   await act(async () => vi.advanceTimersByTimeAsync(3000));
   expect(container.textContent).toContain("更新已生效");
   expect(button("重启生效")).toBeUndefined();
@@ -139,7 +139,7 @@ it("shows an update failure without retrying or clearing version information", a
   await click("更新 Sub2API");
   await act(async () => vi.advanceTimersByTimeAsync(60000));
   expect(container.textContent).toContain("fixture update failed");
-  expect(container.textContent).toContain("运行 0.2.20");
+  expect(container.textContent).toContain("运行 0.2.25");
   expect(clicks("/sub2api-system/update")).toHaveLength(1);
 });
 
@@ -153,16 +153,29 @@ it("keeps a manual check available after restart verification times out", async 
   expect(button("检查更新").disabled).toBe(false);
   expect(vi.getTimerCount()).toBe(0);
   expect(clicks("/sub2api-system/restart")).toHaveLength(1);
-  running = "0.2.21";
+  running = "0.2.26";
   await click("检查更新");
   expect(refreshed).toHaveBeenCalledTimes(1);
   expect(button("重启生效")).toBeUndefined();
 });
 
 it("reuses the parent version across page activation", async () => {
-  await render(true, { knownVersion: "0.2.20" });
-  await render(false, { knownVersion: "0.2.20" });
-  await render(true, { knownVersion: "0.2.20" });
-  expect(container.textContent).toContain("运行 0.2.20");
+  await render(true, { knownVersion: "0.2.25" });
+  await render(false, { knownVersion: "0.2.25" });
+  await render(true, { knownVersion: "0.2.25" });
+  expect(container.textContent).toContain("运行 0.2.25");
   expect(api).not.toHaveBeenCalledWith("GET", "/sub2api-system/version");
+});
+
+it("clears update and restart state when switching Companion connection", async () => {
+  await render(true, { connectionKey: "conn-a", knownVersion: "0.2.25" });
+  await click("检查更新");
+  await click("更新 Sub2API");
+  expect(button("重启生效")).toBeDefined();
+  expect(container.textContent).toContain("更新已下载，重启后生效");
+  await render(true, { connectionKey: "conn-b", knownVersion: "" });
+  expect(button("重启生效")).toBeUndefined();
+  expect(container.textContent).not.toContain("可更新至");
+  expect(container.textContent).not.toContain("更新已下载");
+  expect(container.textContent).toContain("运行 —");
 });

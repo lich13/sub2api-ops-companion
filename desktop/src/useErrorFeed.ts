@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./bridge";
+import { errorMessage } from "./bridgeError";
 import type { OpsError } from "./types";
 
 type ErrorsPage = { items: OpsError[]; next_cursor: number | null };
@@ -63,7 +64,7 @@ export function useErrorFeed(
           setCursor(response.next_cursor);
           return true;
         } catch (reason) {
-          if (valid()) setError(String(reason).replace(/^Error: /, ""));
+          if (valid()) setError(errorMessage(reason));
           return false;
         } finally {
           if (valid()) {

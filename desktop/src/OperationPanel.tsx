@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ListChecks, X } from "lucide-react";
 import { api, command } from "./bridge";
+import { errorMessage } from "./bridgeError";
 import { useDialogFocus } from "./dialogFocus";
 import { fullTime, type Account } from "./types";
 import { useBackAction } from "./mobile";
@@ -166,8 +167,7 @@ export default function AccountOperations({
           setError("");
         }
       } catch (e) {
-        if (alive && epoch === operationEpoch())
-          setError(String(e).replace(/^Error: /, ""));
+        if (alive && epoch === operationEpoch()) setError(errorMessage(e));
       }
       if (alive)
         timer = setTimeout(

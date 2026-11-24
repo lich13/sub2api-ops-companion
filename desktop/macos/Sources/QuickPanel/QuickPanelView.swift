@@ -204,7 +204,7 @@ public struct QuickPanelRootView: View {
                                 .font(DS.fontBadge)
                                 .foregroundStyle(DS.ink)
                                 .lineLimit(1)
-                            Text(verbatim: group.platformText)
+                            Text(verbatim: group.platform)
                                 .font(DS.fontResetTime)
                                 .foregroundStyle(DS.muted)
                                 .lineLimit(1)
@@ -220,9 +220,9 @@ public struct QuickPanelRootView: View {
                                 .padding(.vertical, 10)
                         } else {
                             ForEach(Array(group.recent_accounts.enumerated()), id: \.offset) { _, call in
-                                let aid = call.account_id ?? 0
-                                let acc = call.account_id.flatMap { accountById[$0] }
-                                let cname = call.account_name ?? ""
+                                let aid = call.account_id
+                                let acc = accountById[aid]
+                                let cname = call.account_name
                                 Rectangle().fill(DS.line).frame(height: 1)
                                 QuickAccountRowView(
                                     account: acc,

@@ -1,6 +1,57 @@
 import Foundation
 
 extension AccountCreationFormDraft {
+    public static let headerOverrideVariables = ["user_id", "api_key_id", "group_id", "request_id"]
+    public static let headerOverrideSuggestedNames: [String: String] = [
+        "user_id": "x-gateway-user-id",
+        "api_key_id": "x-gateway-api-key-id",
+        "group_id": "x-gateway-group-id",
+        "request_id": "x-gateway-request-id",
+    ]
+
+    public static func applyHeaderOverrideVariable(
+        _ variable: String,
+        into rows: inout [KeyValuePairDraft],
+        focusedId: UUID? = nil
+    ) {
+        let token = "{{\(variable)}}"
+        let suggested = headerOverrideSuggestedNames[variable] ?? ""
+        if let focusedId, let idx = rows.firstIndex(where: { $0.id == focusedId }) {
+            let curKey = trimmed(rows[idx].key)
+            if curKey.isEmpty, !suggested.isEmpty,
+               !rows.enumerated().contains(where: { $0.offset != idx && trimmed($0.element.key).lowercased() == suggested })
+            {
+                rows[idx].key = suggested
+            }
+            rows[idx].value += token
+            return
+        }
+        let existing = rows.first { trimmed($0.key).lowercased() == suggested }
+        if let existing, trimmed(existing.value) == token {
+            return
+        }
+        rows.append(KeyValuePairDraft(key: existing == nil ? suggested : "", value: token))
+    }
+
+    public static func isValidHeaderOverrideValue(_ raw: String, allowVariables: Bool) -> Bool {
+        if !allowVariables {
+            return !raw.contains("{{")
+        }
+        var rest = raw[...]
+        while let openRange = rest.range(of: "{{") {
+            let afterOpen = rest[openRange.upperBound...]
+            guard let closeRange = afterOpen.range(of: "}}") else {
+                return false
+            }
+            let name = afterOpen[..<closeRange.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !headerOverrideVariables.contains(name) {
+                return false
+            }
+            rest = afterOpen[closeRange.upperBound...]
+        }
+        return true
+    }
+
     public func validateStepOne(requireName: Bool = true) -> String {
         if requireName && Self.trimmed(name).isEmpty {
             return "请输入账号名称"
@@ -22,6 +73,11 @@ extension AccountCreationFormDraft {
         }
         if !Self.trimmed(expiresAtText).isEmpty && Self.parseExpiry(expiresAtText) == nil {
             return "到期时间格式应为 YYYY-MM-DD HH:mm"
+        }
+        if values["upstream_billing_group_sync_enabled"]?.boolValue == true
+            && (type != "apikey" || values["upstream_billing_probe_enabled"]?.boolValue == false)
+        {
+            return "自动同步上游分组名称与备注需开启自动探测上游倍率"
         }
         return ""
     }
@@ -51,6 +107,9 @@ extension AccountCreationFormDraft {
                 || controls || row.value.utf8.count > 8192
             {
                 return "请求头名称、值或重复项无效，认证头不能覆写"
+            }
+            if !Self.isValidHeaderOverrideValue(row.value, allowVariables: type == "apikey") {
+                return "请求头模板变量无效；仅 API Key 账号支持 {{user_id}}、{{api_key_id}}、{{group_id}}、{{request_id}}"
             }
         }
         return rows.count > 64 ? "请求头最多 64 项" : ""

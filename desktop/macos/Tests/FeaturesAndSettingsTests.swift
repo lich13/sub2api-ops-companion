@@ -269,17 +269,17 @@ struct FeaturesAndSettingsTests {
           "available": true,
           "editable": true,
           "reason": "",
-          "version": "0.3.18",
-          "commit": "abc1234",
+          "version": "0.2.25",
+          "commit": "34899726",
           "healthy": true,
-          "revision": "doc-1",
-          "runtime_revision": "rt-1",
+          "revision": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "runtime_revision": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
           "catalog": {
-            "version": "0.3.18",
-            "revision": "cat-1",
+            "version": "0.2.25",
+            "revision": "348997267d756eab5729bb6b78a275a15d18796a",
             "groups": [
               { "id": "server", "label": "服务与监听" },
-              { "id": "ratelimit", "label": "限流与重试" }
+              { "id": "concurrency", "label": "并发与排队" }
             ],
             "fields": [
               {
@@ -295,26 +295,43 @@ struct FeaturesAndSettingsTests {
                 "sensitive": false,
                 "internal": false,
                 "editable": true,
-                "status": "stable",
-                "source_url": "https://example.invalid/config",
+                "status": "supported",
+                "source_url": "https://example.invalid/config#L101",
                 "env": ["SUB2API_LISTEN_ADDR"]
               },
               {
-                "path": "server.cors_enabled",
+                "path": "gateway.request_body_memory_budget_bytes",
                 "group": "server",
-                "type": "boolean",
-                "type_label": "布尔值",
-                "description": "是否启用跨域响应头。",
-                "range": "true / false",
-                "default_text": "false",
-                "default_value": false,
+                "type": "integer",
+                "type_label": "整数",
+                "description": "每个实例接收请求体时可使用的缓冲内存总预算，单位字节。未配置时按 min(物理内存, cgroup 限额, GOMEMLIMIT) 的 1/4 自适应（最低 1 GiB）；显式配置则固定字节数，0 表示不限制。",
+                "range": "≥ 0。",
+                "default_text": "未配置（按内存上限的 1/4 自适应，最低 1 GiB）",
+                "default_value": null,
+                "has_default": false,
+                "sensitive": false,
+                "internal": false,
+                "editable": true,
+                "status": "supported",
+                "source_url": "https://example.invalid/config#L1058",
+                "env": ["GATEWAY_REQUEST_BODY_MEMORY_BUDGET_BYTES"]
+              },
+              {
+                "path": "concurrency.ping_interval",
+                "group": "server",
+                "type": "integer",
+                "type_label": "整数",
+                "description": "并发等待期间的 SSE ping 间隔（秒），0 表示禁用并发等待期间的 SSE ping。 校验：0，或范围 5-30 秒。",
+                "range": "0，或范围 5-30 秒。",
+                "default_text": "10",
+                "default_value": 10,
                 "has_default": true,
                 "sensitive": false,
                 "internal": false,
                 "editable": true,
-                "status": "stable",
-                "source_url": "https://example.invalid/config",
-                "env": []
+                "status": "supported",
+                "source_url": "https://example.invalid/config#L1014",
+                "env": ["CONCURRENCY_PING_INTERVAL"]
               }
             ]
           },
@@ -324,6 +341,22 @@ struct FeaturesAndSettingsTests {
               "yaml": "0.0.0.0:8080",
               "effective": "0.0.0.0:8080",
               "source": "yaml",
+              "environment": null,
+              "editable": true
+            },
+            "gateway.request_body_memory_budget_bytes": {
+              "configured": false,
+              "yaml": null,
+              "effective": null,
+              "source": "default",
+              "environment": null,
+              "editable": true
+            },
+            "concurrency.ping_interval": {
+              "configured": false,
+              "yaml": null,
+              "effective": 10,
+              "source": "default",
               "environment": null,
               "editable": true
             }
@@ -353,6 +386,21 @@ struct FeaturesAndSettingsTests {
             }
             if payload.contains("/connection") {
                 return "{\"state\":\"ok\",\"endpoint\":\"/api/v1/admin/accounts\",\"http_status\":200,\"message\":\"Sub2API 管理接口连通正常 (18 ms)\",\"retryable\":false,\"checked_at\":\"2026-11-17T09:15:00Z\"}"
+            }
+            if payload.contains("/account-creation/options") {
+                return "{\"groups\":[{\"id\":1,\"name\":\"OpenAI\",\"platform\":\"openai\"}],\"proxies\":[]}"
+            }
+            if payload.contains("/account-creation/catalog/tls") {
+                return "[]"
+            }
+            if payload.contains("/account-creation/catalog/gemini") {
+                return "{\"ai_studio_oauth_enabled\":false}"
+            }
+            if payload.contains("/account-creation/catalog/settings") {
+                return "{\"account_quota_notify_enabled\":true}"
+            }
+            if payload.contains("/account-creation/catalog/web-search") {
+                return "{\"enabled\":false}"
             }
             return configJSON
         }
@@ -423,13 +471,192 @@ struct FeaturesAndSettingsTests {
             )
             let sub2apiView = FeaturesPageView(store: featStore, initialTab: .sub2api)
                 .padding(24)
-                .frame(width: 1090, height: 520, alignment: .topLeading)
+                .frame(width: 1090, height: 640, alignment: .topLeading)
                 .background(DS.canvas)
             try await SnapshotRenderUtility.renderPNGAsync(
                 view: sub2apiView,
-                size: CGSize(width: 1090, height: 520),
+                size: CGSize(width: 1090, height: 640),
                 dark: dark,
                 outputURL: baseURL.appendingPathComponent("m5_features_sub2api_\(suffix).png")
+            )
+            let richJob = try JSONDecoder().decode(ModelTestJob.self, from: Data("""
+            {
+              "id": "0123456789abcdef0123456789abcdef",
+              "account_id": 101,
+              "account_name": "Codex · 主力",
+              "requested_model": "gpt-6.2-sol",
+              "forwarded_model": "gpt-6.2-sol",
+              "returned_models": ["gpt-6.2-sol"],
+              "status": "completed",
+              "engine": "lm_detector",
+              "tokenizer_probe": true,
+              "planned_groups": 3,
+              "completed_groups": 3,
+              "valid_groups": 3,
+              "attempts": 3,
+              "duration_ms": 4820,
+              "queued_at": "2026-11-17T09:10:00Z",
+              "started_at": "2026-11-17T09:10:01Z",
+              "completed_at": "2026-11-17T09:10:06Z",
+              "completion_reason": "automatic_degradation",
+              "verdict_mode": "relaxed",
+              "degraded_model_id": "gpt-5.6-luna",
+              "report": {
+                "prediction": "gpt-5.6-luna",
+                "prediction_name": "GPT-5.6 Luna",
+                "probability": 0.912,
+                "used_outputs": 3,
+                "decision": "scored",
+                "merged_class": false,
+                "results": [
+                  { "model": "gpt-5.6-luna", "display_name": "GPT-5.6 Luna", "probability": 0.912, "score": 0.941 },
+                  { "model": "gpt-6.2-sol", "display_name": "GPT-6.2 Sol", "probability": 0.088, "score": 0.214 }
+                ]
+              },
+              "classification": {
+                "outcome": "degraded",
+                "reason": "第 1、2 组跨家族命中降智指纹",
+                "basis": "sample_family",
+                "group_indexes": [1, 2]
+              },
+              "automatic_disposition": {
+                "basis": "sample_family",
+                "group_indexes": [1, 2],
+                "status": "marked",
+                "marked": true,
+                "schedule_verified": true,
+                "reason": ""
+              },
+              "tokenizer": {
+                "status": "completed",
+                "requests": 22,
+                "baseline_drift": false,
+                "report": {
+                  "kind": "exact",
+                  "name": "o200k_base",
+                  "lab": "openai",
+                  "confidence": 0.99,
+                  "unknown": 0.01,
+                  "claim": { "status": "consistent", "probability": 0.99 },
+                  "candidates": [
+                    { "id": "o200k_base", "name": "o200k_base", "probability": 0.99 }
+                  ]
+                }
+              },
+              "groups": [
+                {
+                  "index": 1,
+                  "status": "completed",
+                  "attempts": 1,
+                  "ttft_ms": 420,
+                  "duration_ms": 1520,
+                  "report": { "prediction_name": "GPT-5.6 Luna", "merged_class": false },
+                  "diagnostics": { "response_protocol": "responses", "http_status": 200, "output_tokens": 512, "max_output_tokens": 1024, "bytes": 4120, "end_reason": "completed" }
+                },
+                {
+                  "index": 2,
+                  "status": "completed",
+                  "attempts": 1,
+                  "ttft_ms": 460,
+                  "duration_ms": 1640,
+                  "report": { "prediction_name": "GPT-5.6 Luna", "merged_class": true },
+                  "diagnostics": { "response_protocol": "responses", "http_status": 200, "output_tokens": 512, "max_output_tokens": 1024, "bytes": 4088, "end_reason": "completed" }
+                }
+              ]
+            }
+            """.utf8))
+            try SnapshotRenderUtility.renderPNG(
+                view: ModelFingerprintResultView(job: richJob)
+                    .padding(16)
+                    .frame(width: 620, height: 540, alignment: .topLeading)
+                    .background(DS.canvas),
+                size: CGSize(width: 620, height: 540),
+                dark: dark,
+                outputURL: baseURL.appendingPathComponent("p3_model_fingerprint_result_\(suffix).png")
+            )
+            let richLog = try JSONDecoder().decode(DetectionLog.self, from: Data("""
+            {
+              "job_id": "0123456789abcdef0123456789abcdef",
+              "account_id": 101,
+              "account_name": "Codex · 主力",
+              "model_id": "gpt-6.2-sol",
+              "status": "completed",
+              "created_at": "2026-11-17T09:10:06Z",
+              "started_at": "2026-11-17T09:10:01Z",
+              "completed_at": "2026-11-17T09:10:06Z",
+              "triggers": ["scheduled", "recovery"],
+              "error": "",
+              "details_available": true,
+              "summary": {
+                "engine": "lm_detector",
+                "sample_count": 3,
+                "verdict_mode": "relaxed",
+                "degraded_model_id": "gpt-5.6-luna",
+                "decision": "scored",
+                "outcome": "degraded",
+                "analysis_available": true,
+                "first_prediction": "GPT-5.6 Luna",
+                "prediction": "GPT-5.6 Luna",
+                "prediction_name": "GPT-5.6 Luna",
+                "probability": 0.912,
+                "first_probability": 0.895,
+                "bank_version": { "revision": "8f31c2a09b1e4d00" },
+                "disposition": {
+                  "status": "marked",
+                  "basis": "sample_family",
+                  "group_indexes": [1, 2],
+                  "marked": true,
+                  "schedule_verified": true,
+                  "reason": ""
+                },
+                "verification": {
+                  "status": "passed",
+                  "reason": ""
+                }
+              },
+              "notification": {
+                "status": "delivered",
+                "merged": true,
+                "delivered_at": "2026-11-17T09:10:07Z",
+                "reason": ""
+              }
+            }
+            """.utf8))
+            try await SnapshotRenderUtility.renderPNGAsync(
+                view: DetectionLogDetailModal(row: richLog, online: false, onClose: {})
+                    .frame(width: 680, height: 640),
+                size: CGSize(width: 680, height: 640),
+                dark: dark,
+                outputURL: baseURL.appendingPathComponent("p3_detection_log_detail_\(suffix).png")
+            )
+            var creation0225 = AccountCreationFormDraft()
+            creation0225.applyPlatformDefaults(for: "openai", authType: "apikey")
+            creation0225.name = "OpenAI 0.2.25 网关"
+            creation0225.mappings = creation0225.mappings.filter {
+                $0.key == "gpt-6.2-sol" || $0.key == "gpt-6.2-astra"
+            }
+            creation0225.setValue("upstream_billing_group_sync_enabled", .bool(true))
+            creation0225.setValue("extra.openai_passthrough", .bool(true))
+            creation0225.setValue("extra.openai_passthrough_model_filter", .bool(true))
+            creation0225.setValue("credentials.header_override_enabled", .bool(true))
+            creation0225.headers = [KeyValuePairDraft(key: "X-Sub2Api-User", value: "{{user_id}}:{{request_id}}")]
+            creation0225.apiKey = "sk-fixture-0225-key"
+            try SnapshotRenderUtility.renderPNG(
+                view: ZStack { DS.backdrop; AccountCreationFieldsPreview(draft: creation0225) }
+                    .frame(width: 720, height: 1460),
+                size: CGSize(width: 720, height: 1460),
+                dark: dark,
+                outputURL: baseURL.appendingPathComponent("p3_creation_0225_fields_\(suffix).png")
+            )
+            try await SnapshotRenderUtility.renderPNGAsync(
+                view: ZStack {
+                    DS.backdrop
+                    AccountCreationSheet(store: setStore, draft: creation0225, initialStep: 2, onClose: {})
+                }
+                .frame(width: 720, height: 620),
+                size: CGSize(width: 720, height: 620),
+                dark: dark,
+                outputURL: baseURL.appendingPathComponent("p3_creation_0225_step2_\(suffix).png")
             )
             try await SnapshotRenderUtility.renderPNGAsync(
                 view: MainShellView(store: setStore),
@@ -550,6 +777,57 @@ struct FeaturesAndSettingsTests {
             policyLoading: false, policySaving: false, policyVersion: String(repeating: "a", count: 64),
             policyDirty: false, policyError: "", selectedModel: "gpt-6-luna", models: models
         ) == true)
+    }
+
+    @Test("DraftChange preserves rawScalarText for invalid/empty configured numbers without serializing stale value")
+    func draftChangeRawScalarTextSafety() throws {
+        let emptyConfigured = Sub2ApiConfigTabView.DraftChange(
+            path: "concurrency.ping_interval",
+            remove: false,
+            value: nil,
+            rawScalarText: ""
+        )
+        #expect(emptyConfigured.rawScalarText == "")
+        #expect(emptyConfigured.jsonObject["value"] == nil)
+
+        let invalidInt = Sub2ApiConfigTabView.DraftChange(
+            path: "concurrency.ping_interval",
+            remove: false,
+            value: nil,
+            rawScalarText: "abc"
+        )
+        #expect(invalidInt.rawScalarText == "abc")
+        #expect(invalidInt.jsonObject["value"] == nil)
+
+        // ENV override takes precedence over configured YAML value in effectiveFieldValue
+        let portField = try JSONDecoder().decode(Sub2ApiConfigTabView.CatalogField.self, from: Data("""
+        {
+          "path": "server.port",
+          "group": "server",
+          "type": "integer",
+          "type_label": "整数",
+          "description": "HTTP 监听端口",
+          "range": "1-65535",
+          "default_text": "8080",
+          "default_value": 8080,
+          "has_default": true,
+          "sensitive": false,
+          "internal": false,
+          "editable": true,
+          "status": "supported",
+          "source_url": "https://example.invalid",
+          "env": ["SERVER_PORT"]
+        }
+        """.utf8))
+        let envOverridden = Sub2ApiConfigTabView.FieldRuntimeValue(
+            configured: true,
+            yaml: .int(8080),
+            effective: .int(9090),
+            source: "environment",
+            environment: "SERVER_PORT",
+            editable: false
+        )
+        #expect(Sub2ApiConfigTabView.effectiveFieldValue(field: portField, runtime: envOverridden, change: nil) == .int(9090))
     }
 }
 }

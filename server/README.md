@@ -41,7 +41,7 @@ python scripts/server_mutation_contract.py --command-json '["server/target/debug
 
 `scripts/server_test.py` 支持 `--test <套件>`、`--lib` 和 `--filter <名称>` 缩小范围。`tests/contracts/` 下的固定数据向量覆盖哈希、时间和数值序列化；进程测试覆盖接口、请求次数和未知结果恢复。
 
-依赖审计完整扫描两个锁文件，不忽略通告或限定平台。SQLx 0.8 使用的 `webpki-roots 0.26.11` 仅重新导出 1.x 证书数据；针对 `RUSTSEC-2026-0381`，脚本只接受该兼容包与已修复的 `1.0.10` 的精确注册源、校验和及依赖关系。旧根证书、关系变化或其他漏洞仍阻断发布。依据为[兼容包源码](https://docs.rs/webpki-roots/0.26.11/src/webpki_roots/lib.rs.html)和[上游证书修复](https://github.com/rustls/webpki-roots/pull/133)。
+依赖审计完整扫描两个锁文件，不忽略通告或限定平台。SQLx 0.8 使用的 `webpki-roots 0.26.11` 仅重新导出 1.x 证书数据；针对 `RUSTSEC-2026-0381`，脚本只接受该兼容包与已修复的 `1.0.12` 的精确注册源、校验和及依赖关系。旧根证书、关系变化或其他漏洞仍阻断发布。依据为[兼容包源码](https://docs.rs/webpki-roots/0.26.11/src/webpki_roots/lib.rs.html)和[上游证书修复](https://github.com/rustls/webpki-roots/pull/133)。
 
 测试驱动启用 `test-fixtures`，允许将模型请求的最终地址指向回环模拟服务，保持原有鉴权、账号与配置校验、请求正文和 SSE 处理。正式构建不启用此功能，也不提供运行时覆盖上游地址的配置。
 

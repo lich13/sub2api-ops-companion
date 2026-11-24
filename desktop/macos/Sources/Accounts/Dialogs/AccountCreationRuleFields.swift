@@ -251,6 +251,24 @@ extension AccountCreationFieldsView {
                 Text("相同的请求与转发模型表示白名单；留空表示不限制。")
                     .font(DS.fontResetTime)
                     .foregroundStyle(DS.muted)
+            } else if draft.type == "apikey" {
+                HStack(spacing: 6) {
+                    Text("可用变量：")
+                        .font(DS.fontResetTime)
+                        .foregroundStyle(DS.muted)
+                    ForEach(AccountCreationFormDraft.headerOverrideVariables, id: \.self) { variable in
+                        let token = "{{\(variable)}}"
+                        Button(token) {
+                            AccountCreationFormDraft.applyHeaderOverrideVariable(
+                                variable,
+                                into: &rows.wrappedValue,
+                                focusedId: focusedHeaderValueId
+                            )
+                        }
+                        .buttonStyle(LinearButtonStyle(variant: .ghost, compact: true))
+                    }
+                    Spacer(minLength: 0)
+                }
             }
 
             if !presets.isEmpty {
@@ -296,6 +314,7 @@ extension AccountCreationFieldsView {
                     .textFieldStyle(.plain)
                     .font(DS.fontCompact)
                     .foregroundStyle(DS.ink)
+                    .focused($focusedHeaderValueId, equals: item.id)
                     .padding(.horizontal, 8)
                     .frame(height: 28)
                     .background(DS.surface)

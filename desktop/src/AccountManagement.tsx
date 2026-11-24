@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, RotateCcw, Ticket, Trash2 } from "lucide-react";
 import { command } from "./bridge";
+import { errorMessage } from "./bridgeError";
 import {
   accountOperation,
   followAccountBatch,
@@ -219,7 +220,7 @@ export function DeleteAccountsDialog({
     } catch (cause) {
       if (alive.current && operationEpoch() === epoch) {
         setError(
-          `${String(cause).replace(/^Error: /, "")}。${accepted.current ? "任务已保留，可在账号待办查看。" : "重试将复用本次请求。"}`,
+          `${errorMessage(cause)}。${accepted.current ? "任务已保留，可在账号待办查看。" : "重试将复用本次请求。"}`,
         );
         setPhase("confirm");
       }
@@ -399,7 +400,7 @@ export function ResetCreditsDialog({
         ++used;
         show({ status: "done", message: result?.message || "重置已执行" });
       } catch (error) {
-        const message = String(error).replace(/^Error: /, "");
+        const message = errorMessage(error);
         // An accepted request without a definite failure may still have spent the card.
         if (status && !["failed", "cancelled", "superseded"].includes(status)) {
           ++uncertain;

@@ -6,6 +6,7 @@ import {
   modelDirectoryRevoked,
   type AccountModel,
 } from "./accountModels";
+import { errorMessage } from "./bridgeError";
 import { priorityPlatformName } from "./priorities";
 import type { Account } from "./types";
 
@@ -42,7 +43,7 @@ export default function AccountModelField({
     } catch (cause) {
       if (current === request.current) {
         if (modelDirectoryRevoked(cause)) setModels([]);
-        setError(String(cause).replace(/^Error: /, ""));
+        setError(errorMessage(cause));
       }
     } finally {
       if (current === request.current) setLoading(false);

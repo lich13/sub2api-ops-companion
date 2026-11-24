@@ -4,6 +4,8 @@ import {
   fields,
   fieldVisible,
   getField,
+  headerOverrideSuggestedNames,
+  headerOverrideVariables,
   labels,
   mappingPresets,
   modelPresets,
@@ -43,20 +45,24 @@ function Pairs({
       ([k, v]) => [k, String(v)],
     );
   const [rows, setRows] = useState(() => entries(value)),
-    last = useRef(value);
+    last = useRef(value),
+    invalidRef = useRef(invalid),
+    focusedRow = useRef<number | null>(null),
+    focusedInput = useRef<HTMLInputElement | null>(null);
+  invalidRef.current = invalid;
   useEffect(() => {
     if (last.current !== value) {
       last.current = value;
       setRows(entries(value));
-      invalid("");
+      invalidRef.current("");
     }
-  }, [value, invalid]);
+  }, [value]);
   function update(next: [string, string][]) {
     setRows(next);
-    const out = Object.fromEntries(next);
+    const out = Object.fromEntries(next.filter(([k]) => k.trim()));
     last.current = out;
     change(out);
-    invalid(
+    invalidRef.current(
       next.some(
         ([key, val]) =>
           !key.trim() || (field.kind === "mapping" && !val.trim()),
@@ -64,12 +70,51 @@ function Pairs({
         ? `${field.label}存在未填项目`
         : new Set(
               next.map(([key]) =>
-                field.kind === "headers" ? key.toLowerCase() : key,
+                field.kind === "headers"
+                  ? key.trim().toLowerCase()
+                  : key.trim(),
               ),
             ).size !== next.length
           ? `${field.label}存在重复名称`
           : "",
     );
+  }
+  function insertHeaderVariable(
+    variable: (typeof headerOverrideVariables)[number],
+  ) {
+    const token = `{{${variable}}}`,
+      suggested = headerOverrideSuggestedNames[variable] ?? "",
+      input = focusedInput.current,
+      rowIndex = focusedRow.current;
+    if (
+      input &&
+      document.activeElement === input &&
+      rowIndex !== null &&
+      rows[rowIndex]
+    ) {
+      const [curKey, curVal] = rows[rowIndex],
+        start = input.selectionStart ?? curVal.length,
+        end = input.selectionEnd ?? curVal.length,
+        nextVal = `${curVal.slice(0, start)}${token}${curVal.slice(end)}`,
+        canFillKey =
+          !curKey.trim() &&
+          suggested &&
+          !rows.some(
+            ([k], idx) =>
+              idx !== rowIndex && k.trim().toLowerCase() === suggested,
+          ),
+        nextKey = canFillKey ? suggested : curKey,
+        caret = start + token.length;
+      update(rows.map((r, n) => (n === rowIndex ? [nextKey, nextVal] : r)));
+      requestAnimationFrame(() => {
+        if (document.activeElement === input)
+          input.setSelectionRange(caret, caret);
+      });
+      return;
+    }
+    const existing = rows.find(([k]) => k.trim().toLowerCase() === suggested);
+    if (existing && existing[1].trim() === token) return;
+    update([...rows, [existing ? "" : suggested, token]]);
   }
   return (
     <div className="creation-collection">
@@ -99,6 +144,24 @@ function Pairs({
         <p className="muted">
           相同的请求与转发模型表示白名单；留空表示不限制。
         </p>
+      )}
+      {field.kind === "headers" && draft.type === "apikey" && (
+        <div className="creation-inline">
+          <small className="muted">可用变量：</small>
+          {headerOverrideVariables.map((variable) => {
+            const token = `{{${variable}}}`;
+            return (
+              <button
+                key={variable}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => insertHeaderVariable(variable)}
+              >
+                {token}
+              </button>
+            );
+          })}
+        </div>
       )}
       {field.path === "credentials.model_mapping" && (
         <select
@@ -135,6 +198,16 @@ function Pairs({
             aria-label={`${field.label}值 ${i + 1}`}
             placeholder={field.kind === "headers" ? "请求头值" : "转发模型"}
             value={value}
+            onFocus={(e) => {
+              focusedRow.current = i;
+              focusedInput.current = e.currentTarget;
+            }}
+            onBlur={() => {
+              if (focusedRow.current === i) {
+                focusedRow.current = null;
+                focusedInput.current = null;
+              }
+            }}
             onChange={(e) =>
               update(rows.map((r, n) => (n === i ? [r[0], e.target.value] : r)))
             }

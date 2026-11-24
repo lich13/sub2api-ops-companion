@@ -69,6 +69,13 @@ pub struct CreationModelsReply {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CreationGroupPreviewReply {
+    pub group_name: String,
+    pub group_description: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TokenAuthorization {
     pub auth_url: String,
     pub session_id: String,
@@ -554,12 +561,275 @@ pub struct OperationListReply {
     pub items: Vec<OperationHeader>,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DetectionBasis {
+    FirstGroup,
+    Aggregate,
+    SampleFamily,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DetectionEngineWire {
+    Modeltrace,
+    LmDetector,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VerdictModeWire {
+    Strict,
+    Relaxed,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FlexibleBankVersion {
+    #[serde(default)]
+    pub revision: String,
+    pub sha256: Option<String>,
+    pub built_at: Option<String>,
+    pub analyzer_version: Option<Json>,
+}
+
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ModelTestHeader {
-    pub id: String,
-    pub account_id: Integer,
+pub struct ModelFingerprintCandidateScore {
+    pub model: String,
+    pub display_name: Option<String>,
+    pub probability: Option<f64>,
+    pub score: Option<f64>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModelFingerprintReport {
+    pub prediction: Option<String>,
+    pub prediction_name: Option<String>,
+    pub probability: Option<f64>,
+    pub used_outputs: Option<Integer>,
+    pub decision: Option<String>,
+    pub merged_class: Option<bool>,
+    pub ranking_score: Option<f64>,
+    pub results: Option<Vec<ModelFingerprintCandidateScore>>,
+    pub bank_version: Option<FlexibleBankVersion>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModelTestClassification {
+    pub outcome: String,
+    pub reason: Option<String>,
+    pub basis: Option<String>,
+    pub group_indexes: Option<Vec<Integer>>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModelTestGroupDiagnostics {
+    pub protocol: Option<String>,
+    pub response_protocol: Option<String>,
+    pub http_status: Option<Integer>,
+    pub content_type: Option<String>,
+    pub first_event_ms: Option<f64>,
+    pub first_event_type: Option<String>,
+    pub last_event_type: Option<String>,
+    pub headers_ms: Option<f64>,
+    pub bytes: Option<Integer>,
+    pub end_reason: Option<String>,
+    pub input_tokens: Option<Integer>,
+    pub output_tokens: Option<Integer>,
+    pub reasoning_tokens: Option<Integer>,
+    pub max_output_tokens: Option<Integer>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModelTestGroupStatus {
+    pub index: Integer,
     pub status: String,
+    pub attempts: Option<Integer>,
+    pub ttft_ms: Option<f64>,
+    pub duration_ms: Option<f64>,
+    pub error: Option<String>,
+    pub report: Option<ModelFingerprintReport>,
+    pub diagnostics: Option<ModelTestGroupDiagnostics>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModelTestAutomaticDisposition {
+    pub basis: Option<DetectionBasis>,
+    pub group_indexes: Option<Vec<Integer>>,
+    pub kind: Option<String>,
+    pub status: Option<String>,
+    pub marked: Option<bool>,
+    pub schedule_verified: Option<bool>,
+    pub reason: Option<String>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModelTestTokenizerClaim {
+    pub status: String,
+    pub probability: f64,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModelTestTokenizerCandidate {
+    pub id: String,
+    pub name: String,
+    pub probability: f64,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModelTestTokenizerReport {
+    pub kind: String,
+    pub name: String,
+    pub lab: String,
+    pub confidence: f64,
+    pub unknown: f64,
+    pub claim: Option<ModelTestTokenizerClaim>,
+    pub candidates: Vec<ModelTestTokenizerCandidate>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModelTestTokenizer {
+    pub status: String,
+    pub requests: Option<Integer>,
+    pub baseline_drift: Option<bool>,
+    pub error: Option<String>,
+    pub report: Option<ModelTestTokenizerReport>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModelTestJob {
+    pub id: String,
+    pub account_id: Option<Integer>,
+    pub account_name: Option<String>,
+    pub requested_model: Option<String>,
+    pub forwarded_model: Option<String>,
+    pub returned_models: Option<Vec<String>>,
+    pub status: String,
+    pub phase: Option<String>,
+    pub automatic: Option<bool>,
+    pub engine: Option<DetectionEngineWire>,
+    pub tokenizer_probe: Option<bool>,
+    pub planned_groups: Option<Integer>,
+    pub completed_groups: Option<Integer>,
+    pub valid_groups: Option<Integer>,
+    pub concurrency: Option<Integer>,
+    pub attempts: Option<Integer>,
+    pub duration_ms: Option<f64>,
+    pub queued_at: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub completion_reason: Option<String>,
+    pub verdict_mode: Option<VerdictModeWire>,
+    pub degraded_model_id: Option<String>,
+    pub can_retry: Option<bool>,
+    pub error: Option<String>,
+    pub groups: Option<Vec<ModelTestGroupStatus>>,
+    pub report: Option<ModelFingerprintReport>,
+    pub classification: Option<ModelTestClassification>,
+    pub automatic_disposition: Option<ModelTestAutomaticDisposition>,
+    pub tokenizer: Option<ModelTestTokenizer>,
+    pub bank_version: Option<FlexibleBankVersion>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DetectionReceipt {
+    pub status: String,
+    pub basis: Option<DetectionBasis>,
+    pub group_indexes: Option<Vec<Integer>>,
+    pub marked: Option<bool>,
+    pub schedule_verified: Option<bool>,
+    pub mark_cleared: Option<bool>,
+    pub reason: String,
+    pub completed_at: Option<String>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DetectionClassificationInfo {
+    pub outcome: Option<String>,
+    pub reason: Option<String>,
+    pub basis: Option<String>,
+    pub group_indexes: Option<Vec<Integer>>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DetectionGroupPredictionItem {
+    pub index: Integer,
+    pub prediction: Option<String>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DetectionLogSummary {
+    pub verdict_mode: Option<VerdictModeWire>,
+    pub degraded_model_id: Option<String>,
+    pub engine: Option<String>,
+    pub sample_count: Option<Integer>,
+    pub decision: Option<String>,
+    pub reason: Option<String>,
+    pub prediction_name: Option<String>,
+    pub classification: Option<DetectionClassificationInfo>,
+    pub bank_version: Option<FlexibleBankVersion>,
+    pub group_predictions: Option<Vec<DetectionGroupPredictionItem>>,
+    pub outcome: String,
+    pub analysis_available: bool,
+    pub first_prediction: String,
+    pub prediction: String,
+    pub probability: Option<f64>,
+    pub first_probability: Option<f64>,
+    pub used_outputs: Option<Integer>,
+    pub first_downgrade: Option<bool>,
+    pub aggregate_downgrade: Option<bool>,
+    pub disposition: Option<DetectionReceipt>,
+    pub recovery: Option<DetectionReceipt>,
+    pub verification: Option<DetectionReceipt>,
+    pub restoration: Option<DetectionReceipt>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DetectionLogNotification {
+    pub status: String,
+    pub merged: bool,
+    pub delivered_at: Option<String>,
+    pub reason: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DetectionLog {
+    pub job_id: String,
+    pub account_id: Integer,
+    pub account_name: String,
+    pub model_id: String,
+    pub status: String,
+    pub created_at: String,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub triggers: Vec<String>,
+    pub error: String,
+    pub details_available: bool,
+    pub summary: DetectionLogSummary,
+    pub notification: Option<DetectionLogNotification>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DetectionLogPageReply {
+    pub items: Vec<DetectionLog>,
+    pub next_cursor: Option<String>,
 }
 
 #[typeshare]

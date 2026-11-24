@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, LoaderCircle, Minus, Plus, X } from "lucide-react";
 import { command } from "./bridge";
+import { errorMessage } from "./bridgeError";
 import {
   followOperation,
   operationEpoch,
@@ -102,7 +103,7 @@ function NumericEditor({
     } catch (e) {
       if (alive.current) {
         setNotice("");
-        setError(String(e).replace(/^Error: /, ""));
+        setError(errorMessage(e));
       }
     } finally {
       running.current = false;

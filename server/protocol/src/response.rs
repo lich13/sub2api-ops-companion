@@ -125,10 +125,14 @@ pub fn client_response(method: &str, path: &str, data: Value) -> Option<Value> {
         Reply::Snapshot => None,
         Reply::Usage => projected::<crate::snapshot::UsageSummaryRecord>(&data),
         Reply::Recoveries if !semantics::recoveries_valid(&data["items"]) => None,
-        Reply::DetectionLogs if !semantics::detection_logs_valid(&data) => None,
-        Reply::Errors | Reply::Recoveries | Reply::DetectionLogs | Reply::UsageOptions => {
-            checked::<ListReply>(data)
+        Reply::DetectionLogs => {
+            data.get("next_cursor")?;
+            let page = DetectionLogPageReply::deserialize(&data).ok()?;
+            semantics::detection_logs_valid(&page)
+                .then(|| wire_value(&page, &data))
+                .flatten()
         }
+        Reply::Errors | Reply::Recoveries | Reply::UsageOptions => checked::<ListReply>(data),
         Reply::UsageRecords if data.get("new_count").is_some() => checked::<UsageDeltaReply>(data),
         Reply::UsageRecords => checked::<ListReply>(data),
         Reply::UsageRecord => checked::<RecordDetailHeader>(data),
@@ -153,7 +157,11 @@ pub fn client_response(method: &str, path: &str, data: Value) -> Option<Value> {
             valid.then_some(batch)
         }
         Reply::ModelTest | Reply::LatestModelTest if !data.is_null() => {
-            checked::<ModelTestHeader>(data)
+            let job = ModelTestJob::deserialize(&data).ok()?;
+            job.account_id
+                .is_some_and(|id| id > 0)
+                .then(|| wire_value(&job, &data))
+                .flatten()
         }
         Reply::LatestModelTest => Some(Value::Null),
         Reply::ModelTest => None,
@@ -251,6 +259,7 @@ pub fn client_response(method: &str, path: &str, data: Value) -> Option<Value> {
         },
         Reply::CreationCheck => projected::<CreationCheckReply>(&data),
         Reply::CreationModels => projected::<CreationModelsReply>(&data),
+        Reply::CreationGroupPreview => projected::<CreationGroupPreviewReply>(&data),
         Reply::CreationCatalog => match route {
             Route::CreationCatalog("tls") => projected::<Vec<ChoiceRecord>>(&data),
             Route::CreationCatalog("antigravity-models") => {

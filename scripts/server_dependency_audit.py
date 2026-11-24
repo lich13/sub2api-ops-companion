@@ -10,7 +10,7 @@ import tomllib
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = "registry+https://github.com/rust-lang/crates.io-index"
 FORWARDER_SHA = "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9"
-PATCHED_ROOTS_SHA = "f5f280bbb2b287bc8e7de7e3852945a0ff50d1bbcb5ed42b6c7a568c546df171"
+PATCHED_ROOTS_SHA = "7265c9301c16a8711c992c2d8da90ee77ef54b1ed51482d6dfeb00dc756b1297"
 
 
 def verified_forwarder(finding: dict, packages: list[dict]) -> bool:
@@ -29,15 +29,15 @@ def verified_forwarder(finding: dict, packages: list[dict]) -> bool:
     ):
         return False
     forwarders = [p for p in packages if p["name"] == "webpki-roots" and p["version"] == "0.26.11"]
-    roots = [p for p in packages if p["name"] == "webpki-roots" and p["version"] == "1.0.11"]
+    roots = [p for p in packages if p["name"] == "webpki-roots" and p["version"] == "1.0.12"]
     return (
         len(forwarders) == len(roots) == 1
         and forwarders[0].get("source") == REGISTRY
         and forwarders[0].get("checksum") == FORWARDER_SHA
-        and forwarders[0].get("dependencies") == ["webpki-roots 1.0.11"]
+        and forwarders[0].get("dependencies") == ["webpki-roots 1.0.12"]
         and roots[0].get("source") == REGISTRY
         and roots[0].get("checksum") == PATCHED_ROOTS_SHA
-        and package.get("dependencies") == [{"name": "webpki-roots", "version": "1.0.11", "source": REGISTRY}]
+        and package.get("dependencies") == [{"name": "webpki-roots", "version": "1.0.12", "source": REGISTRY}]
     )
 
 
@@ -73,7 +73,7 @@ def main() -> int:
                 for warning in warnings:
                     print(f"WARN {relative}: {warning.get('kind', 'advisory')} {warning['package']['name']} {warning['package']['version']}")
             if forwarders:
-                print(f"VERIFIED {relative}: RUSTSEC-2026-0381 reports the 0.26.11 re-export; its exact locked root data is patched 1.0.11")
+                print(f"VERIFIED {relative}: RUSTSEC-2026-0381 reports the 0.26.11 re-export; its exact locked root data is patched 1.0.12")
             if not blocked:
                 print(f"PASS {relative}: no unresolved vulnerable dependencies")
             failed |= bool(blocked)

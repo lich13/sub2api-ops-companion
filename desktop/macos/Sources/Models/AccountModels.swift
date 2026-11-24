@@ -100,8 +100,6 @@ extension RecentAccountRecord {
 }
 
 extension GroupRecord: Identifiable {
-    public var platformText: String { platform ?? "" }
-
     public init(
         id: Int,
         name: String,
@@ -128,18 +126,17 @@ public func computeCurrentGroups(_ groups: [Group], accounts: [Account]) -> [Gro
     let members = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0) })
     let mapped: [Group] = groups.map { group in
         let ordered = group.recent_accounts.filter { call in
-            guard let aid = call.account_id else { return false }
-            return members[aid]?.group_ids.contains(group.id) == true
+            members[call.account_id]?.group_ids.contains(group.id) == true
         }.sorted { a, b in
             let ta = BeijingTime.callTimestamp(a.called_at)
             let tb = BeijingTime.callTimestamp(b.called_at)
             if ta != tb { return tb < ta }
-            return (b.log_id ?? 0) < (a.log_id ?? 0)
+            return b.log_id < a.log_id
         }
         var seen = Set<Int>()
         var recent: [RecentAccount] = []
         for call in ordered {
-            guard let aid = call.account_id, seen.insert(aid).inserted else { continue }
+            guard seen.insert(call.account_id).inserted else { continue }
             recent.append(call)
             if recent.count == 3 { break }
         }

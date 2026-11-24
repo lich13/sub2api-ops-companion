@@ -93,78 +93,11 @@ public struct FingerprintBankStatusInfo: Codable, Sendable, Equatable {
     }
 }
 
-public struct ModelFingerprintCandidateScore: Codable, Sendable, Equatable {
-    public var model: String
-    public var display_name: String?
-    public var probability: Double?
-    public var score: Double?
-}
-
-public struct ModelFingerprintReport: Codable, Sendable, Equatable {
-    public var engine: String?
-    public var prediction: String?
-    public var prediction_name: String?
-    public var first_prediction: String?
-    public var probability: Double?
-    public var first_probability: Double?
-    public var decision: String?
-    public var merged_class: Bool?
-    public var ranking_score: Double?
-    public var used_outputs: Int?
-    public var sample_count: Int?
-    public var results: [ModelFingerprintCandidateScore]?
-    public var bank_version: FingerprintBankVersion?
-}
-
-public struct ModelTestClassification: Codable, Sendable, Equatable {
-    public var outcome: String
-    public var reason: String?
-    public var basis: String?
-    public var group_indexes: [Int]?
-}
-
-public struct ModelTestGroupStatus: Codable, Sendable, Equatable, Identifiable {
-    public var index: Int
-    public var status: String
-    public var attempts: Int?
-    public var ttft_ms: Double?
-    public var duration_ms: Double?
-    public var error: String?
-
+extension ModelTestGroupStatus: Identifiable {
     public var id: Int { index }
 }
 
-public struct ModelTestJob: Codable, Sendable, Equatable, Identifiable {
-    public var id: String
-    public var account_id: Int?
-    public var account_name: String?
-    public var model_id: String?
-    public var requested_model: String?
-    public var forwarded_model: String?
-    public var returned_models: [String]?
-    public var engine: String?
-    public var sample_count: Int?
-    public var planned_groups: Int?
-    public var completed_groups: Int?
-    public var valid_groups: Int?
-    public var concurrency: Int?
-    public var attempts: Int?
-    public var duration_ms: Double?
-    public var phase: String?
-    public var completion_reason: String?
-    public var verdict_mode: String?
-    public var degraded_model_id: String?
-    public var can_retry: Bool?
-    public var status: String
-    public var reason: String?
-    public var error: String?
-    public var created_at: String?
-    public var completed_at: String?
-    public var groups: [ModelTestGroupStatus]?
-    public var report: ModelFingerprintReport?
-    public var classification: ModelTestClassification?
-    public var bank_version: FingerprintBankVersion?
-
+extension ModelTestJob: Identifiable {
     public var isTerminal: Bool {
         ["completed", "failed", "cancelled", "interrupted", "needs_confirmation"].contains(status)
     }

@@ -2,6 +2,7 @@ import { useEffectEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, RefreshCw, Square, X } from "lucide-react";
 import { api, command } from "./bridge";
+import { errorMessage as message } from "./bridgeError";
 import {
   clientId,
   getOperations,
@@ -25,7 +26,6 @@ const running = (batch: OperationBatch | null) =>
   batch?.items.some((j) =>
     ["queued", "running", "checking"].includes(j.status),
   ) ?? false;
-const message = (e: unknown) => String(e).replace(/^Error: /, "");
 function storageName(scope: string) {
   let hash = 14695981039346656037n;
   for (const ch of scope)

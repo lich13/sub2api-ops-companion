@@ -2,6 +2,7 @@ import DiagnosticText from "./DiagnosticText";
 import { useEffect, useId, useRef, useState } from "react";
 import { CircleCheck, LoaderCircle, ShieldCheck } from "lucide-react";
 import { api } from "./bridge";
+import { errorMessage } from "./bridgeError";
 import { operationEpoch } from "./accountOperations";
 import type { ProxyChoiceReply as ProxyOption } from "./protocol";
 import type { ConnectionResult, QualityResult } from "./proxyData";
@@ -68,7 +69,7 @@ export default function ProxyOptions({
       if (valid())
         setResults((old) => ({
           ...old,
-          [key]: { error: String(error).replace(/^Error: /, "") },
+          [key]: { error: errorMessage(error) },
         }));
     } finally {
       if (valid()) running.current.delete(key);

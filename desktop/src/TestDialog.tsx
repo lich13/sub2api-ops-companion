@@ -2,6 +2,7 @@ import { useEffectEvent } from "react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { LoaderCircle, RefreshCw, Play, Square, X } from "lucide-react";
 import { api, command } from "./bridge";
+import { errorMessage } from "./bridgeError";
 import {
   fullTime,
   type Account,
@@ -190,9 +191,7 @@ export default function TestDialog({
     } catch (error) {
       if (alive.current && request === directoryRequest.current) {
         if (modelDirectoryRevoked(error)) setModels([]);
-        setModelError(
-          `模型列表读取失败：${String(error).replace(/^Error: /, "")}`,
-        );
+        setModelError(`模型列表读取失败：${errorMessage(error)}`);
       }
     } finally {
       if (alive.current && request === directoryRequest.current)
@@ -322,8 +321,7 @@ export default function TestDialog({
       }
       setScheduledAt(new Date(at + 8 * 3600_000).toISOString().slice(0, 19));
     } catch (e) {
-      if (alive.current)
-        setError(`周期时间读取失败：${String(e).replace(/^Error: /, "")}`);
+      if (alive.current) setError(`周期时间读取失败：${errorMessage(e)}`);
     } finally {
       cycleReading.current = false;
       if (alive.current) setCycleBusy(false);
@@ -387,7 +385,7 @@ export default function TestDialog({
           else close();
         }
       } catch (e) {
-        if (alive.current) setError(String(e).replace(/^Error: /, ""));
+        if (alive.current) setError(errorMessage(e));
       } finally {
         running.current = false;
         if (alive.current) setBusy(false);
@@ -458,8 +456,7 @@ export default function TestDialog({
       if (!terminal && !cancelled.current && alive.current)
         setError("连接结束，未收到完成结果");
     } catch (e) {
-      if (alive.current && !cancelled.current)
-        setError(String(e).replace(/^Error: /, ""));
+      if (alive.current && !cancelled.current) setError(errorMessage(e));
     } finally {
       operationId.current = null;
       running.current = false;

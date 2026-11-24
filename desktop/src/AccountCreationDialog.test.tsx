@@ -557,3 +557,59 @@ it("creates Gemini Vertex with an API key and model-scoped temporary rules", asy
     },
   });
 });
+
+it("syncs upstream group name and description from Step 2 with unnamed Step 1 and suggested header variables", async () => {
+  vi.mocked(api).mockImplementation(async (m, p, b) =>
+    p === "/account-creation/upstream-group"
+      ? ({
+          group_name: "Synced Upstream Name",
+          group_description: "Synced Upstream Notes",
+        } as never)
+      : baseline(m, p, b),
+  );
+  await render();
+  await change(field("平台"), "openai");
+  await change(field("账号类型"), "apikey");
+  await act(async () => field("请求头覆写").click());
+  await click("{{user_id}}");
+  await click("{{request_id}}");
+  expect(
+    container.querySelector<HTMLInputElement>('[aria-label="请求头名称 1"]')!
+      .value,
+  ).toBe("x-gateway-user-id");
+  expect(
+    container.querySelector<HTMLInputElement>('[aria-label="请求头名称 2"]')!
+      .value,
+  ).toBe("x-gateway-request-id");
+  await click("下一步");
+  expect(container.textContent).toContain("未命名账号 · OpenAI · API Key");
+  await change(field("API Key"), "fixture-secret");
+  await click("创建账号");
+  expect(container.textContent).toContain("请输入账号名称");
+  expect(
+    vi
+      .mocked(api)
+      .mock.calls.find(([m, p]) => m === "POST" && p === "/account-creation"),
+  ).toBeUndefined();
+  await click("同步上游分组名称与备注");
+  expect(container.textContent).toContain(
+    "Synced Upstream Name · OpenAI · API Key",
+  );
+  await click("创建账号");
+  const payload = vi
+    .mocked(api)
+    .mock.calls.find(
+      ([m, p]) => m === "POST" && p === "/account-creation",
+    )?.[2];
+  expect(payload).toMatchObject({
+    name: "Synced Upstream Name",
+    notes: "Synced Upstream Notes",
+    credentials: {
+      header_override_enabled: true,
+      header_overrides: {
+        "x-gateway-user-id": "{{user_id}}",
+        "x-gateway-request-id": "{{request_id}}",
+      },
+    },
+  });
+});

@@ -3,6 +3,98 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use typeshare::typeshare;
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageActionWire {
+    QueryUsage,
+    QueryResetCredits,
+    ResetQuota,
+    ProbeQuota,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageBranchWire {
+    None,
+    Apikey,
+    OpenaiOauth,
+    GrokFree,
+    GrokPaid,
+    Native,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageStatusWire {
+    Known,
+    Unavailable,
+    Error,
+    AuthorizationRequired,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowStatusWire {
+    Known,
+    Unknown,
+    Stale,
+    Error,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowColorWire {
+    Indigo,
+    Emerald,
+    Purple,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyQuotaStateWire {
+    Idle,
+    Loading,
+    Ok,
+    Error,
+    Unsupported,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyQuotaSourceWire {
+    Sub2api,
+    Newapi,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StatsStatusWire {
+    Ok,
+    Error,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CreditEvidenceSourceWire {
+    UpstreamError,
+    AccountRateLimit,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryKindWire {
+    QuotaRecovery,
+    ResetCredit,
+    ConnectionTest,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ScheduleModeWire {
+    Fixed,
+    Smart,
+}
+
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SnapshotRecord {
@@ -74,11 +166,11 @@ pub struct GroupRecord {
     pub id: Integer,
     pub sort_order: Option<Integer>,
     pub name: String,
-    pub platform: Option<String>,
+    pub platform: String,
     pub account_id: Option<Integer>,
-    pub account_name: Option<String>,
-    pub model: Option<String>,
-    pub upstream_model: Option<String>,
+    pub account_name: String,
+    pub model: String,
+    pub upstream_model: String,
     pub called_at: Option<String>,
     pub recent_accounts: Vec<RecentAccountRecord>,
 }
@@ -120,7 +212,7 @@ pub struct RecoveryRecord {
     pub test_completed_at: Option<String>,
     pub recovered_at: Option<String>,
     pub legacy: Option<bool>,
-    pub kind: Option<String>,
+    pub kind: Option<RecoveryKindWire>,
     pub result_status: Option<String>,
     pub attempt_count: Option<Integer>,
     pub reset_credit: Option<RecoveryResetCreditRecord>,
@@ -138,7 +230,7 @@ pub struct DegradationMarkRecord {
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ModelDetectionSummaryRecord {
-    pub schedule_mode: Option<String>,
+    pub schedule_mode: Option<ScheduleModeWire>,
     pub min_interval_minutes: Option<Integer>,
     pub effective_interval_minutes: Option<Integer>,
     pub recent_request_count: Option<Integer>,
@@ -163,8 +255,8 @@ pub struct SettingCapabilityRecord {
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AccountBlockerRecord {
-    pub code: Option<String>,
-    pub label: Option<String>,
+    pub code: String,
+    pub label: String,
     pub until: Option<String>,
 }
 
@@ -178,12 +270,12 @@ pub struct UsageWindowRecord {
     pub used_percent: Option<f64>,
     pub reset_at: Option<String>,
     pub observed_at: Option<String>,
-    pub status: String,
+    pub status: WindowStatusWire,
     pub source: String,
     pub used: Option<f64>,
     pub limit: Option<f64>,
     pub remaining: Option<f64>,
-    pub color: Option<String>,
+    pub color: Option<WindowColorWire>,
     pub stats: Option<UsageStatsRecord>,
     pub estimated_total_cost: Option<f64>,
 }
@@ -191,16 +283,16 @@ pub struct UsageWindowRecord {
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UsageSummaryRecord {
-    pub stats_status: Option<String>,
+    pub stats_status: Option<StatsStatusWire>,
     pub key_quota: Option<KeyQuotaRecord>,
-    pub branch: String,
+    pub branch: UsageBranchWire,
     pub native_read: Option<bool>,
-    pub status: Option<String>,
+    pub status: Option<UsageStatusWire>,
     pub message: Option<String>,
     pub balances: Option<Vec<UsageBalanceRecord>>,
     pub windows: Vec<UsageWindowRecord>,
     pub today: Option<UsageStatsRecord>,
-    pub actions: Vec<String>,
+    pub actions: Vec<UsageActionWire>,
     pub reset_credits: Option<ResetCreditsInfoRecord>,
     pub prepaid_balance: Option<f64>,
     pub monthly_limit: Option<f64>,
@@ -228,7 +320,7 @@ pub struct AutoResetCreditStateRecord {
     pub outcome: Option<String>,
     pub notification_status: Option<String>,
     pub notification_attempts: Option<Integer>,
-    pub evidence_source: Option<String>,
+    pub evidence_source: Option<CreditEvidenceSourceWire>,
     pub evidence_at: Option<String>,
     pub stage: String,
     pub label: String,
@@ -242,11 +334,11 @@ pub struct AutoResetCreditStateRecord {
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RecentAccountRecord {
-    pub log_id: Option<Integer>,
-    pub account_id: Option<Integer>,
-    pub account_name: Option<String>,
-    pub model: Option<String>,
-    pub upstream_model: Option<String>,
+    pub log_id: Integer,
+    pub account_id: Integer,
+    pub account_name: String,
+    pub model: String,
+    pub upstream_model: String,
     pub called_at: Option<String>,
 }
 
@@ -295,8 +387,8 @@ pub struct UsageStatsRecord {
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct KeyQuotaRecord {
-    pub state: String,
-    pub source: Option<String>,
+    pub state: KeyQuotaStateWire,
+    pub source: Option<KeyQuotaSourceWire>,
     pub checked_at: Option<f64>,
     pub success_at: Option<f64>,
     pub retry_at: Option<f64>,
@@ -320,7 +412,7 @@ pub struct UsageBalanceRecord {
     pub currency: String,
     pub balance: f64,
     pub observed_at: Option<String>,
-    pub status: Option<String>,
+    pub status: Option<WindowStatusWire>,
 }
 
 #[typeshare]

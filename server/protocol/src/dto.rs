@@ -5,7 +5,6 @@ pub type Integer = i64;
 
 pub const DEFAULT_DETECTION_MODEL: &str = "gpt-6-luna";
 pub const LEGACY_DEGRADED_MODEL: &str = "gpt-5.6-luna";
-pub const DEFAULT_RECORD_COLUMN_COUNT: usize = 10;
 
 #[typeshare]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]

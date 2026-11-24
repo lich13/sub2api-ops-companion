@@ -126,7 +126,7 @@ extension PrioritiesPageView {
                 store.refresh()
             }
         } catch {
-            showTransientResult(platform: group.platform, message: error.localizedDescription)
+            self.error = error.localizedDescription
         }
     }
 

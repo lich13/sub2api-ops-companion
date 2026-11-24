@@ -7,7 +7,7 @@ public enum QuickAccountStatusHelper {
         if account.available && account.blockers.isEmpty && account.recoverable != true {
             return ""
         }
-        var reasons = account.blockers.compactMap(\.label).filter { !$0.isEmpty }
+        var reasons = account.blockers.map(\.label).filter { !$0.isEmpty }
         if reasons.isEmpty {
             reasons.append(account.recoverable == true ? "存在可恢复的状态限制" : "暂不可调度")
         }

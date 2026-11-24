@@ -203,6 +203,19 @@ fn creation_invalid_values_fail_before_upstream_access() {
         ("credentials.pool_mode_retry_count", json!(-1)),
         ("credentials.pool_mode_retry_status_codes", json!([99])),
         ("credentials.header_overrides", json!("invalid")),
+        (
+            "credentials.header_overrides",
+            json!({"Authorization":"Bearer x"}),
+        ),
+        (
+            "credentials.header_overrides",
+            json!({"X-User":"1","x-user":"2"}),
+        ),
+        (
+            "credentials.header_overrides",
+            json!({"X-User":"bad\r\nvalue"}),
+        ),
+        ("credentials.header_overrides", json!({"":"missing-name"})),
         ("credentials.model_mapping", json!({"a":false})),
         ("extra.anthropic_apikey_auth_scheme", json!("unknown")),
         ("concurrency", json!(0)),

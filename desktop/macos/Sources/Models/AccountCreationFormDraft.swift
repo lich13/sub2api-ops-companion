@@ -228,10 +228,6 @@ public struct AccountCreationFormDraft: Sendable, Equatable {
         applyPlatformDefaults(for: nextPlatform, authType: nextType)
     }
 
-    public mutating func selectType(_ nextType: String) {
-        applyPlatformDefaults(for: platform, authType: nextType)
-    }
-
     /// Resets everything except name and notes to the catalog defaults of a platform/type.
     public mutating func applyPlatformDefaults(for nextPlatform: String, authType: String) {
         let catalog = AccountCreationCatalog.shared
@@ -330,6 +326,11 @@ public struct AccountCreationFormDraft: Sendable, Equatable {
         if path == "credentials.oauth_type" {
             values["credentials.tier_id"] = .string(tierChoices[0])
         }
+        if path == "upstream_billing_group_sync_enabled" && value == .bool(true) {
+            values["upstream_billing_probe_enabled"] = .bool(true)
+        } else if path == "upstream_billing_probe_enabled" && value == .bool(false) {
+            values["upstream_billing_group_sync_enabled"] = .bool(false)
+        }
     }
 
     // MARK: Visibility
@@ -367,6 +368,7 @@ public struct AccountCreationFormDraft: Sendable, Equatable {
         }
         if field.path == "credentials.model_mapping" && platform == "openai"
             && values["extra.openai_passthrough"]?.boolValue == true
+            && values["extra.openai_passthrough_model_filter"]?.boolValue != true
         {
             return false
         }

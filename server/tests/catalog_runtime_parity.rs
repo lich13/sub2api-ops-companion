@@ -117,7 +117,6 @@ impl Harness {
             ("DATABASE_URL".into(), url.to_string()),
             ("SUB2API_BASE_URL".into(), base.clone()),
             ("SUB2API_VERIFY_BASE_URL".into(), base),
-            ("BASE_PATH".into(), String::new()),
         ]);
         for (key, file) in [
             ("AUDIT_PATH", "audit.jsonl"),

@@ -2,6 +2,7 @@ import { useEffectEvent } from "react";
 import {
   bridgeFailure,
   credentialsRequired,
+  errorMessage,
   ignoredFailure,
 } from "./bridgeError";
 import { accountDialog, closedDialog } from "./accountDialog";
@@ -389,7 +390,7 @@ export default function App() {
     });
   }, [connectionKey]);
   const report = (e: unknown) => {
-    if (!ignoredFailure(e)) setToast(String(e).replace(/^Error: /, ""));
+    if (!ignoredFailure(e)) setToast(errorMessage(e));
   };
   const accountActions = useAccountActions({
     online: state.online,
@@ -2292,6 +2293,7 @@ function SettingsPage({
               <Suspense fallback={null}>
                 <LazySub2ApiConfig
                   key={connectionKey}
+                  connectionKey={connectionKey}
                   active={
                     featureTab === "sub2api" && state.foreground !== false
                   }

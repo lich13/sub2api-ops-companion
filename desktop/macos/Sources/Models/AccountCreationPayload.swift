@@ -89,6 +89,12 @@ extension AccountCreationFormDraft {
             } else {
                 extra["openai_image_size_tiers"] = .array(tiers.map(JSONValue.string))
             }
+            if extra["openai_passthrough"]?.boolValue != true || extra["openai_passthrough_model_filter"]?.boolValue != true {
+                extra.removeValue(forKey: "openai_passthrough_model_filter")
+            }
+        }
+        if root["upstream_billing_group_sync_enabled"]?.boolValue != true {
+            root.removeValue(forKey: "upstream_billing_group_sync_enabled")
         }
         if type == "bedrock" {
             if credentials["auth_mode"]?.stringValue == "sigv4" {
@@ -210,6 +216,7 @@ extension AccountCreationFormDraft {
                 }
             }
         }
+        values.removeValue(forKey: "upstream_billing_group_sync_enabled")
         if platform == "openai", (values["extra.openai_image_size_tiers"]?.arrayValue ?? []).isEmpty {
             values["extra.openai_image_size_tiers"] = .array(Self.imageTiers.map(JSONValue.string))
         }

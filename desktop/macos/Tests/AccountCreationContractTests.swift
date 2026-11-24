@@ -12,7 +12,8 @@ private enum CreationContract {
     ]
     static let createOnly: Set<String> = [
         "platform", "type", "credentials", "extra",
-        "upstream_billing_probe_enabled", "confirm_mixed_channel_risk",
+        "upstream_billing_probe_enabled", "upstream_billing_group_sync_enabled",
+        "confirm_mixed_channel_risk",
     ]
     static let identity: Set<String> = [
         "api_key", "access_token", "refresh_token", "id_token", "token_type", "expires_at",
@@ -73,6 +74,15 @@ private enum CreationContract {
                 }
                 if let field {
                     if valueProblem(field, value) { problems.append("\(path) 格式无效") }
+                    if field.kind == "headers", let map = value.objectValue {
+                        let invalidVar = map.values.contains { val in
+                            !AccountCreationFormDraft.isValidHeaderOverrideValue(
+                                val.stringValue ?? "",
+                                allowVariables: type == "apikey"
+                            )
+                        }
+                        if invalidVar { problems.append("\(path) 模板变量无效") }
+                    }
                 } else if section == "extra" && platform == "openai"
                     && key == "openai_\(type)_responses_websockets_v2_enabled"
                 {
@@ -429,6 +439,49 @@ struct AccountCreationContractTests {
         #expect(requests.count == 2)
         #expect(requests[0].contains("/accounts/7/models?purpose=model_test\""))
         #expect(requests[1].contains("/accounts/7/models?purpose=model_test&refresh=true\""))
+    }
+
+    @Test("Sub2API 0.2.25 passthrough model filter, group sync linkage and header override variables")
+    func sub2api0225AccountCreationFeatures() throws {
+        var openai = filledDraft(platform: "openai", type: "apikey")
+        openai.setValue("extra.openai_passthrough", .bool(true))
+        let plainPassthrough = try openai.buildPayload()
+        #expect(plainPassthrough["credentials"]?["model_mapping"] == nil)
+        #expect(plainPassthrough["extra"]?["openai_passthrough_model_filter"] == nil)
+
+        openai.setValue("extra.openai_passthrough_model_filter", .bool(true))
+        let filteredPassthrough = try openai.buildPayload()
+        #expect(filteredPassthrough["extra"]?["openai_passthrough_model_filter"] == .bool(true))
+        #expect(filteredPassthrough["credentials"]?["model_mapping"]?["gpt-6.2-sol"] == .string("gpt-6.2-sol"))
+
+        openai.setValue("upstream_billing_probe_enabled", .bool(false))
+        openai.setValue("upstream_billing_group_sync_enabled", .bool(true))
+        #expect(openai.values["upstream_billing_probe_enabled"] == .bool(true))
+        #expect(try openai.buildPayload()["upstream_billing_group_sync_enabled"] == .bool(true))
+        openai.setValue("upstream_billing_probe_enabled", .bool(false))
+        #expect(openai.values["upstream_billing_group_sync_enabled"] == .bool(false))
+        #expect(try openai.buildPayload()["upstream_billing_group_sync_enabled"] == nil)
+
+        var reused = filledDraft(platform: "openai", type: "apikey")
+        try reused.applyReusedSource([
+            "platform": .string("openai"),
+            "type": .string("apikey"),
+            "upstream_billing_group_sync_enabled": .bool(true),
+        ])
+        #expect(reused.values["upstream_billing_group_sync_enabled"] == nil)
+
+        openai.setValue("credentials.header_override_enabled", .bool(true))
+        openai.headers = [KeyValuePairDraft(key: "X-Sub2Api-Identity", value: "{{user_id}}:{{ request_id }}")]
+        #expect(openai.validate() == "")
+        #expect(CreationContract.createProblems(try openai.buildPayload()) == [])
+
+        openai.headers = [KeyValuePairDraft(key: "X-Sub2Api-Identity", value: "{{unknown}}")]
+        #expect(openai.validate().contains("模板变量"))
+
+        var grokOAuth = filledDraft(platform: "grok", type: "oauth")
+        grokOAuth.setValue("credentials.header_override_enabled", .bool(true))
+        grokOAuth.headers = [KeyValuePairDraft(key: "X-Trace", value: "{{user_id}}")]
+        #expect(grokOAuth.validate(requireCredentials: false).contains("模板变量"))
     }
 }
 }

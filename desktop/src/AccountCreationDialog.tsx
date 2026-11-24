@@ -2,11 +2,13 @@ import { useMemo } from "react";
 import { useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { Copy, ExternalLink, LoaderCircle, Plus, X } from "lucide-react";
 import { api, command } from "./bridge";
+import { errorMessage as message } from "./bridgeError";
 import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
 import type {
   ChoiceRecord,
   CreationCheckReply,
+  CreationGroupPreviewReply,
   CreationModelsReply,
   TokenAuthorization as Authorization,
 } from "./protocol";
@@ -85,7 +87,6 @@ type Outcome = {
   status: "success" | "failed" | "unknown";
   message: string;
 };
-const message = (error: unknown) => String(error).replace(/^Error: /, "");
 const uncertainCreation = (error: unknown) => !/\[4\d\d\]/.test(message(error));
 
 export default function AccountCreationDialog({
@@ -378,9 +379,10 @@ export default function AccountCreationDialog({
       draft,
       step === 2 && !isOAuth(draft),
       !(
-        draft.platform === "grok" &&
-        draft.type === "oauth" &&
-        (step === 1 || method === "grok-sso")
+        (step === 1 && draft.type === "apikey") ||
+        (draft.platform === "grok" &&
+          draft.type === "oauth" &&
+          (step === 1 || method === "grok-sso"))
       ),
     );
   async function checkMixed() {
@@ -460,6 +462,52 @@ export default function AccountCreationDialog({
         setPreviewModels(value.models);
         setPreviewSelected(value.models);
         if (value.warnings?.length) setError(value.warnings.join("；"));
+      }
+    } catch (e) {
+      if (mounted.current && current === scope.current) setError(message(e));
+    } finally {
+      guard.current = false;
+      if (mounted.current && current === scope.current) setBusy(false);
+    }
+  }
+  async function syncUpstreamGroup() {
+    if (guard.current || !draft.credentials.api_key) {
+      setError("请先填写 API Key");
+      return;
+    }
+    const body = buildPayload(draft);
+    const baseUrl = String(body.credentials.base_url ?? "").trim();
+    if (!baseUrl) {
+      setError("请先填写 API 地址");
+      return;
+    }
+    guard.current = true;
+    setBusy(true);
+    setError("");
+    const current = scope.current;
+    try {
+      const value = await api<CreationGroupPreviewReply>(
+        "POST",
+        "/account-creation/upstream-group",
+        {
+          platform: draft.platform,
+          base_url: baseUrl,
+          api_key: body.credentials.api_key,
+          ...(draft.proxy_id !== null ? { proxy_id: draft.proxy_id } : {}),
+        },
+      );
+      if (mounted.current && current === scope.current) {
+        const nextName = value.group_name.trim(),
+          nextNotes = value.group_description.trim();
+        if (!nextName && !nextNotes) {
+          setError("上游没有返回可同步的分组名称或描述");
+        } else {
+          setDraft((old) => ({
+            ...old,
+            ...(nextName ? { name: nextName } : {}),
+            ...(nextNotes ? { notes: nextNotes } : {}),
+          }));
+        }
       }
     } catch (e) {
       if (mounted.current && current === scope.current) setError(message(e));
@@ -988,9 +1036,11 @@ export default function AccountCreationDialog({
               {step === 2 && (
                 <>
                   <p className="creation-summary">
-                    {draft.name} ·{" "}
+                    {draft.name.trim() || "未命名账号"} ·{" "}
                     {platforms.find((p) => p.id === draft.platform)?.label} ·{" "}
-                    {typeNames[draft.type]}
+                    {draft.platform === "antigravity" && draft.type === "apikey"
+                      ? "Upstream"
+                      : typeNames[draft.type]}
                   </p>
                   {!isOAuth(draft) ? (
                     <div className="creation-grid">
@@ -1059,9 +1109,20 @@ export default function AccountCreationDialog({
                       )}
                       {draft.type === "apikey" && (
                         <div className="creation-wide">
-                          <button type="button" onClick={() => void preview()}>
-                            读取上游模型
-                          </button>
+                          <div className="creation-inline">
+                            <button
+                              type="button"
+                              onClick={() => void preview()}
+                            >
+                              读取上游模型
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void syncUpstreamGroup()}
+                            >
+                              同步上游分组名称与备注
+                            </button>
+                          </div>
                           {previewModels.length > 0 && (
                             <section
                               className="creation-choices"

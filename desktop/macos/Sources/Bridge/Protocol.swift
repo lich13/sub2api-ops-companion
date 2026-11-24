@@ -5,11 +5,11 @@
 import Foundation
 
 public struct AccountBlockerRecord: Codable, Sendable, Equatable {
-	public let code: String?
-	public let label: String?
+	public let code: String
+	public let label: String
 	public let until: String?
 
-	public init(code: String?, label: String?, until: String?) {
+	public init(code: String, label: String, until: String?) {
 		self.code = code
 		self.label = label
 		self.until = until
@@ -988,6 +988,16 @@ public struct CreationCheckReply: Codable, Sendable, Equatable {
 	}
 }
 
+public struct CreationGroupPreviewReply: Codable, Sendable, Equatable {
+	public let group_name: String
+	public let group_description: String
+
+	public init(group_name: String, group_description: String) {
+		self.group_name = group_name
+		self.group_description = group_description
+	}
+}
+
 public struct CreationModelsReply: Codable, Sendable, Equatable {
 	public let models: [String]
 	public let warnings: [String]?
@@ -1033,6 +1043,160 @@ public struct DeletedProxyReply: Codable, Sendable, Equatable {
 
 	public init(deleted: Bool) {
 		self.deleted = deleted
+	}
+}
+
+public struct DetectionClassificationInfo: Codable, Sendable, Equatable {
+	public let outcome: String?
+	public let reason: String?
+	public let basis: String?
+	public let group_indexes: [Int]?
+
+	public init(outcome: String?, reason: String?, basis: String?, group_indexes: [Int]?) {
+		self.outcome = outcome
+		self.reason = reason
+		self.basis = basis
+		self.group_indexes = group_indexes
+	}
+}
+
+public struct DetectionGroupPredictionItem: Codable, Sendable, Equatable {
+	public let index: Int
+	public let prediction: String?
+
+	public init(index: Int, prediction: String?) {
+		self.index = index
+		self.prediction = prediction
+	}
+}
+
+public struct DetectionReceipt: Codable, Sendable, Equatable {
+	public let status: String
+	public let basis: String?
+	public let group_indexes: [Int]?
+	public let marked: Bool?
+	public let schedule_verified: Bool?
+	public let mark_cleared: Bool?
+	public let reason: String
+	public let completed_at: String?
+
+	public init(status: String, basis: String?, group_indexes: [Int]?, marked: Bool?, schedule_verified: Bool?, mark_cleared: Bool?, reason: String, completed_at: String?) {
+		self.status = status
+		self.basis = basis
+		self.group_indexes = group_indexes
+		self.marked = marked
+		self.schedule_verified = schedule_verified
+		self.mark_cleared = mark_cleared
+		self.reason = reason
+		self.completed_at = completed_at
+	}
+}
+
+public struct DetectionLogSummary: Codable, Sendable, Equatable {
+	public let verdict_mode: String?
+	public let degraded_model_id: String?
+	public let engine: String?
+	public let sample_count: Int?
+	public let decision: String?
+	public let reason: String?
+	public let prediction_name: String?
+	public let classification: DetectionClassificationInfo?
+	public let bank_version: FingerprintBankVersion?
+	public let group_predictions: [DetectionGroupPredictionItem]?
+	public let outcome: String
+	public let analysis_available: Bool
+	public let first_prediction: String
+	public let prediction: String
+	public let probability: Double?
+	public let first_probability: Double?
+	public let used_outputs: Int?
+	public let first_downgrade: Bool?
+	public let aggregate_downgrade: Bool?
+	public let disposition: DetectionReceipt?
+	public let recovery: DetectionReceipt?
+	public let verification: DetectionReceipt?
+	public let restoration: DetectionReceipt?
+
+	public init(verdict_mode: String?, degraded_model_id: String?, engine: String?, sample_count: Int?, decision: String?, reason: String?, prediction_name: String?, classification: DetectionClassificationInfo?, bank_version: FingerprintBankVersion?, group_predictions: [DetectionGroupPredictionItem]?, outcome: String, analysis_available: Bool, first_prediction: String, prediction: String, probability: Double?, first_probability: Double?, used_outputs: Int?, first_downgrade: Bool?, aggregate_downgrade: Bool?, disposition: DetectionReceipt?, recovery: DetectionReceipt?, verification: DetectionReceipt?, restoration: DetectionReceipt?) {
+		self.verdict_mode = verdict_mode
+		self.degraded_model_id = degraded_model_id
+		self.engine = engine
+		self.sample_count = sample_count
+		self.decision = decision
+		self.reason = reason
+		self.prediction_name = prediction_name
+		self.classification = classification
+		self.bank_version = bank_version
+		self.group_predictions = group_predictions
+		self.outcome = outcome
+		self.analysis_available = analysis_available
+		self.first_prediction = first_prediction
+		self.prediction = prediction
+		self.probability = probability
+		self.first_probability = first_probability
+		self.used_outputs = used_outputs
+		self.first_downgrade = first_downgrade
+		self.aggregate_downgrade = aggregate_downgrade
+		self.disposition = disposition
+		self.recovery = recovery
+		self.verification = verification
+		self.restoration = restoration
+	}
+}
+
+public struct DetectionLogNotification: Codable, Sendable, Equatable {
+	public let status: String
+	public let merged: Bool
+	public let delivered_at: String?
+	public let reason: String
+
+	public init(status: String, merged: Bool, delivered_at: String?, reason: String) {
+		self.status = status
+		self.merged = merged
+		self.delivered_at = delivered_at
+		self.reason = reason
+	}
+}
+
+public struct DetectionLog: Codable, Sendable, Equatable {
+	public let job_id: String
+	public let account_id: Int
+	public let account_name: String
+	public let model_id: String
+	public let status: String
+	public let created_at: String
+	public let started_at: String?
+	public let completed_at: String?
+	public let triggers: [String]
+	public let error: String
+	public let details_available: Bool
+	public let summary: DetectionLogSummary
+	public let notification: DetectionLogNotification?
+
+	public init(job_id: String, account_id: Int, account_name: String, model_id: String, status: String, created_at: String, started_at: String?, completed_at: String?, triggers: [String], error: String, details_available: Bool, summary: DetectionLogSummary, notification: DetectionLogNotification?) {
+		self.job_id = job_id
+		self.account_id = account_id
+		self.account_name = account_name
+		self.model_id = model_id
+		self.status = status
+		self.created_at = created_at
+		self.started_at = started_at
+		self.completed_at = completed_at
+		self.triggers = triggers
+		self.error = error
+		self.details_available = details_available
+		self.summary = summary
+		self.notification = notification
+	}
+}
+
+public struct DetectionLogPageReply: Codable, Sendable, Equatable {
+	public let items: [DetectionLog]
+	public let next_cursor: String?
+
+	public init(items: [DetectionLog], next_cursor: String?) {
+		self.items = items
+		self.next_cursor = next_cursor
 	}
 }
 
@@ -1214,14 +1378,14 @@ public struct GrokImportReply: Codable, Sendable, Equatable {
 }
 
 public struct RecentAccountRecord: Codable, Sendable, Equatable {
-	public let log_id: Int?
-	public let account_id: Int?
-	public let account_name: String?
-	public let model: String?
-	public let upstream_model: String?
+	public let log_id: Int
+	public let account_id: Int
+	public let account_name: String
+	public let model: String
+	public let upstream_model: String
 	public let called_at: String?
 
-	public init(log_id: Int?, account_id: Int?, account_name: String?, model: String?, upstream_model: String?, called_at: String?) {
+	public init(log_id: Int, account_id: Int, account_name: String, model: String, upstream_model: String, called_at: String?) {
 		self.log_id = log_id
 		self.account_id = account_id
 		self.account_name = account_name
@@ -1235,15 +1399,15 @@ public struct GroupRecord: Codable, Sendable, Equatable {
 	public let id: Int
 	public let sort_order: Int?
 	public let name: String
-	public let platform: String?
+	public let platform: String
 	public let account_id: Int?
-	public let account_name: String?
-	public let model: String?
-	public let upstream_model: String?
+	public let account_name: String
+	public let model: String
+	public let upstream_model: String
 	public let called_at: String?
 	public let recent_accounts: [RecentAccountRecord]
 
-	public init(id: Int, sort_order: Int?, name: String, platform: String?, account_id: Int?, account_name: String?, model: String?, upstream_model: String?, called_at: String?, recent_accounts: [RecentAccountRecord]) {
+	public init(id: Int, sort_order: Int?, name: String, platform: String, account_id: Int?, account_name: String, model: String, upstream_model: String, called_at: String?, recent_accounts: [RecentAccountRecord]) {
 		self.id = id
 		self.sort_order = sort_order
 		self.name = name
@@ -1425,6 +1589,44 @@ public struct ModelDetectionReply: Codable, Sendable, Equatable {
 	}
 }
 
+public struct ModelFingerprintCandidateScore: Codable, Sendable, Equatable {
+	public let model: String
+	public let display_name: String?
+	public let probability: Double?
+	public let score: Double?
+
+	public init(model: String, display_name: String?, probability: Double?, score: Double?) {
+		self.model = model
+		self.display_name = display_name
+		self.probability = probability
+		self.score = score
+	}
+}
+
+public struct ModelFingerprintReport: Codable, Sendable, Equatable {
+	public let prediction: String?
+	public let prediction_name: String?
+	public let probability: Double?
+	public let used_outputs: Int?
+	public let decision: String?
+	public let merged_class: Bool?
+	public let ranking_score: Double?
+	public let results: [ModelFingerprintCandidateScore]?
+	public let bank_version: FingerprintBankVersion?
+
+	public init(prediction: String?, prediction_name: String?, probability: Double?, used_outputs: Int?, decision: String?, merged_class: Bool?, ranking_score: Double?, results: [ModelFingerprintCandidateScore]?, bank_version: FingerprintBankVersion?) {
+		self.prediction = prediction
+		self.prediction_name = prediction_name
+		self.probability = probability
+		self.used_outputs = used_outputs
+		self.decision = decision
+		self.merged_class = merged_class
+		self.ranking_score = ranking_score
+		self.results = results
+		self.bank_version = bank_version
+	}
+}
+
 public struct ModelOption: Codable, Sendable, Equatable {
 	public let id: String
 	public let display_name: String?
@@ -1435,15 +1637,219 @@ public struct ModelOption: Codable, Sendable, Equatable {
 	}
 }
 
-public struct ModelTestHeader: Codable, Sendable, Equatable {
-	public let id: String
-	public let account_id: Int
-	public let status: String
+public struct ModelTestAutomaticDisposition: Codable, Sendable, Equatable {
+	public let basis: String?
+	public let group_indexes: [Int]?
+	public let kind: String?
+	public let status: String?
+	public let marked: Bool?
+	public let schedule_verified: Bool?
+	public let reason: String?
 
-	public init(id: String, account_id: Int, status: String) {
+	public init(basis: String?, group_indexes: [Int]?, kind: String?, status: String?, marked: Bool?, schedule_verified: Bool?, reason: String?) {
+		self.basis = basis
+		self.group_indexes = group_indexes
+		self.kind = kind
+		self.status = status
+		self.marked = marked
+		self.schedule_verified = schedule_verified
+		self.reason = reason
+	}
+}
+
+public struct ModelTestClassification: Codable, Sendable, Equatable {
+	public let outcome: String
+	public let reason: String?
+	public let basis: String?
+	public let group_indexes: [Int]?
+
+	public init(outcome: String, reason: String?, basis: String?, group_indexes: [Int]?) {
+		self.outcome = outcome
+		self.reason = reason
+		self.basis = basis
+		self.group_indexes = group_indexes
+	}
+}
+
+public struct ModelTestGroupDiagnostics: Codable, Sendable, Equatable {
+	public let `protocol`: String?
+	public let response_protocol: String?
+	public let http_status: Int?
+	public let content_type: String?
+	public let first_event_ms: Double?
+	public let first_event_type: String?
+	public let last_event_type: String?
+	public let headers_ms: Double?
+	public let bytes: Int?
+	public let end_reason: String?
+	public let input_tokens: Int?
+	public let output_tokens: Int?
+	public let reasoning_tokens: Int?
+	public let max_output_tokens: Int?
+
+	public init(protocol: String?, response_protocol: String?, http_status: Int?, content_type: String?, first_event_ms: Double?, first_event_type: String?, last_event_type: String?, headers_ms: Double?, bytes: Int?, end_reason: String?, input_tokens: Int?, output_tokens: Int?, reasoning_tokens: Int?, max_output_tokens: Int?) {
+		self.protocol = `protocol`
+		self.response_protocol = response_protocol
+		self.http_status = http_status
+		self.content_type = content_type
+		self.first_event_ms = first_event_ms
+		self.first_event_type = first_event_type
+		self.last_event_type = last_event_type
+		self.headers_ms = headers_ms
+		self.bytes = bytes
+		self.end_reason = end_reason
+		self.input_tokens = input_tokens
+		self.output_tokens = output_tokens
+		self.reasoning_tokens = reasoning_tokens
+		self.max_output_tokens = max_output_tokens
+	}
+}
+
+public struct ModelTestGroupStatus: Codable, Sendable, Equatable {
+	public let index: Int
+	public let status: String
+	public let attempts: Int?
+	public let ttft_ms: Double?
+	public let duration_ms: Double?
+	public let error: String?
+	public let report: ModelFingerprintReport?
+	public let diagnostics: ModelTestGroupDiagnostics?
+
+	public init(index: Int, status: String, attempts: Int?, ttft_ms: Double?, duration_ms: Double?, error: String?, report: ModelFingerprintReport?, diagnostics: ModelTestGroupDiagnostics?) {
+		self.index = index
+		self.status = status
+		self.attempts = attempts
+		self.ttft_ms = ttft_ms
+		self.duration_ms = duration_ms
+		self.error = error
+		self.report = report
+		self.diagnostics = diagnostics
+	}
+}
+
+public struct ModelTestTokenizerClaim: Codable, Sendable, Equatable {
+	public let status: String
+	public let probability: Double
+
+	public init(status: String, probability: Double) {
+		self.status = status
+		self.probability = probability
+	}
+}
+
+public struct ModelTestTokenizerCandidate: Codable, Sendable, Equatable {
+	public let id: String
+	public let name: String
+	public let probability: Double
+
+	public init(id: String, name: String, probability: Double) {
+		self.id = id
+		self.name = name
+		self.probability = probability
+	}
+}
+
+public struct ModelTestTokenizerReport: Codable, Sendable, Equatable {
+	public let kind: String
+	public let name: String
+	public let lab: String
+	public let confidence: Double
+	public let unknown: Double
+	public let claim: ModelTestTokenizerClaim?
+	public let candidates: [ModelTestTokenizerCandidate]
+
+	public init(kind: String, name: String, lab: String, confidence: Double, unknown: Double, claim: ModelTestTokenizerClaim?, candidates: [ModelTestTokenizerCandidate]) {
+		self.kind = kind
+		self.name = name
+		self.lab = lab
+		self.confidence = confidence
+		self.unknown = unknown
+		self.claim = claim
+		self.candidates = candidates
+	}
+}
+
+public struct ModelTestTokenizer: Codable, Sendable, Equatable {
+	public let status: String
+	public let requests: Int?
+	public let baseline_drift: Bool?
+	public let error: String?
+	public let report: ModelTestTokenizerReport?
+
+	public init(status: String, requests: Int?, baseline_drift: Bool?, error: String?, report: ModelTestTokenizerReport?) {
+		self.status = status
+		self.requests = requests
+		self.baseline_drift = baseline_drift
+		self.error = error
+		self.report = report
+	}
+}
+
+public struct ModelTestJob: Codable, Sendable, Equatable {
+	public let id: String
+	public let account_id: Int?
+	public let account_name: String?
+	public let requested_model: String?
+	public let forwarded_model: String?
+	public let returned_models: [String]?
+	public let status: String
+	public let phase: String?
+	public let automatic: Bool?
+	public let engine: String?
+	public let tokenizer_probe: Bool?
+	public let planned_groups: Int?
+	public let completed_groups: Int?
+	public let valid_groups: Int?
+	public let concurrency: Int?
+	public let attempts: Int?
+	public let duration_ms: Double?
+	public let queued_at: String?
+	public let started_at: String?
+	public let completed_at: String?
+	public let completion_reason: String?
+	public let verdict_mode: String?
+	public let degraded_model_id: String?
+	public let can_retry: Bool?
+	public let error: String?
+	public let groups: [ModelTestGroupStatus]?
+	public let report: ModelFingerprintReport?
+	public let classification: ModelTestClassification?
+	public let automatic_disposition: ModelTestAutomaticDisposition?
+	public let tokenizer: ModelTestTokenizer?
+	public let bank_version: FingerprintBankVersion?
+
+	public init(id: String, account_id: Int?, account_name: String?, requested_model: String?, forwarded_model: String?, returned_models: [String]?, status: String, phase: String?, automatic: Bool?, engine: String?, tokenizer_probe: Bool?, planned_groups: Int?, completed_groups: Int?, valid_groups: Int?, concurrency: Int?, attempts: Int?, duration_ms: Double?, queued_at: String?, started_at: String?, completed_at: String?, completion_reason: String?, verdict_mode: String?, degraded_model_id: String?, can_retry: Bool?, error: String?, groups: [ModelTestGroupStatus]?, report: ModelFingerprintReport?, classification: ModelTestClassification?, automatic_disposition: ModelTestAutomaticDisposition?, tokenizer: ModelTestTokenizer?, bank_version: FingerprintBankVersion?) {
 		self.id = id
 		self.account_id = account_id
+		self.account_name = account_name
+		self.requested_model = requested_model
+		self.forwarded_model = forwarded_model
+		self.returned_models = returned_models
 		self.status = status
+		self.phase = phase
+		self.automatic = automatic
+		self.engine = engine
+		self.tokenizer_probe = tokenizer_probe
+		self.planned_groups = planned_groups
+		self.completed_groups = completed_groups
+		self.valid_groups = valid_groups
+		self.concurrency = concurrency
+		self.attempts = attempts
+		self.duration_ms = duration_ms
+		self.queued_at = queued_at
+		self.started_at = started_at
+		self.completed_at = completed_at
+		self.completion_reason = completion_reason
+		self.verdict_mode = verdict_mode
+		self.degraded_model_id = degraded_model_id
+		self.can_retry = can_retry
+		self.error = error
+		self.groups = groups
+		self.report = report
+		self.classification = classification
+		self.automatic_disposition = automatic_disposition
+		self.tokenizer = tokenizer
+		self.bank_version = bank_version
 	}
 }
 

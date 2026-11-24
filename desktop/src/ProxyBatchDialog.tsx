@@ -2,6 +2,7 @@ import { useEffectEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, RefreshCw, X } from "lucide-react";
 import { api, command } from "./bridge";
+import { errorMessage } from "./bridgeError";
 import {
   clientId,
   getOperations,
@@ -82,13 +83,13 @@ export default function ProxyBatchDialog({
     if (token !== generation.current || epoch !== operationEpoch()) return;
     if (results[0].status === "fulfilled")
       setProxies(results[0].value as Proxy[]);
-    else setError(String(results[0].reason).replace(/^Error: /, ""));
+    else setError(errorMessage(results[0].reason));
     const next: Record<number, AccountSettings> = {},
       failed: Record<number, string> = {};
     results.slice(1).forEach((r, i) => {
       if (r.status === "fulfilled")
         next[accounts[i].id] = r.value as AccountSettings;
-      else failed[accounts[i].id] = String(r.reason).replace(/^Error: /, "");
+      else failed[accounts[i].id] = errorMessage(r.reason);
     });
     setSettings(next);
     setErrors(failed);
@@ -131,7 +132,7 @@ export default function ProxyBatchDialog({
       if (!pending(value)) void command("refresh").catch(report);
     } catch (e) {
       if (token === generation.current && epoch === operationEpoch())
-        setBatchError(String(e).replace(/^Error: /, ""));
+        setBatchError(errorMessage(e));
     }
   }
   const pollBatch = useEffectEvent(readBatch);
@@ -186,7 +187,7 @@ export default function ProxyBatchDialog({
       if (!pending(value)) void command("refresh").catch(report);
     } catch (e) {
       if (token === generation.current && epoch === operationEpoch()) {
-        setError(String(e).replace(/^Error: /, ""));
+        setError(errorMessage(e));
         report(e);
       }
     } finally {

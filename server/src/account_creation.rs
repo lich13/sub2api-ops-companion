@@ -82,6 +82,12 @@ fn configuration(value: &Value, platform: &str, kind: &str, auth: bool) -> Resul
                 .find(|f| f["path"] == path && applies(f, platform, kind))
             {
                 config_value(f, v)?;
+                if f["kind"] == "headers" && !header_overrides_valid(v, kind == "apikey") {
+                    return Err(Error::new(
+                        422,
+                        "请求头名称、值或模板变量无效；认证头不能覆写，仅 API Key 账号支持 {{user_id}}、{{api_key_id}}、{{group_id}}、{{request_id}}",
+                    ));
+                }
             } else if section == "extra"
                 && platform == "openai"
                 && key == &format!("openai_{kind}_responses_websockets_v2_enabled")
@@ -148,6 +154,85 @@ fn config_value(f: &Value, v: &Value) -> Result<()> {
         Err(Error::new(422, format!("{}格式无效", string(&f["label"]))))
     }
 }
+fn header_overrides_valid(value: &Value, allow_variables: bool) -> bool {
+    let Some(map) = value.as_object() else {
+        return true;
+    };
+    if map.len() > 64 {
+        return false;
+    }
+    let blocked = SCHEMA["blocked_headers"].as_array();
+    let mut seen = std::collections::HashSet::with_capacity(map.len());
+    for (key, raw) in map {
+        let k = key.trim();
+        let lower = k.to_ascii_lowercase();
+        if k.is_empty()
+            || k.len() > 200
+            || !k.bytes().all(|b| {
+                b.is_ascii_alphanumeric()
+                    || matches!(
+                        b,
+                        b'!' | b'#'
+                            | b'$'
+                            | b'%'
+                            | b'&'
+                            | b'\''
+                            | b'*'
+                            | b'+'
+                            | b'-'
+                            | b'.'
+                            | b'^'
+                            | b'_'
+                            | b'`'
+                            | b'|'
+                            | b'~'
+                    )
+            })
+            || blocked.is_some_and(|list| list.iter().any(|item| item.as_str() == Some(&lower)))
+            || !seen.insert(lower)
+        {
+            return false;
+        }
+        let Some(s) = raw.as_str() else {
+            return false;
+        };
+        if s.len() > 8192 || s.bytes().any(|b| (b < 0x20 && b != b'\t') || b == 0x7f) {
+            return false;
+        }
+        if !allow_variables {
+            if s.contains("{{") {
+                return false;
+            }
+            continue;
+        }
+        let mut rest = s;
+        while let Some(start) = rest.find("{{") {
+            let after_open = &rest[start + 2..];
+            let Some(end) = after_open.find("}}") else {
+                return false;
+            };
+            let name = after_open[..end].trim();
+            if !matches!(name, "user_id" | "api_key_id" | "group_id" | "request_id") {
+                return false;
+            }
+            rest = &after_open[end + 2..];
+        }
+    }
+    true
+}
+fn http_base_url_valid(value: &Value) -> bool {
+    value.as_str().is_some_and(|raw| {
+        let trimmed = raw.trim();
+        !trimmed.is_empty()
+            && trimmed.len() <= 8192
+            && reqwest::Url::parse(trimmed).is_ok_and(|u| {
+                matches!(u.scheme(), "http" | "https")
+                    && u.host_str().is_some()
+                    && u.username().is_empty()
+                    && u.password().is_none()
+            })
+    })
+}
 pub fn validate(path: &[&str], value: &Value) -> Result<()> {
     let mut fields = COMMON.to_vec();
     match path {
@@ -162,6 +247,20 @@ pub fn validate(path: &[&str], value: &Value) -> Result<()> {
             }
             validation::text(&value["api_key"], 1, 65536)?;
         }
+        ["account-creation", "upstream-group"] => {
+            validation::fields(
+                value,
+                &["platform", "base_url", "api_key", "proxy_id"],
+                &["platform", "base_url", "api_key"],
+            )?;
+            if !supported(string(&value["platform"]), "apikey")
+                || !http_base_url_valid(&value["base_url"])
+            {
+                return Err(Error::invalid());
+            }
+            validation::text(&value["api_key"], 1, 65536)?;
+            common(value)?;
+        }
         ["account-creation"] => {
             fields.extend([
                 "platform",
@@ -169,6 +268,7 @@ pub fn validate(path: &[&str], value: &Value) -> Result<()> {
                 "credentials",
                 "extra",
                 "upstream_billing_probe_enabled",
+                "upstream_billing_group_sync_enabled",
                 "confirm_mixed_channel_risk",
             ]);
             validation::fields(value, &fields, &["name", "platform", "type", "credentials"])?;
@@ -188,11 +288,21 @@ pub fn validate(path: &[&str], value: &Value) -> Result<()> {
             }
             for flag in [
                 "upstream_billing_probe_enabled",
+                "upstream_billing_group_sync_enabled",
                 "confirm_mixed_channel_risk",
             ] {
                 if let Some(v) = value.get(flag) {
                     validation::boolean(v)?;
                 }
+            }
+            if value.get("upstream_billing_group_sync_enabled") == Some(&json!(true))
+                && (string(&value["type"]) != "apikey"
+                    || value.get("upstream_billing_probe_enabled") == Some(&json!(false)))
+            {
+                return Err(Error::new(
+                    422,
+                    "自动同步上游分组名称与备注仅适用于已开启自动探测上游倍率的 API Key 账号",
+                ));
             }
             common(value)?;
         }
@@ -299,13 +409,40 @@ async fn upstream(
     path: &str,
     body: Option<&Value>,
 ) -> Result<Value> {
+    let creating = matches!(
+        path,
+        "accounts"
+            | "accounts/import/codex-session"
+            | "openai/create-from-codex-pat"
+            | "grok/sso-to-oauth"
+    );
     let response = actions
         .request(method, path, key, body, Duration::from_secs(120), false)
         .await?;
     let status = response.status().as_u16();
     let bytes = read_limited(response, 8_000_000).await?;
-    let value: Value = serde_json::from_slice(&bytes)
-        .map_err(|_| Error::new(502, "响应无法确认，请刷新账号核对；未重放请求"))?;
+    if !creating && status == 404 {
+        let message = if path == "accounts/upstream-billing-probe/group-preview" {
+            "当前 Sub2API 版本不支持同步上游分组信息"
+        } else {
+            "上游资源不存在，请刷新后重试"
+        };
+        return Err(Error::new(404, message));
+    }
+    let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
+        if creating {
+            Error::new(502, "响应无法确认，请刷新账号核对；未重放请求")
+        } else {
+            Error::new(
+                if (400..500).contains(&status) {
+                    status
+                } else {
+                    502
+                },
+                "上游返回无效响应，请检查 Sub2API 服务状态",
+            )
+        }
+    })?;
     if !(200..300).contains(&status) || value["code"] != 0 {
         if value.to_string().contains("mixed_channel_warning") {
             return Err(Error::new(
@@ -313,8 +450,12 @@ async fn upstream(
                 "mixed_channel_warning：这些分组包含不同渠道账号，确认后才能创建",
             ));
         }
-        let message = if status >= 500 {
+        let message = if creating && status >= 500 {
             "创建结果未确认，请刷新账号核对；未重放请求"
+        } else if path == "accounts/upstream-billing-probe/group-preview" && status >= 500 {
+            "无法从上游读取分组信息，请检查 API 地址、密钥与代理"
+        } else if status >= 500 {
+            "上游服务暂时不可用，请稍后重试"
         } else {
             "上游拒绝操作，请检查账号参数或授权凭据"
         };
@@ -328,6 +469,21 @@ async fn upstream(
         ));
     }
     Ok(value["data"].clone())
+}
+fn clean_group_text(value: &Value, limit: usize, multiline: bool) -> String {
+    let Some(raw) = value.as_str() else {
+        return String::new();
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty()
+        || (!multiline && trimmed.len() > limit)
+        || trimmed
+            .chars()
+            .any(|c| c.is_control() && (!multiline || !matches!(c, '\n' | '\r' | '\t')))
+    {
+        return String::new();
+    }
+    clean(&Value::String(trimmed.to_owned()), limit)
 }
 fn account_result(value: &Value) -> Value {
     json!({"id":value["id"],"name":clean(&value["name"],512),"platform":value["platform"],"type":value["type"]})
@@ -374,6 +530,20 @@ pub async fn handle(
             )
             .await?;
             Ok(json!({"models":value["models"],"warnings":model_warnings(&value)}))
+        }
+        ["account-creation", "upstream-group"] => {
+            let value = upstream(
+                actions,
+                key,
+                Method::POST,
+                "accounts/upstream-billing-probe/group-preview",
+                Some(body),
+            )
+            .await?;
+            Ok(json!({
+                "group_name": clean_group_text(&value["group_name"], 100, false),
+                "group_description": clean_group_text(&value["group_description"], 8192, true),
+            }))
         }
         ["account-creation", "options"] => {
             let (groups, proxies) = tokio::try_join!(

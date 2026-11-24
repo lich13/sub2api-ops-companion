@@ -1,6 +1,6 @@
 # 添加账号
 
-账号页工具栏的“添加账号”先填写基本信息、分组、代理及账号参数，再填写凭据或完成授权。桌面使用表单弹窗，Android 使用全屏表单。字段和原生接口基于 Sub2API 0.2.20（`dab829a4e9b7d1cc307189aea8b0319eb29e29d0`）的 [CreateAccountModal](https://github.com/Wei-Shaw/sub2api/blob/dab829a4e9b7d1cc307189aea8b0319eb29e29d0/frontend/src/components/account/CreateAccountModal.vue)。
+账号页工具栏的“添加账号”先填写基本信息、分组、代理及账号参数，再填写凭据或完成授权。桌面使用表单弹窗，Android 使用全屏表单。字段和原生接口基于 Sub2API 0.2.25（`348997267d756eab5729bb6b78a275a15d18796a`）的 [CreateAccountModal](https://github.com/Wei-Shaw/sub2api/blob/348997267d756eab5729bb6b78a275a15d18796a/frontend/src/components/account/CreateAccountModal.vue)。
 
 | 平台 | 创建类型 | 授权或导入入口 |
 | --- | --- | --- |
@@ -12,7 +12,7 @@
 | Kimi、智谱、DeepSeek、MiniMax、OpenCode、Command Code、Cline | API Key | 平台账号模式、协议与对应 API 地址 |
 | TypeSafe / Jev | API Key | Jev 上游地址与模型 |
 
-新增临时停用规则默认只作用于模型，旧规则没有范围时仍按账号处理。模型协议规则支持首选协议及多个受支持协议；平台或账号模式切换只更新未改动的默认地址与规则。Gemini API Key 不显示 OAuth 等级，自定义地址的显式缓存默认关闭；OpenAI 图片规格默认全选，仅部分选择写入限制。Vertex 支持总额、每日和每周额度。
+新增临时停用规则默认只作用于模型，旧规则没有范围时仍按账号处理。模型协议规则支持首选协议及多个受支持协议；平台或账号模式切换只更新未改动的默认地址与规则。Gemini API Key 不显示 OAuth 等级，自定义地址的显式缓存默认关闭；OpenAI 图片规格默认全选，仅部分选择写入限制，开启自动透传后可启用“透传时按账号模型筛选”继续维护模型白名单与映射。API Key 账号支持自动同步上游分组名称与备注（与自动探测上游倍率联动，复用账号时不继承该项），凭据页支持一键同步上游分组名称与备注；API Key 请求头覆写值支持 `{{user_id}}`、`{{api_key_id}}`、`{{group_id}}`、`{{request_id}}` 动态变量。Vertex 支持总额、每日和每周额度。
 
 表单有修改时忽略遮罩与 Escape，主动关闭确认是否放弃；输入法组合期间的 Escape 不关闭窗口。
 
@@ -34,6 +34,7 @@ Refresh Token、Cookie、Grok SSO 支持逐行批量输入，Codex Session 和 A
 | `POST /account-creation` | 原生 `CreateAccountRequest` 创建与后续模型同步、倍率探测；已预览模型时使用 `?sync_models=true` 保留原生同步行为 |
 | `POST /account-creation/check-mixed-channel` | Claude / Antigravity 混合渠道风险，需用户确认后继续 |
 | `POST /account-creation/models` | 使用新填写凭据读取上游模型 |
+| `POST /account-creation/upstream-group` | 使用新填写 API Key 凭据预览并同步上游分组名称与备注 |
 | `POST /account-creation/auth/:provider/:action` | 固定平台的授权链接、代码兑换、Cookie 或 Refresh Token |
 | `POST /account-creation/import/:kind` | Codex Session / Agent Identity、Codex PAT、Grok SSO |
 | `GET /accounts/:id/key-quota-settings/access-token` | 用户点击“显示并复制”时读取已保存的账户访问令牌 |

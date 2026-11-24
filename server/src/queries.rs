@@ -19,7 +19,9 @@ pub fn settings_capabilities(row: &Value) -> Value {
     let passthrough = row["platform"] == "openai"
         && ["openai_passthrough", "openai_oauth_passthrough"]
             .into_iter()
-            .any(|k| extra[k] == true || extra[k] == "true");
+            .any(|k| extra[k] == true || extra[k] == "true")
+        && !(extra["openai_passthrough_model_filter"] == true
+            || extra["openai_passthrough_model_filter"] == "true");
     let reason = if inherited {
         "继承母账号凭据，不能独立修改模型配置"
     } else if passthrough {

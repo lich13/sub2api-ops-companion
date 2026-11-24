@@ -5,7 +5,7 @@ import Testing
 @testable import Sub2OpsMacOS
 
 /// Renders every creation field group expanded, outside the bounded dialog scroll view.
-private struct AccountCreationFieldsPreview: View {
+struct AccountCreationFieldsPreview: View {
     @State var draft: AccountCreationFormDraft
 
     var body: some View {
@@ -95,8 +95,7 @@ struct AccountsAndActionsTests {
     @Test("AccountCreationFormDraft validates boundaries, reuses source config, and normalizes token identity")
     func accountCreationEdgeCasesAndReuse() throws {
         var draft = AccountCreationFormDraft()
-        draft.selectPlatform("openai")
-        draft.selectType("oauth")
+        draft.applyPlatformDefaults(for: "openai", authType: "oauth")
 
         // Boundary validation
         #expect(draft.validateStepOne(requireName: true) == "请输入账号名称")
@@ -160,13 +159,34 @@ struct AccountsAndActionsTests {
 
         // Service account missing private_key throws
         var saDraft = AccountCreationFormDraft()
-        saDraft.selectPlatform("gemini")
-        saDraft.selectType("service_account")
+        saDraft.applyPlatformDefaults(for: "gemini", authType: "service_account")
         saDraft.name = "Vertex SA"
         saDraft.serviceAccountJSON = "{\"project_id\":\"demo\"}"
         #expect(throws: RustBridgeError.self) {
             _ = try saDraft.buildPayload(requireCredentials: true)
         }
+
+        // API key Step 1 allows empty name for Step 2 upstream group sync, while Step 2 enforces name
+        var apiKeyDraft = AccountCreationFormDraft()
+        apiKeyDraft.applyPlatformDefaults(for: "openai", authType: "apikey")
+        #expect(apiKeyDraft.validate(requireCredentials: false, requireName: false) == "")
+        apiKeyDraft.apiKey = "sk-fixture-key"
+        #expect(apiKeyDraft.validate(requireCredentials: true, requireName: true) == "请输入账号名称")
+
+        // Header override variable insertion populates suggested gateway header names and handles focus/idempotency
+        var headerRows: [KeyValuePairDraft] = []
+        AccountCreationFormDraft.applyHeaderOverrideVariable("user_id", into: &headerRows)
+        AccountCreationFormDraft.applyHeaderOverrideVariable("user_id", into: &headerRows) // idempotent
+        AccountCreationFormDraft.applyHeaderOverrideVariable("request_id", into: &headerRows)
+        #expect(headerRows.count == 2)
+        #expect(headerRows[0].key == "x-gateway-user-id" && headerRows[0].value == "{{user_id}}")
+        #expect(headerRows[1].key == "x-gateway-request-id" && headerRows[1].value == "{{request_id}}")
+
+        let blankRow = KeyValuePairDraft(key: "", value: "prefix-")
+        let focusId = blankRow.id
+        headerRows.append(blankRow)
+        AccountCreationFormDraft.applyHeaderOverrideVariable("group_id", into: &headerRows, focusedId: focusId)
+        #expect(headerRows[2].key == "x-gateway-group-id" && headerRows[2].value == "prefix-{{group_id}}")
     }
 
     @Test("TestDialog modes/appointments, Accounts TableColumnMetrics, and QuickPanel child-menu blur guards")

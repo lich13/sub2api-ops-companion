@@ -34,6 +34,21 @@ pub(super) fn mock(method: &Method, path: &str, body: &Value) -> Option<Response
         json!({})
     } else if route == "accounts/models/sync-upstream-preview" {
         json!({"models":["fixture-model"],"warnings":[]})
+    } else if route == "accounts/upstream-billing-probe/group-preview" {
+        if body["api_key"] == "fixture-legacy-404" {
+            return Some((StatusCode::NOT_FOUND, "404 page not found").into_response());
+        }
+        if body["api_key"] == "fixture-upstream-502" {
+            return Some(response(
+                StatusCode::BAD_GATEWAY,
+                json!({"code":502,"reason":"UPSTREAM_GROUP_PREVIEW_FAILED","message":"fixture-secret-echo"}),
+            ));
+        }
+        if body["api_key"] == "fixture-blank-group" {
+            json!({"group_name":"   ","group_description":"\n\t  "})
+        } else {
+            json!({"group_name":"Upstream VIP","group_description":"Synced description","private":"fixture-private"})
+        }
     } else if route == "accounts/import/codex-session" {
         json!({"created":1,"updated":1,"skipped":0,"failed":1,"errors":[{"index":3,"message":"fixture-secret-echo"}],"warnings":[]})
     } else if route == "openai/create-from-codex-pat" {
@@ -262,6 +277,99 @@ async fn account_creation_http_forwards_supported_types_and_native_auth_without_
         .0,
         404
     );
+    let (status, preview, text) = h
+        .request(
+            Method::POST,
+            "account-creation/upstream-group",
+            Some(json!({"platform":"openai","base_url":"https://example.invalid/v1","api_key":"fixture-key","proxy_id":7})),
+        )
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        preview,
+        json!({"group_name":"Upstream VIP","group_description":"Synced description"})
+    );
+    assert!(!text.contains("fixture-private"));
+    let (status, blank_preview, _) = h
+        .request(
+            Method::POST,
+            "account-creation/upstream-group",
+            Some(json!({"platform":"openai","base_url":"https://example.invalid/v1","api_key":"fixture-blank-group"})),
+        )
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        blank_preview,
+        json!({"group_name":"","group_description":""})
+    );
+    let (status, _, legacy_text) = h
+        .request(
+            Method::POST,
+            "account-creation/upstream-group",
+            Some(json!({"platform":"openai","base_url":"https://example.invalid/v1","api_key":"fixture-legacy-404"})),
+        )
+        .await;
+    assert_eq!(status, 404);
+    assert!(legacy_text.contains("不支持同步上游分组信息"));
+    assert!(!legacy_text.contains("刷新账号核对"));
+    let (status, _, fail_text) = h
+        .request(
+            Method::POST,
+            "account-creation/upstream-group",
+            Some(json!({"platform":"openai","base_url":"https://example.invalid/v1","api_key":"fixture-upstream-502"})),
+        )
+        .await;
+    assert_eq!(status, 502);
+    assert!(fail_text.contains("无法从上游读取分组信息"));
+    assert!(!fail_text.contains("创建结果未确认"));
+    assert!(!fail_text.contains("fixture-secret-echo"));
+    for bad in [
+        json!({"platform":"openai","base_url":"ftp://example.invalid","api_key":"fixture-key"}),
+        json!({"platform":"openai","base_url":"https://user:secret@example.invalid","api_key":"fixture-key"}),
+        json!({"platform":"openai","base_url":"https://example.invalid","api_key":""}),
+    ] {
+        assert_eq!(
+            h.request(Method::POST, "account-creation/upstream-group", Some(bad))
+                .await
+                .0,
+            422
+        );
+    }
+    let valid_0225 = json!({
+        "name":"Fixture 0.2.25",
+        "platform":"openai",
+        "type":"apikey",
+        "credentials":{
+            "api_key":"fixture-key",
+            "header_override_enabled":true,
+            "header_overrides":{"X-User":"{{user_id}}:{{ request_id }}"},
+            "model_mapping":{"gpt-6.2-sol":"gpt-6.2-sol"}
+        },
+        "extra":{
+            "openai_passthrough":true,
+            "openai_passthrough_model_filter":true
+        },
+        "upstream_billing_probe_enabled":true,
+        "upstream_billing_group_sync_enabled":true
+    });
+    assert_eq!(
+        h.request(Method::POST, "account-creation", Some(valid_0225))
+            .await
+            .0,
+        200
+    );
+    for invalid_0225 in [
+        json!({"name":"Bad sync","platform":"openai","type":"apikey","credentials":{"api_key":"fixture-key"},"upstream_billing_probe_enabled":false,"upstream_billing_group_sync_enabled":true}),
+        json!({"name":"Bad var","platform":"openai","type":"apikey","credentials":{"api_key":"fixture-key","header_override_enabled":true,"header_overrides":{"X-User":"{{unknown}}"}}}),
+        json!({"name":"OAuth var","platform":"grok","type":"oauth","credentials":{"access_token":"fixture-access","header_override_enabled":true,"header_overrides":{"X-User":"{{user_id}}"}}}),
+    ] {
+        assert_eq!(
+            h.request(Method::POST, "account-creation", Some(invalid_0225))
+                .await
+                .0,
+            422
+        );
+    }
     h.finish().await;
 }
 

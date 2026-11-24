@@ -57,10 +57,12 @@ public struct AccountCreationSheet: View {
     public init(
         store: AppStore,
         draft: AccountCreationFormDraft = AccountCreationFormDraft(),
+        initialStep: Int = 1,
         onClose: @escaping () -> Void
     ) {
         self.store = store
         self._draft = State(initialValue: draft)
+        self._step = State(initialValue: initialStep)
         self.onClose = onClose
     }
 
@@ -114,7 +116,8 @@ public struct AccountCreationSheet: View {
     }
 
     var requireName: Bool {
-        !(draft.platform == "grok" && draft.type == "oauth" && (step == 1 || authMethod == "grok-sso"))
+        if step == 1 && draft.type == "apikey" { return false }
+        return !(draft.platform == "grok" && draft.type == "oauth" && (step == 1 || authMethod == "grok-sso"))
     }
 
     private var authScopeKey: [String] {

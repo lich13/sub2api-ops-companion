@@ -1,5 +1,5 @@
 {
-  "upstream": "Sub2API 0.2.20 / dab829a4e9b7d1cc307189aea8b0319eb29e29d0",
+  "upstream": "Sub2API 0.2.25 / 348997267d756eab5729bb6b78a275a15d18796a",
   "platforms": [
     {
       "id": "anthropic",
@@ -384,6 +384,16 @@
         "apikey"
       ],
       "default": true
+    },
+    {
+      "path": "upstream_billing_group_sync_enabled",
+      "label": "自动同步上游分组名称与备注",
+      "kind": "boolean",
+      "group": "连接",
+      "types": [
+        "apikey"
+      ],
+      "default": false
     },
     {
       "path": "extra.upstream_request_id_header",
@@ -905,6 +915,23 @@
         "apikey"
       ],
       "default": false
+    },
+    {
+      "path": "extra.openai_passthrough_model_filter",
+      "label": "透传时按账号模型筛选",
+      "kind": "boolean",
+      "group": "OpenAI",
+      "platforms": [
+        "openai"
+      ],
+      "types": [
+        "oauth",
+        "apikey"
+      ],
+      "default": false,
+      "when": {
+        "extra.openai_passthrough": true
+      }
     },
     {
       "path": "extra.openai_long_context_billing_enabled",
@@ -1489,6 +1516,8 @@
       "claude-haiku-5-5",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
+      "claude-fable-5-2",
+      "claude-mythos-5-2",
       "claude-fable-5-1",
       "claude-fable-5"
     ],
@@ -1504,6 +1533,8 @@
       "gpt-5.6-luna",
       "gpt-6",
       "gpt-6-astra",
+      "gpt-6.2-sol",
+      "gpt-6.2-astra",
       "gpt-6.1-sol",
       "gpt-6.1-terra",
       "gpt-6-sol",
@@ -1541,7 +1572,8 @@
       "gemini-3.6-flash",
       "gemini-3.7-flash",
       "gemini-3.8-flash",
-      "gemini-4-argon"
+      "gemini-4-argon",
+      "gemini-4-carbon"
     ],
     "antigravity": [
       "claude-fable-5-1",
@@ -1589,6 +1621,7 @@
       "gemini-3.8-flash-medium",
       "gemini-3.8-flash-high",
       "gemini-3.8-flash-tiered",
+      "gemini-4-carbon",
       "gemini-4-argon-low",
       "gemini-4-argon-medium",
       "gemini-4-argon-high",
@@ -1987,6 +2020,16 @@
   "mapping_presets": {
     "anthropic": [
       {
+        "label": "Fable 5.2",
+        "from": "claude-fable-5-2",
+        "to": "claude-fable-5-2"
+      },
+      {
+        "label": "Mythos 5.2",
+        "from": "claude-mythos-5-2",
+        "to": "claude-mythos-5-2"
+      },
+      {
         "label": "Fable 5.1",
         "from": "claude-fable-5-1",
         "to": "claude-fable-5-1"
@@ -2122,6 +2165,16 @@
         "label": "GPT-6.1 Terra",
         "from": "gpt-6.1-terra",
         "to": "gpt-6.1-terra"
+      },
+      {
+        "label": "GPT-6.2 Sol",
+        "from": "gpt-6.2-sol",
+        "to": "gpt-6.2-sol"
+      },
+      {
+        "label": "GPT-6.2 Astra",
+        "from": "gpt-6.2-astra",
+        "to": "gpt-6.2-astra"
       },
       {
         "label": "GPT-6.1 Sol",
@@ -2294,6 +2347,11 @@
       }
     ],
     "antigravity": [
+      {
+        "label": "4 Carbon",
+        "from": "gemini-4-carbon",
+        "to": "gemini-4-carbon"
+      },
       {
         "label": "4 Argon→High",
         "from": "gemini-4-argon",
@@ -2531,6 +2589,16 @@
       }
     ],
     "bedrock": [
+      {
+        "label": "Fable 5.2",
+        "from": "claude-fable-5-2",
+        "to": "anthropic.claude-fable-5-2"
+      },
+      {
+        "label": "Mythos 5.2",
+        "from": "claude-mythos-5-2",
+        "to": "anthropic.claude-mythos-5-2"
+      },
       {
         "label": "Fable 5.1",
         "from": "claude-fable-5-1",

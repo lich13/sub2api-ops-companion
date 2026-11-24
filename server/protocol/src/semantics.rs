@@ -311,81 +311,29 @@ fn connection_test_result_valid(data: &Value) -> bool {
         && (data["uncertain"].is_null() || data["uncertain"].is_boolean())
 }
 
-pub fn detection_logs_valid(data: &Value) -> bool {
-    let optional_text = |v: &Value| v.is_null() || v.is_string();
-    let receipt = |v: &Value| {
-        v.is_null()
-            || v.is_object()
-                && v["status"].is_string()
-                && v["reason"].is_string()
-                && optional_text(&v["completed_at"])
-                && (v["basis"].is_null()
-                    || matches!(v["basis"].as_str(), Some("first_group" | "aggregate")))
-                && ["marked", "schedule_verified", "mark_cleared"]
-                    .iter()
-                    .all(|k| v[*k].is_null() || v[*k].is_boolean())
-    };
-    data.is_object()
-        && data.get("next_cursor").is_some_and(|v| {
-            v.is_null() || v.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 512)
-        })
-        && data["items"].as_array().is_some_and(|items| {
-            items.len() <= 100
-                && items.iter().all(|item| {
-                    item["job_id"].as_str().is_some_and(|id| {
-                        id.len() == 32 && id.bytes().all(|c| c.is_ascii_hexdigit())
-                    }) && item["account_id"].as_u64().is_some_and(|id| id > 0)
-                        && ["account_name", "model_id", "created_at", "error"]
-                            .iter()
-                            .all(|key| item[*key].is_string())
-                        && matches!(
-                            item["status"].as_str(),
-                            Some(
-                                "completed"
-                                    | "failed"
-                                    | "cancelled"
-                                    | "interrupted"
-                                    | "needs_confirmation"
-                            )
-                        )
-                        && ["started_at", "completed_at"]
-                            .iter()
-                            .all(|key| optional_text(&item[*key]))
-                        && item["triggers"]
-                            .as_array()
-                            .is_some_and(|values| values.iter().all(Value::is_string))
-                        && item["details_available"].is_boolean()
-                        && item["summary"]["outcome"].is_string()
-                        && item["summary"]["analysis_available"].is_boolean()
-                        && ["first_prediction", "prediction"]
-                            .iter()
-                            .all(|key| item["summary"][*key].is_string())
-                        && (item["summary"]["probability"].is_null()
-                            || item["summary"]["probability"]
-                                .as_f64()
-                                .is_some_and(|v| v.is_finite() && (0.0..=1.0).contains(&v)))
-                        && (item["summary"]["first_probability"].is_null()
-                            || item["summary"]["first_probability"]
-                                .as_f64()
-                                .is_some_and(|v| v.is_finite() && (0.0..=1.0).contains(&v)))
-                        && (item["summary"]["used_outputs"].is_null()
-                            || item["summary"]["used_outputs"].is_u64())
-                        && ["first_downgrade", "aggregate_downgrade"]
-                            .iter()
-                            .all(|key| {
-                                item["summary"][*key].is_null()
-                                    || item["summary"][*key].is_boolean()
-                            })
-                        && ["disposition", "recovery", "verification", "restoration"]
-                            .iter()
-                            .all(|key| receipt(&item["summary"][*key]))
-                        && (item["notification"].is_null()
-                            || item["notification"].is_object()
-                                && item["notification"]["status"].is_string()
-                                && item["notification"]["merged"].is_boolean()
-                                && item["notification"]["reason"].is_string()
-                                && optional_text(&item["notification"]["delivered_at"]))
-                })
+pub fn detection_logs_valid(page: &crate::messages::DetectionLogPageReply) -> bool {
+    page.items.len() <= 100
+        && page
+            .next_cursor
+            .as_ref()
+            .is_none_or(|s| !s.is_empty() && s.len() <= 512)
+        && page.items.iter().all(|item| {
+            item.job_id.len() == 32
+                && item.job_id.bytes().all(|c| c.is_ascii_hexdigit())
+                && item.account_id > 0
+                && matches!(
+                    item.status.as_str(),
+                    "completed" | "failed" | "cancelled" | "interrupted" | "needs_confirmation"
+                )
+                && item
+                    .summary
+                    .probability
+                    .is_none_or(|v| v.is_finite() && (0.0..=1.0).contains(&v))
+                && item
+                    .summary
+                    .first_probability
+                    .is_none_or(|v| v.is_finite() && (0.0..=1.0).contains(&v))
+                && item.summary.used_outputs.is_none_or(|v| v >= 0)
         })
 }
 

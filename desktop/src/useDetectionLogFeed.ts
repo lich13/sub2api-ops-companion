@@ -1,62 +1,47 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./bridge";
+import { errorMessage } from "./bridgeError";
+import type {
+  DetectionLog as DetectionLogRecord,
+  DetectionLogNotification,
+  DetectionLogPageReply,
+  DetectionLogSummary,
+  DetectionReceipt as DetectionReceiptRecord,
+} from "./protocol";
+import type { WireNull } from "./types";
 
-type DetectionLogPage = { items: DetectionLog[]; next_cursor: string | null };
-
-type DetectionReceipt = {
-  status: string;
-  basis?: "first_group" | "aggregate" | "sample_family" | null;
-  group_indexes?: number[];
-  marked: boolean | null;
-  schedule_verified: boolean | null;
-  mark_cleared: boolean | null;
-  reason: string;
-  completed_at: string | null;
-};
-export type DetectionLog = {
-  job_id: string;
-  account_id: number;
-  account_name: string;
-  model_id: string;
-  status: string;
-  created_at: string;
-  started_at: string | null;
-  completed_at: string | null;
-  triggers: string[];
-  error: string;
-  details_available: boolean;
-  summary: {
-    verdict_mode?: "strict" | "relaxed";
-    degraded_model_id?: string;
-    engine?: string;
-    sample_count?: number;
-    reason?: string;
-    prediction_name?: string;
-    decision?: string;
-    classification?: { basis?: string; group_indexes?: number[] };
+type DetectionReceipt = WireNull<
+  DetectionReceiptRecord,
+  "marked" | "schedule_verified" | "mark_cleared" | "completed_at",
+  "basis"
+>;
+export type DetectionLog = Omit<
+  WireNull<DetectionLogRecord, "started_at" | "completed_at">,
+  "summary" | "notification"
+> & {
+  summary: Omit<
+    WireNull<
+      DetectionLogSummary,
+      | "probability"
+      | "used_outputs"
+      | "first_downgrade"
+      | "aggregate_downgrade",
+      "first_probability"
+    >,
+    "bank_version" | "disposition" | "recovery" | "verification" | "restoration"
+  > & {
     bank_version?: { revision?: string };
-    group_predictions?: { index: number; prediction?: string }[];
-    outcome: string;
-    analysis_available: boolean;
-    first_prediction: string;
-    prediction: string;
-    probability: number | null;
-    first_probability?: number | null;
-    used_outputs: number | null;
-    first_downgrade: boolean | null;
-    aggregate_downgrade: boolean | null;
     disposition: DetectionReceipt | null;
     recovery: DetectionReceipt | null;
     verification?: DetectionReceipt | null;
     restoration?: DetectionReceipt | null;
   };
-  notification: {
-    status: string;
-    merged: boolean;
-    delivered_at: string | null;
-    reason: string;
-  } | null;
+  notification: WireNull<DetectionLogNotification, "delivered_at"> | null;
 };
+type DetectionLogPage = Omit<
+  WireNull<DetectionLogPageReply, "next_cursor">,
+  "items"
+> & { items: DetectionLog[] };
 
 export function useDetectionLogFeed(
   active: boolean,
@@ -107,7 +92,7 @@ export function useDetectionLogFeed(
           setCursor(response.next_cursor);
           return true;
         } catch (reason) {
-          if (valid()) setError(String(reason).replace(/^Error: /, ""));
+          if (valid()) setError(errorMessage(reason));
           return false;
         } finally {
           if (valid()) setLoading(false);

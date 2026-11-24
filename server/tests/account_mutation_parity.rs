@@ -2712,6 +2712,31 @@ async fn settings_capabilities_and_human_priority_keep_recovery_intents_independ
         passthrough_settings.1["capabilities"]["sync_models"]["reason"],
         ""
     );
+    let filtered_passthrough_id = harness
+        .insert_account(
+            "openai",
+            "apikey",
+            json!({}),
+            json!({"openai_passthrough":true,"openai_passthrough_model_filter":true}),
+            None,
+            &[],
+        )
+        .await;
+    let filtered_passthrough_settings = harness
+        .request(
+            Method::GET,
+            &format!("accounts/{filtered_passthrough_id}/settings"),
+            None,
+        )
+        .await;
+    assert_eq!(
+        filtered_passthrough_settings.1["capabilities"]["model_config"]["editable"],
+        true
+    );
+    assert_eq!(
+        filtered_passthrough_settings.1["capabilities"]["model_config"]["reason"],
+        ""
+    );
 
     let row = harness.account(parent_id).await;
     let priority = harness

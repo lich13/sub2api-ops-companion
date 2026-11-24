@@ -16,6 +16,7 @@ import {
   Upload,
 } from "lucide-react";
 import { api, command } from "./bridge";
+import { errorMessage as errorText } from "./bridgeError";
 import type { DeleteProxyBatchReply } from "./protocol";
 import { fullTime } from "./types";
 import {
@@ -75,7 +76,6 @@ const qualityLabels: Record<string, string> = {
   failed: "失败",
   fail: "失败",
 };
-const errorText = (e: unknown) => String(e).replace(/^Error: /, "");
 export default function ProxyManagement({
   active,
   online,

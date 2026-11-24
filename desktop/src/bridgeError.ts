@@ -35,3 +35,7 @@ export function ignoredFailure(error: unknown) {
   const code = bridgeFailure(error)?.code;
   return code === "connection_changed" || code === "background";
 }
+
+export function errorMessage(error: unknown): string {
+  return String(error).replace(/^Error: /, "");
+}

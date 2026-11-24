@@ -191,6 +191,47 @@ extension AccountCreationSheet {
         }
     }
 
+    func syncUpstreamGroup() async {
+        guard store.state.online, !busy else { return }
+        let current = scope
+        busy = true
+        error = ""
+        defer { if current == scope { busy = false } }
+        do {
+            let payload = try draft.buildPayload(requireCredentials: true, requireName: false)
+            let creds = payload["credentials"]?.objectValue ?? [:]
+            let baseUrl = (creds["base_url"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !baseUrl.isEmpty else {
+                throw RustBridgeError("请先填写 API 地址")
+            }
+            var body: [String: JSONValue] = [
+                "platform": .string(draft.platform),
+                "base_url": .string(baseUrl),
+                "api_key": creds["api_key"] ?? .string(""),
+            ]
+            if let proxyId = draft.proxyId {
+                body["proxy_id"] = .int(Int64(proxyId))
+            }
+            let res: CreationGroupPreviewReply = try await RustBridge.shared.api(
+                "POST",
+                "/account-creation/upstream-group",
+                body: .object(body)
+            )
+            guard current == scope else { return }
+            let nextName = res.group_name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let nextNotes = res.group_description.trimmingCharacters(in: .whitespacesAndNewlines)
+            if nextName.isEmpty && nextNotes.isEmpty {
+                error = "上游没有返回可同步的分组名称或描述"
+            } else {
+                if !nextName.isEmpty { draft.name = nextName }
+                if !nextNotes.isEmpty { draft.notes = nextNotes }
+                store.showToast("已同步上游分组信息")
+            }
+        } catch {
+            if current == scope { self.error = error.localizedDescription }
+        }
+    }
+
     private func authorizedIdentity(item: String) async throws -> ResolvedIdentity {
         if authMethod == "manual", let identity {
             return identity

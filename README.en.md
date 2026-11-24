@@ -85,7 +85,6 @@ docker compose up -d --build
 | `SUB2API_VERIFY_BASE_URL` | Optional internal base URL used by the server for upstream verification. |
 | `KEEPALIVE_CONFIG_PATH` | Per-account keepalive settings, recovery budgets, and pending checks (default `/data/keepalive-state.json`, disabled by default). |
 | `DATABASE_URL` | Sub2API PostgreSQL connection string. |
-| `BASE_PATH` | Legacy compatibility prefix (default `/sub2ops`); stripped by Nginx externally. |
 | `USAGE_QUERY_STATE_PATH` | OAuth snapshots, admin API Key, and scheduling metadata (default `/data/usage-query-state.json`). |
 | `OAUTH_CONFIG_PATH` | OAuth automation config file (default `/data/oauth-config.json`). Precedence: JSON > env vars > defaults. |
 | `BARK_CONFIG_PATH` | Bark notification config file (default `/data/bark-config.json`). |

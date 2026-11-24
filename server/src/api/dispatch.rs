@@ -210,7 +210,8 @@ impl<'a> Call<'a> {
             | CreationAuth(_, _)
             | CreationImport(_)
             | CreationCheck
-            | CreationModels => {
+            | CreationModels
+            | CreationGroupPreview => {
                 let sync = route == CreateAccount
                     && q.map().len() == 1
                     && q.get("sync_models") == Some("true");

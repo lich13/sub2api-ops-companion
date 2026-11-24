@@ -413,3 +413,55 @@ it("preserves edited protocol defaults, accepts multi-protocol rules and retains
     legacy.credentials.temp_unschedulable_rules,
   );
 });
+
+it("supports Sub2API 0.2.25 passthrough model filter, group sync linkage and header override variables", () => {
+  let openai = newDraft("openai", "apikey");
+  openai.name = "Fixture";
+  openai.credentials.api_key = "sk-fixture";
+  openai = setField(openai, "extra.openai_passthrough", true);
+  expect(buildPayload(openai).credentials.model_mapping).toBeUndefined();
+  expect(
+    buildPayload(openai).extra.openai_passthrough_model_filter,
+  ).toBeUndefined();
+  openai = setField(openai, "extra.openai_passthrough_model_filter", true);
+  const filteredPayload = buildPayload(openai);
+  expect(filteredPayload.extra.openai_passthrough_model_filter).toBe(true);
+  expect(filteredPayload.credentials.model_mapping).toHaveProperty(
+    "gpt-6.2-sol",
+    "gpt-6.2-sol",
+  );
+
+  openai = setField(openai, "upstream_billing_probe_enabled", false);
+  openai = setField(openai, "upstream_billing_group_sync_enabled", true);
+  expect(openai.upstream_billing_probe_enabled).toBe(true);
+  expect(buildPayload(openai).upstream_billing_group_sync_enabled).toBe(true);
+  openai = setField(openai, "upstream_billing_probe_enabled", false);
+  expect(openai.upstream_billing_group_sync_enabled).toBe(false);
+  expect(
+    buildPayload(openai).upstream_billing_group_sync_enabled,
+  ).toBeUndefined();
+
+  const source = newDraft("openai", "apikey");
+  source.upstream_billing_group_sync_enabled = true;
+  expect(
+    reuseDraft(newDraft("openai", "apikey"), source)
+      .upstream_billing_group_sync_enabled,
+  ).toBeUndefined();
+
+  openai.credentials.header_override_enabled = true;
+  openai.credentials.header_overrides = {
+    "X-Sub2Api-Identity":
+      "{{user_id}}:{{ api_key_id }}:{{group_id}}:{{request_id}}",
+  };
+  expect(validateDraft(openai)).toBe("");
+  openai.credentials.header_overrides = { "X-Sub2Api-Identity": "{{secret}}" };
+  expect(validateDraft(openai)).toContain("模板变量");
+  openai.credentials.header_overrides = { "X-Sub2Api-Identity": "{{user_id" };
+  expect(validateDraft(openai)).toContain("模板变量");
+
+  const grokOAuth = newDraft("grok", "oauth");
+  grokOAuth.name = "Grok OAuth";
+  grokOAuth.credentials.header_override_enabled = true;
+  grokOAuth.credentials.header_overrides = { "X-Trace": "{{user_id}}" };
+  expect(validateDraft(grokOAuth, false)).toContain("模板变量");
+});

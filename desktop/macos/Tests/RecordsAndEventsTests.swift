@@ -322,6 +322,49 @@ struct RecordsAndEventsTests {
                 "delivered_at": "2026-11-17T09:05:01Z",
                 "reason": ""
               }
+            },
+            {
+              "job_id": "job-demo-2",
+              "account_id": 101,
+              "account_name": "Codex · 主力",
+              "model_id": "gpt-6.2-sol",
+              "status": "completed",
+              "created_at": "2026-11-17T09:08:00Z",
+              "started_at": "2026-11-17T09:07:45Z",
+              "completed_at": "2026-11-17T09:08:00Z",
+              "triggers": ["recovery"],
+              "error": "",
+              "details_available": true,
+              "summary": {
+                "engine": "lm_detector",
+                "sample_count": 3,
+                "verdict_mode": "relaxed",
+                "degraded_model_id": "gpt-5.6-luna",
+                "outcome": "degraded",
+                "analysis_available": true,
+                "first_prediction": "gpt-5.6-luna",
+                "prediction": "gpt-5.6-luna",
+                "probability": 0.912,
+                "first_probability": 0.884,
+                "disposition": {
+                  "status": "marked",
+                  "basis": "sample_family",
+                  "group_indexes": [1, 2],
+                  "marked": true,
+                  "schedule_verified": true,
+                  "reason": ""
+                },
+                "verification": {
+                  "status": "failed",
+                  "reason": "命中降智指纹"
+                }
+              },
+              "notification": {
+                "status": "delivered",
+                "merged": true,
+                "delivered_at": "2026-11-17T09:08:02Z",
+                "reason": ""
+              }
             }
           ],
           "next_cursor": null

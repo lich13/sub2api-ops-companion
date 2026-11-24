@@ -11,6 +11,8 @@ import type {
   ModelDetectionSummaryRecord,
   OpsErrorRecord,
   QuotaPlanRecord,
+  QuotaRefreshEntry,
+  QuotaRefreshHeader,
   QuotaSubscriptionRecord,
   RecentAccountRecord,
   RecoveryMonitorStateRecord,
@@ -28,53 +30,107 @@ export type {
   UsageStatsRecord as UsageStats,
 } from "./protocol";
 
-type WithNull<T, K extends keyof T> = Omit<T, K> & {
-  [P in K]?: Exclude<T[P], undefined> | null;
+export type WireNull<
+  T,
+  Req extends keyof T = never,
+  Opt extends keyof T = never,
+> = Omit<T, Req | Opt> & {
+  [P in Req]-?: NonNullable<T[P]> | null;
+} & {
+  [P in Opt]?: NonNullable<T[P]> | null;
 };
-type WithRequired<T, K extends keyof T> = Omit<T, K> & Required<Pick<T, K>>;
+export type WireReq<T, K extends keyof T> = Omit<T, K> & {
+  [P in K]-?: NonNullable<T[P]>;
+};
 
-export type DegradationMark = WithNull<DegradationMarkRecord, "marked_at">;
-export type AccountKeepalive = Omit<
+export type DegradationMark = WireNull<
+  DegradationMarkRecord,
+  never,
+  "marked_at"
+>;
+export type AccountKeepalive = WireNull<
   KeepaliveReply,
   "last_restore_at" | "next_allowed_at"
-> & {
-  last_restore_at: string | null;
-  next_allowed_at: string | null;
-};
-type AccountBlocker = WithRequired<AccountBlockerRecord, "code" | "label">;
-type ModelDetectionSummary = Omit<
-  WithNull<
-    WithRequired<
-      ModelDetectionSummaryRecord,
-      "enabled" | "interval_minutes" | "model_id" | "version"
-    >,
-    | "effective_interval_minutes"
-    | "recent_request_count"
-    | "last_automatic_started_at"
-    | "next_at"
-    | "last_result"
+>;
+type ModelDetectionSummary = WireNull<
+  WireReq<
+    ModelDetectionSummaryRecord,
+    "enabled" | "interval_minutes" | "model_id" | "version"
   >,
-  "schedule_mode"
+  never,
+  | "effective_interval_minutes"
+  | "recent_request_count"
+  | "last_automatic_started_at"
+  | "next_at"
+  | "last_result"
+>;
+export type UsageAction = UsageSummaryRecord["actions"][number];
+export type QuotaPlan = WireNull<
+  QuotaPlanRecord,
+  "remaining" | "used" | "total" | "reset_at"
+>;
+export type KeyQuota = Omit<
+  WireNull<
+    KeyQuotaRecord,
+    | "source"
+    | "checked_at"
+    | "success_at"
+    | "retry_at"
+    | "next_refresh_at"
+    | "error"
+    | "key_status"
+    | "expires_at"
+    | "expires_at_unix"
+  >,
+  "plans" | "subscriptions" | "today" | "total_usage"
 > & {
-  schedule_mode?: "fixed" | "smart";
+  plans: QuotaPlan[];
+  subscriptions: (Omit<
+    WireNull<
+      QuotaSubscriptionRecord,
+      "name" | "status" | "active" | "expires_at"
+    >,
+    "plans"
+  > & {
+    plans: QuotaPlan[];
+  })[];
+  today: WireNull<KeyQuotaUsageRecord, keyof KeyQuotaUsageRecord> | null;
+  total_usage: WireNull<KeyQuotaUsageRecord, keyof KeyQuotaUsageRecord> | null;
+};
+export type UsageWindow = WireNull<
+  UsageWindowRecord,
+  "used_percent" | "reset_at" | "observed_at",
+  "used" | "limit" | "remaining" | "stats" | "estimated_total_cost"
+>;
+export type UsageSummary = Omit<
+  WireNull<
+    UsageSummaryRecord,
+    "today",
+    "prepaid_balance" | "monthly_limit" | "monthly_used"
+  >,
+  "key_quota" | "balances" | "windows" | "reset_credits"
+> & {
+  key_quota?: KeyQuota;
+  balances?: WireNull<UsageBalanceRecord, never, "observed_at">[];
+  windows: UsageWindow[];
+  reset_credits: WireNull<
+    ResetCreditsInfoRecord,
+    "available" | "observed_at"
+  > | null;
 };
 export type Account = Omit<
-  WithRequired<
-    AccountRecord,
-    "status" | "error_message" | "success_after_error"
+  WireNull<
+    WireReq<AccountRecord, "status" | "error_message" | "success_after_error">,
+    | "last_success_at"
+    | "last_error_at"
+    | "last_error_id"
+    | "last_error_code"
+    | "last_error_status",
+    "parent_account_id" | "concurrency" | "load_factor" | "last_called_at"
   >,
   | "degradation_mark"
   | "model_detection"
-  | "parent_account_id"
-  | "concurrency"
-  | "load_factor"
   | "blockers"
-  | "last_success_at"
-  | "last_called_at"
-  | "last_error_at"
-  | "last_error_id"
-  | "last_error_code"
-  | "last_error_status"
   | "usage_windows"
   | "usage"
   | "recovery_monitor"
@@ -82,189 +138,35 @@ export type Account = Omit<
 > & {
   degradation_mark?: DegradationMark;
   model_detection?: ModelDetectionSummary;
-  parent_account_id?: number | null;
-  concurrency?: number | null;
-  load_factor?: number | null;
-  blockers: AccountBlocker[];
-  last_success_at: string | null;
-  last_called_at?: string | null;
-  last_error_at: string | null;
-  last_error_id: number | null;
-  last_error_code: string | null;
-  last_error_status: number | null;
+  blockers: AccountBlockerRecord[];
   usage_windows: UsageWindow[];
   usage?: UsageSummary;
-  recovery_monitor?: WithNull<
+  recovery_monitor?: WireNull<
     RecoveryMonitorStateRecord,
+    never,
     "next_at" | "next_retry_at"
   > | null;
-  auto_reset_credit?:
-    | (Omit<
-        WithNull<
-          AutoResetCreditStateRecord,
-          | "trigger_at"
-          | "consume_deadline_at"
-          | "verification_deadline_at"
-          | "completed_at"
-          | "outcome"
-          | "notification_status"
-          | "evidence_at"
-          | "next_at"
-          | "attempt_at"
-          | "test_completed_at"
-          | "recovered_at"
-        >,
-        "evidence_source"
-      > & {
-        evidence_source?: "upstream_error" | "account_rate_limit";
-      })
-    | null;
+  auto_reset_credit?: WireNull<
+    AutoResetCreditStateRecord,
+    never,
+    | "trigger_at"
+    | "consume_deadline_at"
+    | "verification_deadline_at"
+    | "completed_at"
+    | "outcome"
+    | "notification_status"
+    | "evidence_at"
+    | "next_at"
+    | "attempt_at"
+    | "test_completed_at"
+    | "recovered_at"
+  > | null;
 };
-export type UsageAction =
-  "query_usage" | "query_reset_credits" | "reset_quota" | "probe_quota";
-export type QuotaPlan = Omit<
-  QuotaPlanRecord,
-  "remaining" | "used" | "total" | "reset_at"
-> & {
-  remaining: number | null;
-  used: number | null;
-  total: number | null;
-  reset_at: string | null;
-};
-export type KeyQuota = Omit<
-  KeyQuotaRecord,
-  | "state"
-  | "source"
-  | "checked_at"
-  | "success_at"
-  | "retry_at"
-  | "next_refresh_at"
-  | "error"
-  | "key_status"
-  | "plans"
-  | "subscriptions"
-  | "expires_at"
-  | "expires_at_unix"
-  | "today"
-  | "total_usage"
-> & {
-  state: "idle" | "loading" | "ok" | "error" | "unsupported";
-  source: "sub2api" | "newapi" | null;
-  checked_at: number | null;
-  success_at: number | null;
-  retry_at: number | null;
-  next_refresh_at: number | null;
-  error: string | null;
-  key_status: string | null;
-  plans: QuotaPlan[];
-  subscriptions: (Omit<
-    QuotaSubscriptionRecord,
-    "name" | "status" | "active" | "expires_at" | "plans"
-  > & {
-    name: string | null;
-    status: string | null;
-    active: boolean | null;
-    expires_at: string | null;
-    plans: QuotaPlan[];
-  })[];
-  expires_at: string | null;
-  expires_at_unix: number | null;
-  today:
-    | {
-        [K in keyof KeyQuotaUsageRecord]-?: Exclude<
-          KeyQuotaUsageRecord[K],
-          undefined
-        > | null;
-      }
-    | null;
-  total_usage:
-    | {
-        [K in keyof KeyQuotaUsageRecord]-?: Exclude<
-          KeyQuotaUsageRecord[K],
-          undefined
-        > | null;
-      }
-    | null;
-};
-export type UsageSummary = Omit<
-  UsageSummaryRecord,
-  | "stats_status"
-  | "key_quota"
-  | "branch"
-  | "status"
-  | "balances"
-  | "windows"
-  | "today"
-  | "actions"
-  | "reset_credits"
-  | "prepaid_balance"
-  | "monthly_limit"
-  | "monthly_used"
-> & {
-  stats_status?: "ok" | "error";
-  key_quota?: KeyQuota;
-  branch:
-    "none" | "apikey" | "openai_oauth" | "grok_free" | "grok_paid" | "native";
-  status?: "known" | "unavailable" | "error" | "authorization_required";
-  balances?: (Omit<UsageBalanceRecord, "observed_at" | "status"> & {
-    observed_at?: string | null;
-    status?: UsageWindow["status"];
-  })[];
-  windows: UsageWindow[];
-  today: UsageStatsRecord | null;
-  actions: UsageAction[];
-  reset_credits:
-    | (Omit<ResetCreditsInfoRecord, "available" | "observed_at"> & {
-        available: number | null;
-        observed_at: string | null;
-      })
-    | null;
-  prepaid_balance?: number | null;
-  monthly_limit?: number | null;
-  monthly_used?: number | null;
-};
-export type UsageWindow = Omit<
-  UsageWindowRecord,
-  | "used_percent"
-  | "reset_at"
-  | "observed_at"
-  | "status"
-  | "used"
-  | "limit"
-  | "remaining"
-  | "color"
-  | "stats"
-  | "estimated_total_cost"
-> & {
-  used_percent: number | null;
-  reset_at: string | null;
-  observed_at: string | null;
-  status: "known" | "unknown" | "stale" | "error";
-  used?: number | null;
-  limit?: number | null;
-  remaining?: number | null;
-  color?: "indigo" | "emerald" | "purple";
-  stats?: UsageStatsRecord | null;
-  estimated_total_cost?: number | null;
-};
-export type RecentAccount = Omit<
-  WithRequired<
-    RecentAccountRecord,
-    "log_id" | "account_id" | "account_name" | "model" | "upstream_model"
-  >,
-  "called_at"
-> & {
-  called_at: string | null;
-};
+export type RecentAccount = WireNull<RecentAccountRecord, "called_at">;
 export type Group = Omit<
-  WithRequired<
-    GroupRecord,
-    "platform" | "account_name" | "model" | "upstream_model"
-  >,
-  "account_id" | "called_at" | "recent_accounts"
+  WireNull<GroupRecord, "account_id" | "called_at">,
+  "recent_accounts"
 > & {
-  account_id: number | null;
-  called_at: string | null;
   recent_accounts: RecentAccount[];
 };
 function callTime(value: string | null): number {
@@ -302,41 +204,42 @@ export function currentGroups(groups: Group[], accounts: Account[]): Group[] {
 }
 
 export type OpsError = Omit<
-  WithRequired<
-    OpsErrorRecord,
-    | "id"
-    | "account_name"
-    | "group_name"
-    | "created_at"
-    | "model"
-    | "requested_model"
-    | "upstream_model"
-    | "status_code"
-    | "provider_error_code"
-    | "message"
-    | "request_id"
-    | "resolved"
+  WireNull<
+    WireReq<
+      OpsErrorRecord,
+      | "id"
+      | "account_name"
+      | "group_name"
+      | "created_at"
+      | "model"
+      | "requested_model"
+      | "upstream_model"
+      | "status_code"
+      | "provider_error_code"
+      | "message"
+      | "request_id"
+      | "resolved"
+    >,
+    "account_id" | "group_id" | "upstream_status_code"
   >,
-  "account_id" | "group_id" | "upstream_status_code" | "notification"
+  "notification"
 > & {
-  account_id: number | null;
-  group_id: number | null;
-  upstream_status_code: number | null;
-  notification?: WithNull<
+  notification?: WireNull<
     NonNullable<OpsErrorRecord["notification"]>,
+    never,
     "next_at"
   >;
 };
 export type Recovery = Omit<
-  WithRequired<
-    RecoveryRecord,
-    "id" | "account_id" | "account_name" | "model_id" | "legacy"
+  WireNull<
+    WireReq<
+      RecoveryRecord,
+      "id" | "account_id" | "account_name" | "model_id" | "legacy"
+    >,
+    "test_completed_at" | "recovered_at"
   >,
-  "test_completed_at" | "recovered_at" | "kind" | "reset_credit"
+  "reset_credit"
 > & {
-  test_completed_at: string | null;
-  recovered_at: string | null;
-  kind?: "quota_recovery" | "reset_credit" | "connection_test";
   reset_credit?: Omit<RecoveryResetCreditRecord, "verification_method"> & {
     verification_method: "connection" | "model";
   };
@@ -390,13 +293,10 @@ export function savedConnections(preferences: Preferences): SavedConnection[] {
       ]
     : [];
 }
-export type UpstreamConnection = Omit<
+export type UpstreamConnection = WireNull<
   ConnectionReply,
   "http_status" | "checked_at"
-> & {
-  http_status: number | null;
-  checked_at: string | null;
-};
+>;
 export type ViewState = {
   platform?: "macos" | "android";
   foreground?: boolean;
@@ -445,15 +345,15 @@ export function sortPriority(accounts: Account[], ascending = true): Account[] {
   );
 }
 export type QuotaBatch = Omit<
-  WithRequired<
-    WithNull<import("./protocol").QuotaRefreshHeader, "completed_at">,
-    "id" | "total" | "completed" | "started_at" | "completed_at"
+  WireNull<
+    WireReq<QuotaRefreshHeader, "id" | "total" | "completed" | "started_at">,
+    "completed_at"
   >,
   "items"
 > & {
   items: (Omit<
-    WithRequired<
-      import("./protocol").QuotaRefreshEntry,
+    WireReq<
+      QuotaRefreshEntry,
       "account_id" | "account_name" | "platform" | "status"
     >,
     "usage"

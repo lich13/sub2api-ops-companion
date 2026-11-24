@@ -248,3 +248,35 @@ fn gemini_same_account_retry_bounds_default_and_environment_override() {
     assert_eq!(override_value(field(path).unwrap(), &env).unwrap().1, 3);
     assert!(prepare(&bytes(), &env, &payload(path, json!(5))).is_err());
 }
+
+#[test]
+fn ping_interval_zero_and_adaptive_memory_budget_match_upstream_0_2_25() {
+    assert_eq!(CATALOG["version"], "0.2.25");
+    assert_eq!(
+        CATALOG["revision"],
+        "348997267d756eab5729bb6b78a275a15d18796a"
+    );
+    let ping = "concurrency.ping_interval";
+    for bad in [-1, 1, 4, 31] {
+        assert!(
+            prepare(&bytes(), &BTreeMap::new(), &payload(ping, json!(bad))).is_err(),
+            "{bad}"
+        );
+    }
+    for ok in [0, 5, 10, 30] {
+        let (_, cfg) = prepare(&bytes(), &BTreeMap::new(), &payload(ping, json!(ok))).unwrap();
+        assert_eq!(cfg["concurrency"]["ping_interval"], ok);
+    }
+
+    let budget = "gateway.request_body_memory_budget_bytes";
+    let meta = field(budget).unwrap();
+    assert_eq!(meta["has_default"], false);
+    assert!(meta["default_value"].is_null());
+    let eff = effective(&parse_yaml(&bytes()).unwrap(), &BTreeMap::new());
+    assert!(get(&eff, budget).is_none());
+    assert!(prepare(&bytes(), &BTreeMap::new(), &payload(budget, json!(-1))).is_err());
+    for ok in [0i64, 1_073_741_824i64] {
+        let (_, cfg) = prepare(&bytes(), &BTreeMap::new(), &payload(budget, json!(ok))).unwrap();
+        assert_eq!(cfg["gateway"]["request_body_memory_budget_bytes"], ok);
+    }
+}

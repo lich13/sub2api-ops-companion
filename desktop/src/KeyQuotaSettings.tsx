@@ -11,6 +11,7 @@ import {
 } from "react";
 import { Copy, EyeOff, Settings2, X } from "lucide-react";
 import { api } from "./bridge";
+import { errorMessage } from "./bridgeError";
 import { useBackAction } from "./mobile";
 import { useDialogFocus } from "./dialogFocus";
 import type { Account } from "./types";
@@ -65,7 +66,7 @@ export function KeyQuotaProvider({
         }
       })
       .catch((e) => {
-        if (alive) setError(String(e).replace(/^Error: /, ""));
+        if (alive) setError(errorMessage(e));
       });
     return () => {
       alive = false;
@@ -167,7 +168,7 @@ export function KeyQuotaSettingsDialog({
       }
     } catch (e) {
       if (alive.current && currentPath.current === path)
-        setError(String(e).replace(/^Error: /, ""));
+        setError(errorMessage(e));
     }
   }
   const readOnChange = useEffectEvent(read);
@@ -209,7 +210,7 @@ export function KeyQuotaSettingsDialog({
       }
     } catch (e) {
       if (alive.current && currentPath.current === path)
-        setError(String(e).replace(/^Error: /, ""));
+        setError(errorMessage(e));
     } finally {
       guard.current = false;
       if (alive.current && currentPath.current === path) setBusy(false);
@@ -241,7 +242,7 @@ export function KeyQuotaSettingsDialog({
       }
     } catch (e) {
       if (alive.current && currentPath.current === path)
-        setError(String(e).replace(/^Error: /, ""));
+        setError(errorMessage(e));
     } finally {
       guard.current = false;
       if (alive.current && currentPath.current === path) setBusy(false);

@@ -4,6 +4,7 @@ import SwiftUI
 public struct Sub2ApiVersionCardView: View {
     public let active: Bool
     public let online: Bool
+    public var connectionKey: String
     public var knownVersion: String
     public var embedded: Bool
     public var onRuntimeChanged: (() -> Void)?
@@ -16,16 +17,20 @@ public struct Sub2ApiVersionCardView: View {
     @State private var targetVersion: String = ""
     @State private var messageText: String = ""
     @State private var errorText: String = ""
+    @State private var boundConnectionKey: String = ""
+    @State private var generation: UInt64 = 0
 
     public init(
         active: Bool,
         online: Bool,
+        connectionKey: String = "",
         knownVersion: String = "",
         embedded: Bool = false,
         onRuntimeChanged: (() -> Void)? = nil
     ) {
         self.active = active
         self.online = online
+        self.connectionKey = connectionKey
         self.knownVersion = knownVersion
         self.embedded = embedded
         self.onRuntimeChanged = onRuntimeChanged
@@ -125,14 +130,30 @@ public struct Sub2ApiVersionCardView: View {
             }
         }
         .onAppear {
+            if boundConnectionKey.isEmpty {
+                boundConnectionKey = connectionKey
+            }
             if !knownVersion.isEmpty && version.isEmpty {
                 version = knownVersion
             }
         }
+        .onChange(of: connectionKey) { _, next in
+            guard boundConnectionKey != next else { return }
+            boundConnectionKey = next
+            generation &+= 1
+            busy = false
+            version = knownVersion
+            info = nil
+            needRestart = false
+            waitingRestart = false
+            targetVersion = ""
+            messageText = ""
+            errorText = ""
+        }
         .onChange(of: knownVersion) { _, next in
             if !next.isEmpty { version = next }
         }
-        .task(id: "\(waitingRestart):\(active)") {
+        .task(id: "\(connectionKey):\(waitingRestart):\(active)") {
             guard waitingRestart, active else {
                 if !active { waitingRestart = false }
                 return
@@ -143,12 +164,16 @@ public struct Sub2ApiVersionCardView: View {
 
     private func checkUpdates() async {
         guard online, !busy else { return }
+        let capturedGen = generation
         busy = true
         errorText = ""
         messageText = ""
-        defer { busy = false }
+        defer {
+            if generation == capturedGen { busy = false }
+        }
         do {
             let res: UpdatesReply = try await RustBridge.shared.api("GET", "/sub2api-system/check-updates?force=true")
+            guard generation == capturedGen else { return }
             let prev = version
             info = res
             version = res.current_version
@@ -161,18 +186,24 @@ public struct Sub2ApiVersionCardView: View {
                 onRuntimeChanged?()
             }
         } catch {
-            errorText = error.localizedDescription
+            if generation == capturedGen {
+                errorText = error.localizedDescription
+            }
         }
     }
 
     private func performAction(_ action: String) async {
         guard online, !busy else { return }
+        let capturedGen = generation
         busy = true
         errorText = ""
         messageText = ""
-        defer { busy = false }
+        defer {
+            if generation == capturedGen { busy = false }
+        }
         do {
             let res: SystemUpdateReply = try await RustBridge.shared.api("POST", "/sub2api-system/\(action)")
+            guard generation == capturedGen else { return }
             if action == "restart" {
                 waitingRestart = true
                 messageText = "正在等待重启生效"
@@ -197,16 +228,20 @@ public struct Sub2ApiVersionCardView: View {
                 }
             }
         } catch {
-            errorText = error.localizedDescription
-            if action == "restart" { waitingRestart = true }
+            if generation == capturedGen {
+                errorText = error.localizedDescription
+                if action == "restart" { waitingRestart = true }
+            }
         }
     }
 
     private func pollRestartVersion() async {
+        let capturedGen = generation
         try? await Task.sleep(for: .milliseconds(1500))
         for _ in 0..<20 {
-            guard !Task.isCancelled, waitingRestart, active else { return }
+            guard !Task.isCancelled, generation == capturedGen, waitingRestart, active else { return }
             if let cur: SystemVersionReply = try? await RustBridge.shared.api("GET", "/sub2api-system/version") {
+                guard generation == capturedGen else { return }
                 version = cur.version
                 if !targetVersion.isEmpty && normalize(cur.version) == normalize(targetVersion) {
                     waitingRestart = false
@@ -220,7 +255,7 @@ public struct Sub2ApiVersionCardView: View {
             }
             try? await Task.sleep(for: .seconds(3))
         }
-        if !Task.isCancelled {
+        if !Task.isCancelled, generation == capturedGen {
             waitingRestart = false
             messageText = "尚未确认运行版本，请手动刷新"
         }
