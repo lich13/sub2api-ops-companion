@@ -1,6 +1,32 @@
+use chrono::Utc;
 use serde_json::{json, Value};
-use std::{fs, panic::AssertUnwindSafe};
+use std::{
+    fs,
+    io::{BufRead, BufReader},
+    panic::AssertUnwindSafe,
+    path::Path,
+};
 use sub2ops_server::{audit, error_evidence, operations, proxy_diagnostics};
+
+fn read_audit_records(path: &Path, prefix: Option<&str>) -> Vec<Value> {
+    let mut records = Vec::new();
+    let mut rotated = path.as_os_str().to_os_string();
+    rotated.push(".1");
+    for candidate in [path.to_path_buf(), rotated.into()] {
+        let Ok(file) = fs::File::open(candidate) else {
+            continue;
+        };
+        let mut lines: Vec<Value> = BufReader::new(file)
+            .lines()
+            .map_while(Result::ok)
+            .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
+            .filter(|v| prefix.is_none_or(|p| v["event"].as_str().unwrap_or("").starts_with(p)))
+            .collect();
+        lines.reverse();
+        records.extend(lines);
+    }
+    records
+}
 
 #[test]
 fn audit_write_redacts_nested_sensitive_values_and_preserves_public_structure() {
@@ -27,9 +53,9 @@ fn audit_write_redacts_nested_sensitive_values_and_preserves_public_structure() 
         "request_body":{"messages":[{"content":"fixture-audit-content"}]}
     });
 
-    audit::write(&path, "fixture.operation", payload);
+    audit::write_at(&path, "fixture.operation", payload, Utc::now());
 
-    let records = audit::read(&path, 10, Some("fixture."));
+    let records = read_audit_records(&path, Some("fixture."));
     assert_eq!(records.len(), 1);
     let record = &records[0];
     assert_eq!(record["event"], "fixture.operation");
@@ -70,9 +96,9 @@ fn audit_write_redacts_nested_sensitive_values_and_preserves_public_structure() 
 fn audit_new_file_is_private() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("nested").join("audit.jsonl");
-    assert!(audit::read(&path, 10, None).is_empty());
+    assert!(read_audit_records(&path, None).is_empty());
     assert!(!path.parent().unwrap().exists());
-    audit::write(&path, "fixture.private", json!({"value":1}));
+    audit::write_at(&path, "fixture.private", json!({"value":1}), Utc::now());
     assert!(path.is_file());
 
     #[cfg(unix)]
@@ -82,22 +108,10 @@ fn audit_new_file_is_private() {
             fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o600
         );
-    }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
         let lock = path.with_extension("jsonl.lock");
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
-        fs::set_permissions(&lock, fs::Permissions::from_mode(0o640)).unwrap();
-        assert_eq!(audit::read(&path, 10, None).len(), 1);
-        assert_eq!(
-            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-            0o640
-        );
         assert_eq!(
             fs::metadata(&lock).unwrap().permissions().mode() & 0o777,
-            0o640
+            0o600
         );
     }
 }
@@ -110,7 +124,7 @@ fn audit_write_failure_is_ignored_without_panicking() {
     let path = parent_file.join("audit.jsonl");
 
     let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-        audit::write(&path, "fixture.failure", json!({"value":1}));
+        audit::write_at(&path, "fixture.failure", json!({"value":1}), Utc::now());
     }));
 
     assert!(result.is_ok());
@@ -139,13 +153,14 @@ fn capacity_message_is_classified_before_audit_redacts_attached_credentials() {
     let matched = error_evidence::match_message(&row);
     assert_eq!(matched, Some(error_evidence::CAPACITY_MESSAGES[1]));
 
-    audit::write(
+    audit::write_at(
         &path,
         "fixture.capacity_evidence",
         json!({"classification":matched,"evidence":{"error_body":error_body}}),
+        Utc::now(),
     );
 
-    let records = audit::read(&path, 10, Some("fixture.capacity"));
+    let records = read_audit_records(&path, Some("fixture.capacity"));
     assert_eq!(records.len(), 1);
     let evidence = &records[0]["payload"]["evidence"]["error_body"];
     assert_eq!(evidence["message"], error_evidence::CAPACITY_MESSAGES[1]);
@@ -292,10 +307,11 @@ fn audit_rotation_preserves_complete_logs_and_serializes_waiting_writers() {
             let path = &path;
             scope.spawn(move || {
                 for item in 0..50 {
-                    audit::write(
+                    audit::write_at(
                         path,
                         "fixture.concurrent",
                         json!({"worker":worker,"item":item,"token":"fixture-private"}),
+                        Utc::now(),
                     );
                 }
             });
@@ -319,7 +335,7 @@ fn audit_rotation_preserves_complete_logs_and_serializes_waiting_writers() {
         use std::os::unix::fs::MetadataExt;
         assert_eq!(before.ino(), fs::metadata(&previous).unwrap().ino());
     }
-    let written = audit::read(&path, 600, Some("fixture.concurrent"));
+    let written = read_audit_records(&path, Some("fixture.concurrent"));
     assert_eq!(written.len(), 400);
     let identities = written
         .iter()
@@ -334,14 +350,14 @@ fn audit_rotation_preserves_complete_logs_and_serializes_waiting_writers() {
     assert!(written
         .iter()
         .all(|r| r["payload"]["token"] == "[REDACTED]"));
-    let across = audit::read(&path, 401, None);
+    let across = read_audit_records(&path, None);
     assert_eq!(across[400]["event"], "fixture.legacy");
     assert_eq!(across[400]["payload"]["api_key"], "fixture-legacy-secret");
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 3);
 }
 
 #[test]
-fn audit_normal_rotation_renames_and_filters_the_event_field_from_the_tail() {
+fn audit_normal_rotation_renames_full_file_and_opens_fresh_inode() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("audit.jsonl");
     let mut record = serde_json::to_vec(
@@ -356,8 +372,12 @@ fn audit_normal_rotation_renames_and_filters_the_event_field_from_the_tail() {
             let path = &path;
             scope.spawn(move || {
                 for item in 0..50 {
-                    audit::write(path, "fixture.new", json!({"worker":worker,"item":item}));
-                    assert!(audit::read(path, 1, Some("fixture.new")).len() == 1);
+                    audit::write_at(
+                        path,
+                        "fixture.new",
+                        json!({"worker":worker,"item":item}),
+                        Utc::now(),
+                    );
                 }
             });
         }
@@ -373,32 +393,5 @@ fn audit_normal_rotation_renames_and_filters_the_event_field_from_the_tail() {
         );
         assert_ne!(original.ino(), fs::metadata(&path).unwrap().ino());
     }
-    assert_eq!(audit::read(&path, 500, Some("fixture.new")).len(), 400);
-    fs::write(&path, b"{\"event\":\"other\",\"payload\":{\"event\":\"fixture.new\"}}\ninvalid\n{\"event\":\"fixture.\\u006eew\",\"payload\":{\"token\":\"fixture-secret\"}}\n").unwrap();
-    let found = audit::read(&path, 1, Some("fixture.new"));
-    assert_eq!(found[0]["payload"]["token"], "fixture-secret");
-    assert!(audit::read(&path, 0, None).is_empty());
-}
-
-#[test]
-fn audit_without_lock_reads_existing_logs_without_writing_or_changing_permissions() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("audit.jsonl");
-    let content = b"{\"event\":\"fixture.old\"}\n{\"event\":\"fixture.new\",\"payload\":{\"token\":\"fixture-token\"}}\n";
-    fs::write(&path, content).unwrap();
-    let metadata = fs::metadata(&path).unwrap();
-    let values = audit::read(&path, 10, Some("fixture."));
-    assert_eq!(values.len(), 2);
-    assert_eq!(values[0]["event"], "fixture.new");
-    assert_eq!(values[0]["payload"]["token"], "fixture-token");
-    assert_eq!(fs::read(&path).unwrap(), content);
-    assert_eq!(
-        fs::metadata(&path).unwrap().modified().unwrap(),
-        metadata.modified().unwrap()
-    );
-    assert_eq!(
-        fs::metadata(&path).unwrap().permissions(),
-        metadata.permissions()
-    );
-    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+    assert_eq!(read_audit_records(&path, Some("fixture.new")).len(), 400);
 }

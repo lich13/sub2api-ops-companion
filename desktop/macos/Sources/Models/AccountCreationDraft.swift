@@ -153,18 +153,11 @@ public struct AccountCreationCatalog: Codable, Sendable {
 
     public static let shared: AccountCreationCatalog = {
         let data = Data(AccountCreationCatalogGenerated.json.utf8)
-        if let decoded = try? JSONDecoder().decode(AccountCreationCatalog.self, from: data) {
-            return decoded
+        do {
+            return try JSONDecoder().decode(AccountCreationCatalog.self, from: data)
+        } catch {
+            preconditionFailure("Embedded AccountCreationCatalog JSON failed to decode: \(error)")
         }
-        return AccountCreationCatalog(
-            upstream: "",
-            platforms: [],
-            fields: [],
-            models: nil,
-            blocked_headers: nil,
-            mapping_presets: [:],
-            provider_profiles: [:]
-        )
     }()
 }
 

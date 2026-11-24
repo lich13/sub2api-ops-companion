@@ -116,7 +116,7 @@ public struct DeleteAccountsSheet: View {
                 .disabled(!store.state.online || busy)
             }
         }
-        .sub2opsDialogFocus {
+        .sub2opsDialogFocus(canBackdropDismiss: !busy) {
             if !busy { onClose() }
         }
     }

@@ -10,7 +10,7 @@ import {
   setOperations,
   type Operation,
 } from "./accountOperations";
-import { operationLabel, type AccountSettings } from "./AccountSettingsDialog";
+import { operationLabel, type AccountSettings } from "./accountDialog";
 import { useBackAction } from "./mobile";
 import { useDialogFocus } from "./dialogFocus";
 import type { Account } from "./types";
@@ -56,7 +56,7 @@ export default function ProxyBatchDialog({
   useBackAction(true, close);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !e.isComposing) {
         e.stopPropagation();
         close();
       }

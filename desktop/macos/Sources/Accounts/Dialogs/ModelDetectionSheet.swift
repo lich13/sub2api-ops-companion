@@ -1,7 +1,9 @@
 import SwiftUI
+import os
 
 /// Matches `desktop/src/ModelDetectionDialog.tsx` (`schedule_mode: "smart" | "fixed"`, `last_automatic_started_at`, API-key `model_override`).
 public struct ModelDetectionSheet: View {
+    private static let logger = Logger(subsystem: "com.sub2ops.desktop", category: "ModelDetectionSheet")
     public let account: Account
     @Bindable public var store: AppStore
     public let onClose: () -> Void
@@ -70,6 +72,15 @@ public struct ModelDetectionSheet: View {
 
     private var invalidInterval: Bool {
         isSmartMode ? (parsedSmartMinutes == nil) : (parsedFixedMinutes == nil)
+    }
+
+    private var isDirty: Bool {
+        guard let raw = serverState else { return false }
+        return enabled != raw.enabled
+            || scheduleMode != raw.schedule_mode.rawValue
+            || fixedIntervalText != String(raw.interval_minutes)
+            || smartMinIntervalText != String(raw.min_interval_minutes)
+            || (isKeyAccount && modelOverride != (raw.model_override ?? ""))
     }
 
     private var effectiveSelectedModel: String {
@@ -331,21 +342,33 @@ public struct ModelDetectionSheet: View {
             .buttonStyle(LinearButtonStyle(variant: .primary))
             .disabled(!store.state.online || loading || loadingModels || saving || invalidInterval || modelChangedExternally || blockedByModel)
         }
-        .sub2opsDialogFocus {
+        .sub2opsDialogFocus(canBackdropDismiss: !saving && !isDirty) {
             if !saving { onClose() }
         }
-        .task(id: "\(account.id):\(store.state.online)") {
+        .task(id: "\(store.connectionKey):\(account.id):\(store.state.online)") {
             guard store.state.online else {
                 loading = false
                 return
             }
             await readAll(replaceDraft: true, refreshDirectory: false)
+            var hadPollError = false
             while !Task.isCancelled && store.state.online {
                 try? await Task.sleep(for: .seconds(2))
                 guard !Task.isCancelled, store.state.online, !saving else { continue }
-                if let latest: ModelDetectionReply = try? await RustBridge.shared.api("GET", "/accounts/\(account.id)/model-detection") {
+                do {
+                    let latest: ModelDetectionReply = try await RustBridge.shared.api("GET", "/accounts/\(account.id)/model-detection")
                     serverState = latest
                     serverModelId = latest.model_id
+                    if hadPollError {
+                        hadPollError = false
+                        error = ""
+                    }
+                } catch {
+                    if !Task.isCancelled && (error as? RustBridgeError)?.ignored != true {
+                        hadPollError = true
+                        Self.logger.warning("Model detection poll failed: \(error.localizedDescription, privacy: .public)")
+                        self.error = error.localizedDescription
+                    }
                 }
             }
         }

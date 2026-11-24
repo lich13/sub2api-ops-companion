@@ -480,9 +480,6 @@ impl OAuthState {
             |raw| serde::Deserialize::deserialize(raw).map_err(|_| invalid("OAuth 状态文件无效")),
         ))
     }
-    pub fn snapshot(&self) -> Result<Value> {
-        self.shared_snapshot().map(|value| (*value).clone())
-    }
     pub fn shared_snapshot(&self) -> Result<Arc<Value>> {
         self.0.read_shared()
     }
@@ -683,7 +680,7 @@ mod shared_tests {
             })
             .unwrap();
         assert_eq!(
-            state.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"],
+            state.shared_snapshot().unwrap()["scheduler"]["73"]["recovery_intent"],
             intent
         );
         state
@@ -693,17 +690,18 @@ mod shared_tests {
             })
             .unwrap();
         assert_eq!(
-            state.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"],
+            state.shared_snapshot().unwrap()["scheduler"]["73"]["recovery_intent"],
             intent
         );
         state.recover_interrupted(None).unwrap();
-        let resumed = state.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"].clone();
+        let resumed =
+            state.shared_snapshot().unwrap()["scheduler"]["73"]["recovery_intent"].clone();
         assert_eq!(resumed["status"], "retry");
         assert_eq!(resumed["next_retry_at"], intent["tested_at"]);
         assert!(resumed["verification_dispatched"].is_null());
         state.recover_interrupted(None).unwrap();
         assert_eq!(
-            state.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"],
+            state.shared_snapshot().unwrap()["scheduler"]["73"]["recovery_intent"],
             resumed
         );
     }
@@ -722,7 +720,7 @@ mod shared_tests {
             &first,
             &state.clone().shared_snapshot().unwrap()
         ));
-        let mut owned = state.snapshot().unwrap();
+        let mut owned = (*state.shared_snapshot().unwrap()).clone();
         owned["oauth_results"] = json!({});
         assert!(state.shared_snapshot().unwrap()["oauth_results"]["1"].is_object());
         state
@@ -754,12 +752,12 @@ mod shared_tests {
             })
             .unwrap();
         assert_eq!(
-            state.snapshot().unwrap()["scheduler"]["1"]["last_regular_at"],
+            state.shared_snapshot().unwrap()["scheduler"]["1"]["last_regular_at"],
             "fixture-retired-field"
         );
         let reloaded = OAuthState::new(path.clone());
         assert_eq!(
-            reloaded.snapshot().unwrap()["scheduler"]["1"]["last_regular_at"],
+            reloaded.shared_snapshot().unwrap()["scheduler"]["1"]["last_regular_at"],
             "fixture-retired-field"
         );
         let replacement = root.path().join("replacement.json");

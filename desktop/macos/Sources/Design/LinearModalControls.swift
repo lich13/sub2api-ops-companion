@@ -285,12 +285,14 @@ public struct TrimmedEntryField: View {
 
 @MainActor
 private final class WidthReportingNSView: NSView {
+    var preferScrollContentWidth: Bool = false
     var onWidth: (@MainActor (CGFloat) -> Void)?
     private var lastReported: CGFloat = -1
 
     override func layout() {
         super.layout()
-        let w = bounds.width
+        let scrollWidth = preferScrollContentWidth ? enclosingScrollView?.contentSize.width : nil
+        let w = (scrollWidth ?? 0) > 0 ? scrollWidth! : bounds.width
         if w > 0, abs(w - lastReported) >= 0.5 {
             lastReported = w
             // State must not change inside an AppKit layout pass; report on the next main-queue turn.
@@ -302,20 +304,24 @@ private final class WidthReportingNSView: NSView {
 }
 
 public struct LinearWidthObserver: NSViewRepresentable {
+    public let preferScrollContentWidth: Bool
     public let onWidth: @MainActor (CGFloat) -> Void
 
-    public init(onWidth: @escaping @MainActor (CGFloat) -> Void) {
+    public init(preferScrollContentWidth: Bool = false, onWidth: @escaping @MainActor (CGFloat) -> Void) {
+        self.preferScrollContentWidth = preferScrollContentWidth
         self.onWidth = onWidth
     }
 
     public func makeNSView(context: Context) -> NSView {
         let view = WidthReportingNSView()
+        view.preferScrollContentWidth = preferScrollContentWidth
         view.onWidth = onWidth
         return view
     }
 
     public func updateNSView(_ nsView: NSView, context: Context) {
         guard let view = nsView as? WidthReportingNSView else { return }
+        view.preferScrollContentWidth = preferScrollContentWidth
         view.onWidth = onWidth
     }
 }

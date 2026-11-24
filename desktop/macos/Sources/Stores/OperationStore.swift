@@ -5,20 +5,45 @@ import Observation
 @Observable
 public final class OperationStore {
     public private(set) var rows: [Operation] = []
+    public private(set) var pendingByAccount: [Int: [Operation]] = [:]
     public private(set) var epoch: UInt64 = 0
     public private(set) var connectionKey: String = ""
-    public var isOpen: Bool = false
+    public var isOpen: Bool = false {
+        didSet {
+            if oldValue != isOpen {
+                startPollingIfNeeded(online: lastOnline, active: lastActive)
+            }
+        }
+    }
     public var error: String = ""
-    public var batchId: String?
+    public var batchId: String? {
+        didSet {
+            if oldValue != batchId && isOpen {
+                startPollingIfNeeded(online: lastOnline, active: lastActive)
+            }
+        }
+    }
     public var batchItems: [Operation] = []
+
+    private struct PollingKey: Equatable {
+        let online: Bool
+        let active: Bool
+        let isOpen: Bool
+        let batchId: String?
+        let epoch: UInt64
+    }
 
     private var memoryClientId: String = ""
     private var pollingTask: Task<Void, Never>?
+    private var activePollingKey: PollingKey?
+    private var lastOnline: Bool = false
+    private var lastActive: Bool = false
 
     private static let terminalStatuses: Set<String> = [
         "completed", "failed", "cancelled", "superseded", "needs_confirmation",
     ]
     private static let clientKey = "sub2ops-operation-client"
+    private static let adaptivePollDelaysMs: [Int] = [35, 80, 180, 350, 500]
 
     public init() {}
 
@@ -52,14 +77,18 @@ public final class OperationStore {
     }
 
     public func pendingForAccount(_ accountId: Int) -> [Operation] {
-        rows.filter { $0.account_id == accountId && Self.isPending($0) }
+        pendingByAccount[accountId] ?? []
     }
 
     public func bindConnection(_ key: String) {
         guard connectionKey != key else { return }
+        pollingTask?.cancel()
+        pollingTask = nil
+        activePollingKey = nil
         connectionKey = key
         epoch &+= 1
         rows = []
+        pendingByAccount = [:]
         isOpen = false
         error = ""
         batchId = nil
@@ -69,6 +98,13 @@ public final class OperationStore {
     public func setOperations(_ next: [Operation]) {
         guard rows != next else { return }
         rows = next
+        var indexed: [Int: [Operation]] = [:]
+        for op in next where Self.isPending(op) {
+            indexed[op.account_id, default: []].append(op)
+        }
+        if pendingByAccount != indexed {
+            pendingByAccount = indexed
+        }
     }
 
     public func publish(_ job: Operation) {
@@ -80,8 +116,26 @@ public final class OperationStore {
     }
 
     public func startPollingIfNeeded(online: Bool, active: Bool) {
+        lastOnline = online
+        lastActive = active
+        let key = PollingKey(
+            online: online,
+            active: active,
+            isOpen: isOpen,
+            batchId: isOpen ? batchId : nil,
+            epoch: epoch
+        )
+        guard online && (isOpen || active) else {
+            pollingTask?.cancel()
+            pollingTask = nil
+            activePollingKey = nil
+            return
+        }
+        if activePollingKey == key, let pollingTask, !pollingTask.isCancelled {
+            return
+        }
         pollingTask?.cancel()
-        guard online && (isOpen || active) else { return }
+        activePollingKey = key
         let capturedEpoch = epoch
         pollingTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -166,6 +220,7 @@ public final class OperationStore {
         let currentEpoch = epoch
         var job = initial
         var after = 0
+        var step = 0
         while true {
             guard epoch == currentEpoch else {
                 throw RustBridgeError.connectionChanged
@@ -203,7 +258,9 @@ public final class OperationStore {
                 }
                 onEvent(TestEvent(type: "status", text: statusText))
             }
-            try await Task.sleep(for: .milliseconds(500))
+            let delayMs = Self.adaptivePollDelaysMs[min(step, Self.adaptivePollDelaysMs.count - 1)]
+            step += 1
+            try await Task.sleep(for: .milliseconds(delayMs))
             guard epoch == currentEpoch else {
                 throw RustBridgeError.connectionChanged
             }
@@ -271,9 +328,12 @@ public final class OperationStore {
     ) async throws -> OperationBatch {
         let currentEpoch = epoch
         var current = initial
+        var step = 0
         onUpdate?(current)
         while !current.items.allSatisfy({ Self.isTerminal($0.status) }) {
-            try await Task.sleep(for: .milliseconds(600))
+            let delayMs = Self.adaptivePollDelaysMs[min(step, Self.adaptivePollDelaysMs.count - 1)]
+            step += 1
+            try await Task.sleep(for: .milliseconds(delayMs))
             guard epoch == currentEpoch else {
                 throw RustBridgeError.connectionChanged
             }

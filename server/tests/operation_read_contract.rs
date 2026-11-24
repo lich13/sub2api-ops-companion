@@ -188,7 +188,13 @@ async fn waiting_queue_skips_execution_config_but_records_completed_appointments
     fixture.operations.tick().await.unwrap();
     fixture.operations.tick().await.unwrap();
     assert_eq!(fixture.backend.test_config_reads.load(Ordering::SeqCst), 0);
-    let state = fixture.operations.actions.queries.oauth.snapshot().unwrap();
+    let state = fixture
+        .operations
+        .actions
+        .queries
+        .oauth
+        .shared_snapshot()
+        .unwrap();
     assert_eq!(state["recovery_history"].as_object().unwrap().len(), 1);
     assert_eq!(
         state["recovery_history"][format!("connection-test:{JOB_ID}")]["result_status"],
@@ -347,7 +353,7 @@ async fn public_views_keep_requested_options_without_private_payloads_or_state_w
         expected
     );
     assert_eq!(fs::read(fixture.state_path()).unwrap(), before);
-    assert_eq!(fixture.operations.store.0.read().unwrap(), state);
+    assert_eq!(*fixture.operations.store.0.read_shared().unwrap(), state);
     fixture.close().await;
 }
 

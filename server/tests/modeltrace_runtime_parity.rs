@@ -1981,10 +1981,16 @@ async fn transport_diagnostics_redact_untrusted_event_names_and_content_types() 
     assert!(!diagnostics.to_string().contains(secret));
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("audit.jsonl");
-    sub2ops_server::audit::write(&path, "model_test_transport", diagnostics.clone());
-    let stored = sub2ops_server::audit::read(&path, 1, None);
-    assert_eq!(stored[0]["payload"], diagnostics);
-    assert!(!fs::read_to_string(path).unwrap().contains(secret));
+    sub2ops_server::audit::write_at(
+        &path,
+        "model_test_transport",
+        diagnostics.clone(),
+        chrono::Utc::now(),
+    );
+    let raw_audit = fs::read_to_string(&path).unwrap();
+    let stored: Value = serde_json::from_str(raw_audit.lines().next().unwrap()).unwrap();
+    assert_eq!(stored["payload"], diagnostics);
+    assert!(!raw_audit.contains(secret));
     harness.close().await;
 }
 
@@ -2852,7 +2858,7 @@ async fn first_text_progress_diagnostics_are_frozen_before_later_stream_events()
         harness.runtime.tests.latest(account_id).unwrap()["groups"],
         progress["groups"]
     );
-    let disk = harness.runtime.tests.store.read().unwrap();
+    let disk = harness.runtime.tests.store.read_shared().unwrap();
     assert_eq!(disk["jobs"][&job_id]["groups"][0]["status"], "queued");
     assert!(disk["jobs"][&job_id]["groups"][0]["diagnostics"]["ttft_ms"].is_null());
 
@@ -2925,7 +2931,7 @@ async fn cancellation_drains_streams_releases_shared_credential_lock_and_prevent
                 && group["diagnostics"]["ttft_ms"].is_number())
     );
     assert_eq!(
-        harness.runtime.tests.store.read().unwrap()["jobs"][&first_id]["groups"],
+        harness.runtime.tests.store.read_shared().unwrap()["jobs"][&first_id]["groups"],
         cancelled["groups"]
     );
     release.add_permits(20);

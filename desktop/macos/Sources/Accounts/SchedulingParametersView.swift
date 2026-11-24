@@ -224,7 +224,10 @@ private struct NumericParameterPopover: View {
                 text = ""
             }
         }
-        .onExitCommand(perform: onClose)
+        .onExitCommand {
+            guard !ResponderRestorer.shouldSuppressActiveEscape() else { return }
+            onClose()
+        }
     }
 
     private func submit() async {

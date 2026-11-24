@@ -14,40 +14,21 @@ import {
   followOperation,
   operationEpoch,
   submitOperation,
-  type Operation,
 } from "./accountOperations";
+import {
+  operationLabel,
+  type AccountSettings,
+  type SettingsSection,
+} from "./accountDialog";
 import { useBackAction } from "./mobile";
 import { useDialogFocus } from "./dialogFocus";
 import type { Account } from "./types";
 import { validate as validateProfile, type Profile } from "./AccountTemplates";
-import type { AccountSettingsReply } from "./protocol";
 import "./account-settings.css";
 import ProxyOptions, { type ProxyOption } from "./ProxyOptions";
 
-export type SettingsSection = "whitelist" | "mappings" | "proxy";
-export type AccountSettings = Omit<
-  AccountSettingsReply,
-  "concurrency" | "load_factor" | "proxy_id"
-> & {
-  concurrency: number | null;
-  load_factor: number | null;
-  proxy_id: number | null;
-};
+export { operationLabel, type AccountSettings, type SettingsSection };
 type SyncResult = { models: string[]; warnings: string[]; synced_at: string };
-export const operationLabel = (job: Operation) =>
-  job.status === "queued"
-    ? job.reason || "已排队，等待执行"
-    : (
-        {
-          running: "正在保存",
-          checking: "正在核对实际值",
-          completed: "已确认生效",
-          needs_confirmation: "相关字段已变化，请在待办中核对",
-          failed: "保存失败",
-          cancelled: "已取消",
-          superseded: "已由新请求替代",
-        } as Record<string, string>
-      )[job.status] || job.status;
 
 export default function AccountSettingsDialog({
   account,

@@ -45,6 +45,7 @@ public struct ProxyManagementTabView: View {
     @State var errorText: String = ""
     @State var messageText: String = ""
     @State var fallbackModal: ModalKind? = nil
+    @State private var fallbackBackdropGuard = ModalBackdropGuard()
     @State var qualityById: [Int: ProxyQualityResult] = [:]
     @State private var viewportWidth: CGFloat = 1100
     @State private var hoveredRowId: Int? = nil
@@ -110,8 +111,12 @@ public struct ProxyManagementTabView: View {
 
             if let modal = fallbackModal {
                 ZStack {
-                    DS.backdrop.ignoresSafeArea().onTapGesture { fallbackModal = nil }
+                    DS.backdrop.ignoresSafeArea().onTapGesture {
+                        fallbackBackdropGuard.attemptDismiss(defaultClose: { fallbackModal = nil })
+                    }
                     modalView(modal, dismiss: { fallbackModal = nil })
+                        .id(modal.id)
+                        .environment(\.modalBackdropGuard, fallbackBackdropGuard)
                 }
             }
         }

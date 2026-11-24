@@ -93,7 +93,7 @@ impl Harness {
     }
 
     fn raw(&self) -> Value {
-        let mut raw = self.runtime.config.oauth.read().unwrap();
+        let mut raw = (*self.runtime.config.oauth.read_shared().unwrap()).clone();
         raw.as_object_mut().unwrap().shift_remove("updated_at");
         raw.as_object_mut().unwrap().shift_remove("updated_by");
         raw
@@ -381,8 +381,14 @@ async fn reloaded_runtime_keeps_seen_watermark_and_manual_removal() {
         .reconcile(&[row(31), row(32)])
         .await
         .unwrap();
-    assert_eq!(restarted.config.oauth.read().unwrap()[C], json!([32]));
-    assert_eq!(restarted.config.oauth.read().unwrap()[S], json!([31, 32]));
+    assert_eq!(
+        restarted.config.oauth.read_shared().unwrap()[C],
+        json!([32])
+    );
+    assert_eq!(
+        restarted.config.oauth.read_shared().unwrap()[S],
+        json!([31, 32])
+    );
     h = Harness {
         root,
         runtime: restarted,

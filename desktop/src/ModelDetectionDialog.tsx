@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { LoaderCircle, RefreshCw, X } from "lucide-react";
 import { readAccountModels, modelDirectoryRevoked } from "./accountModels";
 import { api, command } from "./bridge";
+import { errorMessage as errorText, ignoredFailure } from "./bridgeError";
 import { engineName } from "./modelTestTypes";
 import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
@@ -171,6 +172,7 @@ export default function ModelDetectionDialog({
   useEffect(() => {
     if (!online || !loaded) return;
     let alive = true,
+      hadPollError = false,
       timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       const current = generation.current;
@@ -179,10 +181,23 @@ export default function ModelDetectionDialog({
           "GET",
           `/accounts/${account.id}/model-detection`,
         );
-        if (alive && !closed.current && current === generation.current)
+        if (alive && !closed.current && current === generation.current) {
           setValue(d);
-      } catch {
-        /* Keep the last verified state. */
+          if (hadPollError) {
+            hadPollError = false;
+            setError("");
+          }
+        }
+      } catch (err) {
+        if (
+          alive &&
+          !closed.current &&
+          current === generation.current &&
+          !ignoredFailure(err)
+        ) {
+          hadPollError = true;
+          setError(errorText(err));
+        }
       }
       if (alive && !closed.current) timer = setTimeout(() => void poll(), 2000);
     };

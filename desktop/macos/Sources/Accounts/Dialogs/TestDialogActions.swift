@@ -130,9 +130,7 @@ extension TestDialogSheet {
                     errorText = "预约时间须晚于当前北京时间。"
                     return
                 }
-                let iso = ISO8601DateFormatter()
-                iso.formatOptions = [.withInternetDateTime]
-                scheduledISO = iso.string(from: date)
+                scheduledISO = BeijingTime.isoUTCString(from: date)
             } else if hasExistingCycle {
                 errorText = "此账号已有连续预约，请先停止现有预约。"
                 return

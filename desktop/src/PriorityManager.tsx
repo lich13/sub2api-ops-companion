@@ -1,5 +1,6 @@
 import { useEffectEvent } from "react";
 import {
+  memo,
   useEffect,
   useMemo,
   useRef,
@@ -66,7 +67,7 @@ const taskLabels: Record<string, string> = {
 };
 const taskPath = (id: string, summary = false) =>
   `/account-priority-orders/${id}?schema=2${summary ? "&details=0" : ""}`;
-export default function PriorityManager(props: Props) {
+function PriorityManagerImpl(props: Props) {
   const { active, online, connectionKey } = props;
   const [view, setView] = useState<PriorityView | null>(null);
   const [drafts, setDrafts] = useState<Drafts>({}),
@@ -94,6 +95,7 @@ export default function PriorityManager(props: Props) {
     viewRef = useRef(view),
     dragRef = useRef(drag);
   const lists = useRef(new Map<string, HTMLOListElement>());
+  const listScrollOffsets = useRef(new Map<string, number>());
   const pointer = useRef<
     (Drag & { ready: boolean; timer?: ReturnType<typeof setTimeout> }) | null
   >(null);
@@ -273,6 +275,7 @@ export default function PriorityManager(props: Props) {
     setNotices({});
     setError("");
     setSelected("");
+    listScrollOffsets.current.clear();
     stopDrag();
   }, [connectionKey]);
   useEffect(() => {
@@ -930,9 +933,22 @@ export default function PriorityManager(props: Props) {
               <ol
                 className={`priority-list${s.parallelism > 1 ? " has-parallel-slots" : ""}`}
                 aria-label={`${priorityPlatformName(platform)} 账号顺序`}
+                onScroll={(e) => {
+                  listScrollOffsets.current.set(
+                    platform,
+                    e.currentTarget.scrollTop,
+                  );
+                }}
                 ref={(node) => {
-                  if (node) lists.current.set(platform, node);
-                  else lists.current.delete(platform);
+                  if (node) {
+                    lists.current.set(platform, node);
+                    const savedTop = listScrollOffsets.current.get(platform);
+                    if (savedTop && node.scrollTop !== savedTop) {
+                      node.scrollTop = savedTop;
+                    }
+                  } else {
+                    lists.current.delete(platform);
+                  }
                 }}
               >
                 {lanes
@@ -1216,3 +1232,14 @@ export default function PriorityManager(props: Props) {
     </section>
   );
 }
+
+const PriorityManager = memo(
+  PriorityManagerImpl,
+  (prev, next) =>
+    !prev.active &&
+    !next.active &&
+    prev.connectionKey === next.connectionKey &&
+    prev.online === next.online &&
+    prev.accounts === next.accounts,
+);
+export default PriorityManager;

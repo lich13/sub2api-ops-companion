@@ -240,4 +240,48 @@ describe("durable operations", () => {
     expect(getOperations()).toEqual([]);
     expect(api).toHaveBeenCalledTimes(1);
   });
+  it("indexes pending operations per account with stable slice references and caches account models per connection", async () => {
+    const { getPendingAccountOperations, setOperations } =
+      await import("./accountOperations");
+    const { bindAccountModelsConnection, readAccountModels } =
+      await import("./accountModels");
+    const { BridgeError } = await import("./bridgeError");
+
+    setOperations([{ ...job, id: "op-1", account_id: 421, status: "running" }]);
+    const list421 = getPendingAccountOperations(421);
+    const empty999 = getPendingAccountOperations(999);
+    expect(list421).toHaveLength(1);
+    expect(empty999).toHaveLength(0);
+
+    // Updating another account keeps account 421's array reference identical (`===`)
+    setOperations([
+      { ...job, id: "op-1", account_id: 421, status: "running" },
+      { ...job, id: "op-2", account_id: 777, status: "queued" },
+    ]);
+    expect(getPendingAccountOperations(421)).toBe(list421);
+    expect(getPendingAccountOperations(999)).toBe(empty999);
+
+    const cleanup = bindAccountModelsConnection(
+      "https://a.example.invalid:true:1",
+    );
+    vi.mocked(api).mockResolvedValueOnce([
+      { id: "gpt-5.4", display_name: "GPT-5.4" },
+    ]);
+    const first = await readAccountModels(421, false);
+    const second = await readAccountModels(421, false);
+    expect(second).toBe(first);
+    expect(api).toHaveBeenCalledTimes(1);
+
+    vi.mocked(api).mockRejectedValueOnce(
+      new BridgeError({ code: "model_directory_revoked", message: "授权失效" }),
+    );
+    await expect(readAccountModels(421, true)).rejects.toThrow("授权失效");
+
+    vi.mocked(api).mockResolvedValueOnce([
+      { id: "gpt-5.4-mini", display_name: "Mini" },
+    ]);
+    const reloaded = await readAccountModels(421, false);
+    expect(reloaded[0].id).toBe("gpt-5.4-mini");
+    cleanup();
+  });
 });

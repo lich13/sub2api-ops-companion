@@ -20,6 +20,7 @@ public struct AccountModalHostView: View {
     public let destination: AccountModalDestination
     public let onDeletedIds: (Set<Int>) -> Void
     public let onClose: () -> Void
+    @State private var backdropGuard = ModalBackdropGuard()
 
     public init(
         store: AppStore,
@@ -38,37 +39,59 @@ public struct AccountModalHostView: View {
             DS.backdrop
                 .ignoresSafeArea()
                 .onTapGesture {
-                    // The creation form guards unsaved input and in-flight submissions itself.
-                    if case .addAccount = destination { return }
-                    onClose()
+                    backdropGuard.attemptDismiss(defaultClose: onClose)
                 }
 
-            switch destination {
-            case .addAccount:
-                AccountCreationSheet(store: store, onClose: onClose)
-            case .keyQuotaSettings(let target):
-                KeyQuotaSettingsSheet(store: store, targetAccount: target, onClose: onClose)
-            case .templates(let target):
-                AccountTemplatesSheet(store: store, targetAccount: target, onClose: onClose)
-            case .testConnection(let acc):
-                TestDialogSheet(account: acc, store: store, onClose: onClose)
-            case .modelTest(let acc):
-                ModelTestSheet(account: acc, store: store, onClose: onClose)
-            case .modelDetection(let acc):
-                ModelDetectionSheet(account: acc, store: store, onClose: onClose)
-            case .keepalive(let acc):
-                KeepaliveSheet(account: acc, store: store, onClose: onClose)
-            case .reauthorize(let acc):
-                ReauthorizeAccountSheet(account: acc, store: store, onClose: onClose)
-            case .accountSettings(let acc, let tab):
-                AccountSettingsSheet(account: acc, store: store, initialTab: tab, onClose: onClose)
-            case .deleteAccounts(let accs):
-                DeleteAccountsSheet(accounts: accs, store: store, onDeleted: onDeletedIds, onClose: onClose)
-            case .batchCredits(let accs):
-                ResetCreditsSheet(accounts: accs, store: store, onClose: onClose)
-            case .batchProxy(let accs):
-                ProxyBatchSheet(accounts: accs, store: store, onClose: onClose)
-            }
+            modalDestinationView
+                .id(destinationKey)
+                .environment(\.modalBackdropGuard, backdropGuard)
+        }
+    }
+
+    private var destinationKey: String {
+        switch destination {
+        case .addAccount: return "addAccount"
+        case .keyQuotaSettings(let target): return "keyQuota-\(target?.id ?? 0)"
+        case .templates(let target): return "templates-\(target?.id ?? 0)"
+        case .testConnection(let acc): return "testConnection-\(acc.id)"
+        case .modelTest(let acc): return "modelTest-\(acc.id)"
+        case .modelDetection(let acc): return "modelDetection-\(acc.id)"
+        case .keepalive(let acc): return "keepalive-\(acc.id)"
+        case .reauthorize(let acc): return "reauthorize-\(acc.id)"
+        case .accountSettings(let acc, let tab): return "accountSettings-\(acc.id)-\(tab)"
+        case .deleteAccounts(let accs): return "deleteAccounts-\(accs.map(\.id))"
+        case .batchCredits(let accs): return "batchCredits-\(accs.map(\.id))"
+        case .batchProxy(let accs): return "batchProxy-\(accs.map(\.id))"
+        }
+    }
+
+    @ViewBuilder
+    private var modalDestinationView: some View {
+        switch destination {
+        case .addAccount:
+            AccountCreationSheet(store: store, onClose: onClose)
+        case .keyQuotaSettings(let target):
+            KeyQuotaSettingsSheet(store: store, targetAccount: target, onClose: onClose)
+        case .templates(let target):
+            AccountTemplatesSheet(store: store, targetAccount: target, onClose: onClose)
+        case .testConnection(let acc):
+            TestDialogSheet(account: acc, store: store, onClose: onClose)
+        case .modelTest(let acc):
+            ModelTestSheet(account: acc, store: store, onClose: onClose)
+        case .modelDetection(let acc):
+            ModelDetectionSheet(account: acc, store: store, onClose: onClose)
+        case .keepalive(let acc):
+            KeepaliveSheet(account: acc, store: store, onClose: onClose)
+        case .reauthorize(let acc):
+            ReauthorizeAccountSheet(account: acc, store: store, onClose: onClose)
+        case .accountSettings(let acc, let tab):
+            AccountSettingsSheet(account: acc, store: store, initialTab: tab, onClose: onClose)
+        case .deleteAccounts(let accs):
+            DeleteAccountsSheet(accounts: accs, store: store, onDeleted: onDeletedIds, onClose: onClose)
+        case .batchCredits(let accs):
+            ResetCreditsSheet(accounts: accs, store: store, onClose: onClose)
+        case .batchProxy(let accs):
+            ProxyBatchSheet(accounts: accs, store: store, onClose: onClose)
         }
     }
 }

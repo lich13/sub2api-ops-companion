@@ -1,6 +1,6 @@
-# Sub2Ops 0.1.104
+# Sub2Ops 0.1.105
 
-- 「Sub2API 配置」目录与说明同步至上游 Sub2API `0.2.25`（`34899726`）：`concurrency.ping_interval` 支持 `0`（关闭保活 ping）或 `5..30` 秒，`gateway.request_body_memory_budget_bytes` 对齐自适应内存上限 1/4（不低于 1 GiB）的默认行为，`pricing.override_file` 补充 DeepSeek 显式覆写最终计费说明，同步脚本补齐源码行号锚点自动定位与校验。
-- 「添加账号」目录与创建流程同步至 Sub2API `0.2.25`：支持 API Key 账号 `upstream_billing_group_sync_enabled`（联动上游计费额度探测）与第二步手动「同步上游分组名称与备注」（`POST /api/desktop/v1/account-creation/upstream-group`）、OpenAI 透传渠道 `extra.openai_passthrough_model_filter`、自定义请求头魔法变量（`{{user_id}}`、`{{api_key_id}}`、`{{group_id}}`、`{{request_id}}`）校验及快捷插入，并更新 Claude 5.2、GPT-6.2 与 Gemini 4 模型及映射预设。
-- 修复 `basis: "sample_family"` 模型测试自动处置与「校验中 / 已复核」检测日志在客户端的展示与解码，修复「Sub2API 配置」清空数值草稿误提交旧整数、切换连接残留旧更新横幅及 macOS「优先级」保存失败提示闪退的问题；统一 `sub2ops-protocol` 生成双端模型测试与检测日志结构，清理重复错误文本清洗与历史失效配置引用，并合并 Rust 依赖更新（含 `webpki-roots 1.0.12`）。
-- 请先升级 Companion 与配置宿主，再更新 macOS 和 Android 客户端；沿用现有业务数据库与运行状态格式，回退 0.1.103 可直接使用保留镜像与当前数据。
+- 全链路响应速度优化：服务端 `/snapshot` 预生成 Gzip 字节流并缓存未变更账号版本摘要，双端与服务端开启 `HTTP/2`、`TCP_NODELAY` 及 Nginx 反代长连接复用；写操作队列（账号操作与优先级排序）改为即时唤醒加自适应退避轮询，只读探测请求不再误刷快照缓存，使用记录首页合并元数据与汇总查询，模型测试与目录拉取支持按代理复用连接池。
+- 客户端交互、拆包与桥接提速：修复 macOS 后台操作轮询每 2 秒被重置导致空闲退避失效的问题，C-ABI 桥接改为预序列化快照加内容指纹去重并在串行后台队列解码，隐藏快捷面板暂停无谓视图刷新；下沉账号与记录表格行悬停状态、重写零异常北京时间解析格式化，Android 与 Web 前端按需拆分首屏模块并支持「分组 / 优先级」首次访问后保活。
+- 草稿安全修复与历史包袱清理：修复 macOS 切页丢失「分组 / 优先级」未保存草稿、点击弹窗遮罩绕过脏检查及输入法组合态按 `Escape` 误关弹窗的问题，修复传统滚动条下账号页顶部时间右侧裁切；移除服务端与宿主无生产调用的死接口、深拷贝状态读取、冷启动冗余 LaunchAgent 写入、空转事件监听及多处轮询静默吞错。
+- 请先升级 Companion 与配置宿主，再更新 macOS 和 Android 客户端；沿用现有 HTTP 接口、业务数据库与运行状态格式，回退 0.1.104 可直接使用保留镜像与当前数据。

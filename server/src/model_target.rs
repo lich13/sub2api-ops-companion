@@ -247,7 +247,25 @@ pub(crate) async fn connection(
         return Err(Error::new(422, "上游地址无效"));
     }
     let (version, agent) = if platform == "openai" {
-        let rows=actions.queries.db.all("SELECT key,value FROM settings WHERE key IN ('openai_codex_user_agent','openai_codex_client_version','openai_codex_client_version_synced')",&[]).await.unwrap_or_default();
+        let rows = match actions
+            .queries
+            .db
+            .all(
+                "SELECT key,value FROM settings WHERE key IN ('openai_codex_user_agent','openai_codex_client_version','openai_codex_client_version_synced')",
+                &[],
+            )
+            .await
+        {
+            Ok(rows) => rows,
+            Err(error) => {
+                tracing::warn!(
+                    category = "model_target",
+                    status = error.status.as_u16(),
+                    "codex_identity_settings_query_failed"
+                );
+                Vec::new()
+            }
+        };
         let values = rows
             .into_iter()
             .filter_map(|row| {

@@ -227,9 +227,9 @@ impl Templates {
         }
     }
     pub fn data(&self) -> Result<Value> {
-        let original = self.store.read()?;
-        let normalized = normalize(original.clone())?;
-        if normalized == original {
+        let original = self.store.read_shared()?;
+        let normalized = normalize((*original).clone())?;
+        if normalized == *original {
             return Ok(normalized);
         }
         self.store.transaction(|current| {

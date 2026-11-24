@@ -7,9 +7,16 @@ private final class NonActivatingQuickPanel: NSPanel {
 }
 
 @MainActor
+@Observable
+final class QuickPanelVisibilityGate {
+    var isVisible: Bool = false
+}
+
+@MainActor
 public final class QuickPanelController: NSObject, NSWindowDelegate {
     public private(set) var panel: NSPanel?
     private let store: AppStore
+    private let visibilityGate = QuickPanelVisibilityGate()
     private var lifecycle = PanelBlurLifecycle()
     private var lastAnchor: CGPoint?
     private weak var lastScreen: NSScreen?
@@ -61,6 +68,7 @@ public final class QuickPanelController: NSObject, NSWindowDelegate {
 
         let rootView = QuickPanelContainerView(
             store: store,
+            gate: visibilityGate,
             onContentHeightChange: { [weak self] height in
                 self?.updateContentHeight(height)
             }
@@ -76,6 +84,8 @@ public final class QuickPanelController: NSObject, NSWindowDelegate {
     public func showPanel(anchorBottomRight: CGPoint, screen: NSScreen?) {
         RustBridge.shared.panelTrace("show_begin", "")
         let p = ensurePanel()
+        visibilityGate.isVisible = true
+        p.contentView?.layoutSubtreeIfNeeded()
         lifecycle.show(focused: false)
         lifecycle.showing = true
         lastAnchor = anchorBottomRight
@@ -138,6 +148,7 @@ public final class QuickPanelController: NSObject, NSWindowDelegate {
         lifecycle.show(focused: false)
         removeGlobalClickMonitor()
         panel?.orderOut(nil)
+        visibilityGate.isVisible = false
         RustBridge.shared.panelTrace("hidden", reason)
         onVisibilityChanged?()
     }
@@ -218,9 +229,15 @@ public final class QuickPanelController: NSObject, NSWindowDelegate {
 
 struct QuickPanelContainerView: View {
     let store: AppStore
+    let gate: QuickPanelVisibilityGate
     let onContentHeightChange: @MainActor (CGFloat) -> Void
 
     var body: some View {
-        QuickPanelRootView(store: store, onContentHeightChange: onContentHeightChange)
+        if gate.isVisible {
+            QuickPanelRootView(store: store, onContentHeightChange: onContentHeightChange)
+        } else {
+            Color.clear
+                .allowsHitTesting(false)
+        }
     }
 }

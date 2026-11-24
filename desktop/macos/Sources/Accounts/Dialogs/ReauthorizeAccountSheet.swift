@@ -218,7 +218,9 @@ public struct ReauthorizeAccountSheet: View {
             .buttonStyle(LinearButtonStyle(variant: .primary))
             .disabled(!store.state.online || busy || submitted || session == nil || parsedCode.isEmpty || !inputError.isEmpty)
         }
-        .sub2opsDialogFocus {
+        .sub2opsDialogFocus(
+            canBackdropDismiss: !busy && session == nil && rawInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        ) {
             if !busy { onClose() }
         }
     }

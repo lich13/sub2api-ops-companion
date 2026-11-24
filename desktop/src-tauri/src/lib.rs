@@ -66,11 +66,12 @@ struct ViewState {
     foreground: bool,
     initializing: bool,
     connection_revision: u64,
+    snapshot_revision: u64,
     connected: bool,
     online: bool,
     error: String,
     upstream_connection: Option<Value>,
-    snapshot: Option<Arc<Value>>,
+    snapshot: Option<Arc<Box<serde_json::value::RawValue>>>,
     preferences: Preferences,
 }
 
@@ -208,6 +209,47 @@ fn save_preferences(path: &Path, value: &Preferences) -> Result<(), String> {
     Ok(())
 }
 
+async fn save_preferences_async(path: &Path, value: &Preferences) -> Result<(), String> {
+    let owned_path = path.to_path_buf();
+    let owned_value = value.clone();
+    tauri::async_runtime::spawn_blocking(move || save_preferences(&owned_path, &owned_value))
+        .await
+        .map_err(|_| "无法保存设置".to_string())?
+}
+
+struct Fnv1aHasher(u64);
+
+impl Default for Fnv1aHasher {
+    fn default() -> Self {
+        Self(0xcbf29ce484222325)
+    }
+}
+
+impl std::io::Write for Fnv1aHasher {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        for &byte in buf {
+            self.0 ^= u64::from(byte);
+            self.0 = self.0.wrapping_mul(0x100000001b3);
+        }
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn encode_snapshot(mut data: Value) -> Option<(u64, Arc<Box<serde_json::value::RawValue>>)> {
+    let observed = data.as_object_mut().and_then(|m| m.remove("observed_at"));
+    let mut hasher = Fnv1aHasher::default();
+    serde_json::to_writer(&mut hasher, &data).ok()?;
+    let revision = if hasher.0 == 0 { 1 } else { hasher.0 };
+    if let (Some(map), Some(obs)) = (data.as_object_mut(), observed) {
+        map.insert("observed_at".to_string(), obs);
+    }
+    let raw = serde_json::value::to_raw_value(&data).ok()?;
+    Some((revision, Arc::new(raw)))
+}
+
 fn publish(_app: &tauri::AppHandle, value: &ViewState) {
     // Android's window visibility getter always returns false. Its suspended /
     // resumed events already control polling and carry foreground in ViewState.
@@ -220,10 +262,16 @@ fn publish(_app: &tauri::AppHandle, value: &ViewState) {
 fn apply_refresh(view: &mut ViewState, result: Result<Value, HttpFailure>) {
     match result {
         Ok(data) => {
-            view.snapshot = Some(Arc::new(data));
-            view.online = true;
-            view.error.clear();
-            view.upstream_connection = None;
+            if let Some((rev, raw)) = encode_snapshot(data) {
+                view.snapshot_revision = rev;
+                view.snapshot = Some(raw);
+                view.online = true;
+                view.error.clear();
+                view.upstream_connection = None;
+            } else {
+                view.online = false;
+                view.error = "快照序列化失败".into();
+            }
         }
         Err(error) => {
             view.online = false;
@@ -351,41 +399,62 @@ async fn connect(
             (trimmed.to_string(), true)
         };
         let _gate = state.network.lock().await;
-        let data = active_read(
-            &state,
-            http_detailed(
-                &state.client,
-                &base,
-                &resolved_key,
-                "GET",
-                "/capabilities",
-                None,
-                &state.path.with_file_name("network-diagnostics.log"),
+        let log_path = state.path.with_file_name("network-diagnostics.log");
+        let (cap_res, snap_res) = tokio::join!(
+            active_read(
+                &state,
+                http_detailed(
+                    &state.client,
+                    &base,
+                    &resolved_key,
+                    "GET",
+                    "/capabilities",
+                    None,
+                    &log_path,
+                ),
             ),
-        )
-        .await?;
+            active_read(
+                &state,
+                http_detailed(
+                    &state.client,
+                    &base,
+                    &resolved_key,
+                    "GET",
+                    "/snapshot",
+                    None,
+                    &log_path,
+                ),
+            ),
+        );
+        let data = cap_res?;
         if should_write {
             credentials::write(app.clone(), base.clone(), resolved_key.clone()).await?;
         }
-        let mut view = state.view.lock().await;
-        let mut prefs = view.preferences.clone();
+        let mut prefs = state.view.lock().await.preferences.clone();
         prefs.base_url = base.clone();
         upsert_connection(&mut prefs, &base, name.as_deref());
-        save_preferences(&state.path, &prefs)?;
+        save_preferences_async(&state.path, &prefs).await?;
+        let mut view = state.view.lock().await;
         view.preferences = prefs;
         view.connection_revision = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
         view.connected = true;
         view.snapshot = None;
+        view.snapshot_revision = 0;
         view.error.clear();
-        view.upstream_connection = data.get("upstream_connection").cloned();
+        let cap_upstream = data.get("upstream_connection").cloned();
+        apply_refresh(&mut view, snap_res);
+        if !view.online && view.upstream_connection.is_none() {
+            view.upstream_connection = cap_upstream;
+        }
         *state.key.lock().await = Some(resolved_key);
+        #[cfg(target_os = "macos")]
+        macos_bridge::publish_tooltip(&view);
         publish(&app, &view);
         Ok(())
     }
     .await;
     *state.connecting_url.lock().await = None;
     connect_result?;
-    refresh_inner(&app, &state).await;
     Ok(())
 }
 
@@ -397,19 +466,22 @@ async fn save_connection_profile(
     name: String,
 ) -> Result<(), HttpFailure> {
     let target = normalize_base(&base_url)?;
-    let mut view = state.view.lock().await;
-    if !view
-        .preferences
-        .connections
-        .iter()
-        .any(|item| item.base_url == target)
-        && view.preferences.base_url != target
-    {
-        return Err("未找到要更新的实例配置".into());
-    }
-    let mut prefs = view.preferences.clone();
+    let mut prefs = {
+        let view = state.view.lock().await;
+        if !view
+            .preferences
+            .connections
+            .iter()
+            .any(|item| item.base_url == target)
+            && view.preferences.base_url != target
+        {
+            return Err("未找到要更新的实例配置".into());
+        }
+        view.preferences.clone()
+    };
     upsert_connection(&mut prefs, &target, Some(&name));
-    save_preferences(&state.path, &prefs)?;
+    save_preferences_async(&state.path, &prefs).await?;
+    let mut view = state.view.lock().await;
     view.preferences = prefs;
     publish(&app, &view);
     Ok(())
@@ -464,7 +536,7 @@ where
     if prefs.base_url == target {
         prefs.base_url.clear();
     }
-    save_preferences(&state.path, &prefs)?;
+    save_preferences_async(&state.path, &prefs).await?;
     view.preferences = prefs.clone();
     Ok(prefs)
 }
@@ -496,13 +568,16 @@ async fn disconnect(
     }
     *state.key.lock().await = None;
     view.connection_revision = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
+    view.snapshot_revision = 0;
     view.connected = false;
     view.online = false;
     view.snapshot = None;
     view.error.clear();
     view.upstream_connection = None;
-    view.preferences.base_url.clear();
-    save_preferences(&state.path, &view.preferences)?;
+    let mut prefs = view.preferences.clone();
+    prefs.base_url.clear();
+    save_preferences_async(&state.path, &prefs).await?;
+    view.preferences = prefs;
     publish(&app, &view);
     Ok(())
 }
@@ -631,7 +706,7 @@ async fn preferences(
     if let Some(columns) = record_columns {
         prefs.record_columns = Some(normalize_record_columns(columns));
     }
-    save_preferences(&state.path, &prefs)?;
+    save_preferences_async(&state.path, &prefs).await?;
     view.preferences = prefs;
     publish(&app, &view);
     Ok(())
@@ -895,6 +970,7 @@ pub fn run() {
         let state = Arc::new(Runtime {
             client: reqwest::Client::builder()
                 .timeout(Duration::from_secs(10))
+                .tcp_nodelay(true)
                 .redirect(reqwest::redirect::Policy::none())
                 .retry(reqwest::retry::never())
                 .build()?,
@@ -918,16 +994,8 @@ pub fn run() {
             path,
         });
         app.manage(state.clone());
-        #[cfg(desktop)]
-        {
-            // Re-register an existing LaunchAgent with the new arguments without
-            // changing the user's preference or enabling a disabled login item.
-            if app.autolaunch().is_enabled()? {
-                app.autolaunch().enable()?;
-            }
-            #[cfg(target_os = "macos")]
-            macos_bridge::init(app.handle().clone());
-        }
+        #[cfg(target_os = "macos")]
+        macos_bridge::init(app.handle().clone());
         let handle = app.handle().clone();
         tauri::async_runtime::spawn(async move {
             let base = state.view.lock().await.preferences.base_url.clone();
@@ -1004,8 +1072,6 @@ pub fn run() {
     ]);
     #[cfg(target_os = "macos")]
     let mut cached_state: Option<Arc<Runtime>> = None;
-    #[cfg(target_os = "macos")]
-    let mut activity_checked = false;
     builder
         .build(tauri::generate_context!())
         .expect("Sub2Ops failed to start")
@@ -1014,20 +1080,13 @@ pub fn run() {
             {
                 let state = cached_state
                     .get_or_insert_with(|| _app.state::<Arc<Runtime>>().inner().clone());
-                match &_event {
+                if matches!(
+                    &_event,
                     tauri::RunEvent::Ready
-                    | tauri::RunEvent::Resumed
-                    | tauri::RunEvent::Reopen { .. } => {
-                        sync_record_activity_with(_app, state);
-                        activity_checked = true;
-                    }
-                    tauri::RunEvent::MainEventsCleared => {
-                        if !activity_checked {
-                            sync_record_activity_with(_app, state);
-                        }
-                        activity_checked = false;
-                    }
-                    _ => {}
+                        | tauri::RunEvent::Resumed
+                        | tauri::RunEvent::Reopen { .. }
+                ) {
+                    sync_record_activity_with(_app, state);
                 }
                 if let tauri::RunEvent::Reopen { .. } = _event {
                     macos_bridge::emit_reopen();
@@ -1135,15 +1194,27 @@ mod tests {
         let mut view = ViewState::default();
         let first = serde_json::json!({"observed_at":"2026-09-25T10:00:00Z","accounts":[{"id":1}]});
         apply_refresh(&mut view, Ok(first.clone()));
+        let first_rev = view.snapshot_revision;
+        assert_ne!(first_rev, 0);
         apply_refresh(&mut view, Err("网关暂不可用 [502]".into()));
         assert!(!view.online);
-        assert_eq!(view.snapshot.as_deref(), Some(&first));
+        assert_eq!(
+            serde_json::from_str::<Value>(view.snapshot.as_ref().unwrap().get()).unwrap(),
+            first
+        );
         let cloned = view.clone();
         assert!(Arc::ptr_eq(
             view.snapshot.as_ref().unwrap(),
             cloned.snapshot.as_ref().unwrap()
         ));
         assert_eq!(serde_json::to_value(&cloned).unwrap()["snapshot"], first);
+
+        // Changing only observed_at keeps the exact same snapshot_revision
+        let same_payload =
+            serde_json::json!({"observed_at":"2026-09-25T10:00:02Z","accounts":[{"id":1}]});
+        apply_refresh(&mut view, Ok(same_payload));
+        assert_eq!(view.snapshot_revision, first_rev);
+
         let connection = serde_json::json!({"state":"auth_rejected"});
         apply_refresh(
             &mut view,
@@ -1156,10 +1227,14 @@ mod tests {
             }),
         );
         assert_eq!(view.upstream_connection, Some(connection));
-        let next = serde_json::json!({"observed_at":"2026-09-25T10:00:02Z","accounts":[{"id":2}]});
+        let next = serde_json::json!({"observed_at":"2026-09-25T10:00:04Z","accounts":[{"id":2}]});
         apply_refresh(&mut view, Ok(next.clone()));
         assert!(view.online && view.error.is_empty());
-        assert_eq!(view.snapshot.as_deref(), Some(&next));
+        assert_ne!(view.snapshot_revision, first_rev);
+        assert_eq!(
+            serde_json::from_str::<Value>(view.snapshot.as_ref().unwrap().get()).unwrap(),
+            next
+        );
     }
 
     #[test]

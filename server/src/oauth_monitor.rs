@@ -99,9 +99,6 @@ impl Monitor {
             .map(|workers| workers.contains_key(&id))
             .unwrap_or(true)
     }
-    pub fn state(&self) -> Result<Value> {
-        self.store.snapshot()
-    }
     pub fn shared_state(&self) -> Result<Arc<Value>> {
         self.store.shared_snapshot()
     }

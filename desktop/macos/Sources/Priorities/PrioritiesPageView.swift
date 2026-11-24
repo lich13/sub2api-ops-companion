@@ -177,6 +177,11 @@ public struct PrioritiesPageView: View {
         .onChange(of: totalChangesCount) { _, count in
             store.priorityChangesCount = count
         }
+        .onChange(of: store.page) { _, next in
+            if next == .priorities && store.state.online && !loading && submittingPlatform.isEmpty {
+                Task { await readPriorities() }
+            }
+        }
         .task(id: "\(store.connectionKey):\(store.state.online)") {
             if store.state.online {
                 await readPriorities()

@@ -1427,7 +1427,7 @@ async fn detection_scheduler_consumes_duplicate_clues_and_honors_exact_persisted
         first_control["next_at"],
         datetime(harness.now() + Duration::seconds(cooldown))
     );
-    let detection_state = harness.runtime().detection.store.read().unwrap();
+    let detection_state = harness.runtime().detection.store.read_shared().unwrap();
     assert!(detection_state["consumed"].get(&first_clue).is_some());
     assert!(detection_state["consumed"].get(&duplicate_clue).is_some());
     assert_eq!(
@@ -1457,7 +1457,7 @@ async fn detection_scheduler_consumes_duplicate_clues_and_honors_exact_persisted
     );
 
     let consumed_before_restart =
-        harness.runtime().detection.store.read().unwrap()["consumed"].clone();
+        harness.runtime().detection.store.read_shared().unwrap()["consumed"].clone();
     harness.restart_runtime().await;
     harness
         .runtime()
@@ -1474,7 +1474,7 @@ async fn detection_scheduler_consumes_duplicate_clues_and_honors_exact_persisted
         .unwrap();
     harness.runtime().detection.tick().await.unwrap();
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 1);
-    let after_reinjection = harness.runtime().detection.store.read().unwrap();
+    let after_reinjection = harness.runtime().detection.store.read_shared().unwrap();
     assert_eq!(after_reinjection["consumed"], consumed_before_restart);
     assert_eq!(
         harness
@@ -1491,8 +1491,8 @@ async fn detection_scheduler_consumes_duplicate_clues_and_honors_exact_persisted
     harness.runtime().detection.tick().await.unwrap();
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 1);
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()]
-            ["started_at"],
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+            [id.to_string()]["started_at"],
         datetime(reference_time())
     );
 
@@ -1520,8 +1520,8 @@ async fn detection_scheduler_consumes_duplicate_clues_and_honors_exact_persisted
     assert_eq!(second_job["triggers"], json!([new_clue]));
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 2);
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()]
-            ["started_at"],
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+            [id.to_string()]["started_at"],
         datetime(reference_time() + Duration::seconds(cooldown))
     );
     assert!(harness.mock.unexpected().is_empty());
@@ -1575,7 +1575,7 @@ async fn cooling_clues_are_consumed_without_later_replay() {
         })
         .unwrap();
     harness.runtime().detection.tick().await.unwrap();
-    let after_cooling_tick = harness.runtime().detection.store.read().unwrap();
+    let after_cooling_tick = harness.runtime().detection.store.read_shared().unwrap();
     assert!(after_cooling_tick["consumed"].get(&error_clue).is_some());
     assert!(after_cooling_tick["consumed"].get(&slow_clue).is_some());
     let capacity_state = harness
@@ -1595,8 +1595,8 @@ async fn cooling_clues_are_consumed_without_later_replay() {
     harness.runtime().detection.tick().await.unwrap();
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 1);
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()]
-            ["job_id"],
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+            [id.to_string()]["job_id"],
         job_id
     );
     assert!(harness.mock.unexpected().is_empty());
@@ -1637,7 +1637,7 @@ async fn unavailable_candidate_rechecks_after_one_minute_and_resumes_a_full_inte
     assert_eq!(harness.mock.count("GET", &models_path), models_before_tick);
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
     assert!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"]
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
             .get(id.to_string())
             .is_none()
     );
@@ -1735,7 +1735,7 @@ async fn missing_fingerprint_target_pauses_candidate_without_dispatch_or_recheck
     );
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
     assert!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"]
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
             .get(id.to_string())
             .is_none()
     );
@@ -1768,7 +1768,7 @@ async fn all_automatic_sources_and_models_share_the_same_exact_cooldown_boundary
         .await;
     assert_eq!(first_job["status"], "completed");
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 1);
-    let started = harness.runtime().detection.store.read().unwrap()["automatic_starts"]
+    let started = harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
         [id.to_string()]
     .clone();
     assert_eq!(started["job_id"], first_job["id"]);
@@ -1804,7 +1804,8 @@ async fn all_automatic_sources_and_models_share_the_same_exact_cooldown_boundary
         );
         assert_eq!(harness.mock.count("POST", "/v1/responses"), 1);
         assert_eq!(
-            harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()],
+            harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+                [id.to_string()],
             started
         );
     }
@@ -1939,8 +1940,8 @@ async fn all_automatic_sources_and_models_share_the_same_exact_cooldown_boundary
         manual_request_count + 1
     );
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()]
-            ["started_at"],
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+            [id.to_string()]["started_at"],
         datetime(reference_time() + Duration::seconds(cooldown))
     );
     assert!(harness.mock.unexpected().is_empty());
@@ -1976,7 +1977,7 @@ async fn failed_dispatched_job_still_owns_cooldown_and_retry_keeps_original_time
     assert_eq!(failed["status"], "failed");
     assert_eq!(failed["error_code"], "invalid_model_or_request");
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 1);
-    let first_start = harness.runtime().detection.store.read().unwrap()["automatic_starts"]
+    let first_start = harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
         [id.to_string()]
     .clone();
     assert_eq!(first_start["job_id"], failed_job_id);
@@ -1995,7 +1996,8 @@ async fn failed_dispatched_job_still_owns_cooldown_and_retry_keeps_original_time
         .unwrap();
     harness.restart_runtime().await;
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()],
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+            [id.to_string()],
         first_start
     );
     assert_eq!(
@@ -2013,7 +2015,8 @@ async fn failed_dispatched_job_still_owns_cooldown_and_retry_keeps_original_time
     assert!(cooling.is_null());
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 1);
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()],
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+            [id.to_string()],
         first_start
     );
 
@@ -2030,8 +2033,8 @@ async fn failed_dispatched_job_still_owns_cooldown_and_retry_keeps_original_time
     assert_eq!(completed["status"], "completed");
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 2);
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()]
-            ["started_at"],
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+            [id.to_string()]["started_at"],
         datetime(reference_time() + Duration::seconds(cooldown))
     );
     assert!(harness.mock.unexpected().is_empty());
@@ -2067,7 +2070,8 @@ async fn retryable_model_transport_failure_preserves_first_dispatch_timestamp() 
         attempts as usize
     );
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()],
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+            [id.to_string()],
         json!({"job_id":job_id,"started_at":datetime(reference_time())})
     );
     assert_eq!(
@@ -2557,7 +2561,7 @@ async fn automatic_first_group_verdict_confirms_schedulable_write_before_bark_an
         .unwrap();
     assert_eq!(resumed_disposition["status"], "completed");
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["disposition_notifications"]
+        harness.runtime().detection.store.read_shared().unwrap()["disposition_notifications"]
             .as_object()
             .unwrap()
             .len(),
@@ -2570,7 +2574,7 @@ async fn automatic_first_group_verdict_confirms_schedulable_write_before_bark_an
         1
     );
     let consumed_clue =
-        harness.runtime().detection.store.read().unwrap()["consumed"][&clue_id].clone();
+        harness.runtime().detection.store.read_shared().unwrap()["consumed"][&clue_id].clone();
     harness
         .runtime()
         .detection
@@ -2586,7 +2590,7 @@ async fn automatic_first_group_verdict_confirms_schedulable_write_before_bark_an
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 1);
     assert_eq!(harness.mock.count("POST", "/push"), 1);
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["consumed"][&clue_id],
+        harness.runtime().detection.store.read_shared().unwrap()["consumed"][&clue_id],
         consumed_clue
     );
     assert!(harness
@@ -3038,8 +3042,8 @@ async fn disposition_response_timeout_verifies_committed_write_without_replay() 
         true
     );
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["disposition_notifications"][&job_id]
-            ["status"],
+        harness.runtime().detection.store.read_shared().unwrap()["disposition_notifications"]
+            [&job_id]["status"],
         "queued"
     );
     assert_eq!(harness.mock.count("POST", "/push"), 0);
@@ -3064,8 +3068,8 @@ async fn disposition_response_timeout_verifies_committed_write_without_replay() 
     );
     assert_eq!(harness.mock.count("POST", "/push"), 0);
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["disposition_notifications"][&job_id]
-            ["status"],
+        harness.runtime().detection.store.read_shared().unwrap()["disposition_notifications"]
+            [&job_id]["status"],
         "queued"
     );
     harness
@@ -3431,7 +3435,7 @@ async fn marked_recheck_waits_for_shared_cooldown_then_clears_mark_without_sched
         .as_str()
         .unwrap()
         .contains("调度保持开启"));
-    let delivered_event = harness.runtime().detection.store.read().unwrap()
+    let delivered_event = harness.runtime().detection.store.read_shared().unwrap()
         ["disposition_notifications"][&job_id]
         .clone();
     assert_eq!(delivered_event["status"], "delivered");
@@ -3464,13 +3468,13 @@ async fn marked_recheck_waits_for_shared_cooldown_then_clears_mark_without_sched
         true
     );
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["disposition_notifications"][&job_id]
-            ["status"],
+        harness.runtime().detection.store.read_shared().unwrap()["disposition_notifications"]
+            [&job_id]["status"],
         "delivered"
     );
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()]
-            ["started_at"],
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+            [id.to_string()]["started_at"],
         datetime(reference_time() + Duration::seconds(cooldown - 100))
     );
     assert!(harness.mock.unexpected().is_empty());
@@ -3663,8 +3667,8 @@ async fn failed_first_group_retry_scores_first_sample_separately_from_aggregate(
     assert_eq!(initial_job["report"]["used_outputs"], 2);
     assert!(initial_job["report"]["probability"].as_f64().unwrap() < 0.99);
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 5);
-    let initial_dispatch = harness.runtime().detection.store.read().unwrap()["automatic_starts"]
-        [id.to_string()]
+    let initial_dispatch = harness.runtime().detection.store.read_shared().unwrap()
+        ["automatic_starts"][id.to_string()]
     .clone();
     assert_eq!(initial_dispatch["job_id"], job_id);
     assert_eq!(initial_dispatch["started_at"], datetime(reference_time()));
@@ -3721,7 +3725,8 @@ async fn failed_first_group_retry_scores_first_sample_separately_from_aggregate(
     assert_eq!(completed["groups"][2]["attempts"], 1);
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 6);
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()],
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+            [id.to_string()],
         initial_dispatch
     );
     assert_eq!(
@@ -4195,7 +4200,7 @@ async fn late_recheck_is_rejected_after_mark_change_manual_release_or_schedule_c
         true
     );
     assert!(object_field_is_empty_or_missing(
-        &harness.runtime().detection.store.read().unwrap(),
+        &harness.runtime().detection.store.read_shared().unwrap(),
         "disposition_notifications"
     ));
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
@@ -4309,8 +4314,8 @@ async fn same_recheck_job_id_with_new_completion_time_is_processed_after_retry()
 
     let after = harness.runtime().detection.control(id).unwrap();
     let receipt = after["recheck_recovery"].clone();
-    let event = harness.runtime().detection.store.read().unwrap()["disposition_notifications"]
-        [&job_id]
+    let event = harness.runtime().detection.store.read_shared().unwrap()
+        ["disposition_notifications"][&job_id]
         .clone();
     assert_eq!(after["handled_job"], job_id);
     assert_eq!(
@@ -4365,7 +4370,7 @@ async fn dispatch_history_survives_pruned_job_summaries_and_restart() {
             Ok(())
         })
         .unwrap();
-    let dispatch = harness.runtime().detection.store.read().unwrap()["automatic_starts"]
+    let dispatch = harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
         [id.to_string()]
     .clone();
     assert_eq!(dispatch["job_id"], "fixture-auto-latest");
@@ -4387,7 +4392,8 @@ async fn dispatch_history_survives_pruned_job_summaries_and_restart() {
         .unwrap();
     harness.restart_runtime().await;
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()],
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+            [id.to_string()],
         dispatch
     );
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
@@ -4531,7 +4537,7 @@ async fn missing_result_report_variants_never_clear_marks_or_create_outbox_event
         assert!(harness.runtime().detection.control(id).unwrap()["recheck_recovery"].is_null());
     }
     assert!(object_field_is_empty_or_missing(
-        &harness.runtime().detection.store.read().unwrap(),
+        &harness.runtime().detection.store.read_shared().unwrap(),
         "disposition_notifications"
     ));
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
@@ -4588,7 +4594,7 @@ async fn non_degraded_and_empty_automatic_reports_create_no_disposition_notifica
         account_ids.push(id);
     }
     assert!(object_field_is_empty_or_missing(
-        &harness.runtime().detection.store.read().unwrap(),
+        &harness.runtime().detection.store.read_shared().unwrap(),
         "disposition_notifications"
     ));
     assert_eq!(
@@ -4678,7 +4684,7 @@ async fn non_degraded_and_empty_automatic_reports_create_no_disposition_notifica
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 3);
     assert_eq!(harness.mock.count("POST", "/push"), 0);
     assert!(object_field_is_empty_or_missing(
-        &harness.runtime().detection.store.read().unwrap(),
+        &harness.runtime().detection.store.read_shared().unwrap(),
         "disposition_notifications"
     ));
     assert!(harness.mock.unexpected().is_empty());
@@ -4735,7 +4741,7 @@ async fn automatic_dispatch_registration_failure_never_reaches_upstream() {
     assert_eq!(terminal["status"], "failed");
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
     assert!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"]
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
             .get(id.to_string())
             .is_none()
     );
@@ -4801,7 +4807,7 @@ async fn control_store_failure_before_verdict_leaves_mark_schedule_and_outbox_un
         true
     );
     assert!(object_field_is_empty_or_missing(
-        &harness.runtime().detection.store.read().unwrap(),
+        &harness.runtime().detection.store.read_shared().unwrap(),
         "disposition_notifications"
     ));
     assert_eq!(
@@ -4985,7 +4991,7 @@ async fn capacity_mark_persistence_failure_does_not_write_schedule_or_queue_bark
         0
     );
     assert!(object_field_is_empty_or_missing(
-        &harness.runtime().detection.store.read().unwrap(),
+        &harness.runtime().detection.store.read_shared().unwrap(),
         "disposition_notifications"
     ));
     assert_eq!(harness.mock.count("POST", "/push"), 0);
@@ -5165,7 +5171,7 @@ async fn disposition_outbox_and_bark_receipts_recover_from_local_write_failures(
         "pending"
     );
     assert!(object_field_is_empty_or_missing(
-        &harness.runtime().detection.store.read().unwrap(),
+        &harness.runtime().detection.store.read_shared().unwrap(),
         "disposition_notifications"
     ));
     assert_eq!(harness.mock.count("POST", "/push"), 0);
@@ -5664,8 +5670,8 @@ async fn completed_worker_anchors_interval_from_current_clock_without_catch_up()
         calls_after_first
     );
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()]
-            ["started_at"],
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+            [id.to_string()]["started_at"],
         datetime(reference_time() + Duration::hours(1))
     );
     assert!(harness.mock.unexpected().is_empty());
@@ -5739,7 +5745,7 @@ async fn disabling_generation_drops_old_marked_clue_without_model_recheck() {
         json!({})
     );
     assert!(
-        harness.runtime().detection.store.read().unwrap()["consumed"]
+        harness.runtime().detection.store.read_shared().unwrap()["consumed"]
             .get(clue)
             .is_some()
     );
@@ -5749,7 +5755,7 @@ async fn disabling_generation_drops_old_marked_clue_without_model_recheck() {
     );
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
     assert!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"]
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
             .get(id.to_string())
             .is_none()
     );
@@ -5817,7 +5823,7 @@ async fn closed_oauth_and_key_accounts_do_not_dispatch_marked_or_unmarked() {
             marked
         );
         assert!(
-            harness.runtime().detection.store.read().unwrap()["automatic_starts"]
+            harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
                 .get(id.to_string())
                 .is_none()
         );
@@ -5977,7 +5983,7 @@ async fn account_pause_and_resume_after_long_gap_starts_a_fresh_full_interval() 
     );
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
     assert!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"]
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
             .get(id.to_string())
             .is_none()
     );
@@ -6059,7 +6065,7 @@ async fn manual_model_request_has_priority_over_detection_using_shared_parent_cr
     assert_eq!(queued_automatic["status"], "queued");
     assert_eq!(queued_automatic["trigger_source"], "automatic");
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"]
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
             .get(automatic_id.to_string()),
         None
     );
@@ -6080,12 +6086,12 @@ async fn manual_model_request_has_priority_over_detection_using_shared_parent_cr
     assert_eq!(automatic_job["automatic"], true);
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 4);
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"]
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
             .get(manual_id.to_string()),
         None
     );
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"]
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
             .get(automatic_id.to_string())
             .unwrap()["job_id"],
         automatic_job_id
@@ -6122,7 +6128,7 @@ async fn manual_request_is_exempt_from_automatic_timestamp_and_same_job_registra
         .to_owned();
     let automatic = harness.wait_job_terminal(&automatic_id).await;
     assert_eq!(automatic["automatic"], true);
-    let dispatch_before_manual = harness.runtime().detection.store.read().unwrap()
+    let dispatch_before_manual = harness.runtime().detection.store.read_shared().unwrap()
         ["automatic_starts"][id.to_string()]
     .clone();
     let next_allowed_before_manual = harness.runtime().detection.next_allowed_at(id).unwrap();
@@ -6162,7 +6168,8 @@ async fn manual_request_is_exempt_from_automatic_timestamp_and_same_job_registra
         before_manual_requests + completed_groups
     );
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()],
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+            [id.to_string()],
         dispatch_before_manual
     );
     assert_eq!(
@@ -6189,7 +6196,8 @@ async fn manual_request_is_exempt_from_automatic_timestamp_and_same_job_registra
         .register_dispatch(&same_job)
         .unwrap();
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()],
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+            [id.to_string()],
         dispatch_before_manual
     );
     let different_job = json!({"id":"fixture-different-auto-job","account_id":id,"automatic":true});
@@ -6210,7 +6218,8 @@ async fn manual_request_is_exempt_from_automatic_timestamp_and_same_job_registra
         .register_dispatch(&manual_registration)
         .unwrap();
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()],
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+            [id.to_string()],
         dispatch_before_manual
     );
     assert!(harness.mock.unexpected().is_empty());
@@ -6278,7 +6287,8 @@ async fn shared_parent_children_have_independent_automatic_dispatch_records() {
         expected_requests
     );
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 3);
-    let dispatches = harness.runtime().detection.store.read().unwrap()["automatic_starts"].clone();
+    let dispatches =
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"].clone();
     assert_eq!(dispatches.as_object().unwrap().len(), 3);
     assert_eq!(dispatches[first_id.to_string()]["job_id"], first_job_id);
     assert_eq!(dispatches[second_id.to_string()]["job_id"], second_job_id);
@@ -6340,8 +6350,8 @@ async fn queued_cancel_does_not_consume_cooldown_but_dispatched_cancel_survives_
         .await;
     assert_eq!(after_queued_cancel["status"], "completed");
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 1);
-    let dispatch_time = harness.runtime().detection.store.read().unwrap()["automatic_starts"]
-        [id.to_string()]["started_at"]
+    let dispatch_time = harness.runtime().detection.store.read_shared().unwrap()
+        ["automatic_starts"][id.to_string()]["started_at"]
         .clone();
 
     harness.advance(300);
@@ -6358,8 +6368,8 @@ async fn queued_cancel_does_not_consume_cooldown_but_dispatched_cancel_survives_
         .expect("second automatic job must reach the synthetic provider before cancellation");
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 2);
     assert_ne!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()]
-            ["started_at"],
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+            [id.to_string()]["started_at"],
         dispatch_time
     );
     let cancelled = harness
@@ -6372,8 +6382,8 @@ async fn queued_cancel_does_not_consume_cooldown_but_dispatched_cancel_survives_
     gate.release.notify_one();
     harness.mock.set_model_gate(None);
     harness.restart_runtime().await;
-    let saved_dispatch = harness.runtime().detection.store.read().unwrap()["automatic_starts"]
-        [id.to_string()]
+    let saved_dispatch = harness.runtime().detection.store.read_shared().unwrap()
+        ["automatic_starts"][id.to_string()]
     .clone();
     let saved_at = sub2ops_server::compat::parse_datetime(&saved_dispatch["started_at"]).unwrap();
 
@@ -6651,7 +6661,7 @@ async fn native_credit_and_usage_evidence_matrix_matches_full_runtime_admission(
             assert_eq!(control["reason"], "已确认额度耗尽", "case {label}");
             assert!(control["job_id"].is_null(), "case {label}");
             assert!(
-                harness.runtime().detection.store.read().unwrap()["automatic_starts"]
+                harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
                     .get(id.to_string())
                     .is_none()
             );
@@ -6770,8 +6780,8 @@ async fn oauth_recovery_restarts_interval_but_preserves_shared_cooldown() {
     let oauth_calls = harness.mock.calls("POST", "/v1/responses");
     assert_native_oauth_calls(&oauth_calls);
     assert_eq!(
-        harness.runtime().detection.store.read().unwrap()["automatic_starts"][id.to_string()]
-            ["started_at"],
+        harness.runtime().detection.store.read_shared().unwrap()["automatic_starts"]
+            [id.to_string()]["started_at"],
         datetime(harness.now())
     );
     assert!(harness.mock.unexpected().is_empty());
@@ -7642,7 +7652,7 @@ async fn clue_batch_failure_keeps_completed_acknowledgements_and_unprocessed_eve
         Ok(())
     }).unwrap();
     assert!(h.runtime().detection.tick().await.is_err());
-    let state = h.runtime().detection.store.read().unwrap();
+    let state = h.runtime().detection.store.read_shared().unwrap();
     assert!(state["consumed"].get("error:processed").is_some());
     assert!(state["consumed"].get("error:remaining").is_none());
     let alerts = h.runtime().detection.capacity.store.snapshot().unwrap();

@@ -116,7 +116,33 @@ export function bindOperationConnection(key: string) {
   ++epoch;
   setOperations([]);
 }
+const emptyPendingOperations: readonly Operation[] = [];
+let pendingByAccount = new Map<number, Operation[]>();
+function rebuildPendingIndex(items: Operation[]) {
+  const nextMap = new Map<number, Operation[]>();
+  for (const job of items) {
+    if (!operationPending(job)) continue;
+    const list = nextMap.get(job.account_id);
+    if (list) list.push(job);
+    else nextMap.set(job.account_id, [job]);
+  }
+  for (const [accountId, nextList] of nextMap) {
+    const prevList = pendingByAccount.get(accountId);
+    if (
+      prevList &&
+      prevList.length === nextList.length &&
+      prevList.every((item, idx) => sameOperation(item, nextList[idx]))
+    ) {
+      nextMap.set(accountId, prevList);
+    }
+  }
+  pendingByAccount = nextMap;
+}
 export const getOperations = () => rows;
+export const getPendingAccountOperations = (
+  accountId: number,
+): readonly Operation[] =>
+  pendingByAccount.get(accountId) ?? emptyPendingOperations;
 export function subscribeOperations(listener: () => void) {
   listeners.add(listener);
   return () => {
@@ -130,6 +156,7 @@ export function setOperations(next: Operation[]) {
   )
     return;
   rows = next;
+  rebuildPendingIndex(next);
   listeners.forEach((listener) => listener());
 }
 export const operationEpoch = () => epoch;
@@ -157,20 +184,24 @@ export async function submitAccountBatch(
   ]);
   return batch;
 }
+const adaptivePollDelaysMs = [35, 80, 180, 350, 500];
 export async function followAccountBatch(
   initial: OperationBatch,
   update: (batch: OperationBatch) => void,
   alive: () => boolean = () => true,
 ): Promise<void> {
   const current = epoch;
-  let batch = initial;
+  let batch = initial,
+    step = 0;
   while (alive() && current === epoch) {
     update(batch);
     if (batch.items.every((j) => operationTerminal.has(j.status))) {
       void command("refresh");
       return;
     }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const delay =
+      adaptivePollDelaysMs[Math.min(step++, adaptivePollDelaysMs.length - 1)];
+    await new Promise((resolve) => setTimeout(resolve, delay));
     if (!alive() || current !== epoch) return;
     const next = await api<OperationBatch>(
       "GET",
@@ -223,7 +254,8 @@ export async function followOperation<T>(
 ): Promise<T> {
   const current = epoch;
   let job = initial,
-    after = 0;
+    after = 0,
+    step = 0;
   while (true) {
     if (current !== epoch) throw BridgeError.changed();
     if (onEvent) {
@@ -262,7 +294,9 @@ export async function followOperation<T>(
             ? "核对结果"
             : "测试中",
     });
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    const delay =
+      adaptivePollDelaysMs[Math.min(step++, adaptivePollDelaysMs.length - 1)];
+    await new Promise((resolve) => setTimeout(resolve, delay));
     if (current !== epoch) throw BridgeError.changed();
     const next = await api<Operation>(
       "GET",

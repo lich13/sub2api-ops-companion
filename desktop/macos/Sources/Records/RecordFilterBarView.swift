@@ -181,7 +181,10 @@ public struct RecordOptionPickerView: View {
                 directory.stop()
                 onOpenChange(false)
             }
-            .onExitCommand { isOpen = false }
+            .onExitCommand {
+                guard !ResponderRestorer.shouldSuppressActiveEscape() else { return }
+                isOpen = false
+            }
         }
     }
 

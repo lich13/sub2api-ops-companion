@@ -261,19 +261,19 @@ impl Bank {
         })
     }
     pub async fn public(&self) -> Result<Value> {
-        let mut state = self.state.read()?;
-        if let Some(error) = self
+        let state = self.state.read_shared()?;
+        let sync_error = self
             .sync_error
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-        {
-            state["error"] = error.clone().into();
-            state["result"] = "failed".into();
-        }
+            .clone();
         let snapshot = self.load(string(&state["revision"]).into()).await?;
+        let (error, result) = match sync_error {
+            Some(err) => (Value::String(err), Value::String("failed".into())),
+            None => (state["error"].clone(), state["result"].clone()),
+        };
         Ok(
-            json!({"version":snapshot.version,"source":if state["revision"]==REVISION{"bundled"}else{"remote"},"checked_at":state["checked_at"],"synced_at":state["synced_at"],"error":state["error"],"result":state["result"],"status":if self.sync_lock.try_lock().is_err(){"syncing"}else{"idle"}}),
+            json!({"version":snapshot.version,"source":if state["revision"]==REVISION{"bundled"}else{"remote"},"checked_at":state["checked_at"],"synced_at":state["synced_at"],"error":error,"result":result,"status":if self.sync_lock.try_lock().is_err(){"syncing"}else{"idle"}}),
         )
     }
     pub async fn request_sync(&self) -> Result<Value> {

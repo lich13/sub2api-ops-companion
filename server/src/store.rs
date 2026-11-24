@@ -155,13 +155,9 @@ impl<S: Clone> Store<S> {
         }
     }
 
-    pub fn read(&self) -> Result<Value> {
-        Ok((*self.read_shared()?).clone())
-    }
-
     /// Immutable snapshots outlive the cache lock and remain stable after a write.
     /// Callers can project a record without copying unrelated history.
-    pub(crate) fn read_shared(&self) -> Result<Arc<Value>> {
+    pub fn read_shared(&self) -> Result<Arc<Value>> {
         Ok(self.read_shared_versioned()?.1)
     }
 
@@ -403,7 +399,11 @@ pub fn write_json(path: &Path, value: &Value) -> Result<()> {
 /// Callers of persistent lock files must hold the lock before changing its mode.
 pub(crate) fn private_permissions(file: &File) -> std::io::Result<()> {
     #[cfg(unix)]
-    file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    {
+        if file.metadata()?.permissions().mode() & 0o777 != 0o600 {
+            file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        }
+    }
     #[cfg(not(unix))]
     let _ = file;
     Ok(())
@@ -468,21 +468,21 @@ mod tests {
         store.transaction(|_| Ok(())).unwrap();
         assert_eq!(fs::read(&path).unwrap(), bytes);
         assert!(Arc::ptr_eq(&first, &store.read_shared().unwrap()));
-        assert_eq!(store.read().unwrap()["value"], 1);
+        assert_eq!(store.read_shared().unwrap()["value"], 1);
         assert_eq!(VALIDATIONS.load(Ordering::SeqCst), validations);
         fs::write(
             &path,
             serde_json::to_vec_pretty(&json!({"version":1,"value":2})).unwrap(),
         )
         .unwrap();
-        assert_eq!(store.read().unwrap()["value"], 2);
+        assert_eq!(store.read_shared().unwrap()["value"], 2);
         assert_eq!(
             first["value"], 1,
             "external replacement cannot mutate retained snapshots"
         );
         assert_eq!(VALIDATIONS.load(Ordering::SeqCst), validations + 1);
         fs::write(&path, b"{\"version\":1,\"value\":3}").unwrap();
-        assert_eq!(store.read().unwrap()["value"], 3);
+        assert_eq!(store.read_shared().unwrap()["value"], 3);
         fs::write(&path, b"{fixture-corrupt-state}").unwrap();
         assert!(store.read_shared().is_err());
         assert!(store
@@ -493,7 +493,7 @@ mod tests {
             .is_err());
         assert_eq!(fs::read(&path).unwrap(), b"{fixture-corrupt-state}");
         fs::remove_file(&path).unwrap();
-        assert!(store.read().is_err());
+        assert!(store.read_shared().is_err());
         assert!(store.0.cache.lock().unwrap().is_none());
     }
     #[test]
@@ -515,7 +515,7 @@ mod tests {
         let current = store.read_shared().unwrap();
         assert_eq!(retained["value"], 1);
         assert_eq!(current["value"], 2);
-        let mut owned = store.read().unwrap();
+        let mut owned = (*store.read_shared().unwrap()).clone();
         owned["value"] = json!(3);
         assert_eq!(store.read_shared().unwrap()["value"], 2);
         let rejected: Result<()> = store.transaction(|data| {
@@ -553,7 +553,10 @@ mod tests {
         let mut expected = serde_json::to_vec(&*after).unwrap();
         expected.push(b'\n');
         assert_eq!(fs::read(&path).unwrap(), expected);
-        assert_eq!(Store::policy(&path, json!({})).read().unwrap(), *after);
+        assert_eq!(
+            *Store::policy(&path, json!({})).read_shared().unwrap(),
+            *after
+        );
     }
     #[test]
     fn unchanged_admin_token_does_not_enter_a_transaction() {
@@ -591,13 +594,16 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        assert_eq!(a.read().unwrap()["jobs"].as_object().unwrap().len(), 3);
+        assert_eq!(
+            a.read_shared().unwrap()["jobs"].as_object().unwrap().len(),
+            3
+        );
         fs::write(&path, b"{broken").unwrap();
         assert!(a.transaction(|_| Ok(())).is_err());
         assert_eq!(fs::read(&path).unwrap(), b"{broken");
         fs::remove_file(&path).unwrap();
-        assert!(a.read().is_err());
-        assert!(Store::policy(&path, json!({})).read().is_err());
+        assert!(a.read_shared().is_err());
+        assert!(Store::policy(&path, json!({})).read_shared().is_err());
     }
     #[test]
     fn rejected_transaction_keeps_original_bytes() {

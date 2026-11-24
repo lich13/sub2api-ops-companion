@@ -1163,7 +1163,7 @@ async fn oauth_failures_persist_one_three_six_twelve_hour_backoff_and_skip_dispa
             index + 1,
             "one upstream call per failed attempt"
         );
-        let saved = state.snapshot().expect("read persisted OAuth state");
+        let saved = state.shared_snapshot().expect("read persisted OAuth state");
         let query = &saved["scheduler"][id.to_string()]["quota_query"];
         assert_eq!(query["failure_count"], index as i64 + 1);
         let retry_at = attempt_time + Duration::hours(*hours);
@@ -1255,7 +1255,9 @@ async fn oauth_timeout_reads_disk_reservation_and_consumes_attempt_without_repla
     assert_eq!(result["success"], false);
     assert_eq!(result["error_code"], "timeout");
     assert_ne!(result["skipped"], true);
-    let saved = state.snapshot().expect("read final persistent query state");
+    let saved = state
+        .shared_snapshot()
+        .expect("read final persistent query state");
     let query = &saved["scheduler"][id.to_string()]["quota_query"];
     assert_eq!(
         query["automatic_attempts"]

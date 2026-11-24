@@ -1122,10 +1122,13 @@ async fn desktop_runtime_snapshot_reuses_shared_stats_without_upstream_io() {
     };
 
     let verification = std::panic::AssertUnwindSafe(async {
-        let first = runtime
-            .snapshot()
-            .await
-            .expect("read the first Runtime snapshot from PostgreSQL");
+        let first: Value = serde_json::from_slice(
+            &runtime
+                .snapshot_bytes()
+                .await
+                .expect("read the first Runtime snapshot from PostgreSQL"),
+        )
+        .unwrap();
         let wire = sub2ops_protocol::response::client_response("GET", "/snapshot", first.clone())
             .expect("both clients can decode a populated server snapshot");
         assert_eq!(
@@ -1181,10 +1184,11 @@ async fn desktop_runtime_snapshot_reuses_shared_stats_without_upstream_io() {
             .execute(&seed.pool)
             .await
             .expect("make a later stats SQL execution fail while leaving other reads available");
-        let second = runtime
-            .snapshot()
-            .await
-            .expect("refresh the whole snapshot while the 15-second stats cache remains valid");
+        let second: Value =
+            serde_json::from_slice(&runtime.snapshot_bytes().await.expect(
+                "refresh the whole snapshot while the 15-second stats cache remains valid",
+            ))
+            .unwrap();
         let second_usage = second["accounts"]
             .as_array()
             .unwrap()

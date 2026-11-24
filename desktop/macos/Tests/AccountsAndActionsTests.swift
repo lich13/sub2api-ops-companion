@@ -24,6 +24,7 @@ struct AccountsAndActionsTests {
         let catalog = AccountCreationCatalog.shared
         #expect(catalog.platforms.count == 13)
         #expect(catalog.platforms.contains(where: { $0.id == "openai" && $0.types.contains("oauth") }))
+        #expect(!(catalog.blocked_headers ?? []).isEmpty)
         #expect(catalog.provider_profiles["opencode_go"]?.default_mode == "go")
 
         var draft = AccountCreationFormDraft()

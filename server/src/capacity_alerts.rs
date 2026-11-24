@@ -140,7 +140,7 @@ impl CapacityStore {
     pub fn snapshot(&self) -> Result<Value> {
         Ok((*self.shared_snapshot()?).clone())
     }
-    pub(crate) fn shared_snapshot(&self) -> Result<std::sync::Arc<Value>> {
+    pub fn shared_snapshot(&self) -> Result<std::sync::Arc<Value>> {
         Ok(self.shared_snapshot_versioned()?.1)
     }
     pub(crate) fn shared_snapshot_versioned(&self) -> Result<(u64, std::sync::Arc<Value>)> {

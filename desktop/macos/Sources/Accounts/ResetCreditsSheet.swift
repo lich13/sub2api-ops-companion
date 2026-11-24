@@ -132,7 +132,11 @@ public struct ResetCreditsSheet: View {
                 .disabled(!store.state.online || phase == .running || targets.isEmpty)
             }
         }
-        .sub2opsDialogFocus(onEscape: handleDismiss)
+        .sub2opsDialogFocus(
+            canBackdropDismiss: phase != .running,
+            onBackdrop: { if phase != .running { handleDismiss() } },
+            onEscape: handleDismiss
+        )
         .onDisappear {
             activeTask?.cancel()
             activeTask = nil

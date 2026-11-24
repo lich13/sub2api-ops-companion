@@ -244,6 +244,7 @@ impl Actions {
             .no_proxy()
             .retry(reqwest::retry::never())
             .redirect(reqwest::redirect::Policy::none())
+            .tcp_nodelay(true)
             .connect_timeout(Duration::from_secs(5))
             .build()?;
         let supervisor = crate::supervision::Supervisor::default();

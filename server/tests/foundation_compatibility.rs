@@ -276,7 +276,7 @@ fn manual_control_generation_rejects_stale_scheduler_results() {
     update.generations = Some(BTreeMap::from([(73, 0)]));
     state.commit(update).unwrap();
 
-    let snapshot = state.snapshot().unwrap();
+    let snapshot = state.shared_snapshot().unwrap();
     assert_eq!(
         snapshot["scheduler"]["73"]["manual_control"], manual["expected_control"],
         "stale scheduler data cannot replace a newer manual generation",
@@ -311,7 +311,10 @@ fn manual_control_generation_rejects_stale_scheduler_results() {
     current.results.insert(73, accepted.clone());
     current.generations = Some(BTreeMap::from([(73, generation)]));
     state.commit(current).unwrap();
-    assert_eq!(state.snapshot().unwrap()["oauth_results"]["73"], accepted);
+    assert_eq!(
+        state.shared_snapshot().unwrap()["oauth_results"]["73"],
+        accepted
+    );
 }
 
 #[test]
@@ -335,14 +338,14 @@ fn state_transactions_preserve_peer_updates_and_detect_lost_files() {
         })
         .unwrap();
     assert_eq!(
-        first.snapshot().unwrap()["scheduler"]["73"],
+        first.shared_snapshot().unwrap()["scheduler"]["73"],
         persistence["lost_update_expected_scheduler"],
         "each transaction rereads the latest state under the shared lock",
     );
 
     std::fs::remove_file(&path).unwrap();
     let error = first
-        .snapshot()
+        .shared_snapshot()
         .expect_err("previously persisted state cannot disappear silently");
     assert_eq!(error.status.as_u16(), 503);
     assert_eq!(error.detail.as_str(), Some("控制状态文件丢失"));

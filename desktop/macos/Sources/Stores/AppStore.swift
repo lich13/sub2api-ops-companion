@@ -147,39 +147,27 @@ public final class AppStore {
             ?? (activeUrl.isEmpty ? nil : SavedConnection(name: defaultConnectionName(activeUrl), base_url: activeUrl))
     }
 
-    public var accounts: [Account] {
-        state.snapshot?.accounts ?? []
-    }
+    public private(set) var accounts: [Account] = []
+    public private(set) var groups: [Group] = []
+    public private(set) var errors: [OpsError] = []
 
-    public var groups: [Group] {
-        state.snapshot?.groups ?? []
-    }
-
+    private var lastOpsStateSeq: UInt64 = 0
     private static let bridgeLogger = Logger(subsystem: "Sub2Ops", category: "bridge")
 
-    public var errors: [OpsError] {
-        (state.snapshot?.errors ?? []).sorted { ($0.id ?? 0) > ($1.id ?? 0) }
-    }
-
     public func bindBridge() {
-        RustBridge.shared.setEventHandler { [weak self] kind, data in
+        RustBridge.shared.setEventHandler { [weak self] event in
             guard let self else { return }
-            switch kind {
-            case .opsState:
-                do {
-                    let next = try JSONDecoder().decode(ViewState.self, from: data)
-                    self.applyViewState(next)
-                } catch {
-                    Self.bridgeLogger.error("Failed to decode ops-state event: \(error.localizedDescription, privacy: .public)")
-                }
-            case .updateResult:
-                if let message = String(data: data, encoding: .utf8), !message.isEmpty {
-                    self.showToast(message)
-                }
-            case .trayTooltip:
-                if let tip = String(data: data, encoding: .utf8), !tip.isEmpty {
-                    self.trayTooltip = tip
-                }
+            switch event {
+            case .opsState(let seq, let next):
+                guard seq > self.lastOpsStateSeq else { return }
+                self.lastOpsStateSeq = seq
+                self.applyViewState(next)
+            case .opsStateDecodeError(let description):
+                Self.bridgeLogger.error("Failed to decode ops-state event: \(description, privacy: .public)")
+            case .updateResult(let message):
+                self.showToast(message)
+            case .trayTooltip(let tip):
+                self.trayTooltip = tip
             case .reopen:
                 self.onReopenMainWindow?()
             }
@@ -188,7 +176,9 @@ public final class AppStore {
             guard let self else { return }
             do {
                 let initial: ViewState = try await RustBridge.shared.command("get_state")
-                self.applyViewState(initial)
+                if self.lastOpsStateSeq == 0 {
+                    self.applyViewState(initial)
+                }
                 self.ready = true
             } catch {
                 self.ready = true
@@ -199,7 +189,42 @@ public final class AppStore {
 
     public func applyViewState(_ next: ViewState) {
         let oldKey = connectionKey
-        state = next
+        let nextKey = "\(next.preferences.base_url):\(next.connected):\(next.connection_revision ?? 0)"
+        let sameSnapshotContent = oldKey == nextKey
+            && state.snapshot != nil
+            && next.snapshot != nil
+            && (state.snapshot_revision ?? 0) != 0
+            && state.snapshot_revision == next.snapshot_revision
+
+        if sameSnapshotContent, let preserved = state.snapshot {
+            var merged = next
+            merged.snapshot = Snapshot(
+                observed_at: next.snapshot?.observed_at ?? preserved.observed_at,
+                accounts: preserved.accounts,
+                groups: preserved.groups,
+                errors: preserved.errors,
+                recoveries: preserved.recoveries,
+                schema_version: preserved.schema_version
+            )
+            if state != merged {
+                state = merged
+            }
+        } else {
+            state = next
+            let nextAccounts = next.snapshot?.accounts ?? []
+            if accounts != nextAccounts {
+                accounts = nextAccounts
+            }
+            let nextGroups = next.snapshot?.groups ?? []
+            if groups != nextGroups {
+                groups = nextGroups
+            }
+            let nextErrors = (next.snapshot?.errors ?? []).sorted { ($0.id ?? 0) > ($1.id ?? 0) }
+            if errors != nextErrors {
+                errors = nextErrors
+            }
+        }
+
         let newKey = connectionKey
         operations.bindConnection(newKey)
         if oldKey != newKey {

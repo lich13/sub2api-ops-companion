@@ -302,6 +302,7 @@ export type ViewState = {
   foreground?: boolean;
   initializing?: boolean;
   connection_revision?: number;
+  snapshot_revision?: number;
   connected: boolean;
   online: boolean;
   error: string;
@@ -330,14 +331,24 @@ const timeFormatter = new Intl.DateTimeFormat("en-GB", {
   second: "2-digit",
   hourCycle: "h23",
 });
+const FULL_TIME_CACHE_LIMIT = 1024;
+const fullTimeCache = new Map<string, string>();
 export function fullTime(value: string | null | undefined): string {
   if (!value) return "暂无记录";
+  const cached = fullTimeCache.get(value);
+  if (cached !== undefined) return cached;
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "时间未知";
   const parts = Object.fromEntries(
     timeFormatter.formatToParts(date).map(({ type, value }) => [type, value]),
   );
-  return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+  const formatted = `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+  if (fullTimeCache.size >= FULL_TIME_CACHE_LIMIT) {
+    const oldest = fullTimeCache.keys().next().value;
+    if (oldest !== undefined) fullTimeCache.delete(oldest);
+  }
+  fullTimeCache.set(value, formatted);
+  return formatted;
 }
 export function sortPriority(accounts: Account[], ascending = true): Account[] {
   return [...accounts].sort(
@@ -369,11 +380,13 @@ export function filterAccounts(
   status: string,
   type = "",
 ): Account[] {
+  const normalizedQuery = query ? query.toLowerCase() : "";
+  const groupId = group ? Number(group) : NaN;
   return accounts.filter(
     (a) =>
-      (!query ||
-        `${a.id} ${a.name}`.toLowerCase().includes(query.toLowerCase())) &&
-      (!group || a.group_ids.includes(Number(group))) &&
+      (!normalizedQuery ||
+        `${a.id} ${a.name}`.toLowerCase().includes(normalizedQuery)) &&
+      (!group || a.group_ids.includes(groupId)) &&
       (!platform || a.platform === platform) &&
       (!type || a.type === type) &&
       (!status ||
@@ -389,16 +402,24 @@ export function sortRecentCall(
   accounts: Account[],
   ascending = false,
 ): Account[] {
-  const timestamp = (account: Account) => {
+  if (accounts.length <= 1) return [...accounts];
+  const keyed = accounts.map((account) => {
     const recent = callTime(account.last_called_at ?? null);
-    return Number.isFinite(recent) ? recent : callTime(account.last_success_at);
-  };
-  return [...accounts].sort((a, b) => {
-    const left = timestamp(a),
-      right = timestamp(b);
-    if (!Number.isFinite(left))
-      return !Number.isFinite(right) ? b.id - a.id : 1;
-    if (!Number.isFinite(right)) return -1;
-    return (ascending ? 1 : -1) * (left - right) || b.id - a.id;
+    const ts = Number.isFinite(recent)
+      ? recent
+      : callTime(account.last_success_at);
+    return { account, ts };
   });
+  return keyed
+    .sort((lhs, rhs) => {
+      const left = lhs.ts,
+        right = rhs.ts;
+      if (!Number.isFinite(left))
+        return !Number.isFinite(right) ? rhs.account.id - lhs.account.id : 1;
+      if (!Number.isFinite(right)) return -1;
+      return (
+        (ascending ? 1 : -1) * (left - right) || rhs.account.id - lhs.account.id
+      );
+    })
+    .map((entry) => entry.account);
 }

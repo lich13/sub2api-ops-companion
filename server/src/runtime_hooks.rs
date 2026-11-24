@@ -310,6 +310,11 @@ impl operations::Backend for Hooks {
             runtime.monitor.queries.forget(id);
         }
     }
+    fn invalidate_snapshot(&self) {
+        if let Ok(runtime) = self.runtime() {
+            runtime.invalidate_snapshot();
+        }
+    }
     fn model_jobs(&self) -> Result<Vec<Value>> {
         Ok(self.runtime()?.tests.shared_data()?["jobs"]
             .as_object()

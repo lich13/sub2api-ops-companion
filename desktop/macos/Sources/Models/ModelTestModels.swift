@@ -74,10 +74,8 @@ public struct FingerprintBankStatusInfo: Codable, Sendable, Equatable {
             return s.isEmpty ? nil : s
         }
         let secs = try c.decode(Double.self, forKey: key)
-        guard secs > 0 else { return nil }
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime]
-        return iso.string(from: Date(timeIntervalSince1970: secs))
+        guard secs.isFinite, secs > 0, secs <= 253_402_300_799 else { return nil }
+        return BeijingTime.isoUTCString(fromEpochSeconds: secs)
     }
 
     public init(from decoder: Decoder) throws {

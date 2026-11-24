@@ -258,7 +258,7 @@ export function KeyQuotaSettingsDialog({
         aria-label={account ? "余额查询设置" : "余额刷新设置"}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
-          if (e.key === "Escape") {
+          if (e.key === "Escape" && !e.nativeEvent.isComposing) {
             e.stopPropagation();
             dismiss();
           }

@@ -92,6 +92,7 @@ public struct ViewState: Codable, Sendable, Equatable {
     public var foreground: Bool?
     public var initializing: Bool?
     public var connection_revision: UInt64?
+    public var snapshot_revision: UInt64?
     public var connected: Bool
     public var online: Bool
     public var error: String
@@ -104,6 +105,7 @@ public struct ViewState: Codable, Sendable, Equatable {
         foreground: Bool? = true,
         initializing: Bool? = false,
         connection_revision: UInt64? = 0,
+        snapshot_revision: UInt64? = nil,
         connected: Bool = false,
         online: Bool = false,
         error: String = "",
@@ -115,6 +117,7 @@ public struct ViewState: Codable, Sendable, Equatable {
         self.foreground = foreground
         self.initializing = initializing
         self.connection_revision = connection_revision
+        self.snapshot_revision = snapshot_revision
         self.connected = connected
         self.online = online
         self.error = error

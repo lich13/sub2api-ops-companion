@@ -1,5 +1,12 @@
 import { useEffectEvent } from "react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -46,7 +53,7 @@ type Props = {
   changed: (count: number, busy: boolean) => void;
 };
 type Drag = { id: number; x: number; y: number; zone?: Zone };
-export default function GroupManager(props: Props) {
+function GroupManagerImpl(props: Props) {
   const { accounts, groups, online, active } = props;
   const [platform, setPlatform] = useState("openai"),
     [query, setQuery] = useState("");
@@ -594,3 +601,15 @@ export default function GroupManager(props: Props) {
     </section>
   );
 }
+
+const GroupManager = memo(
+  GroupManagerImpl,
+  (prev, next) =>
+    !prev.active &&
+    !next.active &&
+    prev.connectionKey === next.connectionKey &&
+    prev.online === next.online &&
+    prev.accounts === next.accounts &&
+    prev.groups === next.groups,
+);
+export default GroupManager;

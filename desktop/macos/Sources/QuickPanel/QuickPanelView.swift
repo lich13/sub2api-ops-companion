@@ -4,7 +4,6 @@ import SwiftUI
 public struct QuickPanelRootView: View {
     @Bindable var store: AppStore
     let onContentHeightChange: @MainActor (CGFloat) -> Void
-    @State private var quickPopoverOpen: Bool = false
 
     public init(store: AppStore, onContentHeightChange: @escaping @MainActor (CGFloat) -> Void = { _ in }) {
         self.store = store
@@ -85,6 +84,7 @@ public struct QuickPanelRootView: View {
             onContentHeightChange(clamped)
         }
         .onExitCommand {
+            guard !ResponderRestorer.shouldSuppressActiveEscape() else { return }
             if store.switcherAnchor == .quick {
                 store.switcherAnchor = nil
             } else if store.detailError != nil || store.detailBusy {
@@ -145,19 +145,7 @@ public struct QuickPanelRootView: View {
                 }
                 .buttonStyle(.linearPlain)
                 .accessibilityLabel("切换 Sub2API 实例")
-                .onAppear { quickPopoverOpen = (store.switcherAnchor == .quick) }
-                .onChange(of: store.switcherAnchor) { _, next in
-                    let shouldOpen = (next == .quick)
-                    if quickPopoverOpen != shouldOpen { quickPopoverOpen = shouldOpen }
-                }
-                .onChange(of: quickPopoverOpen) { _, open in
-                    if open && store.switcherAnchor != .quick {
-                        store.switcherAnchor = .quick
-                    } else if !open && store.switcherAnchor == .quick {
-                        store.switcherAnchor = nil
-                    }
-                }
-                .popover(isPresented: $quickPopoverOpen, arrowEdge: .bottom) {
+                .sub2opsSwitcherPopover(anchor: .quick, store: store, arrowEdge: .bottom) {
                     InstanceSwitcherPopoverContent(store: store, isQuick: true) {
                         store.switcherAnchor = nil
                     }

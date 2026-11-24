@@ -61,11 +61,13 @@ extension PrioritiesPageView {
 
     func readPriorities(repreparePlatform: String? = nil) async {
         guard store.state.online else { return }
+        let capturedKey = store.connectionKey
         loading = true
         error = ""
         defer { loading = false }
         do {
             let loaded: PriorityViewEnvelope = try await RustBridge.shared.api("GET", "/account-priorities?schema=2")
+            guard store.connectionKey == capturedKey else { return }
             view = loaded
             if let rep = repreparePlatform {
                 drafts.removeValue(forKey: rep)
@@ -73,6 +75,7 @@ extension PrioritiesPageView {
                 notices[rep] = "已重新读取实际优先级，请核对后应用"
             }
         } catch {
+            guard store.connectionKey == capturedKey else { return }
             self.error = error.localizedDescription
         }
     }
@@ -130,12 +133,21 @@ extension PrioritiesPageView {
         }
     }
 
+    private static let adaptivePollDelaysMs: [Int] = [35, 80, 180, 350, 500]
+
     func pollActiveTask(id: String) async {
         let capturedKey = store.connectionKey
         var failures = 0
+        var step = 0
         while !Task.isCancelled && store.state.online && store.connectionKey == capturedKey {
-            let delaySec = min(4, 1 << min(failures, 2))
-            try? await Task.sleep(for: .seconds(delaySec))
+            let delayMs: Int
+            if failures > 0 {
+                delayMs = min(4, 1 << min(failures, 2)) * 1000
+            } else {
+                delayMs = Self.adaptivePollDelaysMs[min(step, Self.adaptivePollDelaysMs.count - 1)]
+                step += 1
+            }
+            try? await Task.sleep(for: .milliseconds(delayMs))
             guard !Task.isCancelled, store.state.online, store.connectionKey == capturedKey else { return }
             do {
                 let next: PriorityTask = try await RustBridge.shared.api("GET", "/account-priority-orders/\(id)?schema=2&details=0")

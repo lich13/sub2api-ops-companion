@@ -376,7 +376,13 @@ async fn catalog_client(
     account: &Value,
     timeout: Duration,
 ) -> Result<reqwest::Client> {
-    let client = if let Some(id) = integer(&account["proxy_id"]).filter(|v| *v != 0) {
+    const MAX_POOLED_CLIENTS: usize = 32;
+    type ClientKey = (Option<String>, u64);
+    static CLIENT_POOL: std::sync::LazyLock<
+        std::sync::Mutex<std::collections::VecDeque<(ClientKey, reqwest::Client)>>,
+    > = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::VecDeque::new()));
+
+    let proxy_url = if let Some(id) = integer(&account["proxy_id"]).filter(|v| *v != 0) {
         let proxy = db
             .one(
                 "SELECT protocol,host,port,username,password FROM proxies WHERE id=$1 AND deleted_at IS NULL",
@@ -403,32 +409,40 @@ async fn catalog_client(
             url.set_password(Some(string(&proxy["password"])))
                 .map_err(|_| Error::new(422, "账号代理不可用"))?;
         }
-        reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(timeout)
-            .proxy(
-                reqwest::Proxy::all(url.as_str()).map_err(|_| Error::new(422, "账号代理不可用"))?,
-            )
-            .build()?
+        Some(url.into())
     } else {
-        static NO_PROXY_CLIENT: std::sync::LazyLock<Option<reqwest::Client>> =
-            std::sync::LazyLock::new(|| {
-                reqwest::Client::builder()
-                    .no_proxy()
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .ok()
-            });
-        match NO_PROXY_CLIENT.as_ref() {
-            Some(shared) => shared.clone(),
-            None => reqwest::Client::builder()
-                .no_proxy()
-                .redirect(reqwest::redirect::Policy::none())
-                .timeout(timeout)
-                .build()?,
-        }
+        None
     };
+
+    let key: ClientKey = (proxy_url, timeout.as_millis() as u64);
+    if let Ok(mut pool) = CLIENT_POOL.lock() {
+        if let Some(pos) = pool.iter().position(|(k, _)| k == &key) {
+            let entry = pool.remove(pos).unwrap();
+            let client = entry.1.clone();
+            pool.push_back(entry);
+            return Ok(client);
+        }
+    }
+
+    let mut builder = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .tcp_nodelay(true)
+        .timeout(timeout);
+    if let Some(ref url) = key.0 {
+        builder = builder.proxy(
+            reqwest::Proxy::all(url.as_str()).map_err(|_| Error::new(422, "账号代理不可用"))?,
+        );
+    }
+    let client = builder.build()?;
+    if let Ok(mut pool) = CLIENT_POOL.lock() {
+        if !pool.iter().any(|(k, _)| k == &key) {
+            if pool.len() >= MAX_POOLED_CLIENTS {
+                pool.pop_front();
+            }
+            pool.push_back((key, client.clone()));
+        }
+    }
     Ok(client)
 }
 

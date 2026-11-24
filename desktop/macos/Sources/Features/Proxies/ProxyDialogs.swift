@@ -46,24 +46,35 @@ public struct ProxyEditorSheet: View {
 
     private static func formatBeijingExpiry(_ raw: String?) -> String {
         guard let raw, let d = BeijingTime.parseISO(raw) else { return "" }
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
-        df.dateFormat = "yyyy-MM-dd HH:mm"
-        return df.string(from: d)
+        return BeijingTime.formatBeijingDateTime(d, includeSeconds: false)
     }
 
     private static func parseBeijingExpiry(_ raw: String) -> Date? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
-        for fmt in ["yyyy-MM-dd HH:mm", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd'T'HH:mm:ss"] {
-            df.dateFormat = fmt
-            if let d = df.date(from: trimmed) { return d }
-        }
-        return nil
+        BeijingTime.parseBeijingLocal(raw, requireSeconds: false)
+    }
+
+    private var isDirty: Bool {
+        let initialName = row?.name ?? ""
+        let initialProto = row?.protocolName ?? "socks5"
+        let initialHost = row?.host ?? ""
+        let initialPort = "\(row?.port ?? 1080)"
+        let initialStatus = row?.status == "inactive" ? "inactive" : "active"
+        let initialExpiry = Self.formatBeijingExpiry(row?.expires_at)
+        let initialWarn = "\(row?.expiry_warn_days ?? 7)"
+        let initialFallback = row?.fallback_mode ?? "none"
+        let initialBackup = row?.backup_proxy_id ?? 0
+        return name != initialName
+            || proto != initialProto
+            || host != initialHost
+            || port != initialPort
+            || status != initialStatus
+            || (usernameDirty && !username.isEmpty)
+            || !password.isEmpty
+            || clearAuth
+            || expiryText != initialExpiry
+            || warnDays != initialWarn
+            || fallbackMode != initialFallback
+            || backupProxyId != initialBackup
     }
 
     public var body: some View {
@@ -228,7 +239,7 @@ public struct ProxyEditorSheet: View {
             .buttonStyle(LinearButtonStyle(variant: .primary))
             .disabled(!online || busy)
         }
-        .sub2opsDialogFocus(onEscape: { if !busy { onClose() } })
+        .sub2opsDialogFocus(canBackdropDismiss: !busy && !isDirty, onEscape: { if !busy { onClose() } })
         .task(id: fallbackMode) {
             guard fallbackMode == "proxy", online else { return }
             do {
@@ -415,7 +426,10 @@ public struct ProxyBatchAddSheet: View {
                 .disabled(!online || busy || parsed.proxies.isEmpty || !parsed.errors.isEmpty || parsed.proxies.count > 1000)
             }
         }
-        .sub2opsDialogFocus(onEscape: { if !busy { onClose() } })
+        .sub2opsDialogFocus(
+            canBackdropDismiss: !busy && (text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !results.isEmpty),
+            onEscape: { if !busy { onClose() } }
+        )
     }
 
     private func runBatch() async {

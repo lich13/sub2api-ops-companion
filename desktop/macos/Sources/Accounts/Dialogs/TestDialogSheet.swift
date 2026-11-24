@@ -126,34 +126,15 @@ public struct TestDialogSheet: View {
 
     private static func nextBeijingMinuteString(now: Date = Date()) -> String {
         let nextMin = Date(timeIntervalSince1970: (floor(now.timeIntervalSince1970 / 60.0) + 1.0) * 60.0)
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
-        df.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return df.string(from: nextMin)
+        return BeijingTime.formatBeijingDateTime(nextMin, includeSeconds: true)
     }
 
     static func formatBeijingTimestamp(_ date: Date) -> String {
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
-        df.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return df.string(from: date)
+        BeijingTime.formatBeijingDateTime(date, includeSeconds: true)
     }
 
     public static func parseBeijingAppointment(_ raw: String) -> Date? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
-        for fmt in ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm"] {
-            df.dateFormat = fmt
-            if let d = df.date(from: trimmed) {
-                return d
-            }
-        }
-        return nil
+        BeijingTime.parseBeijingLocal(raw, requireSeconds: false)
     }
 
     public static func nextCycleAppointmentDate(usage: UsageSummary?, windows: [UsageWindow], now: Date = Date()) -> Date? {
@@ -513,7 +494,11 @@ public struct TestDialogSheet: View {
             }
             Spacer()
         }
-        .sub2opsDialogFocus(onEscape: handleClose)
+        .sub2opsDialogFocus(
+            canBackdropDismiss: !running && !cycleBusy,
+            onBackdrop: { if !running && !cycleBusy { handleClose() } },
+            onEscape: handleClose
+        )
         .task {
             if store.state.online {
                 await store.operations.pollOnce()

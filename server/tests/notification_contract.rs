@@ -1278,7 +1278,7 @@ async fn oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_p
     seed_pending(&runtime.monitor.store, std::slice::from_ref(&success));
     runtime.monitor.deliver().await.unwrap();
     runtime.monitor.deliver().await.unwrap();
-    let state = runtime.monitor.store.snapshot().unwrap();
+    let state = runtime.monitor.store.shared_snapshot().unwrap();
     assert!(state["pending_events"].as_object().unwrap().is_empty());
     assert_eq!(capture.bark_request_count(), 1);
     assert_eq!(
@@ -1307,24 +1307,27 @@ async fn oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_p
         capture.bark_requests()[1].payload["title"],
         reference["bark"]["queue"]["confirmed_credit"]["title"]
     );
-    assert!(runtime.monitor.store.snapshot().unwrap()["pending_events"]
-        .get("fixture:queue-credit")
-        .is_none());
+    assert!(
+        runtime.monitor.store.shared_snapshot().unwrap()["pending_events"]
+            .get("fixture:queue-credit")
+            .is_none()
+    );
     let restarted = OAuthState::new(runtime.settings.usage_path.clone());
     assert!(
-        restarted.snapshot().unwrap()["scheduler"]["7"]["notified_keys"]
+        restarted.shared_snapshot().unwrap()["scheduler"]["7"]["notified_keys"]
             .as_array()
             .unwrap()
             .iter()
             .any(|value| value == "fixture:queue-credit")
     );
 
-    let scheduler_before_failure = runtime.monitor.store.snapshot().unwrap()["scheduler"].clone();
+    let scheduler_before_failure =
+        runtime.monitor.store.shared_snapshot().unwrap()["scheduler"].clone();
     let failed = oauth_event("fixture:queue-failure", "recovered", "active_usage");
     seed_pending(&runtime.monitor.store, std::slice::from_ref(&failed));
     capture.queue_response(PlannedResponse::json(200, json!({"code":500})));
     runtime.monitor.deliver().await.unwrap();
-    let after_failure = runtime.monitor.store.snapshot().unwrap();
+    let after_failure = runtime.monitor.store.shared_snapshot().unwrap();
     assert_eq!(after_failure["scheduler"], scheduler_before_failure);
     assert_eq!(
         after_failure["pending_events"]["fixture:queue-failure"],
@@ -1344,7 +1347,7 @@ async fn oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_p
         "an unacknowledged event remains retryable"
     );
     assert_eq!(
-        runtime.monitor.store.snapshot().unwrap()["pending_events"]["fixture:queue-failure"],
+        runtime.monitor.store.shared_snapshot().unwrap()["pending_events"]["fixture:queue-failure"],
         failed
     );
 
@@ -1355,7 +1358,7 @@ async fn oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_p
         true,
     );
     runtime.monitor.deliver().await.unwrap();
-    let state = runtime.monitor.store.snapshot().unwrap();
+    let state = runtime.monitor.store.shared_snapshot().unwrap();
     assert!(state["pending_events"]
         .get("fixture:queue-disabled")
         .is_none());
@@ -1384,7 +1387,7 @@ async fn oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_p
         std::slice::from_ref(&invalid),
     );
     invalid_runtime.monitor.deliver().await.unwrap();
-    let invalid_state = invalid_runtime.monitor.store.snapshot().unwrap();
+    let invalid_state = invalid_runtime.monitor.store.shared_snapshot().unwrap();
     assert_eq!(
         invalid_state["pending_events"]["fixture:queue-invalid"],
         invalid
@@ -1417,7 +1420,7 @@ async fn oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_p
         std::slice::from_ref(&invalid_environment_event),
     );
     env_runtime.monitor.deliver().await.unwrap();
-    let env_state = env_runtime.monitor.store.snapshot().unwrap();
+    let env_state = env_runtime.monitor.store.shared_snapshot().unwrap();
     assert_eq!(
         env_state["pending_events"]["fixture:queue-invalid-environment"],
         invalid_environment_event
@@ -1441,7 +1444,7 @@ async fn oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_p
         std::slice::from_ref(&long_event),
     );
     multi_runtime.monitor.deliver().await.unwrap();
-    let multi_state = multi_runtime.monitor.store.snapshot().unwrap();
+    let multi_state = multi_runtime.monitor.store.shared_snapshot().unwrap();
     let multi_requests = multi_capture.bark_requests();
     assert_eq!(
         multi_requests.len(),
@@ -1499,10 +1502,12 @@ async fn manual_control_cancels_copied_recovery_notification_before_bark_deliver
         .unwrap();
     runtime.monitor.deliver().await.unwrap();
     assert_eq!(capture.bark_request_count(), 0);
-    assert!(runtime.monitor.store.snapshot().unwrap()["pending_events"]
-        .as_object()
-        .unwrap()
-        .is_empty());
+    assert!(
+        runtime.monitor.store.shared_snapshot().unwrap()["pending_events"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
 
     let active = oauth_event("a-fixture-active", "recovered", "active_usage");
     let in_flight_recovery = oauth_event("z-fixture-recovery", "recovered", "recovery");
@@ -1524,7 +1529,7 @@ async fn manual_control_cancels_copied_recovery_notification_before_bark_deliver
     gate.release.notify_one();
     delivery.await.unwrap().unwrap();
 
-    let state = runtime.monitor.store.snapshot().unwrap();
+    let state = runtime.monitor.store.shared_snapshot().unwrap();
     assert_eq!(capture.bark_request_count(), 1);
     assert!(state["pending_events"].as_object().unwrap().is_empty());
     assert!(state["scheduler"]["7"]["notified_keys"]
@@ -1555,9 +1560,11 @@ async fn bark_monitor_and_test_endpoint_observe_three_and_eight_second_timeouts(
     assert!(started.elapsed() >= StdDuration::from_millis(2700));
     assert!(started.elapsed() < StdDuration::from_secs(5));
     assert_eq!(capture.bark_request_count(), 1);
-    assert!(runtime.monitor.store.snapshot().unwrap()["pending_events"]
-        .get("fixture:timeout-monitor")
-        .is_some());
+    assert!(
+        runtime.monitor.store.shared_snapshot().unwrap()["pending_events"]
+            .get("fixture:timeout-monitor")
+            .is_some()
+    );
 
     runtime
         .monitor

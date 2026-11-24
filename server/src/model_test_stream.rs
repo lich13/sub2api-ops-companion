@@ -587,22 +587,46 @@ pub struct Target {
 }
 impl Target {
     pub fn client(&self) -> TransportResult<reqwest::Client> {
+        const MAX_POOLED_PROXY_CLIENTS: usize = 32;
+        static PROXY_CLIENTS: std::sync::LazyLock<
+            std::sync::Mutex<std::collections::VecDeque<(String, reqwest::Client)>>,
+        > = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::VecDeque::new()));
+
         if let Some(proxy) = &self.proxy {
-            return reqwest::Client::builder()
+            if let Ok(mut pool) = PROXY_CLIENTS.lock() {
+                if let Some(pos) = pool.iter().position(|(k, _)| k == proxy) {
+                    let entry = pool.remove(pos).unwrap();
+                    let client = entry.1.clone();
+                    pool.push_back(entry);
+                    return Ok(client);
+                }
+            }
+            let built = reqwest::Client::builder()
                 .no_proxy()
                 .redirect(reqwest::redirect::Policy::none())
+                .tcp_nodelay(true)
                 .connect_timeout(Duration::from_secs(10))
                 .proxy(
                     reqwest::Proxy::all(proxy).map_err(|_| Failure::new("network_error", false))?,
                 )
                 .build()
-                .map_err(|_| Failure::new("network_error", false));
+                .map_err(|_| Failure::new("network_error", false))?;
+            if let Ok(mut pool) = PROXY_CLIENTS.lock() {
+                if !pool.iter().any(|(k, _)| k == proxy) {
+                    if pool.len() >= MAX_POOLED_PROXY_CLIENTS {
+                        pool.pop_front();
+                    }
+                    pool.push_back((proxy.clone(), built.clone()));
+                }
+            }
+            return Ok(built);
         }
         static NO_PROXY_CLIENT: std::sync::LazyLock<Option<reqwest::Client>> =
             std::sync::LazyLock::new(|| {
                 reqwest::Client::builder()
                     .no_proxy()
                     .redirect(reqwest::redirect::Policy::none())
+                    .tcp_nodelay(true)
                     .connect_timeout(Duration::from_secs(10))
                     .build()
                     .ok()
@@ -612,6 +636,7 @@ impl Target {
             None => reqwest::Client::builder()
                 .no_proxy()
                 .redirect(reqwest::redirect::Policy::none())
+                .tcp_nodelay(true)
                 .connect_timeout(Duration::from_secs(10))
                 .build()
                 .map_err(|_| Failure::new("network_error", false)),

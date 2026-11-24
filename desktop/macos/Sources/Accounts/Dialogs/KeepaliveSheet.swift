@@ -118,21 +118,26 @@ public struct KeepaliveSheet: View {
             .buttonStyle(LinearButtonStyle(variant: .primary))
             .disabled(!store.state.online || loading || saving || state == nil)
         }
-        .sub2opsDialogFocus {
+        .sub2opsDialogFocus(canBackdropDismiss: !saving && (state == nil || state?.enabled == enabled)) {
             if !saving { onClose() }
         }
         .task(id: "\(store.connectionKey):\(account.id):\(store.state.online)") {
             guard store.state.online else { return }
             await load(replaceDraft: true)
+            var hadPollError = false
             while !Task.isCancelled && store.state.online {
                 try? await Task.sleep(for: .seconds(2))
                 guard !Task.isCancelled, store.state.online, !saving else { continue }
                 do {
                     let polled: AccountKeepalive = try await RustBridge.shared.api("GET", "/accounts/\(account.id)/keepalive")
                     state = polled
-                    error = ""
+                    if hadPollError {
+                        hadPollError = false
+                        error = ""
+                    }
                 } catch {
                     if !Task.isCancelled && (error as? RustBridgeError)?.ignored != true {
+                        hadPollError = true
                         Self.logger.warning("Keepalive poll failed: \(error.localizedDescription, privacy: .public)")
                         self.error = error.localizedDescription
                     }

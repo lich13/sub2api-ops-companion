@@ -69,21 +69,22 @@ public final class AccountSortStore {
                 return a.id < b.id
             }
         case .usage:
-            func peak(_ account: Account) -> Double {
+            guard accounts.count > 1 else { return accounts }
+            let keyed: [(account: Account, peak: Double)] = accounts.map { account in
                 let windows = account.usage?.windows ?? account.usage_windows
                 let percents = windows.compactMap(\.used_percent)
-                return percents.max() ?? -1
+                return (account, percents.max() ?? -1)
             }
-            return accounts.sorted { a, b in
-                let pa = peak(a)
-                let pb = peak(b)
+            return keyed.sorted { lhs, rhs in
+                let pa = lhs.peak
+                let pb = rhs.peak
                 if pa != pb {
                     if pa < 0 { return false }
                     if pb < 0 { return true }
                     return option.ascending ? pa < pb : pa > pb
                 }
-                return a.id < b.id
-            }
+                return lhs.account.id < rhs.account.id
+            }.map(\.account)
         }
     }
 

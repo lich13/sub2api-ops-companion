@@ -15,7 +15,7 @@ public struct RecordsPageView: View {
     @State private var mismatchOnly: Bool = false
     @State private var hScrollOffset: CGFloat = 0
     @State private var rightPaneWidth: CGFloat = 980
-    @State private var hoveredRowId: Int? = nil
+    @State private var hoverCoordinator = RecordRowHoverCoordinator()
     @State private var scrolled = false
     @State private var openFilters = Set<String>()
     @State private var datePending = false
@@ -364,32 +364,18 @@ public struct RecordsPageView: View {
                     ScrollView(.vertical) {
                         VStack(spacing: 0) {
                             HStack(alignment: .top, spacing: 0) {
-                                VStack(spacing: 0) {
+                                LazyVStack(spacing: 0) {
                                     ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, item in
                                         let row = item.record
                                         let rh = item.height(model: hasModelCol, latency: hasLatencyCol)
-                                        Button {
+                                        RecordUserRowCell(
+                                            row: row,
+                                            userColWidth: userColWidth,
+                                            userCellPad: userCellPad,
+                                            rowHeight: rh,
+                                            hoverCoordinator: hoverCoordinator
+                                        ) {
                                             openDetail(id: row.id)
-                                        } label: {
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text(row.user_name ?? row.user_email ?? "#\(row.user_id)")
-                                                    .font(DS.fontCompactSemibold)
-                                                    .foregroundStyle(DS.ink)
-                                                    .lineLimit(1)
-                                                Text("#\(row.user_id)")
-                                                    .font(DS.fontResetTime)
-                                                    .monospacedDigit()
-                                                    .foregroundStyle(DS.muted)
-                                            }
-                                            .padding(.horizontal, userCellPad)
-                                            .frame(width: userColWidth, height: rh, alignment: .leading)
-                                            .background(hoveredRowId == row.id ? DS.rowHover : DS.surface)
-                                            .contentShape(Rectangle())
-                                        }
-                                        .buttonStyle(.linearPlain)
-                                        .help("\(row.user_name ?? row.user_email ?? "用户") #\(row.user_id)")
-                                        .onHover { hov in
-                                            if hov { hoveredRowId = row.id } else if hoveredRowId == row.id { hoveredRowId = nil }
                                         }
 
                                         if idx < feed.items.count - 1 {
@@ -411,37 +397,38 @@ public struct RecordsPageView: View {
                                         }
                                         .frame(height: 0)
 
-                                        ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, item in
-                                            let row = item.record
-                                            let rh = item.height(model: hasModelCol, latency: hasLatencyCol)
-                                            HStack(spacing: colSpacing) {
-                                                if hasApiKeyCol {
-                                                    cellView(.apiKey, row: row, route: item.route)
+                                        LazyVStack(spacing: 0) {
+                                            ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, item in
+                                                let row = item.record
+                                                let rh = item.height(model: hasModelCol, latency: hasLatencyCol)
+                                                RecordDataRowCell(
+                                                    rowId: row.id,
+                                                    effectiveDataWidth: effectiveDataWidth,
+                                                    rowHeight: rh,
+                                                    hCellPad: hCellPad,
+                                                    hoverCoordinator: hoverCoordinator,
+                                                    onTap: { openDetail(id: row.id) }
+                                                ) {
+                                                    HStack(spacing: colSpacing) {
+                                                        if hasApiKeyCol {
+                                                            cellView(.apiKey, row: row, route: item.route)
+                                                        }
+                                                        Text(BeijingTime.fullTime(row.created_at))
+                                                            .font(DS.fontPriorityMeta)
+                                                            .monospacedDigit()
+                                                            .lineLimit(1)
+                                                            .foregroundStyle(DS.muted)
+                                                            .frame(width: timeColWidth, alignment: .leading)
+                                                        ForEach(trailingCols, id: \.rawValue) { col in
+                                                            cellView(col, row: row, route: item.route)
+                                                        }
+                                                        Spacer(minLength: 0)
+                                                    }
                                                 }
-                                                Text(BeijingTime.fullTime(row.created_at))
-                                                    .font(DS.fontPriorityMeta)
-                                                    .monospacedDigit()
-                                                    .lineLimit(1)
-                                                    .foregroundStyle(DS.muted)
-                                                    .frame(width: timeColWidth, alignment: .leading)
-                                                ForEach(trailingCols, id: \.rawValue) { col in
-                                                    cellView(col, row: row, route: item.route)
-                                                }
-                                                Spacer(minLength: 0)
-                                            }
-                                            .padding(.horizontal, hCellPad)
-                                            .frame(width: effectiveDataWidth, height: rh, alignment: .leading)
-                                            .background(hoveredRowId == row.id ? DS.rowHover : DS.surface)
-                                            .contentShape(Rectangle())
-                                            .onHover { hov in
-                                                if hov { hoveredRowId = row.id } else if hoveredRowId == row.id { hoveredRowId = nil }
-                                            }
-                                            .onTapGesture {
-                                                openDetail(id: row.id)
-                                            }
 
-                                            if idx < feed.items.count - 1 {
-                                                Rectangle().fill(DS.line).frame(height: 1)
+                                                if idx < feed.items.count - 1 {
+                                                    Rectangle().fill(DS.line).frame(height: 1)
+                                                }
                                             }
                                         }
                                     }
@@ -829,5 +816,120 @@ struct RecordTypeBadges: View {
         case "unknown": return (DS.warn, DS.warnBg)
         default: return (DS.recordSyncFg, DS.recordSyncBg)
         }
+    }
+}
+
+
+@MainActor
+private final class RecordRowHoverCoordinator {
+    private struct Listener {
+        let token: UUID
+        let setHovered: (Bool) -> Void
+    }
+
+    private var hoveredRowId: Int?
+    private var listeners: [Int: [Listener]] = [:]
+
+    func register(rowId: Int, setHovered: @escaping (Bool) -> Void) -> UUID {
+        let token = UUID()
+        listeners[rowId, default: []].append(Listener(token: token, setHovered: setHovered))
+        setHovered(hoveredRowId == rowId)
+        return token
+    }
+
+    func unregister(rowId: Int, token: UUID?) {
+        guard let token else { return }
+        listeners[rowId]?.removeAll { $0.token == token }
+        if listeners[rowId]?.isEmpty == true {
+            listeners.removeValue(forKey: rowId)
+        }
+    }
+
+    func setHover(rowId: Int, hovering: Bool) {
+        let next: Int? = hovering ? rowId : (hoveredRowId == rowId ? nil : hoveredRowId)
+        guard next != hoveredRowId else { return }
+        let prev = hoveredRowId
+        hoveredRowId = next
+        if let prev, let prevListeners = listeners[prev] {
+            for item in prevListeners { item.setHovered(false) }
+        }
+        if let next, let nextListeners = listeners[next] {
+            for item in nextListeners { item.setHovered(true) }
+        }
+    }
+}
+
+private struct RecordUserRowCell: View {
+    let row: UsageRecord
+    let userColWidth: CGFloat
+    let userCellPad: CGFloat
+    let rowHeight: CGFloat
+    let hoverCoordinator: RecordRowHoverCoordinator
+    let onTap: () -> Void
+
+    @State private var isHovered: Bool = false
+    @State private var listenerToken: UUID?
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.user_name ?? row.user_email ?? "#\(row.user_id)")
+                    .font(DS.fontCompactSemibold)
+                    .foregroundStyle(DS.ink)
+                    .lineLimit(1)
+                Text("#\(row.user_id)")
+                    .font(DS.fontResetTime)
+                    .monospacedDigit()
+                    .foregroundStyle(DS.muted)
+            }
+            .padding(.horizontal, userCellPad)
+            .frame(width: userColWidth, height: rowHeight, alignment: .leading)
+            .background(isHovered ? DS.rowHover : DS.surface)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.linearPlain)
+        .help("\(row.user_name ?? row.user_email ?? "用户") #\(row.user_id)")
+        .onAppear {
+            listenerToken = hoverCoordinator.register(rowId: row.id) { isHovered = $0 }
+        }
+        .onDisappear {
+            hoverCoordinator.unregister(rowId: row.id, token: listenerToken)
+            listenerToken = nil
+        }
+        .onHover { hov in
+            hoverCoordinator.setHover(rowId: row.id, hovering: hov)
+        }
+    }
+}
+
+private struct RecordDataRowCell<Content: View>: View {
+    let rowId: Int
+    let effectiveDataWidth: CGFloat
+    let rowHeight: CGFloat
+    let hCellPad: CGFloat
+    let hoverCoordinator: RecordRowHoverCoordinator
+    let onTap: () -> Void
+    @ViewBuilder let content: () -> Content
+
+    @State private var isHovered: Bool = false
+    @State private var listenerToken: UUID?
+
+    var body: some View {
+        content()
+            .padding(.horizontal, hCellPad)
+            .frame(width: effectiveDataWidth, height: rowHeight, alignment: .leading)
+            .background(isHovered ? DS.rowHover : DS.surface)
+            .contentShape(Rectangle())
+            .onAppear {
+                listenerToken = hoverCoordinator.register(rowId: rowId) { isHovered = $0 }
+            }
+            .onDisappear {
+                hoverCoordinator.unregister(rowId: rowId, token: listenerToken)
+                listenerToken = nil
+            }
+            .onHover { hov in
+                hoverCoordinator.setHover(rowId: rowId, hovering: hov)
+            }
+            .onTapGesture(perform: onTap)
     }
 }

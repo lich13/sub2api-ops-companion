@@ -17,7 +17,7 @@ public struct AccountsPageView: View {
     @State private var connectionBatch: OperationBatch? = nil
     @State private var batchBusy: Bool = false
     @State private var measuredWidth: CGFloat = 1085
-    @State private var hoveredAccountId: Int? = nil
+    @State private var filterCache = AccountFilterCache()
 
     public init(store: AppStore, viewportWidth: CGFloat? = nil) {
         self.store = store
@@ -29,15 +29,15 @@ public struct AccountsPageView: View {
     }
 
     private var filteredSortedAccounts: [Account] {
-        let filtered = AccountFilterSort.filter(
-            store.accounts,
+        filterCache.resolve(
+            accounts: store.accounts,
             query: query,
             group: groupFilter,
             platform: platformFilter,
             status: statusFilter,
-            type: typeFilter
+            type: typeFilter,
+            sortStore: sortStore
         )
-        return sortStore.sort(filtered)
     }
 
     private var availablePlatforms: [String] {
@@ -283,6 +283,7 @@ public struct AccountsPageView: View {
     private var accountsTable: some View {
         let rows = filteredSortedAccounts
         let allSelected = !rows.isEmpty && rows.allSatisfy { selectedIds.contains($0.id) }
+        let pendingByAccount = store.operations.pendingByAccount
         let metrics = TableColumnMetrics(containerWidth: max(320, availableWidth), nameExpanded: nameExpanded)
         let needsHorizontalScroll = metrics.totalWidth > availableWidth + 0.5
 
@@ -379,7 +380,21 @@ public struct AccountsPageView: View {
             } else {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { idx, account in
-                        accountRow(account, metrics: metrics)
+                        AccountTableRowView(
+                            account: account,
+                            checked: selectedIds.contains(account.id),
+                            pendingCount: pendingByAccount[account.id]?.count ?? 0,
+                            nameExpanded: nameExpanded,
+                            metrics: metrics,
+                            store: store,
+                            nativeUsage: nativeUsage
+                        ) {
+                            if selectedIds.contains(account.id) {
+                                selectedIds.remove(account.id)
+                            } else {
+                                selectedIds.insert(account.id)
+                            }
+                        }
                         if idx < rows.count - 1 {
                             Rectangle().fill(DS.line).frame(height: 1)
                         }
@@ -403,155 +418,6 @@ public struct AccountsPageView: View {
         .overlay(RoundedRectangle(cornerRadius: DS.cardRadius).strokeBorder(DS.line, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: DS.cardRadius))
         .shadow(color: DS.shadowColor, radius: 2, x: 0, y: 1)
-    }
-
-    private func accountRow(_ account: Account, metrics: TableColumnMetrics) -> some View {
-        let checked = selectedIds.contains(account.id)
-        let pendingOps = store.operations.pendingForAccount(account.id)
-
-        return HStack(alignment: .center, spacing: metrics.gap) {
-            LinearCheckbox(
-                isChecked: checked,
-                accessibilityTitle: "选择 \(account.name)"
-            ) {
-                if checked { selectedIds.remove(account.id) } else { selectedIds.insert(account.id) }
-            }
-            .frame(width: metrics.selectW, alignment: .center)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(account.name)
-                    .font(DS.fontCompactSemibold)
-                    .foregroundStyle(DS.ink)
-                    .lineLimit(nameExpanded ? 4 : 1)
-                    .truncationMode(.tail)
-                    .help(account.name)
-                Text("#\(account.id)")
-                    .font(DS.fontResetTime)
-                    .monospacedDigit()
-                    .foregroundStyle(DS.muted)
-                Text("\(PlatformMeta.displayName(account.platform)) · \(PlatformMeta.typeLabel(account.type))")
-                    .font(DS.fontResetTime)
-                    .foregroundStyle(DS.muted)
-                    .lineLimit(1)
-                DegradationBadgeView(account: account)
-                if !pendingOps.isEmpty {
-                    Button {
-                        store.operations.isOpen = true
-                    } label: {
-                        Text("\(pendingOps.count) 项任务进行中")
-                            .font(DS.fontResetTimeMedium)
-                            .monospacedDigit()
-                            .foregroundStyle(DS.accent)
-                    }
-                    .buttonStyle(.linearPlain)
-                }
-            }
-            .frame(width: metrics.nameW, alignment: .leading)
-
-            SchedulingParametersView(account: account, store: store)
-                .frame(width: metrics.paramsW, alignment: .leading)
-
-            AccountStatusView(account: account) { errId in
-                store.openErrorDetail(id: errId)
-            }
-            .frame(width: metrics.statusW, alignment: .leading)
-
-            UsageCellView(
-                account: account,
-                store: store,
-                nativeUsage: nativeUsage,
-                onOpenKeyQuotaSettings: { target in
-                    store.accountModal = .keyQuotaSettings(target)
-                }
-            )
-            .frame(width: metrics.usageW, alignment: .leading)
-
-            errorCell(account)
-                .frame(width: metrics.errorW, alignment: .leading)
-
-            LinearSwitch(
-                isOn: account.schedulable,
-                disabled: !store.state.online || store.busyScheduleAccountId == account.id,
-                label: "\(account.name) 允许调度"
-            ) {
-                Task { await store.toggleSchedulable(account) }
-            }
-            .frame(width: metrics.scheduleW, alignment: .center)
-
-            AccountActionsView(
-                account: account,
-                totalWidth: metrics.actionsW,
-                disabled: !store.state.online
-            ) { action in
-                store.triggerAccountAction(action)
-            }
-            .frame(width: metrics.actionsW, alignment: .leading)
-        }
-        .padding(.horizontal, metrics.horizontalPad)
-        .padding(.vertical, 10)
-        .frame(width: metrics.totalWidth, alignment: .leading)
-        .background(checked ? DS.accentBg.opacity(0.32) : (hoveredAccountId == account.id ? DS.rowHover : DS.surface))
-        .overlay(alignment: .trailing) {
-            HStack(spacing: 0) {
-                Rectangle().fill(DS.line).frame(width: 1)
-                DS.clear.frame(width: metrics.actionsW + metrics.horizontalPad + metrics.separatorInset - 1)
-            }
-        }
-        .onHover { isHovering in
-            if isHovering {
-                hoveredAccountId = account.id
-            } else if hoveredAccountId == account.id {
-                hoveredAccountId = nil
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func errorCell(_ account: Account) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let errId = account.last_error_id {
-                Button {
-                    store.openErrorDetail(id: errId)
-                } label: {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(verbatim: account.last_error_code?.isEmpty == false ? account.last_error_code! : "HTTP \(account.last_error_status ?? 500)")
-                            .font(DS.fontResetTimeMedium)
-                            .foregroundStyle(DS.bad)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                        Text(account.last_error_at == nil ? "错误时间未知" : BeijingTime.fullTime(account.last_error_at))
-                            .font(DS.fontResetTime)
-                            .monospacedDigit()
-                            .foregroundStyle(DS.muted)
-                    }
-                }
-                .buttonStyle(.linearPlain)
-            } else if !account.errorMessageText.isEmpty || account.last_error_status != nil {
-                Text(account.last_error_at == nil ? "错误时间未知" : BeijingTime.fullTime(account.last_error_at))
-                    .font(DS.fontCompactMedium)
-                    .monospacedDigit()
-                    .foregroundStyle(DS.ink)
-            } else {
-                Text("暂无记录")
-                    .font(DS.fontCompact)
-                    .foregroundStyle(DS.muted)
-            }
-
-            if let okAt = account.last_success_at, !okAt.isEmpty {
-                let recoveredAfterErr = account.isSuccessAfterError
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("最后成功")
-                        .font(DS.fontResetTime)
-                        .foregroundStyle(recoveredAfterErr ? DS.good : DS.muted)
-                    Text(BeijingTime.fullTime(okAt))
-                        .font(DS.fontResetTime)
-                        .monospacedDigit()
-                        .foregroundStyle(recoveredAfterErr ? DS.good : DS.muted)
-                }
-                .padding(.top, 2)
-                .help(recoveredAfterErr ? "最近报错后已有成功调用" : "最后成功调用时间")
-            }
-        }
     }
 
     private func triggerQuotaRefresh() async {
@@ -620,6 +486,211 @@ public struct AccountsPageView: View {
             store.showToast("已恢复 \(ok)/\(final.items.count) 个账号状态")
         } catch {
             store.report(error)
+        }
+    }
+}
+
+
+@MainActor
+private final class AccountFilterCache {
+    private var lastAccounts: [Account] = []
+    private var lastQuery: String = ""
+    private var lastGroup: String = ""
+    private var lastPlatform: String = ""
+    private var lastStatus: String = ""
+    private var lastType: String = ""
+    private var lastSortOption: AccountSortOption?
+    private var cachedResult: [Account] = []
+
+    func resolve(
+        accounts: [Account],
+        query: String,
+        group: String,
+        platform: String,
+        status: String,
+        type: String,
+        sortStore: AccountSortStore
+    ) -> [Account] {
+        let opt = sortStore.option
+        if lastSortOption == opt,
+           lastQuery == query,
+           lastGroup == group,
+           lastPlatform == platform,
+           lastStatus == status,
+           lastType == type,
+           lastAccounts == accounts
+        {
+            return cachedResult
+        }
+        let filtered = AccountFilterSort.filter(
+            accounts,
+            query: query,
+            group: group,
+            platform: platform,
+            status: status,
+            type: type
+        )
+        let sorted = sortStore.sort(filtered)
+        lastAccounts = accounts
+        lastQuery = query
+        lastGroup = group
+        lastPlatform = platform
+        lastStatus = status
+        lastType = type
+        lastSortOption = opt
+        cachedResult = sorted
+        return sorted
+    }
+}
+
+private struct AccountTableRowView: View {
+    let account: Account
+    let checked: Bool
+    let pendingCount: Int
+    let nameExpanded: Bool
+    let metrics: AccountsPageView.TableColumnMetrics
+    @Bindable var store: AppStore
+    let nativeUsage: NativeUsageReader
+    let onToggleSelected: () -> Void
+
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        HStack(alignment: .center, spacing: metrics.gap) {
+            LinearCheckbox(
+                isChecked: checked,
+                accessibilityTitle: "选择 \(account.name)",
+                onToggle: onToggleSelected
+            )
+            .frame(width: metrics.selectW, alignment: .center)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(account.name)
+                    .font(DS.fontCompactSemibold)
+                    .foregroundStyle(DS.ink)
+                    .lineLimit(nameExpanded ? 4 : 1)
+                    .truncationMode(.tail)
+                    .help(account.name)
+                Text("#\(account.id)")
+                    .font(DS.fontResetTime)
+                    .monospacedDigit()
+                    .foregroundStyle(DS.muted)
+                Text("\(PlatformMeta.displayName(account.platform)) · \(PlatformMeta.typeLabel(account.type))")
+                    .font(DS.fontResetTime)
+                    .foregroundStyle(DS.muted)
+                    .lineLimit(1)
+                DegradationBadgeView(account: account)
+                if pendingCount > 0 {
+                    Button {
+                        store.operations.isOpen = true
+                    } label: {
+                        Text("\(pendingCount) 项任务进行中")
+                            .font(DS.fontResetTimeMedium)
+                            .monospacedDigit()
+                            .foregroundStyle(DS.accent)
+                    }
+                    .buttonStyle(.linearPlain)
+                }
+            }
+            .frame(width: metrics.nameW, alignment: .leading)
+
+            SchedulingParametersView(account: account, store: store)
+                .frame(width: metrics.paramsW, alignment: .leading)
+
+            AccountStatusView(account: account) { errId in
+                store.openErrorDetail(id: errId)
+            }
+            .frame(width: metrics.statusW, alignment: .leading)
+
+            UsageCellView(
+                account: account,
+                store: store,
+                nativeUsage: nativeUsage,
+                onOpenKeyQuotaSettings: { target in
+                    store.accountModal = .keyQuotaSettings(target)
+                }
+            )
+            .frame(width: metrics.usageW, alignment: .leading)
+
+            errorCell
+                .frame(width: metrics.errorW, alignment: .leading)
+
+            LinearSwitch(
+                isOn: account.schedulable,
+                disabled: !store.state.online || store.busyScheduleAccountId == account.id,
+                label: "\(account.name) 允许调度"
+            ) {
+                Task { await store.toggleSchedulable(account) }
+            }
+            .frame(width: metrics.scheduleW, alignment: .center)
+
+            AccountActionsView(
+                account: account,
+                totalWidth: metrics.actionsW,
+                disabled: !store.state.online
+            ) { action in
+                store.triggerAccountAction(action)
+            }
+            .frame(width: metrics.actionsW, alignment: .leading)
+        }
+        .padding(.horizontal, metrics.horizontalPad)
+        .padding(.vertical, 10)
+        .frame(width: metrics.totalWidth, alignment: .leading)
+        .background(checked ? DS.accentBg.opacity(0.32) : (isHovered ? DS.rowHover : DS.surface))
+        .overlay(alignment: .trailing) {
+            HStack(spacing: 0) {
+                Rectangle().fill(DS.line).frame(width: 1)
+                DS.clear.frame(width: metrics.actionsW + metrics.horizontalPad + metrics.separatorInset - 1)
+            }
+        }
+        .onHover { isHovered = $0 }
+    }
+
+    @ViewBuilder
+    private var errorCell: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let errId = account.last_error_id {
+                Button {
+                    store.openErrorDetail(id: errId)
+                } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(verbatim: account.last_error_code?.isEmpty == false ? account.last_error_code! : "HTTP \(account.last_error_status ?? 500)")
+                            .font(DS.fontResetTimeMedium)
+                            .foregroundStyle(DS.bad)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        Text(account.last_error_at == nil ? "错误时间未知" : BeijingTime.fullTime(account.last_error_at))
+                            .font(DS.fontResetTime)
+                            .monospacedDigit()
+                            .foregroundStyle(DS.muted)
+                    }
+                }
+                .buttonStyle(.linearPlain)
+            } else if !account.errorMessageText.isEmpty || account.last_error_status != nil {
+                Text(account.last_error_at == nil ? "错误时间未知" : BeijingTime.fullTime(account.last_error_at))
+                    .font(DS.fontCompactMedium)
+                    .monospacedDigit()
+                    .foregroundStyle(DS.ink)
+            } else {
+                Text("暂无记录")
+                    .font(DS.fontCompact)
+                    .foregroundStyle(DS.muted)
+            }
+
+            if let okAt = account.last_success_at, !okAt.isEmpty {
+                let recoveredAfterErr = account.isSuccessAfterError
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("最后成功")
+                        .font(DS.fontResetTime)
+                        .foregroundStyle(recoveredAfterErr ? DS.good : DS.muted)
+                    Text(BeijingTime.fullTime(okAt))
+                        .font(DS.fontResetTime)
+                        .monospacedDigit()
+                        .foregroundStyle(recoveredAfterErr ? DS.good : DS.muted)
+                }
+                .padding(.top, 2)
+                .help(recoveredAfterErr ? "最近报错后已有成功调用" : "最后成功调用时间")
+            }
         }
     }
 }

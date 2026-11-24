@@ -1,4 +1,3 @@
-import { useEffectEvent } from "react";
 import {
   bridgeFailure,
   credentialsRequired,
@@ -15,13 +14,12 @@ import React, {
   useState,
 } from "react";
 import {
-  Activity,
-  Bell,
   Check,
   ChevronRight,
   CircleAlert,
   Clock3,
-  ExternalLink,
+  Activity,
+  Bell,
   Layers3,
   ListOrdered,
   LayoutTemplate,
@@ -52,7 +50,6 @@ import {
   initialState,
   type Account,
   type Config,
-  type ConfigSection,
   type Group,
   type OpsError,
   type Preferences,
@@ -62,54 +59,149 @@ import {
 import "./style.css";
 import "./responsive.css";
 import { KeyQuotaProvider, KeyQuotaRefreshSettings } from "./KeyQuotaSettings";
-import RecoveryAccounts from "./RecoveryAccounts";
 import { useErrorFeed, type ErrorCategory } from "./useErrorFeed";
-import { MiniUsage, QuotaRefresh, RecoveryHistory } from "./AccountControls";
-import TestDialog from "./TestDialog";
+import { MiniUsage, QuotaRefresh } from "./AccountControls";
 import { useConnectionBatch, ConnectionBatchResults } from "./ConnectionBatch";
-import ModelTestDialog from "./ModelTestDialog";
-import DetectionPlatformSettings from "./DetectionPlatformSettings";
-import FingerprintBankStatus from "./FingerprintBankStatus";
-import ConnectionStatusCard from "./ConnectionStatusCard";
 import {
-  DeleteAccountsDialog,
   RecoverSelectedButton,
-  ResetCreditsDialog,
   resetCreditEligible,
-} from "./AccountManagement";
-import AccountTemplates from "./AccountTemplates";
-import AccountSettingsDialog from "./AccountSettingsDialog";
+} from "./AccountRecoveryButton";
 import { useAccountActions } from "./AccountActions";
-import ModelDetectionDialog from "./ModelDetectionDialog";
-import AccountModelField from "./AccountModelField";
-import DetectionLogs from "./DetectionLogs";
-import KeepaliveDialog from "./KeepaliveDialog";
 import AccountOperations from "./OperationPanel";
 import {
   accountOperation,
   bindOperationConnection,
   operationEpoch,
 } from "./accountOperations";
-import UsageRecords from "./UsageRecords";
+import { bindAccountModelsConnection } from "./accountModels";
 import MobileAccounts from "./MobileAccounts";
 import GroupManager from "./GroupManager";
 import PriorityManager from "./PriorityManager";
+import ConnectionStatusCard from "./ConnectionStatusCard";
+import ConnectionView from "./ConnectionView";
+import SettingsView, { SwitchControl as Switch } from "./SettingsView";
 import DegradationAction, { DegradationBadge } from "./DegradationMark";
 import { useDialogFocus } from "./dialogFocus";
 import { listenBack, useBackAction } from "./mobile";
-import { version as appVersion } from "../package.json";
 import { getVersion as getRuntimeVersion } from "@tauri-apps/api/app";
 import "./mobile-layout.css";
 
-const LazySub2ApiConfig = React.lazy(() => import("./Sub2ApiConfig"));
-const LazyProxyManagement = React.lazy(() => import("./ProxyManagement"));
-const LazyAccountCreationDialog = React.lazy(
+type PreloadableComponent<P extends object> = React.FC<P> & {
+  preload: () => Promise<unknown>;
+};
+
+function lazyWithPreload<P extends object>(
+  loader: () => Promise<{ default: React.FC<P> }>,
+): PreloadableComponent<P> {
+  let Resolved: React.FC<P> | null = null;
+  let pending: Promise<{ default: React.FC<P> }> | null = null;
+  const load = () => {
+    if (!pending) {
+      pending = loader().then((mod) => {
+        Resolved = mod.default;
+        return mod;
+      });
+    }
+    return pending;
+  };
+  const Lazy = React.lazy(load);
+  const Component: PreloadableComponent<P> = Object.assign(
+    function PreloadableLazy(props: P) {
+      if (Resolved) {
+        return <Resolved {...props} />;
+      }
+      return (
+        <Suspense fallback={null}>
+          <Lazy {...props} />
+        </Suspense>
+      );
+    },
+    { preload: load },
+  );
+  return Component;
+}
+
+const LazyAccountCreationDialog = lazyWithPreload(
   () => import("./AccountCreationDialog"),
 );
-const LazyProxyBatchDialog = React.lazy(() => import("./ProxyBatchDialog"));
-const LazyReauthorizeAccountDialog = React.lazy(
+const LazyProxyBatchDialog = lazyWithPreload(
+  () => import("./ProxyBatchDialog"),
+);
+const LazyReauthorizeAccountDialog = lazyWithPreload(
   () => import("./ReauthorizeAccountDialog"),
 );
+const LazyTestDialog = lazyWithPreload(() => import("./TestDialog"));
+const LazyModelTestDialog = lazyWithPreload(() => import("./ModelTestDialog"));
+const LazyAccountTemplates = lazyWithPreload(
+  () => import("./AccountTemplates"),
+);
+const LazyAccountSettingsDialog = lazyWithPreload(
+  () => import("./AccountSettingsDialog"),
+);
+const LazyModelDetectionDialog = lazyWithPreload(
+  () => import("./ModelDetectionDialog"),
+);
+const LazyKeepaliveDialog = lazyWithPreload(() => import("./KeepaliveDialog"));
+const LazyDeleteAccountsDialog = lazyWithPreload(async () => ({
+  default: (await import("./AccountManagement")).DeleteAccountsDialog,
+}));
+const LazyResetCreditsDialog = lazyWithPreload(async () => ({
+  default: (await import("./AccountManagement")).ResetCreditsDialog,
+}));
+const LazyUsageRecords = lazyWithPreload(() => import("./UsageRecords"));
+const LazyDetectionLogs = lazyWithPreload(() => import("./DetectionLogs"));
+const LazyRecoveryHistory = lazyWithPreload(() => import("./RecoveryHistory"));
+
+const secondarySurfaces = [
+  LazyUsageRecords,
+  LazyDetectionLogs,
+  LazyRecoveryHistory,
+  LazyTestDialog,
+  LazyModelTestDialog,
+  LazyAccountTemplates,
+  LazyAccountSettingsDialog,
+  LazyModelDetectionDialog,
+  LazyKeepaliveDialog,
+  LazyDeleteAccountsDialog,
+  LazyResetCreditsDialog,
+];
+
+let secondaryPrewarmed = false;
+function prewarmSecondarySurfaces() {
+  if (secondaryPrewarmed) return;
+  secondaryPrewarmed = true;
+  for (const surface of secondarySurfaces) {
+    void surface.preload().catch(() => {});
+  }
+}
+
+if (typeof window !== "undefined" && import.meta.env.MODE === "test") {
+  queueMicrotask(prewarmSecondarySurfaces);
+}
+
+function mergeIncomingState(prev: ViewState, next: ViewState): ViewState {
+  const prevKey = `${prev.preferences.base_url}:${prev.connected}:${prev.connection_revision ?? 0}`;
+  const nextKey = `${next.preferences.base_url}:${next.connected}:${next.connection_revision ?? 0}`;
+  if (
+    prevKey === nextKey &&
+    prev.snapshot &&
+    next.snapshot &&
+    prev.snapshot_revision &&
+    prev.snapshot_revision === next.snapshot_revision
+  ) {
+    if (prev.snapshot.observed_at === next.snapshot.observed_at) {
+      return { ...next, snapshot: prev.snapshot };
+    }
+    return {
+      ...next,
+      snapshot: {
+        ...prev.snapshot,
+        observed_at: next.snapshot.observed_at,
+      },
+    };
+  }
+  return next;
+}
 
 function LazyAccountCreationButton({
   accounts,
@@ -161,35 +253,6 @@ const pages: { id: Page; label: string; icon: typeof Activity }[] = [
   { id: "features", label: "功能", icon: SlidersHorizontal },
   { id: "settings", label: "设置", icon: Settings2 },
 ];
-function Switch({
-  on,
-  disabled,
-  label,
-  onChange,
-}: {
-  on: boolean;
-  disabled?: boolean;
-  label: string;
-  onChange: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-      className={`switch ${on ? "on" : ""}`}
-      onClick={(e) => {
-        e.stopPropagation();
-        onChange();
-      }}
-    >
-      <span />
-    </button>
-  );
-}
 function Time({ at }: { at: string | null | undefined }) {
   return <time>{fullTime(at)}</time>;
 }
@@ -330,6 +393,10 @@ export default function App() {
     };
   }, [page]);
   const contentRef = useRef<HTMLDivElement>(null);
+  const retainedScrollRef = useRef<{ groups: number; priorities: number }>({
+    groups: 0,
+    priorities: 0,
+  });
   const previousPage = useRef(page);
   useEffect(() => {
     if (
@@ -354,10 +421,46 @@ export default function App() {
         }
       }
     }
+    if (
+      previousPage.current !== page &&
+      (page === "groups" || page === "priorities") &&
+      contentRef.current
+    ) {
+      contentRef.current.scrollTop = retainedScrollRef.current[page];
+      contentRef.current.scrollLeft = 0;
+    }
     previousPage.current = page;
   }, [page]);
+  useEffect(() => {
+    if (!ready || !state.connected || secondaryPrewarmed) return;
+    if ("requestIdleCallback" in window) {
+      const id = window.requestIdleCallback(prewarmSecondarySurfaces, {
+        timeout: 2500,
+      });
+      return () => window.cancelIdleCallback(id);
+    }
+    const timer = setTimeout(prewarmSecondarySurfaces, 1500);
+    return () => clearTimeout(timer);
+  }, [ready, state.connected]);
   const connectionKey = `${state.preferences.base_url}:${state.connected}:${state.connection_revision ?? 0}`;
+  const [visitedRetained, setVisitedRetained] = useState<{
+    key: string;
+    groups: boolean;
+    priorities: boolean;
+  }>({ key: connectionKey, groups: false, priorities: false });
+  useEffect(() => {
+    setVisitedRetained((prev) => {
+      const sameKey = prev.key === connectionKey;
+      const groups = (sameKey && prev.groups) || page === "groups";
+      const priorities = (sameKey && prev.priorities) || page === "priorities";
+      if (sameKey && prev.groups === groups && prev.priorities === priorities) {
+        return prev;
+      }
+      return { key: connectionKey, groups, priorities };
+    });
+  }, [connectionKey, page]);
   useEffect(() => bindOperationConnection(connectionKey), [connectionKey]);
+  useEffect(() => bindAccountModelsConnection(connectionKey), [connectionKey]);
   const connectionBatch = useConnectionBatch({
     connectionKey,
     storageKey: state.preferences.base_url,
@@ -372,6 +475,7 @@ export default function App() {
     setSwitcherOpen(false);
   }, [page, connectionKey, eventTab]);
   useEffect(() => {
+    retainedScrollRef.current = { groups: 0, priorities: 0 };
     setRemovedIds(new Set());
     showDialog(closedDialog);
     closeDetail();
@@ -419,11 +523,11 @@ export default function App() {
     let un: () => void = () => {};
     void (async () => {
       un = await subscribe((s) => {
-        if (!disposed) setState(s);
+        if (!disposed) setState((prev) => mergeIncomingState(prev, s));
       });
       const s = await command("get_state");
       if (!disposed) {
-        setState(s);
+        setState((prev) => mergeIncomingState(prev, s));
         setReady(true);
       } else {
         un();
@@ -907,6 +1011,11 @@ export default function App() {
           ref={contentRef}
           key={connectionKey}
           className={`content ${page === "events" ? "events-content" : ""} ${page === "records" ? "records-content" : ""}`}
+          onScroll={(e) => {
+            if (page === "groups" || page === "priorities") {
+              retainedScrollRef.current[page] = e.currentTarget.scrollTop;
+            }
+          }}
         >
           <div className="content-inner">
             {!ready || state.initializing ? (
@@ -915,7 +1024,7 @@ export default function App() {
                 正在加载客户端
               </div>
             ) : !state.connected ? (
-              <Connection
+              <ConnectionView
                 state={state}
                 onError={report}
                 onSwitchSaved={(item) => void switchConnection(item)}
@@ -930,7 +1039,7 @@ export default function App() {
                 {page === "settings" && (
                   <>
                     <ConnectionStatusCard connectionKey={connectionKey} />
-                    <Connection
+                    <ConnectionView
                       state={state}
                       onError={report}
                       beforeChange={beforeConnectionChange}
@@ -942,31 +1051,39 @@ export default function App() {
               </div>
             ) : (
               <>
-                <GroupManager
-                  key={connectionKey}
-                  connectionKey={connectionKey}
-                  active={page === "groups"}
-                  accounts={accounts}
-                  groups={groups}
-                  online={state.online}
-                  back={() => setPage("accounts")}
-                  report={report}
-                  accountActions={accountActions}
-                  schedule={schedule}
-                  changed={(count, saving) =>
-                    setGroupChanges({ count, busy: saving })
-                  }
-                />
-                <PriorityManager
-                  key={`priorities:${connectionKey}`}
-                  connectionKey={connectionKey}
-                  active={page === "priorities"}
-                  accounts={accounts}
-                  online={state.online}
-                  back={() => setPage("accounts")}
-                  schedule={schedule}
-                  changed={setPriorityChanges}
-                />
+                {(page === "groups" ||
+                  (visitedRetained.key === connectionKey &&
+                    visitedRetained.groups)) && (
+                  <GroupManager
+                    key={connectionKey}
+                    connectionKey={connectionKey}
+                    active={page === "groups"}
+                    accounts={accounts}
+                    groups={groups}
+                    online={state.online}
+                    back={() => setPage("accounts")}
+                    report={report}
+                    accountActions={accountActions}
+                    schedule={schedule}
+                    changed={(count, saving) =>
+                      setGroupChanges({ count, busy: saving })
+                    }
+                  />
+                )}
+                {(page === "priorities" ||
+                  (visitedRetained.key === connectionKey &&
+                    visitedRetained.priorities)) && (
+                  <PriorityManager
+                    key={`priorities:${connectionKey}`}
+                    connectionKey={connectionKey}
+                    active={page === "priorities"}
+                    accounts={accounts}
+                    online={state.online}
+                    back={() => setPage("accounts")}
+                    schedule={schedule}
+                    changed={setPriorityChanges}
+                  />
+                )}
                 <div
                   key={`surface:${page}:${connectionKey}`}
                   className="page-surface"
@@ -985,16 +1102,18 @@ export default function App() {
                     )}
                   </div>
                   {page === "records" && (
-                    <UsageRecords
-                      key={connectionKey}
-                      online={state.online}
-                      foreground={state.foreground !== false}
-                      accounts={accounts}
-                      columns={state.preferences.record_columns}
-                      saveColumns={(columns) =>
-                        savePrefs({ record_columns: columns })
-                      }
-                    />
+                    <Suspense fallback={null}>
+                      <LazyUsageRecords
+                        key={connectionKey}
+                        online={state.online}
+                        foreground={state.foreground !== false}
+                        accounts={accounts}
+                        columns={state.preferences.record_columns}
+                        saveColumns={(columns) =>
+                          savePrefs({ record_columns: columns })
+                        }
+                      />
+                    </Suspense>
                   )}
                   {page === "accounts" && (
                     <KeyQuotaProvider
@@ -1378,12 +1497,18 @@ export default function App() {
                           aria-labelledby="logs-tab"
                           hidden={eventTab !== "logs"}
                         >
-                          <DetectionLogs
-                            key={connectionKey}
-                            active={page === "events" && eventTab === "logs"}
-                            online={state.online}
-                            connectionKey={connectionKey}
-                          />
+                          {eventTab === "logs" && (
+                            <Suspense fallback={null}>
+                              <LazyDetectionLogs
+                                key={connectionKey}
+                                active={
+                                  page === "events" && eventTab === "logs"
+                                }
+                                online={state.online}
+                                connectionKey={connectionKey}
+                              />
+                            </Suspense>
+                          )}
                         </section>
                         <section
                           id="recoveries-panel"
@@ -1392,14 +1517,18 @@ export default function App() {
                           aria-labelledby="recoveries-tab"
                           hidden={eventTab !== "recoveries"}
                         >
-                          <RecoveryHistory
-                            key={connectionKey}
-                            latest={snap.recoveries ?? []}
-                            accounts={accounts}
-                            online={state.online}
-                            active={eventTab === "recoveries"}
-                            report={report}
-                          />
+                          {eventTab === "recoveries" && (
+                            <Suspense fallback={null}>
+                              <LazyRecoveryHistory
+                                key={connectionKey}
+                                latest={snap.recoveries ?? []}
+                                accounts={accounts}
+                                online={state.online}
+                                active={eventTab === "recoveries"}
+                                report={report}
+                              />
+                            </Suspense>
+                          )}
                         </section>
                       </div>
                     </div>
@@ -1409,7 +1538,7 @@ export default function App() {
                   )}
                   {(page === "features" || page === "settings") &&
                     (config ? (
-                      <SettingsPage
+                      <SettingsView
                         page={page}
                         config={config}
                         accounts={accounts}
@@ -1429,7 +1558,7 @@ export default function App() {
                       />
                     ) : page === "settings" ? (
                       <section className="settings-card">
-                        <Connection
+                        <ConnectionView
                           state={state}
                           onError={report}
                           beforeChange={beforeConnectionChange}
@@ -1525,7 +1654,7 @@ export default function App() {
             aria-label="连接 Sub2API 实例"
             onClick={(e) => e.stopPropagation()}
           >
-            <Connection
+            <ConnectionView
               state={state}
               initialUrl={connectionModal.baseUrl}
               initialName={connectionModal.name}
@@ -1568,41 +1697,47 @@ export default function App() {
         </div>
       )}
       {resetAccounts && (
-        <ResetCreditsDialog
-          accounts={resetAccounts}
-          online={state.online}
-          report={report}
-          close={() => showDialog(closedDialog)}
-        />
+        <Suspense fallback={null}>
+          <LazyResetCreditsDialog
+            accounts={resetAccounts}
+            online={state.online}
+            report={report}
+            close={() => showDialog(closedDialog)}
+          />
+        </Suspense>
       )}
       {deleteAccounts && (
-        <DeleteAccountsDialog
-          accounts={deleteAccounts}
-          allAccounts={accounts}
-          online={state.online}
-          removed={(id) => {
-            setRemovedIds((old) => (old.has(id) ? old : new Set([...old, id])));
-            setSelected((old) =>
-              !old.has(id)
-                ? old
-                : new Set([...old].filter((value) => value !== id)),
-            );
-          }}
-          finished={(results) =>
-            setSelected(
-              new Set(
-                results
-                  .filter(
-                    (r) =>
-                      r.status === "failed" &&
-                      accounts.some((a) => a.id === r.id),
-                  )
-                  .map((r) => r.id),
-              ),
-            )
-          }
-          close={() => showDialog(closedDialog)}
-        />
+        <Suspense fallback={null}>
+          <LazyDeleteAccountsDialog
+            accounts={deleteAccounts}
+            allAccounts={accounts}
+            online={state.online}
+            removed={(id) => {
+              setRemovedIds((old) =>
+                old.has(id) ? old : new Set([...old, id]),
+              );
+              setSelected((old) =>
+                !old.has(id)
+                  ? old
+                  : new Set([...old].filter((value) => value !== id)),
+              );
+            }}
+            finished={(results) =>
+              setSelected(
+                new Set(
+                  results
+                    .filter(
+                      (r) =>
+                        r.status === "failed" &&
+                        accounts.some((a) => a.id === r.id),
+                    )
+                    .map((r) => r.id),
+                ),
+              )
+            }
+            close={() => showDialog(closedDialog)}
+          />
+        </Suspense>
       )}
       {(detail || detailBusy) && (
         <div className="drawer-backdrop" onClick={closeDetail}>
@@ -1735,52 +1870,61 @@ export default function App() {
       )}
 
       {testAccount && (
-        <TestDialog
-          key={`${connectionKey}:${testAccount.id}`}
-          account={accounts.find((a) => a.id === testAccount.id) ?? testAccount}
-          online={state.online}
-          close={() => showDialog(closedDialog)}
-        />
+        <Suspense fallback={null}>
+          <LazyTestDialog
+            key={`${connectionKey}:${testAccount.id}`}
+            account={
+              accounts.find((a) => a.id === testAccount.id) ?? testAccount
+            }
+            online={state.online}
+            close={() => showDialog(closedDialog)}
+          />
+        </Suspense>
       )}
       {modelTestAccount && (
-        <ModelTestDialog
-          key={`${connectionKey}:${modelTestAccount.id}`}
-          account={
-            accounts.find((a) => a.id === modelTestAccount.id) ??
-            modelTestAccount
-          }
-          online={state.online}
-          report={report}
-          close={() => showDialog(closedDialog)}
-          preference={
-            state.preferences.model_test_preferences?.[
-              `${state.preferences.base_url}:${modelTestAccount.id}`
-            ]
-          }
-          savePreference={(value) =>
-            void prefs({
-              model_test_preferences: {
-                ...state.preferences.model_test_preferences,
-                [`${state.preferences.base_url}:${modelTestAccount.id}`]: value,
-              },
-            })
-          }
-          concurrency={state.preferences.model_test_concurrency ?? 1}
-          saveConcurrency={(value) =>
-            void prefs({ model_test_concurrency: value })
-          }
-        />
+        <Suspense fallback={null}>
+          <LazyModelTestDialog
+            key={`${connectionKey}:${modelTestAccount.id}`}
+            account={
+              accounts.find((a) => a.id === modelTestAccount.id) ??
+              modelTestAccount
+            }
+            online={state.online}
+            report={report}
+            close={() => showDialog(closedDialog)}
+            preference={
+              state.preferences.model_test_preferences?.[
+                `${state.preferences.base_url}:${modelTestAccount.id}`
+              ]
+            }
+            savePreference={(value) =>
+              void prefs({
+                model_test_preferences: {
+                  ...state.preferences.model_test_preferences,
+                  [`${state.preferences.base_url}:${modelTestAccount.id}`]:
+                    value,
+                },
+              })
+            }
+            concurrency={state.preferences.model_test_concurrency ?? 1}
+            saveConcurrency={(value) =>
+              void prefs({ model_test_concurrency: value })
+            }
+          />
+        </Suspense>
       )}
       {dialog.kind === "templates" && (
-        <AccountTemplates
-          key={connectionKey}
-          accounts={accounts}
-          online={state.online}
-          initialAccount={dialog.account}
-          initialAccounts={dialog.accounts}
-          close={() => showDialog(closedDialog)}
-          report={report}
-        />
+        <Suspense fallback={null}>
+          <LazyAccountTemplates
+            key={connectionKey}
+            accounts={accounts}
+            online={state.online}
+            initialAccount={dialog.account}
+            initialAccounts={dialog.accounts}
+            close={() => showDialog(closedDialog)}
+            report={report}
+          />
+        </Suspense>
       )}
       {proxyAccounts && (
         <Suspense fallback={null}>
@@ -1795,32 +1939,36 @@ export default function App() {
         </Suspense>
       )}
       {modelDetectionAccount && (
-        <ModelDetectionDialog
-          key={`${connectionKey}:${modelDetectionAccount.id}`}
-          account={
-            accounts.find((a) => a.id === modelDetectionAccount.id) ??
-            modelDetectionAccount
-          }
-          online={state.online}
-          close={() => showDialog(closedDialog)}
-          showResult={() => {
-            showDialog({ kind: "modelTest", account: modelDetectionAccount });
-          }}
-          report={report}
-        />
+        <Suspense fallback={null}>
+          <LazyModelDetectionDialog
+            key={`${connectionKey}:${modelDetectionAccount.id}`}
+            account={
+              accounts.find((a) => a.id === modelDetectionAccount.id) ??
+              modelDetectionAccount
+            }
+            online={state.online}
+            close={() => showDialog(closedDialog)}
+            showResult={() => {
+              showDialog({ kind: "modelTest", account: modelDetectionAccount });
+            }}
+            report={report}
+          />
+        </Suspense>
       )}
       {keepaliveAccount && (
-        <KeepaliveDialog
-          key={`${connectionKey}:${keepaliveAccount.id}`}
-          account={
-            accounts.find((a) => a.id === keepaliveAccount.id) ??
-            keepaliveAccount
-          }
-          online={state.online}
-          connectionKey={connectionKey}
-          close={() => showDialog(closedDialog)}
-          report={report}
-        />
+        <Suspense fallback={null}>
+          <LazyKeepaliveDialog
+            key={`${connectionKey}:${keepaliveAccount.id}`}
+            account={
+              accounts.find((a) => a.id === keepaliveAccount.id) ??
+              keepaliveAccount
+            }
+            online={state.online}
+            connectionKey={connectionKey}
+            close={() => showDialog(closedDialog)}
+            report={report}
+          />
+        </Suspense>
       )}
       {reauthorizeAccount?.connection === connectionKey && (
         <Suspense fallback={null}>
@@ -1834,13 +1982,15 @@ export default function App() {
         </Suspense>
       )}
       {settingsAccount?.connection === connectionKey && (
-        <AccountSettingsDialog
-          key={`${connectionKey}:${settingsAccount.account.id}:${settingsAccount.section}`}
-          account={settingsAccount.account}
-          initialSection={settingsAccount.section}
-          online={state.online}
-          close={() => showDialog(closedDialog)}
-        />
+        <Suspense fallback={null}>
+          <LazyAccountSettingsDialog
+            key={`${connectionKey}:${settingsAccount.account.id}:${settingsAccount.section}`}
+            account={settingsAccount.account}
+            initialSection={settingsAccount.section}
+            online={state.online}
+            close={() => showDialog(closedDialog)}
+          />
+        </Suspense>
       )}
       {toast && (
         <div className="toast" role="status">
@@ -1859,815 +2009,5 @@ function Empty({ text }: { text: string }) {
       <Check size={23} />
       <p>{text}</p>
     </div>
-  );
-}
-function Connection({
-  state,
-  onError,
-  beforeChange = async () => true,
-  initialUrl,
-  initialName,
-  requireKey = false,
-  showNameField = false,
-  onConnected,
-  onCancel,
-  onSwitchSaved,
-  switchingUrl = null,
-}: {
-  state: ViewState;
-
-  onError: (e: unknown) => void;
-  beforeChange?: () => Promise<boolean>;
-  initialUrl?: string;
-  initialName?: string;
-  requireKey?: boolean;
-  showNameField?: boolean;
-  onConnected?: () => void;
-  onCancel?: () => void;
-  onSwitchSaved?: (item: SavedConnection) => void;
-  switchingUrl?: string | null;
-}) {
-  const saved = useMemo(
-    () => savedConnections(state.preferences),
-    [state.preferences],
-  );
-  const defaultUrl =
-    initialUrl !== undefined ? initialUrl : state.preferences.base_url || "";
-  const defaultName =
-    initialName !== undefined
-      ? initialName
-      : saved.find((item) => item.base_url === defaultUrl)?.name || "";
-  const [url, setUrl] = useState(defaultUrl),
-    [name, setName] = useState(defaultName),
-    [nameOpen, setNameOpen] = useState(showNameField || Boolean(initialName)),
-    [key, setKey] = useState(""),
-    [busy, setBusy] = useState(false);
-  useEffect(() => {
-    setUrl(defaultUrl);
-    setName(defaultName);
-    if (initialName) setNameOpen(true);
-  }, [defaultUrl, defaultName, initialName]);
-  const normalizedUrl = url.trim().replace(/\/+$/, "");
-  const normalizedInitial = (initialUrl ?? "").trim().replace(/\/+$/, "");
-  const isEditingSaved = Boolean(
-    showNameField &&
-    normalizedInitial &&
-    !requireKey &&
-    normalizedUrl === normalizedInitial,
-  );
-  return (
-    <form
-      className="connection-form"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        const trimmedName = name.trim();
-        if (isEditingSaved && !key.trim()) {
-          setBusy(true);
-          void command("save_connection_profile", {
-            baseUrl: url,
-            name: trimmedName,
-          })
-            .then(() => {
-              onConnected?.();
-            })
-            .catch(onError)
-            .finally(() => setBusy(false));
-          return;
-        }
-        if (!(await beforeChange())) return;
-        setBusy(true);
-        const payload = {
-          baseUrl: url,
-          apiKey: key,
-          name: trimmedName || undefined,
-        };
-        void command("connect", payload)
-          .then(() => {
-            setKey("");
-            onConnected?.();
-          })
-          .catch(onError)
-          .finally(() => setBusy(false));
-      }}
-    >
-      <div className="connection-form-top">
-        <span className="connection-icon">
-          <Plug size={26} />
-        </span>
-        {onCancel && (
-          <button
-            type="button"
-            className="icon-button"
-            aria-label="关闭连接窗口"
-            onClick={onCancel}
-          >
-            <X size={16} />
-          </button>
-        )}
-      </div>
-      <h2>
-        {initialUrl === "" && showNameField
-          ? "新增 Sub2API 实例"
-          : state.connected
-            ? "更换或添加连接"
-            : "连接你的运维服务"}
-      </h2>
-      {!state.connected && saved.length > 0 && onSwitchSaved && (
-        <div
-          className="saved-connections-quick"
-          aria-label="已保存实例快捷连接"
-        >
-          <span className="saved-connections-label">已保存实例</span>
-          <div className="saved-connections-chips">
-            {saved.map((item) => (
-              <div key={item.base_url} className="saved-connection-chip">
-                <button
-                  type="button"
-                  className="saved-connection-connect"
-                  disabled={busy || switchingUrl !== null}
-                  onClick={() => onSwitchSaved(item)}
-                >
-                  {switchingUrl === item.base_url ? (
-                    <LoaderCircle size={13} className="spin" />
-                  ) : (
-                    <Plug size={13} />
-                  )}
-                  <strong>{item.name}</strong>
-                  <small>{item.base_url}</small>
-                </button>
-                <button
-                  type="button"
-                  className="text-button"
-                  onClick={() => {
-                    setUrl(item.base_url);
-                    setName(item.name);
-                    setNameOpen(true);
-                  }}
-                >
-                  填入
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      <label>
-        服务地址
-        <input
-          type="url"
-          required
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://example.com/sub2ops"
-          autoComplete="url"
-        />
-      </label>
-      <label>
-        管理员 API Key
-        <input
-          type="password"
-          required={!isEditingSaved}
-          value={key}
-          onChange={(e) => setKey(e.target.value)}
-          placeholder={
-            isEditingSaved ? "留空则仅保存实例名称" : "粘贴已有的管理员 Key"
-          }
-          autoComplete="off"
-          spellCheck={false}
-        />
-      </label>
-      {nameOpen ? (
-        <label>
-          实例名称（可选）
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="例如：主力生产节点"
-            autoComplete="off"
-          />
-        </label>
-      ) : (
-        <button
-          type="button"
-          className="text-button connection-name-toggle"
-          onClick={() => setNameOpen(true)}
-        >
-          设置实例备注名
-        </button>
-      )}
-      <div className="connection-form-actions">
-        {onCancel && (
-          <button type="button" onClick={onCancel} disabled={busy}>
-            取消
-          </button>
-        )}
-        <button className="primary" disabled={busy}>
-          {busy ? (
-            <LoaderCircle className="spin" size={15} />
-          ) : (
-            <Plug size={15} />
-          )}
-          {isEditingSaved && !key.trim() ? "保存实例名称" : "验证并连接"}
-        </button>
-      </div>
-    </form>
-  );
-}
-const oauthLabels: Record<string, string> = {
-  oauth_recovery_monitor_enabled: "额度恢复监控",
-  oauth_early_reset_enabled: "提前重置检测",
-  oauth_early_reset_interval_seconds: "检测间隔（秒）",
-  oauth_auto_reset_credit_enabled: "7d 100% 且 429 时自动用卡",
-  oauth_daily_test_enabled: "每日定时测活",
-  oauth_daily_test_time: "测活时间（北京时间）",
-  oauth_usage_refresh_concurrency: "额度查询并发",
-  oauth_recovery_test_concurrency: "测活并发",
-  connection_test_retry_interval_seconds: "连接测试重试间隔（秒）",
-  connection_test_max_retries: "连接测试最大重试次数",
-  oauth_recovery_test_model_id: "测活模型",
-  model_detection_model_id: "自动检测模型",
-};
-function SettingsPage({
-  page,
-  config,
-  accounts,
-  state,
-  runtimeVersion,
-  onChange,
-  onMessage,
-  onError,
-  beforeConnectionChange,
-  onSwitchConnection,
-  onOpenConnectionModal,
-  switchingUrl = null,
-}: {
-  page: Page;
-  config: Config;
-  accounts: Account[];
-  state: ViewState;
-  runtimeVersion: string | null;
-  onChange: (k: string, c: ConfigSection) => void;
-  onMessage: (m: string) => void;
-  onError: (e: unknown) => void;
-  beforeConnectionChange: () => Promise<boolean>;
-  onSwitchConnection?: (item: SavedConnection) => void;
-  onOpenConnectionModal?: (target: {
-    baseUrl: string;
-    name: string;
-    requireKey?: boolean;
-  }) => void;
-  switchingUrl?: string | null;
-}) {
-  const [featureTab, setFeatureTab] = useState("recovery");
-  const [visitedTabs, setVisitedTabs] = useState<Record<string, boolean>>({
-    recovery: true,
-  });
-  const [removingUrl, setRemovingUrl] = useState<string | null>(null);
-  const selectFeatureTab = (next: string) => {
-    setFeatureTab(next);
-    setVisitedTabs((old) => (old[next] ? old : { ...old, [next]: true }));
-  };
-  const connectionKey = `${state.preferences.base_url}:${state.connection_revision ?? 0}`;
-  const connections = useMemo(
-    () => savedConnections(state.preferences),
-    [state.preferences],
-  );
-  const activeUrl = state.preferences.base_url.trim().replace(/\/+$/, "");
-  async function action(name: string) {
-    try {
-      const result = await api<{ message?: string }>(
-        "POST",
-        `/actions/${name}`,
-      );
-      onMessage(result.message || "操作完成");
-    } catch (e) {
-      onError(e);
-    }
-  }
-  async function removeInstance(item: SavedConnection) {
-    if (removingUrl) return;
-    setRemovingUrl(item.base_url);
-    try {
-      await command("remove_connection", {
-        baseUrl: item.base_url,
-      });
-
-      onMessage(`已删除实例 ${item.name}`);
-    } catch (e) {
-      onError(e);
-    } finally {
-      setRemovingUrl(null);
-    }
-  }
-  return (
-    <div
-      className={`settings-stack ${page === "features" ? "features-stack" : ""}`}
-    >
-      {page === "features" ? (
-        <>
-          <div className="feature-tabs" role="tablist" aria-label="功能分区">
-            {[
-              ["recovery", "恢复与检测"],
-              ["ip", "IP 管理"],
-              ["sub2api", "Sub2API 配置"],
-            ].map(([key, label]) => (
-              <button
-                key={key}
-                id={`feature-tab-${key}`}
-                role="tab"
-                aria-selected={featureTab === key}
-                aria-controls={`feature-panel-${key}`}
-                tabIndex={featureTab === key ? 0 : -1}
-                onClick={() => selectFeatureTab(key)}
-                onKeyDown={(e) => {
-                  const keys = ["recovery", "ip", "sub2api"];
-                  const index = keys.indexOf(key);
-                  const next =
-                    e.key === "ArrowRight"
-                      ? keys[(index + 1) % keys.length]
-                      : e.key === "ArrowLeft"
-                        ? keys[(index + keys.length - 1) % keys.length]
-                        : e.key === "Home"
-                          ? keys[0]
-                          : e.key === "End"
-                            ? keys[keys.length - 1]
-                            : null;
-                  if (next) {
-                    e.preventDefault();
-                    selectFeatureTab(next);
-                    document.getElementById(`feature-tab-${next}`)?.focus();
-                  }
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <div
-            role="tabpanel"
-            id="feature-panel-recovery"
-            aria-labelledby="feature-tab-recovery"
-            hidden={featureTab !== "recovery"}
-          >
-            <ConfigForm
-              section="oauth"
-              title="恢复、测活与模型检测"
-              value={config.oauth}
-              online={state.online}
-              onChange={onChange}
-              onMessage={onMessage}
-              onError={onError}
-            >
-              {(draft, set) => (
-                <>
-                  {Object.entries(oauthLabels).map(([key, label]) =>
-                    key === "oauth_recovery_test_model_id" ||
-                    key === "model_detection_model_id" ? (
-                      <AccountModelField
-                        key={`${connectionKey}:${key}`}
-                        label={label}
-                        value={draft[key]}
-                        accounts={accounts}
-                        online={state.online}
-                        set={(v) => set(key, v)}
-                      />
-                    ) : (
-                      <Field
-                        key={key}
-                        label={label}
-                        value={draft[key]}
-                        type={
-                          key === "oauth_daily_test_time" ? "time" : undefined
-                        }
-                        min={
-                          key === "oauth_early_reset_interval_seconds"
-                            ? 2
-                            : undefined
-                        }
-                        disabled={
-                          key === "oauth_early_reset_interval_seconds" &&
-                          draft.oauth_early_reset_enabled !== true
-                        }
-                        set={(v) => set(key, v)}
-                      />
-                    ),
-                  )}
-                  <DetectionPlatformSettings
-                    value={draft.model_detection_platforms}
-                    set={(v) => set("model_detection_platforms", v)}
-                  />
-                  {featureTab === "recovery" &&
-                    (["modeltrace", "lm_detector"] as const).map((engine) => (
-                      <FingerprintBankStatus
-                        key={connectionKey + engine}
-                        engine={engine}
-                        online={state.online}
-                      />
-                    ))}
-                  <RecoveryAccounts
-                    accounts={accounts}
-                    connection={
-                      (draft.oauth_recovery_connection_account_ids as number[]) ??
-                      []
-                    }
-                    models={
-                      (draft.oauth_recovery_model_account_ids as number[]) ?? []
-                    }
-                    change={(connection, models) => {
-                      set("oauth_recovery_connection_account_ids", connection);
-                      set("oauth_recovery_model_account_ids", models);
-                    }}
-                  />
-                </>
-              )}
-            </ConfigForm>
-          </div>
-          <div
-            role="tabpanel"
-            id="feature-panel-sub2api"
-            aria-labelledby="feature-tab-sub2api"
-            hidden={featureTab !== "sub2api"}
-          >
-            {(featureTab === "sub2api" || visitedTabs.sub2api) && (
-              <Suspense fallback={null}>
-                <LazySub2ApiConfig
-                  key={connectionKey}
-                  connectionKey={connectionKey}
-                  active={
-                    featureTab === "sub2api" && state.foreground !== false
-                  }
-                  online={state.online}
-                />
-              </Suspense>
-            )}
-          </div>
-          <div
-            role="tabpanel"
-            id="feature-panel-ip"
-            aria-labelledby="feature-tab-ip"
-            hidden={featureTab !== "ip"}
-          >
-            {(featureTab === "ip" || visitedTabs.ip) && (
-              <Suspense fallback={null}>
-                <LazyProxyManagement
-                  key={connectionKey}
-                  connectionKey={connectionKey}
-                  active={featureTab === "ip"}
-                  online={state.online}
-                />
-              </Suspense>
-            )}
-          </div>
-        </>
-      ) : (
-        <>
-          <section
-            className="settings-card instance-management-card"
-            aria-label="Sub2API 实例管理"
-          >
-            <div className="settings-heading">
-              <h2>Sub2API 实例管理</h2>
-              {onOpenConnectionModal && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    onOpenConnectionModal({
-                      baseUrl: "",
-                      name: "",
-                      requireKey: true,
-                    })
-                  }
-                >
-                  <Plus size={14} />
-                  新增实例
-                </button>
-              )}
-            </div>
-            {connections.length > 0 ? (
-              <div className="saved-instances-list">
-                {connections.map((item) => {
-                  const isCurrent =
-                    state.connected && item.base_url === activeUrl;
-                  const isSwitching = switchingUrl === item.base_url;
-                  const isRemoving = removingUrl === item.base_url;
-                  return (
-                    <article
-                      key={item.base_url}
-                      className={`saved-instance-row${isCurrent ? " current" : ""}`}
-                    >
-                      <div className="saved-instance-info">
-                        <div className="saved-instance-title">
-                          <span
-                            className={`status-dot ${isCurrent ? (state.online ? "good" : "warning") : "muted"}`}
-                          />
-                          <strong>{item.name}</strong>
-                          <span
-                            className={`instance-badge ${isCurrent ? "active" : ""}`}
-                          >
-                            {isCurrent ? "当前连接" : "已保存"}
-                          </span>
-                        </div>
-                        <small>{item.base_url}</small>
-                      </div>
-                      <div className="saved-instance-actions">
-                        {!isCurrent && onSwitchConnection && (
-                          <button
-                            type="button"
-                            disabled={switchingUrl !== null || isRemoving}
-                            onClick={() => onSwitchConnection(item)}
-                          >
-                            {isSwitching ? (
-                              <LoaderCircle size={13} className="spin" />
-                            ) : (
-                              <Plug size={13} />
-                            )}
-                            切换连接
-                          </button>
-                        )}
-                        {onOpenConnectionModal && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onOpenConnectionModal({
-                                baseUrl: item.base_url,
-                                name: item.name,
-                                requireKey: false,
-                              })
-                            }
-                          >
-                            更新 Key / 重命名
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="danger-text"
-                          disabled={
-                            isCurrent || switchingUrl !== null || isRemoving
-                          }
-                          title={
-                            isCurrent
-                              ? "当前实例正在连接或使用中，请先切换到其他实例或断开连接后再删除"
-                              : "删除此实例并清除对应的本机 Key"
-                          }
-                          onClick={() => void removeInstance(item)}
-                        >
-                          <Trash2 size={13} />
-                          删除实例
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="muted">尚未保存任何 Sub2API 实例。</p>
-            )}
-          </section>
-          <section className="settings-card">
-            <h2>客户端</h2>
-            <div className="field">
-              <span>当前版本</span>
-              <button
-                onClick={() =>
-                  void command("check_updates").then(onMessage).catch(onError)
-                }
-              >
-                {runtimeVersion ?? appVersion} · 查看发布页{" "}
-                <ExternalLink size={13} />
-              </button>
-            </div>
-          </section>
-          <ConfigForm
-            section="bark"
-            title="Bark 事件推送"
-            value={config.bark}
-            online={state.online}
-            onChange={onChange}
-            onMessage={onMessage}
-            onError={onError}
-          >
-            {(draft, set) => (
-              <>
-                <Field
-                  label="启用推送"
-                  value={draft.enabled}
-                  set={(v) => set("enabled", v)}
-                />
-                <Field
-                  label={`Device Key${config.bark.device_key_set ? "（已保存，留空保留）" : ""}`}
-                  value={draft.device_key ?? ""}
-                  type="password"
-                  set={(v) => set("device_key", v)}
-                />
-                <button
-                  type="button"
-                  disabled={!state.online}
-                  onClick={() => void action("bark-test")}
-                >
-                  发送测试消息
-                </button>
-              </>
-            )}
-          </ConfigForm>
-          <section className="settings-card">
-            <Connection
-              state={state}
-
-              onError={onError}
-              beforeChange={beforeConnectionChange}
-              onSwitchSaved={onSwitchConnection}
-              switchingUrl={switchingUrl}
-            />
-            <button
-              className="danger-text"
-              onClick={() =>
-                void beforeConnectionChange()
-                  .then((allowed) => {
-                    if (allowed) return command("disconnect");
-                  })
-                  .catch(onError)
-              }
-            >
-              <Unplug size={14} />
-              断开连接并删除本机 Key
-            </button>
-          </section>
-        </>
-      )}
-    </div>
-  );
-}
-function Field({
-  label,
-  value,
-  type,
-  min,
-  disabled,
-  set,
-}: {
-  label: string;
-  value: unknown;
-  type?: string;
-  min?: number;
-  disabled?: boolean;
-  set: (v: unknown) => void;
-}) {
-  const numeric = typeof value === "number";
-  const [raw, setRaw] = useState(() =>
-    numeric ? (Number.isFinite(value) ? String(value) : "") : "",
-  );
-  useEffect(() => {
-    if (!numeric || !Number.isFinite(value)) return;
-    setRaw((current) =>
-      current.trim() !== "" && Number(current) === value
-        ? current
-        : String(value),
-    );
-  }, [numeric, value]);
-  return (
-    <label className="field">
-      <span>{label}</span>
-      {typeof value === "boolean" ? (
-        <Switch
-          label={label}
-          on={value}
-          disabled={disabled}
-          onChange={() => set(!value)}
-        />
-      ) : (
-        <input
-          type={type || (numeric ? "number" : "text")}
-          value={numeric ? raw : String(value ?? "")}
-          autoComplete="off"
-          min={min}
-          step={min == null ? undefined : 1}
-          disabled={disabled}
-          onChange={(e) => {
-            const text = e.currentTarget.value;
-            if (numeric) {
-              setRaw(text);
-              if (text.trim() !== "" && Number.isFinite(Number(text))) {
-                set(Number(text));
-              }
-            } else {
-              set(text);
-            }
-          }}
-          onBlur={() => {
-            if (
-              numeric &&
-              (raw.trim() === "" || !Number.isFinite(Number(raw))) &&
-              Number.isFinite(value)
-            ) {
-              setRaw(String(value));
-            }
-          }}
-        />
-      )}
-    </label>
-  );
-}
-function ConfigForm({
-  section,
-  title,
-  value,
-  online,
-  onChange,
-  onMessage,
-  onError,
-  children,
-}: {
-  section: string;
-  title: string;
-  value: ConfigSection;
-  online: boolean;
-  onChange: (k: string, c: ConfigSection) => void;
-  onMessage: (m: string) => void;
-  onError: (e: unknown) => void;
-  children: (
-    draft: ConfigSection,
-    set: (key: string, v: unknown) => void,
-  ) => React.ReactNode;
-}) {
-  const [draft, setDraft] = useState(value),
-    [changes, setChanges] = useState<Record<string, unknown>>({}),
-    [busy, setBusy] = useState(false),
-    [conflict, setConflict] = useState(false);
-  const receiveConfig = useEffectEvent(() => {
-    if (!Object.keys(changes).length) {
-      setDraft(value);
-      setConflict(false);
-    } else if (draft.revision !== value.revision) setConflict(true);
-  });
-  useEffect(() => {
-    receiveConfig();
-  }, [value]);
-  const set = (key: string, v: unknown) => {
-    setDraft((d) => ({ ...d, [key]: v }));
-    setChanges((c) => ({ ...c, [key]: v }));
-  };
-  return (
-    <form
-      className="settings-card"
-      onSubmit={(e) => {
-        e.preventDefault();
-        setBusy(true);
-        void api<ConfigSection>("PUT", `/config/${section}`, {
-          expected_revision: draft.revision,
-          changes,
-        })
-          .then((c) => {
-            setDraft(c);
-            setChanges({});
-            setConflict(false);
-            onChange(section, c);
-            onMessage("设置已保存");
-          })
-          .catch((e) => {
-            onError(e);
-            if (bridgeFailure(e)?.status === 409) setConflict(true);
-          })
-          .finally(() => setBusy(false));
-      }}
-    >
-      <div className="settings-heading">
-        <div>
-          <h2>{title}</h2>
-        </div>
-        <button
-          className="primary small"
-          disabled={!online || busy || !Object.keys(changes).length || conflict}
-        >
-          {busy ? (
-            <LoaderCircle size={13} className="spin" />
-          ) : (
-            <Check size={13} />
-          )}
-          保存
-        </button>
-      </div>
-      <fieldset disabled={!online || busy}>{children(draft, set)}</fieldset>
-      {conflict && (
-        <div className="conflict">
-          云端配置已变化。
-          <button
-            type="button"
-            onClick={() =>
-              void api<Config>("GET", "/config")
-                .then((c) => {
-                  setChanges({});
-                  setDraft(c[section]);
-                  setConflict(false);
-                  onChange(section, c[section]);
-                })
-                .catch(onError)
-            }
-          >
-            放弃本地修改并刷新
-          </button>
-        </div>
-      )}
-    </form>
   );
 }

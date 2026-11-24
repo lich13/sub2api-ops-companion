@@ -186,10 +186,7 @@ impl OperationStore {
             }
         }
     }
-    pub fn read(&self) -> Result<Value> {
-        Ok((*self.read_shared()?).clone())
-    }
-    pub(crate) fn read_shared(&self) -> Result<Arc<Value>> {
+    pub fn read_shared(&self) -> Result<Arc<Value>> {
         Ok(self.read_shared_versioned()?.1)
     }
     pub(crate) fn read_shared_versioned(&self) -> Result<(u64, Arc<Value>)> {
@@ -390,6 +387,7 @@ pub trait Backend: Send + Sync {
         None
     }
     fn account_deleted(&self, _id: i64) {}
+    fn invalidate_snapshot(&self) {}
 }
 
 struct EventBuffer {
@@ -407,6 +405,7 @@ pub struct Operations {
     events: Mutex<BTreeMap<String, EventBuffer>>,
     tasks: Mutex<BTreeMap<String, JoinHandle<()>>>,
     pub budget: Arc<Semaphore>,
+    pub(crate) wake: tokio::sync::Notify,
     closing: AtomicBool,
     pub(super) cycle_poll_cache: Mutex<Option<(u64, u64, chrono::DateTime<chrono::Utc>)>>,
     scheduled_results_cache: Mutex<(u64, u64)>,
@@ -443,6 +442,7 @@ impl Operations {
             events: Mutex::new(BTreeMap::new()),
             tasks: Mutex::new(BTreeMap::new()),
             budget,
+            wake: tokio::sync::Notify::new(),
             closing: AtomicBool::new(false),
             cycle_poll_cache: Mutex::new(None),
             scheduled_results_cache: Mutex::new((0, 0)),
@@ -902,6 +902,8 @@ impl Operations {
         self.audit(&job, "accepted");
         if short(&job) && job["status"] == "queued" {
             self.launch(job.clone(), None, None);
+        } else if job["status"] == "queued" {
+            self.wake.notify_one();
         }
         Ok(self.public(&job, false, 0))
     }
@@ -1104,6 +1106,7 @@ impl Operations {
                 .insert(string(&job["id"]).into(), key.into());
             self.audit(job, "accepted");
         }
+        self.wake.notify_one();
         self.listing(Some(&bid))
     }
     fn evaluate_batch_job(
@@ -1554,6 +1557,14 @@ impl Operations {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .remove(&cleanup_id);
+            let progressed = cleanup
+                .store
+                .read_shared()
+                .ok()
+                .is_some_and(|data| job_should_wake_next(&data["jobs"][&cleanup_id]));
+            if progressed {
+                cleanup.wake.notify_one();
+            }
         });
         let task = self.actions.supervisor.spawn("operation", async move {
             let _registration = registration;
@@ -1590,6 +1601,17 @@ impl Operations {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .remove(&cleanup_id);
+            let progressed = cleanup.store.read_shared().ok().is_some_and(|data| {
+                data["batches"][&cleanup_id]["job_ids"]
+                    .as_array()
+                    .is_some_and(|ids| {
+                        ids.iter()
+                            .all(|jid| data["jobs"][string(jid)]["status"] != "queued")
+                    })
+            });
+            if progressed {
+                cleanup.wake.notify_one();
+            }
         });
         let task = self.actions.supervisor.spawn("native_batch", async move {
             let _registration = registration;
@@ -1611,6 +1633,7 @@ impl Operations {
                 }
             }
             let _ = queue.refresh_chunks(&task_id);
+            queue.backend.invalidate_snapshot();
         });
         self.tasks
             .lock()
@@ -1782,10 +1805,12 @@ impl Operations {
         payload["expected_version"] = account_version(row).into();
         if action == "account_template" {
             payload["expected_version"] = job["expected_version"].clone();
-            return self.actions.apply_template(aid, &payload, key).await;
+            let result = self.actions.apply_template(aid, &payload, key).await;
+            self.backend.invalidate_snapshot();
+            return result;
         }
         if EDIT_ACTIONS.contains(&action) {
-            return self
+            let result = self
                 .actions
                 .apply_setting(
                     aid,
@@ -1795,9 +1820,13 @@ impl Operations {
                     key,
                 )
                 .await;
+            self.backend.invalidate_snapshot();
+            return result;
         }
         if action == "groups" {
-            return self.actions.set_groups(aid, &payload, key).await;
+            let result = self.actions.set_groups(aid, &payload, key).await;
+            self.backend.invalidate_snapshot();
+            return result;
         }
         if action != "test" {
             return self.backend.dispatch(row, job, key).await;
@@ -2071,9 +2100,36 @@ pub fn native_confirmed(row: Option<&Value>, job: &Value, unchanged: bool) -> Va
     result
 }
 
+fn job_should_wake_next(job: &Value) -> bool {
+    !job.is_null() && (job["status"] != "queued" || job["next_retry_at"].is_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wake_predicate_suppresses_spin_for_requeued_busy_or_cycle_jobs() {
+        assert!(!job_should_wake_next(&Value::Null));
+        assert!(!job_should_wake_next(&json!({
+            "status": "queued",
+            "reason": "等待账号空闲",
+            "next_retry_at": null,
+        })));
+        assert!(!job_should_wake_next(&json!({
+            "status": "queued",
+            "repeat": "quota_cycle",
+            "next_retry_at": null,
+        })));
+        assert!(job_should_wake_next(&json!({
+            "status": "queued",
+            "next_retry_at": "2026-11-24T12:00:05Z",
+        })));
+        assert!(job_should_wake_next(&json!({"status": "completed"})));
+        assert!(job_should_wake_next(
+            &json!({"status": "needs_confirmation"})
+        ));
+    }
 
     #[test]
     fn prune_terminal_jobs_skips_when_terminal_count_within_limit_and_evicts_oldest() {

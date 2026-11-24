@@ -70,7 +70,11 @@ pub fn recoverable(row: &Value, at: DateTime<Utc>) -> bool {
             })
 }
 
-pub fn account_dto_without_windows(row: &Value, at: DateTime<Utc>) -> Value {
+pub(crate) fn account_dto_with_versions(
+    row: &Value,
+    at: DateTime<Utc>,
+    precomputed_versions: Option<(String, Value)>,
+) -> Value {
     let mut value = pick(
         row,
         &[
@@ -172,9 +176,17 @@ pub fn account_dto_without_windows(row: &Value, at: DateTime<Utc>) -> Value {
         .zip(parse_datetime(&row["last_error_at"]))
         .is_some_and(|(s, e)| s > e)
         .into();
-    value["version"] = account_version(row).into();
-    value["operation_versions"] = operation_versions(row);
+    let (ver, op_ver) = match precomputed_versions {
+        Some(pair) => pair,
+        None => (account_version(row), operation_versions(row)),
+    };
+    value["version"] = ver.into();
+    value["operation_versions"] = op_ver;
     value
+}
+
+pub fn account_dto_without_windows(row: &Value, at: DateTime<Utc>) -> Value {
+    account_dto_with_versions(row, at, None)
 }
 
 pub fn group_dtos(rows: &[Value], memberships: &BTreeMap<i64, BTreeSet<i64>>) -> Vec<Value> {
@@ -193,6 +205,7 @@ pub fn group_dtos(rows: &[Value], memberships: &BTreeMap<i64, BTreeSet<i64>>) ->
         let position = *positions.entry(id).or_insert_with(|| {
             let position = groups.len();
             let mut group = pick(row, &["id", "name", "platform", "sort_order"]);
+            group["name"] = clean(&group["name"], 160).into();
             for field in fields {
                 group[field] = Value::Null;
             }
@@ -228,22 +241,17 @@ pub fn group_dtos(rows: &[Value], memberships: &BTreeMap<i64, BTreeSet<i64>>) ->
                 call["called_at"] = datetime(time).into();
             }
         }
-        let first = rows.first().cloned();
-        if let Some(first) = first {
+        if let Some(first) = rows.first().cloned() {
             group
                 .as_object_mut()
                 .unwrap()
                 .extend(first.as_object().unwrap().clone());
+        } else {
+            for field in ["account_name", "model", "upstream_model"] {
+                group[field] = String::new().into();
+            }
         }
-        for field in [
-            "name",
-            "account_name",
-            "model",
-            "upstream_model",
-            "upstream_response_model",
-        ] {
-            group[field] = clean(&group[field], 160).into();
-        }
+        group["upstream_response_model"] = clean(&group["upstream_response_model"], 160).into();
     }
     groups
 }

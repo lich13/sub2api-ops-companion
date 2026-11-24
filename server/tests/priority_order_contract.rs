@@ -1295,7 +1295,13 @@ async fn credit_pause_ownership_is_reconciled_after_priority_write() {
     let detail = harness.wait_task(accepted["id"].as_str().unwrap()).await;
     assert_eq!(detail["status"], "completed");
     assert_eq!(harness.upstream.count_put_for(id), 1);
-    let state = harness.runtime.actions.queries.oauth.snapshot().unwrap();
+    let state = harness
+        .runtime
+        .actions
+        .queries
+        .oauth
+        .shared_snapshot()
+        .unwrap();
     let task = &state["scheduler"][id.to_string()]["auto_reset_credit"];
     assert_eq!(task["owns_pause"], true);
     assert!(task["parameter_edit"].is_null());

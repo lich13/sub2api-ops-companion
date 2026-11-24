@@ -86,6 +86,28 @@ async fn desktop_response(request: Request, next: Next) -> Response {
     .await
 }
 
+fn accepts_gzip(headers: &axum::http::HeaderMap) -> bool {
+    headers
+        .get_all(header::ACCEPT_ENCODING)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|s| s.split(','))
+        .any(|part| {
+            let mut segs = part.trim().split(';');
+            let coding = segs.next().unwrap_or("").trim();
+            if !coding.eq_ignore_ascii_case("gzip") {
+                return false;
+            }
+            !segs.any(|param| {
+                let p = param.trim();
+                p.strip_prefix("q=")
+                    .or_else(|| p.strip_prefix("Q="))
+                    .and_then(|q| q.trim().parse::<f32>().ok())
+                    .is_some_and(|q| q <= 0.0)
+            })
+        })
+}
+
 async fn health(State(runtime): State<Arc<Runtime>>) -> Result<Json<Value>> {
     runtime.db.one("SELECT 1 AS ok", &[]).await?;
     Ok(Json(json!({"status":"ok"})))
@@ -118,6 +140,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
     let route =
         route.parse_numbers(|id| validation::coercible_integer(&json!(id), i64::MIN, i64::MAX))?;
     let query = QueryParams::parse(&request, route)?;
+    let accepts_gzip = accepts_gzip(request.headers());
     let key = request
         .headers()
         .get("x-api-key")
@@ -137,6 +160,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
         query: &query,
         method: &method,
         payload: &payload,
+        accepts_gzip,
     };
     let action = call.prepare(route)?;
     if route == Route::ConnectionStatus {
@@ -153,7 +177,19 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
         runtime.writable()?;
     }
     let response = action.await?;
-    if method != Method::GET {
+    let mutates_snapshot = method != Method::GET
+        && !matches!(
+            route,
+            Route::ProbeProxy(_, _)
+                | Route::CreationAuth(_, _)
+                | Route::CreationCheck
+                | Route::CreationModels
+                | Route::CreationGroupPreview
+                | Route::BarkTest
+                | Route::CheckUpdates
+                | Route::ValidateHost
+        );
+    if mutates_snapshot {
         runtime.invalidate_snapshot();
     }
     Ok(response)

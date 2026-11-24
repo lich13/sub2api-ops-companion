@@ -111,7 +111,7 @@ fn post_reset_quota_supersedes_only_the_old_rate_limit_estimate() {
         at,
     )
     .unwrap();
-    let discovered = store.snapshot().unwrap();
+    let discovered = store.shared_snapshot().unwrap();
     assert_eq!(
         discovered["scheduler"]["73"]["recovery_intent"]["kind"],
         "quota_exhausted"
@@ -207,7 +207,7 @@ fn manual_cancellation_does_not_follow_the_account_into_a_new_quota_cycle() {
         at,
     )
     .unwrap();
-    let state = store.snapshot().unwrap();
+    let state = store.shared_snapshot().unwrap();
     let next = &state["scheduler"]["73"];
     assert_eq!(next["recovery_intent"]["status"], "pending");
     assert_eq!(
@@ -365,7 +365,7 @@ fn manual_cancellation_uses_each_window_and_captures_the_current_cycle() {
     store
         .manual_control(&row, true, at - Duration::minutes(1), "manual")
         .unwrap();
-    let captured = store.snapshot().unwrap()["scheduler"]["73"].clone();
+    let captured = store.shared_snapshot().unwrap()["scheduler"]["73"].clone();
     let descriptor =
         recovery_rules::quota_descriptor(&quota::summary_from_result(&row, &result), at);
     assert_eq!(
@@ -383,7 +383,7 @@ fn manual_cancellation_uses_each_window_and_captures_the_current_cycle() {
     assert!(!recovery_rules::control_allows(
         &row,
         &refreshed,
-        &store.snapshot().unwrap()["scheduler"]["73"],
+        &store.shared_snapshot().unwrap()["scheduler"]["73"],
         at
     ));
     // Manual control also captures a cycle before discovery has created an intent.
@@ -391,7 +391,7 @@ fn manual_cancellation_uses_each_window_and_captures_the_current_cycle() {
     row["schedulable"] = true.into();
     empty.manual_control(&row, true, at, "manual").unwrap();
     assert_eq!(
-        empty.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"]["fingerprint"],
+        empty.shared_snapshot().unwrap()["scheduler"]["73"]["recovery_intent"]["fingerprint"],
         descriptor["fingerprint"]
     );
     let mut threshold_row = row.clone();
@@ -411,7 +411,7 @@ fn manual_cancellation_uses_each_window_and_captures_the_current_cycle() {
         .manual_control(&threshold_row, false, at, "manual")
         .unwrap();
     let captured =
-        threshold_store.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"].clone();
+        threshold_store.shared_snapshot().unwrap()["scheduler"]["73"]["recovery_intent"].clone();
     assert_eq!(captured["status"], "cancelled");
     assert_eq!(captured["kind"], "account_scheduling_threshold");
     assert_eq!(captured["window_keys"], json!(["codex_5h"]));
@@ -424,7 +424,7 @@ fn manual_cancellation_uses_each_window_and_captures_the_current_cycle() {
     )
     .unwrap();
     assert_eq!(
-        empty.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"]["status"],
+        empty.shared_snapshot().unwrap()["scheduler"]["73"]["recovery_intent"]["status"],
         "cancelled"
     );
 }
@@ -459,7 +459,7 @@ fn fresh_release_before_the_old_boundary_accepts_fractional_429_deadlines() {
         at,
     )
     .unwrap();
-    let state = store.snapshot().unwrap();
+    let state = store.shared_snapshot().unwrap();
     assert_eq!(
         state["scheduler"]["73"]["recovery_intent"]["due_at"],
         result["queried_at"]
@@ -525,7 +525,7 @@ fn fresh_release_before_the_old_boundary_accepts_fractional_429_deadlines() {
         .unwrap();
         if reason.is_empty() {
             assert_eq!(
-                store.snapshot().unwrap()["scheduler"]["73"]["recovery_intent"]["status"],
+                store.shared_snapshot().unwrap()["scheduler"]["73"]["recovery_intent"]["status"],
                 "ready"
             );
         } else {
@@ -868,7 +868,7 @@ fn daily_schedule_matches_pinned_on_time_missed_interrupted_and_config_change_st
         )
         .unwrap();
     assert_eq!(
-        state.snapshot().unwrap()["daily_test"],
+        state.shared_snapshot().unwrap()["daily_test"],
         schedule_fixture["initial"]
     );
 
@@ -879,7 +879,7 @@ fn daily_schedule_matches_pinned_on_time_missed_interrupted_and_config_change_st
         )
         .unwrap();
     assert_eq!(
-        state.snapshot().unwrap()["daily_test"],
+        state.shared_snapshot().unwrap()["daily_test"],
         schedule_fixture["on_time_tick"]["expected"],
     );
 
@@ -891,7 +891,7 @@ fn daily_schedule_matches_pinned_on_time_missed_interrupted_and_config_change_st
         )
         .unwrap();
     assert_eq!(
-        state.snapshot().unwrap()["daily_test"],
+        state.shared_snapshot().unwrap()["daily_test"],
         schedule_fixture["configuration_change"]["expected"],
         "changing the future schedule must preserve queued work",
     );
@@ -902,7 +902,7 @@ fn daily_schedule_matches_pinned_on_time_missed_interrupted_and_config_change_st
         .expect("on-time batch should be claimable");
     assert_eq!(claimed, schedule_fixture["claim"]["expected_batch"]);
     assert_eq!(
-        state.snapshot().unwrap()["daily_test"],
+        state.shared_snapshot().unwrap()["daily_test"],
         schedule_fixture["claim"]["expected_state"],
     );
 
@@ -911,7 +911,7 @@ fn daily_schedule_matches_pinned_on_time_missed_interrupted_and_config_change_st
         .startup(&changed_config, date(&schedule_fixture["restart"]["at"]))
         .unwrap();
     assert_eq!(
-        state.snapshot().unwrap()["daily_test"],
+        state.shared_snapshot().unwrap()["daily_test"],
         schedule_fixture["restart"]["expected_state"],
         "queued or running work must become interrupted on restart",
     );
@@ -932,7 +932,7 @@ fn daily_schedule_matches_pinned_on_time_missed_interrupted_and_config_change_st
         )
         .unwrap();
     assert_eq!(
-        late_state.snapshot().unwrap()["daily_test"],
+        late_state.shared_snapshot().unwrap()["daily_test"],
         schedule_fixture["late_missed"]["expected_state"],
         "a tick at or after the one-minute boundary must be marked missed",
     );
@@ -1047,7 +1047,7 @@ fn manual_generation_discards_stale_state_updates() {
     update.generations = Some(BTreeMap::from([(73, generation - 1)]));
     state.commit(update).unwrap();
 
-    let snapshot = state.snapshot().unwrap();
+    let snapshot = state.shared_snapshot().unwrap();
     assert_eq!(
         snapshot["scheduler"]["73"]["manual_control"],
         expected["expected_control"]
@@ -1071,7 +1071,10 @@ fn manual_generation_discards_stale_state_updates() {
     current.results.insert(73, accepted.clone());
     current.generations = Some(BTreeMap::from([(73, generation)]));
     state.commit(current).unwrap();
-    assert_eq!(state.snapshot().unwrap()["oauth_results"]["73"], accepted);
+    assert_eq!(
+        state.shared_snapshot().unwrap()["oauth_results"]["73"],
+        accepted
+    );
 }
 
 #[test]
@@ -1218,7 +1221,7 @@ fn early_quota_release_retires_old_waits_without_erasing_query_budget_or_live_re
         at,
     )
     .unwrap();
-    let state = store.snapshot().unwrap();
+    let state = store.shared_snapshot().unwrap();
     let saved = &state["scheduler"]["73"];
     assert_eq!(saved["recovery_intent"]["status"], "cancelled");
     for field in ["due_at", "next_retry_at", "waiting_until", "waiting_reason"] {
@@ -1328,7 +1331,7 @@ fn early_new_cycle_bypasses_only_obsolete_quota_waits_before_recovery_verificati
         at,
     )
     .unwrap();
-    let scheduler = store.snapshot().unwrap()["scheduler"].clone();
+    let scheduler = store.shared_snapshot().unwrap()["scheduler"].clone();
     assert_eq!(scheduler["74"]["recovery_intent"]["status"], "ready");
     assert_eq!(scheduler["74"]["recovery_intent"]["waiting_until"], "");
     let candidates = recovery_rules::candidates(

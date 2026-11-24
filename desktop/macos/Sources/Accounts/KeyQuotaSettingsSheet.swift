@@ -7,6 +7,8 @@ public struct KeyQuotaSettingsSheet: View {
 
     @State private var autoRefresh: Bool = true
     @State private var secondsText: String = "60"
+    @State private var loadedAutoRefresh: Bool = true
+    @State private var loadedSecondsText: String = "60"
     @State private var globalRevision: String = ""
     @State private var accountRevision: String = ""
     @State private var hasToken: Bool = false
@@ -118,10 +120,20 @@ public struct KeyQuotaSettingsSheet: View {
             .buttonStyle(LinearButtonStyle(variant: .primary))
             .disabled(!store.state.online || loading || saving || loadedRevision.isEmpty)
         }
-        .sub2opsDialogFocus(onEscape: onClose)
+        .sub2opsDialogFocus(
+            canBackdropDismiss: !saving && !isDirty,
+            onEscape: { if !saving { onClose() } }
+        )
         .task {
             await loadSettings()
         }
+    }
+
+    private var isDirty: Bool {
+        if targetAccount != nil {
+            return !tokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return autoRefresh != loadedAutoRefresh || secondsText != loadedSecondsText
     }
 
     private func loadSettings() async {
@@ -135,8 +147,12 @@ public struct KeyQuotaSettingsSheet: View {
                 accountRevision = accSettings.revision
             } else {
                 let global: KeyQuotaGlobalConfig = try await RustBridge.shared.api("GET", "/config/key-quota")
-                autoRefresh = global.seconds != 0
-                secondsText = String(global.seconds == 0 ? 60 : global.seconds)
+                let loadedEnabled = global.seconds != 0
+                let loadedSecs = String(global.seconds == 0 ? 60 : global.seconds)
+                autoRefresh = loadedEnabled
+                secondsText = loadedSecs
+                loadedAutoRefresh = loadedEnabled
+                loadedSecondsText = loadedSecs
                 globalRevision = global.revision
             }
             error = ""

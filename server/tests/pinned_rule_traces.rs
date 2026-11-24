@@ -127,7 +127,7 @@ fn execute(name: &str, args: &Value) -> Result<Value> {
             let result = credit_rules::project(&args["value"], &args["notices"]);
             assert_eq!(std::fs::read(&path).unwrap(), before);
             assert_eq!(
-                OAuthState::new(path).snapshot()?["scheduler"]["31"]["auto_reset_credit"],
+                OAuthState::new(path).shared_snapshot()?["scheduler"]["31"]["auto_reset_credit"],
                 args["value"]
             );
             result

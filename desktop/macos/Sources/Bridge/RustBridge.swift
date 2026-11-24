@@ -61,15 +61,26 @@ public final class RustBridge: Sendable {
         case reopen = 4
     }
 
+    public enum InboundEvent: Sendable {
+        case opsState(seq: UInt64, state: ViewState)
+        case opsStateDecodeError(String)
+        case updateResult(String)
+        case trayTooltip(String)
+        case reopen
+    }
+
     public typealias MockHandler = @Sendable (String, String) async throws -> String
+
+    private static let eventDecodeQueue = DispatchQueue(label: "sub2ops.bridge.events")
 
     private struct State: Sendable {
         var callbacks: Sub2OpsHostCallbacks?
         var nextRequestId: UInt64 = 1
+        var nextEventSeq: UInt64 = 0
         var pending: [UInt64: CheckedContinuation<Data, Error>] = [:]
         var appActive: Bool = false
         var mockHandler: MockHandler?
-        var eventHandler: (@MainActor @Sendable (EventKind, Data) -> Void)?
+        var eventHandler: (@MainActor @Sendable (InboundEvent) -> Void)?
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -88,7 +99,7 @@ public final class RustBridge: Sendable {
         }
     }
 
-    public func setEventHandler(_ handler: (@MainActor @Sendable (EventKind, Data) -> Void)?) {
+    public func setEventHandler(_ handler: (@MainActor @Sendable (InboundEvent) -> Void)?) {
         state.withLock { s in
             s.eventHandler = handler
         }
@@ -146,12 +157,7 @@ public final class RustBridge: Sendable {
         }
     }
 
-    public func command<T: Decodable & Sendable>(_ name: String, args: JSONValue = .object([:])) async throws -> T {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.withoutEscapingSlashes]
-        let payloadData = try encoder.encode(args)
-        let payloadJSON = String(data: payloadData, encoding: .utf8) ?? "{}"
-        let responseData = try await rawCommand(name, payloadJSON: payloadJSON)
+    private func decodeCommandResponse<T: Decodable>(_ responseData: Data) throws -> T {
         do {
             return try JSONDecoder().decode(T.self, from: responseData)
         } catch let error as DecodingError {
@@ -166,6 +172,15 @@ public final class RustBridge: Sendable {
             Logger(subsystem: "Sub2Ops", category: "bridge").error("response_decode path=\(fields, privacy: .public)")
             throw RustBridgeError("响应数据解析失败", code: "invalid_response")
         }
+    }
+
+    public func command<T: Decodable & Sendable>(_ name: String, args: JSONValue = .object([:])) async throws -> T {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        let payloadData = try encoder.encode(args)
+        let payloadJSON = String(data: payloadData, encoding: .utf8) ?? "{}"
+        let responseData = try await rawCommand(name, payloadJSON: payloadJSON)
+        return try decodeCommandResponse(responseData)
     }
 
     public func commandVoid(_ name: String, args: JSONValue = .object([:])) async throws {
@@ -196,9 +211,14 @@ public final class RustBridge: Sendable {
         _ path: String,
         encodable body: B
     ) async throws -> T {
-        let encoded = try JSONEncoder().encode(body)
-        let jsonBody = try JSONDecoder().decode(JSONValue.self, from: encoded)
-        return try await api(method, path, body: jsonBody)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        let methodJSON = String(decoding: try encoder.encode(method), as: UTF8.self)
+        let pathJSON = String(decoding: try encoder.encode(path), as: UTF8.self)
+        let bodyJSON = String(decoding: try encoder.encode(body), as: UTF8.self)
+        let payloadJSON = "{\"method\":\(methodJSON),\"path\":\(pathJSON),\"body\":\(bodyJSON)}"
+        let responseData = try await rawCommand("api_request", payloadJSON: payloadJSON)
+        return try decodeCommandResponse(responseData)
     }
 
     public func apiVoid(
@@ -264,12 +284,40 @@ public final class RustBridge: Sendable {
 
     fileprivate func handleEvent(kindRaw: UInt32, data: Data) {
         guard let kind = EventKind(rawValue: kindRaw) else { return }
-        let handler = state.withLock { $0.eventHandler }
-        guard let handler else { return }
-        // Dispatch via serial main queue to strictly preserve `ops-state` ordering.
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                handler(kind, data)
+        let (seq, hasHandler) = state.withLock { s -> (UInt64, Bool) in
+            guard s.eventHandler != nil else { return (0, false) }
+            if kind == .opsState {
+                s.nextEventSeq &+= 1
+                return (s.nextEventSeq, true)
+            }
+            return (0, true)
+        }
+        guard hasHandler else { return }
+        Self.eventDecodeQueue.async { [self] in
+            let event: InboundEvent?
+            switch kind {
+            case .opsState:
+                do {
+                    let next = try JSONDecoder().decode(ViewState.self, from: data)
+                    event = .opsState(seq: seq, state: next)
+                } catch {
+                    event = .opsStateDecodeError(error.localizedDescription)
+                }
+            case .updateResult:
+                let msg = String(data: data, encoding: .utf8) ?? ""
+                event = msg.isEmpty ? nil : .updateResult(msg)
+            case .trayTooltip:
+                let tip = String(data: data, encoding: .utf8) ?? ""
+                event = tip.isEmpty ? nil : .trayTooltip(tip)
+            case .reopen:
+                event = .reopen
+            }
+            guard let event else { return }
+            DispatchQueue.main.async { [self] in
+                MainActor.assumeIsolated {
+                    let handler = self.state.withLock { $0.eventHandler }
+                    handler?(event)
+                }
             }
         }
     }

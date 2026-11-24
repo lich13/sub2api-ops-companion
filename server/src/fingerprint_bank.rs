@@ -286,8 +286,9 @@ impl FingerprintBank {
             valid_policy,
         );
         let cached = store.path().exists();
-        let mut state = store.read()?;
+        let state = store.read_shared()?;
         store.evict_cache();
+        let mut state = Arc::unwrap_or_clone(state);
         let v = &state["active"]["version"];
         let raw = state["active"]["raw_bank"]
             .as_str()

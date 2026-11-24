@@ -861,7 +861,7 @@ async fn strict_fields_and_single_test_defaults_match_reference() {
         .as_object_mut()
         .unwrap()
         .remove("unexpected_field");
-    let before = harness.operations.store.read().unwrap();
+    let before = harness.operations.store.read_shared().unwrap();
     for payload in [
         json!({}),
         json!({"confirmed":"true"}),
@@ -880,7 +880,7 @@ async fn strict_fields_and_single_test_defaults_match_reference() {
                 .as_u16(),
             422
         );
-        assert_eq!(harness.operations.store.read().unwrap(), before);
+        assert_eq!(harness.operations.store.read_shared().unwrap(), before);
     }
     assert!(
         sub2ops_server::validation::operation_payload("test", &json!({"confirmed": "true"}))
@@ -927,14 +927,14 @@ async fn batch_acceptance_is_idempotent_conflicts_are_rejected_and_dispatch_is_d
     assert_eq!(first["batch_id"], replay["batch_id"]);
     assert_eq!(first["pending"], 2);
     assert_eq!(
-        harness.operations.store.read().unwrap()["jobs"]
+        harness.operations.store.read_shared().unwrap()["jobs"]
             .as_object()
             .unwrap()
             .len(),
         2
     );
     assert!(harness.mock.test_calls().is_empty());
-    let accepted_state = harness.operations.store.read().unwrap();
+    let accepted_state = harness.operations.store.read_shared().unwrap();
     assert_eq!(accepted_state["batches"].as_object().unwrap().len(), 1);
     assert_eq!(
         accepted_state["batch_requests"].as_object().unwrap().len(),
@@ -1060,7 +1060,7 @@ async fn batch_acceptance_is_idempotent_conflicts_are_rejected_and_dispatch_is_d
         409
     );
     assert_eq!(
-        harness.operations.store.read().unwrap()["jobs"]
+        harness.operations.store.read_shared().unwrap()["jobs"]
             .as_object()
             .unwrap()
             .len(),
@@ -1092,7 +1092,7 @@ async fn one_thousand_account_batch_boundary_and_listing_are_complete() {
     assert_eq!(accepted["items"].as_array().unwrap().len(), max);
     assert_eq!(accepted["pending"], max);
     assert_eq!(
-        harness.operations.store.read().unwrap()["jobs"]
+        harness.operations.store.read_shared().unwrap()["jobs"]
             .as_object()
             .unwrap()
             .len(),
@@ -1508,11 +1508,11 @@ async fn running_job_restarts_as_checking_and_never_retests_automatically() {
     )
     .unwrap();
     assert_eq!(
-        restarted.store.read().unwrap()["jobs"][&job_id]["status"],
+        restarted.store.read_shared().unwrap()["jobs"][&job_id]["status"],
         "checking"
     );
     assert_eq!(
-        restarted.store.0.read().unwrap()["batches"]["older-empty-batch"],
+        restarted.store.0.read_shared().unwrap()["batches"]["older-empty-batch"],
         legacy_batch
     );
     restarted.tick().await.unwrap();
@@ -1583,7 +1583,7 @@ async fn dispatch_state_save_failure_never_sends_the_native_test_request() {
         .expect("failed state save should return without dispatch");
     assert!(harness.operations.store.transaction(|_| Ok(())).is_err());
     assert_eq!(
-        harness.operations.store.read().unwrap()["jobs"][&job_id]["status"],
+        harness.operations.store.read_shared().unwrap()["jobs"][&job_id]["status"],
         "queued"
     );
     assert!(harness.mock.test_calls().is_empty());
@@ -1633,7 +1633,7 @@ async fn native_bulk_result_partitions_success_and_failure_after_readback() {
         fixtures()["native_bulk"]["partitioned_failure_status"]
     );
     assert_eq!(harness.mock.bulk_calls().len(), 1);
-    let stored = harness.operations.store.read().unwrap();
+    let stored = harness.operations.store.read_shared().unwrap();
     let chunk = &stored["batches"][accepted["batch_id"].as_str().unwrap()]["chunks"][0];
     assert_eq!(chunk["status"], "checked");
     assert_eq!(chunk["response_valid"], true);
@@ -1680,7 +1680,7 @@ async fn unknown_native_bulk_result_is_not_replayed() {
             .as_u64()
             .unwrap() as usize
     );
-    let stored = harness.operations.store.read().unwrap();
+    let stored = harness.operations.store.read_shared().unwrap();
     let chunk = &stored["batches"][accepted["batch_id"].as_str().unwrap()]["chunks"][0];
     assert_eq!(chunk["status"], "needs_confirmation");
     assert_eq!(chunk["response_valid"], false);
@@ -2526,7 +2526,8 @@ async fn scheduled_connection_runs_once_at_the_second_and_keeps_history_across_r
         .wait_status(job["id"].as_str().unwrap(), "completed")
         .await;
     harness.operations.tick().await.unwrap();
-    let history = harness.actions.queries.oauth.snapshot().unwrap()["recovery_history"].clone();
+    let history =
+        harness.actions.queries.oauth.shared_snapshot().unwrap()["recovery_history"].clone();
     let entry = &history[format!("connection-test:{}", job["id"].as_str().unwrap())];
     assert_eq!(entry["kind"], "connection_test");
     assert_eq!(entry["result_status"], "completed");
@@ -2536,7 +2537,7 @@ async fn scheduled_connection_runs_once_at_the_second_and_keeps_history_across_r
     harness.operations.tick().await.unwrap();
     assert_eq!(harness.mock.test_calls().len(), 1);
     assert_eq!(
-        harness.actions.queries.oauth.snapshot().unwrap()["recovery_history"],
+        harness.actions.queries.oauth.shared_snapshot().unwrap()["recovery_history"],
         history
     );
     let mut cancelled = request.clone();
@@ -2556,7 +2557,7 @@ async fn scheduled_connection_runs_once_at_the_second_and_keeps_history_across_r
     *harness.backend.now.lock().unwrap() = due + chrono::Duration::minutes(1);
     harness.operations.tick().await.unwrap();
     assert_eq!(harness.mock.test_calls().len(), 1);
-    let state = harness.actions.queries.oauth.snapshot().unwrap();
+    let state = harness.actions.queries.oauth.shared_snapshot().unwrap();
     assert_eq!(
         state["recovery_history"][format!("connection-test:{}", queued["id"].as_str().unwrap())]
             ["result_status"],
@@ -2568,8 +2569,9 @@ async fn scheduled_connection_runs_once_at_the_second_and_keeps_history_across_r
         0
     );
     let legacy_id = sub2ops_server::operations::id();
-    let mut legacy =
-        harness.operations.store.read().unwrap()["jobs"][job["id"].as_str().unwrap()].clone();
+    let mut legacy = harness.operations.store.read_shared().unwrap()["jobs"]
+        [job["id"].as_str().unwrap()]
+    .clone();
     legacy["id"] = legacy_id.clone().into();
     legacy.as_object_mut().unwrap().remove("attempt_count");
     harness
@@ -2582,7 +2584,7 @@ async fn scheduled_connection_runs_once_at_the_second_and_keeps_history_across_r
         .unwrap();
     harness.operations.tick().await.unwrap();
     assert!(
-        harness.actions.queries.oauth.snapshot().unwrap()["recovery_history"]
+        harness.actions.queries.oauth.shared_snapshot().unwrap()["recovery_history"]
             [format!("connection-test:{legacy_id}")]["attempt_count"]
             .is_null()
     );
@@ -2828,7 +2830,7 @@ async fn continuous_cycle_chains_once_after_reset_and_restart_with_frozen_model(
     );
     harness.operations.tick().await.unwrap();
     assert_eq!(
-        harness.operations.store.read().unwrap()["jobs"]
+        harness.operations.store.read_shared().unwrap()["jobs"]
             .as_object()
             .unwrap()
             .len(),
@@ -2849,7 +2851,7 @@ async fn continuous_cycle_chains_once_after_reset_and_restart_with_frozen_model(
     *harness.backend.now.lock().unwrap() = third_reset + chrono::Duration::seconds(3);
     harness.operations.tick().await.unwrap();
     assert_eq!(harness.mock.test_calls().len(), 2);
-    let state = harness.actions.queries.oauth.snapshot().unwrap();
+    let state = harness.actions.queries.oauth.shared_snapshot().unwrap();
     for jid in [first_id, next_id] {
         assert_eq!(
             state["recovery_history"][format!("connection-test:{jid}")]["result_status"],
@@ -3003,14 +3005,14 @@ async fn continuous_cycle_stops_after_a_confirmed_test_without_losing_its_result
     assert_eq!(stopped["result"]["success"], false);
     assert_eq!(stopped["status"], "completed");
     assert_eq!(
-        harness.actions.queries.oauth.snapshot().unwrap()["pending_events"]
+        harness.actions.queries.oauth.shared_snapshot().unwrap()["pending_events"]
             [format!("connection-test:{jid}")]["result_status"],
         "failed"
     );
     assert!(stopped["repeat_reason"].as_str().unwrap().contains("429"));
     assert!(stopped["next_operation_id"].is_null());
     assert_eq!(
-        harness.operations.store.read().unwrap()["jobs"]
+        harness.operations.store.read_shared().unwrap()["jobs"]
             .as_object()
             .unwrap()
             .len(),
@@ -3156,7 +3158,7 @@ async fn continuous_cycle_cancellation_wins_during_dispatch_and_successor_refres
         assert_eq!(stopped["result"]["success"], true);
         assert!(stopped["next_operation_id"].is_null());
         assert!(
-            harness.actions.queries.oauth.snapshot().unwrap()["pending_events"]
+            harness.actions.queries.oauth.shared_snapshot().unwrap()["pending_events"]
                 .get(format!("connection-test:{jid}"))
                 .is_none()
         );
@@ -3298,7 +3300,7 @@ async fn scheduled_retry_freezes_policy_survives_restart_and_notifies_only_final
     );
     h.operations.tick().await.unwrap();
     assert!(
-        h.actions.queries.oauth.snapshot().unwrap()["pending_events"]
+        h.actions.queries.oauth.shared_snapshot().unwrap()["pending_events"]
             .as_object()
             .unwrap()
             .is_empty()
@@ -3316,7 +3318,7 @@ async fn scheduled_retry_freezes_policy_survives_restart_and_notifies_only_final
     wait_attempt(&h, jid, 2, "completed").await;
     h.operations.tick().await.unwrap();
     let key = format!("connection-test:{jid}");
-    let state = h.actions.queries.oauth.snapshot().unwrap();
+    let state = h.actions.queries.oauth.shared_snapshot().unwrap();
     let event = &state["pending_events"][&key];
     assert_eq!(event["attempt_count"], 2);
     assert_eq!(event["result_status"], "completed");
@@ -3332,7 +3334,7 @@ async fn scheduled_retry_freezes_policy_survives_restart_and_notifies_only_final
     h.restart().await;
     h.operations.tick().await.unwrap();
     assert!(
-        h.actions.queries.oauth.snapshot().unwrap()["pending_events"]
+        h.actions.queries.oauth.shared_snapshot().unwrap()["pending_events"]
             .as_object()
             .unwrap()
             .is_empty()
@@ -3373,7 +3375,7 @@ async fn scheduled_retry_limit_zero_custom_interval_and_cancellation_are_bounded
                 assert_eq!(h.operations.get(jid, 0).unwrap()["status"], "cancelled");
                 assert_eq!(h.mock.test_calls().len(), 1);
                 assert!(
-                    h.actions.queries.oauth.snapshot().unwrap()["pending_events"]
+                    h.actions.queries.oauth.shared_snapshot().unwrap()["pending_events"]
                         .as_object()
                         .unwrap()
                         .is_empty()
@@ -3391,7 +3393,7 @@ async fn scheduled_retry_limit_zero_custom_interval_and_cancellation_are_bounded
         }
         if !cancel {
             h.operations.tick().await.unwrap();
-            let state = h.actions.queries.oauth.snapshot().unwrap();
+            let state = h.actions.queries.oauth.shared_snapshot().unwrap();
             let event = &state["pending_events"][format!("connection-test:{jid}")];
             assert_eq!(event["result_status"], "failed");
             assert_eq!(event["attempt_count"], retries + 1);
@@ -3437,7 +3439,7 @@ async fn continuous_retry_finishes_the_round_before_handing_authorization_to_suc
         Value::Null
     );
     assert_eq!(
-        h.actions.queries.oauth.snapshot().unwrap()["pending_events"]
+        h.actions.queries.oauth.shared_snapshot().unwrap()["pending_events"]
             [format!("connection-test:{jid}")]["attempt_count"],
         2
     );
@@ -3464,7 +3466,7 @@ async fn scheduled_auth_failure_and_unknown_result_are_final_without_automatic_r
         h.operations.tick().await.unwrap();
         assert_eq!(h.mock.test_calls().len(), 1);
         assert_eq!(
-            h.actions.queries.oauth.snapshot().unwrap()["pending_events"]
+            h.actions.queries.oauth.shared_snapshot().unwrap()["pending_events"]
                 .as_object()
                 .unwrap()
                 .len(),

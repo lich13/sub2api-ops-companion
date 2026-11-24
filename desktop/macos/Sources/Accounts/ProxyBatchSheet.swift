@@ -167,7 +167,7 @@ public struct ProxyBatchSheet: View {
                 .disabled(!store.state.online || busy || loading || editableAccounts.isEmpty || !accountErrors.isEmpty)
             }
         }
-        .sub2opsDialogFocus {
+        .sub2opsDialogFocus(canBackdropDismiss: !busy && !isBatchPending && (!hasChosenTarget || batch != nil)) {
             if !busy { onClose() }
         }
         .task(id: "\(store.connectionKey):\(accounts.map(\.id).description)") {

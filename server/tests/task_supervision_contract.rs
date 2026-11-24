@@ -364,7 +364,7 @@ async fn operation_panic_closes_runtime_and_restart_checks_dispatched_work_once(
         backend.dispatches.load(Ordering::Acquire),
         UPSTREAM_CALLS.load(Ordering::Acquire),
         runtime.actions.supervisor.is_stopping(),
-        queue.store.read().unwrap()["jobs"]
+        queue.store.read_shared().unwrap()["jobs"]
     );
     let serve_result = tokio::time::timeout(Duration::from_secs(10), serving)
         .await
@@ -377,7 +377,7 @@ async fn operation_panic_closes_runtime_and_restart_checks_dispatched_work_once(
         1,
         "panic releases the operation permit"
     );
-    let data = queue.store.read().unwrap();
+    let data = queue.store.read_shared().unwrap();
     let dispatched_id = ids
         .iter()
         .find(|id| data["jobs"][*id]["status"] == "running")
@@ -411,14 +411,14 @@ async fn operation_panic_closes_runtime_and_restart_checks_dispatched_work_once(
     )
     .unwrap();
     assert_eq!(
-        restarted.store.read().unwrap()["jobs"][&dispatched_id]["status"],
+        restarted.store.read_shared().unwrap()["jobs"][&dispatched_id]["status"],
         "checking"
     );
     restarted.tick().await.unwrap();
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             restarted.tick().await.unwrap();
-            let data = restarted.store.read().unwrap();
+            let data = restarted.store.read_shared().unwrap();
             if data["jobs"][&dispatched_id]["status"] == "needs_confirmation"
                 && data["jobs"][&queued_id]["status"] == "completed"
             {
@@ -642,7 +642,7 @@ async fn daily_runtime_cycle_uses_the_injected_clock() {
     );
     tokio::time::timeout(Duration::from_secs(4), async {
         loop {
-            let state = runtime.actions.queries.oauth.snapshot().unwrap();
+            let state = runtime.actions.queries.oauth.shared_snapshot().unwrap();
             if state["daily_test"]["batches"]["2099-03-02"]["status"] == "queued" {
                 break;
             }
@@ -652,8 +652,8 @@ async fn daily_runtime_cycle_uses_the_injected_clock() {
     .await
     .expect("daily cycle did not schedule at the injected local time");
     assert_eq!(
-        runtime.actions.queries.oauth.snapshot().unwrap()["daily_test"]["batches"]["2099-03-02"]
-            ["scheduled_at"],
+        runtime.actions.queries.oauth.shared_snapshot().unwrap()["daily_test"]["batches"]
+            ["2099-03-02"]["scheduled_at"],
         "2099-03-01T21:00:00+00:00"
     );
     runtime.close().await;

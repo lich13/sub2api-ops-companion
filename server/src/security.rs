@@ -16,19 +16,79 @@ static REDACTIONS: LazyLock<Vec<(Regex, &str)>> = LazyLock::new(|| {
 ]
 });
 
+fn may_need_redaction(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.is_empty() {
+        return false;
+    }
+    let mut dots = 0usize;
+    let mut has_unicode_ws_lead = false;
+    for &b in bytes {
+        if matches!(
+            b,
+            b':' | b'=' | b'@' | b' ' | b'\t' | b'\r' | b'\n' | 0x0B | 0x0C
+        ) {
+            return true;
+        }
+        if matches!(b, 0xC2 | 0xE1 | 0xE2 | 0xE3) {
+            has_unicode_ws_lead = true;
+        }
+        if b == b'.' {
+            dots += 1;
+            if dots >= 2 && bytes.len() >= 26 {
+                return true;
+            }
+        }
+    }
+    if has_unicode_ws_lead && value.chars().any(char::is_whitespace) {
+        return true;
+    }
+    if bytes.len() >= 9 {
+        // Check token prefixes (`sk-`, `gh[pousr]_`, `xox[abprs]-`, `-----BEGIN`) case-insensitively
+        for w in bytes.windows(4) {
+            let c0 = w[0].to_ascii_lowercase();
+            let c1 = w[1].to_ascii_lowercase();
+            let c2 = w[2].to_ascii_lowercase();
+            if (c0 == b's' && c1 == b'k' && c2 == b'-')
+                || (c0 == b'g'
+                    && c1 == b'h'
+                    && matches!(c2, b'p' | b'o' | b'u' | b's' | b'r')
+                    && w[3] == b'_')
+                || (c0 == b'x' && c1 == b'o' && c2 == b'x')
+                || w == b"----"
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn redact_text(value: &str) -> String {
+    if !may_need_redaction(value) {
+        return value.to_owned();
+    }
     let mut text = value.to_owned();
     for (pattern, replacement) in REDACTIONS.iter() {
-        text = pattern.replace_all(&text, *replacement).into_owned();
+        if let std::borrow::Cow::Owned(next) = pattern.replace_all(&text, *replacement) {
+            text = next;
+        }
     }
     text
 }
 
 fn contains_request_data(text: &str) -> bool {
+    if !text.as_bytes().iter().any(|&b| b == b':' || b == b'=') {
+        return false;
+    }
     static REQUEST: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r#"(?i)["']?\b(?:request(?:_body|body)?|body|messages|prompt|input|content|credentials|headers|authorization)["']?\s*[:=]"#).expect("request pattern")
     });
-    REQUEST.is_match(&text.replace("\\\"", "\""))
+    if text.contains("\\\"") {
+        REQUEST.is_match(&text.replace("\\\"", "\""))
+    } else {
+        REQUEST.is_match(text)
+    }
 }
 
 /// Redact at the audit boundary without changing ordinary values, keys or
@@ -97,15 +157,16 @@ pub fn clean(value: &Value, limit: usize) -> String {
 }
 
 pub fn safe_error(value: &Value, limit: usize) -> String {
-    let text = if value.is_null() {
+    if value.is_null() {
+        return String::new();
+    }
+    let text = crate::compat::text(value);
+    if text.is_empty() {
         String::new()
-    } else {
-        crate::compat::text(value)
-    };
-    if contains_request_data(&text) {
+    } else if contains_request_data(&text) {
         "上游错误包含请求或凭据数据，详细内容已隐藏".into()
     } else {
-        clean(value, limit)
+        sanitize(&text, limit)
     }
 }
 

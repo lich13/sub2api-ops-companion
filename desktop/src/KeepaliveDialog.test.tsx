@@ -419,4 +419,52 @@ describe("account keepalive", () => {
     expect(report).not.toHaveBeenCalled();
     expect(command).not.toHaveBeenCalledWith("refresh");
   });
+
+  it("preserves save errors across background polls while surfacing and clearing transient poll errors", async () => {
+    let failGet = false;
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "GET" && path === "/accounts/42/keepalive") {
+        if (failGet) throw new Error("轮询网络中断");
+        return baseKeepalive as never;
+      }
+      if (method === "PUT" && path === "/accounts/42/keepalive") {
+        throw new Error("保存版本冲突");
+      }
+      throw new Error("unexpected " + method + " " + path);
+    });
+    await mount();
+
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+        .click(),
+    );
+    await act(async () => button("保存").click());
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "保存版本冲突",
+    );
+
+    // Next 2s background GET succeeds: must NOT erase the save error!
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "保存版本冲突",
+    );
+
+    // Now a background poll fails -> surfaces poll error, then next poll succeeds -> auto-clears!
+    failGet = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "轮询网络中断",
+    );
+
+    failGet = false;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
 });

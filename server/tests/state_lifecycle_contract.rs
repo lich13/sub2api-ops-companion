@@ -77,13 +77,15 @@ fn state_0184_upgrade_preserves_receipts_and_removes_unused_observations() {
         "daily_test":{"next_at":at},"oauth_results":{}});
     fs::write(&path, serde_json::to_vec(&raw).unwrap()).unwrap();
     let store = OAuthState::new(path.clone());
-    assert!(store.snapshot().unwrap()["scheduler"]["7"]["reset_credit_observation"].is_null());
+    assert!(
+        store.shared_snapshot().unwrap()["scheduler"]["7"]["reset_credit_observation"].is_null()
+    );
     assert_eq!(
         serde_json::from_slice::<Value>(&fs::read(&path).unwrap()).unwrap(),
         raw
     );
     store.transaction(|_| Ok(())).unwrap();
-    let migrated = OAuthState::new(path.clone()).snapshot().unwrap();
+    let migrated = OAuthState::new(path.clone()).shared_snapshot().unwrap();
     for field in [
         "settings",
         "pending_events",
@@ -109,7 +111,7 @@ fn state_0184_upgrade_preserves_receipts_and_removes_unused_observations() {
         raw["scheduler"]["7"]["recovery_intent"]["verification_receipt"]
     );
     let disk: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-    assert_eq!(disk, migrated);
+    assert_eq!(disk, *migrated);
 }
 
 fn settings(root: &Path, database_url: String) -> Settings {
@@ -284,7 +286,12 @@ fn existing_store_instance_and_audit_locks_converge_to_private_modes() {
     let audit_path = root.join("audit.jsonl");
     fs::write(&audit_path, b"{}\n").unwrap();
     fs::set_permissions(&audit_path, fs::Permissions::from_mode(0o644)).unwrap();
-    sub2ops_server::audit::write(&audit_path, "fixture_event", json!({"fixture":true}));
+    sub2ops_server::audit::write_at(
+        &audit_path,
+        "fixture_event",
+        json!({"fixture":true}),
+        chrono::Utc::now(),
+    );
     assert_eq!(mode(&audit_path), 0o600, "existing audit append target");
     assert_eq!(
         fs::read_to_string(&audit_path).unwrap().lines().count(),
@@ -666,9 +673,9 @@ async fn runtime_new_directory_startup_creates_valid_state_without_missing_inten
         capacity.get("profile_intents").is_none(),
         "missing legacy profile_intents stays absent rather than becoming null"
     );
-    assert!(
-        runtime.monitor.state().unwrap()["settings"]["legacy_recovery_cleanup_completed"].is_null()
-    );
+    assert!(runtime.monitor.shared_state().unwrap()["settings"]
+        ["legacy_recovery_cleanup_completed"]
+        .is_null());
     assert!(capacity["gateway_since"].is_string());
     runtime.close().await;
 }
@@ -689,12 +696,12 @@ async fn runtime_start_preserves_retired_files_and_initializes_current_detection
         b"fixture-retired-file-not-read"
     );
     assert_eq!(fs::read(&guard).unwrap(), b"fixture-retired-guard");
-    let capacity = runtime.detection.capacity.store.snapshot().unwrap();
+    let capacity = runtime.detection.capacity.store.shared_snapshot().unwrap();
     for key in ["gateway_since", "apikey_since", "detection_since"] {
         assert!(capacity[key].is_string());
     }
-    assert!(
-        runtime.monitor.state().unwrap()["settings"]["legacy_recovery_cleanup_completed"].is_null()
-    );
+    assert!(runtime.monitor.shared_state().unwrap()["settings"]
+        ["legacy_recovery_cleanup_completed"]
+        .is_null());
     runtime.close().await;
 }

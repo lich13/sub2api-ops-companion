@@ -634,7 +634,7 @@ async fn save_result(harness: &Harness, id: i64, result: Value) {
 
 async fn seed_intent(harness: &Harness, row: &Value, status: &str, at: DateTime<Utc>) -> Value {
     let id = integer(&row["id"]).unwrap();
-    let snapshot = harness.runtime.monitor.state().unwrap();
+    let snapshot = harness.runtime.monitor.shared_state().unwrap();
     let result = quota::latest_result(row, &snapshot["oauth_results"][id.to_string()], at);
     let summary = quota::summary_from_result(row, &result);
     let descriptor = recovery_rules::rate_descriptor(row, &summary, at);
@@ -668,10 +668,10 @@ where
 {
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
-            let state = harness.runtime.monitor.state().unwrap();
+            let state = harness.runtime.monitor.shared_state().unwrap();
             let intent = state["scheduler"][id.to_string()]["recovery_intent"].clone();
             if predicate(&intent) {
-                return state;
+                return (*state).clone();
             }
             tokio::time::sleep(StdDuration::from_millis(10)).await;
         }
@@ -778,7 +778,7 @@ async fn manual_control_preempts_an_inflight_monitor_request_and_busy_runtime_lo
                 .expect("manual schedule mutation must verify through loopback readback");
         assert_eq!(response["verified"], true);
         assert_eq!(response["schedulable"], false);
-        let control = locked.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+        let control = locked.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
             ["manual_control"]
             .clone();
         assert_eq!(control["generation"], 1);
@@ -841,7 +841,7 @@ async fn manual_control_preempts_an_inflight_monitor_request_and_busy_runtime_lo
     assert_eq!(harness.mock.count("POST", "/schedulable"), 1);
     assert_eq!(harness.mock.count("POST", "/test"), 0);
     assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
-    let control = harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+    let control = harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
         ["manual_control"]
         .clone();
     assert_eq!(control["generation"], 1);
@@ -897,8 +897,8 @@ async fn manual_open_does_not_revive_old_recovery_after_restart_but_new_evidence
     assert_eq!(opened["verified"], true);
     assert_eq!(harness.mock.count("POST", "/schedulable"), 1);
     assert_eq!(
-        harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
-            ["status"],
+        harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+            ["recovery_intent"]["status"],
         "cancelled"
     );
 
@@ -909,8 +909,8 @@ async fn manual_open_does_not_revive_old_recovery_after_restart_but_new_evidence
     assert_eq!(harness.mock.count("POST", "/test"), 0);
     assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
     assert_eq!(
-        harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
-            ["status"],
+        harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+            ["recovery_intent"]["status"],
         "cancelled"
     );
 
@@ -965,14 +965,14 @@ async fn manual_close_during_dispatched_recovery_test_discards_late_result() {
         .expect("manual close must finish while verification is in flight");
     assert_eq!(closed["verified"], true);
     assert_eq!(
-        harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
-            ["status"],
+        harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+            ["recovery_intent"]["status"],
         "cancelled"
     );
     gate.release.notify_one();
 
     harness.runtime.monitor.drain(8).await;
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     assert_eq!(
         state["scheduler"][id.to_string()]["recovery_intent"]["status"],
         "cancelled"
@@ -1028,7 +1028,7 @@ fn manual_generation_filters_stale_history_and_results_without_losing_query_budg
     update.generations = Some(BTreeMap::from([(id, generation - 1)]));
     state.commit(update).unwrap();
 
-    let snapshot = state.snapshot().unwrap();
+    let snapshot = state.shared_snapshot().unwrap();
     assert_eq!(
         snapshot["scheduler"][id.to_string()]["manual_control"]["generation"],
         generation
@@ -1049,7 +1049,7 @@ fn manual_generation_filters_stale_history_and_results_without_losing_query_budg
     current.generations = Some(BTreeMap::from([(id, generation)]));
     state.commit(current).unwrap();
     assert_eq!(
-        state.snapshot().unwrap()["oauth_results"][id.to_string()],
+        state.shared_snapshot().unwrap()["oauth_results"][id.to_string()],
         accepted
     );
 }
@@ -1168,8 +1168,8 @@ async fn dispatcher_waits_for_live_reset_deadline_and_uses_advanced_account_stat
     harness.runtime.monitor.tick().await.unwrap();
     assert_eq!(harness.mock.count_for(id, "GET", "/usage"), 0);
     assert_eq!(harness.mock.count_for(id, "POST", "/test"), 0);
-    let waiting_intent = harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
-        ["recovery_intent"]
+    let waiting_intent = harness.runtime.monitor.shared_state().unwrap()["scheduler"]
+        [id.to_string()]["recovery_intent"]
         .clone();
     assert_eq!(waiting_intent["waiting_reason"], "waiting_reset");
 
@@ -1223,7 +1223,7 @@ async fn pre_reset_manual_query_does_not_delay_recovery_until_cooldown_or_old_42
     harness.set_now(reset - Duration::seconds(1));
     harness.runtime.monitor.startup().await.unwrap();
     harness.runtime.monitor.tick().await.unwrap();
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     let projected = recovery_events::project(&state["scheduler"][id.to_string()]);
     assert_eq!(projected["next_at"], datetime(reset));
     assert_eq!(harness.mock.count_for(id, "GET", "/usage"), 0);
@@ -1345,13 +1345,14 @@ async fn recovery_worker_queue_keeps_stable_waits_and_dispatches_after_slots_cle
         .mock
         .wait_for_account(ids[1], "GET", "/usage", 1)
         .await;
-    let queued = harness.runtime.monitor.state().unwrap()["scheduler"][ids[2].to_string()].clone();
+    let queued =
+        harness.runtime.monitor.shared_state().unwrap()["scheduler"][ids[2].to_string()].clone();
     assert_eq!(queued["recovery_intent"]["waiting_reason"], "worker_slots");
     assert!(recovery_events::project(&queued)["next_at"].is_null());
     harness.set_now(now + Duration::seconds(2));
     harness.runtime.monitor.tick().await.unwrap();
     assert_eq!(
-        harness.runtime.monitor.state().unwrap()["scheduler"][ids[2].to_string()],
+        harness.runtime.monitor.shared_state().unwrap()["scheduler"][ids[2].to_string()],
         queued
     );
     assert_eq!(harness.mock.count_for(ids[2], "GET", "/usage"), 0);
@@ -1361,7 +1362,7 @@ async fn recovery_worker_queue_keeps_stable_waits_and_dispatches_after_slots_cle
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
             harness.runtime.monitor.tick().await.unwrap();
-            if harness.runtime.monitor.state().unwrap()["scheduler"][ids[2].to_string()]
+            if harness.runtime.monitor.shared_state().unwrap()["scheduler"][ids[2].to_string()]
                 ["recovery_intent"]["status"]
                 == "recovered"
             {
@@ -1508,7 +1509,7 @@ async fn query_http_capacity_is_global_and_rejected_workers_consume_no_query_bud
     harness.mock.set_usage_gate(first_id, first_gate.clone());
     harness.mock.set_usage_gate(second_id, second_gate.clone());
     harness.runtime.monitor.startup().await.unwrap();
-    let before = harness.runtime.monitor.state().unwrap();
+    let before = harness.runtime.monitor.shared_state().unwrap();
 
     harness.runtime.monitor.tick().await.unwrap();
     tokio::time::timeout(StdDuration::from_secs(8), async {
@@ -1759,7 +1760,7 @@ async fn method_generation_change_blocks_completed_test_without_replay() {
         .unwrap();
     gate.release.notify_one();
     harness.runtime.monitor.drain(8).await;
-    let before_restart = harness.runtime.monitor.state().unwrap();
+    let before_restart = harness.runtime.monitor.shared_state().unwrap();
     let intent = &before_restart["scheduler"][id.to_string()]["recovery_intent"];
     assert_eq!(intent["status"], "cancelled");
     assert_eq!(
@@ -1789,7 +1790,7 @@ async fn busy_account_does_not_overwrite_cancelled_method_selection() {
     let id = integer(&row["id"]).unwrap();
     configure_recovery(&harness, &[id], 1, 1, "connection").await;
     seed_intent(&harness, &row, "pending", now).await;
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     let mut candidates = recovery_rules::candidates(
         std::slice::from_ref(&row),
         &state["oauth_results"],
@@ -1823,7 +1824,7 @@ async fn busy_account_does_not_overwrite_cancelled_method_selection() {
         .await
         .unwrap();
     assert_eq!(run["skipped"], true);
-    let cancelled = harness.runtime.monitor.state().unwrap();
+    let cancelled = harness.runtime.monitor.shared_state().unwrap();
     assert_eq!(
         cancelled["scheduler"][id.to_string()]["recovery_intent"]["status"],
         "cancelled"
@@ -1837,8 +1838,8 @@ async fn busy_account_does_not_overwrite_cancelled_method_selection() {
     assert_eq!(harness.mock.count_for(id, "POST", "/test"), 0);
     assert_eq!(harness.mock.count_for(id, "POST", "/recover-state"), 0);
     assert_eq!(
-        harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
-            ["status"],
+        harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+            ["recovery_intent"]["status"],
         "cancelled"
     );
     assert!(harness.mock.unexpected().is_empty());
@@ -1883,7 +1884,7 @@ async fn interrupted_test_persistence_retries_after_restart_without_private_rece
 
     harness.restart_runtime().await;
     harness.runtime.monitor.startup().await.unwrap();
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     let intent = &state["scheduler"][id.to_string()]["recovery_intent"];
     assert_eq!(intent["status"], "retry");
     assert!(intent["verification_receipt"].is_null());
@@ -1923,7 +1924,7 @@ async fn refreshed_limit_is_cleared_but_manual_pause_during_test_is_preserved() 
             assert_eq!(harness.mock.count_for(id, "POST", "/recover-state"), 1);
             assert!(sub2ops_server::recovery_rules::confirmed(&after));
             assert_eq!(
-                harness.runtime.monitor.state().unwrap()["recovery_history"]
+                harness.runtime.monitor.shared_state().unwrap()["recovery_history"]
                     .as_object()
                     .unwrap()
                     .len(),
@@ -1935,7 +1936,7 @@ async fn refreshed_limit_is_cleared_but_manual_pause_during_test_is_preserved() 
         assert_eq!(harness.mock.count_for(id, "POST", "/recover-state"), 0);
         assert_eq!(after["schedulable"], false);
         assert_eq!(after["temp_unschedulable_reason"], "manual pause");
-        let state = harness.runtime.monitor.state().unwrap();
+        let state = harness.runtime.monitor.shared_state().unwrap();
         assert!(state["recovery_history"].as_object().unwrap().is_empty());
         let events = state["pending_events"].as_object().unwrap();
         assert_eq!(events.len(), 1, "{name}");
@@ -1983,7 +1984,7 @@ async fn new_rate_limit_after_recovered_intent_retests_from_passive_quota() {
     assert_eq!(harness.mock.count_for(id, "GET", "/usage"), 0);
     assert_eq!(harness.mock.count_for(id, "POST", "/test"), 1);
     assert_eq!(harness.mock.count_for(id, "POST", "/recover-state"), 1);
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     assert!(state["pending_events"]
         .as_object()
         .unwrap()
@@ -2140,7 +2141,7 @@ async fn unknown_or_zero_reset_credit_skips_dispatcher_http_before_any_worker_re
         harness.runtime.monitor.startup().await.unwrap();
         harness.runtime.monitor.tick().await.unwrap();
         harness.runtime.monitor.drain(8).await;
-        let state = harness.runtime.monitor.state().unwrap();
+        let state = harness.runtime.monitor.shared_state().unwrap();
         let expected_reason = if name == "credit-zero" {
             "no_credit"
         } else {
@@ -2311,8 +2312,8 @@ async fn continuous_appointment_after_authorization_update_keeps_plan_windows_an
         );
         assert_eq!(h.mock.count_for(id, "GET", "/usage"), 1, "{plan}");
         assert!(
-            h.runtime.monitor.store.snapshot().unwrap()["scheduler"][id.to_string()]["quota_query"]
-                ["auth_fingerprint"]
+            h.runtime.monitor.store.shared_snapshot().unwrap()["scheduler"][id.to_string()]
+                ["quota_query"]["auth_fingerprint"]
                 .is_null()
         );
         assert!(!job.to_string().contains("fixture-renewed-access-token"));

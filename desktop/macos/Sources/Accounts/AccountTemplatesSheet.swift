@@ -194,7 +194,10 @@ public struct AccountTemplatesSheet: View {
                 .buttonStyle(LinearButtonStyle(variant: .secondary))
                 .disabled(busy)
             }
-            .sub2opsDialogFocus {
+            .sub2opsDialogFocus(
+                canBackdropDismiss: !busy && !dirtyAny && deleteId == nil,
+                onBackdrop: { requestClose(fromEscape: false) }
+            ) {
                 requestClose(fromEscape: true)
             }
 
@@ -219,7 +222,7 @@ public struct AccountTemplatesSheet: View {
                 .shadow(color: DS.modalShadowColor, radius: 16, x: 0, y: 8)
             }
         }
-        .task(id: store.state.online) {
+        .task(id: "\(store.connectionKey):\(store.state.online)") {
             guard store.state.online else { return }
             await reloadAll()
         }

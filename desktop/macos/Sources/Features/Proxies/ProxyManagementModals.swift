@@ -5,8 +5,12 @@ import UniformTypeIdentifiers
 extension ProxyManagementTabView {
     func presentModal(_ kind: ModalKind) {
         if let store {
-            store.presentWindowModal(onBackdrop: { store.dismissWindowModal() }) {
+            let backdropGuard = ModalBackdropGuard()
+            store.presentWindowModal(onBackdrop: {
+                backdropGuard.attemptDismiss(defaultClose: { store.dismissWindowModal() })
+            }) {
                 modalView(kind, dismiss: { store.dismissWindowModal() })
+                    .environment(\.modalBackdropGuard, backdropGuard)
             }
         } else {
             fallbackModal = kind
@@ -46,7 +50,8 @@ extension ProxyManagementTabView {
                 onClose: dismiss
             )
         case .confirmDelete(let rows):
-            LinearModalCard(title: "确认删除 IP", width: 440, onClose: dismiss) {
+            let deleting = !busyLabel.isEmpty
+            LinearModalCard(title: "确认删除 IP", width: 440, closeDisabled: deleting, onClose: dismiss) {
                 Text("确定删除所选的 \(rows.count) 个代理节点吗？关联账号将不再保留此代理。")
                     .font(DS.fontBody)
                     .foregroundStyle(DS.ink)
@@ -54,12 +59,14 @@ extension ProxyManagementTabView {
                 Spacer()
                 Button("取消", action: dismiss)
                     .buttonStyle(LinearButtonStyle(variant: .secondary))
+                    .disabled(deleting)
                 Button("确认删除") {
                     Task { await deleteRows(rows) }
                 }
                 .buttonStyle(LinearButtonStyle(variant: .solidDanger))
+                .disabled(deleting)
             }
-            .sub2opsDialogFocus(onEscape: dismiss)
+            .sub2opsDialogFocus(canBackdropDismiss: !deleting, onEscape: { if !deleting { dismiss() } })
 
         case .quality(let row, let q):
             LinearModalCard(
@@ -86,8 +93,7 @@ extension ProxyManagementTabView {
                         }
                         Spacer()
                         if let ts = q.checked_at, ts > 0 {
-                            let iso = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: TimeInterval(ts)))
-                            Text(BeijingTime.fullTime(iso))
+                            Text(BeijingTime.unixSeconds(Int64(ts)))
                                 .font(DS.fontResetTime)
                                 .monospacedDigit()
                                 .foregroundStyle(DS.muted)

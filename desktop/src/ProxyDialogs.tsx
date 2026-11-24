@@ -47,7 +47,7 @@ export function ProxyDialog({
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
-          if (e.key === "Escape" && !busy) {
+          if (e.key === "Escape" && !e.nativeEvent.isComposing && !busy) {
             e.stopPropagation();
             close();
           }

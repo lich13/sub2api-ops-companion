@@ -69,9 +69,9 @@ fn account_template_schema_upgrade_matches_pinned_python_and_preserves_corrupt_s
         migration["expected_view"]
     );
     assert_eq!(
-        writable
+        *writable
             .store
-            .read()
+            .read_shared()
             .expect("migrated template state should be readable"),
         migration["expected_persisted"]
     );
@@ -172,7 +172,7 @@ fn account_template_custom_crud_mapping_and_request_validation_match_pinned_pyth
 
     let state_before_stale = templates
         .store
-        .read()
+        .read_shared()
         .expect("template state before stale write");
     let stale = json!({
         "expected_version": "0".repeat(64),
@@ -184,7 +184,7 @@ fn account_template_custom_crud_mapping_and_request_validation_match_pinned_pyth
     assert_eq!(
         templates
             .store
-            .read()
+            .read_shared()
             .expect("template state after stale write"),
         state_before_stale,
         "stale template request must not partially update state"

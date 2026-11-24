@@ -710,7 +710,7 @@ async fn shared_model_reads_keep_legacy_jobs_and_owned_results_independent() {
         "fixture-model"
     );
     assert_eq!(
-        h.runtime.tests.store.read().unwrap(),
+        *h.runtime.tests.store.read_shared().unwrap(),
         legacy,
         "legacy reads do not migrate on disk"
     );
@@ -943,7 +943,7 @@ async fn prepare_loopback_worker(h: &Harness, job: &Value) -> Arc<super::Context
 async fn natural_cycle(h: &Harness, id: i64, original: &Value, usage: &Value) -> Value {
     let row = h.runtime.monitor.row(id).await.unwrap();
     let lease = h.runtime.monitor.lease(&row).unwrap();
-    let state = h.runtime.monitor.state().unwrap();
+    let state = h.runtime.monitor.shared_state().unwrap();
     let meta = &state["scheduler"][id.to_string()];
     h.runtime
         .monitor
@@ -1067,7 +1067,7 @@ async fn recovery_model_one_valid_group_really_recovers_with_durable_history() {
     let result = natural_cycle(&h, id, &intent, &usage).await;
     assert_eq!(result["recovered"], true, "{result}");
     assert_eq!(result["job_id"], job["id"]);
-    let linked = h.runtime.monitor.state().unwrap();
+    let linked = h.runtime.monitor.shared_state().unwrap();
     assert!(linked["recovery_history"]
         .as_object()
         .unwrap()
@@ -1080,7 +1080,7 @@ async fn recovery_model_one_valid_group_really_recovers_with_durable_history() {
         .any(|event| event["model_test_job_id"] == job["id"]));
     assert_eq!(h.mock.count("POST", "/v1/responses"), 1);
     assert_eq!(h.mock.count("POST", "/recover-state"), 1);
-    let state = h.runtime.monitor.state().unwrap();
+    let state = h.runtime.monitor.shared_state().unwrap();
     assert_eq!(
         state["scheduler"][id.to_string()]["recovery_intent"]["status"],
         "recovered"
@@ -1135,13 +1135,15 @@ async fn early_quota_model_recovery_survives_queueing_before_fractional_429_dead
         now,
     )
     .unwrap();
-    let intent =
-        h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"].clone();
+    let intent = h.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+        ["recovery_intent"]
+        .clone();
     assert_eq!(intent["due_at"], usage["queried_at"]);
     let job = run_natural_model(&h, id, &intent, &usage).await;
     assert_eq!(job["status"], "completed", "{job}");
-    let pending =
-        h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"].clone();
+    let pending = h.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+        ["recovery_intent"]
+        .clone();
     recovery_events::discover(
         &h.runtime.monitor.store,
         std::slice::from_ref(&row),
@@ -1150,11 +1152,11 @@ async fn early_quota_model_recovery_survives_queueing_before_fractional_429_dead
     )
     .unwrap();
     assert_eq!(
-        h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"],
+        h.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]["recovery_intent"],
         pending
     );
     h.set_now(now + Duration::seconds(6));
-    let state = h.runtime.monitor.state().unwrap();
+    let state = h.runtime.monitor.shared_state().unwrap();
     let candidates = recovery_rules::candidates(
         &[row],
         &state["oauth_results"],
@@ -1242,7 +1244,7 @@ async fn legacy_recovery_without_reliable_test_count_does_not_infer_a_total() {
         natural_cycle(&h, id, &intent, &usage).await["recovered"],
         true
     );
-    let state = h.runtime.monitor.state().unwrap();
+    let state = h.runtime.monitor.shared_state().unwrap();
     assert!(state["recovery_history"]
         .as_object()
         .unwrap()
@@ -1290,7 +1292,7 @@ async fn model_rejected_before_test_execution_does_not_increment_recovery_count(
                 .await
                 .unwrap();
             assert_eq!(waiting["error_code"], "account_busy");
-            let state = monitor.state().unwrap();
+            let state = monitor.shared_state().unwrap();
             let saved = &state["scheduler"][id.to_string()]["recovery_intent"];
             assert_eq!(saved["attempt_count"], 0);
             assert_eq!(saved["model_attempt_count"], 0);
@@ -1301,8 +1303,8 @@ async fn model_rejected_before_test_execution_does_not_increment_recovery_count(
         assert_eq!(result["attempt_count"], 0);
         assert_eq!(h.mock.count("POST", "/v1/responses"), 0);
         assert_eq!(
-            h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
-                ["model_attempt_count"],
+            h.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+                ["recovery_intent"]["model_attempt_count"],
             0
         );
         h.close().await;
@@ -1330,7 +1332,7 @@ async fn recovery_model_invalid_auth_or_empty_sample_never_authorizes_recovery()
             assert_eq!(job["valid_groups"], 0);
         }
         natural_cycle(&h, id, &intent, &usage).await;
-        let state = h.runtime.monitor.state().unwrap();
+        let state = h.runtime.monitor.shared_state().unwrap();
         let saved = &state["scheduler"][id.to_string()]["recovery_intent"];
         assert_eq!(
             saved["last_error_code"], expected,
@@ -1437,7 +1439,7 @@ async fn lm_uncertain_group_blocks_disposition_then_lower_family_records_exact_e
         false
     );
     assert_eq!(h.mock.count("POST", "/schedulable"), 1);
-    let notice = h.runtime.detection.store.read().unwrap()["disposition_notifications"]
+    let notice = h.runtime.detection.store.read_shared().unwrap()["disposition_notifications"]
         [job["id"].as_str().unwrap()]
     .clone();
     let (_, message) = crate::detection_dispatch::notification_message(&notice);
@@ -1485,7 +1487,7 @@ async fn recovery_model_completed_report_compares_requested_model_before_recover
     assert_eq!(h.mock.count("POST", "/v1/responses"), 1);
     assert_eq!(h.mock.count("POST", "/recover-state"), 0);
     assert_eq!(h.runtime.detection.mark(id).unwrap()["marked"], false);
-    let scheduler = h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()].clone();
+    let scheduler = h.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()].clone();
     assert_eq!(
         scheduler["recovery_intent"]["last_error_code"],
         "detection_held"
@@ -1510,7 +1512,7 @@ async fn recovery_model_missing_prediction_never_authorizes_recovery() {
     natural_cycle(&h, id, &intent, &usage).await;
     assert_eq!(h.mock.count("POST", "/recover-state"), 0);
     assert_ne!(
-        h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
+        h.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
             ["status"],
         "recovered"
     );
@@ -1523,7 +1525,7 @@ async fn recovery_model_method_or_manual_changes_before_dispatch_skip_every_requ
         let h = Harness::new().await;
         let (row, usage, intent) = seed_recovery(&h, false).await;
         let id = integer(&row["id"]).unwrap();
-        let before = h.runtime.monitor.state().unwrap();
+        let before = h.runtime.monitor.shared_state().unwrap();
         if change == "method" {
             h.runtime
                 .config
@@ -1559,7 +1561,7 @@ async fn recovery_model_method_or_manual_changes_before_dispatch_skip_every_requ
         assert!(h.runtime.tests.latest(id).unwrap().is_null());
         assert_eq!(h.mock.count("POST", "/v1/responses"), 0);
         assert_eq!(h.mock.count("POST", "/recover-state"), 0);
-        let state = h.runtime.monitor.state().unwrap();
+        let state = h.runtime.monitor.shared_state().unwrap();
         assert_eq!(state["recovery_history"], json!({}));
         assert_eq!(
             state["scheduler"][id.to_string()]["quota_query"],
@@ -1612,7 +1614,7 @@ async fn recovery_model_method_or_manual_changes_reject_completed_success() {
         assert_eq!(result["skipped"], true);
         assert_eq!(h.mock.count("POST", "/recover-state"), 0);
         assert_eq!(h.mock.count("POST", "/v1/responses"), 1);
-        let state = h.runtime.monitor.state().unwrap();
+        let state = h.runtime.monitor.shared_state().unwrap();
         assert_ne!(
             state["scheduler"][id.to_string()]["recovery_intent"]["status"],
             "recovered"
@@ -1886,7 +1888,7 @@ async fn credit_model_consumes_only_with_slot_and_recovers_once_without_hourly_q
         );
         h.set_now(h.now() + Duration::seconds(30));
         credit_cycle(&h, id).await;
-        let state = h.runtime.monitor.state().unwrap();
+        let state = h.runtime.monitor.shared_state().unwrap();
         let task = &state["scheduler"][id.to_string()]["auto_reset_credit"];
         assert_eq!(task["stage"], "recovered", "{task}");
         assert_eq!(h.mock.count("POST", "/reset-quota"), 1);
@@ -1921,7 +1923,7 @@ async fn credit_model_consumes_only_with_slot_and_recovers_once_without_hourly_q
         credit_cycle(&h, id).await;
         assert_eq!(h.mock.count("POST", "/reset-quota"), 1);
         assert_eq!(
-            h.runtime.monitor.state().unwrap()["recovery_history"],
+            h.runtime.monitor.shared_state().unwrap()["recovery_history"],
             state["recovery_history"]
         );
         assert!(h
@@ -2053,7 +2055,7 @@ async fn credit_model_manual_control_keeps_consumed_receipt_and_never_restores_s
         false
     );
     assert_eq!(
-        h.runtime.monitor.state().unwrap()["recovery_history"],
+        h.runtime.monitor.shared_state().unwrap()["recovery_history"],
         json!({})
     );
     h.close().await;
@@ -2129,7 +2131,7 @@ async fn credit_model_failures_obey_terminal_evidence_and_cooldown() {
         assert_eq!(h.mock.count("POST", "/v1/responses"), expected_requests);
         assert_eq!(h.mock.count("POST", "/recover-state"), 0);
         assert_eq!(
-            h.runtime.monitor.state().unwrap()["recovery_history"],
+            h.runtime.monitor.shared_state().unwrap()["recovery_history"],
             json!({})
         );
         h.close().await;
@@ -2153,7 +2155,7 @@ async fn credit_model_unknown_consumption_survives_full_runtime_restart_without_
         h.set_now(h.now() + Duration::hours(2));
         credit_cycle(&h, id).await;
     }
-    let state = h.runtime.monitor.state().unwrap();
+    let state = h.runtime.monitor.shared_state().unwrap();
     let task = &state["scheduler"][id.to_string()]["auto_reset_credit"];
     assert_eq!(task["episode"], before["episode"]);
     assert_eq!(task["attempt_at"], before["attempt_at"]);
@@ -2668,7 +2670,7 @@ async fn keepalive_unchanged_outcome_retries_after_restart_and_counts_only_succe
     wait_view_status(&h, id, "waiting").await;
     assert_eq!(control.retry_at, Some(now + Duration::seconds(5)));
     assert_eq!(control.used(now), 0);
-    let saved = h.runtime.keepalive.store.read().unwrap();
+    let saved = h.runtime.keepalive.store.read_shared().unwrap();
     assert!(saved["accounts"][id.to_string()].get("pending").is_none());
     assert!(saved["accounts"][id.to_string()]
         .get("reservations")
@@ -3283,8 +3285,9 @@ async fn early_reset_completed_model_waits_for_account_lock_then_finishes_after_
         .await
         .unwrap();
     assert_eq!(deferred["error_code"], "account_busy");
-    let waiting =
-        waiting_monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"].clone();
+    let waiting = waiting_monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+        ["recovery_intent"]
+        .clone();
     assert_eq!(waiting["attempt_count"], 0);
     assert_eq!(waiting["model_attempt_count"], 0);
     assert!(waiting["verification_receipt"].is_null());
@@ -3304,8 +3307,8 @@ async fn early_reset_completed_model_waits_for_account_lock_then_finishes_after_
     tokio::time::timeout(StdDuration::from_secs(5), async {
         loop {
             h.runtime.monitor.tick().await.unwrap();
-            if h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
-                ["status"]
+            if h.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+                ["recovery_intent"]["status"]
                 == "recovered"
             {
                 break;
@@ -3568,8 +3571,8 @@ async fn prepared_credit_evidence_and_available_count_are_rechecked_after_contro
             let detection = h.runtime.detection.clone();
             let pending = tokio::spawn(async move { detection.prepare_recovery(&job, row).await });
             tokio::time::timeout(StdDuration::from_secs(3), async {
-                while h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["quota_query"]
-                    ["last_reason"]
+                while h.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+                    ["quota_query"]["last_reason"]
                     != "reset_credit_consume"
                 {
                     tokio::task::yield_now().await;

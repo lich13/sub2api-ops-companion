@@ -351,6 +351,24 @@ async fn dispatch_command(
     }
 }
 
+struct CatchUnwindFuture<F>(F);
+
+impl<F: std::future::Future> std::future::Future for CatchUnwindFuture<F> {
+    type Output = std::thread::Result<F::Output>;
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        // SAFETY: Field projection without moving `F`.
+        let inner = unsafe { self.map_unchecked_mut(|s| &mut s.0) };
+        match catch_unwind(AssertUnwindSafe(|| inner.poll(cx))) {
+            Ok(std::task::Poll::Ready(val)) => std::task::Poll::Ready(Ok(val)),
+            Ok(std::task::Poll::Pending) => std::task::Poll::Pending,
+            Err(err) => std::task::Poll::Ready(Err(err)),
+        }
+    }
+}
+
 extern "C" fn host_invoke(
     request_id: u64,
     cmd_ptr: *const u8,
@@ -380,8 +398,7 @@ extern "C" fn host_invoke(
             return;
         };
         tauri::async_runtime::spawn(async move {
-            let inner = tauri::async_runtime::spawn(dispatch_command(app, cmd, payload));
-            match inner.await {
+            match CatchUnwindFuture(dispatch_command(app, cmd, payload)).await {
                 Ok(Ok(json)) => send_response(request_id, true, &json),
                 Ok(Err(error)) => send_failure(request_id, &error),
                 Err(_) => {

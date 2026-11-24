@@ -107,6 +107,7 @@ impl Upstream {
     pub(crate) fn with_clock(settings: Arc<Settings>, clock: WallClock) -> Result<Self> {
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
+            .tcp_nodelay(true)
             .connect_timeout(Duration::from_secs(5))
             .build()?;
         Ok(Self {
@@ -258,10 +259,142 @@ impl Upstream {
                 )
             }
         }
-        let body = read_limited(response, 2_000_000)
+        enum GroupsProbeShape {
+            Ok,
+            NonZeroCode,
+            Mismatch,
+        }
+
+        struct JsonArrayFlag(bool);
+
+        impl<'de> serde::Deserialize<'de> for JsonArrayFlag {
+            fn deserialize<D: serde::Deserializer<'de>>(
+                deserializer: D,
+            ) -> std::result::Result<Self, D::Error> {
+                struct Vis;
+                impl<'de> serde::de::Visitor<'de> for Vis {
+                    type Value = JsonArrayFlag;
+                    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        f.write_str("any JSON value")
+                    }
+                    fn visit_bool<E>(self, _: bool) -> std::result::Result<Self::Value, E> {
+                        Ok(JsonArrayFlag(false))
+                    }
+                    fn visit_i64<E>(self, _: i64) -> std::result::Result<Self::Value, E> {
+                        Ok(JsonArrayFlag(false))
+                    }
+                    fn visit_u64<E>(self, _: u64) -> std::result::Result<Self::Value, E> {
+                        Ok(JsonArrayFlag(false))
+                    }
+                    fn visit_f64<E>(self, _: f64) -> std::result::Result<Self::Value, E> {
+                        Ok(JsonArrayFlag(false))
+                    }
+                    fn visit_str<E>(self, _: &str) -> std::result::Result<Self::Value, E> {
+                        Ok(JsonArrayFlag(false))
+                    }
+                    fn visit_none<E>(self) -> std::result::Result<Self::Value, E> {
+                        Ok(JsonArrayFlag(false))
+                    }
+                    fn visit_unit<E>(self) -> std::result::Result<Self::Value, E> {
+                        Ok(JsonArrayFlag(false))
+                    }
+                    fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                        self,
+                        mut seq: A,
+                    ) -> std::result::Result<Self::Value, A::Error> {
+                        while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {}
+                        Ok(JsonArrayFlag(true))
+                    }
+                    fn visit_map<A: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: A,
+                    ) -> std::result::Result<Self::Value, A::Error> {
+                        while map
+                            .next_entry::<serde::de::IgnoredAny, serde::de::IgnoredAny>()?
+                            .is_some()
+                        {}
+                        Ok(JsonArrayFlag(false))
+                    }
+                }
+                deserializer.deserialize_any(Vis)
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for GroupsProbeShape {
+            fn deserialize<D: serde::Deserializer<'de>>(
+                deserializer: D,
+            ) -> std::result::Result<Self, D::Error> {
+                struct Vis;
+                impl<'de> serde::de::Visitor<'de> for Vis {
+                    type Value = GroupsProbeShape;
+                    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        f.write_str("JSON array or envelope object")
+                    }
+                    fn visit_bool<E>(self, _: bool) -> std::result::Result<Self::Value, E> {
+                        Ok(GroupsProbeShape::Mismatch)
+                    }
+                    fn visit_i64<E>(self, _: i64) -> std::result::Result<Self::Value, E> {
+                        Ok(GroupsProbeShape::Mismatch)
+                    }
+                    fn visit_u64<E>(self, _: u64) -> std::result::Result<Self::Value, E> {
+                        Ok(GroupsProbeShape::Mismatch)
+                    }
+                    fn visit_f64<E>(self, _: f64) -> std::result::Result<Self::Value, E> {
+                        Ok(GroupsProbeShape::Mismatch)
+                    }
+                    fn visit_str<E>(self, _: &str) -> std::result::Result<Self::Value, E> {
+                        Ok(GroupsProbeShape::Mismatch)
+                    }
+                    fn visit_none<E>(self) -> std::result::Result<Self::Value, E> {
+                        Ok(GroupsProbeShape::Mismatch)
+                    }
+                    fn visit_unit<E>(self) -> std::result::Result<Self::Value, E> {
+                        Ok(GroupsProbeShape::Mismatch)
+                    }
+                    fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                        self,
+                        mut seq: A,
+                    ) -> std::result::Result<Self::Value, A::Error> {
+                        while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {}
+                        Ok(GroupsProbeShape::Ok)
+                    }
+                    fn visit_map<A: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: A,
+                    ) -> std::result::Result<Self::Value, A::Error> {
+                        let mut code: Option<Value> = None;
+                        let mut data_is_array = false;
+                        while let Some(key) = map.next_key::<std::borrow::Cow<'de, str>>()? {
+                            match key.as_ref() {
+                                "code" => code = Some(map.next_value::<Value>()?),
+                                "data" => data_is_array = map.next_value::<JsonArrayFlag>()?.0,
+                                _ => {
+                                    map.next_value::<serde::de::IgnoredAny>()?;
+                                }
+                            }
+                        }
+                        if code
+                            .as_ref()
+                            .and_then(Value::as_i64)
+                            .is_some_and(|v| v != 0)
+                        {
+                            Ok(GroupsProbeShape::NonZeroCode)
+                        } else if code.as_ref().and_then(Value::as_i64) == Some(0) && data_is_array
+                        {
+                            Ok(GroupsProbeShape::Ok)
+                        } else {
+                            Ok(GroupsProbeShape::Mismatch)
+                        }
+                    }
+                }
+                deserializer.deserialize_any(Vis)
+            }
+        }
+
+        let shape = read_limited(response, 2_000_000)
             .await
-            .and_then(|v| serde_json::from_slice::<Value>(&v).map_err(Into::into));
-        let Ok(body) = body else {
+            .and_then(|v| serde_json::from_slice::<GroupsProbeShape>(&v).map_err(Into::into));
+        let Ok(shape) = shape else {
             return Probe::new(
                 &self.clock,
                 "protocol_mismatch",
@@ -271,25 +404,28 @@ impl Upstream {
                 false,
             );
         };
-        if body["code"].as_i64().is_some_and(|v| v != 0) {
-            return Probe::new(
-                &self.clock,
-                "upstream_error",
-                endpoint,
-                Some(status),
-                "Sub2API 管理接口返回错误",
-                false,
-            );
-        }
-        if !(body.is_array() || (body["code"].as_i64() == Some(0) && body["data"].is_array())) {
-            return Probe::new(
-                &self.clock,
-                "protocol_mismatch",
-                endpoint,
-                Some(status),
-                "Sub2API 管理响应结构不兼容",
-                false,
-            );
+        match shape {
+            GroupsProbeShape::NonZeroCode => {
+                return Probe::new(
+                    &self.clock,
+                    "upstream_error",
+                    endpoint,
+                    Some(status),
+                    "Sub2API 管理接口返回错误",
+                    false,
+                );
+            }
+            GroupsProbeShape::Mismatch => {
+                return Probe::new(
+                    &self.clock,
+                    "protocol_mismatch",
+                    endpoint,
+                    Some(status),
+                    "Sub2API 管理响应结构不兼容",
+                    false,
+                );
+            }
+            GroupsProbeShape::Ok => {}
         }
         Probe::new(
             &self.clock,

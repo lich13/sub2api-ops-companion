@@ -9,7 +9,7 @@ import {
   ResetCreditsDialog,
 } from "./AccountManagement";
 import { bindOperationConnection } from "./accountOperations";
-import { RecoveryHistory } from "./AccountControls";
+import { RecoveryHistory } from "./RecoveryHistory";
 import App from "./main";
 import type {
   Account,

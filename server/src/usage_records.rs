@@ -190,7 +190,7 @@ fn escaped(value: &str) -> String {
             .replace('_', "\\_")
     )
 }
-async fn usage_selection(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Result<&'static str> {
+fn selection_sql(has_compaction: bool) -> &'static str {
     static WITH_COMPACTION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
         format!(
             "{}, COALESCE(u.native_compaction_v2, false) AS native_compaction_v2",
@@ -200,6 +200,14 @@ async fn usage_selection(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Resu
     static WITHOUT_COMPACTION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
         format!("{}, false AS native_compaction_v2", sql::USAGE_SELECT)
     });
+    if has_compaction {
+        WITH_COMPACTION.as_str()
+    } else {
+        WITHOUT_COMPACTION.as_str()
+    }
+}
+
+async fn usage_selection(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Result<&'static str> {
     // Resolve the same relation as the page/detail query, including its search_path.
     // Check on each read so an upstream migration takes effect without a restart.
     let has_compaction: bool = sqlx::query_scalar(
@@ -207,11 +215,7 @@ async fn usage_selection(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Resu
     )
     .fetch_one(&mut **tx)
     .await?;
-    Ok(if has_compaction {
-        WITH_COMPACTION.as_str()
-    } else {
-        WITHOUT_COMPACTION.as_str()
-    })
+    Ok(selection_sql(has_compaction))
 }
 fn decode_cursor(value: &str) -> Result<Value> {
     if value.len() > 2048 {
@@ -430,13 +434,39 @@ impl UsageRecords {
             clauses.push(sql::USAGE_MISMATCH.to_owned());
         }
         let mut tx = self.begin(true).await?;
-        let watermark = match saved.as_ref().and_then(|s| integer(&s["watermark"])) {
-            Some(pinned) => pinned,
-            None => {
-                sqlx::query_scalar::<_, i64>("SELECT coalesce(max(id),0) FROM usage_logs")
-                    .fetch_one(&mut *tx)
-                    .await?
-            }
+        let mut prechecked_summary = None;
+        let (watermark, prechecked_selection) = if f.after_id.is_some() {
+            let wm = match saved.as_ref().and_then(|s| integer(&s["watermark"])) {
+                Some(pinned) => pinned,
+                None => {
+                    sqlx::query_scalar::<_, i64>("SELECT coalesce(max(id),0) FROM usage_logs")
+                        .fetch_one(&mut *tx)
+                        .await?
+                }
+            };
+            (wm, None)
+        } else if let Some(pinned) = saved.as_ref().and_then(|s| integer(&s["watermark"])) {
+            (pinned, None)
+        } else if f.include_summary {
+            let precheck_sql = format!(
+                "SELECT wm.id AS watermark, EXISTS (SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid = pg_catalog.to_regclass('usage_logs') AND attname = 'native_compaction_v2' AND attnum > 0 AND NOT attisdropped) AS has_compaction, coalesce((SELECT sum(u.actual_cost) FROM usage_logs u WHERE {} AND u.id <= wm.id), 0) AS actual_cost FROM (SELECT coalesce(max(id), 0) AS id FROM usage_logs) wm",
+                clauses.join(" AND ")
+            );
+            let row = bind(&precheck_sql, &params).fetch_one(&mut *tx).await?;
+            let value = row_value(row)?;
+            let wm = integer(&value["watermark"]).unwrap_or(0);
+            let has_compaction = truthy(&value["has_compaction"]);
+            let amount = BigDecimal::from_str(&text(&value["actual_cost"]))
+                .map_err(|_| Error::internal())?;
+            prechecked_summary = Some(json!({"actual_cost": decimal_text(&amount, true)}));
+            (wm, Some(selection_sql(has_compaction)))
+        } else {
+            let (wm, has_compaction): (i64, bool) = sqlx::query_as(
+                "SELECT (SELECT coalesce(max(id),0) FROM usage_logs), EXISTS (SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid = pg_catalog.to_regclass('usage_logs') AND attname = 'native_compaction_v2' AND attnum > 0 AND NOT attisdropped)",
+            )
+            .fetch_one(&mut *tx)
+            .await?;
+            (wm, Some(selection_sql(has_compaction)))
         };
         params.push(watermark.into());
         clauses.push(format!("u.id <= ${}", params.len()));
@@ -461,11 +491,16 @@ impl UsageRecords {
             return Ok(json!({"new_count":count,"latest_id":watermark}));
         }
         let summary = if f.include_summary && saved.is_none() {
-            let row=bind(&format!("SELECT coalesce(sum(u.actual_cost),0) AS actual_cost FROM usage_logs u WHERE {}",clauses.join(" AND ")),&params).fetch_one(&mut *tx).await?;
-            let value = row_value(row)?;
-            let amount = BigDecimal::from_str(&text(&value["actual_cost"]))
-                .map_err(|_| Error::internal())?;
-            Some(json!({"actual_cost":decimal_text(&amount,true)}))
+            match prechecked_summary {
+                Some(s) => Some(s),
+                None => {
+                    let row=bind(&format!("SELECT coalesce(sum(u.actual_cost),0) AS actual_cost FROM usage_logs u WHERE {}",clauses.join(" AND ")),&params).fetch_one(&mut *tx).await?;
+                    let value = row_value(row)?;
+                    let amount = BigDecimal::from_str(&text(&value["actual_cost"]))
+                        .map_err(|_| Error::internal())?;
+                    Some(json!({"actual_cost":decimal_text(&amount,true)}))
+                }
+            }
         } else {
             None
         };
@@ -479,7 +514,10 @@ impl UsageRecords {
             ));
         }
         params.push(((limit + 1) as i64).into());
-        let selection = usage_selection(&mut tx).await?;
+        let selection = match prechecked_selection {
+            Some(sel) => sel,
+            None => usage_selection(&mut tx).await?,
+        };
         let rows=bind(&format!("SELECT {} FROM usage_logs u {} WHERE {} ORDER BY u.created_at DESC,u.id DESC LIMIT ${}",selection,sql::USAGE_JOINS,clauses.join(" AND "),params.len()),&params).fetch_all(&mut *tx).await?.into_iter().map(row_value).collect::<Result<Vec<_>>>()?;
         tx.commit().await?;
         let items = rows

@@ -2,6 +2,7 @@ import { useEffectEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, X } from "lucide-react";
 import { api, command } from "./bridge";
+import { ignoredFailure } from "./bridgeError";
 import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
 import { fullTime, type Account, type AccountKeepalive } from "./types";
@@ -99,6 +100,7 @@ export default function KeepaliveDialog({
   useEffect(() => {
     if (!online || !loaded) return;
     let alive = true,
+      hadPollError = false,
       timer: ReturnType<typeof setTimeout>;
     const current = epoch.current;
     const poll = async () => {
@@ -114,10 +116,24 @@ export default function KeepaliveDialog({
             current === epoch.current &&
             request === revision.current &&
             !saving.current
-          )
+          ) {
             setValue(result);
-        } catch {
-          /* Preserve the last verified state and the user's draft. */
+            if (hadPollError) {
+              hadPollError = false;
+              setError("");
+            }
+          }
+        } catch (err) {
+          if (
+            alive &&
+            current === epoch.current &&
+            request === revision.current &&
+            !saving.current &&
+            !ignoredFailure(err)
+          ) {
+            hadPollError = true;
+            setError(message(err));
+          }
         }
       }
       if (alive) timer = setTimeout(() => void poll(), 2000);

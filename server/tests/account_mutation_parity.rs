@@ -1646,10 +1646,12 @@ async fn settings_queue_waits_for_parent_lock_then_writes_once_and_supersedes_id
         .await;
     restore_operation_store_lock(&lock_path, &lock_backup);
     assert_eq!(failed_accept.0, 500);
-    assert!(harness.runtime.operations.store.read().unwrap()["jobs"]
-        .as_object()
-        .unwrap()
-        .is_empty());
+    assert!(
+        harness.runtime.operations.store.read_shared().unwrap()["jobs"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
     assert!(harness
         .upstream
         .matching(
@@ -1730,7 +1732,7 @@ async fn settings_queue_waits_for_parent_lock_then_writes_once_and_supersedes_id
         .unwrap();
     assert_eq!(resumed_independent["id"], independent["id"]);
     assert_eq!(
-        harness.runtime.operations.store.read().unwrap()["jobs"]
+        harness.runtime.operations.store.read_shared().unwrap()["jobs"]
             .as_object()
             .unwrap()
             .len(),
@@ -2384,7 +2386,7 @@ async fn settings_model_config_proxy_clear_sync_and_numeric_validation_use_exact
             "valid endpoint for {action}.{field} is accepted"
         );
         assert_eq!(
-            harness.runtime.operations.store.read().unwrap()["jobs"]
+            harness.runtime.operations.store.read_shared().unwrap()["jobs"]
                 [accepted["id"].as_str().unwrap()]["payload"][field],
             value
         );
@@ -2407,7 +2409,7 @@ async fn settings_model_config_proxy_clear_sync_and_numeric_validation_use_exact
             .await;
         assert_eq!(status, 202);
         assert_eq!(
-            harness.runtime.operations.store.read().unwrap()["jobs"]
+            harness.runtime.operations.store.read_shared().unwrap()["jobs"]
                 [accepted_proxy["id"].as_str().unwrap()]["payload"]["proxy_id"],
             proxy_id
         );
@@ -2789,7 +2791,7 @@ async fn settings_capabilities_and_human_priority_keep_recovery_intents_independ
             .collect::<BTreeSet<_>>(),
         BTreeSet::from(["queued"])
     );
-    let persisted = harness.runtime.operations.store.read().unwrap();
+    let persisted = harness.runtime.operations.store.read_shared().unwrap();
     let actions = accepted
         .iter()
         .map(|value| {
@@ -3480,7 +3482,7 @@ async fn native_template_batch_is_atomic_secret_free_idempotent_and_skips_busy_c
         .await;
     restore_operation_store_lock(&lock_path, &lock_backup);
     assert_eq!(failed_commit.0, 500);
-    let after_failed_commit = harness.runtime.operations.store.read().unwrap();
+    let after_failed_commit = harness.runtime.operations.store.read_shared().unwrap();
     assert!(after_failed_commit["batches"]
         .as_object()
         .unwrap()
@@ -3509,7 +3511,13 @@ async fn native_template_batch_is_atomic_secret_free_idempotent_and_skips_busy_c
     assert_eq!(status, 202);
     assert_eq!(accepted["batch_id"], duplicate["batch_id"]);
     assert_eq!(accepted["items"].as_array().unwrap().len(), 4);
-    let existing_store = harness.runtime.operations.store.read().unwrap().clone();
+    let existing_store = harness
+        .runtime
+        .operations
+        .store
+        .read_shared()
+        .unwrap()
+        .clone();
     let mut second_failing_request = request.clone();
     second_failing_request["request_id"] = json!("e123456789abcdef0123456789abcdef");
     let (lock_path, lock_backup) =
@@ -3524,7 +3532,7 @@ async fn native_template_batch_is_atomic_secret_free_idempotent_and_skips_busy_c
     restore_operation_store_lock(&lock_path, &lock_backup);
     assert_eq!(second_failed_commit.0, 500);
     assert_eq!(
-        harness.runtime.operations.store.read().unwrap(),
+        harness.runtime.operations.store.read_shared().unwrap(),
         existing_store,
         "a failed second batch commit preserves the already accepted jobs and indexes"
     );
@@ -3559,7 +3567,7 @@ async fn native_template_batch_is_atomic_secret_free_idempotent_and_skips_busy_c
         .upstream
         .matching(Method::POST, "/api/v1/admin/accounts/bulk-update")
         .is_empty());
-    let store = harness.runtime.operations.store.read().unwrap();
+    let store = harness.runtime.operations.store.read_shared().unwrap();
     assert_eq!(store["batches"].as_object().unwrap().len(), 1);
     assert_eq!(store["jobs"].as_object().unwrap().len(), 4);
     let persisted = serde_json::to_string(&store).unwrap();
@@ -3977,7 +3985,7 @@ fn operation_store_migrates_legacy_single_job_without_losing_jobs_or_request_ind
     fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
     let store = OperationStore::new(path.clone());
     store.transaction(|_| Ok(())).unwrap();
-    let migrated = OperationStore::new(path).read().unwrap();
+    let migrated = OperationStore::new(path).read_shared().unwrap();
     assert_eq!(migrated["jobs"], legacy["jobs"]);
     assert_eq!(migrated["requests"], legacy["requests"]);
     assert_eq!(migrated["batches"], json!({}));
@@ -4381,7 +4389,7 @@ async fn proxy_batch_acceptance_and_dispatch_persistence_failures_never_send_ear
         .await;
     restore_operation_store_lock(&lock_path, &lock_backup);
     assert_eq!(failed_accept.0, 500);
-    let empty = harness.runtime.operations.store.read().unwrap();
+    let empty = harness.runtime.operations.store.read_shared().unwrap();
     assert!(empty["jobs"].as_object().unwrap().is_empty());
     assert!(empty["batches"].as_object().unwrap().is_empty());
     assert!(harness
@@ -4615,14 +4623,18 @@ async fn proxy_batch_schema_template_and_target_preflight_are_per_item_and_atomi
         422,
         "the native batch request enforces the 1,000 account limit"
     );
-    assert!(harness.runtime.operations.store.read().unwrap()["batches"]
-        .as_object()
-        .unwrap()
-        .is_empty());
-    assert!(harness.runtime.operations.store.read().unwrap()["jobs"]
-        .as_object()
-        .unwrap()
-        .is_empty());
+    assert!(
+        harness.runtime.operations.store.read_shared().unwrap()["batches"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        harness.runtime.operations.store.read_shared().unwrap()["jobs"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
 
     let bad_template_version = json!("f".repeat(64));
     let live_row = harness.account(live_id).await;
@@ -4646,10 +4658,12 @@ async fn proxy_batch_schema_template_and_target_preflight_are_per_item_and_atomi
         409,
         "a stale selected-template version is rejected before a batch is recorded"
     );
-    assert!(harness.runtime.operations.store.read().unwrap()["batches"]
-        .as_object()
-        .unwrap()
-        .is_empty());
+    assert!(
+        harness.runtime.operations.store.read_shared().unwrap()["batches"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
 
     let (status, inherited_proxy, _) = harness
         .request(
@@ -4781,10 +4795,12 @@ async fn native_delete_confirmation_rechecks_children_without_management() {
         )
         .await;
     assert_eq!(unconfirmed.0, 422);
-    assert!(harness.runtime.operations.store.read().unwrap()["batches"]
-        .as_object()
-        .unwrap()
-        .is_empty());
+    assert!(
+        harness.runtime.operations.store.read_shared().unwrap()["batches"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
 
     let (status, accepted, _) = harness
         .request(
@@ -4937,7 +4953,7 @@ async fn proxy_batch_restart_checks_a_dispatched_chunk_without_replaying_it() {
         harness.runtime.operations.budget.clone(),
     )
     .expect("recover the persisted dispatched native proxy chunk");
-    let recovered = reopened.store.read().unwrap();
+    let recovered = reopened.store.read_shared().unwrap();
     assert_eq!(recovered["jobs"][&job_id]["status"], "checking");
     assert_eq!(
         recovered["batches"][&batch_id]["chunks"][0]["status"],
@@ -5652,7 +5668,7 @@ async fn management_delete_preserves_other_keys_and_history() {
         404
     );
     assert_eq!(
-        h.runtime.monitor.store.snapshot().unwrap()["recovery_history"],
+        h.runtime.monitor.store.shared_snapshot().unwrap()["recovery_history"],
         json!({"fixture-old":{"id":10,"account_id":a}})
     );
     let calls = manual_writes(&h);
@@ -5799,7 +5815,7 @@ async fn management_recover_exact_request_preserves_switches_and_history() {
         .await;
     sqlx::query("UPDATE accounts SET status='error',schedulable=false,rate_limit_reset_at=now()+interval '5 minutes' WHERE id=$1")
         .bind(id).execute(&h.runtime.db.pool).await.unwrap();
-    let history = h.runtime.monitor.store.snapshot().unwrap()["recovery_history"].clone();
+    let history = h.runtime.monitor.store.shared_snapshot().unwrap()["recovery_history"].clone();
     let payload = json!({"expected_version":account_version(&h.account(id).await)});
     let response = h.recover_account(id, payload).await;
     assert_eq!(response.0, 200);
@@ -5810,7 +5826,7 @@ async fn management_recover_exact_request_preserves_switches_and_history() {
     assert_eq!(row["schedulable"], false);
     assert!(row["rate_limit_reset_at"].is_null());
     assert_eq!(
-        h.runtime.monitor.store.snapshot().unwrap()["recovery_history"],
+        h.runtime.monitor.store.shared_snapshot().unwrap()["recovery_history"],
         history
     );
     let calls = manual_writes(&h);
@@ -5969,7 +5985,7 @@ async fn management_recovery_history_filters_live_accounts_before_cursor_and_red
             Ok(())
         })
         .unwrap();
-    let original = h.runtime.monitor.store.snapshot().unwrap()["recovery_history"].clone();
+    let original = h.runtime.monitor.store.shared_snapshot().unwrap()["recovery_history"].clone();
     let queries = &h.runtime.actions.queries;
     let first = queries.recoveries(None, 2).await.unwrap();
     let ids = |value: &Value| {
@@ -6002,7 +6018,7 @@ async fn management_recovery_history_filters_live_accounts_before_cursor_and_red
         json!({"items":[],"next_cursor":null})
     );
     assert_eq!(
-        h.runtime.monitor.store.snapshot().unwrap()["recovery_history"],
+        h.runtime.monitor.store.shared_snapshot().unwrap()["recovery_history"],
         original
     );
     sqlx::query("UPDATE accounts SET deleted_at=NULL WHERE id=$1")
@@ -6100,7 +6116,7 @@ async fn connection_http_acceptance_is_202_atomic_order_independent_and_survives
         json!({"confirmed":true,"mode":"text","model_id":""})
     );
     assert_eq!(items[&ids[2]]["requested"], items[&ids[0]]["requested"]);
-    let state = h.runtime.operations.store.read().unwrap();
+    let state = h.runtime.operations.store.read_shared().unwrap();
     assert_eq!(state["jobs"].as_object().unwrap().len(), 3);
     assert_eq!(state["batches"].as_object().unwrap().len(), 1);
     assert_eq!(
@@ -6116,7 +6132,7 @@ async fn connection_http_acceptance_is_202_atomic_order_independent_and_survives
     assert_eq!(replay.0, 202);
     assert_eq!(replay.1, batch);
     assert_eq!(
-        h.runtime.operations.store.read().unwrap()["jobs"]
+        h.runtime.operations.store.read_shared().unwrap()["jobs"]
             .as_object()
             .unwrap()
             .len(),
@@ -6575,7 +6591,7 @@ async fn connection_http_late_account_busy_requeues_without_dispatch_time_and_ca
     assert!(queued["items"][0].get("started_at").is_some());
     assert_eq!(queued["items"][0]["started_at"], Value::Null);
     assert_eq!(
-        h.runtime.operations.store.read().unwrap()["jobs"][&jid]["started_at"],
+        h.runtime.operations.store.read_shared().unwrap()["jobs"][&jid]["started_at"],
         Value::Null
     );
     let cancelled = h
@@ -6913,7 +6929,8 @@ async fn key_quota_http_auth_settings_and_parent_credential_isolation() {
     sqlx::query("UPDATE accounts SET credentials=jsonb_build_object('base_url',$1::text,'api_key','fixture-parent') WHERE id=$2").bind(&base).bind(parent).execute(&harness.runtime.db.pool).await.unwrap();
     // Both child and parent use the inherited source, but their independent
     // account access tokens and cache entries remain isolated.
-    let snapshot = harness.runtime.snapshot().await.unwrap();
+    let snapshot: Value =
+        serde_json::from_slice(&harness.runtime.snapshot_bytes().await.unwrap()).unwrap();
     let child_dto = snapshot["accounts"]
         .as_array()
         .unwrap()
@@ -6939,7 +6956,7 @@ async fn key_quota_http_auth_settings_and_parent_credential_isolation() {
         .runtime
         .operations
         .store
-        .read()
+        .read_shared()
         .unwrap()
         .to_string()
         .contains("key_quota"));

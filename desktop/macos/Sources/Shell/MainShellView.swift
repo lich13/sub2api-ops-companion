@@ -168,7 +168,6 @@ public struct MainShellView: View {
         @Bindable var store: AppStore
         var compact: Bool = false
         @State private var hovered: Bool = false
-        @State private var popoverOpen: Bool = false
 
         var body: some View {
             let isOpen = store.switcherAnchor == .sidebar
@@ -205,19 +204,7 @@ public struct MainShellView: View {
             .buttonStyle(.linearPlain)
             .onHover { hovered = $0 }
             .help(store.activeConnection?.base_url ?? "切换或新增 Sub2API 实例")
-            .onAppear { popoverOpen = (store.switcherAnchor == .sidebar) }
-            .onChange(of: store.switcherAnchor) { _, next in
-                let shouldOpen = (next == .sidebar)
-                if popoverOpen != shouldOpen { popoverOpen = shouldOpen }
-            }
-            .onChange(of: popoverOpen) { _, open in
-                if open && store.switcherAnchor != .sidebar {
-                    store.switcherAnchor = .sidebar
-                } else if !open && store.switcherAnchor == .sidebar {
-                    store.switcherAnchor = nil
-                }
-            }
-            .popover(isPresented: $popoverOpen, arrowEdge: .trailing) {
+            .sub2opsSwitcherPopover(anchor: .sidebar, store: store, arrowEdge: .trailing) {
                 InstanceSwitcherPopoverContent(store: store) {
                     store.switcherAnchor = nil
                 }
@@ -317,7 +304,6 @@ public struct MainShellView: View {
     private struct TopbarInstanceTrigger: View {
         @Bindable var store: AppStore
         @State private var hovered: Bool = false
-        @State private var topbarPopoverOpen: Bool = false
 
         var body: some View {
             Button {
@@ -347,19 +333,7 @@ public struct MainShellView: View {
             .buttonStyle(.linearPlain)
             .onHover { hovered = $0 }
             .accessibilityLabel("切换 Sub2API 实例")
-            .onAppear { topbarPopoverOpen = (store.switcherAnchor == .topbar) }
-            .onChange(of: store.switcherAnchor) { _, next in
-                let shouldOpen = (next == .topbar)
-                if topbarPopoverOpen != shouldOpen { topbarPopoverOpen = shouldOpen }
-            }
-            .onChange(of: topbarPopoverOpen) { _, open in
-                if open && store.switcherAnchor != .topbar {
-                    store.switcherAnchor = .topbar
-                } else if !open && store.switcherAnchor == .topbar {
-                    store.switcherAnchor = nil
-                }
-            }
-            .popover(isPresented: $topbarPopoverOpen, arrowEdge: .bottom) {
+            .sub2opsSwitcherPopover(anchor: .topbar, store: store, arrowEdge: .bottom) {
                 InstanceSwitcherPopoverContent(store: store) {
                     store.switcherAnchor = nil
                 }

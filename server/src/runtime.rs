@@ -287,8 +287,8 @@ impl Runtime {
             self.actions
                 .templates
                 .store
-                .read()
-                .and_then(crate::account_templates::normalize),
+                .read_shared()
+                .and_then(|v| crate::account_templates::normalize((*v).clone())),
         )?;
         startup("connection_config", self.settings.connection_config())?;
         let accounts = self.actions.queries.accounts().await?;
@@ -386,7 +386,17 @@ impl Runtime {
                         "capacity" => Duration::from_secs((1_u64 << (failures + 1)).min(30)),
                         _ => interval,
                     };
-                    tokio::select! { _ = tokio::time::sleep(delay) => {}, _ = stop.changed() => {} }
+                    tokio::select! {
+                        _ = tokio::time::sleep(delay) => {},
+                        _ = stop.changed() => {},
+                        _ = async {
+                            match kind {
+                                "operations" => runtime.operations.wake.notified().await,
+                                "priority_orders" => runtime.priorities.wake.notified().await,
+                                _ => std::future::pending::<()>().await,
+                            }
+                        } => {},
+                    }
                 }
             });
             self.tasks
@@ -408,12 +418,18 @@ impl Runtime {
             self.close().await;
             return Err(error);
         }
+        use axum::serve::ListenerExt;
         let (stop, receive) = tokio::sync::oneshot::channel();
-        let server = axum::serve(listener, crate::api::router(self.clone()))
-            .with_graceful_shutdown(async {
-                let _ = receive.await;
-            })
-            .into_future();
+        let server = axum::serve(
+            listener.tap_io(|tcp_stream| {
+                let _ = tcp_stream.set_nodelay(true);
+            }),
+            crate::api::router(self.clone()),
+        )
+        .with_graceful_shutdown(async {
+            let _ = receive.await;
+        })
+        .into_future();
         tokio::pin!(server);
         tokio::select! {
             result = &mut server => { self.close().await; result?; },

@@ -43,15 +43,17 @@ public enum AccountFilterSort {
     }
 
     public static func sortRecentCall(_ accounts: [Account], ascending: Bool = false) -> [Account] {
-        func timestamp(_ account: Account) -> Double {
+        guard accounts.count > 1 else { return accounts }
+        let keyed: [(account: Account, timestamp: Double)] = accounts.map { account in
             let recent = BeijingTime.callTimestamp(account.last_called_at)
-            return recent.isFinite ? recent : BeijingTime.callTimestamp(account.last_success_at)
+            let ts = recent.isFinite ? recent : BeijingTime.callTimestamp(account.last_success_at)
+            return (account, ts)
         }
-        return accounts.sorted { a, b in
-            let left = timestamp(a)
-            let right = timestamp(b)
+        return keyed.sorted { lhs, rhs in
+            let left = lhs.timestamp
+            let right = rhs.timestamp
             if !left.isFinite {
-                return !right.isFinite ? b.id < a.id : false
+                return !right.isFinite ? rhs.account.id < lhs.account.id : false
             }
             if !right.isFinite {
                 return true
@@ -59,8 +61,8 @@ public enum AccountFilterSort {
             if left != right {
                 return ascending ? left < right : right < left
             }
-            return b.id < a.id
-        }
+            return rhs.account.id < lhs.account.id
+        }.map(\.account)
     }
 }
 

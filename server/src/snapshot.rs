@@ -8,7 +8,8 @@ use crate::{
 };
 use serde_json::{json, Value};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
+    io::Write,
     sync::{atomic::Ordering, LazyLock},
     time::{Duration, Instant},
 };
@@ -22,10 +23,22 @@ pub(crate) struct Cache {
     stats_epoch: u64,
     observed: Option<Instant>,
     snapshot_bytes: axum::body::Bytes,
+    snapshot_gzip: axum::body::Bytes,
+    account_digests: HashMap<i64, (Value, String, Value)>,
     stats_at: Option<Instant>,
     stats_signature: Value,
     stats: usage::Stats,
     stats_failed: bool,
+}
+
+fn compress_gzip(raw: &[u8]) -> Result<axum::body::Bytes> {
+    let mut encoder = flate2::write::GzEncoder::new(
+        Vec::with_capacity(raw.len() / 4),
+        flate2::Compression::default(),
+    );
+    encoder.write_all(raw).map_err(|_| Error::internal())?;
+    let compressed = encoder.finish().map_err(|_| Error::internal())?;
+    Ok(axum::body::Bytes::from(compressed))
 }
 
 impl Runtime {
@@ -36,10 +49,10 @@ impl Runtime {
     pub(crate) fn invalidate_snapshot(&self) {
         self.cache_epoch.fetch_add(1, Ordering::AcqRel);
     }
-    pub async fn snapshot(&self) -> Result<Value> {
-        Ok(serde_json::from_slice(&self.snapshot_bytes().await?)?)
-    }
     pub async fn snapshot_bytes(&self) -> Result<axum::body::Bytes> {
+        Ok(self.snapshot_pair().await?.0)
+    }
+    pub(crate) async fn snapshot_pair(&self) -> Result<(axum::body::Bytes, axum::body::Bytes)> {
         let mut cache = self.snapshot.lock().await;
         let epoch = self.cache_epoch.load(Ordering::Acquire);
         let stats_epoch = self.stats_epoch.load(Ordering::Acquire);
@@ -49,7 +62,7 @@ impl Runtime {
                 .observed
                 .is_some_and(|at| at.elapsed() < Duration::from_millis(1500))
         {
-            return Ok(cache.snapshot_bytes.clone());
+            return Ok((cache.snapshot_bytes.clone(), cache.snapshot_gzip.clone()));
         }
         let now = self.monitor.now();
         let state = self.actions.queries.oauth.shared_snapshot()?;
@@ -63,10 +76,23 @@ impl Runtime {
         for row in &rows {
             let id = integer(&row["id"]).ok_or_else(Error::internal)?;
             live_names.insert(id, row["name"].clone());
+            let versions = match cache.account_digests.get(&id) {
+                Some((cached_row, ver, op_ver)) if cached_row == row => {
+                    (ver.clone(), op_ver.clone())
+                }
+                _ => {
+                    let ver = crate::compat::account_version(row);
+                    let op_ver = crate::compat::operation_versions(row);
+                    cache
+                        .account_digests
+                        .insert(id, (row.clone(), ver.clone(), op_ver.clone()));
+                    (ver, op_ver)
+                }
+            };
             let meta = &state["scheduler"][id.to_string()];
             let result =
                 queries::latest_completed_result(&state["oauth_results"][id.to_string()], meta);
-            let mut account = queries::account_dto_without_windows(row, now);
+            let mut account = queries::account_dto_with_versions(row, now, Some(versions));
             account["usage"] = usage::project(row, now, &result);
             account["auto_reset_credit"] = crate::credit_rules::project(
                 &meta["auto_reset_credit"],
@@ -77,6 +103,9 @@ impl Runtime {
             sig_entries.extend(usage::stats_signature(id, &account["usage"], now));
             accounts.push(account);
         }
+        cache
+            .account_digests
+            .retain(|id, _| live_names.contains_key(id));
         let signature = Value::Array(sig_entries);
         if stats_epoch != cache.stats_epoch
             || cache.stats_failed
@@ -143,14 +172,16 @@ impl Runtime {
             "errors":errors["items"],"recoveries":recoveries["items"]});
         let bytes =
             axum::body::Bytes::from(serde_json::to_vec(&result).map_err(|_| Error::internal())?);
+        let gzip = compress_gzip(&bytes)?;
         if self.cache_epoch.load(Ordering::Acquire) == epoch {
             cache.epoch = epoch;
             cache.observed = Some(Instant::now());
             cache.snapshot_bytes = bytes.clone();
+            cache.snapshot_gzip = gzip.clone();
         } else {
             cache.stats_at = None;
         }
-        Ok(bytes)
+        Ok((bytes, gzip))
     }
     pub async fn account_snapshot_from_row(
         &self,

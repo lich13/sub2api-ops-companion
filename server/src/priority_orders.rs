@@ -338,6 +338,7 @@ pub struct PriorityOrders {
     actions: Actions,
     operations: Arc<Operations>,
     running: Arc<AtomicBool>,
+    pub(crate) wake: tokio::sync::Notify,
 }
 fn version(row: &Value) -> Value {
     priority_version(row).into()
@@ -498,6 +499,7 @@ impl PriorityOrders {
             actions,
             operations,
             running: Arc::new(AtomicBool::new(false)),
+            wake: tokio::sync::Notify::new(),
         })
     }
     async fn rows(&self, platform: Option<&str>) -> Result<Vec<Value>> {
@@ -641,6 +643,7 @@ impl PriorityOrders {
             data["last_id"] = id.clone().into();
             Ok(())
         })?;
+        self.wake.notify_one();
         Ok(public_job(&job, true))
     }
 
@@ -670,10 +673,12 @@ impl PriorityOrders {
         self.view().await
     }
     fn finish(&self, id: &str, status: &str, reason: &str) -> Result<()> {
+        let mut changed = false;
         self.store.transaction(|data| {
             if active(data) != Some(id) {
                 return Ok(());
             }
+            changed = true;
             let job = &mut data["jobs"][id];
             job["status"] = status.into();
             job["reason"] = reason.into();
@@ -683,7 +688,11 @@ impl PriorityOrders {
             job["waiting_account_ids"] = json!([]);
             data["active_id"] = Value::Null;
             Ok(())
-        })
+        })?;
+        if changed {
+            self.operations.backend.invalidate_snapshot();
+        }
+        Ok(())
     }
     pub fn cancel(&self, id: &str) -> Result<Value> {
         self.get(id, true)?;
@@ -910,8 +919,21 @@ impl PriorityOrders {
             return Ok(());
         }
         let this = self.clone();
+        let cleanup_self = self.clone();
+        let cleanup_id = id.clone();
         let running = self.running.clone();
-        let cleanup = crate::supervision::on_drop(move || running.store(false, Ordering::Release));
+        let cleanup = crate::supervision::on_drop(move || {
+            running.store(false, Ordering::Release);
+            let next_order_waiting = cleanup_self
+                .store
+                .read_shared()
+                .ok()
+                .and_then(|data| active(&data).map(str::to_owned))
+                .is_some_and(|act| act != cleanup_id);
+            if next_order_waiting {
+                cleanup_self.wake.notify_one();
+            }
+        });
         self.actions.supervisor.spawn("priority_order", async move {
             let _cleanup = cleanup;
             if let Err(error) = this.run(&id).await {

@@ -8,7 +8,7 @@ import {
   operationEpoch,
   submitOperation,
 } from "./accountOperations";
-import { operationLabel } from "./AccountSettingsDialog";
+import { operationLabel } from "./accountDialog";
 import { useBackAction } from "./mobile";
 import { useDialogFocus } from "./dialogFocus";
 import type { Account } from "./types";

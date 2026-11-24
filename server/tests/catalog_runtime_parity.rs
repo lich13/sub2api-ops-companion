@@ -624,7 +624,12 @@ async fn snapshot_invalidation_never_waits_or_republishes_inflight_cache() {
         .await
         .unwrap();
     let runtime = harness.runtime.clone();
-    let inflight = tokio::spawn(async move { runtime.snapshot().await });
+    let inflight = tokio::spawn(async move {
+        runtime
+            .snapshot_bytes()
+            .await
+            .map(|b| serde_json::from_slice::<Value>(&b).unwrap())
+    });
     tokio::time::timeout(Duration::from_secs(3), async {
         loop {
             let waiting: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))")
@@ -651,14 +656,15 @@ async fn snapshot_invalidation_never_waits_or_republishes_inflight_cache() {
         .execute(&harness.runtime.db.pool)
         .await
         .unwrap();
-    let second = harness.runtime.snapshot().await.unwrap();
+    let second: Value =
+        serde_json::from_slice(&harness.runtime.snapshot_bytes().await.unwrap()).unwrap();
     assert_eq!(second["accounts"][0]["name"], "fixture-after");
     sqlx::query("UPDATE accounts SET name='fixture-unobserved' WHERE id=12")
         .execute(&harness.runtime.db.pool)
         .await
         .unwrap();
     assert_eq!(
-        harness.runtime.snapshot().await.unwrap(),
+        serde_json::from_slice::<Value>(&harness.runtime.snapshot_bytes().await.unwrap()).unwrap(),
         second,
         "the subsequent uncontended snapshot is cached normally"
     );
@@ -842,7 +848,7 @@ async fn single_account_usage_is_independent_of_groups_history_and_snapshot_lock
         .await
         .unwrap();
     let runtime = h.runtime.clone();
-    let snapshot = tokio::spawn(async move { runtime.snapshot().await });
+    let snapshot = tokio::spawn(async move { runtime.snapshot_bytes().await });
     tokio::time::timeout(std::time::Duration::from_secs(3), async {
         loop {
             let waiting: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))")

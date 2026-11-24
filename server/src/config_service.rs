@@ -215,7 +215,7 @@ impl ConfigService {
                 {
                     return Err(Error::new(422, "未知 OAuth 设置"));
                 }
-                let raw = self.oauth.read()?;
+                let raw = self.oauth.read_shared()?;
                 let mut values = self.oauth_values(&raw)?;
                 for (key, value) in changes {
                     if key == "model_detection_platforms" {
@@ -294,7 +294,7 @@ impl ConfigService {
                         return Err(Error::new(422, "所选账号不属于可管理的 OpenAI OAuth 账号"));
                     }
                 }
-                let mut payload = raw.clone();
+                let mut payload = (*raw).clone();
                 payload
                     .as_object_mut()
                     .unwrap()
@@ -337,7 +337,7 @@ impl ConfigService {
                     })
                     .collect::<Vec<_>>();
                 self.oauth.transaction(|on_disk| {
-                    if *on_disk != raw {
+                    if *on_disk != *raw {
                         return Err(conflict());
                     }
                     if selection_changed && !affected.is_empty() {

@@ -67,19 +67,19 @@ extension ModelProfileReply {
         self = ModelProfileReply(whitelist: whitelist, mappings: copy)
     }
 
+    private static let exactModelRegex = try! NSRegularExpression(pattern: "^[A-Za-z0-9._:/-]{1,200}$")
+    private static let sourceModelRegex = try! NSRegularExpression(pattern: "^(?:[A-Za-z0-9._:/-]{1,199}\\*?|\\*)$")
+
     public static func validate(_ profile: ModelProfileReply) -> String {
         var seen = Set<String>()
-        let exactRegex = try? NSRegularExpression(pattern: "^[A-Za-z0-9._:/-]{1,200}$")
-        let sourceRegex = try? NSRegularExpression(pattern: "^(?:[A-Za-z0-9._:/-]{1,199}\\*?|\\*)$")
 
-        func matches(_ text: String, _ regex: NSRegularExpression?) -> Bool {
-            guard let regex else { return !text.isEmpty }
+        func matches(_ text: String, _ regex: NSRegularExpression) -> Bool {
             let range = NSRange(text.startIndex..<text.endIndex, in: text)
             return regex.firstMatch(in: text, range: range) != nil
         }
 
         for model in profile.whitelist {
-            if !matches(model, exactRegex) {
+            if !matches(model, exactModelRegex) {
                 return "白名单必须是精确模型 ID"
             }
             if !seen.insert(model).inserted {
@@ -87,7 +87,7 @@ extension ModelProfileReply {
             }
         }
         for rule in profile.mappings {
-            if !matches(rule.source, sourceRegex) || !matches(rule.target, exactRegex) {
+            if !matches(rule.source, sourceModelRegex) || !matches(rule.target, exactModelRegex) {
                 return "映射源只允许末尾通配符，目标必须是精确模型 ID"
             }
             if seen.contains(rule.source) || rule.source == rule.target {
@@ -301,7 +301,10 @@ public struct AccountSettingsSheet: View {
                 .buttonStyle(LinearButtonStyle(variant: .primary))
                 .disabled(!store.state.online || loading || saving || !writable || !isDirty || !validationMessage.isEmpty)
             }
-            .sub2opsDialogFocus {
+            .sub2opsDialogFocus(
+                canBackdropDismiss: !saving && !isDirty,
+                onBackdrop: { requestClose(fromEscape: false) }
+            ) {
                 requestClose(fromEscape: true)
             }
 
@@ -309,7 +312,7 @@ public struct AccountSettingsSheet: View {
                 discardConfirmCard
             }
         }
-        .task(id: account.id) {
+        .task(id: "\(store.connectionKey):\(account.id)") {
             await load()
         }
     }

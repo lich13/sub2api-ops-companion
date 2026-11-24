@@ -674,8 +674,8 @@ fn has_no_automatic_attempts(quota_query: &Value) -> bool {
 async fn wait_recovery_status(h: &Harness, id: i64, expected: &str) {
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
-            if h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
-                ["status"]
+            if h.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+                ["recovery_intent"]["status"]
                 == expected
             {
                 break;
@@ -848,7 +848,7 @@ fn current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill() {
     fs::write(&path, serde_json::to_vec(&raw).unwrap()).unwrap();
     let store = OAuthState::new(path.clone());
     store.transaction(|_| Ok(())).unwrap();
-    let current = store.snapshot().unwrap();
+    let current = store.shared_snapshot().unwrap();
     assert_eq!(current["settings"]["sub2api_admin_token"], "fixture-admin");
     assert_eq!(current["oauth_results"], raw["oauth_results"]);
     assert_eq!(current["recovery_history"], raw["recovery_history"]);
@@ -864,7 +864,7 @@ fn current_oauth_upgrade_preserves_tasks_and_history_without_legacy_backfill() {
         current["scheduler"]["8"]["recovery_intent"]["status"],
         "ready"
     );
-    assert_eq!(OAuthState::new(path).snapshot().unwrap(), current);
+    assert_eq!(OAuthState::new(path).shared_snapshot().unwrap(), current);
 }
 
 #[tokio::test]
@@ -913,7 +913,7 @@ async fn active_usage_endpoint_budget_cooldown_manual_priority_and_free_plan_mat
         .query(id, ADMIN_KEY, query_options(Source::Manual, harness.now()))
         .await;
     assert_eq!(manual["success"], true);
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     assert_eq!(
         state["scheduler"][id.to_string()]["quota_query"]["automatic_attempts"],
         json!([datetime(start)])
@@ -1026,8 +1026,8 @@ async fn rolling_automatic_budget_and_backoff_survive_state_reopen() {
         datetime(start + Duration::hours(24))
     );
     assert_eq!(harness.mock.count("GET", "/usage"), 6);
-    let automatic_attempts = harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
-        ["quota_query"]["automatic_attempts"]
+    let automatic_attempts = harness.runtime.monitor.shared_state().unwrap()["scheduler"]
+        [id.to_string()]["quota_query"]["automatic_attempts"]
         .clone();
     harness.set_now(start + Duration::hours(6) + Duration::minutes(1));
     let manual = reopened
@@ -1035,7 +1035,7 @@ async fn rolling_automatic_budget_and_backoff_survive_state_reopen() {
         .await;
     assert_eq!(manual["success"], true);
     assert_eq!(
-        harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["quota_query"]
+        harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]["quota_query"]
             ["automatic_attempts"],
         automatic_attempts
     );
@@ -1063,7 +1063,7 @@ async fn rolling_automatic_budget_and_backoff_survive_state_reopen() {
     );
     assert_eq!(harness.mock.count("GET", "/usage"), 8);
     assert_eq!(
-        harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["quota_query"]
+        harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]["quota_query"]
             ["automatic_attempts"],
         json!([
             datetime(start + Duration::hours(1)),
@@ -1098,7 +1098,7 @@ async fn rolling_automatic_budget_and_backoff_survive_state_reopen() {
             .actions
             .queries
             .oauth
-            .snapshot()
+            .shared_snapshot()
             .unwrap();
         assert_eq!(
             state["scheduler"][failure_id.to_string()]["quota_query"]["retry_at"],
@@ -1145,8 +1145,8 @@ async fn future_full_quota_keeps_existing_backoff_until_an_available_response() 
         assert_eq!(failed["error_code"], "http_503");
     }
     let retry_at = start + Duration::hours(10);
-    let failure_state = harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
-        ["quota_query"]
+    let failure_state = harness.runtime.monitor.shared_state().unwrap()["scheduler"]
+        [id.to_string()]["quota_query"]
         .clone();
     assert_eq!(failure_state["failure_count"], 3);
     assert_eq!(failure_state["retry_at"], datetime(retry_at));
@@ -1167,8 +1167,8 @@ async fn future_full_quota_keeps_existing_backoff_until_an_available_response() 
         .query(id, ADMIN_KEY, query_options(Source::Manual, harness.now()))
         .await;
     assert_eq!(manual["success"], true);
-    let preserved =
-        &harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["quota_query"];
+    let preserved = &harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+        ["quota_query"];
     assert_eq!(preserved["failure_count"], 3);
     assert_eq!(preserved["retry_at"], datetime(retry_at));
     harness.set_now(reset + Duration::minutes(1));
@@ -1199,8 +1199,8 @@ async fn future_full_quota_keeps_existing_backoff_until_an_available_response() 
         )
         .await;
     assert_eq!(available["success"], true);
-    let cleared =
-        &harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["quota_query"];
+    let cleared = &harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+        ["quota_query"];
     assert_eq!(cleared["failure_count"], 0);
     assert_eq!(cleared["retry_at"], "");
     assert_eq!(harness.mock.count("GET", "/usage"), 5);
@@ -1281,7 +1281,7 @@ async fn depleted_windows_wait_for_latest_exact_reset_and_missing_data_keeps_goo
         )
         .await;
     assert_eq!(incomplete["error_code"], "incomplete_quota");
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     assert_eq!(state["oauth_results"][id.to_string()], previous);
     assert_eq!(
         state["scheduler"][id.to_string()]["quota_query"]["failure_count"],
@@ -1335,7 +1335,8 @@ async fn auth_pause_rotates_with_credentials_and_corrupt_state_fails_closed() {
             .await;
         assert_eq!(rotated["success"], true);
         assert!(
-            harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["quota_query"]
+            harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+                ["quota_query"]
                 .get("auth_fingerprint")
                 .is_none()
         );
@@ -1357,7 +1358,7 @@ async fn auth_pause_rotates_with_credentials_and_corrupt_state_fails_closed() {
         .query(id, ADMIN_KEY, query_options(Source::Automatic, start))
         .await;
     assert_eq!(failed["error_code"], "http_401");
-    let attempts = harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+    let attempts = harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
         ["quota_query"]["automatic_attempts"]
         .clone();
     harness.set_now(start + Duration::minutes(10));
@@ -1369,7 +1370,7 @@ async fn auth_pause_rotates_with_credentials_and_corrupt_state_fails_closed() {
         .query(id, ADMIN_KEY, query_options(Source::Manual, harness.now()))
         .await;
     assert_eq!(manual["success"], true);
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     assert_eq!(
         state["scheduler"][id.to_string()]["quota_query"]["automatic_attempts"],
         attempts
@@ -1465,8 +1466,8 @@ async fn invalid_usage_json_consumes_automatic_budget_without_replay() {
         )
         .await;
     assert_eq!(first["error_code"], "usage_query_error");
-    let metadata =
-        &harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["quota_query"];
+    let metadata = &harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+        ["quota_query"];
     assert_eq!(metadata["automatic_attempts"].as_array().unwrap().len(), 1);
     assert_eq!(metadata["failure_count"], 1);
     let second = harness
@@ -1508,7 +1509,7 @@ async fn reservation_write_failure_prevents_automatic_and_manual_http() {
     }
     fs::set_permissions(parent, fs::Permissions::from_mode(before)).unwrap();
     assert_eq!(harness.mock.count("GET", "/usage"), 0);
-    assert!(harness.runtime.monitor.state().is_ok());
+    assert!(harness.runtime.monitor.shared_state().is_ok());
     harness.close().await;
 }
 
@@ -1670,7 +1671,7 @@ async fn concurrent_automatic_and_manual_coordinator_queries_coalesce_once() {
     assert_eq!(coalesced_count, 7);
     assert_eq!(harness.mock.count("GET", "/usage"), 1);
     assert_eq!(
-        harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["quota_query"]
+        harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]["quota_query"]
             ["automatic_attempts"],
         json!([datetime(start)])
     );
@@ -1732,10 +1733,10 @@ async fn deleted_account_cache_cleanup_preserves_inflight_queries_and_live_resul
     assert_eq!(joined["success"], true);
     assert_eq!(joined["coalesced"], true);
     assert_eq!(harness.mock.count("GET", "/usage"), 2);
-    let persisted = harness.runtime.monitor.state().unwrap()["oauth_results"].clone();
+    let persisted = harness.runtime.monitor.shared_state().unwrap()["oauth_results"].clone();
     assert!(persisted[id.to_string()].is_object());
     // A late completion may refill the cache; the next full inventory removes it.
-    harness.runtime.snapshot().await.unwrap();
+    harness.runtime.snapshot_bytes().await.unwrap();
     assert!(harness
         .runtime
         .monitor
@@ -1751,7 +1752,7 @@ async fn deleted_account_cache_cleanup_preserves_inflight_queries_and_live_resul
         .await
         .is_some());
     assert_eq!(
-        harness.runtime.monitor.state().unwrap()["oauth_results"],
+        harness.runtime.monitor.shared_state().unwrap()["oauth_results"],
         persisted
     );
     harness.close().await;
@@ -1799,7 +1800,7 @@ async fn single_and_batch_runtime_queries_coalesce_and_keep_request_locks() {
     assert_eq!(batch_result["total"], 1);
     assert_eq!(batch_result["items"][0]["status"], "success");
     assert_eq!(harness.mock.count("GET", "/usage"), 1);
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     let quota_query = &state["scheduler"][id.to_string()]["quota_query"];
     assert!(
         has_no_automatic_attempts(quota_query),
@@ -1983,7 +1984,7 @@ async fn runtime_batch_joins_manual_single_query_that_started_first() {
     assert_eq!(completed["completed"], 1);
     assert_eq!(completed["items"][0]["status"], "success");
     assert_eq!(harness.mock.count("GET", "/usage"), 1);
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     let quota_query = &state["scheduler"][id.to_string()]["quota_query"];
     assert!(
         has_no_automatic_attempts(quota_query),
@@ -2008,7 +2009,7 @@ async fn monitor_and_direct_query_share_one_inflight_usage_request() {
         let id = integer(&row["id"]).unwrap();
         harness.set_now(due - Duration::hours(1));
         harness.runtime.monitor.startup().await.unwrap();
-        let baseline_attempts = harness.runtime.monitor.state().unwrap()["scheduler"]
+        let baseline_attempts = harness.runtime.monitor.shared_state().unwrap()["scheduler"]
             [id.to_string()]["quota_query"]["automatic_attempts"]
             .clone();
         let baseline = baseline_attempts.as_array().cloned().unwrap_or_default();
@@ -2064,7 +2065,7 @@ async fn monitor_and_direct_query_share_one_inflight_usage_request() {
         if monitor_first {
             tokio::time::timeout(StdDuration::from_secs(8), async {
                 loop {
-                    let attempts = harness.runtime.monitor.state().unwrap()["scheduler"]
+                    let attempts = harness.runtime.monitor.shared_state().unwrap()["scheduler"]
                         [id.to_string()]["quota_query"]["automatic_attempts"]
                         .as_array()
                         .cloned()
@@ -2091,13 +2092,13 @@ async fn monitor_and_direct_query_share_one_inflight_usage_request() {
             let mut expected_attempts = baseline.clone();
             expected_attempts.push(json!(datetime(due)));
             assert_eq!(
-                harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+                harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
                     ["quota_query"]["automatic_attempts"],
                 json!(expected_attempts),
                 "the joined manual request must preserve the preexisting budget history"
             );
         } else {
-            let state = harness.runtime.monitor.state().unwrap();
+            let state = harness.runtime.monitor.shared_state().unwrap();
             let quota_query = &state["scheduler"][id.to_string()]["quota_query"];
             assert!(
                 quota_query["automatic_attempts"] == baseline_attempts,
@@ -2138,7 +2139,7 @@ async fn concurrent_quota_refresh_callers_share_one_runtime_batch() {
     let report = wait_for_quota_batch_completion(&harness).await;
     assert_eq!(report["items"][0]["status"], "success");
     assert_eq!(harness.mock.count("GET", "/usage"), 1);
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     assert!(has_no_automatic_attempts(
         &state["scheduler"][id.to_string()]["quota_query"]
     ));
@@ -2185,7 +2186,7 @@ async fn quota_refresh_ignores_probe_batch_cap_and_queries_all_accounts() {
     assert_eq!(harness.mock.count("GET", "/usage"), 3);
     assert_eq!(harness.mock.count("POST", "/test"), 0);
     assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     for id in ids {
         assert_eq!(state["oauth_results"][id.to_string()]["success"], true);
         assert!(parse_datetime(&state["oauth_results"][id.to_string()]["queried_at"]).is_some());
@@ -2220,7 +2221,7 @@ async fn monitor_recovers_fresh_available_quota_once_at_0459_beijing() {
         harness.runtime.monitor.row(id).await.unwrap()["rate_limited_at"],
         Value::Null
     );
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     let event = state["pending_events"]
         .as_object()
         .unwrap()
@@ -2237,8 +2238,8 @@ async fn monitor_recovers_fresh_available_quota_once_at_0459_beijing() {
     assert_eq!(harness.mock.count("POST", "/test"), 1);
     assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
     assert_eq!(
-        harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
-            ["status"],
+        harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+            ["recovery_intent"]["status"],
         "recovered"
     );
     assert!(harness.mock.unexpected().is_empty());
@@ -2284,7 +2285,7 @@ async fn runtime_batch_waits_for_busy_account_without_spending_budget() {
     });
     assert_eq!(progress["items"][0]["status"], "queued");
     assert_eq!(harness.mock.count("GET", "/usage"), 0);
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     let quota_query = &state["scheduler"][id.to_string()]["quota_query"];
     assert!(
         has_no_automatic_attempts(quota_query),
@@ -2349,7 +2350,7 @@ async fn linked_credentials_share_locks_and_runtime_batch_ignores_probe_cap() {
     let queued = if let Ok(queued) = queued {
         queued
     } else {
-        let state = harness.runtime.monitor.state().unwrap();
+        let state = harness.runtime.monitor.shared_state().unwrap();
         let progress = harness.runtime.quota_progress();
         panic!(
             "linked batch did not reach a queued/pending state behind the shared credential lock: {}",
@@ -2369,7 +2370,7 @@ async fn linked_credentials_share_locks_and_runtime_batch_ignores_probe_cap() {
         .iter()
         .any(|item| item["status"] == "queued"));
     assert_eq!(harness.mock.count("GET", "/usage"), 0);
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     for id in [parent_id, child_id] {
         let quota_query = &state["scheduler"][id.to_string()]["quota_query"];
         assert!(
@@ -2438,7 +2439,7 @@ async fn manual_runtime_batch_refreshes_cooldown_without_automatic_budget() {
         .query(id, ADMIN_KEY, query_options(Source::Automatic, start))
         .await;
     assert_eq!(automatic["success"], true);
-    let initial = harness.runtime.monitor.state().unwrap();
+    let initial = harness.runtime.monitor.shared_state().unwrap();
     let initial_attempts =
         initial["scheduler"][id.to_string()]["quota_query"]["automatic_attempts"].clone();
     assert_eq!(initial_attempts, json!([datetime(start)]));
@@ -2454,7 +2455,7 @@ async fn manual_runtime_batch_refreshes_cooldown_without_automatic_budget() {
     let batch = wait_for_quota_batch_completion(&harness).await;
     assert_eq!(batch["total"], 1);
     assert_eq!(batch["items"][0]["status"], "success");
-    let after_batch = harness.runtime.monitor.state().unwrap();
+    let after_batch = harness.runtime.monitor.shared_state().unwrap();
     let query = &after_batch["scheduler"][id.to_string()]["quota_query"];
     assert_eq!(query["last_source"], "manual");
     assert_eq!(query["automatic_attempts"], initial_attempts);
@@ -2520,12 +2521,13 @@ async fn daily_schedule_hot_update_eligibility_and_missed_restart_never_catch_up
     harness.set_now(due + Duration::minutes(2));
     schedule.tick(&config, harness.now()).unwrap();
     assert!(schedule.claim(&config, harness.now()).unwrap().is_none());
-    let missed =
-        harness.runtime.monitor.state().unwrap()["daily_test"]["batches"]["2026-09-22"].clone();
+    let missed = harness.runtime.monitor.shared_state().unwrap()["daily_test"]["batches"]
+        ["2026-09-22"]
+        .clone();
     assert_eq!(missed["status"], "missed");
     let updated = json!({"oauth_daily_test_enabled":true,"oauth_daily_test_time":"06:00"});
     schedule.tick(&updated, harness.now()).unwrap();
-    let after_update = harness.runtime.monitor.state().unwrap()["daily_test"].clone();
+    let after_update = harness.runtime.monitor.shared_state().unwrap()["daily_test"].clone();
     assert_eq!(
         after_update["next_run_at"],
         datetime(due + Duration::hours(1))
@@ -2537,7 +2539,7 @@ async fn daily_schedule_hot_update_eligibility_and_missed_restart_never_catch_up
         )
         .unwrap();
     assert_eq!(
-        harness.runtime.monitor.state().unwrap()["daily_test"]["next_run_at"],
+        harness.runtime.monitor.shared_state().unwrap()["daily_test"]["next_run_at"],
         ""
     );
 
@@ -2600,8 +2602,9 @@ async fn daily_runtime_reuses_fresh_passive_quota_tests_once_and_queues_failure_
         )
         .await
         .unwrap();
-    let saved =
-        harness.runtime.monitor.state().unwrap()["daily_test"]["batches"]["2026-09-30"].clone();
+    let saved = harness.runtime.monitor.shared_state().unwrap()["daily_test"]["batches"]
+        ["2026-09-30"]
+        .clone();
     assert_eq!(saved["status"], "completed");
     assert_eq!(saved["accounts"][id.to_string()]["status"], "success");
     assert_eq!(
@@ -2617,10 +2620,12 @@ async fn daily_runtime_reuses_fresh_passive_quota_tests_once_and_queues_failure_
     assert_eq!(model_call.body["model_id"], "gpt-5.6-luna");
     assert_eq!(harness.mock.count("GET", "/usage"), 0);
     assert_eq!(harness.mock.count("POST", "/test"), 1);
-    assert!(harness.runtime.monitor.state().unwrap()["pending_events"]
-        .as_object()
-        .unwrap()
-        .is_empty());
+    assert!(
+        harness.runtime.monitor.shared_state().unwrap()["pending_events"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
 
     let failure = harness
         .seed_account("plus", "fixture-daily-failure", json!({}))
@@ -2641,7 +2646,7 @@ async fn daily_runtime_reuses_fresh_passive_quota_tests_once_and_queues_failure_
         )
         .await
         .unwrap();
-    let after = harness.runtime.monitor.state().unwrap();
+    let after = harness.runtime.monitor.shared_state().unwrap();
     assert_eq!(
         after["daily_test"]["batches"]["2026-10-01"]["accounts"][failure_id.to_string()]["status"],
         "failed"
@@ -2690,7 +2695,7 @@ async fn daily_model_402_pauses_later_automatic_queries_without_retrying_or_bark
         .await
         .unwrap();
 
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     assert_eq!(
         state["daily_test"]["batches"]["2026-10-02"]["accounts"][id.to_string()]["error_code"],
         "http_402"
@@ -2742,7 +2747,7 @@ async fn monitor_tick_auth_usage_failures_create_events_without_model_or_recover
 
         tokio::time::timeout(StdDuration::from_secs(8), async {
             loop {
-                let state = harness.runtime.monitor.state().unwrap();
+                let state = harness.runtime.monitor.shared_state().unwrap();
                 let event = state["pending_events"]
                     .as_object()
                     .and_then(|items| items.values().next());
@@ -2755,7 +2760,7 @@ async fn monitor_tick_auth_usage_failures_create_events_without_model_or_recover
         .await
         .expect("monitor worker must persist the loopback authorization failure");
 
-        let state = harness.runtime.monitor.state().unwrap();
+        let state = harness.runtime.monitor.shared_state().unwrap();
         assert_eq!(
             state["scheduler"][id.to_string()]["recovery_intent"]["status"],
             "auth_failed"
@@ -2797,7 +2802,7 @@ async fn monitor_tick_self_heals_a_released_block_without_recovery_request() {
     harness.mock.wait_for("POST", "/test", 1).await;
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
-            if harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+            if harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
                 ["recovery_intent"]["status"]
                 == "recovered"
             {
@@ -2816,7 +2821,7 @@ async fn monitor_tick_self_heals_a_released_block_without_recovery_request() {
         harness.runtime.monitor.row(id).await.unwrap()["rate_limited_at"],
         Value::Null
     );
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     let event = state["pending_events"]
         .as_object()
         .unwrap()
@@ -2851,7 +2856,7 @@ async fn recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retr
         harness.mock.wait_for("POST", "/test", 1).await;
         tokio::time::timeout(StdDuration::from_secs(8), async {
             loop {
-                let state = harness.runtime.monitor.state().unwrap();
+                let state = harness.runtime.monitor.shared_state().unwrap();
                 let intent = &state["scheduler"][id.to_string()];
                 let event_status = if expected_status == "auth_failed" {
                     "auth_failed"
@@ -2869,7 +2874,7 @@ async fn recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retr
         })
         .await
         .unwrap_or_else(|_| {
-            let state = harness.runtime.monitor.state().unwrap();
+            let state = harness.runtime.monitor.shared_state().unwrap();
             let account = &state["scheduler"][id.to_string()];
             let event_status = state["pending_events"]
                 .as_object()
@@ -2890,7 +2895,7 @@ async fn recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retr
             );
         });
 
-        let state = harness.runtime.monitor.state().unwrap();
+        let state = harness.runtime.monitor.shared_state().unwrap();
         let intent = &state["scheduler"][id.to_string()]["recovery_intent"];
         assert_eq!(intent["status"], expected_status);
         if expected_status == "auth_failed" {
@@ -3012,7 +3017,7 @@ async fn account_read_failure_marks_retry_without_model_or_recovery_and_recovers
     })
     .await
     .unwrap_or(false);
-    let state_after_failure = harness.runtime.monitor.state().unwrap();
+    let state_after_failure = harness.runtime.monitor.shared_state().unwrap();
     let intent = &state_after_failure["scheduler"][id.to_string()]["recovery_intent"];
     let retry_state = intent.clone();
     let retry_committed = intent["status"] == "retry"
@@ -3040,7 +3045,7 @@ async fn account_read_failure_marks_retry_without_model_or_recovery_and_recovers
     let recovered = if retry_test_started {
         tokio::time::timeout(StdDuration::from_secs(8), async {
             loop {
-                if harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+                if harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
                     ["recovery_intent"]["status"]
                     == "recovered"
                 {
@@ -3134,7 +3139,7 @@ async fn monitor_recovery_write_failures_use_ordinary_retry_without_replaying_qu
         };
         tokio::time::timeout(StdDuration::from_secs(8), async {
             loop {
-                if harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+                if harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
                     ["recovery_intent"]["status"]
                     == expected_status
                 {
@@ -3146,7 +3151,7 @@ async fn monitor_recovery_write_failures_use_ordinary_retry_without_replaying_qu
         .await
         .expect("the recovery-state outcome must be committed after the model test");
 
-        let state = harness.runtime.monitor.state().unwrap();
+        let state = harness.runtime.monitor.shared_state().unwrap();
         let intent = &state["scheduler"][id.to_string()]["recovery_intent"];
         assert_eq!(intent["status"], expected_status);
         assert_eq!(harness.mock.count("GET", "/usage"), 1);
@@ -3200,7 +3205,7 @@ async fn monitor_recovery_write_failures_use_ordinary_retry_without_replaying_qu
             };
             tokio::time::timeout(StdDuration::from_secs(8), async {
                 loop {
-                    if harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+                    if harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
                         ["recovery_intent"]["status"]
                         == retry_status
                     {
@@ -3213,11 +3218,11 @@ async fn monitor_recovery_write_failures_use_ordinary_retry_without_replaying_qu
             .unwrap_or_else(|_| {
                 panic!(
                     "ordinary recovery retry failed for {effect}: {}",
-                    harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+                    harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
                         ["recovery_intent"]
                 )
             });
-            let restarted = harness.runtime.monitor.state().unwrap();
+            let restarted = harness.runtime.monitor.shared_state().unwrap();
             let restarted_intent = &restarted["scheduler"][id.to_string()]["recovery_intent"];
             assert_eq!(
                 restarted_intent["status"], retry_status,
@@ -3278,7 +3283,7 @@ async fn monitor_recovery_accepts_refreshed_limits_and_unrelated_parameters_duri
     let test_entered =
         tokio::time::timeout(StdDuration::from_secs(5), gate.entered.notified()).await;
     if test_entered.is_err() {
-        let state = harness.runtime.monitor.state().unwrap();
+        let state = harness.runtime.monitor.shared_state().unwrap();
         let account = &state["scheduler"][id.to_string()];
         let usage = &state["oauth_results"][id.to_string()];
         panic!(
@@ -3312,7 +3317,7 @@ async fn monitor_recovery_accepts_refreshed_limits_and_unrelated_parameters_duri
 
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
-            if harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+            if harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
                 ["recovery_intent"]["status"]
                 == "recovered"
             {
@@ -3361,7 +3366,7 @@ async fn daily_active_refresh_obeys_budget_and_known_reset_without_model_or_bark
         .run_daily_with_recovery(json!({"date":"2026-10-01","scheduled_at":datetime(harness.now()),"status":"running","accounts":{}}), std::sync::Arc::new(vec![account]), Default::default())
         .await
         .unwrap();
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     assert_eq!(
         state["daily_test"]["batches"]["2026-10-01"]["accounts"][id.to_string()]["status"],
         "skipped"
@@ -3395,7 +3400,7 @@ async fn daily_active_refresh_obeys_budget_and_known_reset_without_model_or_bark
         .run_daily_with_recovery(json!({"date":"2026-10-02","scheduled_at":datetime(harness.now()),"status":"running","accounts":{}}), std::sync::Arc::new(vec![depleted]), Default::default())
         .await
         .unwrap();
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     assert_eq!(
         state["daily_test"]["batches"]["2026-10-02"]["accounts"][depleted_id.to_string()]["status"],
         "skipped"
@@ -3442,7 +3447,8 @@ async fn runtime_tick_runs_a_due_daily_batch_once_without_catching_up() {
     harness.runtime.monitor.tick().await.unwrap();
     harness.mock.wait_for("POST", "/test", 1).await;
     for _ in 0..100 {
-        if harness.runtime.monitor.state().unwrap()["daily_test"]["batches"]["2026-09-30"]["status"]
+        if harness.runtime.monitor.shared_state().unwrap()["daily_test"]["batches"]["2026-09-30"]
+            ["status"]
             == "completed"
         {
             break;
@@ -3452,7 +3458,8 @@ async fn runtime_tick_runs_a_due_daily_batch_once_without_catching_up() {
     harness.set_now(due + Duration::seconds(1));
     harness.runtime.monitor.tick().await.unwrap();
     assert_eq!(
-        harness.runtime.monitor.state().unwrap()["daily_test"]["batches"]["2026-09-30"]["status"],
+        harness.runtime.monitor.shared_state().unwrap()["daily_test"]["batches"]["2026-09-30"]
+            ["status"],
         "completed"
     );
     assert_eq!(harness.mock.count("GET", "/usage"), 0);
@@ -3520,7 +3527,8 @@ async fn daily_cycle_lock_stays_queued_and_runs_after_due_minute() {
     harness.set_now(due);
     harness.runtime.monitor.tick().await.unwrap();
     assert_eq!(
-        harness.runtime.monitor.state().unwrap()["daily_test"]["batches"][&local_date]["status"],
+        harness.runtime.monitor.shared_state().unwrap()["daily_test"]["batches"][&local_date]
+            ["status"],
         "queued",
         "a due batch must be registered even while another whole monitor cycle owns the lock"
     );
@@ -3533,7 +3541,7 @@ async fn daily_cycle_lock_stays_queued_and_runs_after_due_minute() {
     harness.mock.wait_for("POST", "/test", 1).await;
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
-            if harness.runtime.monitor.state().unwrap()["daily_test"]["batches"][&local_date]
+            if harness.runtime.monitor.shared_state().unwrap()["daily_test"]["batches"][&local_date]
                 ["status"]
                 == "completed"
             {
@@ -3594,8 +3602,8 @@ async fn daily_tick_reuses_only_same_cycle_recovery_test_for_a_still_eligible_ac
 
         tokio::time::timeout(StdDuration::from_secs(8), async {
             loop {
-                if harness.runtime.monitor.state().unwrap()["daily_test"]["batches"][&local_date]
-                    ["status"]
+                if harness.runtime.monitor.shared_state().unwrap()["daily_test"]["batches"]
+                    [&local_date]["status"]
                     == "completed"
                 {
                     break;
@@ -3606,7 +3614,7 @@ async fn daily_tick_reuses_only_same_cycle_recovery_test_for_a_still_eligible_ac
         .await
         .expect("daily record must commit after the same-cycle recovery worker finishes");
 
-        let state = harness.runtime.monitor.state().unwrap();
+        let state = harness.runtime.monitor.shared_state().unwrap();
         let record = &state["daily_test"]["batches"][&local_date]["accounts"][id.to_string()];
         if becomes_unschedulable {
             assert_eq!(record["status"], "skipped");
@@ -3657,8 +3665,8 @@ async fn monitor_tick_reuses_passive_state_and_dispatches_one_bootstrap_query() 
     harness.runtime.monitor.tick().await.unwrap();
     harness.mock.wait_for("GET", "/usage", 1).await;
     for _ in 0..100 {
-        if harness.runtime.monitor.state().unwrap()["oauth_results"][bootstrap_id.to_string()]
-            ["success"]
+        if harness.runtime.monitor.shared_state().unwrap()["oauth_results"]
+            [bootstrap_id.to_string()]["success"]
             == true
         {
             break;
@@ -3681,7 +3689,8 @@ async fn monitor_tick_reuses_passive_state_and_dispatches_one_bootstrap_query() 
     assert_eq!(usage_calls[0].api_key.as_deref(), Some(ADMIN_KEY));
     assert!(usage_calls[0].authorization.is_none());
     assert!(
-        harness.runtime.monitor.state().unwrap()["oauth_results"][passive_id.to_string()].is_null()
+        harness.runtime.monitor.shared_state().unwrap()["oauth_results"][passive_id.to_string()]
+            .is_null()
     );
     assert_eq!(harness.mock.count("POST", "/test"), 0);
     assert!(harness.mock.unexpected().is_empty());
@@ -3720,7 +3729,7 @@ async fn monitor_bootstrap_queue_is_bounded_and_advances_between_ticks() {
     harness.mock.wait_for("GET", "/usage", 2).await;
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
-            let state = harness.runtime.monitor.state().unwrap();
+            let state = harness.runtime.monitor.shared_state().unwrap();
             if ids[..2]
                 .iter()
                 .all(|id| state["oauth_results"][id.to_string()]["success"] == true)
@@ -3739,7 +3748,7 @@ async fn monitor_bootstrap_queue_is_bounded_and_advances_between_ticks() {
     harness.mock.wait_for("GET", "/usage", 3).await;
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
-            if harness.runtime.monitor.state().unwrap()["oauth_results"][ids[2].to_string()]
+            if harness.runtime.monitor.shared_state().unwrap()["oauth_results"][ids[2].to_string()]
                 ["success"]
                 == true
             {
@@ -3798,7 +3807,7 @@ async fn fresh_seven_day_exhaustion_blocks_model_verification_until_reset() {
     harness.mock.wait_for("GET", "/usage", 1).await;
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
-            let state = harness.runtime.monitor.state().unwrap();
+            let state = harness.runtime.monitor.shared_state().unwrap();
             let usage = &state["oauth_results"][id.to_string()];
             if usage["success"] == true && usage["queried_at"] == datetime(due) {
                 break;
@@ -3808,7 +3817,7 @@ async fn fresh_seven_day_exhaustion_blocks_model_verification_until_reset() {
     })
     .await
     .expect("the fresh usage result must persist before checking the legacy no-test behavior");
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     assert_eq!(
         state["scheduler"][id.to_string()]["recovery_intent"]["status"],
         "pending",
@@ -3817,10 +3826,12 @@ async fn fresh_seven_day_exhaustion_blocks_model_verification_until_reset() {
     assert_eq!(harness.mock.count("GET", "/usage"), 1);
     assert_eq!(harness.mock.count("POST", "/test"), 0);
     assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
-    assert!(harness.runtime.monitor.state().unwrap()["pending_events"]
-        .as_object()
-        .unwrap()
-        .is_empty());
+    assert!(
+        harness.runtime.monitor.shared_state().unwrap()["pending_events"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
     assert!(harness.mock.unexpected().is_empty());
     harness.close().await;
 }
@@ -3868,7 +3879,7 @@ async fn cached_seven_day_exhaustion_does_not_probe_before_future_reset() {
     harness.runtime.monitor.tick().await.unwrap();
     tokio::time::sleep(StdDuration::from_millis(150)).await;
 
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     assert_eq!(harness.mock.count("GET", "/usage"), 0);
     assert_eq!(harness.mock.count("POST", "/test"), 0);
     assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
@@ -3934,7 +3945,7 @@ async fn threshold_block_still_above_threshold_waits_one_hour() {
     harness.mock.wait_for("GET", "/usage", 1).await;
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
-            let state = harness.runtime.monitor.state().unwrap();
+            let state = harness.runtime.monitor.shared_state().unwrap();
             if state["scheduler"][id.to_string()]["recovery_intent"]["status"] == "waiting_quota" {
                 break;
             }
@@ -3955,7 +3966,7 @@ async fn threshold_block_still_above_threshold_waits_one_hour() {
     harness.mock.wait_for("GET", "/usage", 2).await;
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
-            let state = harness.runtime.monitor.state().unwrap();
+            let state = harness.runtime.monitor.shared_state().unwrap();
             let intent = &state["scheduler"][id.to_string()]["recovery_intent"];
             if intent["status"] == "waiting_quota"
                 && intent["next_retry_at"] == datetime(due + Duration::seconds(7200))
@@ -3970,8 +3981,8 @@ async fn threshold_block_still_above_threshold_waits_one_hour() {
     assert_eq!(harness.mock.count("GET", "/usage"), 2);
     assert_eq!(harness.mock.count("POST", "/test"), 0);
     assert_eq!(
-        harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
-            ["next_retry_at"],
+        harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+            ["recovery_intent"]["next_retry_at"],
         datetime(due + Duration::seconds(7200))
     );
     assert!(harness.mock.unexpected().is_empty());
@@ -4009,7 +4020,7 @@ async fn due_quota_still_depleted_waits_one_hour() {
     harness.mock.wait_for("GET", "/usage", 1).await;
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
-            let state = harness.runtime.monitor.state().unwrap();
+            let state = harness.runtime.monitor.shared_state().unwrap();
             let intent = &state["scheduler"][id.to_string()]["recovery_intent"];
             if intent["status"] == "waiting_quota"
                 && intent["next_retry_at"] == datetime(due + Duration::seconds(3600))
@@ -4021,7 +4032,7 @@ async fn due_quota_still_depleted_waits_one_hour() {
     })
     .await
     .expect("still depleted 5h quota must retry at the one-hour deadline");
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     let query = &state["scheduler"][id.to_string()]["quota_query"];
     assert_eq!(query["failure_count"], 1);
     assert_eq!(query["retry_at"], datetime(due + Duration::hours(1)));
@@ -4037,7 +4048,7 @@ async fn due_quota_still_depleted_waits_one_hour() {
     harness.mock.wait_for("GET", "/usage", 2).await;
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
-            let state = harness.runtime.monitor.state().unwrap();
+            let state = harness.runtime.monitor.shared_state().unwrap();
             let intent = &state["scheduler"][id.to_string()]["recovery_intent"];
             if intent["status"] == "waiting_quota"
                 && intent["next_retry_at"] == datetime(due + Duration::seconds(7200))
@@ -4052,8 +4063,8 @@ async fn due_quota_still_depleted_waits_one_hour() {
     assert_eq!(harness.mock.count("GET", "/usage"), 2);
     assert_eq!(harness.mock.count("POST", "/test"), 0);
     assert_eq!(
-        harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
-            ["next_retry_at"],
+        harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+            ["recovery_intent"]["next_retry_at"],
         datetime(due + Duration::seconds(7200))
     );
     assert!(harness.mock.unexpected().is_empty());
@@ -4221,7 +4232,8 @@ async fn live_monitor_reserves_request_time_after_blocked_inventory_read() {
     harness.mock.wait_for("GET", "/usage", 1).await;
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
-            if harness.runtime.monitor.state().unwrap()["oauth_results"][id.to_string()]["success"]
+            if harness.runtime.monitor.shared_state().unwrap()["oauth_results"][id.to_string()]
+                ["success"]
                 == true
             {
                 break;
@@ -4232,7 +4244,7 @@ async fn live_monitor_reserves_request_time_after_blocked_inventory_read() {
     .await
     .expect("the monitor's admitted request must finish against loopback");
 
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     let query = &state["scheduler"][id.to_string()]["quota_query"];
     assert_eq!(query["last_query_at"], datetime(requested));
     assert_eq!(query["automatic_attempts"], json!([datetime(requested)]));
@@ -4333,7 +4345,7 @@ async fn interrupted_daily_test_with_unknown_response_is_marked_and_not_replayed
     reopened
         .startup(&config, due + Duration::seconds(2))
         .unwrap();
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     let date = due
         .with_timezone(&chrono::FixedOffset::east_opt(8 * 3600).unwrap())
         .date_naive()
@@ -4438,7 +4450,7 @@ async fn five_due_accounts_with_expired_reasons_recover_once_across_capacity_and
     harness.runtime.monitor.tick().await.unwrap();
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
-            let state = harness.runtime.monitor.state().unwrap();
+            let state = harness.runtime.monitor.shared_state().unwrap();
             if ids
                 .iter()
                 .filter(|id| {
@@ -4464,7 +4476,7 @@ async fn five_due_accounts_with_expired_reasons_recover_once_across_capacity_and
     tokio::time::timeout(StdDuration::from_secs(10), async {
         loop {
             harness.runtime.monitor.tick().await.unwrap();
-            let state = harness.runtime.monitor.state().unwrap();
+            let state = harness.runtime.monitor.shared_state().unwrap();
             if ids.iter().all(|id| {
                 state["scheduler"][id.to_string()]["recovery_intent"]["status"] == "recovered"
             }) {
@@ -4489,7 +4501,7 @@ async fn five_due_accounts_with_expired_reasons_recover_once_across_capacity_and
         );
     }
     assert_eq!(harness.mock.count("GET", "/usage"), 5);
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     let history = state["recovery_history"].as_object().unwrap();
     assert_eq!(
         history
@@ -4544,7 +4556,7 @@ async fn renewed_temporary_restriction_during_test_prevents_recovery() {
         .unwrap();
     gate.release.notify_one();
     harness.runtime.monitor.drain(8).await;
-    let intent = harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+    let intent = harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
         ["recovery_intent"]
         .clone();
     assert_eq!(intent["status"], "retry");
@@ -4552,8 +4564,8 @@ async fn renewed_temporary_restriction_during_test_prevents_recovery() {
     assert_eq!(harness.mock.count("POST", "/test"), 1);
     assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
     assert_ne!(
-        harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
-            ["status"],
+        harness.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+            ["recovery_intent"]["status"],
         "recovered"
     );
     harness.close().await;
@@ -4596,7 +4608,7 @@ async fn successful_traffic_supersedes_old_rate_only_intents_including_restart()
         h.restart_runtime().await;
         h.runtime.monitor.startup().await.unwrap();
         h.runtime.monitor.tick().await.unwrap();
-        let state = h.runtime.monitor.state().unwrap();
+        let state = h.runtime.monitor.shared_state().unwrap();
         if queued {
             assert_eq!(
                 state["scheduler"][id.to_string()]["recovery_intent"]["status"],
@@ -4632,7 +4644,7 @@ async fn late_passive_quota_before_reset_sends_no_recovery_test_or_notice() {
     h.set_now(due - Duration::minutes(30));
     h.runtime.monitor.startup().await.unwrap();
     h.runtime.monitor.tick().await.unwrap();
-    let initial = h.runtime.monitor.state().unwrap();
+    let initial = h.runtime.monitor.shared_state().unwrap();
     let original = &initial["scheduler"][id.to_string()]["recovery_intent"];
     assert_eq!(original["kind"], "quota_exhausted");
 
@@ -4653,7 +4665,7 @@ async fn late_passive_quota_before_reset_sends_no_recovery_test_or_notice() {
     h.runtime.monitor.tick().await.unwrap();
     h.runtime.monitor.drain(5).await;
     h.runtime.monitor.deliver().await.unwrap();
-    let state = h.runtime.monitor.state().unwrap();
+    let state = h.runtime.monitor.shared_state().unwrap();
     let intent = &state["scheduler"][id.to_string()]["recovery_intent"];
     assert_eq!(intent["due_at"], original["due_at"]);
     assert_eq!(intent["status"], "pending");
@@ -4679,7 +4691,7 @@ async fn early_quota_reset_retires_old_waits_and_recovers_only_remaining_blocks(
         h.set_now(due - Duration::hours(1));
         h.runtime.monitor.startup().await.unwrap();
         h.runtime.monitor.tick().await.unwrap();
-        let initial = h.runtime.monitor.state().unwrap();
+        let initial = h.runtime.monitor.shared_state().unwrap();
         assert_eq!(
             initial["scheduler"][id.to_string()]["recovery_intent"]["kind"],
             "quota_exhausted"
@@ -4733,7 +4745,7 @@ async fn early_quota_reset_retires_old_waits_and_recovers_only_remaining_blocks(
             },
         )
         .await;
-        let state = h.runtime.monitor.state().unwrap();
+        let state = h.runtime.monitor.shared_state().unwrap();
         let intent = &state["scheduler"][id.to_string()]["recovery_intent"];
         let expected_status = if already_unblocked {
             "cancelled"
@@ -4757,7 +4769,7 @@ async fn early_quota_reset_retires_old_waits_and_recovers_only_remaining_blocks(
         h.restart_runtime().await;
         h.runtime.monitor.startup().await.unwrap();
         h.runtime.monitor.tick().await.unwrap();
-        let state = h.runtime.monitor.state().unwrap();
+        let state = h.runtime.monitor.shared_state().unwrap();
         assert_eq!(
             state["scheduler"][id.to_string()]["recovery_intent"]["status"],
             expected_status
@@ -4811,7 +4823,7 @@ async fn traffic_arriving_after_enqueue_cancels_rate_probe_at_dispatch() {
         .unwrap();
     assert_eq!(result["error_code"], "already_serving");
     assert_eq!(
-        h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
+        h.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
             ["status"],
         "cancelled"
     );
@@ -4828,7 +4840,7 @@ async fn traffic_arriving_after_enqueue_cancels_rate_probe_at_dispatch() {
 async fn wait_connection_attempt(h: &Harness, id: i64, attempts: i64, status: &str) -> Value {
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
-            let intent = h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+            let intent = h.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
                 ["recovery_intent"]
                 .clone();
             if intent["connection_attempt_count"] == attempts
@@ -4902,7 +4914,7 @@ async fn recovery_connection_retry_policy_is_frozen_bounded_and_restart_safe() {
                 h.set_now(at + Duration::seconds(interval - 1));
                 h.runtime.monitor.tick().await.unwrap();
                 assert_eq!(h.mock.count("POST", "/test"), attempt as usize);
-                let saved = h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+                let saved = h.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
                     ["recovery_intent"]
                     .clone();
                 assert_eq!(saved["connection_attempt_count"], attempt);
@@ -4915,7 +4927,7 @@ async fn recovery_connection_retry_policy_is_frozen_bounded_and_restart_safe() {
         h.runtime.monitor.tick().await.unwrap();
         assert_eq!(h.mock.count("POST", "/test"), (retries + 1) as usize);
         if !success {
-            let intent = h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+            let intent = h.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
                 ["recovery_intent"]
                 .clone();
             assert_eq!(intent["status"], "retry_exhausted");
@@ -4962,7 +4974,7 @@ async fn recovery_connection_retry_policy_is_frozen_bounded_and_restart_safe() {
                 h.now(),
             )
             .unwrap();
-            let fresh = h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+            let fresh = h.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
                 ["recovery_intent"]
                 .clone();
             assert_eq!(fresh["status"], "pending");
@@ -5054,7 +5066,7 @@ async fn scheduled_bark_queue_survives_delivery_failure_restart_and_disabled_pus
     h.runtime.monitor.deliver().await.unwrap();
     assert_eq!(h.mock.count("POST", "/push"), 1);
     assert_eq!(
-        h.runtime.monitor.state().unwrap()["pending_events"]
+        h.runtime.monitor.shared_state().unwrap()["pending_events"]
             .as_object()
             .unwrap()
             .len(),
@@ -5066,7 +5078,7 @@ async fn scheduled_bark_queue_survives_delivery_failure_restart_and_disabled_pus
     h.runtime.monitor.deliver().await.unwrap();
     assert_eq!(h.mock.count("POST", "/push"), 2);
     assert_eq!(h.mock.count("POST", "/test"), 0);
-    assert!(h.runtime.monitor.state().unwrap()["pending_events"]
+    assert!(h.runtime.monitor.shared_state().unwrap()["pending_events"]
         .as_object()
         .unwrap()
         .is_empty());
@@ -5104,7 +5116,7 @@ async fn scheduled_bark_queue_survives_delivery_failure_restart_and_disabled_pus
     }).unwrap();
     h.runtime.monitor.deliver().await.unwrap();
     assert_eq!(h.mock.count("POST", "/push"), 2);
-    assert!(h.runtime.monitor.state().unwrap()["pending_events"]
+    assert!(h.runtime.monitor.shared_state().unwrap()["pending_events"]
         .as_object()
         .unwrap()
         .is_empty());
@@ -5160,8 +5172,9 @@ async fn recovery_failure_restart_preserves_retry_deadline_and_ignores_legacy_re
         .await
         .unwrap();
     assert_eq!(result["deferred"], true);
-    let restored =
-        h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"].clone();
+    let restored = h.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]
+        ["recovery_intent"]
+        .clone();
     assert_eq!(restored["status"], "retry");
     assert_eq!(restored["last_error_code"], "http_500");
     assert_eq!(restored["attempt_count"], 1);
@@ -5172,7 +5185,7 @@ async fn recovery_failure_restart_preserves_retry_deadline_and_ignores_legacy_re
     assert_eq!(restored["verification_dispatched"], true);
     assert_eq!(h.mock.count("POST", "/test"), 0);
     assert_eq!(
-        h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
+        h.runtime.monitor.shared_state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
             ["next_retry_at"],
         datetime(due + Duration::seconds(10))
     );
@@ -5223,16 +5236,16 @@ async fn early_wait(h: &Harness, condition: impl Fn(&Value) -> bool) -> Value {
     tokio::time::timeout(StdDuration::from_secs(8), async {
         loop {
             h.runtime.monitor.tick().await.unwrap();
-            let state = h.runtime.monitor.state().unwrap();
+            let state = h.runtime.monitor.shared_state().unwrap();
             if condition(&state) {
-                return state;
+                return (*state).clone();
             }
             tokio::time::sleep(StdDuration::from_millis(10)).await;
         }
     })
     .await
     .unwrap_or_else(|_| {
-        let state = h.runtime.monitor.state().unwrap();
+        let state = h.runtime.monitor.shared_state().unwrap();
         let intents = state["scheduler"].as_object().into_iter().flatten().map(|(id, meta)| {
             (id.clone(), json!({"status":meta["recovery_intent"]["status"],"error_code":meta["recovery_intent"]["last_error_code"],"reason":meta["recovery_intent"]["waiting_reason"]}))
         }).collect::<BTreeMap<_, _>>();
@@ -5281,7 +5294,7 @@ async fn early_reset_observes_one_per_plan_and_recovers_each_account_without_que
     early_config(&h, 60).await;
     early_baseline(&h, &[a, pro], 80).await;
     assert_eq!(h.mock.count("GET", "/usage"), 2);
-    let before = h.runtime.monitor.state().unwrap();
+    let before = h.runtime.monitor.shared_state().unwrap();
     h.set_now(h.now() + Duration::seconds(59));
     h.runtime.monitor.tick().await.unwrap();
     assert_eq!(h.mock.count("GET", "/usage"), 2);

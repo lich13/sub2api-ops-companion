@@ -8,6 +8,7 @@ pub(super) struct Call<'a> {
     pub query: &'a QueryParams,
     pub method: &'a Method,
     pub payload: &'a Value,
+    pub accepts_gzip: bool,
 }
 
 type Action<'a> = BoxFuture<'a, Result<Response>>;
@@ -35,6 +36,7 @@ impl<'a> Call<'a> {
             path,
             method,
             payload: p,
+            accepts_gzip,
         } = *self;
         let accepted = StatusCode::ACCEPTED;
         let action: Action<'a> = match route {
@@ -49,14 +51,33 @@ impl<'a> Call<'a> {
                 upstream_connection: r.upstream.connection(),
             }),
             Snapshot => Box::pin(async move {
-                Ok((
-                    [(
-                        header::CONTENT_TYPE,
-                        HeaderValue::from_static("application/json"),
-                    )],
-                    r.snapshot_bytes().await?,
-                )
-                    .into_response())
+                let (raw, gzip) = r.snapshot_pair().await?;
+                if accepts_gzip {
+                    Ok((
+                        [
+                            (
+                                header::CONTENT_TYPE,
+                                HeaderValue::from_static("application/json"),
+                            ),
+                            (header::CONTENT_ENCODING, HeaderValue::from_static("gzip")),
+                            (header::VARY, HeaderValue::from_static("Accept-Encoding")),
+                        ],
+                        gzip,
+                    )
+                        .into_response())
+                } else {
+                    Ok((
+                        [
+                            (
+                                header::CONTENT_TYPE,
+                                HeaderValue::from_static("application/json"),
+                            ),
+                            (header::VARY, HeaderValue::from_static("Accept-Encoding")),
+                        ],
+                        raw,
+                    )
+                        .into_response())
+                }
             }),
             Errors => {
                 let account = q.number("account_id", 1, i64::MAX)?;
@@ -233,6 +254,7 @@ impl<'a> Call<'a> {
             path,
             method,
             payload: p,
+            accepts_gzip: _,
         } = *self;
         let accepted = StatusCode::ACCEPTED;
         let action: Action<'a> = match route {

@@ -471,7 +471,7 @@ export default function TestDialog({
     <div
       className="modal-backdrop"
       onKeyDown={(e) => {
-        if (e.key === "Escape") {
+        if (e.key === "Escape" && !e.nativeEvent.isComposing) {
           e.stopPropagation();
           dismiss();
         }

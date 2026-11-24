@@ -371,7 +371,10 @@ public struct ModelTestSheet: View {
                 )
             }
         }
-        .sub2opsDialogFocus(onEscape: onClose)
+        .sub2opsDialogFocus(
+            canBackdropDismiss: !isRunning && !policySaving && !policyDirty,
+            onEscape: { if !policySaving { onClose() } }
+        )
         .onDisappear {
             pollTask?.cancel()
             pollTask = nil

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Eye, EyeOff, RefreshCw, Search, X } from "lucide-react";
 import { parseDocument, stringify } from "yaml";
 import { api } from "./bridge";
-import { errorMessage as errorText } from "./bridgeError";
+import { errorMessage as errorText, ignoredFailure } from "./bridgeError";
 import type {
   HostConfigHeader,
   HostFieldIssue,
@@ -548,7 +548,9 @@ export default function Sub2ApiConfig({
       .then((value) => {
         if (alive.current) setOperation(value);
       })
-      .catch(() => {});
+      .catch((err: unknown) => {
+        if (alive.current && !ignoredFailure(err)) setError(errorText(err));
+      });
   }, [active]);
   useEffect(() => {
     if (!applying) return;

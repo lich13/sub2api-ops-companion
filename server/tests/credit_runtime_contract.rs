@@ -716,7 +716,7 @@ async fn concurrent_usage_queries_share_one_dispatch_and_persist_the_budget() {
     assert_eq!(harness.mock.count(Method::GET, "/usage"), 1);
     assert!(first_result["success"] == true, "{first_result}");
     assert!(second_result["coalesced"] == true, "{second_result}");
-    let saved = harness.controller.store.snapshot().unwrap();
+    let saved = harness.controller.store.shared_snapshot().unwrap();
     assert_eq!(
         saved["scheduler"][id.to_string()]["quota_query"]["automatic_attempts"]
             .as_array()
@@ -1015,7 +1015,7 @@ async fn a_truncated_native_sse_receipt_finishes_without_a_second_test() {
         "data: {\"type\":\"test_start\",\"model\":\"fixture-model\"}\n\ndata: {\"type\":\"test_complete\",\"success\":",
     );
     let now = fixed_now();
-    let state = harness.controller.store.snapshot().unwrap();
+    let state = harness.controller.store.shared_snapshot().unwrap();
     let task = json!({
         "episode": "fixture-sse-episode",
         "stage": "testing",
@@ -1110,7 +1110,7 @@ async fn manual_generation_change_keeps_consumption_receipt_and_never_unpauses()
         .await
         .expect("dispatch mock model verification across manual generation update");
 
-    let changed = harness.controller.store.snapshot().unwrap();
+    let changed = harness.controller.store.shared_snapshot().unwrap();
     let pending = harness.controller.state(id).unwrap();
     let after_row = credit_ownership::account(&harness.db, id).await.unwrap();
     assert_eq!(credit_ownership::generation(&changed, id), 1);
@@ -1146,7 +1146,7 @@ async fn bark_delivery_is_once_only_and_failure_reservations_stop_after_five() {
     let bark = Bark::new(harness.settings.clone()).expect("construct loopback Bark client");
     harness.controller.deliver_results(&bark).await.unwrap();
     assert_eq!(harness.mock.count(Method::POST, "/push"), 1);
-    let delivered = harness.controller.store.snapshot().unwrap();
+    let delivered = harness.controller.store.shared_snapshot().unwrap();
     assert_eq!(
         delivered["scheduler"][delivered_id.to_string()]["credit_result_notifications"]
             ["fixture-bark-delivered"]["status"],
@@ -1164,7 +1164,7 @@ async fn bark_delivery_is_once_only_and_failure_reservations_stop_after_five() {
         harness.set_now(fixed_now() + Duration::seconds(offset));
         harness.controller.deliver_results(&bark).await.unwrap();
     }
-    let after_five = harness.controller.store.snapshot().unwrap();
+    let after_five = harness.controller.store.shared_snapshot().unwrap();
     let notice = &after_five["scheduler"][failed_id.to_string()]["credit_result_notifications"]
         ["fixture-bark-five"];
     assert_eq!(notice["attempts"], 5);
@@ -1361,7 +1361,7 @@ async fn parameter_recovery_conflicting_manual_or_account_changes_never_resume_h
         assert!(!restored.owned(&row, &task).unwrap());
         assert_eq!(restored.row(id).await.unwrap()["schedulable"], false);
         assert_eq!(
-            restored.store.snapshot().unwrap()["recovery_history"],
+            restored.store.shared_snapshot().unwrap()["recovery_history"],
             json!({})
         );
         assert_eq!(h.mock.count(Method::POST, "/reset-quota"), 1);

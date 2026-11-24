@@ -7,6 +7,7 @@ import { fullTime, type Account } from "./types";
 import { useBackAction } from "./mobile";
 import {
   getOperations,
+  getPendingAccountOperations,
   subscribeOperations,
   setOperations,
   operationEpoch,
@@ -83,9 +84,8 @@ function describe(value: Record<string, unknown>) {
   );
 }
 export function AccountOperationStatus({ id }: { id: number }) {
-  const jobs = useSyncExternalStore(subscribeOperations, getOperations);
-  const active = jobs.filter(
-    (job) => job.account_id === id && operationPending(job),
+  const active = useSyncExternalStore(subscribeOperations, () =>
+    getPendingAccountOperations(id),
   );
   if (!active.length) return null;
   return (

@@ -557,7 +557,7 @@ async fn manual_query_preserves_budget_without_an_unused_card_observation() {
         )
         .await;
     assert_eq!(result["success"], true);
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     let metadata = &state["scheduler"][id.to_string()];
     assert!(metadata["reset_credit_observation"].is_null());
     assert_eq!(metadata["quota_query"]["automatic_attempts"], attempts);
@@ -598,7 +598,7 @@ async fn daily_worker_runs_once_in_window_and_persists_missed_work_without_repla
         .schedule
         .startup(&config, startup_at)
         .expect("recover stale daily batches and initialize schedule");
-    let after_startup = harness.runtime.monitor.state().unwrap()["daily_test"].clone();
+    let after_startup = harness.runtime.monitor.shared_state().unwrap()["daily_test"].clone();
     assert_eq!(
         after_startup["batches"]["2031-04-03"]["status"],
         "interrupted"
@@ -661,7 +661,7 @@ async fn daily_worker_runs_once_in_window_and_persists_missed_work_without_repla
         .await
         .expect("run real daily quota query and connection test workers");
 
-    let completed = harness.runtime.monitor.state().unwrap()["daily_test"].clone();
+    let completed = harness.runtime.monitor.shared_state().unwrap()["daily_test"].clone();
     let date = "2031-04-05";
     assert_eq!(completed["batches"][date]["status"], "completed");
     assert_eq!(
@@ -679,7 +679,7 @@ async fn daily_worker_runs_once_in_window_and_persists_missed_work_without_repla
         .schedule
         .tick(&config, late_at)
         .unwrap();
-    let late = harness.runtime.monitor.state().unwrap()["daily_test"].clone();
+    let late = harness.runtime.monitor.shared_state().unwrap()["daily_test"].clone();
     assert_eq!(
         late["batches"]["2031-04-06"]["status"],
         reference["daily_test"]["late_status"]
@@ -743,7 +743,7 @@ async fn interrupted_recovery_verification_uses_existing_retry_without_private_r
             .await
             .unwrap();
         assert_eq!(result["success"], false);
-        let after = harness.runtime.monitor.state().unwrap();
+        let after = harness.runtime.monitor.shared_state().unwrap();
         let saved = &after["scheduler"][id.to_string()]["recovery_intent"];
         assert_eq!(saved["status"], "retry");
         assert_eq!(saved["connection_attempt_count"], 1);
@@ -823,7 +823,7 @@ async fn interrupted_recovery_ignores_retired_fields_and_preserves_existing_retr
         .await
         .expect("synthetic recovery write did not enter its response gate");
 
-    let state = harness.runtime.monitor.state().unwrap();
+    let state = harness.runtime.monitor.shared_state().unwrap();
     let synchronous_intent = &state["scheduler"][id.to_string()]["recovery_intent"];
     assert!(synchronous_intent["verification_receipt"].is_null());
     assert!(synchronous_intent["recovery_write_dispatched"].is_null());
@@ -839,14 +839,14 @@ async fn interrupted_recovery_ignores_retired_fields_and_preserves_existing_retr
     }).unwrap();
     let reopened = OAuthState::new(harness.runtime.settings.usage_path.clone());
     reopened.transaction(|_| Ok(())).unwrap();
-    let normalized = reopened.snapshot().unwrap();
+    let normalized = reopened.shared_snapshot().unwrap();
     let saved = &normalized["scheduler"][id.to_string()]["recovery_intent"];
     assert_eq!(saved["status"], "testing");
     assert_eq!(saved["verification_receipt"]["result"]["success"], true);
     assert_eq!(saved["verification_dispatched"], true);
     assert_eq!(saved["recovery_write_dispatched"], true);
     harness.runtime.monitor.startup().await.unwrap();
-    let restarted = harness.runtime.monitor.state().unwrap();
+    let restarted = harness.runtime.monitor.shared_state().unwrap();
     assert_eq!(
         restarted["scheduler"][id.to_string()]["recovery_intent"]["status"],
         "retry"
@@ -1117,7 +1117,7 @@ async fn manual_revoke_filters_daily_event_and_bark_delivery_is_deduplicated() {
         })
         .expect("seed three synthetic pending event stages");
     close_schedule(&harness, id).await;
-    let after_revoke = harness.runtime.monitor.state().unwrap();
+    let after_revoke = harness.runtime.monitor.shared_state().unwrap();
     assert!(after_revoke["pending_events"].get(&removed_key).is_none());
     assert!(after_revoke["pending_events"]
         .get(&removed_recovery_key)
@@ -1130,7 +1130,7 @@ async fn manual_revoke_filters_daily_event_and_bark_delivery_is_deduplicated() {
 
     harness.runtime.monitor.deliver().await.unwrap();
     harness.runtime.monitor.deliver().await.unwrap();
-    let after_delivery = harness.runtime.monitor.state().unwrap();
+    let after_delivery = harness.runtime.monitor.shared_state().unwrap();
     assert!(after_delivery["pending_events"]
         .get(&retained_key)
         .is_none());

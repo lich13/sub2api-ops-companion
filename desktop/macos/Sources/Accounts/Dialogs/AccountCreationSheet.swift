@@ -338,7 +338,10 @@ public struct AccountCreationSheet: View {
             .buttonStyle(LinearButtonStyle(variant: .primary))
             .disabled(!store.state.online || busy || reusing || options == nil || blockedDirect || (mixedRisk && !mixedConfirmed))
         }
-        .sub2opsDialogFocus {
+        .sub2opsDialogFocus(
+            canBackdropDismiss: !busy && !isDirty,
+            onBackdrop: { requestClose(fromEscape: false) }
+        ) {
             requestClose(fromEscape: true)
         }
     }

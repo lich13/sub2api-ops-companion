@@ -44,6 +44,13 @@ describe("account evidence", () => {
     expect(fullTime("2026-09-24T16:00:00Z")).toBe("09-25 00:00:00");
     expect(fullTime("2026-09-25T00:00:01+08:00")).toBe("09-25 00:00:01");
     expect(fullTime("2026-12-31T16:00:00Z")).toBe("01-01 00:00:00");
+    // Bounded cache eviction (>1024 unique timestamps) stays accurate.
+    for (let i = 0; i < 1100; i++) {
+      const sec = String(i % 60).padStart(2, "0");
+      const min = String(Math.floor(i / 60) % 60).padStart(2, "0");
+      const raw = `2026-06-${String((i % 28) + 1).padStart(2, "0")}T00:${min}:${sec}Z`;
+      expect(fullTime(raw)).toMatch(/^\d{2}-\d{2} 08:\d{2}:\d{2}$/);
+    }
   });
   it("combines group and state filters without assuming enabled means available", () => {
     const data = [

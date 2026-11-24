@@ -405,24 +405,33 @@ public struct AccountCreationFormDraft: Sendable, Equatable {
 
     // MARK: Parsing helpers
 
-    private static func expiryFormatter() -> DateFormatter {
+    private static let expiryFormatterLock = NSLock()
+    private static let sharedExpiryFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
         return formatter
-    }
+    }()
 
     /// Parses `YYYY-MM-DD HH:mm` in the local time zone into epoch seconds.
     public static func parseExpiry(_ text: String) -> Int64? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "T", with: " ")
-        guard let date = expiryFormatter().date(from: trimmed) else { return nil }
+        guard !trimmed.isEmpty else { return nil }
+        expiryFormatterLock.lock()
+        sharedExpiryFormatter.timeZone = .current
+        let parsed = sharedExpiryFormatter.date(from: trimmed)
+        expiryFormatterLock.unlock()
+        guard let date = parsed else { return nil }
         let seconds = Int64(date.timeIntervalSince1970.rounded(.down))
         return seconds > 0 ? seconds : nil
     }
 
     public static func formatExpiry(_ seconds: Int64) -> String {
-        expiryFormatter().string(from: Date(timeIntervalSince1970: TimeInterval(seconds)))
+        expiryFormatterLock.lock()
+        sharedExpiryFormatter.timeZone = .current
+        let text = sharedExpiryFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(seconds)))
+        expiryFormatterLock.unlock()
+        return text
     }
 
     /// Mirrors the comma / whitespace separated number list input; `nil` means not a list.

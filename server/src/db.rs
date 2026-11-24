@@ -122,7 +122,8 @@ impl Database {
     pub async fn open(url: &str) -> Result<Self> {
         let pool = PgPoolOptions::new()
             .min_connections(1)
-            .max_connections(8)
+            .max_connections(16)
+            .acquire_timeout(std::time::Duration::from_secs(10))
             .after_connect(|connection, _| {
                 Box::pin(async move {
                     sqlx::query("SET TIME ZONE 'UTC'")

@@ -1332,7 +1332,7 @@ async fn fixed_five_minute_admission_boundary_uses_current_time() {
         if offset == 299 {
             assert_eq!(harness.controller.state(id).unwrap()["stage"], "recovered");
         } else {
-            let state = harness.controller.store.snapshot().unwrap();
+            let state = harness.controller.store.shared_snapshot().unwrap();
             assert!(state["scheduler"][id.to_string()]["auto_reset_credit"].is_null());
             assert_eq!(
                 state["scheduler"][id.to_string()]["credit_admission"]["reason"],
@@ -1353,7 +1353,7 @@ async fn fixed_five_minute_admission_boundary_uses_current_time() {
     let no_card =
         set_credit_snapshot(&harness, id, snapshot(0, now + Duration::days(2), now)).await;
     run_automatic(&harness, &no_card, now).await;
-    let initial_admission = harness.controller.store.snapshot().unwrap()["scheduler"]
+    let initial_admission = harness.controller.store.shared_snapshot().unwrap()["scheduler"]
         [id.to_string()]["credit_admission"]
         .clone();
     assert_eq!(initial_admission["reason"], "no_credit");
@@ -1420,7 +1420,7 @@ async fn fixed_five_minute_admission_boundary_uses_current_time() {
     harness.set_now(at_deadline);
     run_automatic(&harness, &zero, at_deadline).await;
     assert_eq!(
-        harness.controller.store.snapshot().unwrap()["scheduler"][id.to_string()]
+        harness.controller.store.shared_snapshot().unwrap()["scheduler"][id.to_string()]
             ["credit_admission"]["reason"],
         "consume_deadline"
     );
@@ -1436,8 +1436,8 @@ async fn card_granted_after_the_window_never_consumes_for_the_earlier_limit() {
     let no_card =
         set_credit_snapshot(&harness, id, snapshot(0, now + Duration::days(2), now)).await;
     run_automatic(&harness, &no_card, now).await;
-    let admission = harness.controller.store.snapshot().unwrap()["scheduler"][id.to_string()]
-        ["credit_admission"]
+    let admission = harness.controller.store.shared_snapshot().unwrap()["scheduler"]
+        [id.to_string()]["credit_admission"]
         .clone();
     assert_eq!(admission["reason"], "no_credit");
     assert_eq!(admission["trigger_at"], datetime(trigger));
@@ -1496,7 +1496,7 @@ async fn card_granted_after_the_window_never_consumes_for_the_earlier_limit() {
             assert_eq!(repeat_evidence["evidence_at"], datetime(repeated));
         }
         run_automatic(&harness, &with_card, at).await;
-        let state = harness.controller.store.snapshot().unwrap();
+        let state = harness.controller.store.shared_snapshot().unwrap();
         let meta = &state["scheduler"][id.to_string()];
         assert!(
             meta["auto_reset_credit"].is_null(),
@@ -1528,8 +1528,8 @@ async fn next_seven_day_round_triggers_without_an_observed_recovery() {
     let expired = first_trigger + Duration::minutes(10);
     harness.set_now(expired);
     run_automatic(&harness, &no_card, expired).await;
-    let admission = harness.controller.store.snapshot().unwrap()["scheduler"][id.to_string()]
-        ["credit_admission"]
+    let admission = harness.controller.store.shared_snapshot().unwrap()["scheduler"]
+        [id.to_string()]["credit_admission"]
         .clone();
     assert_eq!(admission["reason"], "consume_deadline");
     assert!(admission["recovered_at"].is_null());
@@ -1581,7 +1581,7 @@ async fn next_seven_day_round_triggers_without_an_observed_recovery() {
     assert_eq!(task["stage"], "recovered", "{task}");
     assert_eq!(task["trigger_at"], datetime(trigger));
     assert_eq!(
-        harness.controller.store.snapshot().unwrap()["scheduler"][id.to_string()]
+        harness.controller.store.shared_snapshot().unwrap()["scheduler"][id.to_string()]
             ["credit_admission"]["trigger_at"],
         datetime(trigger)
     );
@@ -2269,7 +2269,7 @@ async fn zero_expired_or_unconfirmed_cards_remain_silent_across_rounds() {
                 .unwrap();
         }
         run_automatic(&harness, &row, now).await;
-        let state = harness.controller.store.snapshot().unwrap();
+        let state = harness.controller.store.shared_snapshot().unwrap();
         let meta = &state["scheduler"][id.to_string()];
         assert!(meta["auto_reset_credit"].is_null(), "{kind} created a task");
         assert_eq!(meta["credit_admission"]["reason"], reason, "{kind}");
@@ -2294,7 +2294,7 @@ async fn zero_expired_or_unconfirmed_cards_remain_silent_across_rounds() {
         harness.set_now(next);
         run_automatic(&harness, &row, next).await;
         if kind == "missing" {
-            let after = harness.controller.store.snapshot().unwrap();
+            let after = harness.controller.store.shared_snapshot().unwrap();
             assert_eq!(
                 after["scheduler"][id.to_string()]["credit_admission"]["reason"],
                 "consume_deadline"
@@ -2302,7 +2302,7 @@ async fn zero_expired_or_unconfirmed_cards_remain_silent_across_rounds() {
             assert!(after["scheduler"][id.to_string()]["auto_reset_credit"].is_null());
         }
         if kind == "budget_exhausted" {
-            let after = harness.controller.store.snapshot().unwrap();
+            let after = harness.controller.store.shared_snapshot().unwrap();
             assert_eq!(
                 after["scheduler"][id.to_string()]["quota_query"]["automatic_attempts"],
                 json!(exhausted_attempts)
@@ -2633,7 +2633,7 @@ async fn automatic_pause_is_read_back_owned_before_receipt_and_recovery_is_once_
     run_automatic(&harness, &row, now).await;
 
     let state = harness.controller.state(id).unwrap();
-    let automatic_attempts = harness.controller.store.snapshot().unwrap()["scheduler"]
+    let automatic_attempts = harness.controller.store.shared_snapshot().unwrap()["scheduler"]
         [id.to_string()]["quota_query"]["automatic_attempts"]
         .as_array()
         .unwrap()
@@ -2675,7 +2675,7 @@ async fn automatic_pause_is_read_back_owned_before_receipt_and_recovery_is_once_
     assert_eq!(before_test["receipt"]["business_code"], "success");
     assert_eq!(before_test["stage"], "testing");
 
-    let serialized = harness.controller.store.snapshot().unwrap();
+    let serialized = harness.controller.store.shared_snapshot().unwrap();
     assert_eq!(serialized["settings"]["sub2api_admin_token"], ADMIN_KEY);
     assert!(!state.to_string().contains(ADMIN_KEY));
     assert!(!serialized.to_string().contains("fixture-bark-device-key"));
@@ -2685,7 +2685,8 @@ async fn automatic_pause_is_read_back_owned_before_receipt_and_recovery_is_once_
 
     let receipt = state["receipt"].clone();
     let completed = state["reset_completed_at"].clone();
-    let reset_history = harness.controller.store.snapshot().unwrap()["recovery_history"].clone();
+    let reset_history =
+        harness.controller.store.shared_snapshot().unwrap()["recovery_history"].clone();
     let restarted = harness.restart_controller();
     restarted
         .run_account(&row, now + Duration::seconds(2))
@@ -2700,7 +2701,7 @@ async fn automatic_pause_is_read_back_owned_before_receipt_and_recovery_is_once_
         completed
     );
     assert_eq!(
-        harness.controller.store.snapshot().unwrap()["recovery_history"],
+        harness.controller.store.shared_snapshot().unwrap()["recovery_history"],
         reset_history
     );
 }
@@ -2775,7 +2776,7 @@ async fn confirming_restart_reconciles_the_confirmed_history_without_repeating_m
         ],
         counts
     );
-    let state = harness.controller.store.snapshot().unwrap();
+    let state = harness.controller.store.shared_snapshot().unwrap();
     assert_eq!(state["recovery_history"].as_object().unwrap().len(), 1);
     assert_eq!(
         state["scheduler"][id.to_string()]["credit_result_notifications"]
@@ -2890,7 +2891,7 @@ async fn confirming_restart_preserves_manual_changes_and_new_account_blocks() {
         }
         let expected = reload_account(&harness, id).await;
         let before_calls = harness.mock.total();
-        let generation_before = harness.controller.store.snapshot().unwrap()["scheduler"]
+        let generation_before = harness.controller.store.shared_snapshot().unwrap()["scheduler"]
             [id.to_string()]["manual_control"]["generation"]
             .clone();
         harness
@@ -2919,13 +2920,13 @@ async fn confirming_restart_preserves_manual_changes_and_new_account_blocks() {
         assert_eq!(harness.mock.total(), before_calls, "{change} replayed I/O");
         assert_ne!(harness.controller.state(id).unwrap()["stage"], "recovered");
         assert_eq!(
-            harness.controller.store.snapshot().unwrap()["scheduler"][id.to_string()]
+            harness.controller.store.shared_snapshot().unwrap()["scheduler"][id.to_string()]
                 ["manual_control"]["generation"],
             generation_before,
             "{change} changed manual generation"
         );
         assert!(
-            harness.controller.store.snapshot().unwrap()["recovery_history"]
+            harness.controller.store.shared_snapshot().unwrap()["recovery_history"]
                 .as_object()
                 .unwrap()
                 .is_empty()
@@ -3868,8 +3869,9 @@ async fn detection_version_hold_and_failed_readback_are_fail_closed() {
         .await
         .unwrap();
     assert!(merged);
-    let notice = &harness.controller.store.snapshot().unwrap()["scheduler"][third_id.to_string()]
-        ["credit_result_notifications"][third_task["episode"].as_str().unwrap()];
+    let notice = &harness.controller.store.shared_snapshot().unwrap()["scheduler"]
+        [third_id.to_string()]["credit_result_notifications"]
+        [third_task["episode"].as_str().unwrap()];
     assert_eq!(notice["degradation_confirmed"], true);
     assert_eq!(notice["model_id"], "fixture-model");
     assert_eq!(notice["prediction"], "gpt-5.6-luna");
@@ -3931,7 +3933,7 @@ async fn confirmed_degradation_merges_into_one_credit_notice_and_bark_delivery()
     assert_eq!(harness.mock.count(Method::POST, "/recover-state"), 0);
     assert_eq!(harness.mock.count(Method::POST, "/schedulable"), 1);
 
-    let state = harness.controller.store.snapshot().unwrap();
+    let state = harness.controller.store.shared_snapshot().unwrap();
     let notices = state["scheduler"][id.to_string()]["credit_result_notifications"]
         .as_object()
         .unwrap();
@@ -3952,8 +3954,8 @@ async fn confirmed_degradation_merges_into_one_credit_notice_and_bark_delivery()
     );
     let bark = Bark::new(harness.settings.clone()).unwrap();
     harness.controller.deliver_results(&bark).await.unwrap();
-    let delivered = &harness.controller.store.snapshot().unwrap()["scheduler"][id.to_string()]
-        ["credit_result_notifications"][episode];
+    let delivered = &harness.controller.store.shared_snapshot().unwrap()["scheduler"]
+        [id.to_string()]["credit_result_notifications"][episode];
     assert_eq!(delivered["status"], "delivered");
     assert_eq!(delivered["attempts"], 1);
     let pushes = bark_calls(&harness);
@@ -4139,7 +4141,7 @@ async fn legacy_unknown_episodes_remain_quarantined_after_restarts_without_any_i
             .unwrap();
         assert_eq!(harness.controller.state(id).unwrap(), task);
         assert_eq!(harness.mock.total(), 0);
-        let state = harness.controller.store.snapshot().unwrap();
+        let state = harness.controller.store.shared_snapshot().unwrap();
         assert!(state["recovery_history"].as_object().unwrap().is_empty());
         assert!(
             state["scheduler"][id.to_string()]["credit_result_notifications"]
@@ -4235,7 +4237,7 @@ async fn manual_http_502_receipt_is_not_replayed_and_requires_a_fresh_quota_conf
     assert_eq!(harness.mock.count(Method::POST, "/test"), 0);
     assert_eq!(harness.mock.count(Method::POST, "/schedulable"), 0);
     assert!(
-        harness.controller.store.snapshot().unwrap()["recovery_history"]
+        harness.controller.store.shared_snapshot().unwrap()["recovery_history"]
             .as_object()
             .unwrap()
             .is_empty()
@@ -4317,7 +4319,7 @@ async fn newer_depletion_after_manual_unknown_recovery_uses_a_new_episode_and_po
     assert_eq!(no_card["episode"], old_episode);
     assert_eq!(no_card["stage"], "recovered");
     assert_eq!(
-        harness.controller.store.snapshot().unwrap()["scheduler"][id.to_string()]
+        harness.controller.store.shared_snapshot().unwrap()["scheduler"][id.to_string()]
             ["credit_admission"]["reason"],
         "no_credit"
     );
@@ -4365,7 +4367,7 @@ async fn bark_delivery_has_an_atomic_reservation_five_attempt_limit_and_no_busin
     assert_eq!(harness.mock.count(Method::POST, "/push"), 1);
     harness.mock.release_push();
     first.await.unwrap().unwrap();
-    let delivered = &harness.controller.store.snapshot().unwrap()["scheduler"]
+    let delivered = &harness.controller.store.shared_snapshot().unwrap()["scheduler"]
         [first_id.to_string()]["credit_result_notifications"]["fixture-bark-once"];
     assert_eq!(delivered["status"], "delivered");
     assert_eq!(delivered["attempts"], 1);
@@ -4392,8 +4394,8 @@ async fn bark_delivery_has_an_atomic_reservation_five_attempt_limit_and_no_busin
         harness.set_now(now + Duration::seconds(offset));
         harness.controller.deliver_results(&bark).await.unwrap();
     }
-    let failed = &harness.controller.store.snapshot().unwrap()["scheduler"][retry_id.to_string()]
-        ["credit_result_notifications"]["fixture-bark-five"];
+    let failed = &harness.controller.store.shared_snapshot().unwrap()["scheduler"]
+        [retry_id.to_string()]["credit_result_notifications"]["fixture-bark-five"];
     assert_eq!(failed["status"], "failed");
     assert_eq!(failed["attempts"], 5);
     assert!(failed["next_at"].is_null());
@@ -4423,7 +4425,7 @@ async fn bark_delivery_has_an_atomic_reservation_five_attempt_limit_and_no_busin
         true,
     );
     harness.controller.deliver_results(&disabled).await.unwrap();
-    let suppressed = &harness.controller.store.snapshot().unwrap()["scheduler"]
+    let suppressed = &harness.controller.store.shared_snapshot().unwrap()["scheduler"]
         [disabled_id.to_string()]["credit_result_notifications"]["fixture-bark-disabled"];
     assert_eq!(suppressed["status"], "suppressed");
     assert_eq!(suppressed["attempts"], 0);
@@ -4517,8 +4519,8 @@ async fn terminal_credit_outcomes_and_bark_receipts_survive_restart_once() {
             task["outcome"], expected_outcome,
             "{expected_outcome}: {task}"
         );
-        let notices = &harness.controller.store.snapshot().unwrap()["scheduler"][id.to_string()]
-            ["credit_result_notifications"];
+        let notices = &harness.controller.store.shared_snapshot().unwrap()["scheduler"]
+            [id.to_string()]["credit_result_notifications"];
         assert_eq!(notices.as_object().unwrap().len(), 1, "{expected_outcome}");
         let episode = task["episode"].as_str().unwrap();
         let notice = &notices[episode];
@@ -4526,8 +4528,8 @@ async fn terminal_credit_outcomes_and_bark_receipts_survive_restart_once() {
         assert_eq!(notice["outcome"], expected_outcome, "{expected_outcome}");
 
         harness.controller.deliver_results(&bark).await.unwrap();
-        let delivered = &harness.controller.store.snapshot().unwrap()["scheduler"][id.to_string()]
-            ["credit_result_notifications"][episode];
+        let delivered = &harness.controller.store.shared_snapshot().unwrap()["scheduler"]
+            [id.to_string()]["credit_result_notifications"][episode];
         assert_eq!(delivered["status"], "delivered", "{expected_outcome}");
         assert_eq!(delivered["attempts"], 1, "{expected_outcome}");
         assert_eq!(harness.mock.count(Method::POST, "/push"), before_push + 1);
@@ -4552,8 +4554,8 @@ async fn terminal_credit_outcomes_and_bark_receipts_survive_restart_once() {
                 }
         );
         assert_eq!(harness.mock.count(Method::POST, "/push"), before_push + 1);
-        let after = &harness.controller.store.snapshot().unwrap()["scheduler"][id.to_string()]
-            ["credit_result_notifications"][episode];
+        let after = &harness.controller.store.shared_snapshot().unwrap()["scheduler"]
+            [id.to_string()]["credit_result_notifications"][episode];
         assert_eq!(after["status"], "delivered");
         assert_eq!(after["attempts"], 1);
         if expected_outcome == "unrecovered" {
@@ -4668,7 +4670,7 @@ async fn coordinator_quota_results_do_not_persist_unused_card_observations() {
             .await;
         assert_eq!(result["success"], true, "{name}: {result}");
         assert_eq!(harness.mock.count(Method::GET, "/usage"), before + 1);
-        let state = harness.controller.store.snapshot().unwrap();
+        let state = harness.controller.store.shared_snapshot().unwrap();
         let observation = &state["scheduler"][id.to_string()]["reset_credit_observation"];
         assert!(observation.is_null(), "{name}");
         assert_eq!(state["oauth_results"][id.to_string()]["success"], true);
@@ -4721,7 +4723,7 @@ async fn coordinator_quota_results_do_not_persist_unused_card_observations() {
     assert_eq!(failed["error_code"], "query_state_unavailable");
     let lock_path = PathBuf::from(format!("{}.lock", harness.settings.oauth_path.display()));
     fs::remove_dir(&lock_path).expect("remove only this fixture lock fault");
-    let after_failed_write = harness.controller.store.snapshot().unwrap();
+    let after_failed_write = harness.controller.store.shared_snapshot().unwrap();
     assert!(after_failed_write["scheduler"][id.to_string()]["reset_credit_observation"].is_null());
     harness.mock.set_usage(
         id,
@@ -4788,7 +4790,7 @@ async fn usage_refresh_http_429_is_status_only_and_cannot_create_an_observation(
         harness.mock.count(Method::POST, "/schedulable"),
         before_schedule
     );
-    let state = harness.controller.store.snapshot().unwrap();
+    let state = harness.controller.store.shared_snapshot().unwrap();
     assert!(state["scheduler"][id.to_string()]["reset_credit_observation"].is_null());
     assert_eq!(
         state["scheduler"][id.to_string()]["last_error_code"],
@@ -4826,7 +4828,7 @@ async fn unused_legacy_observation_is_ignored_and_removed_on_normal_write() {
         let mut legacy_snapshot = row["extra"]["codex_reset_credit_snapshot"].clone();
         legacy_snapshot["fetched_at"] = json!(datetime(now - Duration::hours(2)));
         let row = set_credit_snapshot(&harness, id, legacy_snapshot).await;
-        let mut state = harness.controller.store.snapshot().unwrap();
+        let mut state = (*harness.controller.store.shared_snapshot().unwrap()).clone();
         state["scheduler"][id.to_string()]["reset_credit_observation"][field] = bad_value.clone();
         fs::write(
             &harness.settings.oauth_path,
@@ -4836,7 +4838,7 @@ async fn unused_legacy_observation_is_ignored_and_removed_on_normal_write() {
         harness.set_config(recovery_config(id, "connection"));
 
         let before = fs::read(&harness.settings.oauth_path).unwrap();
-        let loaded = harness.controller.store.snapshot().unwrap();
+        let loaded = harness.controller.store.shared_snapshot().unwrap();
         assert!(loaded["scheduler"][id.to_string()]["reset_credit_observation"].is_null());
         assert_eq!(fs::read(&harness.settings.oauth_path).unwrap(), before);
         harness.controller.run_account(&row, now).await.unwrap();
@@ -4890,7 +4892,7 @@ async fn usage_auth_failure_is_scoped_to_credentials_and_never_schedules_card_re
         .await;
     assert_eq!(result["error_code"], "http_401");
     assert_eq!(harness.mock.count(Method::GET, "/usage"), 1);
-    let state = harness.controller.store.snapshot().unwrap();
+    let state = harness.controller.store.shared_snapshot().unwrap();
     let query = &state["scheduler"][id.to_string()]["quota_query"];
     assert_eq!(
         query["auth_fingerprint"],
@@ -4930,7 +4932,7 @@ async fn usage_auth_failure_is_scoped_to_credentials_and_never_schedules_card_re
         assert!(!harness
             .controller
             .store
-            .snapshot()
+            .shared_snapshot()
             .unwrap()
             .to_string()
             .contains(private_value));
@@ -5034,7 +5036,7 @@ async fn explicit_loopback_card_observation_authorizes_one_real_reset_and_immedi
         )
         .await;
     assert_eq!(query["success"], true, "{query}");
-    let observed_state = harness.controller.store.snapshot().unwrap();
+    let observed_state = harness.controller.store.shared_snapshot().unwrap();
     assert!(observed_state["scheduler"][id.to_string()]["reset_credit_observation"].is_null());
     let snapshot_row = reload_account(&harness, id).await;
     assert_eq!(
@@ -5060,7 +5062,7 @@ async fn explicit_loopback_card_observation_authorizes_one_real_reset_and_immedi
     assert_eq!(task["stage"], "recovered");
     assert_eq!(task["consumption_outcome"], "consumed");
     assert_eq!(task["receipt"]["business_code"], "success");
-    let automatic_attempts = harness.controller.store.snapshot().unwrap()["scheduler"]
+    let automatic_attempts = harness.controller.store.shared_snapshot().unwrap()["scheduler"]
         [id.to_string()]["quota_query"]["automatic_attempts"]
         .as_array()
         .unwrap()
@@ -5205,7 +5207,7 @@ async fn automatic_usage_cooldown_and_six_per_day_budget_survive_restart() {
         assert_eq!(result["success"], true, "hour {hour}: {result}");
     }
     assert_eq!(harness.mock.count(Method::GET, "/usage"), 6);
-    let saved = harness.controller.store.snapshot().unwrap();
+    let saved = harness.controller.store.shared_snapshot().unwrap();
     assert_eq!(
         saved["scheduler"][id.to_string()]["quota_query"]["automatic_attempts"]
             .as_array()
@@ -5305,7 +5307,7 @@ async fn admission_pause_and_consume_receipt_write_failures_never_dispatch_again
     assert_eq!(paused_final["stage"], "finished");
     assert_eq!(paused_final["result_reason"], "pause_uncertain");
     assert_eq!(paused_final["outcome"], "not_executed");
-    let paused_state = harness.controller.store.snapshot().unwrap();
+    let paused_state = harness.controller.store.shared_snapshot().unwrap();
     let paused_notices = paused_state["scheduler"][id.to_string()]["credit_result_notifications"]
         .as_object()
         .unwrap();
@@ -5540,7 +5542,7 @@ async fn manual_reset_uses_the_account_state_after_the_connection_test() {
     assert_eq!(task["test_success"], true);
     assert_eq!(task["outcome"], "unrecovered");
     assert_eq!(task["result_reason"], "recovery_failed");
-    let notice = h.controller.store.snapshot().unwrap()["scheduler"][id.to_string()]
+    let notice = h.controller.store.shared_snapshot().unwrap()["scheduler"][id.to_string()]
         ["credit_result_notifications"][task["episode"].as_str().unwrap()]
     .clone();
     assert_eq!(notice["outcome"], "unrecovered");
@@ -5571,7 +5573,7 @@ async fn deleted_accounts_suppress_all_pending_credit_results_without_losing_rec
         h.seed_notice(id, "fixture-consumed", now).await;
         h.seed_notice(id, "fixture-future", now + Duration::minutes(10))
             .await;
-        let history = h.controller.store.snapshot().unwrap()["recovery_history"].clone();
+        let history = h.controller.store.shared_snapshot().unwrap()["recovery_history"].clone();
         let bark = Bark::new(h.settings.clone()).unwrap();
         if deletion == "retry" {
             h.mock.set_bark_codes([500]);
@@ -5591,7 +5593,7 @@ async fn deleted_accounts_suppress_all_pending_credit_results_without_losing_rec
         h.controller.deliver_results(&bark).await.unwrap();
         h.set_now(now + Duration::minutes(20));
         h.restart_controller().deliver_results(&bark).await.unwrap();
-        let state = h.controller.store.snapshot().unwrap();
+        let state = h.controller.store.shared_snapshot().unwrap();
         assert_eq!(state["recovery_history"], history);
         assert_eq!(
             state["scheduler"][id.to_string()]["auto_reset_credit"]["receipt"],
@@ -5638,7 +5640,7 @@ async fn legacy_manual_record_without_source_never_becomes_an_automatic_credit_t
         .unwrap();
     assert_eq!(restarted.state(id).unwrap(), task);
     assert!(
-        restarted.store.snapshot().unwrap()["scheduler"][id.to_string()]
+        restarted.store.shared_snapshot().unwrap()["scheduler"][id.to_string()]
             ["credit_result_notifications"]
             .is_null()
     );
@@ -5656,7 +5658,7 @@ async fn future_credit_notices_remain_pending_when_other_accounts_are_due() {
         .await;
     let bark = Bark::new(h.settings.clone()).unwrap();
     h.controller.deliver_results(&bark).await.unwrap();
-    let state = h.controller.store.snapshot().unwrap();
+    let state = h.controller.store.shared_snapshot().unwrap();
     assert_eq!(
         state["scheduler"][due.to_string()]["credit_result_notifications"]["fixture-due"]["status"],
         "delivered"
@@ -5670,7 +5672,7 @@ async fn future_credit_notices_remain_pending_when_other_accounts_are_due() {
     h.set_now(now + Duration::minutes(10));
     h.controller.deliver_results(&bark).await.unwrap();
     assert_eq!(
-        h.controller.store.snapshot().unwrap()["scheduler"][future.to_string()]
+        h.controller.store.shared_snapshot().unwrap()["scheduler"][future.to_string()]
             ["credit_result_notifications"]["fixture-future"]["status"],
         "delivered"
     );

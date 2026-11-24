@@ -71,7 +71,7 @@ fn credit_history_limits_keep_active_pending_and_owned_receipts_in_order() {
         episodes["fixture-owned"] = json!({"episode":"fixture-owned","stage":"finished","owns_pause":true,"receipt":receipt});
         notices["fixture-pending"]["status"] = "pending".into();
         notices["fixture-pending"]["next_at"] = at.into();
-        let mut raw = store.snapshot().unwrap();
+        let mut raw = (*store.shared_snapshot().unwrap()).clone();
         raw["scheduler"]["7"] = json!({"auto_reset_credit":episodes["fixture-active"],
             "reset_credit_episodes":episodes,"credit_result_notifications":notices,
             "reset_credit_observation":{"fixture":"retired"}});
@@ -79,7 +79,7 @@ fn credit_history_limits_keep_active_pending_and_owned_receipts_in_order() {
         raw["scheduler"]["7"]["auto_reset_credit"]["owned_version"] = "fixture-retired".into();
         let bytes = serde_json::to_vec(&raw).unwrap();
         std::fs::write(&path, &bytes).unwrap();
-        let loaded = store.snapshot().unwrap();
+        let loaded = store.shared_snapshot().unwrap();
         assert!(loaded["scheduler"]["7"]
             .get("reset_credit_episodes")
             .is_none());
@@ -98,7 +98,7 @@ fn credit_history_limits_keep_active_pending_and_owned_receipts_in_order() {
             "loading does not rewrite state"
         );
         store.transaction(|_| Ok(())).unwrap();
-        let state = store.snapshot().unwrap();
+        let state = store.shared_snapshot().unwrap();
         let meta = &state["scheduler"]["7"];
         {
             let field = "credit_result_notifications";
@@ -128,7 +128,9 @@ fn credit_history_limits_keep_active_pending_and_owned_receipts_in_order() {
             notices["fixture-pending"]
         );
         assert_eq!(
-            oauth_state::OAuthState::new(path).snapshot().unwrap(),
+            oauth_state::OAuthState::new(path)
+                .shared_snapshot()
+                .unwrap(),
             state
         );
     }
