@@ -3,7 +3,7 @@ use crate::{
     credit_rules,
     error::{Error, Result},
     model_detection::{Detection, TARGET},
-    model_downgrade::{bank_contains, is_downgrade, valid_report},
+    model_downgrade::{is_downgrade, valid_report},
     model_tests::ACTIVE,
     oauth_queries::Source,
     quota, recovery_policy, recovery_rules,
@@ -315,11 +315,11 @@ impl Detection {
                 json!({"success":false,"error":"所选模型不在当前账号上游模型目录中","error_code":"model_unavailable"}),
             );
         }
-        let bank = self.tests.bank.snapshot();
+        let bank = self.tests.bank.compiled();
         if if crate::verdict_policy::relaxed(&value) {
-            !crate::verdict_policy::bank_contains(&bank.0, &value)
+            !bank.contains_policy(&value)
         } else {
-            !bank_contains(&bank.0, TARGET)
+            !bank.contains_exact(TARGET)
         } {
             return Ok(
                 json!({"success":false,"error":"指纹库缺少降智判定模型","error_code":"bank_unavailable"}),

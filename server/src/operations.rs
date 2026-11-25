@@ -116,35 +116,57 @@ fn validate_job(data: &Value, job: &Value) -> Result<()> {
     }
     Ok(())
 }
-pub fn validate_store(data: &Value) -> Result<()> {
+fn validate_store_envelope(data: &Value) -> Result<()> {
     let error = || Error::new(503, "操作状态无法读取");
     if data["version"] != 1 || !data["jobs"].is_object() || !data["requests"].is_object() {
         return Err(error());
-    }
-    for job in data["jobs"].as_object().ok_or_else(error)?.values() {
-        validate_job(data, job)?;
     }
     for field in ["batches", "batch_requests"] {
         if data.get(field).is_some_and(|v| !v.is_object()) {
             return Err(error());
         }
     }
-    for (bid, batch) in data["batches"].as_object().into_iter().flatten() {
-        if batch
-            .get("chunks")
-            .is_some_and(|chunks| !chunks.is_null() && !chunks.is_array())
-        {
-            return Err(error());
-        }
-        if !batch["job_ids"].as_array().is_some_and(|v| {
-            v.iter().all(|j| {
-                j.as_str().is_some_and(|jid| {
-                    data["jobs"].get(jid).is_some() && data["jobs"][jid]["batch_id"] == *bid
-                })
-            })
+    Ok(())
+}
+
+fn validate_batch_entry(data: &Value, bid: &str, batch: &Value) -> Result<()> {
+    let error = || Error::new(503, "操作状态无法读取");
+    if let Some(chunks) = batch.get("chunks").filter(|c| !c.is_null()) {
+        if !chunks.as_array().is_some_and(|arr| {
+            arr.iter()
+                .all(|chunk| chunk.is_object() && chunk["status"].is_string())
         }) {
             return Err(error());
         }
+    }
+    if !batch["job_ids"].as_array().is_some_and(|v| {
+        v.iter().all(|j| {
+            j.as_str().is_some_and(|jid| {
+                data["jobs"].get(jid).is_some() && data["jobs"][jid]["batch_id"] == bid
+            })
+        })
+    }) {
+        return Err(error());
+    }
+    Ok(())
+}
+
+pub fn validate_store(data: &Value) -> Result<()> {
+    let error = || Error::new(503, "操作状态无法读取");
+    validate_store_envelope(data)?;
+    if data["requests"]
+        .as_object()
+        .ok_or_else(error)?
+        .values()
+        .any(|id| !id.is_string())
+    {
+        return Err(error());
+    }
+    for job in data["jobs"].as_object().ok_or_else(error)?.values() {
+        validate_job(data, job)?;
+    }
+    for (bid, batch) in data["batches"].as_object().into_iter().flatten() {
+        validate_batch_entry(data, bid, batch)?;
     }
     if data["batch_requests"]
         .as_object()
@@ -159,24 +181,80 @@ pub fn validate_store(data: &Value) -> Result<()> {
     }
     Ok(())
 }
+
+fn validate_store_incremental(before: &Value, after: &Value, pruned: bool) -> Result<()> {
+    let error = || Error::new(503, "操作状态无法读取");
+    if pruned
+        || before["jobs"]
+            .as_object()
+            .is_some_and(|prev| prev.keys().any(|k| after["jobs"].get(k).is_none()))
+        || before["batches"]
+            .as_object()
+            .is_some_and(|prev| prev.keys().any(|k| after["batches"].get(k).is_none()))
+    {
+        return validate_store(after);
+    }
+    validate_store_envelope(after)?;
+    let prev_req = before["requests"].as_object();
+    for (req, id) in after["requests"].as_object().ok_or_else(error)? {
+        if prev_req.and_then(|m| m.get(req)) != Some(id) && !id.is_string() {
+            return Err(error());
+        }
+    }
+    let prev_jobs = before["jobs"].as_object();
+    for (jid, job) in after["jobs"].as_object().ok_or_else(error)? {
+        let prev_job = prev_jobs.and_then(|m| m.get(jid));
+        if prev_job != Some(job) {
+            if let Some(old_job) = prev_job {
+                if old_job["account_id"] != job["account_id"]
+                    || old_job["repeat_series_id"] != job["repeat_series_id"]
+                {
+                    return validate_store(after);
+                }
+                if old_job["batch_id"] != job["batch_id"] {
+                    if let Some((old_bid, batch)) = old_job["batch_id"]
+                        .as_str()
+                        .and_then(|bid| after["batches"].get(bid).map(|b| (bid, b)))
+                    {
+                        validate_batch_entry(after, old_bid, batch)?;
+                    }
+                }
+            }
+            validate_job(after, job)?;
+        }
+    }
+    let prev_batches = before["batches"].as_object();
+    for (bid, batch) in after["batches"].as_object().into_iter().flatten() {
+        if prev_batches.and_then(|m| m.get(bid)) != Some(batch) {
+            validate_batch_entry(after, bid, batch)?;
+        }
+    }
+    let prev_breq = before["batch_requests"].as_object();
+    for (req, id) in after["batch_requests"].as_object().into_iter().flatten() {
+        if prev_breq.and_then(|m| m.get(req)) != Some(id)
+            && id
+                .as_str()
+                .is_none_or(|id| after["batches"].get(id).is_none())
+        {
+            return Err(error());
+        }
+    }
+    Ok(())
+}
+
 #[derive(Clone)]
-pub struct OperationStore(pub Store<crate::state_files::OperationFile>);
+pub struct OperationStore(pub Store);
 impl OperationStore {
     pub fn new(path: PathBuf) -> Self {
         let lock = path.with_extension("lock");
         Self::with_lock(path, lock)
     }
     pub fn with_lock(path: PathBuf, lock: PathBuf) -> Self {
-        Self(Store::typed(
+        Self(Store::with_lock(
             path,
             lock,
             json!({"version":1,"jobs":{},"requests":{},"batches":{},"batch_requests":{}}),
             validate_store,
-            |_| Ok(false),
-            |raw| {
-                serde::Deserialize::deserialize(raw)
-                    .map_err(|_| Error::new(503, "操作状态无法读取"))
-            },
         ))
     }
     fn normalize(data: &mut Value) {
@@ -197,12 +275,16 @@ impl OperationStore {
         Ok((rev, data))
     }
     pub fn transaction<T>(&self, f: impl FnOnce(&mut Value) -> Result<T>) -> Result<T> {
-        self.0.transaction(|data| {
-            Self::normalize(data);
-            let out = f(data)?;
-            Self::prune_terminal_jobs(data);
-            Ok(out)
-        })
+        let pruned = std::cell::Cell::new(false);
+        self.0.transaction_diff_validated(
+            |data| {
+                Self::normalize(data);
+                let out = f(data)?;
+                pruned.set(Self::prune_terminal_jobs(data));
+                Ok(out)
+            },
+            |before, after| validate_store_incremental(before, after, pruned.get()),
+        )
     }
     fn prune_terminal_jobs(data: &mut Value) -> bool {
         const MAX_TERMINAL_JOBS: usize = 10_000;
@@ -317,7 +399,9 @@ impl OperationStore {
         true
     }
     pub fn recover_startup(&self) -> Result<()> {
-        let data = self.0.read_state()?;
+        let raw = self.read_shared()?;
+        let data: crate::state_files::OperationFile = serde::Deserialize::deserialize(&*raw)
+            .map_err(|_| Error::new(503, "操作状态无法读取"))?;
         let needs_recovery = data.jobs.values().any(|job| job.status == "running")
             || data
                 .batches
@@ -325,23 +409,22 @@ impl OperationStore {
                 .flat_map(|batch| batch.chunks.iter().flatten())
                 .any(|chunk| chunk.status == "dispatched");
         if needs_recovery {
-            self.0.edit_state(|state| {
-                for job in state
-                    .jobs
-                    .values_mut()
-                    .filter(|job| job.status == "running")
-                {
-                    job.status = "checking".into();
-                    job.fields
-                        .insert("reason".into(), "服务重启，核对已派发请求".into());
+            self.transaction(|state| {
+                if let Some(jobs) = state["jobs"].as_object_mut() {
+                    for job in jobs.values_mut().filter(|job| job["status"] == "running") {
+                        job["status"] = "checking".into();
+                        job["reason"] = "服务重启，核对已派发请求".into();
+                    }
                 }
-                for chunk in state
-                    .batches
-                    .values_mut()
-                    .flat_map(|batch| batch.chunks.iter_mut().flatten())
-                    .filter(|chunk| chunk.status == "dispatched")
-                {
-                    chunk.status = "checking".into();
+                if let Some(batches) = state["batches"].as_object_mut() {
+                    for chunk in batches
+                        .values_mut()
+                        .filter_map(|batch| batch["chunks"].as_array_mut())
+                        .flatten()
+                        .filter(|chunk| chunk["status"] == "dispatched")
+                    {
+                        chunk["status"] = "checking".into();
+                    }
                 }
                 Ok(())
             })?;
@@ -902,7 +985,7 @@ impl Operations {
         self.audit(&job, "accepted");
         if short(&job) && job["status"] == "queued" {
             self.launch(job.clone(), None, None);
-        } else if job["status"] == "queued" {
+        } else {
             self.wake.notify_one();
         }
         Ok(self.public(&job, false, 0))
@@ -1214,6 +1297,7 @@ impl Operations {
             }
             Ok(())
         })?;
+        self.wake.notify_one();
         self.listing(Some(bid))
     }
     pub async fn cancel(&self, jid: &str) -> Result<Value> {
@@ -1229,6 +1313,7 @@ impl Operations {
         }
         if matches!(string(&job["status"]), "queued" | "needs_confirmation") {
             self.update(jid, json!({"status":"cancelled","reason":"已取消"}))?;
+            self.wake.notify_one();
         } else if job["status"] == "running" && job["action"] == "test" {
             if let Some(task) = self
                 .tasks
@@ -1242,10 +1327,55 @@ impl Operations {
                 jid,
                 json!({"status":"cancelled","reason":"请求已停止；已派发写入仍需核对"}),
             )?;
+            self.wake.notify_one();
         } else if matches!(string(&job["status"]), "running" | "checking") {
             self.update(jid, json!({"reason":"请求已派发，等待核对结果"}))?;
         }
         self.get(jid, 0)
+    }
+    pub(crate) fn has_pending_work(&self) -> bool {
+        if !self
+            .tasks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
+            || !self
+                .events
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_empty()
+        {
+            return true;
+        }
+        let Ok((ops_rev, data)) = self.store.read_shared_versioned() else {
+            return true;
+        };
+        let Ok(oauth_rev) = self.actions.queries.oauth.0.cache_revision() else {
+            return true;
+        };
+        if *self
+            .scheduled_results_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            != (ops_rev, oauth_rev)
+        {
+            return true;
+        }
+        let cache = *self
+            .active_scan_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if cache.0 == ops_rev {
+            return cache.1 || cache.2;
+        }
+        data["jobs"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .any(|(_, job)| {
+                matches!(string(&job["status"]), "queued" | "checking")
+                    || job["repeat_state"] == "active"
+            })
     }
     pub async fn tick(self: &Arc<Self>) -> Result<()> {
         if self.closing.load(Ordering::Acquire) || self.actions.supervisor.is_stopping() {
@@ -2184,5 +2314,79 @@ mod tests {
         assert!(data["jobs"].get(format!("{:032x}", 0usize)).is_none());
         assert!(data["jobs"].get(&pending_id).is_some());
         assert!(data["jobs"].get(&extra_id).is_some());
+    }
+
+    #[test]
+    fn incremental_validation_catches_cross_entry_batch_and_successor_mutations_and_typed_shapes() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = OperationStore::new(dir.path().join("operations.json"));
+        let pred_id = "11111111111111111111111111111111";
+        let succ_id = "22222222222222222222222222222222";
+        let series_id = "33333333333333333333333333333333";
+        let batch_id = "44444444444444444444444444444444";
+        store
+            .transaction(|data| {
+                data["jobs"][pred_id] = json!({
+                    "id": pred_id,
+                    "account_id": 7,
+                    "action": "test",
+                    "status": "completed",
+                    "payload": {},
+                    "repeat": "quota_cycle",
+                    "repeat_series_id": series_id,
+                    "repeat_state": "continued",
+                    "next_operation_id": succ_id,
+                });
+                data["jobs"][succ_id] = json!({
+                    "id": succ_id,
+                    "account_id": 7,
+                    "action": "test",
+                    "status": "queued",
+                    "payload": {},
+                    "batch_id": batch_id,
+                    "repeat": "quota_cycle",
+                    "repeat_series_id": series_id,
+                    "repeat_state": "active",
+                });
+                data["batches"][batch_id] = json!({
+                    "job_ids": [succ_id],
+                    "chunks": [{"status": "pending"}],
+                });
+                data["requests"]["req-1"] = json!(succ_id);
+                Ok(())
+            })
+            .unwrap();
+
+        // Breaking batch.job_ids -> jobs[jid].batch_id by mutating only the job must fail
+        assert!(store
+            .transaction(|data| {
+                data["jobs"][succ_id]["batch_id"] = json!("other-batch");
+                Ok(())
+            })
+            .is_err());
+
+        // Breaking predecessor.next_operation_id -> successor.account_id by mutating only successor must fail
+        assert!(store
+            .transaction(|data| {
+                data["jobs"][succ_id]["account_id"] = json!(99);
+                Ok(())
+            })
+            .is_err());
+
+        // Non-string request values and malformed batch chunks must fail
+        assert!(store
+            .transaction(|data| {
+                data["requests"]["req-bad"] = json!(123);
+                Ok(())
+            })
+            .is_err());
+        assert!(store
+            .transaction(|data| {
+                data["batches"][batch_id]["chunks"] = json!([{"missing_status": true}]);
+                Ok(())
+            })
+            .is_err());
+
+        store.recover_startup().unwrap();
     }
 }

@@ -60,7 +60,6 @@ import {
   type ViewState,
 } from "./types";
 import "./style.css";
-import "./responsive.css";
 import { KeyQuotaProvider, KeyQuotaRefreshSettings } from "./KeyQuotaSettings";
 import { useErrorFeed, type ErrorCategory } from "./useErrorFeed";
 import { MiniUsage, QuotaRefresh } from "./AccountControls";
@@ -87,7 +86,6 @@ import DegradationAction, { DegradationBadge } from "./DegradationMark";
 import { useDialogFocus } from "./dialogFocus";
 import { listenBack, useBackAction } from "./mobile";
 import { getVersion as getRuntimeVersion } from "@tauri-apps/api/app";
-import "./mobile-layout.css";
 
 type PreloadableComponent<P extends object> = React.FC<P> & {
   preload: () => Promise<unknown>;
@@ -213,6 +211,81 @@ function getObservedSnapshot() {
   return latestObservedAt;
 }
 
+function sameStringArray(
+  a: readonly string[] | null | undefined,
+  b: readonly string[] | null | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function sameConnections(
+  a: readonly SavedConnection[] | undefined,
+  b: readonly SavedConnection[] | undefined,
+): boolean {
+  if (a === b) return true;
+  const left = a ?? [];
+  const right = b ?? [];
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i++) {
+    if (
+      left[i].name !== right[i].name ||
+      left[i].base_url !== right[i].base_url
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function samePreferences(a: Preferences, b: Preferences): boolean {
+  if (a === b) return true;
+  if (
+    a.base_url !== b.base_url ||
+    (a.model_test_concurrency ?? null) !== (b.model_test_concurrency ?? null) ||
+    !sameStringArray(a.record_columns ?? null, b.record_columns ?? null) ||
+    !sameConnections(a.connections, b.connections)
+  ) {
+    return false;
+  }
+  const mpA = a.model_test_preferences;
+  const mpB = b.model_test_preferences;
+  if (mpA === mpB) return true;
+  const keysA = mpA ? Object.keys(mpA) : [];
+  const keysB = mpB ? Object.keys(mpB) : [];
+  if (keysA.length !== keysB.length) return false;
+  for (const key of keysA) {
+    const va = mpA![key];
+    const vb = mpB?.[key];
+    if (!vb || va.engine !== vb.engine || va.sample_count !== vb.sample_count) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function sameUpstreamConnection(
+  a: ViewState["upstream_connection"],
+  b: ViewState["upstream_connection"],
+): boolean {
+  const left = a ?? null;
+  const right = b ?? null;
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return (
+    left.state === right.state &&
+    left.endpoint === right.endpoint &&
+    left.http_status === right.http_status &&
+    left.message === right.message &&
+    left.retryable === right.retryable &&
+    left.checked_at === right.checked_at
+  );
+}
+
 function mergeIncomingState(prev: ViewState, next: ViewState): ViewState {
   publishObservedAt(next.snapshot?.observed_at);
   const prevKey = `${prev.preferences.base_url}:${prev.connected}:${prev.connection_revision ?? 0}`;
@@ -229,9 +302,8 @@ function mergeIncomingState(prev: ViewState, next: ViewState): ViewState {
       prev.error === next.error &&
       prev.foreground === next.foreground &&
       prev.initializing === next.initializing &&
-      JSON.stringify(prev.preferences) === JSON.stringify(next.preferences) &&
-      JSON.stringify(prev.upstream_connection ?? null) ===
-        JSON.stringify(next.upstream_connection ?? null)
+      samePreferences(prev.preferences, next.preferences) &&
+      sameUpstreamConnection(prev.upstream_connection, next.upstream_connection)
     ) {
       return prev;
     }
@@ -708,6 +780,14 @@ export default function App() {
     () => [...new Set(accounts.map((a) => a.type))],
     [accounts],
   );
+  const selectedAccounts = useMemo(
+    () => (selected.size ? accounts.filter((a) => selected.has(a.id)) : []),
+    [accounts, selected],
+  );
+  const hasSelectedResetCredit = useMemo(
+    () => selectedAccounts.some(resetCreditEligible),
+    [selectedAccounts],
+  );
   function savePrefs(patch: Partial<Preferences>) {
     return command("preferences", {
       ...(patch.record_columns !== undefined
@@ -819,6 +899,22 @@ export default function App() {
       );
     },
     [busy, state.online, toggle],
+  );
+  const mobileSchedule = useCallback(
+    function mobileScheduleCell(a: Account, disabled = false, isBusy = false) {
+      return (
+        <div className="switch-cell">
+          {isBusy ? <LoaderCircle size={14} className="spin" /> : null}
+          <Switch
+            on={a.schedulable}
+            disabled={disabled || !state.online || isBusy}
+            label={`${a.name}调度`}
+            onChange={() => void toggle(a)}
+          />
+        </div>
+      );
+    },
+    [state.online, toggle],
   );
   const toggleSelect = useCallback((id: number, checked: boolean) => {
     setSelected((old) => {
@@ -1401,9 +1497,7 @@ export default function App() {
                                 disabled={!state.online || selected.size === 0}
                                 aria-disabled={connectionBatch.busy}
                                 onClick={() =>
-                                  void connectionBatch.start(
-                                    accounts.filter((a) => selected.has(a.id)),
-                                  )
+                                  void connectionBatch.start(selectedAccounts)
                                 }
                               >
                                 <Activity size={12} />
@@ -1411,27 +1505,18 @@ export default function App() {
                               </button>
                               <RecoverSelectedButton
                                 key={connectionKey}
-                                accounts={accounts.filter((a) =>
-                                  selected.has(a.id),
-                                )}
+                                accounts={selectedAccounts}
                                 online={state.online}
                                 report={report}
                               />
                               <button
                                 disabled={
-                                  !state.online ||
-                                  !accounts.some(
-                                    (a) =>
-                                      selected.has(a.id) &&
-                                      resetCreditEligible(a),
-                                  )
+                                  !state.online || !hasSelectedResetCredit
                                 }
                                 onClick={() =>
                                   showDialog({
                                     kind: "reset",
-                                    accounts: accounts.filter((a) =>
-                                      selected.has(a.id),
-                                    ),
+                                    accounts: selectedAccounts,
                                   })
                                 }
                               >
@@ -1443,9 +1528,7 @@ export default function App() {
                                 onClick={() =>
                                   showDialog({
                                     kind: "proxy",
-                                    accounts: accounts.filter((a) =>
-                                      selected.has(a.id),
-                                    ),
+                                    accounts: selectedAccounts,
                                   })
                                 }
                               >
@@ -1458,9 +1541,7 @@ export default function App() {
                                   showDialog({
                                     kind: "templates",
                                     account: null,
-                                    accounts: accounts.filter((a) =>
-                                      selected.has(a.id),
-                                    ),
+                                    accounts: selectedAccounts,
                                   });
                                 }}
                               >
@@ -1473,9 +1554,7 @@ export default function App() {
                                 onClick={() =>
                                   showDialog({
                                     kind: "delete",
-                                    accounts: accounts.filter((a) =>
-                                      selected.has(a.id),
-                                    ),
+                                    accounts: selectedAccounts,
                                   })
                                 }
                               >
@@ -1492,8 +1571,9 @@ export default function App() {
                           accounts={filteredAccounts}
                           online={state.online}
                           selected={selected}
+                          busyAccountId={busy}
                           select={toggleSelect}
-                          schedule={schedule}
+                          schedule={mobileSchedule}
                           accountActions={accountActions}
                           error={handleAccountError}
                           report={report}

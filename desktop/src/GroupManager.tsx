@@ -30,7 +30,6 @@ import { command } from "./bridge";
 import { DegradationBadge } from "./DegradationMark";
 import AccountActions, { type AccountActionItem } from "./AccountActions";
 import {
-  draftConflict,
   membershipZone,
   moveAccount,
   platformGroups,
@@ -52,7 +51,7 @@ type Props = {
   schedule: (account: Account, disabled?: boolean) => ReactNode;
   changed: (count: number, busy: boolean) => void;
 };
-type Drag = { id: number; x: number; y: number; zone?: Zone };
+type Drag = { id: number; zone?: Zone };
 function GroupManagerImpl(props: Props) {
   const { accounts, groups, online, active } = props;
   const [platform, setPlatform] = useState("openai"),
@@ -66,7 +65,9 @@ function GroupManagerImpl(props: Props) {
   const mounted = useRef(true),
     latest = useRef(props),
     draftRef = useRef(drafts),
-    dragRef = useRef<Drag | null>(null);
+    dragRef = useRef<Drag | null>(null),
+    dragCoordsRef = useRef({ x: 0, y: 0 }),
+    ghostRef = useRef<HTMLDivElement>(null);
   const pointer = useRef<{
     id: number;
     x: number;
@@ -78,6 +79,14 @@ function GroupManagerImpl(props: Props) {
   latest.current = props;
   draftRef.current = drafts;
   dragRef.current = drag;
+  const accountById = useMemo(
+    () => new Map(accounts.map((a) => [a.id, a])),
+    [accounts],
+  );
+  const groupById = useMemo(
+    () => new Map(groups.map((g) => [g.id, g])),
+    [groups],
+  );
   const platforms = useMemo(
     () =>
       active
@@ -97,25 +106,51 @@ function GroupManagerImpl(props: Props) {
     )
       setPlatform(platforms[0].platform);
   }, [active, platform, platforms]);
-  const available = active ? platformGroups(groups, platform) : [];
-  const pair = available.slice(0, 2).map((group) => group.id);
+  const available = useMemo(
+    () => (active ? platformGroups(groups, platform) : []),
+    [active, groups, platform],
+  );
+  const pair = useMemo(
+    () => available.slice(0, 2).map((group) => group.id),
+    [available],
+  );
   const pairRef = useRef(pair);
   pairRef.current = pair;
-  const pending = Object.values(drafts),
-    conflicts = active
-      ? pending.filter((d) => draftConflict(d, accounts, groups))
-      : [];
-  const candidates = active
-    ? accounts
-        .filter((a) => a.platform === platform)
-        .sort((a, b) => a.name.localeCompare(b.name, "zh-CN") || a.id - b.id)
-    : [];
-  const members = (a: Account) => drafts[a.id]?.target ?? a.group_ids;
+  const pending = useMemo(() => Object.values(drafts), [drafts]);
+  const conflictIds = useMemo(() => {
+    const out = new Set<number>();
+    if (!active) return out;
+    for (const d of pending) {
+      const account = accountById.get(d.id);
+      if (
+        !account ||
+        account.operation_versions.groups !== d.version ||
+        d.scope.some((id) => groupById.get(id)?.platform !== account.platform)
+      ) {
+        out.add(d.id);
+      }
+    }
+    return out;
+  }, [active, pending, accountById, groupById]);
+  const conflicts = useMemo(
+    () => (active ? pending.filter((d) => conflictIds.has(d.id)) : []),
+    [active, pending, conflictIds],
+  );
+  const candidates = useMemo(
+    () =>
+      active
+        ? accounts
+            .filter((a) => a.platform === platform)
+            .sort(
+              (a, b) => a.name.localeCompare(b.name, "zh-CN") || a.id - b.id,
+            )
+        : [],
+    [active, accounts, platform],
+  );
+  const normalizedQuery = query.trim().toLocaleLowerCase();
   const matches = (a: Account) =>
-    !query.trim() ||
-    `${a.name} #${a.id}`
-      .toLocaleLowerCase()
-      .includes(query.trim().toLocaleLowerCase());
+    !normalizedQuery ||
+    `${a.name} #${a.id}`.toLocaleLowerCase().includes(normalizedQuery);
   const notifyChanges = useEffectEvent(props.changed);
   useEffect(() => {
     notifyChanges(pending.length, busy);
@@ -155,11 +190,11 @@ function GroupManagerImpl(props: Props) {
   }, [accounts]);
 
   function move(id: number, zone: Zone) {
-    const account = latest.current.accounts.find((a) => a.id === id);
+    const account = accountById.get(id);
     if (!account || !latest.current.online || busy) return;
     const before = draftRef.current,
       next = moveAccount(before, account, pairRef.current, zone);
-    if (JSON.stringify(before) !== JSON.stringify(next)) {
+    if (next !== before) {
       setHistory((h) => [...h, before]);
       setDrafts(next);
     }
@@ -181,18 +216,25 @@ function GroupManagerImpl(props: Props) {
     if (!dragging) return;
     let frame = 0;
     const scroll = () => {
-      const current = dragRef.current,
-        surface = document.querySelector(".content") as HTMLElement | null;
-      if (current && surface) {
+      const surface = document.querySelector(".content") as HTMLElement | null;
+      if (dragRef.current && surface) {
         const bounds = surface.getBoundingClientRect();
-        if (current.y < bounds.top + 60) surface.scrollTop -= 9;
-        if (current.y > bounds.bottom - 70) surface.scrollTop += 9;
+        const y = dragCoordsRef.current.y;
+        if (y < bounds.top + 60) surface.scrollTop -= 9;
+        if (y > bounds.bottom - 70) surface.scrollTop += 9;
       }
       frame = requestAnimationFrame(scroll);
     };
     frame = requestAnimationFrame(scroll);
     return () => cancelAnimationFrame(frame);
   }, [dragging]);
+  function updateGhostCoords(x: number, y: number) {
+    dragCoordsRef.current = { x, y };
+    if (ghostRef.current) {
+      ghostRef.current.style.left = `${x + 12}px`;
+      ghostRef.current.style.top = `${y + 12}px`;
+    }
+  }
   function pointerDown(event: React.PointerEvent, id: number) {
     if (!online || busy || event.button !== 0) return;
     event.stopPropagation();
@@ -205,10 +247,12 @@ function GroupManagerImpl(props: Props) {
       timer: undefined as ReturnType<typeof setTimeout> | undefined,
     };
     pointer.current = item;
+    updateGhostCoords(item.x, item.y);
     if (!item.ready)
       item.timer = setTimeout(() => {
         item.ready = true;
-        setDrag({ id, x: item.x, y: item.y });
+        updateGhostCoords(item.x, item.y);
+        setDrag({ id });
       }, 350);
   }
   function pointerMove(event: React.PointerEvent) {
@@ -228,11 +272,15 @@ function GroupManagerImpl(props: Props) {
         !dragRef.current)
     )
       return;
+    updateGhostCoords(event.clientX, event.clientY);
     const zone = document
       .elementFromPoint(event.clientX, event.clientY)
       ?.closest<HTMLElement>("[data-drop-zone]")?.dataset.dropZone as
       Zone | undefined;
-    setDrag({ id: item.id, x: event.clientX, y: event.clientY, zone });
+    const prev = dragRef.current;
+    if (!prev || prev.id !== item.id || prev.zone !== zone) {
+      setDrag({ id: item.id, zone });
+    }
   }
   function pointerUp(event: React.PointerEvent) {
     const item = pointer.current;
@@ -320,7 +368,7 @@ function GroupManagerImpl(props: Props) {
   }
   function card(a: Account) {
     const dirty = drafts[a.id],
-      conflict = dirty && draftConflict(dirty, accounts, groups);
+      conflict = !!dirty && conflictIds.has(a.id);
     return (
       <article
         key={a.id}
@@ -378,6 +426,7 @@ function GroupManagerImpl(props: Props) {
     );
   }
   function zone(zone: Zone, label: string, values: Account[], extra = "") {
+    const matched = normalizedQuery ? values.filter(matches) : values;
     return (
       <section
         className={`membership-zone zone-${zone} ${extra}${drag?.zone === zone ? " drop-over" : ""}`}
@@ -390,8 +439,8 @@ function GroupManagerImpl(props: Props) {
           <span>{values.length}</span>
         </header>
         <div className="membership-accounts">
-          {values.filter(matches).map(card)}
-          {!values.filter(matches).length && (
+          {matched.map(card)}
+          {!matched.length && (
             <span className="group-empty">
               {query ? "无匹配账号" : "暂无账号"}
             </span>
@@ -401,14 +450,27 @@ function GroupManagerImpl(props: Props) {
     );
   }
   if (!active) return null;
-  const groupName = (id: number) =>
-    groups.find((g) => g.id === id)?.name || `#${id}`;
-  const region = (name: Zone) =>
-    candidates.filter((a) => membershipZone(members(a), pair) === name);
-  const unassigned = region("none").filter(
-    (a) => !members(a).some((id) => groups.some((g) => g.id === id)),
-  );
-  const others = region("none").filter((a) => !unassigned.includes(a));
+  const groupName = (id: number) => groupById.get(id)?.name || `#${id}`;
+  const regionLeft: Account[] = [];
+  const regionBoth: Account[] = [];
+  const regionRight: Account[] = [];
+  const unassigned: Account[] = [];
+  const others: Account[] = [];
+  const pairCounts = new Map<number, number>();
+  for (const a of candidates) {
+    const memberIds = drafts[a.id]?.target ?? a.group_ids;
+    for (const pid of pair) {
+      if (memberIds.includes(pid)) {
+        pairCounts.set(pid, (pairCounts.get(pid) ?? 0) + 1);
+      }
+    }
+    const z = membershipZone(memberIds, pair);
+    if (z === "left") regionLeft.push(a);
+    else if (z === "both") regionBoth.push(a);
+    else if (z === "right") regionRight.push(a);
+    else if (memberIds.some((id) => groupById.has(id))) others.push(a);
+    else unassigned.push(a);
+  }
   return (
     <section className="group-manager" hidden={!active} aria-hidden={!active}>
       <div className="group-manager-toolbar">
@@ -467,9 +529,7 @@ function GroupManagerImpl(props: Props) {
                   <strong>{groupName(id)}</strong>
                   <span>#{id}</span>
                 </div>
-                <b>
-                  {candidates.filter((a) => members(a).includes(id)).length}
-                </b>
+                <b>{pairCounts.get(id) ?? 0}</b>
               </div>
             ))}
           </div>
@@ -479,12 +539,12 @@ function GroupManagerImpl(props: Props) {
             {zone(
               "left",
               pair.length > 1 ? `仅 ${groupName(pair[0])}` : groupName(pair[0]),
-              region("left"),
+              regionLeft,
             )}
             {pair.length > 1 && (
               <>
-                {zone("both", "两组共有", region("both"))}
-                {zone("right", `仅 ${groupName(pair[1])}`, region("right"))}
+                {zone("both", "两组共有", regionBoth)}
+                {zone("right", `仅 ${groupName(pair[1])}`, regionRight)}
               </>
             )}
           </div>
@@ -557,7 +617,7 @@ function GroupManagerImpl(props: Props) {
                     <ArrowRight size={14} />
                     {d.target.map(groupName).join("、") || "待分组"}
                   </span>
-                  {draftConflict(d, accounts, groups) && (
+                  {conflictIds.has(d.id) && (
                     <button
                       onClick={() => {
                         setDrafts((all) => {
@@ -591,10 +651,14 @@ function GroupManagerImpl(props: Props) {
       )}
       {drag && (
         <div
+          ref={ghostRef}
           className="group-drag-ghost"
-          style={{ left: drag.x + 12, top: drag.y + 12 }}
+          style={{
+            left: dragCoordsRef.current.x + 12,
+            top: dragCoordsRef.current.y + 12,
+          }}
         >
-          {accounts.find((a) => a.id === drag.id)?.name}
+          {accountById.get(drag.id)?.name}
           <span>#{drag.id}</span>
         </div>
       )}

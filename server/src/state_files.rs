@@ -87,20 +87,12 @@ pub struct PriorityItem {
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct OAuthFile {
     pub version: u32,
-    pub settings: OAuthSettings,
+    pub settings: Fields,
     pub scheduler: IndexMap<String, SchedulerEntry>,
     pub oauth_results: IndexMap<String, Fields>,
     pub pending_events: IndexMap<String, Fields>,
     pub recovery_history: IndexMap<String, Fields>,
     pub daily_test: Fields,
-    #[serde(flatten)]
-    fields: Fields,
-}
-
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct OAuthSettings {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sub2api_admin_token: Option<String>,
     #[serde(flatten)]
     fields: Fields,
 }

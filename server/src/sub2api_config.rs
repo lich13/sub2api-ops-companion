@@ -8,19 +8,27 @@ use crate::{
     error::{Error, Result},
 };
 use serde_json::{json, Value};
-use std::{collections::BTreeMap, sync::LazyLock};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::LazyLock,
+};
 
 pub static CATALOG: LazyLock<Value> = LazyLock::new(|| {
     serde_json::from_str(include_str!("../resources/sub2api-config.json"))
         .expect("reviewed configuration catalogue")
 });
+static FIELDS_BY_PATH: LazyLock<HashMap<&'static str, &'static Value>> = LazyLock::new(|| {
+    CATALOG["fields"]
+        .as_array()
+        .expect("reviewed configuration fields")
+        .iter()
+        .filter_map(|f| f["path"].as_str().map(|path| (path, f)))
+        .collect()
+});
 pub const MAX_CONFIG_BYTES: usize = 1024 * 1024;
 
 pub fn field(path: &str) -> Option<&'static Value> {
-    CATALOG["fields"]
-        .as_array()?
-        .iter()
-        .find(|f| f["path"] == path)
+    FIELDS_BY_PATH.get(path).copied()
 }
 pub fn get<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
     path.split('.').try_fold(value, |v, key| v.get(key))

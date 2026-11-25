@@ -69,6 +69,7 @@ fn active(data: &Value) -> Option<&str> {
 fn task_terminal(status: &str) -> bool {
     !ACTIVE.contains(&status)
 }
+
 fn validate_store(data: &Value) -> Result<()> {
     if data["version"] != 2 || !data["jobs"].is_object() || !data["requests"].is_object() {
         return Err(invalid_state());
@@ -696,14 +697,19 @@ impl PriorityOrders {
     }
     pub fn cancel(&self, id: &str) -> Result<Value> {
         self.get(id, true)?;
+        let mut notified = false;
         self.store.transaction(|data| {
             if active(data) == Some(id) {
                 data["jobs"][id]["cancel_requested"] = true.into();
                 data["jobs"][id]["reason"] = "正在停止，已派发项仍需核对".into();
                 data["jobs"][id]["updated_at"] = self.actions.timestamp().into();
+                notified = true;
             }
             Ok(())
         })?;
+        if notified {
+            self.wake.notify_one();
+        }
         self.get(id, true)
     }
     pub fn recover_startup(&self) -> Result<()> {
@@ -903,6 +909,14 @@ impl PriorityOrders {
                 }
             }
         }
+    }
+    pub(crate) fn has_pending_work(&self) -> bool {
+        if self.running.load(Ordering::Acquire) {
+            return true;
+        }
+        self.store
+            .read_shared()
+            .map_or(true, |data| active(&data).is_some())
     }
     pub async fn tick(self: &Arc<Self>) -> Result<()> {
         if self.actions.supervisor.is_stopping() || self.running.load(Ordering::Acquire) {

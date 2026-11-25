@@ -434,13 +434,23 @@ export function ProxyBatchAdd({
     const slots: ((typeof results)[number] | undefined)[] = new Array(
       parsed.proxies.length,
     );
-    const flushSlots = () => {
+    let rafId = 0;
+    const flushNow = () => {
+      rafId = 0;
       if (alive.current)
         setResults(
           slots.filter(
             (item): item is NonNullable<typeof item> => item !== undefined,
           ),
         );
+    };
+    const scheduleFlush = () => {
+      if (!rafId && alive.current) {
+        rafId =
+          typeof requestAnimationFrame === "function"
+            ? requestAnimationFrame(flushNow)
+            : (setTimeout(flushNow, 16) as unknown as number);
+      }
     };
     await Promise.all(
       Array.from({ length: Math.min(5, parsed.proxies.length) }, async () => {
@@ -469,10 +479,16 @@ export function ProxyBatchAdd({
               : "结果未确认，请刷新核对；未重试";
           }
           slots[index] = { index, address: proxyAddress(proxy), ok, message };
-          flushSlots();
+          scheduleFlush();
         }
       }),
     );
+    if (rafId) {
+      if (typeof cancelAnimationFrame === "function")
+        cancelAnimationFrame(rafId);
+      else clearTimeout(rafId);
+      rafId = 0;
+    }
     if (alive.current) {
       for (let i = next; i < parsed.proxies.length; i++) {
         slots[i] = {
@@ -482,7 +498,7 @@ export function ProxyBatchAdd({
           message: "连接已断开，未提交",
         };
       }
-      flushSlots();
+      flushNow();
       setBusy(false);
     }
     lock.current = false;

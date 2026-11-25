@@ -180,12 +180,12 @@ pub fn quota_result(
     out
 }
 const EVIDENCE_COLUMNS: &str = "e.id,e.created_at,e.error_owner,e.error_phase,\
-to_jsonb(e)->>'model' AS model,to_jsonb(e)->>'requested_model' AS requested_model,\
-to_jsonb(e)->>'upstream_model' AS upstream_model,to_jsonb(e)->>'provider_error_code' AS provider_error_code,\
-to_jsonb(e)->>'provider_error_type' AS provider_error_type,to_jsonb(e)->>'error_type' AS error_type,\
-to_jsonb(e)->>'upstream_error_message' AS upstream_error_message,to_jsonb(e)->>'error_message' AS error_message,\
-to_jsonb(e)->'error_body' AS error_body,to_jsonb(e)->'upstream_error_detail' AS upstream_error_detail,\
-to_jsonb(e)->'upstream_errors' AS upstream_errors";
+ej.jb->>'model' AS model,ej.jb->>'requested_model' AS requested_model,\
+ej.jb->>'upstream_model' AS upstream_model,ej.jb->>'provider_error_code' AS provider_error_code,\
+ej.jb->>'provider_error_type' AS provider_error_type,ej.jb->>'error_type' AS error_type,\
+ej.jb->>'upstream_error_message' AS upstream_error_message,ej.jb->>'error_message' AS error_message,\
+ej.jb->'error_body' AS error_body,ej.jb->'upstream_error_detail' AS upstream_error_detail,\
+ej.jb->'upstream_errors' AS upstream_errors";
 
 pub async fn upstream_evidence(db: &Database, row: &Value, at: DateTime<Utc>) -> Result<Value> {
     let (Some(start), Some(reset)) = (
@@ -203,11 +203,13 @@ pub async fn upstream_evidence(db: &Database, row: &Value, at: DateTime<Utc>) ->
         at.into(),
     ];
     let sql = format!(
-        "SELECT {EVIDENCE_COLUMNS} FROM ops_error_logs e \
+        "SELECT {EVIDENCE_COLUMNS} FROM (SELECT * FROM ops_error_logs e \
          WHERE e.account_id=$1 AND e.upstream_status_code=429 AND coalesce(e.error_owner,'') <> 'client' \
          AND NOT {local} AND e.created_at >= $2 AND e.created_at <= $3 \
          AND NOT EXISTS (SELECT 1 FROM ops_error_logs x WHERE x.account_id=e.account_id AND x.created_at>e.created_at AND x.upstream_status_code IN (401,402)) \
-         ORDER BY e.created_at DESC,e.id DESC LIMIT 20",
+         ORDER BY e.created_at DESC,e.id DESC LIMIT 20) e \
+         CROSS JOIN LATERAL (SELECT to_jsonb(e) AS jb OFFSET 0) ej \
+         ORDER BY e.created_at DESC,e.id DESC",
         local = sql::ERRORS_LOCAL_THROTTLE
     );
     let candidates = db
@@ -269,10 +271,12 @@ pub async fn upstream_evidence_batch(
             AND (e.upstream_status_code IN (401,402) OR {local} OR (e.error_owner='client' AND (e.status_code=429 OR e.upstream_status_code=429)))) AS excluded
         FROM jsonb_to_recordset($1::jsonb) AS w(account_id bigint,since timestamptz)
         LEFT JOIN LATERAL (SELECT {EVIDENCE_COLUMNS}
-            FROM ops_error_logs e WHERE e.account_id=w.account_id AND e.upstream_status_code=429 AND coalesce(e.error_owner,'')<>'client'
+            FROM (SELECT * FROM ops_error_logs e WHERE e.account_id=w.account_id AND e.upstream_status_code=429 AND coalesce(e.error_owner,'')<>'client'
             AND NOT {local} AND e.created_at>=w.since AND e.created_at<=$2
             AND NOT EXISTS (SELECT 1 FROM ops_error_logs x WHERE x.account_id=e.account_id AND x.created_at>e.created_at AND x.upstream_status_code IN (401,402))
-            ORDER BY e.created_at DESC,e.id DESC LIMIT 20) c ON TRUE
+            ORDER BY e.created_at DESC,e.id DESC LIMIT 20) e
+            CROSS JOIN LATERAL (SELECT to_jsonb(e) AS jb OFFSET 0) ej
+            ORDER BY e.created_at DESC,e.id DESC) c ON TRUE
         ORDER BY w.account_id ASC, c.created_at DESC, c.id DESC",local=sql::ERRORS_LOCAL_THROTTLE);
     let results = db
         .all(&sql, &[crate::db::Param::Json(json!(windows)), at.into()])

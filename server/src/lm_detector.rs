@@ -23,6 +23,7 @@ const PREVIOUS_BUNDLED_REVISIONS: &[&str] = &[
     "7663b6580cb6c9123da72e9218e700537544f1db",
     "f920cfe2ff0bab94989ce01ac061e21425b6e321",
 ];
+const COMPACT_BANK_FILE: &str = "unified_bank.compact.json";
 const FILES: [(&str, &[u8], usize); 3] = [
     (
         "unified_bank.json",
@@ -51,6 +52,55 @@ fn valid_revision(v: &str) -> bool {
 }
 fn unavailable() -> Error {
     Error::new(503, "LM Detector 检测库无效或不兼容，请更新检测库或服务端")
+}
+
+fn compact_unified_bank(raw: &[u8]) -> Result<Vec<u8>> {
+    let bank: Value = serde_json::from_slice(raw).map_err(|_| unavailable())?;
+    let models = bank["models"]
+        .as_array()
+        .ok_or_else(unavailable)?
+        .iter()
+        .map(|model| {
+            let mut compact = serde_json::Map::with_capacity(5);
+            for key in [
+                "id",
+                "display_name",
+                "family",
+                "family_name",
+                "response_count",
+            ] {
+                compact.insert(key.into(), model.get(key).ok_or_else(unavailable)?.clone());
+            }
+            Ok(Value::Object(compact))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    serde_json::to_vec(&json!({"built_at": bank["built_at"], "models": models}))
+        .map_err(|_| unavailable())
+}
+
+fn public_files_metadata(files: &Value) -> Value {
+    let Some(map) = files.as_object() else {
+        return files.clone();
+    };
+    let mut cleaned = map.clone();
+    for entry in cleaned.values_mut() {
+        if let Some(obj) = entry.as_object_mut() {
+            obj.shift_remove("compact_sha256");
+        }
+    }
+    Value::Object(cleaned)
+}
+
+fn disk_file_name(name: &'static str, meta: &Value) -> &'static str {
+    if name == "unified_bank.json"
+        && meta["files"]["unified_bank.json"]
+            .get("compact_sha256")
+            .is_some()
+    {
+        COMPACT_BANK_FILE
+    } else {
+        name
+    }
 }
 
 pub struct Snapshot {
@@ -91,7 +141,10 @@ impl Snapshot {
                 .into_iter()
                 .zip([bank_bytes, detector_bytes, tokenizer_bytes])
         {
-            if bytes.len() > limit || sha256(bytes) != meta["files"][name]["sha256"] {
+            let expected = meta["files"][name]
+                .get("compact_sha256")
+                .unwrap_or(&meta["files"][name]["sha256"]);
+            if bytes.len() > limit || expected.as_str() != Some(sha256(bytes).as_str()) {
                 return Err(unavailable());
             }
         }
@@ -107,7 +160,8 @@ impl Snapshot {
             .map(|m| m.id.clone())
             .collect();
         let tokenizer = tokenizer::Bank::parse(tokenizer_bytes)?;
-        let version = json!({"revision":meta["revision"],"sha256":meta["files"]["shared_detector.bin"]["sha256"],"files":meta["files"],"built_at":detector.built_at(),"tokenizer_built_at":tokenizer.built_at(),"analyzer_version":manifest()["analyzer_version"]});
+        let public_files = public_files_metadata(&meta["files"]);
+        let version = json!({"revision":meta["revision"],"sha256":meta["files"]["shared_detector.bin"]["sha256"],"files":public_files,"built_at":detector.built_at(),"tokenizer_built_at":tokenizer.built_at(),"analyzer_version":manifest()["analyzer_version"]});
         Ok(Self {
             detector,
             tokenizer,
@@ -116,8 +170,8 @@ impl Snapshot {
         })
     }
     fn load(path: &Path, meta: &Value) -> Result<Self> {
-        let bank_bytes =
-            std::fs::read(path.join("unified_bank.json")).map_err(|_| unavailable())?;
+        let bank_bytes = std::fs::read(path.join(disk_file_name("unified_bank.json", meta)))
+            .map_err(|_| unavailable())?;
         let detector_bytes =
             std::fs::read(path.join("shared_detector.bin")).map_err(|_| unavailable())?;
         let tokenizer_bytes =
@@ -424,8 +478,16 @@ impl Bank {
             if git_blob_digest(&bytes) != blob {
                 return Err(unavailable());
             }
-            files[name] = json!({"sha256":sha256(&bytes),"git_blob":blob,"bytes":bytes.len()});
-            std::fs::write(stage.path().join(name), bytes)?;
+            let mut entry = json!({"sha256":sha256(&bytes),"git_blob":blob,"bytes":bytes.len()});
+            let (disk_name, disk_bytes) = if name == "unified_bank.json" {
+                let compact = compact_unified_bank(&bytes)?;
+                entry["compact_sha256"] = sha256(&compact).into();
+                (COMPACT_BANK_FILE, compact)
+            } else {
+                (name, bytes)
+            };
+            files[name] = entry;
+            std::fs::write(stage.path().join(disk_name), disk_bytes)?;
         }
         let meta = json!({"revision":revision,"files":files});
         self.activate(stage, meta).await
@@ -446,12 +508,26 @@ impl Bank {
             let check = meta.clone();
             crate::supervision::join(tokio::task::spawn_blocking(move || -> Result<Snapshot> {
                 for (name, _, limit) in FILES {
-                    let bytes = std::fs::read(stage_path.join(name)).map_err(|_| unavailable())?;
-                    if bytes.len() > limit || sha256(&bytes) != check["files"][name]["sha256"] {
+                    let disk_name = disk_file_name(name, &check);
+                    let bytes =
+                        std::fs::read(stage_path.join(disk_name)).map_err(|_| unavailable())?;
+                    let expected = check["files"][name]
+                        .get("compact_sha256")
+                        .unwrap_or(&check["files"][name]["sha256"]);
+                    if bytes.len() > limit || expected.as_str() != Some(sha256(&bytes).as_str()) {
                         return Err(unavailable());
                     }
                 }
-                Snapshot::load(&dest_path, &check)
+                let existing_meta: Value = serde_json::from_slice(
+                    &std::fs::read(dest_path.join("manifest.json")).map_err(|_| unavailable())?,
+                )
+                .map_err(|_| unavailable())?;
+                if public_files_metadata(&existing_meta["files"])
+                    != public_files_metadata(&check["files"])
+                {
+                    return Err(unavailable());
+                }
+                Snapshot::load(&dest_path, &existing_meta)
             }))
             .await
             .map_err(|_| unavailable())??
@@ -538,7 +614,9 @@ impl Bank {
                 let name = file.file_name();
                 if !file.file_type()?.is_file()
                     || !(name == "manifest.json"
-                        || FILES.iter().any(|(known, _, _)| name == *known))
+                        || FILES
+                            .iter()
+                            .any(|(known, _, _)| name == disk_file_name(known, &meta)))
                 {
                     files.clear();
                     break;
@@ -905,6 +983,22 @@ mod tests {
         let upstream = MockUpstream::serve(update_responses(&revision, true)).await;
         upstream.update(&bank).await.unwrap();
         assert_eq!(bank.revision().unwrap(), revision);
+        assert!(!bank.root.join(&revision).join("unified_bank.json").exists());
+        let synced_bank_len = std::fs::metadata(bank.root.join(&revision).join(COMPACT_BANK_FILE))
+            .unwrap()
+            .len();
+        assert!(
+            synced_bank_len < 65_536,
+            "synced {COMPACT_BANK_FILE} must be compacted on disk, got {synced_bank_len} bytes"
+        );
+        let pub_status = bank.public().await.unwrap();
+        assert!(pub_status["version"]["files"]["unified_bank.json"]
+            .get("compact_sha256")
+            .is_none());
+        assert_eq!(
+            pub_status["version"]["files"]["unified_bank.json"]["bytes"],
+            FULL_BANK.len() + 1
+        );
         assert_eq!(pinned.version["revision"], REVISION);
         assert_eq!(
             upstream
@@ -921,13 +1015,57 @@ mod tests {
         let restarted = test_bank(root.path());
         next.update(&restarted).await.unwrap();
         assert_eq!(restarted.revision().unwrap(), revision);
-        assert!(!restarted.root.join(next_revision).exists());
+        assert!(!restarted.root.join(&next_revision).exists());
         assert!(!next
             .requests
             .lock()
             .unwrap()
             .iter()
             .any(|p| p.contains("/data/")));
+
+        // Verify unreferenced compacted remote directories are reclaimed cleanly on later updates.
+        let mut responses_r3 = update_responses(&"3".repeat(40), true);
+        let mut responses_r4 = update_responses(&"4".repeat(40), true);
+        for (rev, map, extra) in [
+            ("3".repeat(40), &mut responses_r3, b"  " as &[u8]),
+            ("4".repeat(40), &mut responses_r4, b"   " as &[u8]),
+        ] {
+            let mut changed_bank = FULL_BANK.to_vec();
+            changed_bank.extend_from_slice(extra);
+            let blob = git_blob_digest(&changed_bank);
+            map.insert(
+                format!("/{rev}/data/unified_bank.json"),
+                (200, changed_bank),
+            );
+            let tree = "d".repeat(40);
+            let mut tree_val: Value =
+                serde_json::from_slice(&map[&format!("/git/trees/{tree}")].1).unwrap();
+            for entry in tree_val["tree"].as_array_mut().unwrap() {
+                if entry["path"] == "unified_bank.json" {
+                    entry["sha"] = blob.clone().into();
+                }
+            }
+            map.insert(
+                format!("/git/trees/{tree}"),
+                (200, serde_json::to_vec(&tree_val).unwrap()),
+            );
+        }
+        MockUpstream::serve(responses_r3)
+            .await
+            .update(&restarted)
+            .await
+            .unwrap();
+        MockUpstream::serve(responses_r4)
+            .await
+            .update(&restarted)
+            .await
+            .unwrap();
+        assert!(
+            !restarted.root.join(&revision).exists(),
+            "superseded compacted remote revision directory should be pruned"
+        );
+        assert!(restarted.root.join("3".repeat(40)).is_dir());
+        assert!(restarted.root.join("4".repeat(40)).is_dir());
     }
     #[tokio::test]
     async fn unreadable_active_cache_does_not_prevent_a_verified_new_revision() {

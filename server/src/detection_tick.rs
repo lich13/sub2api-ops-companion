@@ -3,7 +3,7 @@ use crate::{
     degradation_rechecks,
     error::{Error, Result},
     model_detection::{Detection, TARGET},
-    model_downgrade::{bank_contains, is_downgrade, valid_report},
+    model_downgrade::{is_downgrade, valid_report},
     model_tests::ACTIVE,
     security::safe_error,
 };
@@ -70,25 +70,22 @@ impl Detection {
         if !processed.is_empty() {
             let now = datetime(self.now());
             self.store.transaction(|data| {
+                let consumed = data["consumed"].as_object_mut().unwrap();
                 for key in &processed {
-                    data["consumed"]
-                        .as_object_mut()
-                        .unwrap()
+                    consumed
                         .entry(key.clone())
                         .or_insert_with(|| now.clone().into());
                 }
-                while data["consumed"].as_object().unwrap().len() > 10000 {
-                    let first = data["consumed"]
-                        .as_object()
-                        .unwrap()
-                        .keys()
-                        .next()
-                        .unwrap()
-                        .clone();
-                    data["consumed"]
-                        .as_object_mut()
-                        .unwrap()
-                        .shift_remove(&first);
+                if consumed.len() > 10000 {
+                    let mut drop_count = consumed.len() - 10000;
+                    consumed.retain(|_, _| {
+                        if drop_count > 0 {
+                            drop_count -= 1;
+                            false
+                        } else {
+                            true
+                        }
+                    });
                 }
                 Ok(())
             })?;
@@ -442,10 +439,11 @@ impl Detection {
                             || crate::verdict_policy::lm_contains(&bank, value)
                     })
             } else {
+                let compiled = self.tests.bank.compiled();
                 if crate::verdict_policy::relaxed(value) {
-                    crate::verdict_policy::bank_contains(&self.tests.bank.snapshot().0, value)
+                    compiled.contains_policy(value)
                 } else {
-                    bank_contains(&self.tests.bank.snapshot().0, TARGET)
+                    compiled.contains_exact(TARGET)
                 }
             };
             if !allowed || !ready {

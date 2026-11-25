@@ -12,8 +12,8 @@ export type Drafts = Record<number, GroupDraft>;
 export type Zone = "left" | "both" | "right" | "none";
 export const ids = (values: number[]) =>
   [...new Set(values)].sort((a, b) => a - b);
-const sameIds = (a: number[], b: number[]) =>
-  JSON.stringify(ids(a)) === JSON.stringify(ids(b));
+const sameSortedIds = (a: number[], b: number[]) =>
+  a.length === b.length && a.every((value, index) => value === b[index]);
 export function platformGroups(groups: Group[], platform: string) {
   return groups
     .filter((g) => g.platform === platform)
@@ -42,18 +42,32 @@ export function moveAccount(
     ...targetPair,
   ]);
   const original = existing?.original ?? ids(account.group_ids);
-  const next = { ...drafts };
-  if (sameIds(original, target)) delete next[account.id];
-  else
-    next[account.id] = {
+  if (sameSortedIds(original, target)) {
+    if (!existing) return drafts;
+    const next = { ...drafts };
+    delete next[account.id];
+    return next;
+  }
+  const scope = ids([...(existing?.scope ?? []), ...pair]);
+  if (
+    existing &&
+    existing.name === account.name &&
+    sameSortedIds(existing.target, target) &&
+    sameSortedIds(existing.scope, scope)
+  ) {
+    return drafts;
+  }
+  return {
+    ...drafts,
+    [account.id]: {
       id: account.id,
       name: account.name,
       version: existing?.version ?? account.operation_versions.groups,
       original,
       target,
-      scope: ids([...(existing?.scope ?? []), ...pair]),
-    };
-  return next;
+      scope,
+    },
+  };
 }
 export function membershipZone(memberships: number[], pair: number[]): Zone {
   const left = memberships.includes(pair[0]),

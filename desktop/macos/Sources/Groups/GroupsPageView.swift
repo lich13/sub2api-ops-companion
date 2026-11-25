@@ -18,21 +18,12 @@ public struct GroupsPageView: View {
         self.store = store
     }
 
-    private var platforms: [String] {
+    private func computePlatforms() -> [String] {
         let all = store.accounts.map(\.platform) + store.groups.compactMap(\.platform)
         return PlatformMeta.sortPlatforms(all)
     }
 
-    private var activePlatform: String {
-        if platforms.contains(selectedPlatform) { return selectedPlatform }
-        return platforms.first ?? "openai"
-    }
-
-    private var availableGroups: [Group] {
-        GroupDraftLogic.platformGroups(store.groups, platform: activePlatform)
-    }
-
-    private var pair: [Int] {
+    private func computePair(availableGroups: [Group]) -> [Int] {
         guard !availableGroups.isEmpty else { return [] }
         if availableGroups.count == 1 {
             return [availableGroups[0].id]
@@ -47,9 +38,9 @@ public struct GroupsPageView: View {
         return [first]
     }
 
-    private var candidates: [Account] {
+    private func computeCandidates(platform: String) -> [Account] {
         store.accounts
-            .filter { $0.platform == activePlatform }
+            .filter { $0.platform == platform }
             .sorted { a, b in
                 let cmp = a.name.localizedStandardCompare(b.name)
                 if cmp != .orderedSame { return cmp == .orderedAscending }
@@ -57,12 +48,18 @@ public struct GroupsPageView: View {
             }
     }
 
-    private var pendingDrafts: [GroupDraftEntry] {
+    private func buildGroupById() -> [Int: Group] {
+        Dictionary(store.groups.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+    }
+
+    private func sortedPendingDrafts() -> [GroupDraftEntry] {
         drafts.values.sorted { $0.id < $1.id }
     }
 
-    private var conflictDrafts: [GroupDraftEntry] {
-        pendingDrafts.filter { GroupDraftLogic.hasConflict(draft: $0, accounts: store.accounts, groups: store.groups) }
+    private func conflictDrafts(pending: [GroupDraftEntry], groupById: [Int: Group]) -> [GroupDraftEntry] {
+        pending.filter {
+            GroupDraftLogic.hasConflict(draft: $0, accountById: store.accountById, groupById: groupById)
+        }
     }
 
     private func memberships(for account: Account) -> [Int] {
@@ -75,13 +72,61 @@ public struct GroupsPageView: View {
         return "\(account.name) #\(account.id)".lowercased().contains(q)
     }
 
-    private func groupName(_ id: Int) -> String {
-        store.groups.first(where: { $0.id == id })?.name ?? "#\(id)"
+    private func groupName(_ id: Int, groupById: [Int: Group]) -> String {
+        groupById[id]?.name ?? "#\(id)"
+    }
+
+    private struct PartitionedCandidates {
+        var leftItems: [Account] = []
+        var bothItems: [Account] = []
+        var rightItems: [Account] = []
+        var unassigned: [Account] = []
+        var otherGroups: [Account] = []
+        var leftTotal: Int = 0
+        var rightTotal: Int = 0
+    }
+
+    private func partitionCandidates(candidates: [Account], pair: [Int], validGroupIds: Set<Int>) -> PartitionedCandidates {
+        var out = PartitionedCandidates()
+        for acc in candidates {
+            let mem = memberships(for: acc)
+            let zone = GroupDraftLogic.membershipZone(memberships: mem, pair: pair)
+            switch zone {
+            case .left:
+                out.leftItems.append(acc)
+                out.leftTotal += 1
+            case .both:
+                out.bothItems.append(acc)
+                out.leftTotal += 1
+                out.rightTotal += 1
+            case .right:
+                out.rightItems.append(acc)
+                out.rightTotal += 1
+            case .none:
+                if mem.contains(where: { validGroupIds.contains($0) }) {
+                    out.otherGroups.append(acc)
+                } else {
+                    out.unassigned.append(acc)
+                }
+            }
+        }
+        return out
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            toolbar
+        let allPlatforms = computePlatforms()
+        let activePlatform = allPlatforms.contains(selectedPlatform) ? selectedPlatform : (allPlatforms.first ?? "openai")
+        let availableGroups = GroupDraftLogic.platformGroups(store.groups, platform: activePlatform)
+        let activePair = computePair(availableGroups: availableGroups)
+        let gMap = buildGroupById()
+        let partitioned = partitionCandidates(
+            candidates: computeCandidates(platform: activePlatform),
+            pair: activePair,
+            validGroupIds: Set(gMap.keys)
+        )
+        let pending = drafts.isEmpty ? [] : sortedPendingDrafts()
+        return VStack(alignment: .leading, spacing: 18) {
+            toolbar(platforms: allPlatforms, activePlatform: activePlatform)
 
             if availableGroups.isEmpty {
                 HStack(spacing: 10) {
@@ -93,14 +138,14 @@ public struct GroupsPageView: View {
                 .foregroundStyle(DS.muted)
                 .padding(.vertical, 28)
             } else {
-                vennHeading
-                vennMap
+                vennHeading(availableGroups: availableGroups, pair: activePair, partitioned: partitioned, groupById: gMap)
+                vennMap(pair: activePair, partitioned: partitioned, groupById: gMap)
             }
 
-            poolSection
+            poolSection(partitioned: partitioned, pair: activePair, groupById: gMap)
 
-            if !pendingDrafts.isEmpty {
-                draftFooterPanel
+            if !pending.isEmpty {
+                draftFooterPanel(pending: pending, groupById: gMap)
             }
 
             if !statusMessage.isEmpty {
@@ -139,7 +184,7 @@ public struct GroupsPageView: View {
         }
     }
 
-    private var toolbar: some View {
+    private func toolbar(platforms: [String], activePlatform: String) -> some View {
         HStack(spacing: 10) {
             LinearSegmentedTabs(
                 items: platforms.map { pid in
@@ -178,17 +223,17 @@ public struct GroupsPageView: View {
         }
     }
 
-    private var vennHeading: some View {
+    private func vennHeading(availableGroups: [Group], pair: [Int], partitioned: PartitionedCandidates, groupById: [Int: Group]) -> some View {
         HStack(alignment: .center, spacing: 16) {
             if let first = pair.first {
-                groupHeaderColumn(id: first, isRight: false)
+                groupHeaderColumn(id: first, count: partitioned.leftTotal, isRight: false, groupById: groupById)
             }
 
             if pair.count > 1 {
                 HStack(spacing: 6) {
                     if availableGroups.count > 2 {
                         LinearSelect(
-                            label: groupName(pair[0]),
+                            label: groupName(pair[0], groupById: groupById),
                             accessibilityTitle: "左侧分组",
                             height: 28,
                             compactFont: true,
@@ -206,7 +251,7 @@ public struct GroupsPageView: View {
                             .font(DS.fontCompact)
                             .foregroundStyle(DS.muted)
                         LinearSelect(
-                            label: groupName(pair[1]),
+                            label: groupName(pair[1], groupById: groupById),
                             accessibilityTitle: "右侧分组",
                             height: 28,
                             compactFont: true,
@@ -224,20 +269,19 @@ public struct GroupsPageView: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                groupHeaderColumn(id: pair[1], isRight: true)
+                groupHeaderColumn(id: pair[1], count: partitioned.rightTotal, isRight: true, groupById: groupById)
             }
         }
         .padding(.horizontal, 4)
     }
 
-    private func groupHeaderColumn(id: Int, isRight: Bool) -> some View {
-        let count = candidates.filter { memberships(for: $0).contains(id) }.count
-        return HStack(spacing: 10) {
+    private func groupHeaderColumn(id: Int, count: Int, isRight: Bool, groupById: [Int: Group]) -> some View {
+        HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 4)
                 .fill(isRight ? DS.groupTeal : DS.accent)
                 .frame(width: 8, height: 28)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(groupName(id))
+                Text(groupName(id, groupById: groupById))
                     .font(DS.fontDialogTitle)
                     .foregroundStyle(DS.ink)
                     .lineLimit(1)
@@ -254,12 +298,8 @@ public struct GroupsPageView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private var vennMap: some View {
-        let leftItems = candidates.filter { GroupDraftLogic.membershipZone(memberships: memberships(for: $0), pair: pair) == .left }
-        let bothItems = candidates.filter { GroupDraftLogic.membershipZone(memberships: memberships(for: $0), pair: pair) == .both }
-        let rightItems = candidates.filter { GroupDraftLogic.membershipZone(memberships: memberships(for: $0), pair: pair) == .right }
-
-        return ZStack {
+    private func vennMap(pair: [Int], partitioned: PartitionedCandidates, groupById: [Int: Group]) -> some View {
+        ZStack {
             GeometryReader { geo in
                 let outlineW = pair.count > 1 ? geo.size.width * (2.0 / 3.0) : geo.size.width
                 ZStack(alignment: .leading) {
@@ -280,13 +320,13 @@ public struct GroupsPageView: View {
             }
 
             if pair.count == 1 {
-                zoneColumn(zone: .left, title: groupName(pair[0]), items: leftItems, accentTitle: false)
+                zoneColumn(zone: .left, title: groupName(pair[0], groupById: groupById), items: partitioned.leftItems, accentTitle: false, pair: pair, groupById: groupById)
                     .padding(20)
             } else {
                 HStack(alignment: .top, spacing: 16) {
-                    zoneColumn(zone: .left, title: "仅 \(groupName(pair[0]))", items: leftItems, accentTitle: false)
-                    zoneColumn(zone: .both, title: "两组共有", items: bothItems, accentTitle: true)
-                    zoneColumn(zone: .right, title: "仅 \(groupName(pair[1]))", items: rightItems, accentTitle: false)
+                    zoneColumn(zone: .left, title: "仅 \(groupName(pair[0], groupById: groupById))", items: partitioned.leftItems, accentTitle: false, pair: pair, groupById: groupById)
+                    zoneColumn(zone: .both, title: "两组共有", items: partitioned.bothItems, accentTitle: true, pair: pair, groupById: groupById)
+                    zoneColumn(zone: .right, title: "仅 \(groupName(pair[1], groupById: groupById))", items: partitioned.rightItems, accentTitle: false, pair: pair, groupById: groupById)
                 }
                 .padding(20)
             }
@@ -294,23 +334,17 @@ public struct GroupsPageView: View {
         .frame(minHeight: 240)
     }
 
-    private var poolSection: some View {
-        let noneRegion = candidates.filter { GroupDraftLogic.membershipZone(memberships: memberships(for: $0), pair: pair) == .none }
-        let unassigned = noneRegion.filter { acc in
-            !memberships(for: acc).contains { gid in store.groups.contains(where: { $0.id == gid }) }
-        }
-        let otherGroups = noneRegion.filter { acc in !unassigned.contains(where: { $0.id == acc.id }) }
-
-        return VStack(alignment: .leading, spacing: 14) {
+    private func poolSection(partitioned: PartitionedCandidates, pair: [Int], groupById: [Int: Group]) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
             Rectangle().fill(DS.line).frame(height: 1)
-            poolGrid(title: "待分组", items: unassigned)
-            if !otherGroups.isEmpty {
-                poolGrid(title: "其他分组", items: otherGroups)
+            poolGrid(title: "待分组", items: partitioned.unassigned, pair: pair, groupById: groupById)
+            if !partitioned.otherGroups.isEmpty {
+                poolGrid(title: "其他分组", items: partitioned.otherGroups, pair: pair, groupById: groupById)
             }
         }
     }
 
-    private func zoneColumn(zone: GroupMembershipZone, title: String, items: [Account], accentTitle: Bool) -> some View {
+    private func zoneColumn(zone: GroupMembershipZone, title: String, items: [Account], accentTitle: Bool, pair: [Int], groupById: [Int: Group]) -> some View {
         let visible = items.filter(matchesQuery)
         let isHover = hoveredZone == zone
         return VStack(alignment: .leading, spacing: 10) {
@@ -333,7 +367,7 @@ public struct GroupsPageView: View {
                     .padding(.vertical, 36)
             } else {
                 ForEach(visible) { acc in
-                    accountCard(acc)
+                    accountCard(acc, pair: pair, groupById: groupById)
                 }
             }
             Spacer(minLength: 0)
@@ -355,7 +389,7 @@ public struct GroupsPageView: View {
         }
     }
 
-    private func poolGrid(title: String, items: [Account]) -> some View {
+    private func poolGrid(title: String, items: [Account], pair: [Int], groupById: [Int: Group]) -> some View {
         let visible = items.filter(matchesQuery)
         let cols = [
             GridItem(.flexible(minimum: 220), spacing: 10),
@@ -381,7 +415,7 @@ public struct GroupsPageView: View {
             } else {
                 LazyVGrid(columns: cols, spacing: 10) {
                     ForEach(visible) { acc in
-                        accountCard(acc)
+                        accountCard(acc, pair: pair, groupById: groupById)
                     }
                 }
             }
@@ -394,16 +428,19 @@ public struct GroupsPageView: View {
         }
     }
 
-    private func accountCard(_ account: Account) -> some View {
+    private func accountCard(_ account: Account, pair: [Int], groupById: [Int: Group]) -> some View {
         let dirty = drafts[account.id]
-        let conflict = dirty.map { GroupDraftLogic.hasConflict(draft: $0, accounts: store.accounts, groups: store.groups) } ?? false
+        let conflict = dirty.map {
+            GroupDraftLogic.hasConflict(draft: $0, accountById: store.accountById, groupById: groupById)
+        } ?? false
 
         var moveEntries: [LinearMenuEntry] = []
         if let first = pair.first {
+            let firstName = groupName(first, groupById: groupById)
             moveEntries.append(
                 LinearMenuEntry(
                     id: "left",
-                    title: pair.count > 1 ? "移入 仅 \(groupName(first))" : "移入 \(groupName(first))"
+                    title: pair.count > 1 ? "移入 仅 \(firstName)" : "移入 \(firstName)"
                 ) {
                     move(accountId: account.id, to: .left)
                 }
@@ -413,7 +450,7 @@ public struct GroupsPageView: View {
             moveEntries.append(LinearMenuEntry(id: "both", title: "移入 两组共有") {
                 move(accountId: account.id, to: .both)
             })
-            moveEntries.append(LinearMenuEntry(id: "right", title: "移入 仅 \(groupName(pair[1]))") {
+            moveEntries.append(LinearMenuEntry(id: "right", title: "移入 仅 \(groupName(pair[1], groupById: groupById))") {
                 move(accountId: account.id, to: .right)
             })
         }
@@ -494,14 +531,15 @@ public struct GroupsPageView: View {
         .draggable("\(account.id)")
     }
 
-    private var draftFooterPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
+    private func draftFooterPanel(pending: [GroupDraftEntry], groupById: [Int: Group]) -> some View {
+        let conflicts = conflictDrafts(pending: pending, groupById: groupById)
+        return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Button {
                     expandedDraftList.toggle()
                 } label: {
                     HStack(spacing: 5) {
-                        Text("\(pendingDrafts.count) 个账号待应用")
+                        Text("\(pending.count) 个账号待应用")
                             .font(DS.fontCompactSemibold)
                             .monospacedDigit()
                             .foregroundStyle(DS.ink)
@@ -532,28 +570,30 @@ public struct GroupsPageView: View {
                 .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
                 .disabled(saving)
 
-                Button(saving ? "正在保存…" : "应用变更 \(pendingDrafts.count)") {
+                Button(saving ? "正在保存…" : "应用变更 \(pending.count)") {
                     Task { await applyDrafts() }
                 }
                 .buttonStyle(LinearButtonStyle(variant: .primary, compact: true))
-                .disabled(!store.state.online || saving || !conflictDrafts.isEmpty)
+                .disabled(!store.state.online || saving || !conflicts.isEmpty)
             }
 
             if expandedDraftList {
                 Rectangle().fill(DS.line).frame(height: 1)
-                ForEach(pendingDrafts) { d in
-                    let isConflict = GroupDraftLogic.hasConflict(draft: d, accounts: store.accounts, groups: store.groups)
+                ForEach(pending) { d in
+                    let isConflict = GroupDraftLogic.hasConflict(draft: d, accountById: store.accountById, groupById: groupById)
+                    let origNames = d.original.map { groupName($0, groupById: groupById) }.joined(separator: "、")
+                    let targetNames = d.target.map { groupName($0, groupById: groupById) }.joined(separator: "、")
                     HStack(spacing: 8) {
                         Text("\(d.name) #\(d.id)")
                             .font(DS.fontCompactSemibold)
                             .foregroundStyle(DS.ink)
-                        Text(d.original.map(groupName).joined(separator: "、").isEmpty ? "待分组" : d.original.map(groupName).joined(separator: "、"))
+                        Text(origNames.isEmpty ? "待分组" : origNames)
                             .font(DS.fontCompact)
                             .foregroundStyle(DS.muted)
                         Image(systemName: "arrow.right")
                             .font(DS.iconFont(10))
                             .foregroundStyle(DS.muted)
-                        Text(d.target.map(groupName).joined(separator: "、").isEmpty ? "待分组" : d.target.map(groupName).joined(separator: "、"))
+                        Text(targetNames.isEmpty ? "待分组" : targetNames)
                             .font(DS.fontCompactMedium)
                             .foregroundStyle(DS.accent)
                         Spacer()
@@ -575,8 +615,14 @@ public struct GroupsPageView: View {
     }
 
     private func move(accountId: Int, to zone: GroupMembershipZone) {
-        guard store.state.online, !saving, let account = store.accounts.first(where: { $0.id == accountId }) else { return }
-        let next = GroupDraftLogic.moveAccount(drafts: drafts, account: account, pair: pair, zone: zone)
+        guard store.state.online,
+              !saving,
+              let account = store.accountById[accountId] ?? store.accounts.first(where: { $0.id == accountId })
+        else { return }
+        let allPlatforms = computePlatforms()
+        let activePlatform = allPlatforms.contains(selectedPlatform) ? selectedPlatform : (allPlatforms.first ?? "openai")
+        let activePair = computePair(availableGroups: GroupDraftLogic.platformGroups(store.groups, platform: activePlatform))
+        let next = GroupDraftLogic.moveAccount(drafts: drafts, account: account, pair: activePair, zone: zone)
         if next != drafts {
             history.append(drafts)
             drafts = next
@@ -585,8 +631,9 @@ public struct GroupsPageView: View {
     }
 
     private func applyDrafts() async {
-        guard store.state.online, !saving, !pendingDrafts.isEmpty else { return }
-        if !conflictDrafts.isEmpty {
+        guard store.state.online, !saving, !drafts.isEmpty else { return }
+        let snapshotPending = sortedPendingDrafts()
+        if !conflictDrafts(pending: snapshotPending, groupById: buildGroupById()).isEmpty {
             statusMessage = "账号或分组已变化，请先处理冲突"
             expandedDraftList = true
             return
@@ -595,7 +642,6 @@ public struct GroupsPageView: View {
         statusMessage = ""
         defer { saving = false }
 
-        let snapshotPending = pendingDrafts
         let targets: [[String: JSONValue]] = snapshotPending.map { d in
             [
                 "account_id": .int(Int64(d.id)),

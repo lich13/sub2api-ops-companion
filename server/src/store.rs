@@ -56,10 +56,15 @@ impl From<&fs::Metadata> for FileStamp {
     }
 }
 
+enum Defaults<S> {
+    Eager(Result<Document<S>>),
+    Lazy(fn() -> Value),
+}
+
 struct Inner<S> {
     path: PathBuf,
     lock_path: PathBuf,
-    defaults: Result<Document<S>>,
+    defaults: Defaults<S>,
     decode: Decoder<S>,
     default_revision: u64,
     existed: AtomicBool,
@@ -96,20 +101,45 @@ impl Store {
         Self::with_lock(path, lock_path, defaults, validate)
     }
 
+    pub(crate) fn new_lazy(
+        path: impl Into<PathBuf>,
+        defaults: fn() -> Value,
+        validate: Validator,
+    ) -> Self {
+        let path = path.into();
+        let lock_path = path.with_extension("lock");
+        let existed = path.exists() || lock_path.exists();
+        Self(Arc::new(Inner {
+            path,
+            lock_path,
+            defaults: Defaults::Lazy(defaults),
+            decode: |_| Ok(()),
+            default_revision: next_cache_revision(),
+            existed: AtomicBool::new(existed),
+            mutex: Mutex::new(()),
+            validate,
+            load: |_| Ok(false),
+            cache: Mutex::new(None),
+        }))
+    }
+
     pub fn with_lock(
         path: PathBuf,
         lock_path: PathBuf,
         defaults: Value,
         validate: Validator,
     ) -> Self {
-        Self::typed(
-            path,
-            lock_path,
-            defaults,
-            validate,
-            |_| Ok(false),
-            |_| Ok(()),
-        )
+        Self::with_load(path, lock_path, defaults, validate, |_| Ok(false))
+    }
+
+    pub(crate) fn with_load(
+        path: PathBuf,
+        lock_path: PathBuf,
+        defaults: Value,
+        validate: Validator,
+        load: Loader,
+    ) -> Self {
+        Self::typed(path, lock_path, defaults, validate, load, |_| Ok(()))
     }
 
     pub fn policy(path: impl Into<PathBuf>, mut defaults: Value) -> Self {
@@ -132,10 +162,10 @@ impl<S: Clone> Store<S> {
         Self(Arc::new(Inner {
             path,
             lock_path,
-            defaults: state.map(|state| Document {
+            defaults: Defaults::Eager(state.map(|state| Document {
                 raw: Arc::new(defaults),
                 state: Arc::new(state),
-            }),
+            })),
             decode,
             default_revision: next_cache_revision(),
             existed: AtomicBool::new(existed),
@@ -144,6 +174,20 @@ impl<S: Clone> Store<S> {
             load,
             cache: Mutex::new(None),
         }))
+    }
+
+    fn default_document(&self) -> Result<Document<S>> {
+        match &self.0.defaults {
+            Defaults::Eager(doc) => doc.clone(),
+            Defaults::Lazy(build) => {
+                let raw = build();
+                let state = (self.0.decode)(&raw)?;
+                Ok(Document {
+                    raw: Arc::new(raw),
+                    state: Arc::new(state),
+                })
+            }
+        }
     }
 
     pub fn path(&self) -> &Path {
@@ -189,7 +233,7 @@ impl<S: Clone> Store<S> {
                 if error.kind() == std::io::ErrorKind::NotFound
                     && !self.0.existed.load(Ordering::Acquire) =>
             {
-                return Ok((self.0.default_revision, self.0.defaults.clone()?, false));
+                return Ok((self.0.default_revision, self.default_document()?, false));
             }
             Err(_) => {
                 *self.0.cache.lock().map_err(|_| Error::internal())? = None;
@@ -241,7 +285,7 @@ impl<S: Clone> Store<S> {
                 if e.kind() == std::io::ErrorKind::NotFound
                     && !self.0.existed.load(Ordering::Acquire) =>
             {
-                Ok((self.0.default_revision, self.0.defaults.clone()?, false))
+                Ok((self.0.default_revision, self.default_document()?, false))
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 Err(Error::new(503, "控制状态文件丢失"))
@@ -254,20 +298,45 @@ impl<S: Clone> Store<S> {
         self.transaction_validated(action, self.0.validate)
     }
 
+    pub(crate) fn transaction_versioned<T>(
+        &self,
+        action: impl FnOnce(&mut Value) -> Result<T>,
+    ) -> Result<(Option<u64>, T)> {
+        blocking_file_io(|| {
+            self.transaction_blocking(
+                |previous| {
+                    let mut raw = (*previous.raw).clone();
+                    let result = action(&mut raw)?;
+                    Ok((Some(raw), result))
+                },
+                |_, after| (self.0.validate)(after),
+            )
+        })
+    }
+
     pub(crate) fn transaction_validated<T>(
         &self,
         action: impl FnOnce(&mut Value) -> Result<T>,
         validate: impl FnOnce(&Value) -> Result<()>,
+    ) -> Result<T> {
+        self.transaction_diff_validated(action, |_, after| validate(after))
+    }
+
+    pub(crate) fn transaction_diff_validated<T>(
+        &self,
+        action: impl FnOnce(&mut Value) -> Result<T>,
+        validate: impl FnOnce(&Value, &Value) -> Result<()>,
     ) -> Result<T> {
         blocking_file_io(|| {
             self.transaction_blocking(
                 |previous| {
                     let mut raw = (*previous.raw).clone();
                     let result = action(&mut raw)?;
-                    Ok((raw, result))
+                    Ok((Some(raw), result))
                 },
                 validate,
             )
+            .map(|(_, result)| result)
         })
     }
 
@@ -280,26 +349,28 @@ impl<S: Clone> Store<S> {
                 |previous| {
                     let mut state = (*previous.state).clone();
                     let result = action(&mut state)?;
-                    let mut raw = (*previous.raw).clone();
-                    if state != *previous.state {
-                        apply_state_changes(
-                            &mut raw,
-                            serde_json::to_value(&*previous.state)?,
-                            serde_json::to_value(state)?,
-                        );
+                    if state == *previous.state {
+                        return Ok((None, result));
                     }
-                    Ok((raw, result))
+                    let mut raw = (*previous.raw).clone();
+                    apply_state_changes(
+                        &mut raw,
+                        serde_json::to_value(&*previous.state)?,
+                        serde_json::to_value(state)?,
+                    );
+                    Ok((Some(raw), result))
                 },
-                self.0.validate,
+                |_, after| (self.0.validate)(after),
             )
+            .map(|(_, result)| result)
         })
     }
 
     fn transaction_blocking<T>(
         &self,
-        action: impl FnOnce(&Document<S>) -> Result<(Value, T)>,
-        validate: impl FnOnce(&Value) -> Result<()>,
-    ) -> Result<T> {
+        action: impl FnOnce(&Document<S>) -> Result<(Option<Value>, T)>,
+        validate: impl FnOnce(&Value, &Value) -> Result<()>,
+    ) -> Result<(Option<u64>, T)> {
         let _mutex = self.0.mutex.lock().map_err(|_| Error::internal())?;
         let parent = self.0.path.parent().ok_or_else(Error::internal)?;
         fs::create_dir_all(parent)?;
@@ -312,21 +383,27 @@ impl<S: Clone> Store<S> {
         private_permissions(&lock)?;
         // Recheck the current file stamp under the cross-process lock. Reuse
         // validated bytes only while that identity is unchanged.
-        let (_, previous, migrated) = self.read_snapshot()?;
-        let (value, result) = action(&previous)?;
+        let (prev_rev, previous, migrated) = self.read_snapshot()?;
+        let (maybe_value, result) = action(&previous)?;
         let first_write = !self.0.existed.load(Ordering::Acquire);
-        if migrated || first_write || value != *previous.raw {
+        let changed = maybe_value.as_ref().is_some_and(|v| v != &*previous.raw);
+        let committed_rev = if migrated || first_write || changed {
+            let value = maybe_value.unwrap_or_else(|| (*previous.raw).clone());
             if migrated || first_write {
                 (self.0.validate)(&value)?;
-            } else {
-                validate(&value)?;
+            }
+            if changed {
+                validate(&previous.raw, &value)?;
             }
             let state = (self.0.decode)(&value)?;
             write_json(&self.0.path, &value)?;
+            let mut next_rev = None;
             let cached = fs::metadata(&self.0.path).ok().map(|metadata| {
+                let rev = next_cache_revision();
+                next_rev = Some(rev);
                 (
                     FileStamp::from(&metadata),
-                    next_cache_revision(),
+                    rev,
                     Document {
                         raw: Arc::new(value),
                         state: Arc::new(state),
@@ -335,10 +412,13 @@ impl<S: Clone> Store<S> {
                 )
             });
             *self.0.cache.lock().map_err(|_| Error::internal())? = cached;
-        }
+            next_rev
+        } else {
+            Some(prev_rev)
+        };
         self.0.existed.store(true, Ordering::Release);
         // File drop releases the OS lock on every error path too.
-        Ok(result)
+        Ok((committed_rev, result))
     }
 }
 

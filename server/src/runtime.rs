@@ -386,8 +386,20 @@ impl Runtime {
                         "capacity" => Duration::from_secs((1_u64 << (failures + 1)).min(30)),
                         _ => interval,
                     };
+                    let suspend_until_wake = failures == 0
+                        && match kind {
+                            "operations" => !runtime.operations.has_pending_work(),
+                            "priority_orders" => !runtime.priorities.has_pending_work(),
+                            _ => false,
+                        };
                     tokio::select! {
-                        _ = tokio::time::sleep(delay) => {},
+                        _ = async {
+                            if suspend_until_wake {
+                                std::future::pending::<()>().await;
+                            } else {
+                                tokio::time::sleep(delay).await;
+                            }
+                        } => {},
                         _ = stop.changed() => {},
                         _ = async {
                             match kind {

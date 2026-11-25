@@ -267,5 +267,76 @@ struct BridgeAndLayoutTests {
         #expect(reader.queuedAccountIdsForTest.isEmpty)
         #expect(reader.error(for: child, accountById: lookupV2) == "暂不可用")
     }
+
+    @Test("ViewState reuses cached Snapshot on unchanged revision while updating observed_at and invalidating on change")
+    func viewStateCachedSnapshotReuse() throws {
+        let cachedSnap = Snapshot(
+            observed_at: "2026-10-01T08:00:00Z",
+            accounts: [Account(id: 7, name: "Cached-Codex")],
+            groups: [Group(id: 1, name: "Main")]
+        )
+        let context = CachedSnapshotContext(
+            connectionKey: "3|https://prod.example.invalid",
+            snapshotRevision: 9001,
+            snapshot: cachedSnap
+        )
+
+        // Same connectionKey + snapshotRevision, updated observed_at, sentinel accounts that would differ if decoded
+        let sameRevJSON = Data("""
+        {
+          "platform":"macos",
+          "connection_revision":3,
+          "snapshot_revision":9001,
+          "connected":true,
+          "online":true,
+          "error":"",
+          "snapshot":{"observed_at":"2026-10-01T08:00:08Z","accounts":[]},
+          "preferences":{"base_url":"https://prod.example.invalid","connections":[]}
+        }
+        """.utf8)
+        let decoder = JSONDecoder()
+        decoder.userInfo[ViewState.cachedSnapshotUserInfoKey] = context
+        let reused = try decoder.decode(ViewState.self, from: sameRevJSON)
+        #expect(reused.snapshot?.accounts.map(\.name) == ["Cached-Codex"])
+        #expect(reused.snapshot?.observed_at == "2026-10-01T08:00:08Z")
+
+        // Different snapshot_revision decodes fresh payload
+        let freshState = ViewState(
+            platform: "macos",
+            foreground: true,
+            initializing: false,
+            connection_revision: 3,
+            snapshot_revision: 9002,
+            connected: true,
+            online: true,
+            error: "",
+            upstream_connection: nil,
+            snapshot: Snapshot(
+                observed_at: "2026-10-01T08:00:16Z",
+                accounts: [Account(id: 8, name: "Fresh-Codex")],
+                groups: [Group(id: 1, name: "Main")]
+            ),
+            preferences: Preferences(base_url: "https://prod.example.invalid", connections: [])
+        )
+        let nextRevJSON = try JSONEncoder().encode(freshState)
+        let refreshed = try decoder.decode(ViewState.self, from: nextRevJSON)
+        #expect(refreshed.snapshot?.accounts.map(\.name) == ["Fresh-Codex"])
+
+        // Null snapshot clears snapshot even if revision header was set
+        let nullSnapJSON = Data("""
+        {
+          "platform":"macos",
+          "connection_revision":3,
+          "snapshot_revision":9001,
+          "connected":false,
+          "online":false,
+          "error":"",
+          "snapshot":null,
+          "preferences":{"base_url":"https://prod.example.invalid","connections":[]}
+        }
+        """.utf8)
+        let cleared = try decoder.decode(ViewState.self, from: nullSnapJSON)
+        #expect(cleared.snapshot == nil)
+    }
 }
 }

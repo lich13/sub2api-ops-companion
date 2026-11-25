@@ -11,6 +11,7 @@ pub(crate) fn valid_report(report: &Value) -> bool {
         && !string(&report["prediction"]).trim().is_empty()
 }
 
+#[cfg(test)]
 pub(crate) fn bank_contains(bank: &Value, model: &str) -> bool {
     bank["models"]
         .as_array()

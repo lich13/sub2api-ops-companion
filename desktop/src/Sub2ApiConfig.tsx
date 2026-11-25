@@ -1,6 +1,6 @@
 import { useEffectEvent, useCallback } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Eye, EyeOff, RefreshCw, Search, X } from "lucide-react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight, Eye, EyeOff, RefreshCw, Search, X } from "lucide-react";
 import { parseDocument, stringify } from "yaml";
 import { api } from "./bridge";
 import { errorMessage as errorText, ignoredFailure } from "./bridgeError";
@@ -272,7 +272,10 @@ function FieldEditor({
   );
 }
 
-function ConfigFieldRow({
+const EMPTY_CHILDREN: ConfigField[] = [];
+const EMPTY_ISSUES: Issue[] = [];
+
+const ConfigFieldRow = memo(function ConfigFieldRow({
   field,
   current,
   change,
@@ -281,9 +284,9 @@ function ConfigFieldRow({
   expand,
   blocked,
   locked,
-  edit,
-  remove,
-  undo,
+  onEdit,
+  onRemove,
+  onUndo,
 }: {
   field: ConfigField;
   current?: FieldValue;
@@ -293,14 +296,23 @@ function ConfigFieldRow({
   expand: boolean;
   blocked: boolean;
   locked: boolean;
-  edit: (value: unknown, explicit?: boolean) => void;
-  remove: () => void;
-  undo: () => void;
+  onEdit: (field: ConfigField, value: unknown, explicit?: boolean) => void;
+  onRemove: (field: ConfigField) => void;
+  onUndo: (path: string) => void;
 }) {
   const [details, setDetails] = useState(false);
   useEffect(() => {
     if (expand) setDetails(true);
   }, [expand]);
+  const handleEdit = useCallback(
+    (val: unknown, explicit?: boolean) => onEdit(field, val, explicit),
+    [onEdit, field],
+  );
+  const handleRemove = useCallback(() => onRemove(field), [onRemove, field]);
+  const handleUndo = useCallback(
+    () => onUndo(field.path),
+    [onUndo, field.path],
+  );
   const configured = change ? !change.remove : !!current?.configured;
   const value = change
     ? change.remove
@@ -373,7 +385,7 @@ function ConfigFieldRow({
           value={value}
           disabled={blocked || !editable || overridden}
           invalid={issues.length > 0}
-          change={edit}
+          change={handleEdit}
         />
         <div id={`${id}-help`} className="config-value-meta">
           <span>
@@ -398,12 +410,12 @@ function ConfigFieldRow({
         {(change || (editable && configured)) && (
           <div className="config-field-actions">
             {editable && configured && (
-              <button type="button" disabled={blocked} onClick={remove}>
+              <button type="button" disabled={blocked} onClick={handleRemove}>
                 恢复默认
               </button>
             )}
             {change && (
-              <button type="button" disabled={locked} onClick={undo}>
+              <button type="button" disabled={locked} onClick={handleUndo}>
                 撤销此项
               </button>
             )}
@@ -416,7 +428,10 @@ function ConfigFieldRow({
         onToggle={(e) => setDetails(e.currentTarget.open)}
       >
         <summary>
-          完整说明{children.length ? `与内部字段（${children.length}）` : ""}
+          <ChevronRight size={14} className="config-summary-arrow" />
+          <span>
+            完整说明{children.length ? `与内部字段（${children.length}）` : ""}
+          </span>
         </summary>
         <div className="config-detail-body">
           <p>{field.description}</p>
@@ -438,7 +453,7 @@ function ConfigFieldRow({
               <button
                 type="button"
                 disabled={blocked}
-                onClick={() => edit(field.default_value, true)}
+                onClick={() => handleEdit(field.default_value, true)}
               >
                 写入默认值
               </button>
@@ -448,7 +463,7 @@ function ConfigFieldRow({
       </details>
     </article>
   );
-}
+});
 
 export default function Sub2ApiConfig({
   active,
@@ -590,26 +605,29 @@ export default function Sub2ApiConfig({
   }, [applying]);
   const changes = Object.values(draft),
     blocked = busy || applying || !online || !document?.editable;
-  function edit(field: ConfigField, value: unknown, explicit = false) {
-    const numeric = field.type === "integer" || field.type === "number";
-    setDraft((old) => {
-      const next = { ...old },
-        current = document?.values[field.path];
-      if (
-        !explicit &&
-        (current?.configured
-          ? equal(current.yaml, value)
-          : numeric && value === null && !field.nullable
-            ? true
-            : field.has_default && equal(field.default_value, value))
-      )
-        delete next[field.path];
-      else next[field.path] = { path: field.path, remove: false, value };
-      return next;
-    });
-    setIssues([]);
-    setMessage("");
-  }
+  const edit = useCallback(
+    (field: ConfigField, value: unknown, explicit = false) => {
+      const numeric = field.type === "integer" || field.type === "number";
+      setDraft((old) => {
+        const next = { ...old },
+          current = documentRef.current?.values[field.path];
+        if (
+          !explicit &&
+          (current?.configured
+            ? equal(current.yaml, value)
+            : numeric && value === null && !field.nullable
+              ? true
+              : field.has_default && equal(field.default_value, value))
+        )
+          delete next[field.path];
+        else next[field.path] = { path: field.path, remove: false, value };
+        return next;
+      });
+      setIssues((old) => (old.length ? [] : old));
+      setMessage("");
+    },
+    [],
+  );
   function payload() {
     return {
       expected_revision: document!.revision,
@@ -713,29 +731,38 @@ export default function Sub2ApiConfig({
       if (alive.current) setBusy(false);
     }
   }
+  const searchIndex = useMemo(() => {
+    const index = new Map<string, string>();
+    for (const f of document?.catalog.fields ?? []) {
+      index.set(f.path, `${f.path} ${f.description}`.toLowerCase());
+    }
+    return index;
+  }, [document]);
   const childrenByPath = useMemo(() => {
     const fields = document?.catalog.fields ?? [];
+    const internalFields = fields.filter(
+      (c) => c.internal && c.status === "internal",
+    );
     return new Map(
       fields
         .filter((f) => !f.internal)
-        .map((f) => [
-          f.path,
-          fields.filter(
-            (c) =>
-              c.internal &&
-              c.status === "internal" &&
-              containsPath(f.path, c.path),
-          ),
-        ]),
+        .map((f) => {
+          const matched = internalFields.filter((c) =>
+            containsPath(f.path, c.path),
+          );
+          return [f.path, matched.length ? matched : EMPTY_CHILDREN] as const;
+        }),
     );
   }, [document]);
   const needle = query.trim().toLowerCase();
   const matches = useCallback(
     (field: ConfigField) =>
-      `${field.path} ${field.description}`.toLowerCase().includes(needle),
-    [needle],
+      (searchIndex.get(field.path) ?? "").includes(needle),
+    [searchIndex, needle],
   );
-  const fields = useMemo(() => {
+  const configuredOnly = filter === "configured";
+  const changedOnly = filter === "changed";
+  const baseFields = useMemo(() => {
     if (!document) return [];
     return document.catalog.fields.filter((field) => {
       const value = document.values[field.path];
@@ -748,12 +775,27 @@ export default function Sub2ApiConfig({
         (!needle ||
           matches(field) ||
           childrenByPath.get(field.path)?.some(matches)) &&
-        (filter === "all" ||
-          (filter === "configured" && value?.configured) ||
-          (filter === "changed" && !!draft[field.path]))
+        (!configuredOnly || value?.configured)
       );
     });
-  }, [document, needle, matches, childrenByPath, filter, draft]);
+  }, [document, needle, matches, childrenByPath, configuredOnly]);
+  const fields = useMemo(
+    () =>
+      changedOnly ? baseFields.filter((f) => !!draft[f.path]) : baseFields,
+    [baseFields, changedOnly, draft],
+  );
+  const issuesByPath = useMemo(() => {
+    if (!issues.length || !document) return new Map<string, Issue[]>();
+    const map = new Map<string, Issue[]>();
+    for (const f of document.catalog.fields) {
+      if (f.internal) continue;
+      const matched = issues.filter((issue) =>
+        containsPath(f.path, issue.path),
+      );
+      if (matched.length) map.set(f.path, matched);
+    }
+    return map;
+  }, [issues, document]);
   const groupCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const field of fields)
@@ -820,27 +862,36 @@ export default function Sub2ApiConfig({
     input?.focus({ preventScroll: true });
     input?.scrollIntoView?.({ block: "nearest" });
   }, [focusTarget, document?.catalog.fields]);
-  function undo(path: string) {
+  const undo = useCallback((path: string) => {
     setDraft((old) => {
       const next = { ...old };
       delete next[path];
       return next;
     });
-    setIssues((old) => old.filter((issue) => !containsPath(path, issue.path)));
-    setMessage("");
-  }
-  function remove(field: ConfigField) {
-    if (document?.values[field.path]?.configured)
-      setDraft((old) => ({
-        ...old,
-        [field.path]: { path: field.path, remove: true },
-      }));
-    else undo(field.path);
     setIssues((old) =>
-      old.filter((issue) => !containsPath(field.path, issue.path)),
+      old.some((issue) => containsPath(path, issue.path))
+        ? old.filter((issue) => !containsPath(path, issue.path))
+        : old,
     );
     setMessage("");
-  }
+  }, []);
+  const remove = useCallback(
+    (field: ConfigField) => {
+      if (documentRef.current?.values[field.path]?.configured)
+        setDraft((old) => ({
+          ...old,
+          [field.path]: { path: field.path, remove: true },
+        }));
+      else undo(field.path);
+      setIssues((old) =>
+        old.some((issue) => containsPath(field.path, issue.path))
+          ? old.filter((issue) => !containsPath(field.path, issue.path))
+          : old,
+      );
+      setMessage("");
+    },
+    [undo],
+  );
   function scrollToSection(id: string) {
     rootRef.current?.ownerDocument
       .getElementById(`config-section-${id}`)
@@ -1056,7 +1107,9 @@ export default function Sub2ApiConfig({
                               field={field}
                               current={document.values[field.path]}
                               change={draft[field.path]}
-                              children={childrenByPath.get(field.path) ?? []}
+                              children={
+                                childrenByPath.get(field.path) ?? EMPTY_CHILDREN
+                              }
                               expand={
                                 (!!needle &&
                                   (childrenByPath
@@ -1067,16 +1120,14 @@ export default function Sub2ApiConfig({
                                   focusTarget.path !== field.path &&
                                   containsPath(field.path, focusTarget.path))
                               }
-                              issues={issues.filter((issue) =>
-                                containsPath(field.path, issue.path),
-                              )}
+                              issues={
+                                issuesByPath.get(field.path) ?? EMPTY_ISSUES
+                              }
                               blocked={blocked}
                               locked={busy || applying}
-                              edit={(value, explicit) =>
-                                edit(field, value, explicit)
-                              }
-                              remove={() => remove(field)}
-                              undo={() => undo(field.path)}
+                              onEdit={edit}
+                              onRemove={remove}
+                              onUndo={undo}
                             />
                           ))}
                         </div>

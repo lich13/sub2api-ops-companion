@@ -243,12 +243,20 @@ impl std::io::Write for Fnv1aHasher {
 struct HashBuffer {
     hasher: Fnv1aHasher,
     buf: Vec<u8>,
+    skip_opening_brace: bool,
+    hashed_bytes: usize,
 }
 
 impl std::io::Write for HashBuffer {
     fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
         let _ = self.hasher.write(data)?;
-        self.buf.extend_from_slice(data);
+        self.hashed_bytes += data.len();
+        if self.skip_opening_brace && !data.is_empty() {
+            self.skip_opening_brace = false;
+            self.buf.extend_from_slice(&data[1..]);
+        } else {
+            self.buf.extend_from_slice(data);
+        }
         Ok(data.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {
@@ -258,9 +266,21 @@ impl std::io::Write for HashBuffer {
 
 fn encode_snapshot(mut data: Value) -> Option<(u64, Arc<Box<serde_json::value::RawValue>>)> {
     let observed = data.as_object_mut().and_then(|m| m.remove("observed_at"));
+    let obs_str = observed.as_ref().and_then(Value::as_str);
+    let mut buf = Vec::with_capacity(1024);
+    let skip_opening_brace = if let Some(obs) = obs_str {
+        buf.extend_from_slice(b"{\"observed_at\":");
+        serde_json::to_writer(&mut buf, obs).ok()?;
+        buf.push(b',');
+        true
+    } else {
+        false
+    };
     let mut writer = HashBuffer {
         hasher: Fnv1aHasher::default(),
-        buf: Vec::with_capacity(1024),
+        buf,
+        skip_opening_brace,
+        hashed_bytes: 0,
     };
     serde_json::to_writer(&mut writer, &data).ok()?;
     let revision = if writer.hasher.0 == 0 {
@@ -268,18 +288,13 @@ fn encode_snapshot(mut data: Value) -> Option<(u64, Arc<Box<serde_json::value::R
     } else {
         writer.hasher.0
     };
-    let body = String::from_utf8(writer.buf).ok()?;
-    let raw_str = match observed.as_ref().and_then(Value::as_str) {
-        Some(obs) => {
-            let prefix = format!("{{\"observed_at\":{}", serde_json::to_string(obs).ok()?);
-            if body.len() > 2 {
-                format!("{prefix},{}", &body[1..])
-            } else {
-                format!("{prefix}}}")
-            }
-        }
-        None => body,
-    };
+    if obs_str.is_some() && writer.hashed_bytes == 2 {
+        // Empty `{}` object: replace trailing `,}` with `}`
+        let len = writer.buf.len();
+        writer.buf[len - 2] = b'}';
+        writer.buf.pop();
+    }
+    let raw_str = String::from_utf8(writer.buf).ok()?;
     let raw = serde_json::value::RawValue::from_string(raw_str).ok()?;
     Some((revision, Arc::new(raw)))
 }

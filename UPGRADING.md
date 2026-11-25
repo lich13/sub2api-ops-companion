@@ -1,5 +1,12 @@
 # 升级与回退
 
+## 0.1.107 服务端资源精简、慢首字增量水位线与双端稳定性修复
+
+从 0.1.106 升级时，先更新 Companion 和配置宿主，再更新 macOS 与 Android 客户端。沿用现有 HTTP 接口、业务数据库结构及 JSON 状态格式，无需数据库迁移或调整 Nginx。
+
+- **LM Detector 在线检测库落盘格式**：0.1.107 在线拉取新的远程检测库版本 `<rev>` 时，验证上游完整文件摘要与 Git blob 后仅将离线判定所需的模型元数据写入 `lm-detector/<rev>/unified_bank.compact.json`（`manifest.json` 额外记录 `compact_sha256`，对外接口与报告中的 `version.files` 继续展示上游原始文件摘要与字节数）；升级前数据目录中已存在的 `lm-detector/<rev>/unified_bank.json` 远程缓存目录继续直接兼容读取，无需重新下载。
+- **回退 0.1.106 说明**：若 0.1.107 运行期间未通过在线更新切换到新的 LM Detector 远程版本（仍使用内置版本 `33fb43f26670be0ed7817ab13e5c4c4731ccb76a` 或升级前已有的 `unified_bank.json` 缓存目录），可直接使用保留的 `rollback-0.1.106` 镜像与当前数据回退。若在 0.1.107 运行期间已在线更新至新的远程版本 `<rev>`（目录内为 `unified_bank.compact.json`），0.1.106 只识别完整的 `unified_bank.json`；回退前请先停止服务，将 `lm-detector/state.json` 的 `revision` 改回 `33fb43f26670be0ed7817ab13e5c4c4731ccb76a`（或本地仍保留完整 `unified_bank.json` 的上一缓存版本）并移走 `lm-detector/<rev>` 精简目录，启动 0.1.106 后如需最新远程库可在「模型测试」中点击「检查更新」重新拉取完整文件。ModelTrace 指纹库与其他业务状态文件可直接沿用。
+
 ## 0.1.104 Sub2API 0.2.25 同步、协议契约收口与草稿安全修复
 
 从 0.1.103 升级时，先更新 Companion 和配置宿主，再更新 macOS 与 Android 客户端。沿用现有 HTTP 接口（新增 `POST /api/desktop/v1/account-creation/upstream-group` 仅供 0.1.104 客户端创建账号时手动同步上游分组使用）、JSON 状态文件、指纹库与业务数据库结构，无需数据库迁移或调整 Nginx。回退 0.1.103 可直接使用保留的 `rollback-0.1.103` 镜像与当前数据。

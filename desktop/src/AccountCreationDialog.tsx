@@ -129,6 +129,10 @@ export default function AccountCreationDialog({
     errorRiskKey = errorRisks.join(",");
   const [previewModels, setPreviewModels] = useState<string[]>([]),
     [previewSelected, setPreviewSelected] = useState<string[]>([]);
+  const previewSelectedSet = useMemo(
+    () => new Set(previewSelected),
+    [previewSelected],
+  );
   const [modelsPreviewed, setModelsPreviewed] = useState(false);
   const scope = useRef(0),
     mounted = useRef(true),
@@ -1132,7 +1136,7 @@ export default function AccountCreationDialog({
                                 <label key={model}>
                                   <input
                                     type="checkbox"
-                                    checked={previewSelected.includes(model)}
+                                    checked={previewSelectedSet.has(model)}
                                     onChange={(e) =>
                                       setPreviewSelected((old) =>
                                         e.target.checked

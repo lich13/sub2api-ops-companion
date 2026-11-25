@@ -338,9 +338,17 @@ public struct ProxyBatchAddSheet: View {
     public let onSaved: (String) -> Void
     public let onClose: () -> Void
 
+    private struct BatchResultItem: Identifiable, Equatable {
+        let id: Int
+        let address: String
+        var ok: Bool?
+        var message: String
+    }
+
     @State private var text: String = ""
+    @State private var parsed: ProxyLineParseOutput = ProxyDataParser.parseProxyLines("")
     @State private var busy: Bool = false
-    @State private var results: [(address: String, ok: Bool, message: String)] = []
+    @State private var results: [BatchResultItem] = []
 
     public init(online: Bool, onSaved: @escaping (String) -> Void, onClose: @escaping () -> Void) {
         self.online = online
@@ -348,28 +356,40 @@ public struct ProxyBatchAddSheet: View {
         self.onClose = onClose
     }
 
-    private var parsed: ProxyLineParseOutput {
-        ProxyDataParser.parseProxyLines(text)
+    private var completedResults: [BatchResultItem] {
+        results.filter { $0.ok != nil }
     }
 
     public var body: some View {
         LinearModalCard(
             title: "批量添加 IP",
-            subtitle: "每行一条，格式：protocol://[user:pass@]host:port（支持 http / https / socks5 / socks5h）",
             width: 540,
             closeDisabled: busy,
             onClose: onClose
         ) {
-            TextEditor(text: $text)
-                .font(DS.fontMono12)
-                .foregroundStyle(DS.ink)
-                .scrollContentBackground(.hidden)
-                .frame(height: 156)
-                .padding(6)
-                .background(DS.surface)
-                .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
-                .disabled(busy || !results.isEmpty)
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $text)
+                    .font(DS.fontMono12)
+                    .foregroundStyle(DS.ink)
+                    .scrollContentBackground(.hidden)
+                    .frame(height: 156)
+                    .padding(6)
+                    .background(DS.surface)
+                    .overlay(RoundedRectangle(cornerRadius: DS.cornerRadius).strokeBorder(DS.line, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: DS.cornerRadius))
+                    .disabled(busy || !results.isEmpty)
+                    .onChange(of: text) { _, next in
+                        parsed = ProxyDataParser.parseProxyLines(next)
+                    }
+                if text.isEmpty {
+                    Text(verbatim: "http://host:port\nsocks5://user:pass@host:port")
+                        .font(DS.fontMono12)
+                        .foregroundStyle(DS.muted)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 14)
+                        .allowsHitTesting(false)
+                }
+            }
 
             HStack(spacing: 10) {
                 Text("有效 \(parsed.proxies.count) 个")
@@ -384,23 +404,25 @@ public struct ProxyBatchAddSheet: View {
             .font(DS.fontResetTime)
             .monospacedDigit()
 
-            if !results.isEmpty {
+            if !completedResults.isEmpty {
                 LinearBoundedScrollView(maxHeight: 160) {
                     VStack(alignment: .leading, spacing: 6) {
-                        ForEach(Array(results.enumerated()), id: \.offset) { _, item in
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(verbatim: item.address)
-                                    .font(DS.fontPriorityMeta).monospacedDigit()
-                                    .foregroundStyle(DS.ink)
-                                if item.ok {
-                                    Text(item.message)
-                                        .font(DS.fontResetTime)
-                                        .foregroundStyle(DS.good)
-                                } else {
-                                    DiagnosticTextView(text: item.message)
+                        ForEach(results) { item in
+                            if let ok = item.ok {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(verbatim: item.address)
+                                        .font(DS.fontPriorityMeta).monospacedDigit()
+                                        .foregroundStyle(DS.ink)
+                                    if ok {
+                                        Text(item.message)
+                                            .font(DS.fontResetTime)
+                                            .foregroundStyle(DS.good)
+                                    } else {
+                                        DiagnosticTextView(text: item.message)
+                                    }
                                 }
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
@@ -411,7 +433,7 @@ public struct ProxyBatchAddSheet: View {
                 if results.isEmpty {
                     onClose()
                 } else {
-                    let okCount = results.filter(\.ok).count
+                    let okCount = results.filter { $0.ok == true }.count
                     onSaved("批量添加完成：成功 \(okCount) / \(results.count)")
                 }
             }
@@ -437,15 +459,16 @@ public struct ProxyBatchAddSheet: View {
         busy = true
         defer { busy = false }
         guard online, !items.isEmpty else { return }
-        typealias BatchOutcome = (index: Int, address: String, ok: Bool, message: String)
-        var ordered: [BatchOutcome?] = Array(repeating: nil, count: items.count)
+        results = items.enumerated().map { idx, entry in
+            BatchResultItem(id: idx, address: entry.address, ok: nil, message: "")
+        }
+        typealias BatchOutcome = (index: Int, ok: Bool, message: String)
         let maxConcurrency = 5
         await withTaskGroup(of: BatchOutcome.self) { group in
             var nextIndex = 0
             func submitNext() {
                 guard nextIndex < items.count, online else { return }
                 let idx = nextIndex
-                let addr = items[idx].address
                 let payload = items[idx].json
                 nextIndex += 1
                 group.addTask {
@@ -456,9 +479,9 @@ public struct ProxyBatchAddSheet: View {
                             body: .object(["proxies": .array([payload])])
                         )
                         let ok = r.created == 1
-                        return (idx, addr, ok, ok ? "已添加" : "已存在或未添加")
+                        return (idx, ok, ok ? "已添加" : "已存在或未添加")
                     } catch {
-                        return (idx, addr, false, error.localizedDescription)
+                        return (idx, false, error.localizedDescription)
                     }
                 }
             }
@@ -466,12 +489,14 @@ public struct ProxyBatchAddSheet: View {
                 submitNext()
             }
             for await outcome in group {
-                ordered[outcome.index] = outcome
-                results = ordered.compactMap { entry in
-                    entry.map { ($0.address, $0.ok, $0.message) }
-                }
+                results[outcome.index].ok = outcome.ok
+                results[outcome.index].message = outcome.message
                 submitNext()
             }
+        }
+        for idx in results.indices where results[idx].ok == nil {
+            results[idx].ok = false
+            results[idx].message = "连接已断开，未提交"
         }
     }
 }

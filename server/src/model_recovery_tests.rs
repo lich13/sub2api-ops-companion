@@ -927,13 +927,14 @@ async fn prepare_loopback_worker(h: &Harness, job: &Value) -> Arc<super::Context
     .await
     .unwrap();
     target.url = format!("{}/v1/responses", h.base_url);
+    let (bank_version, compiled) = h.runtime.tests.bank.compiled_version();
     Arc::new(super::Context {
         progress: StdMutex::new(Default::default()),
         lm: None,
         samples: StdMutex::new(Default::default()),
         challenges: modeltrace::challenges(),
-        snapshot: h.runtime.tests.bank.snapshot(),
-        compiled: None,
+        bank_version,
+        compiled,
         row,
         owner,
         target,

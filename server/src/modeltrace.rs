@@ -32,6 +32,22 @@ pub fn bundled() -> Result<(Value, Value)> {
     let version = json!({"revision":manifest["revision"],"sha256":digest,"built_at":data["built_at"],"analyzer_version":manifest.get("analyzerVersion").unwrap_or(&json!(1))});
     Ok((data, version))
 }
+pub fn bundled_compiled() -> Result<(CompiledBank, Value)> {
+    let manifest = manifest();
+    let raw = include_str!("../resources/modeltrace/unified_bank.json");
+    let digest = sha256(raw);
+    if manifest["files"]["bank"]["sha256"] != digest {
+        return Err(Error::new(503, "模型指纹库校验失败"));
+    }
+    let compiled = CompiledBank::compile_str(raw)?;
+    let version = json!({
+        "revision": manifest["revision"],
+        "sha256": digest,
+        "built_at": compiled.built_at(),
+        "analyzer_version": manifest.get("analyzerVersion").unwrap_or(&json!(1)),
+    });
+    Ok((compiled, version))
+}
 fn choose(n: usize) -> usize {
     let range = usize::MAX - usize::MAX % n;
     loop {
@@ -169,106 +185,6 @@ fn normalized(v: Vec<f64>) -> Vec<f64> {
     let scale = dot(&v, &v).sqrt().max(1e-12);
     v.into_iter().map(|x| x / scale).collect()
 }
-fn subtract_basis(mut v: Vec<f64>, basis: &Value) -> Vec<f64> {
-    for row in basis.as_array().into_iter().flatten() {
-        let row = vector(row);
-        let projection = dot(&v, &row);
-        v = v
-            .into_iter()
-            .zip(row)
-            .map(|(x, y)| x - projection * y)
-            .collect();
-    }
-    v
-}
-fn scaled(feature: &[f64], artifact: &Value) -> Vec<f64> {
-    let center = vector(&artifact["feature_mean"]);
-    let scale = vector(&artifact["feature_scale"]);
-    feature
-        .iter()
-        .enumerate()
-        .map(|(i, x)| (x - center[i]) / scale[i])
-        .collect()
-}
-fn similarities(unit: &[f64], rows: &Value) -> Vec<f64> {
-    rows.as_array()
-        .into_iter()
-        .flatten()
-        .map(|row| dot(unit, &vector(row)))
-        .collect()
-}
-pub fn scores(numbers: &[usize], data: &Value) -> Vec<f64> {
-    let mut marginal = vec![0f64; 355];
-    for n in numbers {
-        marginal[n - 1] += 1.0;
-    }
-    let total = marginal.iter().sum::<f64>() + 0.5 * 355.0;
-    let feature = marginal
-        .iter()
-        .map(|n| ((n + 0.5) / total).sqrt())
-        .collect::<Vec<_>>();
-    let artifact = &data["robust"]["hellinger"];
-    let unit = normalized(subtract_basis(
-        scaled(&feature, artifact),
-        &artifact["nuisance_basis"],
-    ));
-    let marginal = standardize(similarities(&unit, &artifact["centroids"]));
-    let artifact = &data["robust"]["ordered_blocks"];
-    let weight = artifact["weight"].as_f64().unwrap_or(0.0);
-    if weight == 0.0 {
-        return marginal;
-    }
-    let mut feature = vec![];
-    let mut start = 0;
-    for i in 0..4 {
-        let size = numbers.len() / 4 + usize::from(i < numbers.len() % 4);
-        let mut bins = vec![0.5; 16];
-        for n in &numbers[start..start + size] {
-            bins[((n - 1) * 16 / 355).min(15)] += 1.0;
-        }
-        let sum = bins.iter().sum::<f64>();
-        feature.extend(bins.into_iter().map(|x| (x / sum).sqrt()));
-        start += size;
-    }
-    let mut bins = vec![0.5; 10];
-    for n in numbers {
-        bins[n % 10] += 1.0;
-    }
-    let total = bins.iter().sum::<f64>();
-    feature.extend(bins.into_iter().map(|x| (x / total).sqrt()));
-    let standardized = scaled(&feature, artifact);
-    let unit = normalized(standardized.clone());
-    let environment = artifact["environment_centroids"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|rows| similarities(&unit, rows))
-        .collect::<Vec<_>>();
-    let template = standardize(
-        (0..marginal.len())
-            .map(|i| {
-                environment
-                    .iter()
-                    .map(|row| row[i])
-                    .fold(f64::NEG_INFINITY, f64::max)
-            })
-            .collect(),
-    );
-    let projected = normalized(subtract_basis(standardized, &artifact["nuisance_basis"]));
-    let nuisance = standardize(similarities(&projected, &artifact["centroids"]));
-    let ordered = standardize(
-        template
-            .into_iter()
-            .zip(nuisance)
-            .map(|(x, y)| 0.5 * x + 0.5 * y)
-            .collect(),
-    );
-    marginal
-        .into_iter()
-        .zip(ordered)
-        .map(|(x, y)| (1.0 - weight) * x + weight * y)
-        .collect()
-}
 fn matrix(value: &Value) -> Vec<Vec<f64>> {
     value.as_array().into_iter().flatten().map(vector).collect()
 }
@@ -295,6 +211,7 @@ fn similarities_vec(unit: &[f64], rows: &[Vec<f64>]) -> Vec<f64> {
 }
 
 pub struct CompiledBank {
+    built_at: Value,
     hellinger_mean: Vec<f64>,
     hellinger_scale: Vec<f64>,
     hellinger_basis: Vec<Vec<f64>>,
@@ -306,10 +223,192 @@ pub struct CompiledBank {
     ordered_basis: Vec<Vec<f64>>,
     ordered_centroids: Vec<Vec<f64>>,
     models: Vec<(Value, Value)>,
+    exact_model_ids: std::collections::HashSet<String>,
+    normalized_model_ids: std::collections::HashSet<String>,
     betas: [Option<f64>; 3],
 }
 
+#[derive(serde::Deserialize)]
+struct RawMethod {
+    range: [u64; 2],
+    alpha: f64,
+    ordered_block_weight: f64,
+}
+
+#[derive(serde::Deserialize)]
+struct RawModel {
+    id: String,
+    display_name: String,
+    family: String,
+    family_name: String,
+    counts: Vec<f64>,
+}
+
+#[derive(serde::Deserialize)]
+struct RawFeatureSpace {
+    feature_mean: Vec<f64>,
+    feature_scale: Vec<f64>,
+    nuisance_basis: Vec<Vec<f64>>,
+    centroids: Vec<Vec<f64>>,
+}
+
+#[derive(serde::Deserialize)]
+struct RawOrderedSpace {
+    weight: f64,
+    feature_mean: Vec<f64>,
+    feature_scale: Vec<f64>,
+    nuisance_basis: Vec<Vec<f64>>,
+    centroids: Vec<Vec<f64>>,
+    environment_centroids: Vec<Vec<Vec<f64>>>,
+}
+
+#[derive(serde::Deserialize)]
+struct RawRobust {
+    robust_ready: bool,
+    model_order: Vec<String>,
+    hellinger: RawFeatureSpace,
+    ordered_blocks: RawOrderedSpace,
+}
+
+#[derive(serde::Deserialize)]
+struct RawCalibrationEntry {
+    beta: f64,
+    cv_accuracy: f64,
+}
+
+#[derive(serde::Deserialize)]
+struct RawCalibrations {
+    #[serde(rename = "1")]
+    one: RawCalibrationEntry,
+    #[serde(rename = "2")]
+    two: RawCalibrationEntry,
+    #[serde(rename = "3")]
+    three: RawCalibrationEntry,
+}
+
+#[derive(serde::Deserialize)]
+struct RawBank {
+    schema: String,
+    built_at: String,
+    minimum_valid_numbers: u64,
+    recommended_queries: u64,
+    method: RawMethod,
+    models: Vec<RawModel>,
+    robust: RawRobust,
+    calibration: RawCalibrations,
+}
+
+fn valid_vec(v: &[f64], dim: usize, pred: impl Fn(f64) -> bool) -> bool {
+    v.len() == dim && v.iter().all(|x| x.is_finite() && pred(*x))
+}
+
+fn valid_mat(m: &[Vec<f64>], rows: usize, dim: usize) -> bool {
+    m.len() == rows && m.iter().all(|r| valid_vec(r, dim, |_| true))
+}
+
 impl CompiledBank {
+    pub fn compile_str(raw: &str) -> Result<Self> {
+        let invalid = || Error::new(503, "指纹库数据无效");
+        let parsed: RawBank = serde_json::from_str(raw).map_err(|_| invalid())?;
+        if parsed.schema != "robust-number-fingerprint-bank"
+            || chrono::DateTime::parse_from_rfc3339(&parsed.built_at).is_err()
+            || parsed.minimum_valid_numbers != 80
+            || parsed.recommended_queries != 3
+            || parsed.method.range != [1, 355]
+            || parsed.method.alpha != 0.5
+            || parsed.method.ordered_block_weight != 0.25
+            || parsed.models.is_empty()
+            || parsed.models.len() > 256
+            || !parsed.robust.robust_ready
+        {
+            return Err(invalid());
+        }
+        let model_count = parsed.models.len();
+        let mut seen_ids = std::collections::BTreeSet::new();
+        for (idx, m) in parsed.models.iter().enumerate() {
+            for s in [&m.id, &m.display_name, &m.family, &m.family_name] {
+                if s.is_empty() || s.chars().count() > 256 {
+                    return Err(invalid());
+                }
+            }
+            if !seen_ids.insert(m.id.as_str())
+                || parsed.robust.model_order.get(idx).map(String::as_str) != Some(m.id.as_str())
+                || !valid_vec(&m.counts, 355, |v| {
+                    (0.0..=9007199254740991.0).contains(&v) && v.trunc() == v
+                })
+            {
+                return Err(invalid());
+            }
+        }
+        if parsed.robust.model_order.len() != model_count {
+            return Err(invalid());
+        }
+        let h = parsed.robust.hellinger;
+        let o = parsed.robust.ordered_blocks;
+        if !valid_vec(&h.feature_mean, 355, |_| true)
+            || !valid_vec(&h.feature_scale, 355, |v| v > 0.0)
+            || h.nuisance_basis.len() > 355
+            || !valid_mat(&h.nuisance_basis, h.nuisance_basis.len(), 355)
+            || !valid_mat(&h.centroids, model_count, 355)
+            || o.weight != 0.25
+            || !valid_vec(&o.feature_mean, 74, |_| true)
+            || !valid_vec(&o.feature_scale, 74, |v| v > 0.0)
+            || o.nuisance_basis.len() > 74
+            || !valid_mat(&o.nuisance_basis, o.nuisance_basis.len(), 74)
+            || !valid_mat(&o.centroids, model_count, 74)
+            || o.environment_centroids.is_empty()
+            || o.environment_centroids.len() > 256
+            || !o
+                .environment_centroids
+                .iter()
+                .all(|env| valid_mat(env, model_count, 74))
+        {
+            return Err(invalid());
+        }
+        for c in [
+            &parsed.calibration.one,
+            &parsed.calibration.two,
+            &parsed.calibration.three,
+        ] {
+            if !c.beta.is_finite()
+                || c.beta <= 0.0
+                || !c.cv_accuracy.is_finite()
+                || !(0.0..=1.0).contains(&c.cv_accuracy)
+            {
+                return Err(invalid());
+            }
+        }
+        let mut exact_model_ids = std::collections::HashSet::with_capacity(model_count);
+        let mut normalized_model_ids = std::collections::HashSet::with_capacity(model_count);
+        let mut models = Vec::with_capacity(model_count);
+        for m in parsed.models {
+            normalized_model_ids.insert(crate::lm_verdict::normalize(&m.id));
+            exact_model_ids.insert(m.id.clone());
+            models.push((Value::String(m.id), Value::String(m.display_name)));
+        }
+        Ok(Self {
+            built_at: Value::String(parsed.built_at),
+            hellinger_mean: h.feature_mean,
+            hellinger_scale: h.feature_scale,
+            hellinger_basis: h.nuisance_basis,
+            hellinger_centroids: h.centroids,
+            ordered_weight: o.weight,
+            ordered_mean: o.feature_mean,
+            ordered_scale: o.feature_scale,
+            ordered_env_centroids: o.environment_centroids,
+            ordered_basis: o.nuisance_basis,
+            ordered_centroids: o.centroids,
+            models,
+            exact_model_ids,
+            normalized_model_ids,
+            betas: [
+                Some(parsed.calibration.one.beta),
+                Some(parsed.calibration.two.beta),
+                Some(parsed.calibration.three.beta),
+            ],
+        })
+    }
+
     pub fn compile(data: &Value) -> Result<Self> {
         crate::fingerprint_bank::validate(data)?;
         let invalid = || Error::new(503, "指纹库数据无效");
@@ -319,9 +418,18 @@ impl CompiledBank {
             .iter()
             .map(|m| (m["id"].clone(), m["display_name"].clone()))
             .collect::<Vec<_>>();
+        let exact_model_ids = models
+            .iter()
+            .filter_map(|(id, _)| id.as_str().map(str::to_owned))
+            .collect();
+        let normalized_model_ids = models
+            .iter()
+            .map(|(id, _)| crate::lm_verdict::normalize(crate::compat::string(id)))
+            .collect();
         let hellinger = &data["robust"]["hellinger"];
         let ordered = &data["robust"]["ordered_blocks"];
         Ok(Self {
+            built_at: data["built_at"].clone(),
             hellinger_mean: vector(&hellinger["feature_mean"]),
             hellinger_scale: vector(&hellinger["feature_scale"]),
             hellinger_basis: matrix(&hellinger["nuisance_basis"]),
@@ -338,12 +446,27 @@ impl CompiledBank {
             ordered_basis: matrix(&ordered["nuisance_basis"]),
             ordered_centroids: matrix(&ordered["centroids"]),
             models,
+            exact_model_ids,
+            normalized_model_ids,
             betas: [
                 data["calibration"]["1"]["beta"].as_f64(),
                 data["calibration"]["2"]["beta"].as_f64(),
                 data["calibration"]["3"]["beta"].as_f64(),
             ],
         })
+    }
+
+    pub fn built_at(&self) -> &Value {
+        &self.built_at
+    }
+
+    pub fn contains_exact(&self, model: &str) -> bool {
+        self.exact_model_ids.contains(model)
+    }
+
+    pub fn contains_policy(&self, policy: &Value) -> bool {
+        let target = crate::lm_verdict::normalize(crate::verdict_policy::target(policy));
+        self.normalized_model_ids.contains(&target)
     }
 
     pub fn scores(&self, numbers: &[usize]) -> Vec<f64> {

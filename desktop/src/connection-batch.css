@@ -1,5 +1,5 @@
 .connection-batch {
-  padding: 10px 12px;
+  padding: 10px 0;
   border-bottom: 1px solid var(--line);
   font-size: 12px;
 }
@@ -23,6 +23,8 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-height: 48px;
+  padding: 8px 10px;
 }
 .connection-batch-error {
   display: flex;
@@ -36,7 +38,7 @@
   overflow-wrap: anywhere;
 }
 .connection-batch-scroll {
-  max-height: 240px;
+  max-height: 300px;
   overflow: auto;
 }
 .connection-batch table {
@@ -47,53 +49,27 @@
 }
 .connection-batch th,
 .connection-batch td {
-  padding: 6px 8px;
+  padding: 6px 3px;
+  font-size: 11px;
   text-align: left;
   vertical-align: top;
   overflow-wrap: anywhere;
 }
 .connection-batch th:nth-child(1) {
-  width: 17%;
+  width: 19%;
 }
 .connection-batch th:nth-child(2) {
-  width: 82px;
+  width: 56px;
 }
 .connection-batch th:nth-child(3) {
-  width: 28%;
+  width: 26%;
 }
 .connection-batch th:nth-child(4) {
-  width: 68px;
+  width: 45px;
 }
 .connection-batch td svg {
   vertical-align: middle;
   margin-right: 3px;
-}
-.mobile .connection-batch {
-  padding: 10px 0;
-}
-.mobile .connection-batch button {
-  min-height: 44px;
-  padding: 8px 10px;
-}
-.mobile .connection-batch-scroll {
-  max-height: 300px;
-}
-.mobile .connection-batch th,
-.mobile .connection-batch td {
-  padding: 6px 3px;
-  font-size: 11px;
-}
-.mobile .connection-batch th:nth-child(1) {
-  width: 19%;
-}
-.mobile .connection-batch th:nth-child(2) {
-  width: 56px;
-}
-.mobile .connection-batch th:nth-child(3) {
-  width: 26%;
-}
-.mobile .connection-batch th:nth-child(4) {
-  width: 45px;
 }
 .selection-actions #connection-batch-start[aria-disabled="true"] {
   opacity: 0.45;

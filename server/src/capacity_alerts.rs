@@ -154,7 +154,13 @@ impl CapacityStore {
         Ok((rev, data))
     }
     pub fn transaction<T>(&self, action: impl FnOnce(&mut Value) -> Result<T>) -> Result<T> {
-        self.0.transaction(|data| {
+        self.transaction_versioned(action).map(|(_, out)| out)
+    }
+    pub(crate) fn transaction_versioned<T>(
+        &self,
+        action: impl FnOnce(&mut Value) -> Result<T>,
+    ) -> Result<(Option<u64>, T)> {
+        self.0.transaction_versioned(|data| {
             Self::normalize(data);
             let out = action(data)?;
             prune_notifications(data);
@@ -235,10 +241,13 @@ fn prune_notifications(data: &mut Value) {
     }
 }
 
+#[derive(Clone)]
 struct SlowPollCache {
-    max_id: i64,
+    floor_id: i64,
+    watermark: (String, i64, i64),
     store_rev: u64,
     scanned_at: DateTime<Utc>,
+    earliest_sample_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone)]
@@ -311,7 +320,16 @@ impl CapacityAlerts {
         for _ in 0..20 {
             let cursor =
                 integer(&self.store.shared_snapshot()?["cursor"]).ok_or_else(Error::internal)?;
-            let rows=self.db.all(&format!("SELECT {} FROM ops_error_logs e LEFT JOIN accounts a ON a.id=e.account_id WHERE e.id>$1 ORDER BY e.id LIMIT 200",sql::CAPACITY_FIELDS),&[cursor.into()]).await?;
+            let rows = self
+                .db
+                .all(
+                    &format!(
+                        "SELECT {} FROM (SELECT * FROM ops_error_logs WHERE id>$1 ORDER BY id LIMIT 200) e CROSS JOIN LATERAL (SELECT to_jsonb(e) AS jb OFFSET 0) ej LEFT JOIN accounts a ON a.id=e.account_id ORDER BY e.id",
+                        sql::CAPACITY_FIELDS
+                    ),
+                    &[cursor.into()],
+                )
+                .await?;
             if rows.is_empty() {
                 break;
             }
@@ -323,45 +341,58 @@ impl CapacityAlerts {
         let since = (at - Duration::minutes(5))
             .max(parse_datetime(&state["initialized_at"]).ok_or_else(Error::internal)?);
         let current = self.store.shared_snapshot()?;
-        let mut seen_ids = current["seen"]
-            .as_object()
-            .into_iter()
-            .flat_map(|m| m.keys())
-            .chain(
-                current["pending"]
-                    .as_object()
-                    .into_iter()
-                    .flat_map(|m| m.keys()),
-            )
-            .filter_map(|key| key.parse::<i64>().ok())
-            .collect::<Vec<_>>();
-        seen_ids.sort_unstable();
-        seen_ids.dedup();
-        let mut after = 0i64;
-        let mut collected_any = false;
-        loop {
-            let rows = self
+        let upper_cursor = integer(&current["cursor"]).unwrap_or(0);
+        let has_recent = upper_cursor > 0
+            && self
                 .db
-                .all(
-                    &format!(
-                        "SELECT {} FROM ops_error_logs e LEFT JOIN accounts a ON a.id=e.account_id WHERE e.created_at>=$1 AND e.id>$2 AND NOT (e.id = ANY($3)) ORDER BY e.id LIMIT 200",
-                        sql::CAPACITY_FIELDS
-                    ),
-                    &[
-                        since.into(),
-                        after.into(),
-                        crate::db::Param::Ints(seen_ids.clone()),
-                    ],
+                .one(
+                    "SELECT EXISTS (SELECT 1 FROM ops_error_logs WHERE created_at>=$1 AND id<=$2) AS present",
+                    &[since.into(), upper_cursor.into()],
                 )
-                .await?;
-            if rows.is_empty() {
-                break;
-            }
-            collected_any = true;
-            self.collect(&rows, false, (self.clock)())?;
-            after = integer(&rows.last().unwrap()["id"]).ok_or_else(Error::internal)?;
-            if rows.len() < 200 {
-                break;
+                .await?
+                .is_some_and(|row| row["present"] == true);
+        let mut collected_any = false;
+        if has_recent {
+            let mut seen_ids = current["seen"]
+                .as_object()
+                .into_iter()
+                .flat_map(|m| m.keys())
+                .chain(
+                    current["pending"]
+                        .as_object()
+                        .into_iter()
+                        .flat_map(|m| m.keys()),
+                )
+                .filter_map(|key| key.parse::<i64>().ok())
+                .collect::<Vec<_>>();
+            seen_ids.sort_unstable();
+            seen_ids.dedup();
+            let mut after = 0i64;
+            loop {
+                let rows = self
+                    .db
+                    .all(
+                        &format!(
+                            "SELECT {} FROM (SELECT * FROM ops_error_logs WHERE created_at>=$1 AND id>$2 AND id<=$4 AND NOT (id = ANY($3)) ORDER BY id LIMIT 200) e CROSS JOIN LATERAL (SELECT to_jsonb(e) AS jb OFFSET 0) ej LEFT JOIN accounts a ON a.id=e.account_id ORDER BY e.id",
+                            sql::CAPACITY_FIELDS
+                        ),
+                        &[
+                            since.into(),
+                            after.into(),
+                            crate::db::Param::Ints(seen_ids.clone()),
+                            upper_cursor.into(),
+                        ],
+                    )
+                    .await?;
+                if rows.is_empty() {
+                    break;
+                }
+                collected_any = true;
+                self.collect(&rows, false, (self.clock)())?;
+                after = integer(&rows.last().unwrap()["id"]).ok_or_else(Error::internal)?;
+                if rows.len() < 200 {
+                    break;
+                }
             }
         }
         if !collected_any {
@@ -484,42 +515,126 @@ impl CapacityAlerts {
         }
         Ok(())
     }
+    async fn slow_scan_watermark(&self, at: DateTime<Utc>) -> Option<(i64, (String, i64, i64))> {
+        let row = self
+            .db
+            .one(
+                "SELECT b.floor_id, s.accounts_sig, t.tail_max_id, t.tail_count \
+                 FROM ( \
+                   SELECT m AS global_max_id, GREATEST(m - 4096, 0)::bigint AS floor_id \
+                   FROM (SELECT COALESCE(MAX(id), 0)::bigint AS m FROM usage_logs) raw_max \
+                 ) b \
+                 CROSS JOIN ( \
+                   SELECT md5(COALESCE(jsonb_agg(id ORDER BY id)::text, '[]')) AS accounts_sig \
+                   FROM accounts \
+                   WHERE deleted_at IS NULL AND platform='openai' AND type IN ('oauth','apikey') \
+                 ) s \
+                 CROSS JOIN LATERAL ( \
+                   SELECT COALESCE(MAX(u.id), 0)::bigint AS tail_max_id, COUNT(*)::bigint AS tail_count \
+                   FROM usage_logs u JOIN accounts a ON a.id=u.account_id \
+                   WHERE u.id > b.floor_id AND u.created_at <= $1 \
+                     AND a.deleted_at IS NULL AND a.platform='openai' AND a.type IN ('oauth','apikey') \
+                 ) t",
+                &[at.into()],
+            )
+            .await
+            .ok()??;
+        let floor_id = integer(&row["floor_id"]).unwrap_or(0);
+        let accounts_sig = row["accounts_sig"].as_str().unwrap_or("").to_owned();
+        let tail_max_id = integer(&row["tail_max_id"]).unwrap_or(0);
+        let tail_count = integer(&row["tail_count"]).unwrap_or(0);
+        Some((floor_id, (accounts_sig, tail_max_id, tail_count)))
+    }
     async fn poll_slow(&self, at: DateTime<Utc>) -> Result<()> {
         let (store_rev, previous) = self.store.shared_snapshot_versioned()?;
-        let max_id = match self
-            .db
-            .one("SELECT COALESCE(MAX(id), 0) AS max_id FROM usage_logs", &[])
-            .await
-        {
-            Ok(row) => row
-                .as_ref()
-                .and_then(|r| integer(&r["max_id"]))
-                .unwrap_or(0),
-            Err(_) => {
-                self.audit("slow_ttft_query_error", json!({"error":"DatabaseError"}));
-                return Ok(());
-            }
-        };
-        if let Some(cached) = self
+        let window_start = at - Duration::hours(24);
+        let valid_cached = self
             .slow_cache
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .as_ref()
-        {
-            if cached.max_id == max_id
-                && cached.store_rev == store_rev
-                && at >= cached.scanned_at
-                && at < cached.scanned_at + Duration::seconds(30)
+            .filter(|cached| {
+                cached.store_rev == store_rev
+                    && at >= cached.scanned_at
+                    && at < cached.scanned_at + Duration::seconds(30)
+                    && cached
+                        .earliest_sample_at
+                        .is_none_or(|earliest| earliest >= window_start)
+            })
+            .cloned();
+        let (floor_id, watermark) = if let Some(cached) = valid_cached {
+            let check = match self
+                .db
+                .one(
+                    "SELECT b.global_max_id, s.accounts_sig, t.tail_max_id, t.tail_count \
+                     FROM (SELECT COALESCE(MAX(id), 0)::bigint AS global_max_id FROM usage_logs) b \
+                     CROSS JOIN ( \
+                       SELECT md5(COALESCE(jsonb_agg(id ORDER BY id)::text, '[]')) AS accounts_sig \
+                       FROM accounts \
+                       WHERE deleted_at IS NULL AND platform='openai' AND type IN ('oauth','apikey') \
+                     ) s \
+                     LEFT JOIN LATERAL ( \
+                       SELECT COALESCE(MAX(u.id), 0)::bigint AS tail_max_id, COUNT(*)::bigint AS tail_count \
+                       FROM usage_logs u JOIN accounts a ON a.id=u.account_id \
+                       WHERE u.id > $1 AND u.created_at <= $2 \
+                         AND a.deleted_at IS NULL AND a.platform='openai' AND a.type IN ('oauth','apikey') \
+                     ) t ON b.global_max_id >= $1 AND b.global_max_id - $1 <= 20000",
+                    &[cached.floor_id.into(), at.into()],
+                )
+                .await
             {
-                return Ok(());
+                Ok(Some(row)) => row,
+                _ => {
+                    self.audit("slow_ttft_query_error", json!({"error":"DatabaseError"}));
+                    return Ok(());
+                }
+            };
+            if let (Some(tail_max_id), Some(tail_count)) = (
+                integer(&check["tail_max_id"]),
+                integer(&check["tail_count"]),
+            ) {
+                let current_wm = (
+                    check["accounts_sig"].as_str().unwrap_or("").to_owned(),
+                    tail_max_id,
+                    tail_count,
+                );
+                if current_wm == cached.watermark {
+                    return Ok(());
+                }
+                let global_max_id = integer(&check["global_max_id"]).unwrap_or(0);
+                let next_floor = global_max_id.max(0).saturating_sub(4096);
+                if next_floor == cached.floor_id {
+                    (next_floor, current_wm)
+                } else {
+                    match self.slow_scan_watermark(at).await {
+                        Some(v) => v,
+                        None => {
+                            self.audit("slow_ttft_query_error", json!({"error":"DatabaseError"}));
+                            return Ok(());
+                        }
+                    }
+                }
+            } else {
+                match self.slow_scan_watermark(at).await {
+                    Some(v) => v,
+                    None => {
+                        self.audit("slow_ttft_query_error", json!({"error":"DatabaseError"}));
+                        return Ok(());
+                    }
+                }
             }
-        }
+        } else {
+            match self.slow_scan_watermark(at).await {
+                Some(v) => v,
+                None => {
+                    self.audit("slow_ttft_query_error", json!({"error":"DatabaseError"}));
+                    return Ok(());
+                }
+            }
+        };
         let rows = match self
             .db
-            .all(
-                sql::CAPACITY_SLOW_SQL,
-                &[(at - Duration::hours(24)).into(), at.into()],
-            )
+            .all(sql::CAPACITY_SLOW_SQL, &[window_start.into(), at.into()])
             .await
         {
             Ok(v) => v,
@@ -530,10 +645,15 @@ impl CapacityAlerts {
         };
         let mut grouped: BTreeMap<i64, Vec<Value>> = BTreeMap::new();
         let mut accounts = BTreeMap::new();
+        let mut earliest_sample_at: Option<DateTime<Utc>> = None;
         for row in rows {
             let Some(id) = integer(&row["account_id"]) else {
                 continue;
             };
+            if let Some(created) = parse_datetime(&row["created_at"]) {
+                earliest_sample_at =
+                    Some(earliest_sample_at.map_or(created, |prev| prev.min(created)));
+            }
             accounts.insert(id,json!({"id":id,"platform":row["account_platform"],"type":row["account_type"],"name":row.get("account_name").cloned().filter(truthy).unwrap_or(json!(format!("账号 {id}")))}));
             grouped.entry(id).or_default().push(row);
         }
@@ -542,13 +662,15 @@ impl CapacityAlerts {
             && projected["alerts"].as_array().unwrap().is_empty()
         {
             *self.slow_cache.lock().unwrap_or_else(|e| e.into_inner()) = Some(SlowPollCache {
-                max_id,
+                floor_id,
+                watermark,
                 store_rev,
                 scanned_at: at,
+                earliest_sample_at,
             });
             return Ok(());
         }
-        let matched = self.store.transaction(|data| {
+        let (updated_rev, matched) = self.store.transaction_versioned(|data| {
             // Recalculate under the file lock: a manual mark or another scan may
             // have changed eligibility since the shared snapshot was read.
             let projected = slow_projection(data, &grouped, &accounts, at);
@@ -565,11 +687,13 @@ impl CapacityAlerts {
             }
             Ok(projected["alerts"].clone())
         })?;
-        if let Ok(updated_rev) = self.store.0.cache_revision() {
+        if let Some(updated_rev) = updated_rev {
             *self.slow_cache.lock().unwrap_or_else(|e| e.into_inner()) = Some(SlowPollCache {
-                max_id,
+                floor_id,
+                watermark,
                 store_rev: updated_rev,
                 scanned_at: at,
+                earliest_sample_at,
             });
         }
         for alert in matched.as_array().unwrap() {

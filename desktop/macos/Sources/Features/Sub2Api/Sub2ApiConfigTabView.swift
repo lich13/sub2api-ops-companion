@@ -173,6 +173,62 @@ public struct Sub2ApiConfigTabView: View {
         public var source_url: String
         public var env: [String]
         public var choices: [String]?
+        public let searchHaystack: String
+        public let summaryLine: String
+
+        private enum CodingKeys: String, CodingKey {
+            case path, group, type, type_label, description, range, default_text
+            case default_value, has_default, nullable, sensitive
+            case `internal` = "internal"
+            case editable, status, source_url, env, choices
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            let path = try c.decode(String.self, forKey: .path)
+            let description = try c.decode(String.self, forKey: .description)
+            let env = try c.decode([String].self, forKey: .env)
+            self.path = path
+            self.group = try c.decode(String.self, forKey: .group)
+            self.type = try c.decode(String.self, forKey: .type)
+            self.type_label = try c.decode(String.self, forKey: .type_label)
+            self.description = description
+            self.range = try c.decode(String.self, forKey: .range)
+            self.default_text = try c.decode(String.self, forKey: .default_text)
+            self.default_value = try c.decodeIfPresent(JSONValue.self, forKey: .default_value)
+            self.has_default = try c.decode(Bool.self, forKey: .has_default)
+            self.nullable = try c.decodeIfPresent(Bool.self, forKey: .nullable)
+            self.sensitive = try c.decode(Bool.self, forKey: .sensitive)
+            self.internal = try c.decode(Bool.self, forKey: .internal)
+            self.editable = try c.decode(Bool.self, forKey: .editable)
+            self.status = try c.decode(String.self, forKey: .status)
+            self.source_url = try c.decode(String.self, forKey: .source_url)
+            self.env = env
+            self.choices = try c.decodeIfPresent([String].self, forKey: .choices)
+            self.searchHaystack = "\(path) \(description) \(env.joined(separator: " "))".lowercased()
+            self.summaryLine = description.components(separatedBy: CharacterSet(charactersIn: "。\n")).first ?? description
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(path, forKey: .path)
+            try c.encode(group, forKey: .group)
+            try c.encode(type, forKey: .type)
+            try c.encode(type_label, forKey: .type_label)
+            try c.encode(description, forKey: .description)
+            try c.encode(range, forKey: .range)
+            try c.encode(default_text, forKey: .default_text)
+            try c.encodeIfPresent(default_value, forKey: .default_value)
+            try c.encode(has_default, forKey: .has_default)
+            try c.encodeIfPresent(nullable, forKey: .nullable)
+            try c.encode(sensitive, forKey: .sensitive)
+            try c.encode(`internal`, forKey: .internal)
+            try c.encode(editable, forKey: .editable)
+            try c.encode(status, forKey: .status)
+            try c.encode(source_url, forKey: .source_url)
+            try c.encode(env, forKey: .env)
+            try c.encodeIfPresent(choices, forKey: .choices)
+        }
     }
 
     public struct FieldRuntimeValue: Codable, Sendable, Equatable {
@@ -189,12 +245,53 @@ public struct Sub2ApiConfigTabView: View {
         public var revision: String
         public var groups: [CatalogGroup]
         public var fields: [CatalogField]
+        public let internalChildrenByPath: [String: [CatalogField]]
+
+        private enum CodingKeys: String, CodingKey {
+            case version, revision, groups, fields
+        }
+
+        private static func buildInternalChildrenIndex(_ fields: [CatalogField]) -> [String: [CatalogField]] {
+            let internals = fields.filter { $0.internal && $0.status == "internal" }
+            guard !internals.isEmpty else { return [:] }
+            var index: [String: [CatalogField]] = [:]
+            for f in fields where !f.internal {
+                let dotPrefix = "\(f.path)."
+                let bracketPrefix = "\(f.path)["
+                let matched = internals.filter { c in
+                    c.path == f.path || c.path.hasPrefix(dotPrefix) || c.path.hasPrefix(bracketPrefix)
+                }
+                if !matched.isEmpty {
+                    index[f.path] = matched
+                }
+            }
+            return index
+        }
 
         public init(version: String = "", revision: String = "", groups: [CatalogGroup] = [], fields: [CatalogField] = []) {
             self.version = version
             self.revision = revision
             self.groups = groups
             self.fields = fields
+            self.internalChildrenByPath = Self.buildInternalChildrenIndex(fields)
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            let fields = try c.decode([CatalogField].self, forKey: .fields)
+            self.version = try c.decode(String.self, forKey: .version)
+            self.revision = try c.decode(String.self, forKey: .revision)
+            self.groups = try c.decode([CatalogGroup].self, forKey: .groups)
+            self.fields = fields
+            self.internalChildrenByPath = Self.buildInternalChildrenIndex(fields)
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(version, forKey: .version)
+            try c.encode(revision, forKey: .revision)
+            try c.encode(groups, forKey: .groups)
+            try c.encode(fields, forKey: .fields)
         }
     }
 
@@ -353,9 +450,8 @@ public struct Sub2ApiConfigTabView: View {
         return doc.catalog.fields.filter { f in
             if f.internal { return false }
             if q.isEmpty && f.group != selectedGroup { return false }
-            if !q.isEmpty {
-                let hay = "\(f.path) \(f.description) \(f.env.joined(separator: " "))".lowercased()
-                if !hay.contains(q) { return false }
+            if !q.isEmpty && !f.searchHaystack.contains(q) {
+                return false
             }
             if filterMode == "configured" {
                 return doc.values[f.path]?.configured == true || draft[f.path] != nil
@@ -572,13 +668,21 @@ public struct Sub2ApiConfigTabView: View {
     }
 
     private func groupSidebar(_ doc: ConfigDocumentDTO) -> some View {
-        ScrollView {
+        var countsByGroup: [String: (total: Int, changed: Int)] = [:]
+        for f in doc.catalog.fields where !f.internal {
+            var entry = countsByGroup[f.group] ?? (0, 0)
+            entry.total += 1
+            if draft[f.path] != nil {
+                entry.changed += 1
+            }
+            countsByGroup[f.group] = entry
+        }
+        let isQueryEmpty = query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return ScrollView {
             VStack(alignment: .leading, spacing: 3) {
                 ForEach(doc.catalog.groups) { g in
-                    let groupFields = doc.catalog.fields.filter { !$0.internal && $0.group == g.id }
-                    if !groupFields.isEmpty {
-                        let changedCount = groupFields.filter { draft[$0.path] != nil }.count
-                        let isSelected = query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedGroup == g.id
+                    if let stats = countsByGroup[g.id], stats.total > 0 {
+                        let isSelected = isQueryEmpty && selectedGroup == g.id
                         Button {
                             selectedGroup = g.id
                             query = ""
@@ -589,12 +693,12 @@ public struct Sub2ApiConfigTabView: View {
                                     .foregroundStyle(isSelected ? DS.accent : DS.ink)
                                     .lineLimit(1)
                                 Spacer(minLength: 4)
-                                if changedCount > 0 {
+                                if stats.changed > 0 {
                                     Circle()
                                         .fill(DS.accent)
                                         .frame(width: 5, height: 5)
                                 }
-                                Text("\(groupFields.count)")
+                                Text("\(stats.total)")
                                     .font(DS.fontResetTime)
                                     .monospacedDigit()
                                     .foregroundStyle(isSelected ? DS.accent : DS.muted)
@@ -615,14 +719,18 @@ public struct Sub2ApiConfigTabView: View {
     }
 
     private func fieldsPane(_ doc: ConfigDocumentDTO) -> some View {
+        let fields = visibleFields
         let activeGroupLabel = doc.catalog.groups.first(where: { $0.id == selectedGroup })?.label ?? selectedGroup
         let isSearching = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let issuesByPath: [String: [ConfigIssue]] = issues.isEmpty
+            ? [:]
+            : Dictionary(grouping: issues, by: \.path)
 
         return ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("\(visibleFields.count) 个字段")
+                        Text("\(fields.count) 个字段")
                             .font(DS.fontResetTime)
                             .monospacedDigit()
                             .foregroundStyle(DS.muted)
@@ -655,7 +763,7 @@ public struct Sub2ApiConfigTabView: View {
                         Text(isSearching ? "搜索结果" : activeGroupLabel)
                             .font(DS.fontSectionTitle)
                             .foregroundStyle(DS.ink)
-                        Text("\(visibleFields.count)")
+                        Text("\(fields.count)")
                             .font(DS.fontCompact)
                             .monospacedDigit()
                             .foregroundStyle(DS.muted)
@@ -666,15 +774,15 @@ public struct Sub2ApiConfigTabView: View {
 
                 Rectangle().fill(DS.line).frame(height: 1)
 
-                if visibleFields.isEmpty {
+                if fields.isEmpty {
                     Text("当前筛选下没有匹配的配置字段")
                         .font(DS.fontCompact)
                         .foregroundStyle(DS.muted)
                         .padding(24)
                 } else {
-                    ForEach(Array(visibleFields.enumerated()), id: \.element.id) { idx, field in
-                        fieldRow(field, doc: doc)
-                        if idx < visibleFields.count - 1 {
+                    ForEach(Array(fields.enumerated()), id: \.element.id) { idx, field in
+                        fieldRow(field, doc: doc, fieldIssues: issuesByPath[field.path] ?? [])
+                        if idx < fields.count - 1 {
                             Rectangle().fill(DS.line).frame(height: 1)
                         }
                     }
@@ -701,19 +809,15 @@ public struct Sub2ApiConfigTabView: View {
         return runtime?.effective ?? field.default_value
     }
 
-    private func fieldRow(_ field: CatalogField, doc: ConfigDocumentDTO) -> some View {
+    private func fieldRow(_ field: CatalogField, doc: ConfigDocumentDTO, fieldIssues: [ConfigIssue]) -> some View {
         let runtime = doc.values[field.path]
         let change = draft[field.path]
         let configured = change != nil ? (change?.remove != true) : (runtime?.configured == true)
         let overridden = runtime?.environment != nil
         let fieldEditable = !isBlocked && field.editable && runtime?.editable != false && !overridden
         let effectiveVal = Self.effectiveFieldValue(field: field, runtime: runtime, change: change)
-        let fieldIssues = issues.filter { $0.path == field.path }
-        let summaryLine = field.description.components(separatedBy: CharacterSet(charactersIn: "。\n")).first ?? field.description
-        let children = doc.catalog.fields.filter { c in
-            c.internal && c.status == "internal"
-                && (c.path == field.path || c.path.hasPrefix("\(field.path).") || c.path.hasPrefix("\(field.path)["))
-        }
+        let summaryLine = field.summaryLine
+        let children = doc.catalog.internalChildrenByPath[field.path] ?? []
         let isNoteOpen = expandedDescriptions.contains(field.path)
         let sourceText: String = {
             if let envName = runtime?.environment { return "环境变量 \(envName)" }

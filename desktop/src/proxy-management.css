@@ -2,19 +2,32 @@
   min-width: 0;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 8px;
   box-shadow: var(--shadow-sm);
+}
+.proxy-management button,
+.proxy-management input:not([type="checkbox"]),
+.proxy-management select {
+  min-height: 48px;
+}
+.proxy-management input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
 .proxy-filterbar,
 .proxy-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 16px;
+  gap: 8px;
+  padding: 12px;
 }
 .proxy-filterbar {
   flex-wrap: wrap;
   padding-bottom: 0;
+}
+.proxy-filterbar > select {
+  flex: 1;
 }
 .proxy-search {
   display: flex;
@@ -25,7 +38,7 @@
   border-radius: 7px;
   padding-left: 10px;
   color: var(--muted);
-  width: min(340px, 100%);
+  width: 100%;
   transition:
     border-color 0.12s ease,
     box-shadow 0.12s ease;
@@ -40,7 +53,6 @@
 }
 .proxy-search input {
   border: 0;
-  min-height: 0;
   padding: 5px 10px 5px 0;
   background: transparent;
   width: 100%;
@@ -48,6 +60,9 @@
   box-shadow: none;
 }
 .proxy-total {
+  width: 100%;
+  margin-top: 2px;
+  font-size: 12px;
   color: var(--muted);
   margin-left: auto;
   font-variant-numeric: tabular-nums;
@@ -59,16 +74,21 @@
 }
 .proxy-selection,
 .proxy-primary-actions {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
 .proxy-selection {
+  gap: 6px;
   min-height: 34px;
   color: var(--muted);
 }
 .proxy-primary-actions {
+  margin-left: auto;
+}
+.proxy-primary-actions > .primary {
   margin-left: auto;
 }
 .proxy-selection > span {
@@ -135,8 +155,8 @@
 }
 .proxy-management .icon-button {
   padding: 6px;
-  min-width: 28px;
-  min-height: 28px;
+  min-width: 48px;
+  min-height: 48px;
 }
 .proxy-auth {
   min-height: 26px;
@@ -166,6 +186,12 @@
 .proxy-quality-link .good {
   color: var(--good);
 }
+.proxy-quality-link .warning {
+  color: var(--warn);
+}
+.proxy-quality-link .bad {
+  color: var(--bad);
+}
 .proxy-status {
   min-height: 26px;
   border: 0;
@@ -174,12 +200,17 @@
   background: var(--hover);
 }
 .proxy-row-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: center;
   gap: 4px;
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 8px;
 }
 .proxy-row-actions button {
-  min-height: 0;
+  min-height: 52px;
+  min-width: 0;
   flex-direction: column;
   gap: 5px;
   font-size: 11px;
@@ -200,14 +231,15 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 8px;
   border-top: 1px solid var(--line);
-  padding: 12px 16px;
+  padding: 12px;
   color: var(--muted);
   font-size: 12px;
   flex-wrap: wrap;
 }
 .proxy-pagination label {
+  flex: 1 1 55%;
   margin-right: auto;
   display: flex;
   align-items: center;
@@ -216,10 +248,76 @@
 .proxy-mobile-list {
   display: block;
 }
+.proxy-mobile-list article {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.proxy-mobile-list article.selected {
+  background: var(--accent-bg);
+}
+.proxy-mobile-list article:last-child {
+  border-bottom: 0;
+}
+.proxy-mobile-list header,
+.proxy-mobile-list header label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+}
+.proxy-mobile-list header {
+  justify-content: space-between;
+}
+.proxy-mobile-list header label {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.proxy-mobile-address {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.proxy-mobile-address code {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.proxy-mobile-address button {
+  border: 0;
+  margin-left: auto;
+  min-width: 48px;
+}
+.proxy-mobile-facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.proxy-mobile-facts > span {
+  overflow-wrap: anywhere;
+}
+.proxy-mobile-facts button {
+  border: 0;
+  background: transparent;
+}
+.proxy-mobile-list .proxy-quality-cell {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
 .proxy-mobile-select {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 48px;
+  padding-right: 10px;
+}
+.proxy-mobile-sort {
+  display: block;
+  flex: 1 1 100%;
 }
 .proxy-dialog .field {
   flex-direction: column;
@@ -234,11 +332,11 @@
 .proxy-dialog .field input,
 .proxy-dialog .field select {
   width: 100%;
-  min-height: var(--control-h-field);
+  min-height: 48px;
 }
 .proxy-form {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   border: 0;
   padding: 0;
@@ -273,6 +371,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 48px;
   color: var(--muted);
   font-size: 12px;
 }
@@ -284,7 +383,7 @@
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 10px;
-  font-size: 13px;
+  font-size: 16px;
 }
 .proxy-dialog textarea:focus-visible {
   outline: 2px solid var(--accent);
@@ -309,22 +408,37 @@
   margin-top: 20px;
 }
 .proxy-report-table table {
+  display: block;
   border-collapse: collapse;
   width: 100%;
   font-size: 12px;
 }
-.proxy-report-table th,
-.proxy-report-table td {
-  text-align: left;
-  padding: 12px 8px;
+.proxy-report-table tbody {
+  display: block;
+}
+.proxy-report-table thead {
+  display: none;
+}
+.proxy-report-table tr {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 8px 0;
   border-bottom: 1px solid var(--line);
 }
-.proxy-report-table th {
-  color: var(--muted);
-  font-weight: 500;
+.proxy-report-table td {
+  display: block;
+  text-align: left;
+  border: 0;
+  padding: 6px;
+}
+.proxy-report-table td:first-child {
+  width: 100%;
+  font-weight: 600;
 }
 .proxy-report-table td:last-child {
-  min-width: 150px;
+  width: 100%;
+  min-width: 220px;
+  white-space: normal;
   overflow-wrap: anywhere;
 }
 .proxy-result-list,
@@ -344,9 +458,13 @@
 .proxy-result-list li,
 .proxy-account-list li {
   display: flex;
+  flex-direction: column;
   justify-content: space-between;
   align-items: baseline;
-  gap: 18px;
+  gap: 8px;
+}
+.proxy-result-list .diagnostic-text {
+  width: 100%;
 }
 .proxy-account-list span {
   color: var(--muted);
@@ -365,183 +483,4 @@
   font-family: ui-monospace, monospace;
   overflow-wrap: anywhere;
   user-select: text;
-}
-.proxy-mobile-sort {
-  display: block;
-  flex: 1 1 100%;
-}
-.mobile .proxy-management {
-  border-radius: 8px;
-}
-.mobile .proxy-management button,
-.mobile .proxy-management input:not([type="checkbox"]),
-.mobile .proxy-management select {
-  min-height: 48px;
-}
-.mobile .proxy-management input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-}
-.mobile .proxy-filterbar,
-.mobile .proxy-toolbar {
-  padding: 12px;
-  gap: 8px;
-}
-.mobile .proxy-search,
-.mobile .proxy-total,
-.mobile .proxy-selection,
-.mobile .proxy-primary-actions {
-  width: 100%;
-}
-.mobile .proxy-filterbar > select {
-  flex: 1;
-}
-.mobile .proxy-total {
-  margin-top: 2px;
-  font-size: 12px;
-}
-.mobile .proxy-selection {
-  gap: 6px;
-}
-.mobile .proxy-mobile-select {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 48px;
-  padding-right: 10px;
-}
-.mobile .proxy-primary-actions > .primary {
-  margin-left: auto;
-}
-.mobile .proxy-mobile-list {
-  display: block;
-}
-.mobile .proxy-mobile-list article {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--line);
-}
-.mobile .proxy-mobile-list article.selected {
-  background: var(--accent-bg);
-}
-.mobile .proxy-mobile-list article:last-child {
-  border-bottom: 0;
-}
-.mobile .proxy-mobile-list header,
-.mobile .proxy-mobile-list header label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 48px;
-}
-.mobile .proxy-mobile-list header {
-  justify-content: space-between;
-}
-.mobile .proxy-mobile-list header label {
-  min-width: 0;
-  flex: 1;
-  overflow-wrap: anywhere;
-}
-.mobile .proxy-mobile-address {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.mobile .proxy-mobile-address code {
-  overflow-wrap: anywhere;
-  min-width: 0;
-}
-.mobile .proxy-mobile-address button {
-  border: 0;
-  margin-left: auto;
-  min-width: 48px;
-}
-.mobile .proxy-mobile-facts {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 4px 8px;
-  color: var(--muted);
-  font-size: 12px;
-  margin-bottom: 8px;
-}
-.mobile .proxy-mobile-facts > span {
-  overflow-wrap: anywhere;
-}
-.mobile .proxy-mobile-facts button {
-  border: 0;
-  background: transparent;
-}
-.mobile .proxy-mobile-list .proxy-quality-cell {
-  flex-direction: row;
-  align-items: center;
-  gap: 12px;
-}
-.mobile .proxy-row-actions {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  border-top: 1px solid var(--line);
-  margin-top: 12px;
-  padding-top: 8px;
-}
-.mobile .proxy-row-actions button {
-  min-height: 52px;
-}
-.mobile .proxy-pagination {
-  padding: 12px;
-  gap: 8px;
-}
-.mobile .proxy-pagination label {
-  flex: 1 1 55%;
-}
-.mobile .proxy-form {
-  grid-template-columns: minmax(0, 1fr);
-}
-.mobile .proxy-check {
-  min-height: 48px;
-}
-.mobile .proxy-report-table table,
-.mobile .proxy-report-table tbody,
-.mobile .proxy-report-table tr,
-.mobile .proxy-report-table td {
-  display: block;
-}
-.mobile .proxy-report-table thead {
-  display: none;
-}
-.mobile .proxy-report-table tr {
-  display: flex;
-  flex-wrap: wrap;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--line);
-}
-.mobile .proxy-report-table td {
-  border: 0;
-  padding: 6px;
-}
-.mobile .proxy-report-table td:first-child {
-  width: 100%;
-  font-weight: 600;
-}
-.mobile .proxy-report-table td:last-child {
-  width: 100%;
-}
-.mobile .proxy-result-list li,
-.mobile .proxy-account-list li {
-  flex-direction: column;
-  gap: 8px;
-}
-
-.proxy-quality-link .warning {
-  color: var(--warn);
-}
-.proxy-quality-link .bad {
-  color: var(--bad);
-}
-.proxy-report-table td:last-child {
-  white-space: normal;
-  min-width: 220px;
-}
-.proxy-result-list .diagnostic-text {
-  width: 100%;
 }

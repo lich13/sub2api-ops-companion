@@ -163,6 +163,7 @@ impl Database {
             if self.pool.size() == 0 {
                 break;
             }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
     }
 }

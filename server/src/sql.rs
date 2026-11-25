@@ -320,9 +320,9 @@ pub const ERRORS_OTHER_WHERE: &str = concat!(
 pub const ERRORS_LOCAL_THROTTLE: &str = sql_local_throttle!();
 
 pub const CAPACITY_FIELDS: &str = r####"e.id,e.account_id,e.created_at,e.error_owner,e.error_phase,e.error_source,e.stream,e.requested_model,e.model,e.upstream_model,
- e.upstream_error_message,e.error_message,to_jsonb(e)->'error_body' AS error_body,
- to_jsonb(e)->'upstream_error_detail' AS upstream_error_detail,
- to_jsonb(e)->'upstream_errors' AS upstream_errors,
+ e.upstream_error_message,e.error_message,ej.jb->'error_body' AS error_body,
+ ej.jb->'upstream_error_detail' AS upstream_error_detail,
+ ej.jb->'upstream_errors' AS upstream_errors,
  a.name AS account_name,a.platform AS account_platform,a.type AS account_type,a.deleted_at AS account_deleted_at"####;
 
 // Keep the ordered candidate scan separate so expensive JSON/media filters
@@ -342,13 +342,13 @@ pub const CAPACITY_SLOW_SQL: &str = r####"
               FROM (
                 SELECT u.* FROM usage_logs u
                 WHERE u.account_id=a.id AND u.created_at >= $1 AND u.created_at <= $2
+                  AND u.stream IS TRUE AND u.first_token_ms > 0 AND u.duration_ms > u.first_token_ms
+                  AND u.output_tokens >= 0 AND coalesce(u.image_count,0)=0 AND coalesce(u.image_output_tokens,0)=0
+                  AND coalesce(u.upstream_model,u.model,'') <> ''
                 ORDER BY u.created_at DESC,u.id DESC OFFSET 0
               ) u CROSS JOIN LATERAL (SELECT to_jsonb(u) AS jb) uj
-              WHERE u.stream IS TRUE AND u.first_token_ms > 0 AND u.duration_ms > u.first_token_ms
-                AND u.output_tokens >= 0 AND coalesce(u.image_count,0)=0 AND coalesce(u.image_output_tokens,0)=0
-                AND coalesce(uj.jb->>'video_count','0') IN ('0','0.0')
+              WHERE coalesce(uj.jb->>'video_count','0') IN ('0','0.0')
                 AND coalesce(uj.jb->>'video_duration_seconds','0') IN ('0','0.0')
-                AND coalesce(u.upstream_model,u.model,'') <> ''
                 AND (coalesce(u.inbound_endpoint,'') || ' ' || coalesce(u.upstream_model,u.model,'')) !~* '(/audio|/images|/videos|-image|-video|-tts|-stt|realtime|whisper|dall-e)'
               ORDER BY u.created_at DESC,u.id DESC LIMIT 10
             ) r ON true

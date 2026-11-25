@@ -1,7 +1,16 @@
 .priority-manager {
   max-width: 1120px;
   margin: 0 auto;
-  padding: 0 0 36px;
+  padding: 10px 0 24px;
+}
+.priority-manager button,
+.priority-manager input {
+  min-height: 48px;
+}
+.priority-manager .icon-button,
+.priority-grip {
+  min-width: 48px;
+  min-height: 48px;
 }
 .priority-heading,
 .priority-filters,
@@ -12,12 +21,13 @@
   gap: 10px;
 }
 .priority-heading {
+  gap: 5px;
   margin-bottom: 18px;
 }
 .priority-heading h1 {
   flex: 1;
   margin: 0;
-  font-size: 23px;
+  font-size: 20px;
 }
 .priority-manager > p {
   margin: 8px 0;
@@ -31,11 +41,12 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
+  width: 100%;
   color: var(--muted);
 }
 .priority-filters input {
   min-width: 0;
-  width: 260px;
+  width: 100%;
 }
 .priority-platforms {
   display: grid;
@@ -89,10 +100,8 @@
   color: var(--ink);
 }
 .priority-parallelism .icon-button {
-  width: 22px;
-  min-width: 22px;
-  height: 22px;
-  min-height: 22px;
+  width: 48px;
+  height: 48px;
   padding: 2px;
   border-color: transparent;
   background: transparent;
@@ -112,7 +121,6 @@
   padding: 0 0 10px;
 }
 .priority-tabs button {
-  min-height: var(--control-h-compact);
   gap: 6px;
   font-size: 12px;
   background: transparent;
@@ -141,7 +149,7 @@
   margin: 0;
   padding: 0;
   overflow: auto;
-  max-height: min(56vh, max(96px, calc(100dvh - 380px)), 640px);
+  max-height: 52vh;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
@@ -150,9 +158,9 @@
 }
 .priority-lane {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 6px;
-  padding: 8px;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 4px;
+  padding: 8px 6px;
   border-bottom: 1px solid var(--line);
 }
 .priority-lane:last-child {
@@ -167,23 +175,8 @@
 }
 .priority-slot-grid {
   display: grid;
-  grid-template-columns: repeat(
-    auto-fit,
-    minmax(
-      min(
-        100%,
-        max(
-          220px,
-          calc(
-            (100% - (var(--priority-parallelism, 1) - 1) * 6px) /
-              var(--priority-parallelism, 1)
-          )
-        )
-      ),
-      1fr
-    )
-  );
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
   min-width: 0;
 }
 .priority-slot {
@@ -230,19 +223,17 @@
 .priority-account-row {
   position: relative;
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto minmax(34px, auto);
+  grid-template-columns: 48px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
-  padding: 8px;
+  gap: 4px 6px;
+  padding: 8px 4px;
   min-height: 64px;
 }
 .priority-account-row.dragging {
   opacity: 0.45;
 }
 .priority-grip {
-  min-height: 0;
   padding: 4px 0;
-  min-width: 24px;
   border: 0;
   background: transparent;
   color: var(--muted);
@@ -292,15 +283,15 @@
   color: var(--accent);
 }
 .priority-moves {
+  grid-column: 2 / -1;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  justify-content: flex-end;
+  gap: 6px;
 }
 .priority-moves .icon-button {
-  width: 26px;
-  min-width: 26px;
-  height: 26px;
-  min-height: 26px;
+  width: 48px;
+  height: 48px;
   padding: 3px;
   border-color: transparent;
   background: transparent;
@@ -322,9 +313,8 @@
   gap: 6px;
 }
 .priority-draft button {
-  min-height: var(--control-h-compact);
   gap: 4px;
-  padding: 5px 9px;
+  padding: 6px 10px;
   font-size: 12px;
 }
 .priority-draft .primary {
@@ -349,65 +339,12 @@
   box-shadow: 0 8px 25px #0002;
   overflow-wrap: anywhere;
 }
-.app.mobile .priority-manager {
-  padding: 10px 0 24px;
-}
-.app.mobile .priority-heading {
-  gap: 5px;
-}
-.app.mobile .priority-heading h1 {
-  font-size: 20px;
-}
-.app.mobile .priority-filters label,
-.app.mobile .priority-filters input {
-  width: 100%;
-}
-.app.mobile .priority-manager button,
-.app.mobile .priority-manager input {
-  min-height: 48px;
-}
-.app.mobile .priority-manager .icon-button,
-.app.mobile .priority-grip {
-  min-width: 48px;
-}
-.app.mobile .priority-list {
-  max-height: 52vh;
-}
-.app.mobile .priority-lane {
-  grid-template-columns: 22px minmax(0, 1fr);
-  gap: 4px;
-  padding: 8px 6px;
-}
-.app.mobile .priority-slot-grid {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 5px;
-}
-.app.mobile .priority-account-row {
-  grid-template-columns: 48px minmax(0, 1fr) auto;
-  gap: 4px 6px;
-  padding: 8px 4px;
-}
-.app.mobile .priority-moves {
-  grid-column: 2 / -1;
-  flex-direction: row;
-  justify-content: flex-end;
-  gap: 6px;
-}
-.app.mobile .priority-draft button {
-  padding: 6px 10px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .priority-manager *,
-  .priority-drag-ghost {
-    scroll-behavior: auto;
-    transition: none;
-  }
-}
-
 .priority-account-controls {
+  grid-column: 2 / -1;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
 }
 .priority-task-state {
@@ -424,28 +361,11 @@
   color: var(--muted);
 }
 .priority-task-state button {
-  min-height: var(--control-h-dense);
   font-size: 12px;
   padding: 4px 8px;
 }
 .priority-result {
   overflow-wrap: anywhere;
-}
-.app.mobile .priority-account-controls {
-  grid-column: 2 / -1;
-  flex-direction: row;
-  justify-content: flex-end;
-}
-.has-parallel-slots .priority-account-row {
-  grid-template-columns: 24px minmax(0, 1fr) auto;
-}
-.has-parallel-slots .priority-account-controls {
-  grid-column: 2 / -1;
-  flex-direction: row;
-  justify-content: space-between;
-}
-.has-parallel-slots .priority-moves {
-  flex-direction: row;
 }
 .has-parallel-slots .priority-slot:not(.priority-slot-empty) {
   border-color: var(--line);
@@ -455,6 +375,10 @@
   border-color: var(--accent);
   background: var(--accent-bg);
 }
-.app.mobile .has-parallel-slots .priority-account-row {
-  grid-template-columns: 48px minmax(0, 1fr) auto;
+@media (prefers-reduced-motion: reduce) {
+  .priority-manager *,
+  .priority-drag-ghost {
+    scroll-behavior: auto;
+    transition: none;
+  }
 }

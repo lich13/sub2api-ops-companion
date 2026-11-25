@@ -85,6 +85,7 @@ public final class RustBridge: Sendable {
         var appActive: Bool = false
         var mockHandler: MockHandler?
         var eventHandler: (@MainActor @Sendable (InboundEvent) -> Void)?
+        var cachedSnapshot: CachedSnapshotContext?
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -100,6 +101,7 @@ public final class RustBridge: Sendable {
     public func setMockHandler(_ handler: MockHandler?) {
         state.withLock { s in
             s.mockHandler = handler
+            s.cachedSnapshot = nil
         }
     }
 
@@ -317,7 +319,23 @@ public final class RustBridge: Sendable {
             switch kind {
             case .opsState:
                 do {
-                    let next = try JSONDecoder().decode(ViewState.self, from: data)
+                    let decoder = JSONDecoder()
+                    if let cached = self.state.withLock({ $0.cachedSnapshot }) {
+                        decoder.userInfo[ViewState.cachedSnapshotUserInfoKey] = cached
+                    }
+                    let next = try decoder.decode(ViewState.self, from: data)
+                    self.state.withLock { s in
+                        if let snap = next.snapshot, let rev = next.snapshot_revision, rev != 0 {
+                            let connKey = "\(next.connection_revision ?? 0)|\(next.preferences.base_url)"
+                            s.cachedSnapshot = CachedSnapshotContext(
+                                connectionKey: connKey,
+                                snapshotRevision: rev,
+                                snapshot: snap
+                            )
+                        } else if next.snapshot == nil {
+                            s.cachedSnapshot = nil
+                        }
+                    }
                     event = .opsState(seq: seq, state: next)
                 } catch {
                     event = .opsStateDecodeError(error.localizedDescription)

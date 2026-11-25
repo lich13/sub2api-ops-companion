@@ -5,7 +5,7 @@ use crate::{
     compat::{datetime, digest, integer, operation_versions, parse_datetime, pick, string, truthy},
     detection_quota,
     error::{Error, Result},
-    model_downgrade::{bank_contains, is_downgrade, valid_report},
+    model_downgrade::{is_downgrade, valid_report},
     model_target,
     model_tests::{ModelTests, ACTIVE},
     oauth_monitor::Monitor,
@@ -511,18 +511,17 @@ impl Detection {
                     data["notifications"][key] = record;
                 }
             }
-            while data["detection_clues"].as_object().unwrap().len() > 10000 {
-                let key = data["detection_clues"]
-                    .as_object()
-                    .unwrap()
-                    .keys()
-                    .next()
-                    .unwrap()
-                    .clone();
-                data["detection_clues"]
-                    .as_object_mut()
-                    .unwrap()
-                    .shift_remove(&key);
+            let clues_map = data["detection_clues"].as_object_mut().unwrap();
+            if clues_map.len() > 10000 {
+                let mut drop_count = clues_map.len() - 10000;
+                clues_map.retain(|_, _| {
+                    if drop_count > 0 {
+                        drop_count -= 1;
+                        false
+                    } else {
+                        true
+                    }
+                });
             }
             Ok(())
         })?;
@@ -640,10 +639,11 @@ impl Detection {
                         || crate::verdict_policy::lm_contains(&bank, &value)
                 })
         } else {
+            let compiled = self.tests.bank.compiled();
             if crate::verdict_policy::relaxed(&value) {
-                crate::verdict_policy::bank_contains(&self.tests.bank.snapshot().0, &value)
+                compiled.contains_policy(&value)
             } else {
-                bank_contains(&self.tests.bank.snapshot().0, TARGET)
+                compiled.contains_exact(TARGET)
             }
         };
         if !allowed || !ready {

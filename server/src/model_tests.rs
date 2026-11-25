@@ -54,8 +54,8 @@ pub(crate) struct Context {
     pub progress: Mutex<serde_json::Map<String, Value>>,
     pub samples: Mutex<BTreeMap<usize, String>>,
     pub challenges: Vec<(usize, String)>,
-    pub snapshot: Arc<(Value, Value)>,
-    pub compiled: Option<Arc<modeltrace::CompiledBank>>,
+    pub bank_version: Value,
+    pub compiled: Arc<modeltrace::CompiledBank>,
     pub lm: Option<Arc<crate::lm_detector::Snapshot>>,
     pub row: Value,
     pub owner: Value,
@@ -67,10 +67,7 @@ impl Context {
             Some(lm) => lm.analyze(samples, &self.challenges),
             None => {
                 let outputs = samples.values().cloned().collect::<Vec<_>>();
-                match &self.compiled {
-                    Some(compiled) => compiled.analyze(&outputs, &self.snapshot.1),
-                    None => modeltrace::analyze(&outputs, &self.snapshot),
-                }
+                self.compiled.analyze(&outputs, &self.bank_version)
             }
         }
     }
@@ -124,12 +121,12 @@ fn validate(value: &Value) -> Result<()> {
 
 const MAX_TERMINAL_MODEL_JOBS: usize = 10_000;
 
-fn prune_terminal_jobs(value: &mut Value) {
+fn prune_terminal_jobs(value: &mut Value) -> bool {
     let Some(total) = value["jobs"].as_object().map(|m| m.len()) else {
-        return;
+        return false;
     };
     if total <= MAX_TERMINAL_MODEL_JOBS {
-        return;
+        return false;
     }
     let pinned = value["accounts"]
         .as_object()
@@ -159,7 +156,7 @@ fn prune_terminal_jobs(value: &mut Value) {
         })
         .collect::<Vec<_>>();
     if terminals.len() <= MAX_TERMINAL_MODEL_JOBS {
-        return;
+        return false;
     }
     terminals.sort();
     let drop_count = terminals.len() - MAX_TERMINAL_MODEL_JOBS;
@@ -176,6 +173,33 @@ fn prune_terminal_jobs(value: &mut Value) {
     if let Some(requests) = value["requests"].as_object_mut() {
         requests.retain(|_, job_id| job_id.as_str().is_some_and(|id| live_ids.contains(id)));
     }
+    true
+}
+fn validate_incremental(before: &Value, after: &Value, pruned: bool) -> Result<()> {
+    if pruned
+        || !after.is_object()
+        || after["version"] != 1
+        || !after["accounts"].is_object()
+        || after.get("requests").is_some_and(|v| !v.is_object())
+        || after.get("jobs").is_some_and(|v| !v.is_object())
+    {
+        return validate(after);
+    }
+    let prev_accounts = before["accounts"].as_object();
+    for (k, v) in after["accounts"].as_object().unwrap() {
+        if prev_accounts.and_then(|m| m.get(k)) != Some(v) && !valid_account(v) {
+            return Err(Error::new(503, "模型测试状态损坏"));
+        }
+    }
+    if let Some(jobs) = after.get("jobs").and_then(Value::as_object) {
+        let prev_jobs = before.get("jobs").and_then(Value::as_object);
+        for (k, v) in jobs {
+            if prev_jobs.and_then(|m| m.get(k)) != Some(v) && !valid_job(v) {
+                return Err(Error::new(503, "模型测试状态损坏"));
+            }
+        }
+    }
+    Ok(())
 }
 fn normalize(value: &mut Value) {
     if value.get("requests").is_none() {
@@ -208,13 +232,13 @@ fn interruption(job: &Value, error: &str, at: Value) -> Value {
 impl ModelTests {
     fn check_policy_bank(
         policy: &Value,
-        bank: &Value,
+        bank: &modeltrace::CompiledBank,
         lm: Option<&crate::lm_detector::Snapshot>,
     ) -> Result<()> {
         let present = if let Some(lm) = lm {
             crate::verdict_policy::lm_contains(lm, policy)
         } else {
-            crate::verdict_policy::bank_contains(bank, policy)
+            bank.contains_policy(policy)
         };
         if !present {
             return Err(Error::new(422, "当前检测库无法识别指定的降智模型"));
@@ -281,12 +305,16 @@ impl ModelTests {
         Ok(data)
     }
     pub fn transaction<T>(&self, change: impl FnOnce(&mut Value) -> Result<T>) -> Result<T> {
-        self.store.transaction(|data| {
-            normalize(data);
-            let out = change(data)?;
-            prune_terminal_jobs(data);
-            Ok(out)
-        })
+        let pruned = std::cell::Cell::new(false);
+        self.store.transaction_diff_validated(
+            |data| {
+                normalize(data);
+                let out = change(data)?;
+                pruned.set(prune_terminal_jobs(data));
+                Ok(out)
+            },
+            |before, after| validate_incremental(before, after, pruned.get()),
+        )
     }
     pub fn public(&self, mut job: Value) -> Value {
         if let Some(object) = job.as_object_mut() {
@@ -618,7 +646,7 @@ impl ModelTests {
         job["engine"] = payload["engine"].clone();
         crate::verdict_policy::copy(&policy, &mut job);
         if crate::verdict_policy::relaxed(&policy) {
-            Self::check_policy_bank(&policy, &self.bank.snapshot().0, lm.as_deref())?;
+            Self::check_policy_bank(&policy, &self.bank.compiled(), lm.as_deref())?;
         }
         job["sample_count"] = groups.into();
         job["tokenizer_probe"] = payload["tokenizer_probe"].clone();
@@ -882,26 +910,20 @@ impl ModelTests {
             context
         } else {
             let lm = prepared_lm;
-            let (snapshot, compiled) = self.bank.compiled_snapshot();
+            let (bank_version, compiled) = self.bank.compiled_version();
             if crate::verdict_policy::relaxed(job) {
-                Self::check_policy_bank(job, &snapshot.0, lm.as_deref())?;
+                Self::check_policy_bank(job, &compiled, lm.as_deref())?;
             }
             if job["automatic"] == true
                 && !crate::verdict_policy::relaxed(job)
                 && lm.is_none()
-                && !crate::model_downgrade::bank_contains(
-                    &snapshot.0,
-                    crate::model_downgrade::LEGACY_TARGET,
-                )
+                && !compiled.contains_exact(crate::model_downgrade::LEGACY_TARGET)
             {
                 return Err(Error::new(409, "当前指纹库缺少降智判定模型"));
             }
             if job["automatic"] == true
                 && lm.is_none()
-                && !crate::model_downgrade::bank_contains(
-                    &snapshot.0,
-                    string(&job["requested_model"]),
-                )
+                && !compiled.contains_exact(string(&job["requested_model"]))
             {
                 eprintln!("model_detection_diagnostic level=debug reason=requested_model_absent");
             }
@@ -928,8 +950,8 @@ impl ModelTests {
                     modeltrace::challenges()
                 },
                 lm,
-                snapshot,
-                compiled: Some(compiled),
+                bank_version,
+                compiled,
                 row,
                 owner,
                 target,
@@ -953,7 +975,7 @@ impl ModelTests {
         if self.actions.supervisor.is_stopping() {
             return Ok(());
         }
-        let job=self.update(id,json!({"status":"running","started_at":crate::compat::datetime((self.clock)()),"error":"","completed_at":null,"waiting_until":null,"bank_version":context.lm.as_ref().map(|lm|&lm.version).unwrap_or(&context.snapshot.1),"can_retry":false}))?;
+        let job=self.update(id,json!({"status":"running","started_at":crate::compat::datetime((self.clock)()),"error":"","completed_at":null,"waiting_until":null,"bank_version":context.lm.as_ref().map(|lm|&lm.version).unwrap_or(&context.bank_version),"can_retry":false}))?;
         self.run(job, context, prepared_row).await
     }
     pub async fn retry_failed(&self, id: &str, request: &str) -> Result<Value> {

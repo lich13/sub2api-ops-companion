@@ -99,4 +99,17 @@ public enum GroupDraftLogic {
             !groups.contains(where: { $0.id == gid && $0.platform == account.platform })
         }
     }
+
+    public static func hasConflict(
+        draft: GroupDraftEntry,
+        accountById: [Int: Account],
+        groupById: [Int: Group]
+    ) -> Bool {
+        guard let account = accountById[draft.id] else { return true }
+        let liveVer = account.operation_versions["groups"] ?? account.version
+        if liveVer != draft.version { return true }
+        return draft.scope.contains { gid in
+            groupById[gid]?.platform != account.platform
+        }
+    }
 }

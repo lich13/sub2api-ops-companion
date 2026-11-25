@@ -190,8 +190,13 @@ fn load(value: &mut Value) -> Result<bool> {
     *value = normalized;
     Ok(migrated)
 }
-fn validate_shape(value: &Value) -> Result<()> {
-    if !value.is_object() || value["version"].as_i64().is_some_and(|v| v > 5) {
+fn validate_sections(value: &Value) -> Result<()> {
+    if !value.is_object()
+        || value
+            .get("version")
+            .filter(|v| !v.is_null())
+            .is_some_and(|ver| ver.as_u64().is_none_or(|v| v > 5))
+    {
         return Err(invalid("OAuth 状态文件无效"));
     }
     for section in [
@@ -206,77 +211,126 @@ fn validate_shape(value: &Value) -> Result<()> {
             return Err(invalid("OAuth 状态分区无效"));
         }
     }
+    Ok(())
+}
+
+fn validate_scheduler_entry(meta: &Value) -> Result<()> {
+    if !meta.is_object() {
+        return Err(invalid("OAuth 调度状态无效"));
+    }
+    if meta.get("quota_query").is_some() {
+        query_metadata(meta, &Value::Null)?;
+    }
+    if let Some(credit) = meta.get("auto_reset_credit") {
+        validate_credit(credit)?;
+    }
+    if let Some(notices) = meta.get("credit_result_notifications") {
+        let notices = notices
+            .as_object()
+            .ok_or_else(|| invalid("用卡通知状态无效"))?;
+        for (episode, notice) in notices {
+            if !notice.is_object()
+                || !matches!(
+                    string(&notice["status"]),
+                    "pending" | "delivered" | "failed" | "suppressed"
+                )
+                || notice["episode"] != *episode
+                || !matches!(
+                    string(&notice["outcome"]),
+                    "restored" | "not_executed" | "consume_failed" | "unrecovered" | "unknown"
+                )
+                || notice["account_id"].as_i64().is_none_or(|v| v <= 0)
+                || notice["attempts"]
+                    .as_i64()
+                    .is_none_or(|v| !(0..=5).contains(&v))
+                || parse_datetime(&notice["completed_at"]).is_none()
+                || (notice["status"] == "pending" && parse_datetime(&notice["next_at"]).is_none())
+                || !optional_time(&notice["next_at"])
+            {
+                return Err(invalid("用卡通知状态无效"));
+            }
+        }
+    }
+    if let Some(admission) = meta.get("credit_admission").filter(|v| !v.is_null()) {
+        if !admission.is_object()
+            || parse_datetime(&admission["trigger_at"]).is_none()
+            || parse_datetime(&admission["checked_at"]).is_none()
+            || !admission["reason"].is_string()
+            || !admission["evidence_fingerprint"].is_string()
+            || !optional_time(&admission["recovered_at"])
+        {
+            return Err(invalid("重置卡准入状态无效"));
+        }
+    }
+    if let Some(control) = meta.get("manual_control") {
+        if !control.is_object()
+            || control["generation"].as_i64().is_none_or(|v| v < 1)
+            || !control["enabled"].is_boolean()
+            || parse_datetime(&control["at"]).is_none()
+        {
+            return Err(invalid("人工调度控制状态无效"));
+        }
+    }
+    let intent = &meta["recovery_intent"];
+    if intent.is_object() {
+        crate::connection_retry::Policy::saved(intent)?;
+        if intent
+            .get("connection_attempt_count")
+            .is_some_and(|value| value.as_u64().is_none())
+        {
+            return Err(invalid("连接测试尝试次数无效"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_shape(value: &Value) -> Result<()> {
+    validate_sections(value)?;
     for meta in value["scheduler"]
         .as_object()
         .into_iter()
         .flat_map(|v| v.values())
     {
-        if !meta.is_object() {
-            return Err(invalid("OAuth 调度状态无效"));
-        }
-        if meta.get("quota_query").is_some() {
-            query_metadata(meta, &Value::Null)?;
-        }
-        if let Some(credit) = meta.get("auto_reset_credit") {
-            validate_credit(credit)?;
-        }
-        if let Some(notices) = meta.get("credit_result_notifications") {
-            let notices = notices
-                .as_object()
-                .ok_or_else(|| invalid("用卡通知状态无效"))?;
-            for (episode, notice) in notices {
-                if !notice.is_object()
-                    || !matches!(
-                        string(&notice["status"]),
-                        "pending" | "delivered" | "failed" | "suppressed"
-                    )
-                    || notice["episode"] != *episode
-                    || !matches!(
-                        string(&notice["outcome"]),
-                        "restored" | "not_executed" | "consume_failed" | "unrecovered" | "unknown"
-                    )
-                    || notice["account_id"].as_i64().is_none_or(|v| v <= 0)
-                    || notice["attempts"]
-                        .as_i64()
-                        .is_none_or(|v| !(0..=5).contains(&v))
-                    || parse_datetime(&notice["completed_at"]).is_none()
-                    || (notice["status"] == "pending"
-                        && parse_datetime(&notice["next_at"]).is_none())
-                    || !optional_time(&notice["next_at"])
-                {
-                    return Err(invalid("用卡通知状态无效"));
-                }
+        validate_scheduler_entry(meta)?;
+    }
+    Ok(())
+}
+
+fn validate_shape_incremental(before: &Value, after: &Value) -> Result<()> {
+    validate_sections(after)?;
+    if after["version"].as_u64().is_none_or(|v| v > 5)
+        || after["settings"]
+            .get("sub2api_admin_token")
+            .is_some_and(|v| !v.is_null() && !v.is_string())
+    {
+        return Err(invalid("OAuth 状态文件无效"));
+    }
+    for section in ["oauth_results", "pending_events", "recovery_history"] {
+        let prev = before[section].as_object();
+        for (key, row) in after[section]
+            .as_object()
+            .into_iter()
+            .flat_map(|v| v.iter())
+        {
+            if prev.and_then(|m| m.get(key)) != Some(row) && !row.is_object() {
+                return Err(invalid("OAuth 状态文件无效"));
             }
         }
-        if let Some(admission) = meta.get("credit_admission").filter(|v| !v.is_null()) {
-            if !admission.is_object()
-                || parse_datetime(&admission["trigger_at"]).is_none()
-                || parse_datetime(&admission["checked_at"]).is_none()
-                || !admission["reason"].is_string()
-                || !admission["evidence_fingerprint"].is_string()
-                || !optional_time(&admission["recovered_at"])
+    }
+    let prev = before["scheduler"].as_object();
+    for (key, meta) in after["scheduler"]
+        .as_object()
+        .into_iter()
+        .flat_map(|v| v.iter())
+    {
+        if prev.and_then(|m| m.get(key)) != Some(meta) {
+            if meta
+                .get("recovery_intent")
+                .is_some_and(|v| !v.is_null() && !v.is_object())
             {
-                return Err(invalid("重置卡准入状态无效"));
+                return Err(invalid("OAuth 调度状态无效"));
             }
-        }
-        if let Some(control) = meta.get("manual_control") {
-            if !control.is_object()
-                || control["generation"].as_i64().is_none_or(|v| v < 1)
-                || !control["enabled"].is_boolean()
-                || parse_datetime(&control["at"]).is_none()
-            {
-                return Err(invalid("人工调度控制状态无效"));
-            }
-        }
-        let intent = &meta["recovery_intent"];
-        if intent.is_object() {
-            crate::connection_retry::Policy::saved(intent)?;
-            if intent
-                .get("connection_attempt_count")
-                .is_some_and(|value| value.as_u64().is_none())
-            {
-                return Err(invalid("连接测试尝试次数无效"));
-            }
+            validate_scheduler_entry(meta)?;
         }
     }
     Ok(())
@@ -454,7 +508,7 @@ fn prune_credit_history(state: &mut Value) {
 }
 
 #[derive(Clone)]
-pub struct OAuthState(pub Store<crate::state_files::OAuthFile>);
+pub struct OAuthState(pub Store);
 
 #[derive(Default)]
 pub struct Update {
@@ -471,26 +525,31 @@ pub struct Update {
 impl OAuthState {
     pub fn new(path: PathBuf) -> Self {
         let lock = PathBuf::from(format!("{}.lock", path.display()));
-        Self(Store::typed(
+        Self(Store::with_load(
             path,
             lock,
             normalize(&json!({})),
             validate_shape,
             load,
-            |raw| serde::Deserialize::deserialize(raw).map_err(|_| invalid("OAuth 状态文件无效")),
         ))
     }
     pub fn shared_snapshot(&self) -> Result<Arc<Value>> {
         self.0.read_shared()
     }
     pub fn transaction<T>(&self, action: impl FnOnce(&mut Value) -> Result<T>) -> Result<T> {
-        self.0.transaction(|value| {
-            let out = action(value)?;
-            prune_credit_history(value);
-            Ok(out)
-        })
+        self.0.transaction_diff_validated(
+            |value| {
+                let out = action(value)?;
+                prune_credit_history(value);
+                Ok(out)
+            },
+            validate_shape_incremental,
+        )
     }
     pub(crate) fn recover_interrupted(&self, account: Option<i64>) -> Result<()> {
+        let raw = self.shared_snapshot()?;
+        let parsed: crate::state_files::OAuthFile =
+            serde::Deserialize::deserialize(&*raw).map_err(|_| invalid("OAuth 状态文件无效"))?;
         let applies = |id: &str, meta: &crate::state_files::SchedulerEntry| {
             account.is_none_or(|account| id.parse() == Ok(account))
                 && meta
@@ -499,42 +558,32 @@ impl OAuthState {
                     .and_then(|i| i.get("status"))
                     .is_some_and(|s| s == "testing")
         };
-        if !self
-            .0
-            .read_state()?
-            .scheduler
-            .iter()
-            .any(|(id, meta)| applies(id, meta))
-        {
+        if !parsed.scheduler.iter().any(|(id, meta)| applies(id, meta)) {
             return Ok(());
         }
-        self.0.edit_state(|state| {
-            for (id, meta) in &mut state.scheduler {
-                if !applies(id, meta) {
-                    continue;
-                }
-                if let Some(intent) = &mut meta.recovery_intent {
+        self.transaction(|state| {
+            if let Some(scheduler) = state["scheduler"].as_object_mut() {
+                for (id, meta) in scheduler {
+                    let matches_account = account.is_none_or(|account| id.parse() == Ok(account));
+                    if !matches_account || meta["recovery_intent"]["status"] != "testing" {
+                        continue;
+                    }
+                    let intent = &mut meta["recovery_intent"];
                     let next = ["next_retry_at", "tested_at", "confirmed_at", "due_at"]
                         .into_iter()
                         .filter_map(|key| intent.get(key))
                         .find(|v| truthy(v))
                         .cloned()
                         .unwrap_or(json!(""));
-                    intent.insert("status".into(), "retry".into());
-                    intent.insert("next_retry_at".into(), next);
+                    intent["status"] = "retry".into();
+                    intent["next_retry_at"] = next;
                 }
             }
             Ok(())
         })
     }
     pub fn admin_token(&self) -> Result<String> {
-        Ok(self
-            .0
-            .read_state()?
-            .settings
-            .sub2api_admin_token
-            .clone()
-            .unwrap_or_default())
+        Ok(string(&self.shared_snapshot()?["settings"]["sub2api_admin_token"]).to_owned())
     }
     pub fn save_admin_token(&self, key: &str) -> Result<()> {
         let key = key.trim();
@@ -544,8 +593,11 @@ impl OAuthState {
         if self.admin_token()? == key {
             return Ok(());
         }
-        self.0.edit_state(|state| {
-            state.settings.sub2api_admin_token = Some(key.to_owned());
+        self.transaction(|state| {
+            if !state["settings"].is_object() {
+                state["settings"] = json!({});
+            }
+            state["settings"]["sub2api_admin_token"] = key.into();
             Ok(())
         })
     }
@@ -768,5 +820,31 @@ mod shared_tests {
         assert!(state.shared_snapshot().is_err());
         std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
         assert_eq!(*state.shared_snapshot().unwrap(), *first);
+
+        assert!(state
+            .transaction(|value| {
+                value["version"] = json!("corrupted");
+                Ok(())
+            })
+            .is_err());
+        assert!(state
+            .transaction(|value| {
+                value["settings"]["sub2api_admin_token"] = json!(12345);
+                Ok(())
+            })
+            .is_err());
+        assert!(state
+            .transaction(|value| {
+                value["scheduler"]["1"]["recovery_intent"] = json!("corrupted");
+                Ok(())
+            })
+            .is_err());
+        assert!(state
+            .transaction(|value| {
+                value["oauth_results"]["9"] = json!("not-an-object");
+                Ok(())
+            })
+            .is_err());
+        state.recover_interrupted(None).unwrap();
     }
 }

@@ -2463,3 +2463,167 @@ async fn capacity_duplicate_rescans_preserve_progress_cleanup_and_validation() {
     );
     database.close().await;
 }
+
+#[tokio::test]
+async fn slow_poll_cache_ignores_non_openai_traffic_catches_out_of_order_commits_and_expires_aged_samples(
+) {
+    let _serial = DB_TEST_LOCK.lock().await;
+    let capture = CaptureServer::start(vec![]).await;
+    let root = tempfile::tempdir().unwrap();
+    let t0 = Utc::now();
+    let now_cell = Arc::new(Mutex::new(t0));
+    let clock_cell = Arc::clone(&now_cell);
+    let cfg = settings(
+        root.path(),
+        database_url(),
+        json!({"enabled":false,"device_key":"","server_url":""}),
+        true,
+        capture.url.clone(),
+    );
+    let runtime = Runtime::new_with_clock(cfg, Arc::new(move || *clock_cell.lock().unwrap()))
+        .await
+        .expect("construct Runtime with controllable clock");
+    let alerts = &runtime.detection.capacity;
+    seed_capacity_baseline(alerts, t0 - Duration::hours(2));
+    let db = runtime.db.clone();
+
+    let openai_id = account_id();
+    let anthropic_id = account_id();
+    insert_account(&db, openai_id, "fixture-slow-openai", "oauth", None, false).await;
+    sqlx::query(
+        "INSERT INTO accounts (id,name,platform,type,status,schedulable,deleted_at,updated_at) \
+         VALUES ($1,'fixture-slow-anthropic','anthropic','apikey','active',true,NULL,now())",
+    )
+    .bind(anthropic_id)
+    .execute(&db.pool)
+    .await
+    .unwrap();
+
+    let max_existing: i64 =
+        sqlx::query_scalar("SELECT COALESCE(MAX(id), 0)::bigint FROM usage_logs")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+    let high_base = max_existing + 50_000;
+    let insert_slow_log = |log_id: i64, acct: i64, created: DateTime<Utc>, ttft_ms: i64| {
+        let pool = db.pool.clone();
+        async move {
+            sqlx::query(
+                "INSERT INTO usage_logs(id,account_id,created_at,model,stream,first_token_ms,duration_ms,output_tokens,inbound_endpoint,image_count) \
+                 VALUES ($1,$2,$3,'gpt-5.4',true,$4,$5,32,'/v1/responses',0)",
+            )
+            .bind(log_id)
+            .bind(acct)
+            .bind(created)
+            .bind(ttft_ms)
+            .bind(ttft_ms + 500)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+    };
+
+    // Oldest of the eventual 10 samples sits 10s inside the 24h window so it will age out at t0 + 15s.
+    insert_slow_log(
+        high_base + 1,
+        openai_id,
+        t0 - Duration::hours(24) + Duration::seconds(10),
+        15_000,
+    )
+    .await;
+    for idx in 2..=9_i64 {
+        insert_slow_log(
+            high_base + idx,
+            openai_id,
+            t0 - Duration::minutes(10 - idx),
+            15_000,
+        )
+        .await;
+    }
+    // High-ID Anthropic row moves global_max_id to high_base + 10_000 (floor_id = high_base + 5_904).
+    insert_slow_log(
+        high_base + 10_000,
+        anthropic_id,
+        t0 - Duration::seconds(5),
+        15_000,
+    )
+    .await;
+
+    alerts.poll().await.unwrap();
+    let s1 = alerts.store.snapshot().unwrap();
+    assert_eq!(s1["slow_ttft"][openai_id.to_string()]["active"], false);
+
+    // Additional Anthropic rows advance global_max_id without touching OpenAI accounts.
+    for extra in 1..=5_i64 {
+        insert_slow_log(
+            high_base + 10_000 + extra,
+            anthropic_id,
+            t0 + Duration::seconds(1),
+            15_000,
+        )
+        .await;
+    }
+    *now_cell.lock().unwrap() = t0 + Duration::seconds(2);
+    alerts.poll().await.unwrap();
+    assert_eq!(
+        alerts.store.snapshot().unwrap()["slow_ttft"][openai_id.to_string()]["active"],
+        false
+    );
+
+    // Out-of-order OpenAI commit (id < global_max_id, id > floor_id = high_base + 5_909) must invalidate cache.
+    let out_of_order_id = high_base + 9_950;
+    insert_slow_log(
+        out_of_order_id,
+        openai_id,
+        t0 + Duration::seconds(3),
+        16_000,
+    )
+    .await;
+    *now_cell.lock().unwrap() = t0 + Duration::seconds(4);
+    alerts.poll().await.unwrap();
+    let s2 = alerts.store.snapshot().unwrap();
+    assert_eq!(s2["slow_ttft"][openai_id.to_string()]["active"], true);
+    assert!(
+        s2["detection_events"]
+            .get(format!("slow:{openai_id}:{out_of_order_id}").as_str())
+            .is_some(),
+        "out-of-order OpenAI slow sample must emit detection event immediately"
+    );
+
+    // At t0 + 15s (< t0 + 4s + 30s TTL), the oldest sample (t0 - 24h + 10s) ages out of the 24h window.
+    *now_cell.lock().unwrap() = t0 + Duration::seconds(15);
+    alerts.poll().await.unwrap();
+    let s3 = alerts.store.snapshot().unwrap();
+    assert_eq!(
+        s3["slow_ttft"][openai_id.to_string()]["active"],
+        false,
+        "aged-out top-10 sample must invalidate 30s cache immediately"
+    );
+
+    // >20,000 PK jump across non-OpenAI traffic plus a fresh OpenAI sample re-anchors floor_id cleanly.
+    insert_slow_log(
+        high_base + 40_000,
+        anthropic_id,
+        t0 + Duration::seconds(16),
+        15_000,
+    )
+    .await;
+    insert_slow_log(
+        high_base + 40_001,
+        openai_id,
+        t0 + Duration::seconds(17),
+        17_000,
+    )
+    .await;
+    *now_cell.lock().unwrap() = t0 + Duration::seconds(18);
+    alerts.poll().await.unwrap();
+    let s4 = alerts.store.snapshot().unwrap();
+    assert_eq!(s4["slow_ttft"][openai_id.to_string()]["active"], true);
+
+    sqlx::query("DELETE FROM usage_logs WHERE id >= $1")
+        .bind(high_base)
+        .execute(&db.pool)
+        .await
+        .unwrap();
+    runtime.close().await;
+}

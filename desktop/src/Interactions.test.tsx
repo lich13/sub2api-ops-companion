@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, command } from "./bridge";
 import TestDialog from "./TestDialog";
 import { QuotaRefresh } from "./AccountControls";
+import { usageRefreshEvent } from "./UsageCell";
 import { setOperations } from "./accountOperations";
 import type { Account, TestEvent } from "./types";
 
@@ -306,5 +307,221 @@ describe("quota batch polling", () => {
     });
     expect(api).toHaveBeenCalledTimes(calls);
     expect(command).toHaveBeenCalledWith("refresh");
+  });
+  it("does not emit false refresh completion when switching connections during a running batch", async () => {
+    vi.useFakeTimers();
+    vi.mocked(api).mockResolvedValueOnce({
+      id: "batch-a",
+      status: "running",
+      items: [],
+      total: 4,
+      completed: 1,
+      started_at: "2026-10-01T00:00:00Z",
+    });
+    const report = vi.fn();
+    await act(async () =>
+      root.render(
+        <QuotaRefresh online active connectionKey="conn-a" report={report} />,
+      ),
+    );
+    expect(command).not.toHaveBeenCalled();
+
+    vi.mocked(api).mockResolvedValueOnce({
+      id: "batch-b",
+      status: "completed",
+      items: [],
+      total: 2,
+      completed: 2,
+      started_at: "2026-10-01T00:00:00Z",
+    });
+    await act(async () =>
+      root.render(
+        <QuotaRefresh online active connectionKey="conn-b" report={report} />,
+      ),
+    );
+    expect(command).not.toHaveBeenCalled();
+  });
+  it("preserves initial running state and continues 1s polling under React.StrictMode", async () => {
+    vi.useFakeTimers();
+    const report = vi.fn();
+    let step = 0;
+    vi.mocked(api).mockImplementation(async () => {
+      step += 1;
+      if (step <= 2) {
+        return {
+          id: "strict-batch",
+          status: "running",
+          items: [],
+          total: 3,
+          completed: 1,
+          started_at: "2026-10-01T00:00:00Z",
+        };
+      }
+      if (step === 3) {
+        return {
+          id: "strict-batch",
+          status: "running",
+          items: [],
+          total: 3,
+          completed: 2,
+          started_at: "2026-10-01T00:00:00Z",
+        };
+      }
+      return {
+        id: "strict-batch",
+        status: "completed",
+        items: [],
+        total: 3,
+        completed: 3,
+        started_at: "2026-10-01T00:00:00Z",
+        completed_at: "2026-10-01T00:00:02Z",
+      };
+    });
+    await act(async () =>
+      root.render(
+        <React.StrictMode>
+          <QuotaRefresh
+            online
+            active
+            connectionKey="conn-strict"
+            report={report}
+          />
+        </React.StrictMode>,
+      ),
+    );
+    expect(container.textContent).toContain("1/3 查询中");
+    expect(button("刷新全部").disabled).toBe(true);
+    expect(command).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(container.textContent).toContain("2/3 查询中");
+    expect(command).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(container.textContent).toContain("3/3 已完成");
+    expect(button("刷新全部").disabled).toBe(false);
+    expect(command).toHaveBeenCalledTimes(1);
+    expect(command).toHaveBeenCalledWith("refresh");
+
+    const settledCalls = vi.mocked(api).mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(vi.mocked(api)).toHaveBeenCalledTimes(settledCalls);
+  });
+  it("notifies completion on immediate terminal POST, ignores pre-POST GET, and isolates A->B->A in-flight POSTs", async () => {
+    vi.useFakeTimers();
+    const report = vi.fn();
+    let resolveInitialGetA!: (value: unknown) => void;
+    let resolvePostA!: (value: unknown) => void;
+    let getCount = 0;
+    vi.mocked(api).mockImplementation((method) => {
+      if (method === "GET") {
+        getCount += 1;
+        if (getCount === 1) {
+          return new Promise((resolve) => {
+            resolveInitialGetA = resolve;
+          });
+        }
+        return Promise.resolve({
+          id: "batch-fresh",
+          status: "completed",
+          items: [],
+          total: 4,
+          completed: 4,
+          started_at: "2026-10-01T00:00:00Z",
+          completed_at: "2026-10-01T00:00:01Z",
+        });
+      }
+      return new Promise((resolve) => {
+        resolvePostA = resolve;
+      });
+    });
+
+    const events: CustomEvent[] = [];
+    const onRefreshEvent = (event: Event) => events.push(event as CustomEvent);
+    document.addEventListener(usageRefreshEvent, onRefreshEvent);
+    try {
+      await act(async () =>
+        root.render(
+          <QuotaRefresh online active connectionKey="conn-a" report={report} />,
+        ),
+      );
+      expect(button("刷新全部").disabled).toBe(false);
+
+      // Click manual refresh while initial GET on conn-a is still in flight; POST resolves immediately as completed.
+      await act(async () => {
+        button("刷新全部").click();
+      });
+      expect(button("刷新全部").disabled).toBe(true);
+      await act(async () => {
+        resolvePostA({
+          id: "post-immediate",
+          status: "completed",
+          items: [],
+          total: 2,
+          completed: 2,
+          started_at: "2026-10-01T00:00:00Z",
+          completed_at: "2026-10-01T00:00:00Z",
+        });
+      });
+      expect(container.textContent).toContain("2/2 已完成");
+      expect(command).toHaveBeenCalledTimes(1);
+      expect(command).toHaveBeenCalledWith("refresh");
+      expect(events).toHaveLength(1);
+      expect(events[0]?.detail.connectionKey).toBe("conn-a");
+
+      // Late pre-POST GET returning idle must not overwrite the completed POST result.
+      await act(async () => {
+        resolveInitialGetA({
+          status: "idle",
+          items: [],
+          total: 0,
+          completed: 0,
+        });
+      });
+      expect(container.textContent).toContain("2/2 已完成");
+
+      // Start another slow POST on conn-a, then switch conn-a -> conn-b -> conn-a before it settles.
+      await act(async () => {
+        button("刷新全部").click();
+      });
+      expect(button("刷新全部").disabled).toBe(true);
+
+      await act(async () =>
+        root.render(
+          <QuotaRefresh online active connectionKey="conn-b" report={report} />,
+        ),
+      );
+      // conn-b must not inherit conn-a's starting lock.
+      expect(button("刷新全部").disabled).toBe(false);
+
+      await act(async () =>
+        root.render(
+          <QuotaRefresh online active connectionKey="conn-a" report={report} />,
+        ),
+      );
+      expect(container.textContent).toContain("4/4 已完成");
+
+      // Stale POST from the earlier conn-a visit resolves as running and must be ignored.
+      await act(async () => {
+        resolvePostA({
+          id: "stale-post-a",
+          status: "running",
+          items: [],
+          total: 4,
+          completed: 0,
+          started_at: "2026-10-01T00:00:00Z",
+        });
+      });
+      expect(container.textContent).toContain("4/4 已完成");
+      expect(button("刷新全部").disabled).toBe(false);
+    } finally {
+      document.removeEventListener(usageRefreshEvent, onRefreshEvent);
+    }
   });
 });

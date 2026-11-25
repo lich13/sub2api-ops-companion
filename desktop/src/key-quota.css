@@ -105,18 +105,18 @@
   gap: 8px;
 }
 .key-quota-token-actions button {
-  min-height: 34px;
+  min-height: 48px;
 }
-.mobile .key-quota .usage-action {
+.key-quota .usage-action {
   min-width: 48px;
   min-height: 48px;
   justify-content: center;
 }
-.mobile .key-quota {
+.key-quota {
   font-size: 12px;
 }
-.mobile .key-quota .key-quota-plans th,
-.mobile .key-quota .key-quota-plans td {
+.key-quota .key-quota-plans th,
+.key-quota .key-quota-plans td {
   font-size: 11px;
 }
 .key-quota-compact > span {

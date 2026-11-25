@@ -117,6 +117,7 @@ impl Operations {
             }
             Ok(job.clone())
         })?;
+        self.wake.notify_one();
         Ok(self.public(&job, false, 0))
     }
 

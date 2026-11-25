@@ -336,3 +336,156 @@ async fn refresh_has_an_eight_second_budget_and_can_retry_after_timeout() {
     );
     cache.close().await;
 }
+
+#[tokio::test]
+async fn concurrent_persisted_refreshes_track_sizes_atomically_within_max_bytes() {
+    let temp = tempfile::tempdir().unwrap();
+    let settings = Settings::from_env(
+        &[
+            (
+                "DATABASE_URL".into(),
+                "postgresql://fixture@127.0.0.1/fixture".into(),
+            ),
+            (
+                "USAGE_QUERY_STATE_PATH".into(),
+                temp.path()
+                    .join("usage.json")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+        ]
+        .into(),
+    )
+    .unwrap();
+    let cache = Candidates::new(Default::default())
+        .persisted(&settings)
+        .unwrap();
+    // Seed account-1 with a tiny entry so in-memory `self.state` initially records <100 bytes.
+    cache
+        .get("account-1".into(), false, async { Ok(models()) })
+        .await
+        .unwrap();
+
+    let (ready_a_tx, ready_a_rx) = tokio::sync::oneshot::channel();
+    let (ready_b_tx, ready_b_rx) = tokio::sync::oneshot::channel();
+    let (go_a_tx, go_a_rx) = tokio::sync::oneshot::channel();
+    let (go_b_tx, go_b_rx) = tokio::sync::oneshot::channel();
+
+    let c1 = cache.clone();
+    let t1 = tokio::spawn(async move {
+        c1.get("account-1".into(), true, async move {
+            let _ = ready_a_tx.send(());
+            let _ = go_a_rx.await;
+            Ok(vec![json!({
+                "id": "fixture-large-1",
+                "display_name": "a".repeat(5 * 1024 * 1024),
+            })])
+        })
+        .await
+    });
+    let c2 = cache.clone();
+    let t2 = tokio::spawn(async move {
+        c2.get("account-2".into(), true, async move {
+            let _ = ready_b_tx.send(());
+            let _ = go_b_rx.await;
+            Ok(vec![json!({
+                "id": "fixture-large-2",
+                "display_name": "b".repeat(5 * 1024 * 1024),
+            })])
+        })
+        .await
+    });
+
+    ready_a_rx.await.unwrap();
+    ready_b_rx.await.unwrap();
+    go_a_tx.send(()).unwrap();
+    go_b_tx.send(()).unwrap();
+
+    t1.await.unwrap().unwrap();
+    t2.await.unwrap().unwrap();
+
+    let raw_disk: Value = serde_json::from_slice(
+        &std::fs::read(temp.path().join("account-model-cache.json")).unwrap(),
+    )
+    .unwrap();
+    let persisted_entries = raw_disk["entries"].as_object().unwrap();
+    let persisted_total: usize = persisted_entries
+        .values()
+        .map(|v| json_byte_len(v).unwrap())
+        .sum();
+    assert!(
+        persisted_total <= MAX_BYTES,
+        "persisted entries exceeded MAX_BYTES: {persisted_total} > {MAX_BYTES}"
+    );
+    assert_eq!(persisted_entries.len(), 1);
+    cache.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn failed_persist_leaves_prior_disk_sizes_intact_for_subsequent_eviction() {
+    let temp = tempfile::tempdir().unwrap();
+    let settings = Settings::from_env(
+        &[
+            (
+                "DATABASE_URL".into(),
+                "postgresql://fixture@127.0.0.1/fixture".into(),
+            ),
+            (
+                "USAGE_QUERY_STATE_PATH".into(),
+                temp.path()
+                    .join("usage.json")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+        ]
+        .into(),
+    )
+    .unwrap();
+    let cache = Candidates::new(Default::default())
+        .persisted(&settings)
+        .unwrap();
+    cache
+        .get("account-1".into(), false, async {
+            Ok(vec![json!({
+                "id": "fixture-5mb",
+                "display_name": "x".repeat(5 * 1024 * 1024),
+            })])
+        })
+        .await
+        .unwrap();
+
+    // Corrupting the on-disk entries field makes the next refresh's disk.transaction fail
+    // before committing, so disk_sizes must not record a tiny replacement size for account-1.
+    let cache_path = temp.path().join("account-model-cache.json");
+    let valid_bytes = std::fs::read(&cache_path).unwrap();
+    std::fs::write(&cache_path, br#"{"version":1,"entries":"broken"}"#).unwrap();
+    cache.disk.as_ref().unwrap().evict_cache();
+    assert!(cache
+        .get("account-1".into(), true, async { Ok(models()) })
+        .await
+        .is_err());
+
+    // Restore valid 5 MiB file and verify persisting another 5 MiB entry still knows account-1 is 5 MiB and evicts it.
+    std::fs::write(&cache_path, &valid_bytes).unwrap();
+    cache.disk.as_ref().unwrap().evict_cache();
+    cache
+        .get("account-2".into(), true, async {
+            Ok(vec![json!({
+                "id": "fixture-5mb-2",
+                "display_name": "y".repeat(5 * 1024 * 1024),
+            })])
+        })
+        .await
+        .unwrap();
+
+    let raw_disk: Value = serde_json::from_slice(&std::fs::read(&cache_path).unwrap()).unwrap();
+    let persisted_entries = raw_disk["entries"].as_object().unwrap();
+    let persisted_total: usize = persisted_entries
+        .values()
+        .map(|v| json_byte_len(v).unwrap())
+        .sum();
+    assert!(persisted_total <= MAX_BYTES);
+    assert_eq!(persisted_entries.len(), 1);
+    assert!(persisted_entries.contains_key("account-2"));
+    cache.close().await;
+}

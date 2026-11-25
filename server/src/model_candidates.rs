@@ -58,10 +58,27 @@ struct State {
 #[derive(Clone)]
 pub(crate) struct Candidates {
     state: Arc<Mutex<State>>,
+    disk_sizes: Arc<Mutex<HashMap<String, usize>>>,
     slots: Arc<Semaphore>,
     tasks: Tasks,
     clock: Arc<dyn Fn() -> Instant + Send + Sync>,
     disk: Option<Store>,
+}
+struct ByteCounter(usize);
+impl std::io::Write for ByteCounter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0 = self.0.saturating_add(buf.len());
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+fn json_byte_len<T: serde::Serialize + ?Sized>(value: &T) -> Option<usize> {
+    let mut counter = ByteCounter(0);
+    serde_json::to_writer(&mut counter, value)
+        .ok()
+        .map(|()| counter.0)
 }
 fn unavailable() -> Error {
     Error::new(503, "模型目录暂不可用，请稍后重试")
@@ -99,6 +116,7 @@ impl Candidates {
     ) -> Self {
         Self {
             state: Default::default(),
+            disk_sizes: Default::default(),
             slots: Arc::new(Semaphore::new(8)),
             tasks: Tasks::supervised(supervisor),
             clock,
@@ -114,6 +132,7 @@ impl Candidates {
         let at = (self.clock)();
         {
             let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            let mut disk_sizes = self.disk_sizes.lock().unwrap_or_else(|e| e.into_inner());
             for (identity, models) in saved["entries"].as_object().into_iter().flatten() {
                 let Some(models) = models
                     .as_array()
@@ -121,7 +140,9 @@ impl Candidates {
                 else {
                     continue;
                 };
-                let bytes = serde_json::to_vec(models)?.len();
+                let bytes =
+                    json_byte_len(models).ok_or_else(|| Error::new(503, "模型缓存格式无效"))?;
+                disk_sizes.insert(identity.clone(), bytes);
                 state.entries.insert(
                     identity.clone(),
                     Entry {
@@ -140,36 +161,50 @@ impl Candidates {
         self.disk = Some(disk);
         Ok(self)
     }
-    fn persist(&self, identity: &str, models: Option<&Vec<Value>>) -> Result<()> {
+    fn persist(&self, identity: &str, models: Option<(&Vec<Value>, usize)>) -> Result<()> {
         let Some(disk) = self.disk.as_ref() else {
             return Ok(());
         };
-        disk.transaction(|data| {
-            let entries = data["entries"]
-                .as_object_mut()
-                .ok_or_else(|| Error::new(503, "模型缓存格式无效"))?;
-            entries.shift_remove(identity);
-            if let Some(models) = models {
-                entries.insert(identity.to_owned(), json!(models));
-            }
-            let mut sizes = entries
-                .iter()
-                .map(|(k, v)| {
-                    (
-                        k.clone(),
-                        serde_json::to_vec(v)
-                            .map(|v| v.len())
-                            .unwrap_or(MAX_BYTES + 1),
-                    )
-                })
-                .collect::<std::collections::VecDeque<_>>();
-            let mut total_bytes: usize = sizes.iter().map(|(_, s)| *s).sum();
-            while entries.len() > MAX_ENTRIES || total_bytes > MAX_BYTES {
-                let Some((oldest, size)) = sizes.pop_front() else {
-                    break;
-                };
-                total_bytes = total_bytes.saturating_sub(size);
-                entries.shift_remove(&oldest);
+        crate::store::blocking_file_io(|| {
+            let mut disk_sizes = self.disk_sizes.lock().unwrap_or_else(|e| e.into_inner());
+            let mut next_sizes = None;
+            disk.transaction(|data| {
+                let entries = data["entries"]
+                    .as_object_mut()
+                    .ok_or_else(|| Error::new(503, "模型缓存格式无效"))?;
+                entries.shift_remove(identity);
+                if let Some((models, _)) = models {
+                    entries.insert(identity.to_owned(), json!(models));
+                }
+                let mut sizes = entries
+                    .iter()
+                    .map(|(k, v)| {
+                        let bytes = if k == identity {
+                            models
+                                .map(|(_, b)| b)
+                                .unwrap_or_else(|| json_byte_len(v).unwrap_or(MAX_BYTES + 1))
+                        } else {
+                            disk_sizes
+                                .get(k)
+                                .copied()
+                                .unwrap_or_else(|| json_byte_len(v).unwrap_or(MAX_BYTES + 1))
+                        };
+                        (k.clone(), bytes)
+                    })
+                    .collect::<std::collections::VecDeque<_>>();
+                let mut total_bytes: usize = sizes.iter().map(|(_, s)| *s).sum();
+                while entries.len() > MAX_ENTRIES || total_bytes > MAX_BYTES {
+                    let Some((oldest, size)) = sizes.pop_front() else {
+                        break;
+                    };
+                    total_bytes = total_bytes.saturating_sub(size);
+                    entries.shift_remove(&oldest);
+                }
+                next_sizes = Some(sizes.into_iter().collect());
+                Ok(())
+            })?;
+            if let Some(sizes) = next_sizes {
+                *disk_sizes = sizes;
             }
             Ok(())
         })
@@ -181,6 +216,10 @@ impl Candidates {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .entries
+            .clear();
+        self.disk_sizes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .clear();
     }
     pub async fn get(
@@ -257,9 +296,15 @@ impl Candidates {
                             )))
                         })
                         .map(Arc::new);
+                    let mut computed_bytes = 0;
                     match &outcome {
                         Ok(models) => {
-                            if cache.persist(&task_identity, Some(models)).is_err() {
+                            computed_bytes =
+                                json_byte_len(models.as_ref()).unwrap_or(MAX_BYTES + 1);
+                            if cache
+                                .persist(&task_identity, Some((models, computed_bytes)))
+                                .is_err()
+                            {
                                 outcome = Err(Failure::temporary(Error::new(
                                     503,
                                     "模型目录已读取，但缓存保存失败，请重试",
@@ -277,12 +322,9 @@ impl Candidates {
                         if entry.flight.as_ref().is_some_and(|(id, _)| *id == serial) {
                             match &outcome {
                                 Ok(models) => {
-                                    let bytes = serde_json::to_vec(models.as_ref())
-                                        .map(|v| v.len())
-                                        .unwrap_or(MAX_BYTES + 1);
                                     entry.success = Some(Success {
                                         models: models.clone(),
-                                        bytes,
+                                        bytes: computed_bytes,
                                     });
                                     entry.failure = None;
                                 }

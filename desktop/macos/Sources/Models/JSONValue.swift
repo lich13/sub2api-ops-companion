@@ -13,18 +13,18 @@ public enum JSONValue: Sendable, Equatable, Codable {
         let container = try decoder.singleValueContainer()
         if container.decodeNil() {
             self = .null
+        } else if let s = try? container.decode(String.self) {
+            self = .string(s)
+        } else if let obj = try? container.decode([String: JSONValue].self) {
+            self = .object(obj)
         } else if let b = try? container.decode(Bool.self) {
             self = .bool(b)
         } else if let i = try? container.decode(Int64.self) {
             self = .int(i)
         } else if let d = try? container.decode(Double.self) {
             self = .double(d)
-        } else if let s = try? container.decode(String.self) {
-            self = .string(s)
         } else if let arr = try? container.decode([JSONValue].self) {
             self = .array(arr)
-        } else if let obj = try? container.decode([String: JSONValue].self) {
-            self = .object(obj)
         } else {
             throw DecodingError.dataCorruptedError(
                 in: container,

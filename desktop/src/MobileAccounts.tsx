@@ -19,10 +19,15 @@ type Props = {
   accounts: Account[];
   online: boolean;
   selected: Set<number>;
+  busyAccountId?: number | null;
   active?: boolean;
   connectionKey?: string;
   select: (id: number, checked: boolean) => void;
-  schedule: (account: Account) => ReactNode;
+  schedule: (
+    account: Account,
+    disabled?: boolean,
+    isBusy?: boolean,
+  ) => ReactNode;
   error: (id: number) => void;
   report: (error: unknown) => void;
   accountActions: (account: Account) => AccountActionItem[];
@@ -34,6 +39,7 @@ const MobileAccountCard = memo(function MobileAccountCard({
   account: a,
   online,
   isSelected,
+  isSchedulingBusy,
   active,
   connectionKey,
   select,
@@ -46,10 +52,15 @@ const MobileAccountCard = memo(function MobileAccountCard({
   account: Account;
   online: boolean;
   isSelected: boolean;
+  isSchedulingBusy: boolean;
   active?: boolean;
   connectionKey?: string;
   select: (id: number, checked: boolean) => void;
-  schedule: (account: Account) => ReactNode;
+  schedule: (
+    account: Account,
+    disabled?: boolean,
+    isBusy?: boolean,
+  ) => ReactNode;
   error: (id: number) => void;
   report: (error: unknown) => void;
   accountActions: (account: Account) => AccountActionItem[];
@@ -83,7 +94,7 @@ const MobileAccountCard = memo(function MobileAccountCard({
                 : a.type}
           </span>
         </div>
-        {schedule(a)}
+        {schedule(a, false, isSchedulingBusy)}
         <button
           className="icon-button"
           aria-label={`${a.name}操作`}
@@ -161,6 +172,7 @@ export default function MobileAccounts(props: Props) {
             account={a}
             online={props.online}
             isSelected={props.selected.has(a.id)}
+            isSchedulingBusy={props.busyAccountId === a.id}
             active={props.active}
             connectionKey={props.connectionKey}
             select={props.select}

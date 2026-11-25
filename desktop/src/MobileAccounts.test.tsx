@@ -202,6 +202,7 @@ describe("mobile accounts", () => {
 
     function Harness() {
       const [selected, setSelected] = useState(() => new Set<number>());
+      const [busyId, setBusyId] = useState<number | null>(null);
       const select = useCallback((id: number, checked: boolean) => {
         setSelected((prev) => {
           const next = new Set(prev);
@@ -210,10 +211,19 @@ describe("mobile accounts", () => {
           return next;
         });
       }, []);
-      const schedule = useCallback((a: Account) => {
-        renderCounts.set(a.id, (renderCounts.get(a.id) ?? 0) + 1);
-        return null;
-      }, []);
+      const schedule = useCallback(
+        (a: Account, _disabled = false, isBusy = false) => {
+          renderCounts.set(a.id, (renderCounts.get(a.id) ?? 0) + 1);
+          return (
+            <button
+              aria-label={`切换 ${a.name}`}
+              disabled={isBusy}
+              onClick={() => setBusyId(a.id)}
+            />
+          );
+        },
+        [],
+      );
       const accountActions = useAccountActions({
         online: true,
         connectionKey: "https://example.invalid:true:1",
@@ -229,6 +239,7 @@ describe("mobile accounts", () => {
           accounts={rows}
           online={true}
           selected={selected}
+          busyAccountId={busyId}
           select={select}
           schedule={schedule}
           error={noop}
@@ -249,6 +260,14 @@ describe("mobile accounts", () => {
     await act(async () => firstCheckbox.click());
     expect(renderCounts.get(1)).toBe(2);
     expect(renderCounts.get(2)).toBe(1);
+    expect(renderCounts.get(3)).toBe(1);
+
+    const secondToggle = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="切换 Fixture 2"]',
+    )!;
+    await act(async () => secondToggle.click());
+    expect(renderCounts.get(1)).toBe(2);
+    expect(renderCounts.get(2)).toBe(2);
     expect(renderCounts.get(3)).toBe(1);
   });
 });

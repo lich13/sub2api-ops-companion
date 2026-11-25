@@ -123,17 +123,13 @@ export function useRecordFeed(
               current.current.items.length > 50)
           )
             return true;
-          const items =
-            mode === "more"
-              ? [
-                  ...new Map(
-                    [...current.current.items, ...page.items].map((row) => [
-                      row.id,
-                      row,
-                    ]),
-                  ).values(),
-                ]
-              : page.items;
+          let items = page.items;
+          if (mode === "more") {
+            const merged = new Map<number, (typeof page.items)[number]>();
+            for (const row of current.current.items) merged.set(row.id, row);
+            for (const row of page.items) merged.set(row.id, row);
+            items = Array.from(merged.values());
+          }
           const stalled =
             mode === "more" &&
             !!page.next_cursor &&

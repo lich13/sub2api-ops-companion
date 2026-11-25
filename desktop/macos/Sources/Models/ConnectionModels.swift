@@ -87,7 +87,25 @@ public func normalizedSavedConnections(_ preferences: Preferences) -> [SavedConn
     return list
 }
 
+public struct CachedSnapshotContext: Sendable {
+    public let connectionKey: String
+    public let snapshotRevision: UInt64
+    public let snapshot: Snapshot
+
+    public init(connectionKey: String, snapshotRevision: UInt64, snapshot: Snapshot) {
+        self.connectionKey = connectionKey
+        self.snapshotRevision = snapshotRevision
+        self.snapshot = snapshot
+    }
+}
+
+private struct SnapshotObservedHeader: Decodable {
+    let observed_at: String?
+}
+
 public struct ViewState: Codable, Sendable, Equatable {
+    public static let cachedSnapshotUserInfoKey = CodingUserInfoKey(rawValue: "sub2ops.cachedSnapshot")!
+
     public var platform: String?
     public var foreground: Bool?
     public var initializing: Bool?
@@ -99,6 +117,11 @@ public struct ViewState: Codable, Sendable, Equatable {
     public var upstream_connection: ConnectionReply?
     public var snapshot: Snapshot?
     public var preferences: Preferences
+
+    private enum CodingKeys: String, CodingKey {
+        case platform, foreground, initializing, connection_revision, snapshot_revision
+        case connected, online, error, upstream_connection, snapshot, preferences
+    }
 
     public init(
         platform: String? = "macos",
@@ -124,5 +147,47 @@ public struct ViewState: Codable, Sendable, Equatable {
         self.upstream_connection = upstream_connection
         self.snapshot = snapshot
         self.preferences = preferences
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.platform = try container.decodeIfPresent(String.self, forKey: .platform)
+        self.foreground = try container.decodeIfPresent(Bool.self, forKey: .foreground)
+        self.initializing = try container.decodeIfPresent(Bool.self, forKey: .initializing)
+        self.connection_revision = try container.decodeIfPresent(UInt64.self, forKey: .connection_revision)
+        self.snapshot_revision = try container.decodeIfPresent(UInt64.self, forKey: .snapshot_revision)
+        self.connected = try container.decode(Bool.self, forKey: .connected)
+        self.online = try container.decode(Bool.self, forKey: .online)
+        self.error = try container.decode(String.self, forKey: .error)
+        self.upstream_connection = try container.decodeIfPresent(ConnectionReply.self, forKey: .upstream_connection)
+        let prefs = try container.decode(Preferences.self, forKey: .preferences)
+        self.preferences = prefs
+
+        let connKey = "\(self.connection_revision ?? 0)|\(prefs.base_url)"
+        if let rev = self.snapshot_revision,
+           rev != 0,
+           let cached = decoder.userInfo[Self.cachedSnapshotUserInfoKey] as? CachedSnapshotContext,
+           cached.connectionKey == connKey,
+           cached.snapshotRevision == rev,
+           container.contains(.snapshot),
+           (try? container.decodeNil(forKey: .snapshot)) == false
+        {
+            if let obs = (try? container.decode(SnapshotObservedHeader.self, forKey: .snapshot))?.observed_at,
+               obs != cached.snapshot.observed_at
+            {
+                self.snapshot = Snapshot(
+                    observed_at: obs,
+                    accounts: cached.snapshot.accounts,
+                    groups: cached.snapshot.groups,
+                    errors: cached.snapshot.errors,
+                    recoveries: cached.snapshot.recoveries,
+                    schema_version: cached.snapshot.schema_version
+                )
+            } else {
+                self.snapshot = cached.snapshot
+            }
+        } else {
+            self.snapshot = try container.decodeIfPresent(Snapshot.self, forKey: .snapshot)
+        }
     }
 }

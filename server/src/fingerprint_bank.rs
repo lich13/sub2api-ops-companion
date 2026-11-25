@@ -215,12 +215,25 @@ fn compatible_blob(manifest: &Value, name: &str, blob: &Value) -> bool {
             .as_array()
             .is_some_and(|known| known.contains(blob))
 }
-fn bundled_state(manifest: &Value, bundled: &(Value, Value)) -> Value {
-    let mut provenance = bundled.1.clone();
+fn bundled_provenance(manifest: &Value, version: &Value) -> Value {
+    let mut provenance = version.clone();
     for name in ["core", "challenge"] {
         provenance[format!("{name}_blob")] = manifest["files"][name]["gitBlob"].clone();
     }
+    provenance
+}
+fn bundled_state_meta(manifest: &Value, version: &Value) -> Value {
+    let provenance = bundled_provenance(manifest, version);
+    json!({"version":1,"active":{"version":provenance},"source":"bundled","checked_at":0,"synced_at":0,"cooldown_until":null,"last_error":null,"result":null})
+}
+fn bundled_state_with_raw(manifest: &Value, version: &Value) -> Value {
+    let provenance = bundled_provenance(manifest, version);
     json!({"version":1,"active":{"raw_bank":include_str!("../resources/modeltrace/unified_bank.json"),"version":provenance},"source":"bundled","checked_at":0,"synced_at":0,"cooldown_until":null,"last_error":null,"result":null})
+}
+fn lazy_bundled_state() -> Value {
+    let manifest = modeltrace::manifest();
+    let (_, version) = modeltrace::bundled_compiled().expect("bundled modeltrace bank");
+    bundled_state_with_raw(&manifest, &version)
 }
 fn strip_raw_bank(mut state: Value) -> Value {
     if let Some(active) = state["active"].as_object_mut() {
@@ -228,8 +241,29 @@ fn strip_raw_bank(mut state: Value) -> Value {
     }
     state
 }
+fn persist_bank_state(disk: &mut Value, next: Value) -> Result<()> {
+    let preserved_raw = disk["active"].get("raw_bank").cloned();
+    *disk = next;
+    if disk["active"].get("raw_bank").is_none() {
+        let expected_sha = &disk["active"]["version"]["sha256"];
+        if let Some(raw) =
+            preserved_raw.filter(|raw| raw.as_str().is_some_and(|s| sha256(s) == *expected_sha))
+        {
+            disk["active"]["raw_bank"] = raw;
+        } else {
+            let bundled_raw = include_str!("../resources/modeltrace/unified_bank.json");
+            if sha256(bundled_raw) == *expected_sha {
+                disk["active"]["raw_bank"] = bundled_raw.into();
+            } else {
+                return Err(Error::new(503, "指纹库缓存损坏"));
+            }
+        }
+    }
+    Ok(())
+}
 struct Active {
-    snapshot: Arc<(Value, Value)>,
+    version: Value,
+    lazy_snapshot: Arc<std::sync::OnceLock<Arc<(Value, Value)>>>,
     compiled: Arc<modeltrace::CompiledBank>,
     state: Value,
     status: String,
@@ -277,59 +311,79 @@ impl FingerprintBank {
         if manifest["repository"] != "Hanmo123/ModelTrace" || manifest["branch"] != "hanmo" {
             return Err(Error::new(503, "指纹库来源无效"));
         }
-        let bundled = modeltrace::bundled()?;
-        validate(&bundled.0)?;
-        let defaults = bundled_state(&manifest, &bundled);
-        let store = Store::new(
+        let (bundled_compiled, bundled_version) = modeltrace::bundled_compiled()?;
+        let store = Store::new_lazy(
             settings.data_dir().join("modeltrace-bank-state.json"),
-            defaults.clone(),
+            lazy_bundled_state,
             valid_policy,
         );
-        let cached = store.path().exists();
-        let state = store.read_shared()?;
-        store.evict_cache();
-        let mut state = Arc::unwrap_or_clone(state);
-        let v = &state["active"]["version"];
-        let raw = state["active"]["raw_bank"]
-            .as_str()
-            .ok_or_else(|| Error::new(503, "指纹库缓存损坏"))?;
-        if raw.len() > MAX_BYTES
-            || !hex(&v["revision"], 40)
-            || !hex(&v["sha256"], 64)
-            || v["analyzer_version"] != manifest["analyzerVersion"]
-            || ["core", "challenge"]
-                .iter()
-                .any(|key| !compatible_blob(&manifest, key, &v[format!("{key}_blob")]))
-            || ["checked_at", "synced_at"].iter().any(|key| {
-                !state[key]
-                    .as_f64()
-                    .is_some_and(|n| n.is_finite() && n >= 0.0)
-            })
-            || !state["cooldown_until"].is_null()
-                && !state["cooldown_until"].as_f64().is_some_and(f64::is_finite)
-            || sha256(raw) != v["sha256"]
-        {
-            return Err(Error::new(503, "指纹库缓存损坏"));
-        }
-        let mut bank: Value = serde_json::from_str(raw)?;
-        if bank["built_at"] != v["built_at"] {
-            return Err(Error::new(503, "指纹库缓存不兼容"));
-        }
-        // A cache older than the bundled bank is superseded by it. The file is replaced
-        // by `adopt_bundled` once the service starts; validation alone writes nothing.
-        if parse_datetime(&bank["built_at"]) < parse_datetime(&bundled.0["built_at"]) {
-            bank = bundled.0;
-            state = defaults;
-        } else if cached {
-            state["source"] = "cache".into();
-        }
-        let compiled = Arc::new(modeltrace::CompiledBank::compile(&bank)?);
-        let v = &state["active"]["version"];
-        let snapshot = Arc::new((
-            bank,
-            crate::compat::pick(v, &["revision", "sha256", "built_at", "analyzer_version"]),
-        ));
-        state = strip_raw_bank(state);
+        let cached = store.path().exists() || store.path().with_extension("lock").exists();
+        let (compiled, version, state) = if !cached {
+            let mut defaults = bundled_state_meta(&manifest, &bundled_version);
+            let v = crate::compat::pick(
+                &defaults["active"]["version"],
+                &["revision", "sha256", "built_at", "analyzer_version"],
+            );
+            defaults["source"] = "bundled".into();
+            (Arc::new(bundled_compiled), v, defaults)
+        } else {
+            let state = store.read_shared()?;
+            store.evict_cache();
+            let mut state = Arc::unwrap_or_clone(state);
+            let v = &state["active"]["version"];
+            let raw = state["active"]["raw_bank"]
+                .as_str()
+                .ok_or_else(|| Error::new(503, "指纹库缓存损坏"))?;
+            if raw.len() > MAX_BYTES
+                || !hex(&v["revision"], 40)
+                || !hex(&v["sha256"], 64)
+                || v["analyzer_version"] != manifest["analyzerVersion"]
+                || ["core", "challenge"]
+                    .iter()
+                    .any(|key| !compatible_blob(&manifest, key, &v[format!("{key}_blob")]))
+                || ["checked_at", "synced_at"].iter().any(|key| {
+                    !state[key]
+                        .as_f64()
+                        .is_some_and(|n| n.is_finite() && n >= 0.0)
+                })
+                || !state["cooldown_until"].is_null()
+                    && !state["cooldown_until"].as_f64().is_some_and(f64::is_finite)
+                || sha256(raw) != v["sha256"]
+            {
+                return Err(Error::new(503, "指纹库缓存损坏"));
+            }
+            let cached_compiled = match modeltrace::CompiledBank::compile_str(raw) {
+                Ok(c) => c,
+                Err(e) => {
+                    // Preserve exact serde_json parse error vs schema validation error semantics.
+                    let bank_val: Value = serde_json::from_str(raw)?;
+                    if bank_val["built_at"] != v["built_at"] {
+                        return Err(Error::new(503, "指纹库缓存不兼容"));
+                    }
+                    return Err(e);
+                }
+            };
+            if cached_compiled.built_at() != &v["built_at"] {
+                return Err(Error::new(503, "指纹库缓存不兼容"));
+            }
+            // A cache older than the bundled bank is superseded by it. The file is replaced
+            // by `adopt_bundled` once the service starts; validation alone writes nothing.
+            let compiled = if parse_datetime(cached_compiled.built_at())
+                < parse_datetime(bundled_compiled.built_at())
+            {
+                state = bundled_state_meta(&manifest, &bundled_version);
+                Arc::new(bundled_compiled)
+            } else {
+                state["source"] = "cache".into();
+                state = strip_raw_bank(state);
+                Arc::new(cached_compiled)
+            };
+            let v = crate::compat::pick(
+                &state["active"]["version"],
+                &["revision", "sha256", "built_at", "analyzer_version"],
+            );
+            (compiled, v, state)
+        };
         let code = string(&state["last_error"]["code"]);
         let status = if code.is_empty() {
             "idle"
@@ -342,7 +396,8 @@ impl FingerprintBank {
         Ok(Self {
             store,
             active: Arc::new(RwLock::new(Active {
-                snapshot,
+                version,
+                lazy_snapshot: Arc::new(std::sync::OnceLock::new()),
                 compiled,
                 state,
                 status,
@@ -360,12 +415,15 @@ impl FingerprintBank {
         if !self.store.path().exists() {
             return Ok(());
         }
+        if self.active.read().unwrap_or_else(|e| e.into_inner()).state["source"] != "bundled" {
+            return Ok(());
+        }
         let manifest = modeltrace::manifest();
-        let bundled = modeltrace::bundled()?;
-        let built = parse_datetime(&bundled.0["built_at"]);
+        let (_, bundled_version) = modeltrace::bundled_compiled()?;
+        let built = parse_datetime(&bundled_version["built_at"]);
         let result = self.store.transaction(|state| {
             if parse_datetime(&state["active"]["version"]["built_at"]) < built {
-                *state = bundled_state(&manifest, &bundled);
+                *state = bundled_state_with_raw(&manifest, &bundled_version);
             }
             Ok(())
         });
@@ -373,15 +431,54 @@ impl FingerprintBank {
         result
     }
     pub fn snapshot(&self) -> Arc<(Value, Value)> {
+        let (lazy, version, source) = {
+            let active = self.active.read().unwrap_or_else(|e| e.into_inner());
+            (
+                active.lazy_snapshot.clone(),
+                active.version.clone(),
+                string(&active.state["source"]).to_owned(),
+            )
+        };
+        if let Some(cached) = lazy.get() {
+            return cached.clone();
+        }
+        if source != "bundled" {
+            let loaded = self
+                .store
+                .path()
+                .exists()
+                .then(|| self.store.read_shared().ok())
+                .flatten()
+                .and_then(|s| {
+                    s["active"]["raw_bank"]
+                        .as_str()
+                        .filter(|raw| sha256(raw) == version["sha256"])
+                        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+                        .filter(|bank| validate(bank).is_ok())
+                });
+            self.store.evict_cache();
+            if let Some(bank) = loaded {
+                return lazy.get_or_init(|| Arc::new((bank, version))).clone();
+            }
+            let (bundled_bank, bundled_version) = modeltrace::bundled().expect("bundled bank");
+            return Arc::new((bundled_bank, bundled_version));
+        }
+        lazy.get_or_init(|| {
+            let (bundled_bank, _) = modeltrace::bundled().expect("bundled bank");
+            Arc::new((bundled_bank, version))
+        })
+        .clone()
+    }
+    pub(crate) fn compiled(&self) -> Arc<modeltrace::CompiledBank> {
         self.active
             .read()
             .unwrap_or_else(|e| e.into_inner())
-            .snapshot
+            .compiled
             .clone()
     }
-    pub(crate) fn compiled_snapshot(&self) -> (Arc<(Value, Value)>, Arc<modeltrace::CompiledBank>) {
+    pub(crate) fn compiled_version(&self) -> (Value, Arc<modeltrace::CompiledBank>) {
         let active = self.active.read().unwrap_or_else(|e| e.into_inner());
-        (active.snapshot.clone(), active.compiled.clone())
+        (active.version.clone(), active.compiled.clone())
     }
     pub fn public(&self) -> Value {
         let active = self.active.read().unwrap_or_else(|e| e.into_inner());
@@ -396,7 +493,7 @@ impl FingerprintBank {
                 "retrieval",
             ],
         );
-        value["version"] = active.snapshot.1.clone();
+        value["version"] = active.version.clone();
         value["status"] = active.status.clone().into();
         value["error"] = active.state["last_error"]
             .get("code")
@@ -568,9 +665,10 @@ impl FingerprintBank {
     async fn retrieve(
         &self,
         state: &Value,
-        snapshot: &(Value, Value),
+        current_version: &Value,
+        current_built_at: &Value,
         rate: &mut Option<f64>,
-    ) -> SyncResult<(Value, Option<(Value, Value)>)> {
+    ) -> SyncResult<(Value, Option<(Arc<modeltrace::CompiledBank>, Value)>)> {
         let now = self.now();
         let deadline = Instant::now() + Duration::from_secs(60);
         let manifest = modeltrace::manifest();
@@ -601,7 +699,7 @@ impl FingerprintBank {
             }
             Err(failure) => return Err(failure),
         };
-        if snapshot.1["revision"] == revision {
+        if current_version["revision"] == revision {
             let mut next = state.clone();
             next.as_object_mut().unwrap().extend(json!({"checked_at":now,"cooldown_until":null,"last_error":null,"result":"up-to-date","rate_limit_until":rate}).as_object().unwrap().clone());
             if let Some(rate) = rate {
@@ -678,18 +776,17 @@ impl FingerprintBank {
         if expected.is_some_and(|digest| git_blob_digest(&raw) != digest) {
             return Err(Failure::new("invalid-data"));
         }
-        let bank: Value = serde_json::from_slice(&raw).map_err(|_| Failure::new("invalid-data"))?;
-        validate(&bank).map_err(|_| Failure::new("invalid-data"))?;
-        if parse_datetime(&bank["built_at"]) < parse_datetime(&snapshot.0["built_at"]) {
+        let raw_digest = sha256(&raw);
+        let raw_str = String::from_utf8(raw).map_err(|_| Failure::new("invalid-data"))?;
+        let compiled = modeltrace::CompiledBank::compile_str(&raw_str)
+            .map_err(|_| Failure::new("invalid-data"))?;
+        if parse_datetime(compiled.built_at()) < parse_datetime(current_built_at) {
             return Err(Failure::new("incompatible"));
         }
-        let version = json!({"revision":revision,"sha256":sha256(&raw),"built_at":bank["built_at"],"analyzer_version":manifest["analyzerVersion"]});
-        let mut provenance = version.clone();
-        for key in ["core", "challenge"] {
-            provenance[format!("{key}_blob")] = manifest["files"][key]["gitBlob"].clone();
-        }
-        let next = json!({"version":1,"active":{"raw_bank":String::from_utf8(raw).map_err(|_|Failure::new("invalid-data"))?,"version":provenance},"checked_at":now,"synced_at":self.now(),"source":"remote","last_error":null,"cooldown_until":rate,"rate_limit_until":rate,"result":"updated","retrieval":retrieval});
-        Ok((next, Some((bank, version))))
+        let version = json!({"revision":revision,"sha256":raw_digest,"built_at":compiled.built_at(),"analyzer_version":manifest["analyzerVersion"]});
+        let provenance = bundled_provenance(&manifest, &version);
+        let next = json!({"version":1,"active":{"raw_bank":raw_str,"version":provenance},"checked_at":now,"synced_at":self.now(),"source":"remote","last_error":null,"cooldown_until":rate,"rate_limit_until":rate,"result":"updated","retrieval":retrieval});
+        Ok((next, Some((Arc::new(compiled), version))))
     }
     pub async fn sync(&self, force: bool) {
         if self.tasks.is_closed() {
@@ -698,7 +795,7 @@ impl FingerprintBank {
         let Ok(_guard) = self.lock.try_lock() else {
             return;
         };
-        let (state, snapshot) = {
+        let (state, current_version, current_built_at) = {
             let mut active = self.active.write().unwrap_or_else(|e| e.into_inner());
             let now = self.now();
             let code = string(&active.state["last_error"]["code"]);
@@ -717,43 +814,34 @@ impl FingerprintBank {
                 return;
             }
             active.status = "checking".into();
-            (active.state.clone(), active.snapshot.clone())
+            (
+                active.state.clone(),
+                active.version.clone(),
+                active.compiled.built_at().clone(),
+            )
         };
         let mut rate = None;
         let result = self
-            .retrieve(&state, &snapshot, &mut rate)
+            .retrieve(&state, &current_version, &current_built_at, &mut rate)
             .await
-            .and_then(|(next, bank)| {
-                let compiled = match &bank {
-                    Some((bank_data, _)) => Some(Arc::new(
-                        modeltrace::CompiledBank::compile(bank_data)
-                            .map_err(|_| Failure::new("invalid-data"))?,
-                    )),
-                    None => None,
-                };
+            .and_then(|(next, compiled_and_version)| {
+                let compiled_and_version =
+                    compiled_and_version.map(|(compiled, version)| (version, compiled));
                 self.store
-                    .transaction(|v| {
-                        let preserved_raw = v["active"].get("raw_bank").cloned();
-                        *v = next.clone();
-                        if v["active"].get("raw_bank").is_none() {
-                            if let Some(raw) = preserved_raw {
-                                v["active"]["raw_bank"] = raw;
-                            }
-                        }
-                        Ok(())
-                    })
+                    .transaction(|v| persist_bank_state(v, next.clone()))
                     .map_err(|_| Failure::new("cache"))?;
                 self.store.evict_cache();
-                Ok((strip_raw_bank(next), bank, compiled))
+                Ok((strip_raw_bank(next), compiled_and_version))
             });
         match result {
-            Ok((next, bank, compiled)) => {
+            Ok((next, compiled_and_version)) => {
                 let event = string(&next["result"]).to_owned();
                 let revision = next["active"]["version"]["revision"].clone();
                 let mut active = self.active.write().unwrap_or_else(|e| e.into_inner());
                 active.state = next;
-                if let (Some(bank), Some(compiled)) = (bank, compiled) {
-                    active.snapshot = Arc::new(bank);
+                if let Some((version, compiled)) = compiled_and_version {
+                    active.version = version;
+                    active.lazy_snapshot = Arc::new(std::sync::OnceLock::new());
                     active.compiled = compiled;
                 }
                 active.status = "idle".into();
@@ -780,16 +868,9 @@ impl FingerprintBank {
                     next["rate_limit_until"] = json!(rate);
                     next["cooldown_until"] = json!(cooldown.unwrap_or(0.0).max(rate));
                 }
-                let _ = self.store.transaction(|v| {
-                    let preserved_raw = v["active"].get("raw_bank").cloned();
-                    *v = next.clone();
-                    if v["active"].get("raw_bank").is_none() {
-                        if let Some(raw) = preserved_raw {
-                            v["active"]["raw_bank"] = raw;
-                        }
-                    }
-                    Ok(())
-                });
+                let _ = self
+                    .store
+                    .transaction(|v| persist_bank_state(v, next.clone()));
                 self.store.evict_cache();
                 let mut active = self.active.write().unwrap_or_else(|e| e.into_inner());
                 active.state = next;

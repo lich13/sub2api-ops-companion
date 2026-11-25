@@ -328,6 +328,12 @@ pub(crate) async fn resolve_candidate_sha256(
         .ok_or_else(|| "校验文件未包含当前 APK 摘要".to_string())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DownloadError {
+    Cancelled,
+    Failed(String),
+}
+
 pub(crate) async fn ensure_verified_apk<F>(
     client: &reqwest::Client,
     updates_dir: &Path,
@@ -336,11 +342,12 @@ pub(crate) async fn ensure_verified_apk<F>(
     mut cancel_rx: watch::Receiver<u64>,
     expected_seq: u64,
     mut on_progress: F,
-) -> Result<PathBuf, String>
+) -> Result<PathBuf, DownloadError>
 where
     F: FnMut(&'static str, u64, u64),
 {
-    std::fs::create_dir_all(updates_dir).map_err(|_| "无法创建更新缓存目录".to_string())?;
+    std::fs::create_dir_all(updates_dir)
+        .map_err(|_| DownloadError::Failed("无法创建更新缓存目录".into()))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -374,56 +381,65 @@ where
         .send();
     let mut response = tokio::select! {
         biased;
-        _ = cancel_rx.changed() => return Err("__cancelled__".into()),
+        _ = cancel_rx.changed() => return Err(DownloadError::Cancelled),
         res = tokio::time::timeout(CHUNK_TIMEOUT, send_fut) => {
-            res.map_err(|_| "连接更新源超时".to_string())?
-                .map_err(|_| "无法连接更新下载源".to_string())?
+            res.map_err(|_| DownloadError::Failed("连接更新源超时".into()))?
+                .map_err(|_| DownloadError::Failed("无法连接更新下载源".into()))?
         }
     };
     if *cancel_rx.borrow() != expected_seq {
-        return Err("__cancelled__".into());
+        return Err(DownloadError::Cancelled);
     }
     if !response.status().is_success() {
-        return Err(format!("下载安装包失败 [{}]", response.status().as_u16()));
+        return Err(DownloadError::Failed(format!(
+            "下载安装包失败 [{}]",
+            response.status().as_u16()
+        )));
     }
     if let Some(content_len) = response.content_length() {
         if content_len != candidate.apk_size {
-            return Err("远端安装包大小与发布记录不一致".into());
+            return Err(DownloadError::Failed(
+                "远端安装包大小与发布记录不一致".into(),
+            ));
         }
     }
 
-    let mut file = std::fs::OpenOptions::new()
+    let file = std::fs::OpenOptions::new()
         .create(true)
         .truncate(true)
         .write(true)
         .open(&part_path)
-        .map_err(|_| "无法写入临时安装包".to_string())?;
+        .map_err(|_| DownloadError::Failed("无法写入临时安装包".into()))?;
+    let mut writer = std::io::BufWriter::with_capacity(256 * 1024, file);
     let mut hasher = Sha256::new();
     let mut downloaded: u64 = 0;
     let mut last_emit = Instant::now();
 
-    let stream_res: Result<(), String> = async {
+    let stream_res: Result<(), DownloadError> = async {
         loop {
             let chunk_opt = tokio::select! {
                 biased;
-                _ = cancel_rx.changed() => return Err("__cancelled__".into()),
+                _ = cancel_rx.changed() => return Err(DownloadError::Cancelled),
                 chunk_res = tokio::time::timeout(CHUNK_TIMEOUT, response.chunk()) => {
-                    chunk_res.map_err(|_| "下载数据块超时，请重试".to_string())?
-                        .map_err(|_| "下载连接中断，请重试".to_string())?
+                    chunk_res.map_err(|_| DownloadError::Failed("下载数据块超时，请重试".into()))?
+                        .map_err(|_| DownloadError::Failed("下载连接中断，请重试".into()))?
                 }
             };
             if *cancel_rx.borrow() != expected_seq {
-                return Err("__cancelled__".into());
+                return Err(DownloadError::Cancelled);
             }
             let Some(chunk) = chunk_opt else {
                 break;
             };
             downloaded = downloaded.saturating_add(chunk.len() as u64);
             if downloaded > candidate.apk_size || downloaded > MAX_APK_BYTES {
-                return Err("安装包体积超出预期，已中止下载".into());
+                return Err(DownloadError::Failed(
+                    "安装包体积超出预期，已中止下载".into(),
+                ));
             }
-            file.write_all(&chunk)
-                .map_err(|_| "写入安装包失败，请检查存储空间".to_string())?;
+            writer
+                .write_all(&chunk)
+                .map_err(|_| DownloadError::Failed("写入安装包失败，请检查存储空间".into()))?;
             hasher.update(&chunk);
             if last_emit.elapsed() >= Duration::from_millis(80) || downloaded == candidate.apk_size
             {
@@ -436,34 +452,62 @@ where
     .await;
 
     if let Err(err) = stream_res {
-        drop(file);
+        drop(writer);
         let _ = std::fs::remove_file(&part_path);
         return Err(err);
     }
 
     if downloaded != candidate.apk_size {
-        drop(file);
+        drop(writer);
         let _ = std::fs::remove_file(&part_path);
-        return Err("安装包下载不完整，请重试".into());
+        return Err(DownloadError::Failed("安装包下载不完整，请重试".into()));
     }
     on_progress("verifying", downloaded, candidate.apk_size);
-    if file.sync_all().is_err() {
-        drop(file);
-        let _ = std::fs::remove_file(&part_path);
-        return Err("同步安装包文件失败".into());
-    }
-    drop(file);
-
     let actual_sha256 = format!("{:x}", hasher.finalize());
     if actual_sha256 != expected_sha256 {
+        drop(writer);
         let _ = std::fs::remove_file(&part_path);
-        return Err("安装包 SHA-256 校验未通过，已拒绝安装".into());
+        return Err(DownloadError::Failed(
+            "安装包 SHA-256 校验未通过，已拒绝安装".into(),
+        ));
     }
-    if std::fs::rename(&part_path, &final_path).is_err() {
-        let _ = std::fs::remove_file(&part_path);
-        return Err("保存安装包失败".into());
-    }
-    cleanup_updates_dir(updates_dir, Some(&candidate.apk_name));
+
+    let updates_dir_owned = updates_dir.to_path_buf();
+    let apk_name = candidate.apk_name.clone();
+    let final_path_clone = final_path.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), DownloadError> {
+        if writer.flush().is_err() {
+            drop(writer);
+            let _ = std::fs::remove_file(&part_path);
+            return Err(DownloadError::Failed(
+                "写入安装包失败，请检查存储空间".into(),
+            ));
+        }
+        let file = match writer.into_inner() {
+            Ok(f) => f,
+            Err(_) => {
+                let _ = std::fs::remove_file(&part_path);
+                return Err(DownloadError::Failed(
+                    "写入安装包失败，请检查存储空间".into(),
+                ));
+            }
+        };
+        if file.sync_all().is_err() {
+            drop(file);
+            let _ = std::fs::remove_file(&part_path);
+            return Err(DownloadError::Failed("同步安装包文件失败".into()));
+        }
+        drop(file);
+        if std::fs::rename(&part_path, &final_path_clone).is_err() {
+            let _ = std::fs::remove_file(&part_path);
+            return Err(DownloadError::Failed("保存安装包失败".into()));
+        }
+        cleanup_updates_dir(&updates_dir_owned, Some(&apk_name));
+        Ok(())
+    })
+    .await
+    .map_err(|_| DownloadError::Failed("保存安装包失败".into()))??;
+
     Ok(final_path)
 }
 
@@ -658,13 +702,15 @@ impl UpdaterState {
         let updates_dir = self.cache_dir.join("updates");
         let version = candidate.version.clone();
         let total = candidate.apk_size;
-        let (prog_tx, mut prog_rx) =
-            tokio::sync::mpsc::unbounded_channel::<(&'static str, u64, u64)>();
+        let (prog_tx, mut prog_rx) = watch::channel::<Option<(&'static str, u64, u64)>>(None);
         let progress_state = self.clone();
         let progress_app = app.clone();
         let progress_ver = version.clone();
         let forwarder = tauri::async_runtime::spawn(async move {
-            while let Some((phase, dl, tot)) = prog_rx.recv().await {
+            while prog_rx.changed().await.is_ok() {
+                let Some((phase, dl, tot)) = *prog_rx.borrow_and_update() else {
+                    continue;
+                };
                 let msg = if phase == "verifying" {
                     format!("正在校验 v{progress_ver} 安装包完整性…")
                 } else {
@@ -695,7 +741,7 @@ impl UpdaterState {
             cancel_rx,
             seq,
             move |phase, dl, tot| {
-                let _ = prog_tx.send((phase, dl, tot));
+                let _ = prog_tx.send(Some((phase, dl, tot)));
             },
         )
         .await;
@@ -703,8 +749,8 @@ impl UpdaterState {
 
         let apk_path = match download_res {
             Ok(path) => path,
-            Err(err) if err == "__cancelled__" => return,
-            Err(err) => {
+            Err(DownloadError::Cancelled) => return,
+            Err(DownloadError::Failed(err)) => {
                 self.fail(Some(&app), seq, Some(version), err).await;
                 return;
             }
@@ -1149,7 +1195,10 @@ mod tests {
         )
         .await
         .unwrap_err();
-        assert!(err.contains("SHA-256"));
+        assert!(matches!(
+            err,
+            DownloadError::Failed(ref msg) if msg.contains("SHA-256")
+        ));
         assert!(!apk_path.exists());
         assert!(!updates_dir
             .join("Sub2Ops_0.1.106_arm64-v8a.apk.part")
@@ -1186,7 +1235,7 @@ mod tests {
         .await
         .unwrap_err();
         let _ = canceller.await;
-        assert_eq!(cancel_err, "__cancelled__");
+        assert_eq!(cancel_err, DownloadError::Cancelled);
         assert!(!updates_dir
             .join("Sub2Ops_0.1.106_arm64-v8a.apk.part")
             .exists());

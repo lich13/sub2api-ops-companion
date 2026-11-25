@@ -1939,3 +1939,87 @@ async fn parallel_slots_keep_priorities_and_validate_platform_capacity() {
     );
     harness.finish().await;
 }
+
+#[tokio::test]
+async fn over_200_completed_priority_orders_preserve_history_idempotent_replay_and_conflict_rejection(
+) {
+    let mut harness = Harness::new().await;
+    let a = harness.insert_account("openai", "oauth", 2).await;
+    let b = harness.insert_account("openai", "apikey", 1).await;
+
+    let initial_view = harness.v2_view().await;
+    let initial_version = initial_view["platforms"][0]["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let first_request_id = "fixture-priority-history-0001";
+    let first_ordered = vec![a, b];
+    let (status, first_job, text) = harness
+        .v2_submit("openai", &first_ordered, &initial_version, first_request_id)
+        .await;
+    assert_eq!(status, 200, "{text}");
+    let first_id = first_job["id"].as_str().unwrap().to_owned();
+    assert_eq!(harness.wait_v2_task(&first_id).await["status"], "completed");
+
+    let settled_view = harness.v2_view().await;
+    let settled_version = settled_view["platforms"][0]["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut completed_ids = vec![first_id.clone()];
+    for idx in 2..=210_usize {
+        let req_id = format!("fixture-priority-history-{idx:04}");
+        let (status, job, text) = harness
+            .v2_submit("openai", &first_ordered, &settled_version, &req_id)
+            .await;
+        assert_eq!(status, 200, "order #{idx} submit failed: {text}");
+        let jid = job["id"].as_str().unwrap().to_owned();
+        assert_eq!(harness.wait_v2_task(&jid).await["status"], "completed");
+        completed_ids.push(jid);
+    }
+    assert_eq!(completed_ids.len(), 210);
+    let puts_before_replay = harness.upstream.put_ids().len();
+
+    let (status, fetched_first, text) = harness.v2_detail(&first_id, true).await;
+    assert_eq!(status, 200, "oldest order must remain queryable: {text}");
+    assert_eq!(fetched_first["id"], first_id);
+    assert_eq!(fetched_first["status"], "completed");
+
+    let (status, replayed_first, text) = harness
+        .v2_submit("openai", &first_ordered, &initial_version, first_request_id)
+        .await;
+    assert_eq!(
+        status, 200,
+        "idempotent replay of oldest order failed: {text}"
+    );
+    assert_eq!(replayed_first["id"], first_id);
+    assert_eq!(replayed_first["status"], "completed");
+
+    let (conflict_order_status, conflict_order_body, _) = harness
+        .v2_submit("openai", &[b, a], &initial_version, first_request_id)
+        .await;
+    assert_eq!(conflict_order_status, 409);
+    assert_eq!(conflict_order_body["detail"], "请求 ID 已用于其他排序");
+
+    let (conflict_client_status, conflict_client_body, _) = harness
+        .request(
+            Method::POST,
+            "account-priority-orders?schema=2",
+            Some(json!({
+                "platform": "openai",
+                "ordered_account_ids": first_ordered,
+                "expected_version": initial_version,
+                "request_id": first_request_id,
+                "client_id": "fixture-other-client"
+            })),
+        )
+        .await;
+    assert_eq!(conflict_client_status, 409);
+    assert_eq!(conflict_client_body["detail"], "请求 ID 已用于其他排序");
+    assert_eq!(harness.upstream.put_ids().len(), puts_before_replay);
+
+    let persisted = harness.runtime.priorities.store.read_shared().unwrap();
+    assert_eq!(persisted["jobs"].as_object().unwrap().len(), 210);
+    assert_eq!(persisted["requests"].as_object().unwrap().len(), 210);
+    harness.finish().await;
+}
