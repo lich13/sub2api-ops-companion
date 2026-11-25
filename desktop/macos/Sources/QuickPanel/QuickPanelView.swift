@@ -11,11 +11,11 @@ public struct QuickPanelRootView: View {
     }
 
     private var activeGroups: [Group] {
-        computeCurrentGroups(store.groups, accounts: store.accounts)
+        store.activeGroups
     }
 
     private var accountById: [Int: Account] {
-        Dictionary(uniqueKeysWithValues: store.accounts.map { ($0.id, $0) })
+        store.accountById
     }
 
     public var body: some View {
@@ -347,10 +347,7 @@ public struct QuickPanelRootView: View {
 
     private var footerBar: some View {
         HStack {
-            Text(BeijingTime.fullTime(store.state.snapshot?.observed_at))
-                .font(DS.fontPriorityMeta)
-                .monospacedDigit()
-                .foregroundStyle(DS.muted)
+            QuickObservedFooterText(clock: store.observedClock)
             Spacer()
             Button {
                 store.onReopenMainWindow?()

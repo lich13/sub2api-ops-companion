@@ -23,6 +23,7 @@ import {
 import { api, command } from "./bridge";
 import { errorMessage as cleanError } from "./bridgeError";
 import { clientId } from "./accountOperations";
+import { nextAdaptiveDelay } from "./pollBackoff";
 import {
   movePriority,
   movePrioritySlot,
@@ -447,6 +448,7 @@ function PriorityManagerImpl(props: Props) {
   useEffect(() => {
     if (!active || !online || !visible || !pendingTaskId) return;
     let disposed = false,
+      step = 0,
       timer: ReturnType<typeof setTimeout>;
     const epoch = generation.current,
       id = pendingTaskId;
@@ -464,9 +466,9 @@ function PriorityManagerImpl(props: Props) {
         if (!disposed && isCurrentPoll(epoch)) setError(cleanError(error));
       }
       if (!disposed && isCurrentPoll(epoch))
-        timer = setTimeout(() => void poll(), 1000);
+        timer = setTimeout(() => void poll(), nextAdaptiveDelay(step++));
     };
-    timer = setTimeout(() => void poll(), 1000);
+    timer = setTimeout(() => void poll(), nextAdaptiveDelay(step++));
     return () => {
       disposed = true;
       clearTimeout(timer);

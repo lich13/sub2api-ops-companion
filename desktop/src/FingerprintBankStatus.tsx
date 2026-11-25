@@ -2,6 +2,7 @@ import { useEffectEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { api } from "./bridge";
+import { nextAdaptiveDelay } from "./pollBackoff";
 import type {
   BankStatusReply,
   BankVersionReply,
@@ -53,7 +54,7 @@ export default function FingerprintBankStatus({
     [error, setError] = useState("");
   const generation = useRef(0),
     timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  async function read(current: number, follow = false) {
+  async function read(current: number, follow = false, step = 0) {
     try {
       const next = await api<Bank>("GET", path);
       if (generation.current !== current) return;
@@ -61,7 +62,10 @@ export default function FingerprintBankStatus({
       setValue(next);
       setError("");
       if (["checking", "syncing"].includes(next.status) || follow)
-        timer.current = setTimeout(() => void read(current), 1000);
+        timer.current = setTimeout(
+          () => void read(current, false, step + 1),
+          nextAdaptiveDelay(step),
+        );
       else setBusy(false);
     } catch (e) {
       if (generation.current === current) {

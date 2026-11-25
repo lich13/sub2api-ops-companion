@@ -89,9 +89,13 @@ public struct AccountsPageView: View {
         .onChange(of: "\(query)|\(groupFilter)|\(platformFilter)|\(typeFilter)|\(statusFilter)") { _, _ in
             selectedIds.removeAll()
         }
-        .task(id: "\(store.connectionKey):\(store.accounts.count):\(store.state.online)") {
+        .task(id: "\(store.connectionKey):\(store.state.snapshot_revision ?? 0):\(store.state.online)") {
             nativeUsage.bindConnection(store.connectionKey)
-            nativeUsage.enqueueIfNeeded(accounts: store.accounts, online: store.state.online)
+            nativeUsage.enqueueIfNeeded(
+                accounts: store.accounts,
+                accountById: store.accountById,
+                online: store.state.online
+            )
             let liveIds = Set(store.accounts.map(\.id))
             selectedIds = selectedIds.intersection(liveIds)
         }
@@ -422,7 +426,7 @@ public struct AccountsPageView: View {
 
     private func triggerQuotaRefresh() async {
         guard store.state.online else { return }
-        nativeUsage.refreshAll(accounts: store.accounts)
+        nativeUsage.refreshAll(accounts: store.accounts, accountById: store.accountById)
         do {
             let started: QuotaRefreshHeader = try await RustBridge.shared.api("POST", "/quota-refresh", body: .object([:]))
             quotaJob = started

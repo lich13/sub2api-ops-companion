@@ -2,6 +2,7 @@
 import type { ConfigHeader } from "./protocol";
 import {
   defaultConnectionName,
+  type AppUpdateSnapshot,
   type ViewState,
   type Account,
   type Config,
@@ -706,10 +707,28 @@ function emit() {
 }
 let previewQuotaSeconds = 60;
 const previewQuotaTokens = new Map<number, string>();
+let previewUpdateState: AppUpdateSnapshot = {
+  phase: "idle",
+  current_version: appVersion,
+  latest_version: null,
+  downloaded_bytes: 0,
+  total_bytes: null,
+  message: "",
+};
+const updateListeners = new Set<(s: AppUpdateSnapshot) => void>();
+function emitUpdate() {
+  for (const cb of updateListeners) cb(structuredClone(previewUpdateState));
+}
 export function subscribe(cb: (s: ViewState) => void) {
   listeners.add(cb);
   return () => {
     listeners.delete(cb);
+  };
+}
+export function subscribeAppUpdate(cb: (s: AppUpdateSnapshot) => void) {
+  updateListeners.add(cb);
+  return () => {
+    updateListeners.delete(cb);
   };
 }
 export async function run(
@@ -811,7 +830,41 @@ export async function run(
   }
   if (name === "open_authorization_url" || name === "open_sub2api_release")
     return;
-  if (name === "check_updates") return `预览模式 · 当前版本 ${appVersion}`;
+  if (name === "get_app_update_state")
+    return structuredClone(previewUpdateState);
+  if (name === "start_app_update") {
+    previewUpdateState = {
+      phase: "up_to_date",
+      current_version: appVersion,
+      latest_version: appVersion,
+      downloaded_bytes: 0,
+      total_bytes: null,
+      message: `当前版本 ${appVersion} 已是最新`,
+    };
+    emitUpdate();
+    return structuredClone(previewUpdateState);
+  }
+  if (name === "cancel_app_update") {
+    previewUpdateState = {
+      phase: "idle",
+      current_version: appVersion,
+      latest_version: null,
+      downloaded_bytes: 0,
+      total_bytes: null,
+      message: "已取消更新下载",
+    };
+    emitUpdate();
+    return structuredClone(previewUpdateState);
+  }
+  if (name === "install_app_update") {
+    previewUpdateState = {
+      ...previewUpdateState,
+      phase: "installing",
+      message: `已校验 v${previewUpdateState.latest_version ?? appVersion}，正在调起系统安装器…`,
+    };
+    emitUpdate();
+    return structuredClone(previewUpdateState);
+  }
   if (name === "api_request") {
     if (String(args.path).startsWith("/sub2api-system/"))
       return (await import("./sub2apiConfigPreview")).systemPreview(

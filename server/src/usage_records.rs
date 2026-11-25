@@ -262,18 +262,15 @@ pub struct Filter {
 pub struct UsageRecords(pub Database);
 impl UsageRecords {
     async fn begin(&self, repeatable: bool) -> Result<sqlx::Transaction<'_, sqlx::Postgres>> {
-        let mut transaction = self.0.pool.begin().await?;
-        sqlx::query(if repeatable {
-            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
-        } else {
-            "SET TRANSACTION READ ONLY"
-        })
-        .execute(&mut *transaction)
-        .await?;
-        sqlx::query("SET LOCAL statement_timeout='5s'")
-            .execute(&mut *transaction)
-            .await?;
-        Ok(transaction)
+        Ok(self
+            .0
+            .pool
+            .begin_with(if repeatable {
+                "BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY; SET LOCAL statement_timeout='5s'"
+            } else {
+                "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'"
+            })
+            .await?)
     }
     pub async fn list(&self, f: &Filter) -> Result<Value> {
         self.list_at(f, Utc::now()).await

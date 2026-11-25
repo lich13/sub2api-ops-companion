@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { act, type ComponentProps } from "react";
+import { act, useCallback, useState, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AccountActionItem } from "./AccountActions";
+import { useAccountActions, type AccountActionItem } from "./AccountActions";
 import MobileAccounts from "./MobileAccounts";
 import type { Account } from "./types";
 
@@ -189,5 +189,66 @@ describe("mobile accounts", () => {
     expect(actionSheet()).not.toBeNull();
     await render({ ...current, accounts: [] });
     expect(actionSheet()).toBeNull();
+  });
+
+  it("skips re-rendering unselected MobileAccountCard siblings when useAccountActions is used", async () => {
+    const rows = [
+      account,
+      { ...account, id: 2, name: "Fixture 2" },
+      { ...account, id: 3, name: "Fixture 3" },
+    ];
+    const renderCounts = new Map<number, number>();
+    const noop = vi.fn();
+
+    function Harness() {
+      const [selected, setSelected] = useState(() => new Set<number>());
+      const select = useCallback((id: number, checked: boolean) => {
+        setSelected((prev) => {
+          const next = new Set(prev);
+          if (checked) next.add(id);
+          else next.delete(id);
+          return next;
+        });
+      }, []);
+      const schedule = useCallback((a: Account) => {
+        renderCounts.set(a.id, (renderCounts.get(a.id) ?? 0) + 1);
+        return null;
+      }, []);
+      const accountActions = useAccountActions({
+        online: true,
+        connectionKey: "https://example.invalid:true:1",
+        report: noop,
+        modelTest: noop,
+        modelDetection: noop,
+        test: noop,
+        template: noop,
+        remove: noop,
+      });
+      return (
+        <MobileAccounts
+          accounts={rows}
+          online={true}
+          selected={selected}
+          select={select}
+          schedule={schedule}
+          error={noop}
+          report={noop}
+          accountActions={accountActions}
+        />
+      );
+    }
+
+    await act(async () => root.render(<Harness />));
+    expect(renderCounts.get(1)).toBe(1);
+    expect(renderCounts.get(2)).toBe(1);
+    expect(renderCounts.get(3)).toBe(1);
+
+    const firstCheckbox = container.querySelector<HTMLInputElement>(
+      'input[aria-label="选择 Fixture account"]',
+    )!;
+    await act(async () => firstCheckbox.click());
+    expect(renderCounts.get(1)).toBe(2);
+    expect(renderCounts.get(2)).toBe(1);
+    expect(renderCounts.get(3)).toBe(1);
   });
 });

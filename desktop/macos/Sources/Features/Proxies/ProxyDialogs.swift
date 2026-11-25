@@ -433,24 +433,45 @@ public struct ProxyBatchAddSheet: View {
     }
 
     private func runBatch() async {
-        let items = parsed.proxies
+        let items = parsed.proxies.map { (address: $0.displayAddress, json: $0.jsonObject) }
         busy = true
         defer { busy = false }
-        var out: [(address: String, ok: Bool, message: String)] = []
-        for item in items {
-            guard online else { break }
-            do {
-                let r: CreateProxyBatchReply = try await RustBridge.shared.api(
-                    "POST",
-                    "/proxy-management/batch",
-                    body: .object(["proxies": .array([item.jsonObject])])
-                )
-                let ok = r.created == 1
-                out.append((item.displayAddress, ok, ok ? "已添加" : "已存在或未添加"))
-            } catch {
-                out.append((item.displayAddress, false, error.localizedDescription))
+        guard online, !items.isEmpty else { return }
+        typealias BatchOutcome = (index: Int, address: String, ok: Bool, message: String)
+        var ordered: [BatchOutcome?] = Array(repeating: nil, count: items.count)
+        let maxConcurrency = 5
+        await withTaskGroup(of: BatchOutcome.self) { group in
+            var nextIndex = 0
+            func submitNext() {
+                guard nextIndex < items.count, online else { return }
+                let idx = nextIndex
+                let addr = items[idx].address
+                let payload = items[idx].json
+                nextIndex += 1
+                group.addTask {
+                    do {
+                        let r: CreateProxyBatchReply = try await RustBridge.shared.api(
+                            "POST",
+                            "/proxy-management/batch",
+                            body: .object(["proxies": .array([payload])])
+                        )
+                        let ok = r.created == 1
+                        return (idx, addr, ok, ok ? "已添加" : "已存在或未添加")
+                    } catch {
+                        return (idx, addr, false, error.localizedDescription)
+                    }
+                }
             }
-            results = out
+            for _ in 0 ..< min(maxConcurrency, items.count) {
+                submitNext()
+            }
+            for await outcome in group {
+                ordered[outcome.index] = outcome
+                results = ordered.compactMap { entry in
+                    entry.map { ($0.address, $0.ok, $0.message) }
+                }
+                submitNext()
+            }
         }
     }
 }

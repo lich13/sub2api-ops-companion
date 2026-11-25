@@ -5,6 +5,7 @@ import { LoaderCircle, RefreshCw, X } from "lucide-react";
 import { readAccountModels, modelDirectoryRevoked } from "./accountModels";
 import { api, command } from "./bridge";
 import { errorMessage as errorText, ignoredFailure } from "./bridgeError";
+import { nextAdaptiveDelay } from "./pollBackoff";
 import { engineName } from "./modelTestTypes";
 import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
@@ -169,11 +170,21 @@ export default function ModelDetectionDialog({
     };
   }, [account.id, online]);
   const loaded = !!value;
+  const activeStatusRef = useRef(false);
+  activeStatusRef.current = ["queued", "running", "handling"].includes(
+    value?.status ?? "",
+  );
   useEffect(() => {
     if (!online || !loaded) return;
     let alive = true,
       hadPollError = false,
+      step = 0,
       timer: ReturnType<typeof setTimeout>;
+    const nextDelay = () => {
+      if (activeStatusRef.current) return nextAdaptiveDelay(step++);
+      step = 0;
+      return 2000;
+    };
     const poll = async () => {
       const current = generation.current;
       try {
@@ -182,6 +193,9 @@ export default function ModelDetectionDialog({
           `/accounts/${account.id}/model-detection`,
         );
         if (alive && !closed.current && current === generation.current) {
+          activeStatusRef.current = ["queued", "running", "handling"].includes(
+            d.status ?? "",
+          );
           setValue(d);
           if (hadPollError) {
             hadPollError = false;
@@ -199,9 +213,10 @@ export default function ModelDetectionDialog({
           setError(errorText(err));
         }
       }
-      if (alive && !closed.current) timer = setTimeout(() => void poll(), 2000);
+      if (alive && !closed.current)
+        timer = setTimeout(() => void poll(), nextDelay());
     };
-    timer = setTimeout(() => void poll(), 2000);
+    timer = setTimeout(() => void poll(), nextDelay());
     return () => {
       alive = false;
       clearTimeout(timer);

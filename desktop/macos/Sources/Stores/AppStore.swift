@@ -65,8 +65,82 @@ public struct ConnectionModalTarget: Identifiable, Sendable, Equatable {
 
 @MainActor
 @Observable
+public final class ObservedClock {
+    public var raw: String = ""
+    public init() {}
+}
+
+public struct ObservedHeaderLabel: View {
+    public var clock: ObservedClock
+    public var spacing: CGFloat
+
+    public init(clock: ObservedClock, spacing: CGFloat = 5) {
+        self.clock = clock
+        self.spacing = spacing
+    }
+
+    public var body: some View {
+        if !clock.raw.isEmpty {
+            HStack(spacing: spacing) {
+                Image(systemName: "clock")
+                    .font(DS.iconFont(11))
+                Text("更新于 \(BeijingTime.fullTime(clock.raw))")
+                    .font(DS.fontPriorityMeta)
+                    .monospacedDigit()
+            }
+            .foregroundStyle(DS.muted)
+        }
+    }
+}
+
+public struct QuickObservedFooterText: View {
+    public var clock: ObservedClock
+    public init(clock: ObservedClock) { self.clock = clock }
+
+    public var body: some View {
+        Text(BeijingTime.fullTime(clock.raw.isEmpty ? nil : clock.raw))
+            .font(DS.fontPriorityMeta)
+            .monospacedDigit()
+            .foregroundStyle(DS.muted)
+    }
+}
+
+public struct OfflineObservedBannerText: View {
+    public let baseMessage: String
+    public let hasSnapshot: Bool
+    public var clock: ObservedClock
+
+    public init(baseMessage: String, hasSnapshot: Bool, clock: ObservedClock) {
+        self.baseMessage = baseMessage
+        self.hasSnapshot = hasSnapshot
+        self.clock = clock
+    }
+
+    public var body: some View {
+        if hasSnapshot {
+            Text("\(baseMessage) · 上次更新 \(BeijingTime.fullTime(clock.raw))")
+                .font(DS.fontPriorityMeta)
+                .monospacedDigit()
+        } else {
+            Text(baseMessage)
+                .font(DS.fontPriorityMeta)
+        }
+    }
+}
+
+@MainActor
+@Observable
 public final class AppStore {
-    public var state: ViewState = ViewState()
+    @ObservationIgnored private var applyingViewState = false
+    public let observedClock = ObservedClock()
+
+    public var state: ViewState = ViewState() {
+        didSet {
+            if !applyingViewState {
+                syncDerivedCollections(from: state.snapshot)
+            }
+        }
+    }
     public var ready: Bool = false
     public var page: AppPage = .accounts {
         didSet {
@@ -148,11 +222,43 @@ public final class AppStore {
     }
 
     public private(set) var accounts: [Account] = []
+    public private(set) var accountById: [Int: Account] = [:]
     public private(set) var groups: [Group] = []
+    public private(set) var activeGroups: [Group] = []
     public private(set) var errors: [OpsError] = []
 
     private var lastOpsStateSeq: UInt64 = 0
     private static let bridgeLogger = Logger(subsystem: "Sub2Ops", category: "bridge")
+
+    private func syncDerivedCollections(from snapshot: Snapshot?) {
+        let nextObserved = snapshot?.observed_at ?? ""
+        if observedClock.raw != nextObserved {
+            observedClock.raw = nextObserved
+        }
+        let nextAccounts = snapshot?.accounts ?? []
+        let accountsChanged = accounts != nextAccounts
+        if accountsChanged {
+            accounts = nextAccounts
+            accountById = Dictionary(nextAccounts.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        } else if accountById.count != nextAccounts.count {
+            accountById = Dictionary(nextAccounts.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        }
+        let nextGroups = snapshot?.groups ?? []
+        let groupsChanged = groups != nextGroups
+        if groupsChanged {
+            groups = nextGroups
+        }
+        if accountsChanged || groupsChanged || (activeGroups.isEmpty && !nextGroups.isEmpty) {
+            let computed = computeCurrentGroups(nextGroups, accounts: nextAccounts)
+            if activeGroups != computed {
+                activeGroups = computed
+            }
+        }
+        let nextErrors = (snapshot?.errors ?? []).sorted { ($0.id ?? 0) > ($1.id ?? 0) }
+        if errors != nextErrors {
+            errors = nextErrors
+        }
+    }
 
     public func bindBridge() {
         RustBridge.shared.setEventHandler { [weak self] event in
@@ -170,6 +276,10 @@ public final class AppStore {
                 self.trayTooltip = tip
             case .reopen:
                 self.onReopenMainWindow?()
+            case .observedAt(let stamp):
+                if self.observedClock.raw != stamp {
+                    self.observedClock.raw = stamp
+                }
             }
         }
         Task { @MainActor [weak self] in
@@ -196,33 +306,22 @@ public final class AppStore {
             && (state.snapshot_revision ?? 0) != 0
             && state.snapshot_revision == next.snapshot_revision
 
+        applyingViewState = true
+        defer { applyingViewState = false }
+
         if sameSnapshotContent, let preserved = state.snapshot {
+            let latestObserved = next.snapshot?.observed_at ?? preserved.observed_at
+            if observedClock.raw != latestObserved {
+                observedClock.raw = latestObserved
+            }
             var merged = next
-            merged.snapshot = Snapshot(
-                observed_at: next.snapshot?.observed_at ?? preserved.observed_at,
-                accounts: preserved.accounts,
-                groups: preserved.groups,
-                errors: preserved.errors,
-                recoveries: preserved.recoveries,
-                schema_version: preserved.schema_version
-            )
+            merged.snapshot = preserved
             if state != merged {
                 state = merged
             }
         } else {
             state = next
-            let nextAccounts = next.snapshot?.accounts ?? []
-            if accounts != nextAccounts {
-                accounts = nextAccounts
-            }
-            let nextGroups = next.snapshot?.groups ?? []
-            if groups != nextGroups {
-                groups = nextGroups
-            }
-            let nextErrors = (next.snapshot?.errors ?? []).sorted { ($0.id ?? 0) > ($1.id ?? 0) }
-            if errors != nextErrors {
-                errors = nextErrors
-            }
+            syncDerivedCollections(from: next.snapshot)
         }
 
         let newKey = connectionKey

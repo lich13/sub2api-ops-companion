@@ -85,7 +85,8 @@ export default function UsageCell({
   const request = useRef(0);
   const parent =
     account.type === "apikey" && account.parent_account_id
-      ? quotaSettings.accounts.find((a) => a.id === account.parent_account_id)
+      ? (quotaSettings.accountById.get(account.parent_account_id) ??
+        quotaSettings.accounts.find((a) => a.id === account.parent_account_id))
       : undefined;
   const identity = `${connectionKey}:${account.id}:${account.operation_versions.usage}:${parent?.operation_versions.usage ?? ""}`;
   const usage =

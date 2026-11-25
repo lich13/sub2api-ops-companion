@@ -243,7 +243,14 @@ impl Detection {
                 if error.status.is_server_error() {
                     return Err(error);
                 }
-                self.tests.cancel(string(&job["id"])).await?;
+                let cancel = {
+                    let _control = self.actions.locks.control(id).await;
+                    self.control(id)?["disposition"]["job_id"] != job["id"]
+                        && self.guard(&job).await.is_err()
+                };
+                if cancel {
+                    self.tests.cancel(string(&job["id"])).await?;
+                }
                 return Ok(None);
             }
             if value["status"] != job["status"] {

@@ -251,6 +251,8 @@ fn assert_read_only_queries(statements: &[String], context: &str) {
             continue;
         }
         let allowed_control = sql == "begin"
+            || sql == "begin isolation level repeatable read, read only; set local statement_timeout='5s'"
+            || sql == "begin read only; set local statement_timeout='5s'"
             || sql == "commit"
             || sql == "rollback"
             || sql.starts_with("set time zone ")

@@ -353,7 +353,7 @@ impl Queries {
             .await?
             .ok_or_else(|| Error::new(404, "账号不存在"))
     }
-    pub async fn groups(&self, accounts: &[Value]) -> Result<Vec<Value>> {
+    pub(crate) fn groups_from_rows(rows: &[Value], accounts: &[Value]) -> Vec<Value> {
         let memberships = accounts
             .iter()
             .filter_map(|a| {
@@ -370,9 +370,12 @@ impl Queries {
                 })
             })
             .collect();
-        Ok(group_dtos(
+        group_dtos(rows, &memberships)
+    }
+    pub async fn groups(&self, accounts: &[Value]) -> Result<Vec<Value>> {
+        Ok(Self::groups_from_rows(
             &self.db.all(sql::DESKTOP_GROUP_SQL, &[]).await?,
-            &memberships,
+            accounts,
         ))
     }
     fn error_filter(category: Option<&str>) -> Result<&'static str> {

@@ -23,6 +23,7 @@ import type {
 } from "./protocol";
 const Context = createContext({
   accounts: [] as Account[],
+  accountById: new Map<number, Account>(),
   seconds: 60,
   ready: true,
   visible: true,
@@ -76,6 +77,10 @@ export function KeyQuotaProvider({
     () => (enabled ? accounts : []),
     [enabled, accounts],
   );
+  const accountById = useMemo(
+    () => new Map(stableAccounts.map((a) => [a.id, a])),
+    [stableAccounts],
+  );
   const reload = useCallback(() => setRetry((n) => n + 1), []);
   const saved = useCallback((v: Settings) => {
     setValue(v);
@@ -84,6 +89,7 @@ export function KeyQuotaProvider({
   const contextValue = useMemo(
     () => ({
       accounts: stableAccounts,
+      accountById,
       seconds: value?.seconds ?? 60,
       revision: value?.revision ?? "",
       ready: !!value && !error,
@@ -92,7 +98,7 @@ export function KeyQuotaProvider({
       reload,
       saved,
     }),
-    [stableAccounts, value, error, visible, active, reload, saved],
+    [stableAccounts, accountById, value, error, visible, active, reload, saved],
   );
   return <Context.Provider value={contextValue}>{children}</Context.Provider>;
 }

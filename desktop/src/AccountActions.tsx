@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   Activity,
   Link2,
@@ -55,7 +61,9 @@ export function useAccountActions(
   current.current = options;
   const alive = useRef(true);
   const running = useRef(new Set<string>());
-  const [, redraw] = useState(0);
+  const [runningSnapshot, setRunningSnapshot] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [marks, setMarks] = useState<
     Record<number, { base?: string; value: DegradationMark }>
   >({});
@@ -66,200 +74,219 @@ export function useAccountActions(
     };
   }, []);
   useEffect(() => {
-    setMarks({});
+    setMarks((prev) => (Object.keys(prev).length === 0 ? prev : {}));
   }, [options.connectionKey]);
 
-  async function execute(
-    account: Account,
-    action: "recover" | "degradation_mark",
-    mark?: DegradationMark,
-  ) {
-    const connection = current.current.connectionKey;
-    const key = `${connection}:${account.id}:${action}`;
-    if (!current.current.online || running.current.has(key)) return;
-    if (action === "degradation_mark" && !mark?.version) return;
-    const valid = () =>
-      alive.current && current.current.connectionKey === connection;
-    running.current.add(key);
-    redraw((value) => value + 1);
-    try {
-      if (action === "degradation_mark") {
-        const result = await accountOperation<{
-          verified: boolean;
-          degradation_mark: DegradationMark;
-        }>(account, action, { marked: !mark!.marked }, mark!.version);
-        if (!valid()) return;
-        if (!result.verified) throw new Error("降智标记保存未确认");
-        setMarks((saved) => ({
-          ...saved,
-          [account.id]: {
-            base: account.degradation_mark?.version,
-            value: result.degradation_mark,
-          },
-        }));
-        await command("refresh");
-      } else {
-        const result = await accountOperation<{ verified: boolean }>(
-          account,
-          action,
-          {},
-        );
-        if (valid())
-          current.current.report(
-            result.verified
-              ? `${account.name}：状态已恢复`
-              : "恢复状态未确认，请刷新",
+  const execute = useCallback(
+    async (
+      account: Account,
+      action: "recover" | "degradation_mark",
+      mark?: DegradationMark,
+    ) => {
+      const connection = current.current.connectionKey;
+      const key = `${connection}:${account.id}:${action}`;
+      if (!current.current.online || running.current.has(key)) return;
+      if (action === "degradation_mark" && !mark?.version) return;
+      const valid = () =>
+        alive.current && current.current.connectionKey === connection;
+      running.current.add(key);
+      setRunningSnapshot(new Set(running.current));
+      try {
+        if (action === "degradation_mark") {
+          const result = await accountOperation<{
+            verified: boolean;
+            degradation_mark: DegradationMark;
+          }>(account, action, { marked: !mark!.marked }, mark!.version);
+          if (!valid()) return;
+          if (!result.verified) throw new Error("降智标记保存未确认");
+          setMarks((saved) => ({
+            ...saved,
+            [account.id]: {
+              base: account.degradation_mark?.version,
+              value: result.degradation_mark,
+            },
+          }));
+          await command("refresh");
+        } else {
+          const result = await accountOperation<{ verified: boolean }>(
+            account,
+            action,
+            {},
           );
+          if (valid())
+            current.current.report(
+              result.verified
+                ? `${account.name}：状态已恢复`
+                : "恢复状态未确认，请刷新",
+            );
+        }
+      } catch (error) {
+        if (valid()) current.current.report(error);
+      } finally {
+        running.current.delete(key);
+        if (valid()) {
+          setRunningSnapshot(new Set(running.current));
+          if (action === "recover")
+            void command("refresh").catch((error) => {
+              if (valid()) current.current.report(error);
+            });
+        }
       }
-    } catch (error) {
-      if (valid()) current.current.report(error);
-    } finally {
-      running.current.delete(key);
-      if (valid()) {
-        redraw((value) => value + 1);
-        if (action === "recover")
-          void command("refresh").catch((error) => {
-            if (valid()) current.current.report(error);
-          });
-      }
-    }
-  }
+    },
+    [],
+  );
 
-  return (account) => {
-    const openai =
-      account.platform === "openai" &&
-      ["oauth", "apikey"].includes(account.type);
-    const pending = (action: string) =>
-      running.current.has(`${options.connectionKey}:${account.id}:${action}`);
-    const mark =
-      marks[account.id]?.base === account.degradation_mark?.version
-        ? (marks[account.id]?.value ?? account.degradation_mark)
-        : account.degradation_mark;
-    const items: AccountActionItem[] = [];
-    if (supportsModelDetection(account))
-      items.push(
-        {
-          id: "model_test",
-          label: "模型测试",
+  const { online, connectionKey } = options;
+  const hasKeepalive = Boolean(options.keepalive);
+  const hasReauthorize = Boolean(options.reauthorize);
+  const hasSettings = Boolean(options.settings);
+
+  return useCallback(
+    (account: Account) => {
+      const openai =
+        account.platform === "openai" &&
+        ["oauth", "apikey"].includes(account.type);
+      const pending = (action: string) =>
+        runningSnapshot.has(`${connectionKey}:${account.id}:${action}`);
+      const mark =
+        marks[account.id]?.base === account.degradation_mark?.version
+          ? (marks[account.id]?.value ?? account.degradation_mark)
+          : account.degradation_mark;
+      const items: AccountActionItem[] = [];
+      if (supportsModelDetection(account))
+        items.push(
+          {
+            id: "model_test",
+            label: "模型测试",
+            icon: <Activity size={12} />,
+            className: "degradation-action",
+            disabled: !online,
+            run: () => current.current.modelTest(account),
+          },
+          {
+            id: "degradation_mark",
+            label: mark?.error
+              ? "标记读取失败"
+              : mark?.marked
+                ? "取消标记"
+                : "标记降智",
+            icon: pending("degradation_mark") ? (
+              <LoaderCircle size={12} className="spin" />
+            ) : (
+              <BellOff size={12} />
+            ),
+            className: "degradation-action",
+            title: mark?.error,
+            disabled: !online || pending("degradation_mark") || !mark?.version,
+            run: () => {
+              void execute(account, "degradation_mark", mark);
+            },
+          },
+          {
+            id: "model_detection",
+            label: "定时检测",
+            icon: <Clock3 size={12} />,
+            className: "detection-action",
+            disabled: !online,
+            run: () => current.current.modelDetection(account),
+          },
+        );
+      items.push({
+        id: "test",
+        label: "测试连接",
+        icon: <CircleCheck size={12} />,
+        className: "test-button",
+        disabled: !online,
+        run: () => current.current.test(account),
+      });
+      if (hasKeepalive)
+        items.push({
+          id: "keepalive",
+          label: "账号保活",
           icon: <Activity size={12} />,
-          className: "degradation-action",
-          disabled: !options.online,
-          run: () => options.modelTest(account),
-        },
-        {
-          id: "degradation_mark",
-          label: mark?.error
-            ? "标记读取失败"
-            : mark?.marked
-              ? "取消标记"
-              : "标记降智",
-          icon: pending("degradation_mark") ? (
+          disabled: !online,
+          run: () => current.current.keepalive?.(account),
+        });
+      if (
+        account.platform === "openai" &&
+        account.type === "oauth" &&
+        hasReauthorize
+      )
+        items.push({
+          id: "reauthorize",
+          label: "重新授权",
+          icon: <Link2 size={12} />,
+          disabled: !online,
+          run: () => current.current.reauthorize?.(account),
+        });
+      if (account.recoverable)
+        items.push({
+          id: "recover",
+          label: "恢复状态",
+          disabled: !online || pending("recover"),
+          pending: pending("recover"),
+          icon: pending("recover") ? (
             <LoaderCircle size={12} className="spin" />
           ) : (
-            <BellOff size={12} />
+            <RotateCcw size={12} />
           ),
-          className: "degradation-action",
-          title: mark?.error,
-          disabled:
-            !options.online || pending("degradation_mark") || !mark?.version,
           run: () => {
-            void execute(account, "degradation_mark", mark);
+            void execute(account, "recover");
           },
-        },
-        {
-          id: "model_detection",
-          label: "定时检测",
-          icon: <Clock3 size={12} />,
-          className: "detection-action",
-          disabled: !options.online,
-          run: () => options.modelDetection(account),
-        },
-      );
-    items.push({
-      id: "test",
-      label: "测试连接",
-      icon: <CircleCheck size={12} />,
-      className: "test-button",
-      disabled: !options.online,
-      run: () => options.test(account),
-    });
-    if (options.keepalive)
+        });
+      if (openai)
+        items.push({
+          id: "template",
+          label: "应用模板",
+          icon: <LayoutTemplate size={12} />,
+          disabled: !online,
+          run: () => current.current.template(account),
+        });
+      if (hasSettings)
+        items.push(
+          {
+            id: "model_whitelist",
+            label: "模型白名单",
+            icon: <ListFilter size={12} />,
+            disabled: !online,
+            run: () => current.current.settings?.(account, "whitelist"),
+          },
+          {
+            id: "model_mapping",
+            label: "模型映射",
+            icon: <Route size={12} />,
+            disabled: !online,
+            run: () => current.current.settings?.(account, "mappings"),
+          },
+          {
+            id: "proxy",
+            label: "选择代理",
+            icon: <Network size={12} />,
+            disabled: !online,
+            run: () => current.current.settings?.(account, "proxy"),
+          },
+        );
       items.push({
-        id: "keepalive",
-        label: "账号保活",
-        icon: <Activity size={12} />,
-        disabled: !options.online,
-        run: () => options.keepalive?.(account),
+        id: "delete",
+        label: "删除",
+        icon: <Trash2 size={12} />,
+        className: "danger-text",
+        disabled: !online,
+        run: () => current.current.remove(account),
       });
-    if (
-      account.platform === "openai" &&
-      account.type === "oauth" &&
-      options.reauthorize
-    )
-      items.push({
-        id: "reauthorize",
-        label: "重新授权",
-        icon: <Link2 size={12} />,
-        disabled: !options.online,
-        run: () => options.reauthorize?.(account),
-      });
-    if (account.recoverable)
-      items.push({
-        id: "recover",
-        label: "恢复状态",
-        disabled: !options.online || pending("recover"),
-        pending: pending("recover"),
-        icon: pending("recover") ? (
-          <LoaderCircle size={12} className="spin" />
-        ) : (
-          <RotateCcw size={12} />
-        ),
-        run: () => {
-          void execute(account, "recover");
-        },
-      });
-    if (openai)
-      items.push({
-        id: "template",
-        label: "应用模板",
-        icon: <LayoutTemplate size={12} />,
-        disabled: !options.online,
-        run: () => options.template(account),
-      });
-    if (options.settings)
-      items.push(
-        {
-          id: "model_whitelist",
-          label: "模型白名单",
-          icon: <ListFilter size={12} />,
-          disabled: !options.online,
-          run: () => options.settings?.(account, "whitelist"),
-        },
-        {
-          id: "model_mapping",
-          label: "模型映射",
-          icon: <Route size={12} />,
-          disabled: !options.online,
-          run: () => options.settings?.(account, "mappings"),
-        },
-        {
-          id: "proxy",
-          label: "选择代理",
-          icon: <Network size={12} />,
-          disabled: !options.online,
-          run: () => options.settings?.(account, "proxy"),
-        },
-      );
-    items.push({
-      id: "delete",
-      label: "删除",
-      icon: <Trash2 size={12} />,
-      className: "danger-text",
-      disabled: !options.online,
-      run: () => options.remove(account),
-    });
-    return items;
-  };
+      return items;
+    },
+    [
+      online,
+      connectionKey,
+      hasKeepalive,
+      hasReauthorize,
+      hasSettings,
+      marks,
+      runningSnapshot,
+      execute,
+    ],
+  );
 }
 
 const primaryActions = new Set([

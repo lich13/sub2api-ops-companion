@@ -18,9 +18,10 @@ use tokio::sync::{watch, Mutex, Notify};
 
 mod api_http;
 mod credentials;
-use api_http::{http_detailed, HttpFailure};
+mod updater;
+use api_http::{http_detailed, http_snapshot, HttpFailure, SnapshotFetch};
 
-const RELEASES: &str = "https://github.com/lich13/sub2api-ops-companion/releases";
+pub(crate) const RELEASES: &str = "https://github.com/lich13/sub2api-ops-companion/releases";
 
 #[cfg(target_os = "macos")]
 mod macos_bridge;
@@ -79,6 +80,7 @@ struct Runtime {
     client: reqwest::Client,
     view: Mutex<ViewState>,
     key: Mutex<Option<String>>,
+    snapshot_etag: Mutex<Option<String>>,
     connecting_url: Mutex<Option<String>>,
     network: Mutex<()>,
     snapshot_gate: Mutex<()>,
@@ -238,16 +240,79 @@ impl std::io::Write for Fnv1aHasher {
     }
 }
 
+struct HashBuffer {
+    hasher: Fnv1aHasher,
+    buf: Vec<u8>,
+}
+
+impl std::io::Write for HashBuffer {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        let _ = self.hasher.write(data)?;
+        self.buf.extend_from_slice(data);
+        Ok(data.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 fn encode_snapshot(mut data: Value) -> Option<(u64, Arc<Box<serde_json::value::RawValue>>)> {
     let observed = data.as_object_mut().and_then(|m| m.remove("observed_at"));
-    let mut hasher = Fnv1aHasher::default();
-    serde_json::to_writer(&mut hasher, &data).ok()?;
-    let revision = if hasher.0 == 0 { 1 } else { hasher.0 };
-    if let (Some(map), Some(obs)) = (data.as_object_mut(), observed) {
-        map.insert("observed_at".to_string(), obs);
-    }
-    let raw = serde_json::value::to_raw_value(&data).ok()?;
+    let mut writer = HashBuffer {
+        hasher: Fnv1aHasher::default(),
+        buf: Vec::with_capacity(1024),
+    };
+    serde_json::to_writer(&mut writer, &data).ok()?;
+    let revision = if writer.hasher.0 == 0 {
+        1
+    } else {
+        writer.hasher.0
+    };
+    let body = String::from_utf8(writer.buf).ok()?;
+    let raw_str = match observed.as_ref().and_then(Value::as_str) {
+        Some(obs) => {
+            let prefix = format!("{{\"observed_at\":{}", serde_json::to_string(obs).ok()?);
+            if body.len() > 2 {
+                format!("{prefix},{}", &body[1..])
+            } else {
+                format!("{prefix}}}")
+            }
+        }
+        None => body,
+    };
+    let raw = serde_json::value::RawValue::from_string(raw_str).ok()?;
     Some((revision, Arc::new(raw)))
+}
+
+fn update_raw_observed_at(
+    raw: &serde_json::value::RawValue,
+    next_obs: &str,
+) -> Option<Arc<Box<serde_json::value::RawValue>>> {
+    let text = raw.get();
+    let rest = text.strip_prefix("{\"observed_at\":\"")?;
+    let mut escaped = false;
+    let mut end_quote = None;
+    for (idx, b) in rest.bytes().enumerate() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if b == b'\\' {
+            escaped = true;
+        } else if b == b'"' {
+            end_quote = Some(idx);
+            break;
+        }
+    }
+    let suffix = &rest[end_quote? + 1..];
+    let updated = format!(
+        "{{\"observed_at\":{}{}",
+        serde_json::to_string(next_obs).ok()?,
+        suffix
+    );
+    serde_json::value::RawValue::from_string(updated)
+        .ok()
+        .map(Arc::new)
 }
 
 fn publish(_app: &tauri::AppHandle, value: &ViewState) {
@@ -257,6 +322,13 @@ fn publish(_app: &tauri::AppHandle, value: &ViewState) {
     let _ = _app.emit("ops-state", value);
     #[cfg(target_os = "macos")]
     macos_bridge::publish_state(value);
+}
+
+fn publish_observed(_app: &tauri::AppHandle, _observed_at: &str) {
+    #[cfg(mobile)]
+    let _ = _app.emit("ops-observed", _observed_at);
+    #[cfg(target_os = "macos")]
+    macos_bridge::publish_observed_at(_observed_at);
 }
 
 fn apply_refresh(view: &mut ViewState, result: Result<Value, HttpFailure>) {
@@ -288,12 +360,19 @@ async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
     let Ok(_gate) = state.snapshot_gate.try_lock() else {
         return;
     };
-    let (base, key, generation) = {
+    let (base, key, generation, etag) = {
         let _connection = state.network.lock().await;
+        let view = state.view.lock().await;
+        let cached_etag = if view.snapshot.is_some() {
+            state.snapshot_etag.lock().await.clone()
+        } else {
+            None
+        };
         (
-            state.view.lock().await.preferences.base_url.clone(),
+            view.preferences.base_url.clone(),
             state.key.lock().await.clone(),
             state.generation.load(Ordering::SeqCst),
+            cached_etag,
         )
     };
     if base.is_empty() || key.is_none() {
@@ -301,13 +380,11 @@ async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
     }
     let result = active_read(
         state,
-        http_detailed(
+        http_snapshot(
             &state.client,
             &base,
             key.as_deref().unwrap_or(""),
-            "GET",
-            "/snapshot",
-            None,
+            etag.as_deref(),
             &state.path.with_file_name("network-diagnostics.log"),
         ),
     )
@@ -319,10 +396,52 @@ async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
         return;
     }
     let mut view = state.view.lock().await;
-    apply_refresh(&mut view, result);
-    #[cfg(target_os = "macos")]
-    macos_bridge::publish_tooltip(&view);
-    publish(app, &view);
+    match result {
+        Ok(SnapshotFetch::NotModified {
+            etag: next_etag,
+            observed_at,
+        }) => {
+            if let Some(tag) = next_etag {
+                *state.snapshot_etag.lock().await = Some(tag);
+            }
+            let was_healthy =
+                view.online && view.error.is_empty() && view.upstream_connection.is_none();
+            view.online = true;
+            view.error.clear();
+            view.upstream_connection = None;
+            if let (Some(obs), Some(existing)) = (observed_at.as_deref(), view.snapshot.as_deref())
+            {
+                if let Some(updated) = update_raw_observed_at(existing, obs) {
+                    view.snapshot = Some(updated);
+                }
+            }
+            #[cfg(target_os = "macos")]
+            macos_bridge::publish_tooltip(&view);
+            if was_healthy {
+                if let Some(obs) = observed_at.as_deref() {
+                    publish_observed(app, obs);
+                }
+            } else {
+                publish(app, &view);
+            }
+        }
+        Ok(SnapshotFetch::Full {
+            data,
+            etag: next_etag,
+        }) => {
+            *state.snapshot_etag.lock().await = next_etag;
+            apply_refresh(&mut view, Ok(data));
+            #[cfg(target_os = "macos")]
+            macos_bridge::publish_tooltip(&view);
+            publish(app, &view);
+        }
+        Err(error) => {
+            apply_refresh(&mut view, Err(error));
+            #[cfg(target_os = "macos")]
+            macos_bridge::publish_tooltip(&view);
+            publish(app, &view);
+        }
+    }
 }
 
 async fn active_read<T>(
@@ -415,15 +534,7 @@ async fn connect(
             ),
             active_read(
                 &state,
-                http_detailed(
-                    &state.client,
-                    &base,
-                    &resolved_key,
-                    "GET",
-                    "/snapshot",
-                    None,
-                    &log_path,
-                ),
+                http_snapshot(&state.client, &base, &resolved_key, None, &log_path),
             ),
         );
         let data = cap_res?;
@@ -442,7 +553,15 @@ async fn connect(
         view.snapshot_revision = 0;
         view.error.clear();
         let cap_upstream = data.get("upstream_connection").cloned();
-        apply_refresh(&mut view, snap_res);
+        let (snap_val, next_etag) = match snap_res {
+            Ok(SnapshotFetch::Full { data, etag }) => (Ok(data), etag),
+            Ok(SnapshotFetch::NotModified { .. }) => {
+                (Err(HttpFailure::new("http", "快照响应异常")), None)
+            }
+            Err(err) => (Err(err), None),
+        };
+        *state.snapshot_etag.lock().await = next_etag;
+        apply_refresh(&mut view, snap_val);
         if !view.online && view.upstream_connection.is_none() {
             view.upstream_connection = cap_upstream;
         }
@@ -567,6 +686,7 @@ async fn disconnect(
         credentials::delete(app.clone(), view.preferences.base_url.clone()).await?;
     }
     *state.key.lock().await = None;
+    *state.snapshot_etag.lock().await = None;
     view.connection_revision = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
     view.snapshot_revision = 0;
     view.connected = false;
@@ -578,6 +698,8 @@ async fn disconnect(
     prefs.base_url.clear();
     save_preferences_async(&state.path, &prefs).await?;
     view.preferences = prefs;
+    #[cfg(target_os = "macos")]
+    macos_bridge::publish_tooltip(&view);
     publish(&app, &view);
     Ok(())
 }
@@ -740,7 +862,7 @@ async fn open_sub2api_release(app: tauri::AppHandle, url: String) -> Result<(), 
         .map_err(|_| "无法打开系统浏览器".into())
 }
 
-#[cfg_attr(mobile, tauri::command)]
+#[cfg(desktop)]
 async fn check_updates(
     app: tauri::AppHandle,
     state: State<'_, Arc<Runtime>>,
@@ -762,30 +884,51 @@ async fn check_updates(
             .map_err(|_| HttpFailure::new("invalid_response", "版本信息无效"))
     })
     .await?;
-    if let Some((tag, url)) = release_update(&releases, env!("CARGO_PKG_VERSION"), cfg!(mobile)) {
+    if let Some((tag, url)) = release_update(&releases, env!("CARGO_PKG_VERSION")) {
         app.opener()
             .open_url(&url, None::<&str>)
             .map_err(|_| "无法打开发布页")?;
-        return Ok(if cfg!(mobile) {
-            format!("发现 {tag}，已打开发布页")
-        } else {
-            format!("发现 {tag}，已打开安装包")
-        });
-    }
-    if cfg!(mobile) {
-        let page = latest_release_page(&releases).unwrap_or_else(|| format!("{RELEASES}/latest"));
-        app.opener()
-            .open_url(&page, None::<&str>)
-            .map_err(|_| "无法打开发布页")?;
-        return Ok(format!(
-            "当前版本 {}，已打开发布页",
-            env!("CARGO_PKG_VERSION")
-        ));
+        return Ok(format!("发现 {tag}，已打开安装包"));
     }
     Ok(format!("当前版本 {}，已是最新", env!("CARGO_PKG_VERSION")))
 }
 
-fn parsed_release_version(tag: &str) -> Option<(u64, u64, u64)> {
+#[cfg(mobile)]
+#[tauri::command]
+async fn get_app_update_state(
+    updater: State<'_, Arc<updater::UpdaterState>>,
+) -> Result<updater::AppUpdateSnapshot, HttpFailure> {
+    Ok(updater.get_snapshot().await)
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+async fn start_app_update(
+    app: tauri::AppHandle,
+    updater: State<'_, Arc<updater::UpdaterState>>,
+) -> Result<updater::AppUpdateSnapshot, HttpFailure> {
+    Ok(updater.start(app).await)
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+async fn cancel_app_update(
+    app: tauri::AppHandle,
+    updater: State<'_, Arc<updater::UpdaterState>>,
+) -> Result<updater::AppUpdateSnapshot, HttpFailure> {
+    Ok(updater.cancel(Some(&app)).await)
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+async fn install_app_update(
+    app: tauri::AppHandle,
+    updater: State<'_, Arc<updater::UpdaterState>>,
+) -> Result<updater::AppUpdateSnapshot, HttpFailure> {
+    updater.install_verified(&app).await
+}
+
+pub(crate) fn parsed_release_version(tag: &str) -> Option<(u64, u64, u64)> {
     let raw = tag.strip_prefix("desktop-v")?;
     if !raw.bytes().all(|c| c.is_ascii_digit() || c == b'.') {
         return None;
@@ -801,25 +944,8 @@ fn parsed_release_version(tag: &str) -> Option<(u64, u64, u64)> {
     Some((parts[0], parts[1], parts[2]))
 }
 
-fn latest_release_page(releases: &Value) -> Option<String> {
-    releases
-        .as_array()?
-        .iter()
-        .filter_map(|release| {
-            if release["draft"].as_bool().unwrap_or(false)
-                || release["prerelease"].as_bool().unwrap_or(false)
-            {
-                return None;
-            }
-            let tag = release["tag_name"].as_str()?;
-            parsed_release_version(tag)?;
-            Some((parsed_release_version(tag)?, tag))
-        })
-        .max_by_key(|r| r.0)
-        .map(|(_, tag)| format!("{RELEASES}/tag/{tag}"))
-}
-
-fn release_update(releases: &Value, current: &str, android: bool) -> Option<(String, String)> {
+#[cfg(any(desktop, test))]
+fn release_update(releases: &Value, current: &str) -> Option<(String, String)> {
     let version = |value: &str| -> Option<(u64, u64, u64)> {
         let parts = value
             .split('.')
@@ -845,9 +971,6 @@ fn release_update(releases: &Value, current: &str, android: bool) -> Option<(Str
             let newer = parsed_release_version(tag)?;
             if newer <= current {
                 return None;
-            }
-            if android {
-                return Some((newer, tag.to_string(), format!("{RELEASES}/tag/{tag}")));
             }
             let asset = release["assets"].as_array()?.iter().find(|asset| {
                 asset["name"]
@@ -955,8 +1078,18 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(credentials::plugin());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(updater::plugin());
     let builder = builder.setup(|app| {
         let path = app.path().app_config_dir()?.join("preferences.json");
+        #[cfg(mobile)]
+        {
+            let cache_dir = app.path().app_cache_dir()?;
+            app.manage(updater::UpdaterState::new(
+                cache_dir,
+                env!("CARGO_PKG_VERSION").to_string(),
+            )?);
+        }
         let prefs = normalize_preferences(
             std::fs::read(&path)
                 .ok()
@@ -986,6 +1119,7 @@ pub fn run() {
                 ..Default::default()
             }),
             key: Mutex::new(None),
+            snapshot_etag: Mutex::new(None),
             connecting_url: Mutex::new(None),
             network: Mutex::new(()),
             snapshot_gate: Mutex::new(()),
@@ -1013,6 +1147,8 @@ pub fn run() {
                     }
                 }
                 view.initializing = false;
+                #[cfg(target_os = "macos")]
+                macos_bridge::publish_tooltip(&view);
                 publish(&handle, &view);
             }
             loop {
@@ -1042,6 +1178,8 @@ pub fn run() {
             state.foreground.store(active, Ordering::SeqCst);
             if !active {
                 state.read_epoch.send_modify(|epoch| *epoch += 1);
+            } else {
+                updater::on_resumed(window.app_handle().clone());
             }
             let handle = window.app_handle().clone();
             let state = state.inner().clone();
@@ -1066,7 +1204,10 @@ pub fn run() {
         api_request,
         preferences,
         background,
-        check_updates,
+        get_app_update_state,
+        start_app_update,
+        cancel_app_update,
+        install_app_update,
         open_authorization_url,
         open_sub2api_release
     ]);
@@ -1103,6 +1244,7 @@ mod tests {
             client: reqwest::Client::new(),
             view: Mutex::new(ViewState::default()),
             key: Mutex::new(None),
+            snapshot_etag: Mutex::new(None),
             connecting_url: Mutex::new(None),
             network: Mutex::new(()),
             snapshot_gate: Mutex::new(()),
@@ -1148,45 +1290,69 @@ mod tests {
 
     #[test]
     fn updates_select_newer_signed_platform_package_only() {
+        let digest = format!("sha256:{}", "c".repeat(64));
         let data = serde_json::json!([
             {"tag_name":"desktop-v0.1.10","assets":[
                 {"name":"Sub2Ops_0.1.10_aarch64.dmg","browser_download_url":format!("{RELEASES}/download/desktop-v0.1.10/Sub2Ops_0.1.10_aarch64.dmg")},
-                {"name":"Sub2Ops_0.1.10_arm64-v8a.apk","browser_download_url":format!("{RELEASES}/download/desktop-v0.1.10/Sub2Ops_0.1.10_arm64-v8a.apk")}]},
+                {"name":"Sub2Ops_0.1.10_arm64-v8a.apk","size":2048,"digest":digest,"browser_download_url":format!("{RELEASES}/download/desktop-v0.1.10/Sub2Ops_0.1.10_arm64-v8a.apk")}]},
             {"tag_name":"desktop-v0.2.0","draft":true,"assets":[]},
-            {"tag_name":"desktop-v9.0.0","assets":[{"name":"unsafe_arm64-v8a.apk","browser_download_url":"https://other.example/file.apk"}]}
+            {"tag_name":"desktop-v9.0.0","assets":[{"name":"unsafe_arm64-v8a.apk","size":2048,"digest":digest,"browser_download_url":"https://other.example/file.apk"}]}
         ]);
-        assert_eq!(
-            release_update(&data, "0.1.9", true).unwrap().1,
-            format!("{RELEASES}/tag/desktop-v9.0.0")
-        );
-        assert!(release_update(&data, "0.1.9", false)
+        assert!(release_update(&data, "0.1.9")
             .unwrap()
             .1
             .ends_with("_aarch64.dmg"));
-        assert!(release_update(&data, "9.0.0", true).is_none());
-        assert_eq!(
-            latest_release_page(&data).as_deref(),
-            Some("https://github.com/lich13/sub2api-ops-companion/releases/tag/desktop-v9.0.0")
+        assert!(release_update(&data, "0.1.10").is_none());
+        assert!(updater::select_android_release(&data, "0.1.9", RELEASES).is_err());
+        let valid_android = serde_json::json!([data[0].clone()]);
+        let selected = updater::select_android_release(&valid_android, "0.1.9", RELEASES)
+            .unwrap()
+            .unwrap();
+        assert_eq!(selected.apk_name, "Sub2Ops_0.1.10_arm64-v8a.apk");
+        assert!(
+            updater::select_android_release(&valid_android, "0.1.10", RELEASES)
+                .unwrap()
+                .is_none()
         );
     }
     #[test]
     fn release_pages_reject_untrusted_tags_and_nonstable_releases() {
+        let digest = format!("sha256:{}", "d".repeat(64));
         let data = serde_json::json!([
-            {"tag_name":"desktop-v9.9.9/../../other"},
-            {"tag_name":"desktop-v9.9.9?redirect=bad"},
-            {"tag_name":"desktop-v99.1.1","prerelease":true},
-            {"tag_name":"desktop-v99.1.2","draft":true},
-            {"tag_name":"desktop-v1.2.3","html_url":"https://other.invalid"}
+            {"tag_name":"desktop-v9.9.9/../../other","assets":[]},
+            {"tag_name":"desktop-v9.9.9?redirect=bad","assets":[]},
+            {"tag_name":"desktop-v99.1.1","prerelease":true,"assets":[]},
+            {"tag_name":"desktop-v99.1.2","draft":true,"assets":[]},
+            {"tag_name":"desktop-v1.2.3","html_url":"https://other.invalid","assets":[
+                {"name":"Sub2Ops_1.2.3_aarch64.dmg","browser_download_url":format!("{RELEASES}/download/desktop-v1.2.3/Sub2Ops_1.2.3_aarch64.dmg")},
+                {"name":"Sub2Ops_1.2.3_arm64-v8a.apk","size":1024,"digest":digest,"browser_download_url":format!("{RELEASES}/download/desktop-v1.2.3/Sub2Ops_1.2.3_arm64-v8a.apk")}
+            ]}
         ]);
+        assert_eq!(release_update(&data, "1.2.2").unwrap().0, "desktop-v1.2.3");
         assert_eq!(
-            latest_release_page(&data),
-            Some(format!("{RELEASES}/tag/desktop-v1.2.3"))
+            updater::select_android_release(&data, "1.2.2", RELEASES)
+                .unwrap()
+                .unwrap()
+                .tag,
+            "desktop-v1.2.3"
         );
-        assert_eq!(
-            release_update(&data, "1.2.2", true).unwrap().1,
-            format!("{RELEASES}/tag/desktop-v1.2.3")
+        assert!(
+            updater::select_android_release(&serde_json::json!([]), "1.2.2", RELEASES)
+                .unwrap()
+                .is_none()
         );
-        assert!(latest_release_page(&serde_json::json!([])).is_none());
+    }
+
+    #[test]
+    fn raw_observed_at_splice_preserves_payload_and_revision() {
+        let orig = serde_json::json!({"observed_at":"2026-09-25T10:00:00Z","accounts":[{"id":1,"name":"A\"B"}]});
+        let (rev, raw) = encode_snapshot(orig).unwrap();
+        let updated = update_raw_observed_at(&raw, "2026-09-25T10:00:08Z").unwrap();
+        let parsed: Value = serde_json::from_str(updated.get()).unwrap();
+        assert_eq!(parsed["observed_at"], "2026-09-25T10:00:08Z");
+        assert_eq!(parsed["accounts"][0]["name"], "A\"B");
+        let (rev2, _) = encode_snapshot(parsed).unwrap();
+        assert_eq!(rev, rev2);
     }
 
     #[test]

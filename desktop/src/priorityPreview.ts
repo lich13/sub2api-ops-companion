@@ -1,12 +1,34 @@
 import type { Account } from "./types";
 import {
-  groupPriorityAccounts,
   priorityPending,
   samePriorityAccounts,
+  sortPriorityPlatforms,
   type PriorityAccount,
+  type PriorityPlatform,
   type PriorityTask,
   type PriorityView,
 } from "./priorities";
+
+export function groupPriorityAccounts(
+  items: PriorityAccount[],
+  version = "",
+): PriorityPlatform[] {
+  const groups = new Map<string, PriorityAccount[]>();
+  for (const item of items) {
+    const group = groups.get(item.platform) ?? [];
+    group.push(item);
+    groups.set(item.platform, group);
+  }
+  return sortPriorityPlatforms(
+    [...groups].map(([platform, accounts]) => ({
+      platform,
+      items: accounts,
+      version,
+      last_task: null,
+      parallelism: 1,
+    })),
+  );
+}
 const jobs = new Map<string, PriorityTask>();
 const requests = new Map<string, { signature: string; id: string }>();
 let active: PriorityTask | null = null;

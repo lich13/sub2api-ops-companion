@@ -41,16 +41,7 @@ public struct FeaturesPageView: View {
 
                     Spacer()
 
-                    if let observed = store.state.snapshot?.observed_at, !observed.isEmpty {
-                        HStack(spacing: 5) {
-                            Image(systemName: "clock")
-                                .font(DS.iconFont(11))
-                            Text("更新于 \(BeijingTime.fullTime(observed))")
-                                .font(DS.fontPriorityMeta)
-                                .monospacedDigit()
-                        }
-                        .foregroundStyle(DS.muted)
-                    }
+                    ObservedHeaderLabel(clock: store.observedClock)
                 }
                 .padding(.horizontal, padContainer ? horizontalPadding : 0)
                 .padding(.top, padContainer ? 18 : 0)

@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { api, command } from "./bridge";
+import { nextAdaptiveDelay } from "./pollBackoff";
 import {
   clientId,
   getOperations,
@@ -492,9 +493,14 @@ export default function AccountTemplates({
     }
   }
   const pollBatch = useEffectEvent(readBatch);
+  const pollStep = useRef(0);
+  useEffect(() => {
+    pollStep.current = 0;
+  }, [batch?.batch_id]);
   useEffect(() => {
     if (!online || !batch || !running(batch) || batchError) return;
-    const timer = setTimeout(() => void pollBatch(batch.batch_id), 2000);
+    const delay = nextAdaptiveDelay(pollStep.current++);
+    const timer = setTimeout(() => void pollBatch(batch.batch_id), delay);
     return () => clearTimeout(timer);
   }, [online, batch, batchError]);
   async function apply() {

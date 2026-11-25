@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, X } from "lucide-react";
 import { api, command } from "./bridge";
 import { ignoredFailure } from "./bridgeError";
+import { nextAdaptiveDelay } from "./pollBackoff";
 import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
 import { fullTime, type Account, type AccountKeepalive } from "./types";
@@ -97,12 +98,20 @@ export default function KeepaliveDialog({
     };
   }, [account.id, connectionKey, online]);
   const loaded = !!value;
+  const activeKeepaliveRef = useRef(false);
+  activeKeepaliveRef.current = value?.status === "running";
   useEffect(() => {
     if (!online || !loaded) return;
     let alive = true,
       hadPollError = false,
+      step = 0,
       timer: ReturnType<typeof setTimeout>;
     const current = epoch.current;
+    const nextDelay = () => {
+      if (activeKeepaliveRef.current) return nextAdaptiveDelay(step++);
+      step = 0;
+      return 2000;
+    };
     const poll = async () => {
       const request = revision.current;
       if (!saving.current) {
@@ -117,6 +126,7 @@ export default function KeepaliveDialog({
             request === revision.current &&
             !saving.current
           ) {
+            activeKeepaliveRef.current = result.status === "running";
             setValue(result);
             if (hadPollError) {
               hadPollError = false;
@@ -136,9 +146,9 @@ export default function KeepaliveDialog({
           }
         }
       }
-      if (alive) timer = setTimeout(() => void poll(), 2000);
+      if (alive) timer = setTimeout(() => void poll(), nextDelay());
     };
-    timer = setTimeout(() => void poll(), 2000);
+    timer = setTimeout(() => void poll(), nextDelay());
     return () => {
       alive = false;
       clearTimeout(timer);

@@ -59,6 +59,7 @@ public final class RustBridge: Sendable {
         case updateResult = 2
         case trayTooltip = 3
         case reopen = 4
+        case observedAt = 5
     }
 
     public enum InboundEvent: Sendable {
@@ -67,6 +68,7 @@ public final class RustBridge: Sendable {
         case updateResult(String)
         case trayTooltip(String)
         case reopen
+        case observedAt(String)
     }
 
     public typealias MockHandler = @Sendable (String, String) async throws -> String
@@ -311,6 +313,9 @@ public final class RustBridge: Sendable {
                 event = tip.isEmpty ? nil : .trayTooltip(tip)
             case .reopen:
                 event = .reopen
+            case .observedAt:
+                let stamp = String(data: data, encoding: .utf8) ?? ""
+                event = stamp.isEmpty ? nil : .observedAt(stamp)
             }
             guard let event else { return }
             DispatchQueue.main.async { [self] in

@@ -132,16 +132,7 @@ public struct PageContentRouterView: View {
                 .font(DS.fontPageTitle)
                 .foregroundStyle(DS.ink)
             Spacer()
-            if let observedAt = store.state.snapshot?.observed_at, !observedAt.isEmpty {
-                HStack(spacing: 4) {
-                    Image(systemName: "clock")
-                        .font(DS.iconFont(11))
-                    Text("更新于 \(BeijingTime.fullTime(observedAt))")
-                        .monospacedDigit()
-                }
-                .font(DS.fontPriorityMeta)
-                .foregroundStyle(DS.muted)
-            }
+            ObservedHeaderLabel(clock: store.observedClock, spacing: 4)
         }
     }
 }

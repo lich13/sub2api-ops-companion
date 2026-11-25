@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, RefreshCw, X } from "lucide-react";
 import { api, command } from "./bridge";
 import { errorMessage } from "./bridgeError";
+import { nextAdaptiveDelay } from "./pollBackoff";
 import {
   clientId,
   getOperations,
@@ -136,9 +137,14 @@ export default function ProxyBatchDialog({
     }
   }
   const pollBatch = useEffectEvent(readBatch);
+  const pollStep = useRef(0);
+  useEffect(() => {
+    pollStep.current = 0;
+  }, [batch?.batch_id]);
   useEffect(() => {
     if (!online || !batch || !pending(batch) || batchError) return;
-    const timer = setTimeout(() => void pollBatch(batch.batch_id), 2000);
+    const delay = nextAdaptiveDelay(pollStep.current++);
+    const timer = setTimeout(() => void pollBatch(batch.batch_id), delay);
     return () => clearTimeout(timer);
   }, [batch, batchError, online]);
   const editable = accounts.filter(

@@ -5,15 +5,7 @@ import React, {
   useMemo,
   useState,
 } from "react";
-import {
-  Check,
-  ExternalLink,
-  LoaderCircle,
-  Plug,
-  Plus,
-  Trash2,
-  Unplug,
-} from "lucide-react";
+import { Check, LoaderCircle, Plug, Plus, Trash2, Unplug } from "lucide-react";
 import { api, command } from "./bridge";
 import { bridgeFailure } from "./bridgeError";
 import {
@@ -29,7 +21,8 @@ import DetectionPlatformSettings from "./DetectionPlatformSettings";
 import FingerprintBankStatus from "./FingerprintBankStatus";
 import AccountModelField from "./AccountModelField";
 import ConnectionView from "./ConnectionView";
-import { version as appVersion } from "../package.json";
+import ClientUpdateCard from "./ClientUpdateCard";
+import { SwitchControl } from "./SwitchControl";
 
 const LazySub2ApiConfig = React.lazy(() => import("./Sub2ApiConfig"));
 const LazyProxyManagement = React.lazy(() => import("./ProxyManagement"));
@@ -48,36 +41,6 @@ const oauthLabels: Record<string, string> = {
   oauth_recovery_test_model_id: "测活模型",
   model_detection_model_id: "自动检测模型",
 };
-
-export function SwitchControl({
-  on,
-  disabled,
-  label,
-  onChange,
-}: {
-  on: boolean;
-  disabled?: boolean;
-  label: string;
-  onChange: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-      className={`switch ${on ? "on" : ""}`}
-      onClick={(e) => {
-        e.stopPropagation();
-        onChange();
-      }}
-    >
-      <span />
-    </button>
-  );
-}
 
 export default function SettingsView({
   page,
@@ -414,20 +377,7 @@ export default function SettingsView({
               <p className="muted">尚未保存任何 Sub2API 实例。</p>
             )}
           </section>
-          <section className="settings-card">
-            <h2>客户端</h2>
-            <div className="field">
-              <span>当前版本</span>
-              <button
-                onClick={() =>
-                  void command("check_updates").then(onMessage).catch(onError)
-                }
-              >
-                {runtimeVersion ?? appVersion} · 查看发布页{" "}
-                <ExternalLink size={13} />
-              </button>
-            </div>
-          </section>
+          <ClientUpdateCard runtimeVersion={runtimeVersion} onError={onError} />
           <ConfigForm
             section="bark"
             title="Bark 事件推送"

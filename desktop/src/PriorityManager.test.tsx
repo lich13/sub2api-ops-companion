@@ -297,11 +297,11 @@ describe("platform priority manager", () => {
       "fixture refresh failed",
     );
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(35);
     });
     expect(polls).toBe(1);
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(80);
     });
     expect(polls).toBe(2);
     expect(container.querySelector(".priority-result")?.textContent).toContain(
@@ -594,7 +594,7 @@ describe("platform priority manager", () => {
         ),
     ).toBe(false);
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(35);
     });
     await settle();
     expect(summaryCalls).toBe(1);
@@ -639,7 +639,7 @@ describe("platform priority manager", () => {
     });
     await render();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(35);
     });
     await settle();
     expect(summaryCalls).toBe(1);

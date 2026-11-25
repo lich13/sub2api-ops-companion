@@ -116,11 +116,14 @@ impl Runtime {
             if self.closing.load(Ordering::Acquire) || self.actions.supervisor.is_stopping() {
                 return Err(Error::new(503, "服务正在停止"));
             }
+            let notified = self.actions.locks.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
             let lease = match self.monitor.lease(original) {
                 Ok(lease) => lease,
                 Err(error) if error.status.as_u16() == 409 => {
                     self.quota_item(id, json!({"status":"queued"}), false);
-                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    let _ = tokio::time::timeout(Duration::from_millis(100), notified).await;
                     continue;
                 }
                 Err(error) => return Err(error),

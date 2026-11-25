@@ -346,14 +346,11 @@ public struct MainShellView: View {
             Image(systemName: "wifi.slash")
                 .font(DS.iconFont(12, weight: .medium))
             let baseMsg = store.state.error.isEmpty ? "正在读取云端状态" : store.state.error
-            if let snap = store.state.snapshot {
-                Text("\(baseMsg) · 上次更新 \(BeijingTime.fullTime(snap.observed_at))")
-                    .font(DS.fontPriorityMeta)
-                    .monospacedDigit()
-            } else {
-                Text(baseMsg)
-                    .font(DS.fontPriorityMeta)
-            }
+            OfflineObservedBannerText(
+                baseMessage: baseMsg,
+                hasSnapshot: store.state.snapshot != nil,
+                clock: store.observedClock
+            )
             Spacer()
         }
         .foregroundStyle(DS.warn)

@@ -459,12 +459,12 @@ impl Runtime {
         static USAGE_SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
             format!(
             "SELECT a.id,a.platform,a.type,a.extra,a.credentials,p.id AS effective_parent_id,p.credentials AS parent_credentials,
-             nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id,
+             nullif(aj.jb->>'parent_account_id','')::bigint AS parent_account_id,
              coalesce(nullif(a.credentials->>'plan_type',''),nullif(a.credentials->>'chatgpt_plan_type',''),a.extra->>'plan_type') AS quota_plan_type,
              a.credentials->>'subscription_tier' AS quota_grok_tier,a.credentials->>'entitlement_status' AS quota_grok_entitlement,
              a.credentials->>'account_mode' AS usage_account_mode,a.credentials->>'base_url' AS usage_base_url,
-             to_jsonb(a)->>'session_window_end' AS usage_session_window_end,to_jsonb(a)->>'session_window_status' AS usage_session_window_status
-             FROM accounts a{PARENT}WHERE a.id=$1 AND a.deleted_at IS NULL")
+             aj.jb->>'session_window_end' AS usage_session_window_end,aj.jb->>'session_window_status' AS usage_session_window_status
+             FROM accounts a CROSS JOIN LATERAL (SELECT to_jsonb(a) AS jb) aj{PARENT}WHERE a.id=$1 AND a.deleted_at IS NULL")
         });
         self.db
             .one(

@@ -56,10 +56,6 @@ public final class ModalBackdropGuard {
         self.customHandler = onBackdrop
     }
 
-    public func updateCanDismiss(_ allowed: Bool) {
-        self.canDismiss = allowed
-    }
-
     public func attemptDismiss(defaultClose: () -> Void) {
         if let customHandler {
             customHandler()

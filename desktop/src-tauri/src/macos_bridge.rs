@@ -16,6 +16,7 @@ pub(crate) const EVENT_OPS_STATE: u32 = 1;
 pub(crate) const EVENT_UPDATE_RESULT: u32 = 2;
 pub(crate) const EVENT_TRAY_TOOLTIP: u32 = 3;
 pub(crate) const EVENT_REOPEN: u32 = 4;
+pub(crate) const EVENT_OBSERVED_AT: u32 = 5;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -165,6 +166,13 @@ pub(crate) fn publish_state(value: &ViewState) {
     }
 }
 
+pub(crate) fn publish_observed_at(observed_at: &str) {
+    if !any_window_visible() || observed_at.is_empty() {
+        return;
+    }
+    send_event(EVENT_OBSERVED_AT, observed_at);
+}
+
 pub(crate) fn emit_update_result(message: &str) {
     send_event(EVENT_UPDATE_RESULT, message);
 }
@@ -191,8 +199,17 @@ pub(crate) fn tray_tooltip_text(view: &ViewState) -> &'static str {
     }
 }
 
+static LAST_TOOLTIP: std::sync::Mutex<&'static str> = std::sync::Mutex::new("");
+
 pub(crate) fn publish_tooltip(view: &ViewState) {
-    send_event(EVENT_TRAY_TOOLTIP, tray_tooltip_text(view));
+    let next = tray_tooltip_text(view);
+    let mut last = LAST_TOOLTIP.lock().unwrap_or_else(|e| e.into_inner());
+    if *last == next {
+        return;
+    }
+    *last = next;
+    drop(last);
+    send_event(EVENT_TRAY_TOOLTIP, next);
 }
 
 fn trace_safe(stage: &str, detail: &str) {

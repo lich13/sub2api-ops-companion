@@ -22,8 +22,10 @@ pub(crate) struct Cache {
     epoch: u64,
     stats_epoch: u64,
     observed: Option<Instant>,
+    observed_at: String,
+    etag: String,
     snapshot_bytes: axum::body::Bytes,
-    snapshot_gzip: axum::body::Bytes,
+    snapshot_gzip: Option<axum::body::Bytes>,
     account_digests: HashMap<i64, (Value, String, Value)>,
     stats_at: Option<Instant>,
     stats_signature: Value,
@@ -31,10 +33,53 @@ pub(crate) struct Cache {
     stats_failed: bool,
 }
 
+pub(crate) enum SnapshotReply {
+    NotModified {
+        etag: String,
+        observed_at: String,
+    },
+    Full {
+        etag: String,
+        observed_at: String,
+        body: axum::body::Bytes,
+        gzipped: bool,
+    },
+}
+
+#[derive(serde::Serialize)]
+struct SnapshotContent<'a> {
+    schema_version: u8,
+    accounts: &'a [Value],
+    groups: &'a [Value],
+    errors: &'a Value,
+    recoveries: &'a Value,
+}
+
+fn weak_opaque_tag(raw: &str) -> Option<&str> {
+    let trimmed = raw.trim();
+    let tag = trimmed.strip_prefix("W/").unwrap_or(trimmed);
+    tag.strip_prefix('"')?.strip_suffix('"')
+}
+
+pub(crate) fn etag_matches(if_none_match: Option<&str>, current_etag: &str) -> bool {
+    let Some(header) = if_none_match.map(str::trim).filter(|h| !h.is_empty()) else {
+        return false;
+    };
+    if header == "*" {
+        return true;
+    }
+    let Some(expected) = weak_opaque_tag(current_etag) else {
+        return false;
+    };
+    header
+        .split(',')
+        .any(|candidate| weak_opaque_tag(candidate) == Some(expected))
+}
+
 fn compress_gzip(raw: &[u8]) -> Result<axum::body::Bytes> {
     let mut encoder = flate2::write::GzEncoder::new(
         Vec::with_capacity(raw.len() / 4),
-        flate2::Compression::default(),
+        flate2::Compression::fast(),
     );
     encoder.write_all(raw).map_err(|_| Error::internal())?;
     let compressed = encoder.finish().map_err(|_| Error::internal())?;
@@ -50,9 +95,16 @@ impl Runtime {
         self.cache_epoch.fetch_add(1, Ordering::AcqRel);
     }
     pub async fn snapshot_bytes(&self) -> Result<axum::body::Bytes> {
-        Ok(self.snapshot_pair().await?.0)
+        match self.snapshot_http(None, false).await? {
+            SnapshotReply::Full { body, .. } => Ok(body),
+            SnapshotReply::NotModified { .. } => Err(Error::internal()),
+        }
     }
-    pub(crate) async fn snapshot_pair(&self) -> Result<(axum::body::Bytes, axum::body::Bytes)> {
+    pub(crate) async fn snapshot_http(
+        &self,
+        if_none_match: Option<&str>,
+        accepts_gzip: bool,
+    ) -> Result<SnapshotReply> {
         let mut cache = self.snapshot.lock().await;
         let epoch = self.cache_epoch.load(Ordering::Acquire);
         let stats_epoch = self.stats_epoch.load(Ordering::Acquire);
@@ -62,11 +114,38 @@ impl Runtime {
                 .observed
                 .is_some_and(|at| at.elapsed() < Duration::from_millis(1500))
         {
-            return Ok((cache.snapshot_bytes.clone(), cache.snapshot_gzip.clone()));
+            if etag_matches(if_none_match, &cache.etag) {
+                return Ok(SnapshotReply::NotModified {
+                    etag: cache.etag.clone(),
+                    observed_at: cache.observed_at.clone(),
+                });
+            }
+            let body = if accepts_gzip {
+                match &cache.snapshot_gzip {
+                    Some(gzip) => gzip.clone(),
+                    None => {
+                        let gzip = compress_gzip(&cache.snapshot_bytes)?;
+                        cache.snapshot_gzip = Some(gzip.clone());
+                        gzip
+                    }
+                }
+            } else {
+                cache.snapshot_bytes.clone()
+            };
+            return Ok(SnapshotReply::Full {
+                etag: cache.etag.clone(),
+                observed_at: cache.observed_at.clone(),
+                body,
+                gzipped: accepts_gzip,
+            });
         }
         let now = self.monitor.now();
         let state = self.actions.queries.oauth.shared_snapshot()?;
-        let rows = self.actions.queries.accounts().await?;
+        let (rows, group_rows, errors) = tokio::try_join!(
+            self.actions.queries.accounts(),
+            self.db.all(crate::sql::DESKTOP_GROUP_SQL, &[]),
+            self.actions.queries.errors(None, None, 20, None)
+        )?;
         self.key_quota.retain_accounts(&rows);
         self.monitor.queries.retain_accounts(&rows);
         let mut specs = vec![];
@@ -160,28 +239,57 @@ impl Runtime {
                 }
             }
         }
-        let (groups, errors) = tokio::try_join!(
-            self.actions.queries.groups(&rows),
-            self.actions.queries.errors(None, None, 20, None)
-        )?;
+        let groups = queries::Queries::groups_from_rows(&group_rows, &rows);
         let recoveries = self
             .actions
             .queries
             .recoveries_with_names(None, 20, &live_names)?;
-        let result = json!({"schema_version":1,"observed_at":datetime(now),"accounts":accounts,"groups":groups,
-            "errors":errors["items"],"recoveries":recoveries["items"]});
-        let bytes =
-            axum::body::Bytes::from(serde_json::to_vec(&result).map_err(|_| Error::internal())?);
-        let gzip = compress_gzip(&bytes)?;
+        let observed_at = datetime(now);
+        let content_bytes = serde_json::to_vec(&SnapshotContent {
+            schema_version: 1,
+            accounts: &accounts,
+            groups: &groups,
+            errors: &errors["items"],
+            recoveries: &recoveries["items"],
+        })
+        .map_err(|_| Error::internal())?;
+        let etag = format!("W/\"{}\"", crate::compat::sha256(&content_bytes));
+        let obs_prefix = format!(
+            "{{\"observed_at\":{},",
+            serde_json::to_string(&observed_at).map_err(|_| Error::internal())?
+        );
+        let mut raw = Vec::with_capacity(obs_prefix.len() + content_bytes.len());
+        raw.extend_from_slice(obs_prefix.as_bytes());
+        raw.extend_from_slice(&content_bytes[1..]);
+        let bytes = axum::body::Bytes::from(raw);
+        let not_modified = etag_matches(if_none_match, &etag);
+        let gzip = if !not_modified && accepts_gzip {
+            Some(compress_gzip(&bytes)?)
+        } else {
+            None
+        };
         if self.cache_epoch.load(Ordering::Acquire) == epoch {
             cache.epoch = epoch;
             cache.observed = Some(Instant::now());
+            cache.observed_at = observed_at.clone();
+            cache.etag = etag.clone();
             cache.snapshot_bytes = bytes.clone();
             cache.snapshot_gzip = gzip.clone();
         } else {
             cache.stats_at = None;
         }
-        Ok((bytes, gzip))
+        if not_modified {
+            return Ok(SnapshotReply::NotModified { etag, observed_at });
+        }
+        Ok(SnapshotReply::Full {
+            etag,
+            observed_at,
+            body: match gzip {
+                Some(gzip) => gzip,
+                None => bytes,
+            },
+            gzipped: accepts_gzip,
+        })
     }
     pub async fn account_snapshot_from_row(
         &self,
@@ -256,5 +364,25 @@ impl Runtime {
             Err(_) => result["notification"] = json!({"status":"unavailable"}),
         }
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::etag_matches;
+
+    #[test]
+    fn weak_etag_matching_covers_rfc_cases_and_malformed_headers() {
+        let current = "W/\"abc123\"";
+        assert!(!etag_matches(None, current));
+        assert!(!etag_matches(Some(""), current));
+        assert!(!etag_matches(Some("   "), current));
+        assert!(etag_matches(Some("*"), current));
+        assert!(etag_matches(Some("W/\"abc123\""), current));
+        assert!(etag_matches(Some("\"abc123\""), current));
+        assert!(etag_matches(Some("W/\"old\", W/\"abc123\""), current));
+        assert!(!etag_matches(Some("w/\"abc123\""), current));
+        assert!(!etag_matches(Some("abc123"), current));
+        assert!(!etag_matches(Some("W/\"other\""), current));
     }
 }

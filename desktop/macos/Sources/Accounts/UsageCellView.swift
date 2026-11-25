@@ -25,7 +25,7 @@ public struct UsageCellView: View {
     }
 
     private var summary: UsageSummary? {
-        nativeUsage.resolvedUsage(for: account)
+        nativeUsage.resolvedUsage(for: account, accountById: store.accountById)
     }
 
     private var windows: [UsageWindow] {
@@ -87,12 +87,12 @@ public struct UsageCellView: View {
             if windows.isEmpty && summary?.key_quota == nil && (summary?.balances ?? []).isEmpty
                 && summary?.today == nil && summary?.branch != "apikey" && (summary?.message ?? "").isEmpty
             {
-                Text(nativeUsage.loadingIds.contains(account.id) ? "正在读取额度…" : "未知")
+                Text(nativeUsage.isLoading(accountId: account.id) ? "正在读取额度…" : "未知")
                     .font(DS.fontResetTime)
                     .foregroundStyle(DS.muted)
             }
 
-            if let nativeErr = nativeUsage.errors[account.id], !nativeErr.isEmpty {
+            if let nativeErr = nativeUsage.error(for: account, accountById: store.accountById), !nativeErr.isEmpty {
                 Text(nativeErr)
                     .font(DS.fontResetTime)
                     .foregroundStyle(DS.bad)
@@ -259,7 +259,7 @@ public struct UsageCellView: View {
             if actions.contains("query_usage") {
                 inlineActionButton(title: "查询", icon: "arrow.clockwise", color: DS.usageActionBlue, key: "usage") {
                     if summary?.native_read == true {
-                        nativeUsage.refresh(accountId: account.id)
+                        nativeUsage.refresh(account: account, accountById: store.accountById)
                     } else {
                         await runUsageOperation(action: "usage", payload: Self.usagePayload("query_usage"))
                     }

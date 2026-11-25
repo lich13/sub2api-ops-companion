@@ -162,7 +162,7 @@ fn transactions(statements: &[String]) -> Vec<Vec<String>> {
     let mut complete = Vec::new();
     let mut current: Option<Vec<String>> = None;
     for statement in statements {
-        if statement == "begin" {
+        if statement == "begin" || statement.starts_with("begin ") {
             if let Some(previous) = current.take() {
                 complete.push(previous);
             }
@@ -881,33 +881,20 @@ async fn usage_list_count_and_detail_are_bounded_read_only_select_transactions()
         .unwrap()
         .to_ascii_lowercase();
     for tx in &txs {
-        assert_eq!(tx.first().map(String::as_str), Some("begin"));
+        let header = tx.first().map(String::as_str).unwrap_or("");
         assert_eq!(tx.last().map(String::as_str), Some("commit"));
-        let setup = tx
-            .iter()
-            .position(|sql| sql.contains("set transaction"))
-            .expect("transaction must explicitly set read-only mode");
-        let setup_sql = &tx[setup];
-        if setup_sql.contains("repeatable read") {
-            assert!(setup_sql.contains("read only"));
+        let expected_repeatable =
+            format!("begin isolation level repeatable read, read only; set local statement_timeout='{timeout_setting}'");
+        let expected_read_only =
+            format!("begin read only; set local statement_timeout='{timeout_setting}'");
+        if header == expected_repeatable {
             repeatable += 1;
-        } else {
-            assert_eq!(setup_sql, "set transaction read only");
+        } else if header == expected_read_only {
             read_only_detail += 1;
+        } else {
+            panic!("unexpected read transaction header: {header}");
         }
-        let bounded = tx
-            .iter()
-            .position(|sql| sql.contains("set local statement_timeout"))
-            .expect("transaction must set a local statement timeout");
-        assert!(
-            setup < bounded,
-            "read-only mode precedes timeout/query work"
-        );
-        assert!(
-            tx[bounded].contains(&format!("'{timeout_setting}'")),
-            "read transaction must use the pinned 5-second timeout"
-        );
-        for sql in &tx[bounded + 1..tx.len() - 1] {
+        for sql in &tx[1..tx.len() - 1] {
             assert!(sql.starts_with("select "), "only SELECT is allowed: {sql}");
             assert!(
                 !sql.contains("select *") && !sql.contains("select u.*"),

@@ -5,89 +5,240 @@ public typealias KeyQuotaGlobalConfig = GlobalQuotaReply
 public typealias AccountKeyQuotaSettings = AccountQuotaReply
 public typealias AccountKeyQuotaTokenResponse = AccountTokenReply
 
-/// 4-slot concurrent native usage reader matching `desktop/src/nativeUsage.ts`.
 @MainActor
 @Observable
-public final class NativeUsageReader {
-    public private(set) var overrides: [Int: UsageSummary] = [:]
-    public private(set) var loadingIds: Set<Int> = []
-    public private(set) var errors: [Int: String] = [:]
+public final class AccountUsageSlot {
+    public var cachedIdentity: String = ""
+    public var overrideSummary: UsageSummary?
+    public var isLoading: Bool = false
+    public var errorIdentity: String = ""
+    public var errorMessage: String?
+    @ObservationIgnored fileprivate var lastIdentity: String = ""
+    @ObservationIgnored fileprivate var cooldownIdentity: String = ""
+    @ObservationIgnored fileprivate var cooldownUntil: Date?
 
+    public init() {}
+}
+
+/// 4-slot concurrent native usage reader matching `desktop/src/nativeUsage.ts` & `UsageCell.tsx`.
+@MainActor
+public final class NativeUsageReader {
+    private var slots: [Int: AccountUsageSlot] = [:]
     private var connectionKey: String = ""
     private var generation: UInt64 = 0
     private var activeSlots: Int = 0
-    private var queue: [Int] = []
+    private var queue: [(accountId: Int, identity: String)] = []
     private let maxConcurrency = 4
+    private static let failureCooldown: TimeInterval = 60
 
     public init() {}
+
+    public func slot(for accountId: Int) -> AccountUsageSlot {
+        if let existing = slots[accountId] {
+            return existing
+        }
+        let created = AccountUsageSlot()
+        slots[accountId] = created
+        return created
+    }
+
+    public func usageIdentity(for account: Account, accountById: [Int: Account]) -> String {
+        let parentVer: String
+        if account.type == "apikey", let pid = account.parent_account_id, let parent = accountById[pid] {
+            parentVer = parent.operation_versions["usage"] ?? ""
+        } else {
+            parentVer = ""
+        }
+        return "\(connectionKey):\(account.id):\(account.operation_versions["usage"] ?? ""):\(parentVer)"
+    }
 
     public func bindConnection(_ key: String) {
         guard connectionKey != key else { return }
         connectionKey = key
         generation &+= 1
-        overrides.removeAll()
-        loadingIds.removeAll()
-        errors.removeAll()
+        for slot in slots.values {
+            slot.cachedIdentity = ""
+            slot.overrideSummary = nil
+            slot.isLoading = false
+            slot.errorIdentity = ""
+            slot.errorMessage = nil
+            slot.lastIdentity = ""
+            slot.cooldownIdentity = ""
+            slot.cooldownUntil = nil
+        }
         queue.removeAll()
         activeSlots = 0
     }
 
-    public func resolvedUsage(for account: Account) -> UsageSummary? {
-        overrides[account.id] ?? account.usage
+    public func resolvedUsage(for account: Account, accountById: [Int: Account] = [:]) -> UsageSummary? {
+        let identity = usageIdentity(for: account, accountById: accountById)
+        let s = slot(for: account.id)
+        s.lastIdentity = identity
+        guard s.cachedIdentity == identity, let cached = s.overrideSummary else {
+            return account.usage
+        }
+        let mergedToday: UsageStats? = account.usage?.stats_status == "error"
+            ? nil
+            : (account.usage?.today ?? cached.today)
+        let mergedStatsStatus: String? = cached.stats_status == "error"
+            ? "error"
+            : (account.usage?.stats_status ?? cached.stats_status)
+        return UsageSummary(
+            stats_status: mergedStatsStatus,
+            key_quota: cached.key_quota,
+            branch: cached.branch,
+            native_read: cached.native_read,
+            status: cached.status,
+            message: cached.message,
+            balances: cached.balances,
+            windows: cached.windows,
+            today: mergedToday,
+            actions: cached.actions,
+            reset_credits: cached.reset_credits,
+            prepaid_balance: cached.prepaid_balance,
+            monthly_limit: cached.monthly_limit,
+            monthly_used: cached.monthly_used
+        )
     }
 
-    public func enqueueIfNeeded(accounts: [Account], online: Bool) {
+    public func isLoading(accountId: Int) -> Bool {
+        slot(for: accountId).isLoading
+    }
+
+    public func error(for account: Account, accountById: [Int: Account] = [:]) -> String? {
+        let identity = usageIdentity(for: account, accountById: accountById)
+        let s = slot(for: account.id)
+        return s.errorIdentity == identity ? s.errorMessage : nil
+    }
+
+    public func enqueueIfNeeded(
+        accounts: [Account],
+        accountById: [Int: Account] = [:],
+        online: Bool,
+        now: Date = Date()
+    ) {
         guard online else { return }
+        let lookup = accountById.isEmpty
+            ? Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+            : accountById
+        let liveIds = Set(accounts.map(\.id))
+        slots = slots.filter { liveIds.contains($0.key) }
         for account in accounts where account.usage?.native_read == true {
-            if overrides[account.id] == nil && !loadingIds.contains(account.id) && !queue.contains(account.id) && account.usage?.windows.isEmpty == true && account.usage?.key_quota == nil && account.usage?.balances == nil {
-                queue.append(account.id)
+            let identity = usageIdentity(for: account, accountById: lookup)
+            let s = slot(for: account.id)
+            s.lastIdentity = identity
+            if s.cachedIdentity == identity && s.overrideSummary != nil {
+                continue
+            }
+            if s.cooldownIdentity == identity, let until = s.cooldownUntil, now < until {
+                continue
+            }
+            let needsInitialRead = account.usage?.windows.isEmpty == true
+                && account.usage?.key_quota == nil
+                && account.usage?.balances == nil
+            let invalidatedOverride = !s.cachedIdentity.isEmpty && s.cachedIdentity != identity
+            if (needsInitialRead || invalidatedOverride)
+                && !s.isLoading
+                && !queue.contains(where: { $0.accountId == account.id })
+            {
+                queue.append((account.id, identity))
             }
         }
         pumpQueue()
     }
 
-    public func refresh(accountId: Int) {
-        errors[accountId] = nil
-        if !loadingIds.contains(accountId) && !queue.contains(accountId) {
-            queue.insert(accountId, at: 0)
+    public func refresh(account: Account, accountById: [Int: Account] = [:]) {
+        let identity = usageIdentity(for: account, accountById: accountById)
+        let s = slot(for: account.id)
+        s.lastIdentity = identity
+        s.errorMessage = nil
+        s.errorIdentity = ""
+        s.cooldownUntil = nil
+        s.cooldownIdentity = ""
+        if !s.isLoading && !queue.contains(where: { $0.accountId == account.id }) {
+            queue.insert((account.id, identity), at: 0)
         }
         pumpQueue()
     }
 
-    public func refreshAll(accounts: [Account]) {
+    public func refreshAll(accounts: [Account], accountById: [Int: Account] = [:]) {
+        let lookup = accountById.isEmpty
+            ? Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+            : accountById
         for account in accounts where account.usage?.native_read == true {
-            if !loadingIds.contains(account.id) && !queue.contains(account.id) {
-                queue.append(account.id)
+            let identity = usageIdentity(for: account, accountById: lookup)
+            let s = slot(for: account.id)
+            s.lastIdentity = identity
+            s.errorMessage = nil
+            s.errorIdentity = ""
+            s.cooldownUntil = nil
+            s.cooldownIdentity = ""
+            if !s.isLoading && !queue.contains(where: { $0.accountId == account.id }) {
+                queue.append((account.id, identity))
             }
         }
         pumpQueue()
+    }
+
+    public func storeCachedForTest(accountId: Int, identity: String, summary: UsageSummary) {
+        let s = slot(for: accountId)
+        s.cachedIdentity = identity
+        s.overrideSummary = summary
+    }
+
+    public func recordFailureForTest(accountId: Int, identity: String, message: String, now: Date) {
+        let s = slot(for: accountId)
+        s.errorIdentity = identity
+        s.errorMessage = message
+        s.cooldownIdentity = identity
+        s.cooldownUntil = now.addingTimeInterval(Self.failureCooldown)
+    }
+
+    public var queuedAccountIdsForTest: [Int] {
+        queue.map(\.accountId)
     }
 
     private func pumpQueue() {
         let capturedGen = generation
         let capturedKey = connectionKey
         while activeSlots < maxConcurrency, !queue.isEmpty {
-            let accountId = queue.removeFirst()
+            let item = queue.removeFirst()
+            let accountId = item.accountId
+            let identity = item.identity
+            let s = slot(for: accountId)
             activeSlots += 1
-            loadingIds.insert(accountId)
+            s.isLoading = true
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 defer {
                     if self.generation == capturedGen {
                         self.activeSlots = max(0, self.activeSlots - 1)
-                        self.loadingIds.remove(accountId)
+                        self.slot(for: accountId).isLoading = false
                         self.pumpQueue()
                     }
                 }
                 do {
                     let summary: UsageSummary = try await RustBridge.shared.api("GET", "/accounts/\(accountId)/usage")
                     if self.generation == capturedGen && self.connectionKey == capturedKey {
-                        self.overrides[accountId] = summary
-                        self.errors[accountId] = nil
+                        let target = self.slot(for: accountId)
+                        if target.lastIdentity.isEmpty || target.lastIdentity == identity {
+                            target.cachedIdentity = identity
+                            target.overrideSummary = summary
+                            target.errorIdentity = ""
+                            target.errorMessage = nil
+                            target.cooldownIdentity = ""
+                            target.cooldownUntil = nil
+                        }
                     }
                 } catch {
                     if self.generation == capturedGen && self.connectionKey == capturedKey {
-                        self.errors[accountId] = error.localizedDescription
+                        let target = self.slot(for: accountId)
+                        if target.lastIdentity.isEmpty || target.lastIdentity == identity {
+                            target.errorIdentity = identity
+                            target.errorMessage = error.localizedDescription
+                            target.cooldownIdentity = identity
+                            target.cooldownUntil = Date().addingTimeInterval(Self.failureCooldown)
+                        }
                     }
                 }
             }

@@ -9,6 +9,7 @@ pub(super) struct Call<'a> {
     pub method: &'a Method,
     pub payload: &'a Value,
     pub accepts_gzip: bool,
+    pub if_none_match: Option<&'a str>,
 }
 
 type Action<'a> = BoxFuture<'a, Result<Response>>;
@@ -37,6 +38,7 @@ impl<'a> Call<'a> {
             method,
             payload: p,
             accepts_gzip,
+            if_none_match,
         } = *self;
         let accepted = StatusCode::ACCEPTED;
         let action: Action<'a> = match route {
@@ -51,32 +53,44 @@ impl<'a> Call<'a> {
                 upstream_connection: r.upstream.connection(),
             }),
             Snapshot => Box::pin(async move {
-                let (raw, gzip) = r.snapshot_pair().await?;
-                if accepts_gzip {
-                    Ok((
-                        [
-                            (
-                                header::CONTENT_TYPE,
-                                HeaderValue::from_static("application/json"),
-                            ),
-                            (header::CONTENT_ENCODING, HeaderValue::from_static("gzip")),
-                            (header::VARY, HeaderValue::from_static("Accept-Encoding")),
-                        ],
-                        gzip,
-                    )
-                        .into_response())
-                } else {
-                    Ok((
-                        [
-                            (
-                                header::CONTENT_TYPE,
-                                HeaderValue::from_static("application/json"),
-                            ),
-                            (header::VARY, HeaderValue::from_static("Accept-Encoding")),
-                        ],
-                        raw,
-                    )
-                        .into_response())
+                match r.snapshot_http(if_none_match, accepts_gzip).await? {
+                    crate::snapshot::SnapshotReply::NotModified { etag, observed_at } => {
+                        let mut response = StatusCode::NOT_MODIFIED.into_response();
+                        let headers = response.headers_mut();
+                        if let Ok(val) = HeaderValue::from_str(&etag) {
+                            headers.insert(header::ETAG, val);
+                        }
+                        if let Ok(val) = HeaderValue::from_str(&observed_at) {
+                            headers.insert("x-observed-at", val);
+                        }
+                        headers.insert(header::VARY, HeaderValue::from_static("Accept-Encoding"));
+                        Ok(response)
+                    }
+                    crate::snapshot::SnapshotReply::Full {
+                        etag,
+                        observed_at,
+                        body,
+                        gzipped,
+                    } => {
+                        let mut response = body.into_response();
+                        let headers = response.headers_mut();
+                        headers.insert(
+                            header::CONTENT_TYPE,
+                            HeaderValue::from_static("application/json"),
+                        );
+                        if gzipped {
+                            headers
+                                .insert(header::CONTENT_ENCODING, HeaderValue::from_static("gzip"));
+                        }
+                        if let Ok(val) = HeaderValue::from_str(&etag) {
+                            headers.insert(header::ETAG, val);
+                        }
+                        if let Ok(val) = HeaderValue::from_str(&observed_at) {
+                            headers.insert("x-observed-at", val);
+                        }
+                        headers.insert(header::VARY, HeaderValue::from_static("Accept-Encoding"));
+                        Ok(response)
+                    }
                 }
             }),
             Errors => {
@@ -255,6 +269,7 @@ impl<'a> Call<'a> {
             method,
             payload: p,
             accepts_gzip: _,
+            if_none_match: _,
         } = *self;
         let accepted = StatusCode::ACCEPTED;
         let action: Action<'a> = match route {

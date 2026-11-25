@@ -9,6 +9,8 @@ import {
   X,
 } from "lucide-react";
 import { api } from "./bridge";
+import { ignoredFailure } from "./bridgeError";
+import { nextAdaptiveDelay } from "./pollBackoff";
 import {
   DefaultModelId,
   type ModelDetectionReply,
@@ -186,6 +188,9 @@ export default function ModelTestDialog({
       api<Policy>("GET", `/accounts/${account.id}/model-detection`),
     ]).then(([latest, detection]) => {
       if (!alive || current !== scope.current) return;
+      if (latest.status === "rejected" && !ignoredFailure(latest.reason)) {
+        reportRef.current(latest.reason);
+      }
       const value = latest.status === "fulfilled" ? latest.value : null;
       const preferred =
         detection.status === "fulfilled"
@@ -224,17 +229,23 @@ export default function ModelTestDialog({
   useEffect(() => {
     if (!jobId || !jobStatus || terminal.has(jobStatus) || !online) return;
     const current = ++generation.current;
+    let step = 0;
     const poll = async () => {
+      let done = false;
       try {
         const next = await api<Result>("GET", `/model-tests/${jobId}`);
+        done = terminal.has(next.status);
         if (generation.current === current) setJob(next);
       } catch (e) {
         if (generation.current === current) reportRef.current(e);
       }
-      if (generation.current === current)
-        timer.current = setTimeout(() => void poll(), 2000);
+      if (!done && generation.current === current)
+        timer.current = setTimeout(
+          () => void poll(),
+          nextAdaptiveDelay(step++),
+        );
     };
-    timer.current = setTimeout(() => void poll(), 400);
+    timer.current = setTimeout(() => void poll(), nextAdaptiveDelay(step++));
     return () => {
       generation.current = generation.current + 1;
       clearTimeout(timer.current);

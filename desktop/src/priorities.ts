@@ -157,23 +157,3 @@ export function sortPriorityPlatforms<T extends { platform: string }>(
       (a.platform < b.platform ? -1 : a.platform > b.platform ? 1 : 0),
   );
 }
-export function groupPriorityAccounts(
-  items: PriorityAccount[],
-  version = "",
-): PriorityPlatform[] {
-  const groups = new Map<string, PriorityAccount[]>();
-  for (const item of items) {
-    const group = groups.get(item.platform) ?? [];
-    group.push(item);
-    groups.set(item.platform, group);
-  }
-  return sortPriorityPlatforms(
-    [...groups].map(([platform, accounts]) => ({
-      platform,
-      items: accounts,
-      version,
-      last_task: null,
-      parallelism: 1,
-    })),
-  );
-}

@@ -45,7 +45,7 @@ macro_rules! sql_detail_response_error_msg {
 macro_rules! sql_upstream_events_exists {
     ($predicate:expr) => {
         concat!(
-            "EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(to_jsonb(e)->'upstream_errors')='array' THEN to_jsonb(e)->'upstream_errors' ELSE '[]'::jsonb END) event WHERE ",
+            "EXISTS (SELECT 1 FROM (SELECT to_jsonb(e)->'upstream_errors' AS val) ue, jsonb_array_elements(CASE WHEN jsonb_typeof(ue.val)='array' THEN ue.val ELSE '[]'::jsonb END) event WHERE ",
             $predicate,
             ")"
         )
@@ -213,10 +213,10 @@ pub const DESKTOP_ERROR_FIELDS: &str = r####"e.id, e.account_id, e.group_id, e.c
 macro_rules! desktop_account_sql {
     ($private:literal, $parent:expr) => { concat!(
     "SELECT ", $private, r####"a.id, a.name, a.platform, a.type, a.status, a.schedulable, a.updated_at, a.priority, a.concurrency, a.load_factor, a.error_message, a.extra,
- nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id,
+ nullif(aj.jb->>'parent_account_id','')::bigint AS parent_account_id,
  coalesce(nullif(a.credentials->>'plan_type',''),nullif(a.credentials->>'chatgpt_plan_type',''),a.extra->>'plan_type') AS quota_plan_type,
  a.credentials->>'account_mode' AS usage_account_mode, a.credentials->>'base_url' AS usage_base_url,
- to_jsonb(a)->>'session_window_end' AS usage_session_window_end, to_jsonb(a)->>'session_window_status' AS usage_session_window_status,
+ aj.jb->>'session_window_end' AS usage_session_window_end, aj.jb->>'session_window_status' AS usage_session_window_status,
  a.proxy_id, md5(a.credentials::text) AS credential_version,
  md5((a.credentials - 'model_mapping')::text) AS credential_settings_version,
  jsonb_build_object('plan_type',a.credentials->'plan_type','chatgpt_account_id',a.credentials->'chatgpt_account_id','email',a.credentials->'email') AS account_identity,
@@ -232,7 +232,7 @@ macro_rules! desktop_account_sql {
  u.created_at AS last_success_at, u.created_at AS last_called_at, e.created_at AS last_error_at, e.id AS last_error_id,
  e.provider_error_code AS last_error_code, coalesce(e.upstream_status_code,e.status_code) AS last_error_status,
  coalesce(nullif(e.upstream_error_message,''),e.error_message) AS last_error_message
-FROM accounts a"####, $parent, r####"
+FROM accounts a CROSS JOIN LATERAL (SELECT to_jsonb(a) AS jb) aj"####, $parent, r####"
 LEFT JOIN LATERAL (SELECT created_at FROM usage_logs WHERE account_id=a.id ORDER BY created_at DESC,id DESC LIMIT 1) u ON true
 LEFT JOIN LATERAL (SELECT e.* FROM ops_error_logs e WHERE e.account_id=a.id AND "####,
     sql_desktop_error_where!(),
@@ -245,7 +245,7 @@ pub const DESKTOP_ACCOUNT_SQL: &str = desktop_account_sql!("", "");
 pub const MODEL_ACCOUNT_SQL: &str = desktop_account_sql!("a.credentials, ", "");
 
 macro_rules! usage_parent_join {
-    () => { " LEFT JOIN accounts p ON p.id=coalesce(nullif(to_jsonb(a)->>'parent_account_id','')::bigint,nullif(a.extra->>'parent_account_id','')::bigint) AND p.deleted_at IS NULL " };
+    () => { " LEFT JOIN accounts p ON p.id=coalesce(nullif(aj.jb->>'parent_account_id','')::bigint,nullif(a.extra->>'parent_account_id','')::bigint) AND p.deleted_at IS NULL " };
 }
 pub const USAGE_PARENT_JOIN: &str = usage_parent_join!();
 pub const USAGE_ACCOUNT_SQL: &str = desktop_account_sql!(
@@ -337,17 +337,17 @@ pub const CAPACITY_SLOW_SQL: &str = r####"
               SELECT u.id,u.created_at,u.model,u.upstream_model,u.stream,
                      u.first_token_ms,u.duration_ms,u.output_tokens,u.inbound_endpoint,
                      u.image_count,u.image_output_tokens,
-                     to_jsonb(u)->>'video_count' AS video_count,
-                     to_jsonb(u)->>'video_duration_seconds' AS video_duration_seconds
+                     uj.jb->>'video_count' AS video_count,
+                     uj.jb->>'video_duration_seconds' AS video_duration_seconds
               FROM (
                 SELECT u.* FROM usage_logs u
                 WHERE u.account_id=a.id AND u.created_at >= $1 AND u.created_at <= $2
                 ORDER BY u.created_at DESC,u.id DESC OFFSET 0
-              ) u
+              ) u CROSS JOIN LATERAL (SELECT to_jsonb(u) AS jb) uj
               WHERE u.stream IS TRUE AND u.first_token_ms > 0 AND u.duration_ms > u.first_token_ms
                 AND u.output_tokens >= 0 AND coalesce(u.image_count,0)=0 AND coalesce(u.image_output_tokens,0)=0
-                AND coalesce(to_jsonb(u)->>'video_count','0') IN ('0','0.0')
-                AND coalesce(to_jsonb(u)->>'video_duration_seconds','0') IN ('0','0.0')
+                AND coalesce(uj.jb->>'video_count','0') IN ('0','0.0')
+                AND coalesce(uj.jb->>'video_duration_seconds','0') IN ('0','0.0')
                 AND coalesce(u.upstream_model,u.model,'') <> ''
                 AND (coalesce(u.inbound_endpoint,'') || ' ' || coalesce(u.upstream_model,u.model,'')) !~* '(/audio|/images|/videos|-image|-video|-tts|-stt|realtime|whisper|dall-e)'
               ORDER BY u.created_at DESC,u.id DESC LIMIT 10
@@ -355,112 +355,3 @@ pub const CAPACITY_SLOW_SQL: &str = r####"
             WHERE a.deleted_at IS NULL AND a.platform='openai' AND a.type IN ('oauth','apikey')
             ORDER BY account_id,r.created_at DESC,r.id DESC
         "####;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn deduplicated_sql_constants_are_byte_for_byte_identical() {
-        let expected = [
-            (
-                "DESKTOP_ACCOUNT_SQL",
-                DESKTOP_ACCOUNT_SQL,
-                23898,
-                "c651f4ca508c273df2364e8c953d2c8337ad014a499fc9dff1beb6f8931db940",
-            ),
-            (
-                "DESKTOP_ERROR_WHERE",
-                DESKTOP_ERROR_WHERE,
-                21382,
-                "a32ea587d40dd1ffe26ac53ed395e555141057533a184dc53bf8a883d02a198a",
-            ),
-            (
-                "DESKTOP_ERROR_FIELDS",
-                DESKTOP_ERROR_FIELDS,
-                393,
-                "3a11331e2fd05e78c76b334fcbb50ce3f1de42bd8feb2bb14c156b5a4126a921",
-            ),
-            (
-                "DESKTOP_GROUP_SQL",
-                DESKTOP_GROUP_SQL,
-                838,
-                "1deb56b6c6a93984d2c96b9b289698038e829acbb7a6ed8c0c9b6277c7a3275f",
-            ),
-            (
-                "ERRORS_ERROR_WHERE",
-                ERRORS_ERROR_WHERE,
-                21382,
-                "a32ea587d40dd1ffe26ac53ed395e555141057533a184dc53bf8a883d02a198a",
-            ),
-            (
-                "USAGE_SELECT",
-                USAGE_SELECT,
-                1005,
-                "5e1019a0fda0dfb77a0ab8fe82e99846bc5732f0f2d7e94c3dd2aa34f3ccdac0",
-            ),
-            (
-                "USAGE_JOINS",
-                USAGE_JOINS,
-                160,
-                "ab4826e98e675eb1b56f601a8586232a5255295836e93bed4140665e61348f83",
-            ),
-            (
-                "USAGE_REQUEST_TYPE",
-                USAGE_REQUEST_TYPE,
-                116,
-                "57b24a84a46ec78f247b2bec120e422596b101f288d157b636ad14f17b663efd",
-            ),
-            (
-                "USAGE_MISMATCH",
-                USAGE_MISMATCH,
-                210,
-                "2b5e14d3bc3150eff84af9a6463986b26e089561a4681182a2b1af4f2c628bf8",
-            ),
-            (
-                "STATS_STATS_SQL",
-                STATS_STATS_SQL,
-                564,
-                "21bc8f3277bcb67443d46f7dfab54640fabb701140b7e2353ba50c111021fc55",
-            ),
-            (
-                "ERRORS_DEGRADATION_WHERE",
-                ERRORS_DEGRADATION_WHERE,
-                21366,
-                "70dc5995129622813dbe192782a68e14325aa2b2923d3d3e30593d034815cf2e",
-            ),
-            (
-                "ERRORS_OTHER_WHERE",
-                ERRORS_OTHER_WHERE,
-                21370,
-                "8713a4bdca1ee17f90052a8f09e04791471fc38ea51197d78c59ff15dd6cae1a",
-            ),
-            (
-                "ERRORS_LOCAL_THROTTLE",
-                ERRORS_LOCAL_THROTTLE,
-                16398,
-                "05e4d3893ea35d4753f9ce3f42109a5b19707aea68b58231f5303d0e532a4629",
-            ),
-            (
-                "CAPACITY_FIELDS",
-                CAPACITY_FIELDS,
-                438,
-                "22097ef112ab041885025b2877af8e4a85dbef15f465c7e941ae030c8140a242",
-            ),
-            (
-                "CAPACITY_SLOW_SQL",
-                CAPACITY_SLOW_SQL,
-                1890,
-                "fcdf12a538018e44e338dc21cac3306bc8e5ebfecf3d427efb826832aed2c23a",
-            ),
-        ];
-        for (name, sql, len, digest) in expected {
-            assert_eq!(sql.len(), len, "{name} byte length changed");
-            assert_eq!(
-                crate::compat::sha256(sql),
-                digest,
-                "{name} sha256 digest changed"
-            );
-        }
-    }
-}

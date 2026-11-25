@@ -764,7 +764,7 @@ describe("account sorting and Android connection settings", () => {
     setItem.mockRestore();
   });
 
-  it("shows Android release-page copy and distinct upstream diagnostics with manual retry", async () => {
+  it("shows Android in-app update card and distinct upstream diagnostics with manual retry", async () => {
     const initial = state();
     initial.platform = "android";
     const diagnostics = [
@@ -823,7 +823,7 @@ describe("account sorting and Android connection settings", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(container.textContent).toContain("查看发布页");
+    expect(container.textContent).toContain("检查更新");
     expect(container.textContent).toContain(diagnostics[0].message);
 
     const retry = () =>

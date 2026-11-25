@@ -12,6 +12,7 @@ import {
   type OperationBatch,
 } from "./accountOperations";
 import type { Account } from "./types";
+import { nextAdaptiveDelay } from "./pollBackoff";
 import "./connection-batch.css";
 
 type Submission = {
@@ -153,6 +154,7 @@ export function useConnectionBatch({
     )
       return;
     let alive = true,
+      step = 0,
       timer: ReturnType<typeof setTimeout> | undefined;
     const token = generation.current;
     async function read() {
@@ -179,7 +181,8 @@ export function useConnectionBatch({
         setView({ scope: connectionKey, batch: next });
         publish(next);
         setError("");
-        if (running(next)) timer = setTimeout(() => void read(), 1000);
+        if (running(next))
+          timer = setTimeout(() => void read(), nextAdaptiveDelay(step++));
         else void command("refresh");
       } catch (e) {
         if (

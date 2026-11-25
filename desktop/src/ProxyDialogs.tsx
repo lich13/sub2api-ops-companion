@@ -2,7 +2,7 @@ import DiagnosticText from "./DiagnosticText";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Eye, EyeOff, LoaderCircle, X } from "lucide-react";
 import { api } from "./bridge";
-import { errorMessage } from "./bridgeError";
+import { bridgeFailure, errorMessage } from "./bridgeError";
 import type { CreateProxyBatchReply } from "./protocol";
 import { useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
@@ -462,8 +462,11 @@ export function ProxyBatchAdd({
             ok = r.created === 1;
             if (ok) ++succeeded;
             message = ok ? "已添加" : "已存在或未添加，请核对";
-          } catch {
-            message = "结果未确认，请刷新核对；未重试";
+          } catch (e) {
+            const failure = bridgeFailure(e);
+            message = failure?.status
+              ? errorMessage(e)
+              : "结果未确认，请刷新核对；未重试";
           }
           slots[index] = { index, address: proxyAddress(proxy), ok, message };
           flushSlots();

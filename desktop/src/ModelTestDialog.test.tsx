@@ -592,7 +592,7 @@ describe("ModelTestDialog candidates", () => {
     );
     await settle();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(400);
+      await vi.advanceTimersByTimeAsync(35);
     });
     expect(poll).toBe(1);
     online = false;
@@ -619,7 +619,7 @@ describe("ModelTestDialog candidates", () => {
     );
     await settle();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(400);
+      await vi.advanceTimersByTimeAsync(35);
     });
     expect(poll).toBe(2);
     expect(
@@ -689,7 +689,7 @@ describe("ModelTestDialog candidates", () => {
     );
     await settle();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(400);
+      await vi.advanceTimersByTimeAsync(35);
     });
     expect(polls).toBe(1);
     const retry = [
@@ -752,7 +752,7 @@ describe("ModelTestDialog candidates", () => {
       );
       await settle();
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(400);
+        await vi.advanceTimersByTimeAsync(35);
       });
       if (action === "switch") {
         await act(async () =>
@@ -1089,14 +1089,14 @@ describe("ModelTestDialog candidates", () => {
     ).toContain("0/1 组");
     expect(validGroups()).toBe("0/1");
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(400);
+      await vi.advanceTimersByTimeAsync(35);
     });
     expect(
       container.querySelector(".model-test-status")?.textContent,
     ).toContain("1/1 组");
     expect(validGroups()).toBe("1/1");
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(400);
+      await vi.advanceTimersByTimeAsync(80);
     });
     expect(
       container.querySelector(".model-test-status")?.textContent,

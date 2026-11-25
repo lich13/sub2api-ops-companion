@@ -52,11 +52,8 @@ export type AccountKeepalive = WireNull<
   KeepaliveReply,
   "last_restore_at" | "next_allowed_at"
 >;
-type ModelDetectionSummary = WireNull<
-  WireReq<
-    ModelDetectionSummaryRecord,
-    "enabled" | "interval_minutes" | "model_id" | "version"
-  >,
+export type ModelDetectionSummary = WireNull<
+  ModelDetectionSummaryRecord,
   never,
   | "effective_interval_minutes"
   | "recent_request_count"
@@ -309,6 +306,23 @@ export type ViewState = {
   upstream_connection?: UpstreamConnection | null;
   snapshot: Snapshot | null;
   preferences: Preferences;
+};
+export type AppUpdatePhase =
+  | "idle"
+  | "checking"
+  | "up_to_date"
+  | "downloading"
+  | "verifying"
+  | "permission_required"
+  | "installing"
+  | "error";
+export type AppUpdateSnapshot = {
+  phase: AppUpdatePhase;
+  current_version: string;
+  latest_version: string | null;
+  downloaded_bytes: number;
+  total_bytes: number | null;
+  message: string;
 };
 export type ConfigSection = Record<string, unknown> & { revision: string };
 export type Config = Record<string, ConfigSection>;

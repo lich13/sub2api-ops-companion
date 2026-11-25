@@ -254,10 +254,20 @@
   background: var(--surface);
 }
 .mobile-account > header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
   align-items: center;
   gap: 3px;
   margin: -2px -8px 3px;
+}
+.mobile-account > header .switch-cell {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
+}
+.mobile-account > header > .icon-button {
+  grid-column: 3;
+  grid-row: 1;
 }
 .account-check {
   width: 48px;
@@ -274,7 +284,8 @@
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   font-size: 14px;
 }
 .mobile-identity > span {
@@ -333,7 +344,7 @@
 }
 .mobile-error time {
   color: var(--muted);
-  white-space: nowrap;
+  white-space: normal;
 }
 .mobile-account > footer > .text-button {
   font-size: 11px;
@@ -555,21 +566,31 @@
     padding: calc(14px + env(safe-area-inset-top)) 16px
       calc(16px + env(safe-area-inset-bottom));
   }
-  .mobile .account-template-grid {
-    grid-template-columns: 1fr;
-  }
   .mobile .account-template-row {
     align-items: stretch;
   }
   .mobile .account-template-row.mapping {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 48px;
+    gap: 4px 8px;
   }
   .mobile .account-template-row.mapping input {
-    width: calc(100% - 42px);
+    grid-column: 1;
+    width: 100%;
   }
   .mobile .account-template-row.mapping svg {
     transform: rotate(90deg);
     margin: -5px auto;
+  }
+  .mobile .account-template-row.mapping > svg {
+    grid-column: 1;
+    justify-self: center;
+    margin: 0;
+  }
+  .mobile .account-template-row.mapping > button {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    align-self: center;
   }
   .mobile .account-template-apply-row {
     grid-template-columns: 1fr;
@@ -606,27 +627,6 @@
   white-space: normal;
   text-align: left;
 }
-@media (max-width: 680px) {
-  .mobile .account-template-row.mapping {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 48px;
-    gap: 4px 8px;
-  }
-  .mobile .account-template-row.mapping input {
-    grid-column: 1;
-    width: 100%;
-  }
-  .mobile .account-template-row.mapping > svg {
-    grid-column: 1;
-    justify-self: center;
-    margin: 0;
-  }
-  .mobile .account-template-row.mapping > button {
-    grid-column: 2;
-    grid-row: 1 / span 3;
-    align-self: center;
-  }
-}
 
 .account-action-icon {
   display: inline-flex;
@@ -649,8 +649,7 @@
 
 .mobile .model-test-dialog button,
 .mobile .model-test-dialog summary,
-.mobile .lm-probe-option label,
-.mobile .detection-platform-settings select {
+.mobile .lm-probe-option label {
   min-height: 48px;
   height: auto;
 }
@@ -677,6 +676,8 @@
 }
 .mobile .detection-platform-settings select {
   width: 100%;
+  min-height: 48px;
+  height: auto;
 }
 .mobile .model-directory-control > select,
 .mobile .model-directory-control > input,

@@ -106,54 +106,72 @@ pub fn truthy(value: &Value) -> bool {
     }
 }
 
-fn json_string(value: &str, ascii: bool) -> String {
-    let result = serde_json::to_string(value).expect("string serialization");
-    if !ascii {
-        return result;
+struct HashWriter(Sha256);
+
+impl std::io::Write for HashWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.update(buf);
+        Ok(buf.len())
     }
-    let mut out = String::new();
-    for ch in result.chars() {
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn write_json_str<W: std::io::Write>(out: &mut W, value: &str, ascii: bool) {
+    if !ascii {
+        serde_json::to_writer(out, value).expect("string serialization");
+        return;
+    }
+    let escaped = serde_json::to_string(value).expect("string serialization");
+    if escaped.is_ascii() {
+        out.write_all(escaped.as_bytes()).expect("in-memory write");
+        return;
+    }
+    for ch in escaped.chars() {
         if (ch as u32) < 127 {
-            out.push(ch);
+            let mut buf = [0u8; 4];
+            out.write_all(ch.encode_utf8(&mut buf).as_bytes())
+                .expect("in-memory write");
         } else {
             for unit in ch.encode_utf16(&mut [0; 2]) {
-                out.push_str(&format!("\\u{unit:04x}"));
+                write!(out, "\\u{unit:04x}").expect("in-memory write");
             }
         }
     }
-    out
 }
 
-pub fn py_json(value: &Value, ascii: bool, compact: bool) -> String {
-    let comma = if compact { "," } else { ", " };
-    let colon = if compact { ":" } else { ": " };
+pub fn write_py_json<W: std::io::Write>(out: &mut W, value: &Value, ascii: bool, compact: bool) {
+    let comma: &[u8] = if compact { b"," } else { b", " };
+    let colon: &[u8] = if compact { b":" } else { b": " };
     match value {
-        Value::String(v) => json_string(v, ascii),
-        Value::Array(v) => format!(
-            "[{}]",
-            v.iter()
-                .map(|v| py_json(v, ascii, compact))
-                .collect::<Vec<_>>()
-                .join(comma)
-        ),
+        Value::String(v) => write_json_str(out, v, ascii),
+        Value::Array(v) => {
+            out.write_all(b"[").expect("in-memory write");
+            for (idx, item) in v.iter().enumerate() {
+                if idx > 0 {
+                    out.write_all(comma).expect("in-memory write");
+                }
+                write_py_json(out, item, ascii, compact);
+            }
+            out.write_all(b"]").expect("in-memory write");
+        }
         Value::Object(v) => {
             // Parsed objects retain the upstream order, which becomes visible
             // when model mappings are projected into arrays. Version digests
             // still follow Python's recursive sort_keys=True contract.
             let mut entries = v.iter().collect::<Vec<_>>();
             entries.sort_unstable_by_key(|(key, _)| *key);
-            format!(
-                "{{{}}}",
-                entries
-                    .into_iter()
-                    .map(|(k, v)| format!(
-                        "{}{colon}{}",
-                        json_string(k, ascii),
-                        py_json(v, ascii, compact)
-                    ))
-                    .collect::<Vec<_>>()
-                    .join(comma)
-            )
+            out.write_all(b"{").expect("in-memory write");
+            for (idx, (k, val)) in entries.into_iter().enumerate() {
+                if idx > 0 {
+                    out.write_all(comma).expect("in-memory write");
+                }
+                write_json_str(out, k, ascii);
+                out.write_all(colon).expect("in-memory write");
+                write_py_json(out, val, ascii, compact);
+            }
+            out.write_all(b"}").expect("in-memory write");
         }
         Value::Number(n) if n.is_f64() => {
             let v = n.as_f64().expect("float");
@@ -161,32 +179,73 @@ pub fn py_json(value: &Value, ascii: bool, compact: bool) -> String {
                 let raw = format!("{v:e}");
                 let (mantissa, exponent) = raw.split_once('e').expect("scientific notation");
                 let exponent: i32 = exponent.parse().expect("exponent");
-                format!(
+                write!(
+                    out,
                     "{mantissa}e{}{:02}",
                     if exponent < 0 { "-" } else { "+" },
                     exponent.abs()
                 )
+                .expect("in-memory write");
             } else {
                 let s = n.to_string();
-                if s.contains('.') {
-                    s
-                } else {
-                    format!("{s}.0")
+                out.write_all(s.as_bytes()).expect("in-memory write");
+                if !s.contains('.') {
+                    out.write_all(b".0").expect("in-memory write");
                 }
             }
         }
-        _ => value.to_string(),
+        Value::Bool(true) => out.write_all(b"true").expect("in-memory write"),
+        Value::Bool(false) => out.write_all(b"false").expect("in-memory write"),
+        Value::Null => out.write_all(b"null").expect("in-memory write"),
+        Value::Number(n) => write!(out, "{n}").expect("in-memory write"),
     }
+}
+
+fn digest_py(write_fn: impl FnOnce(&mut HashWriter)) -> String {
+    let mut writer = HashWriter(Sha256::new());
+    write_fn(&mut writer);
+    format!("{:x}", writer.0.finalize())
+}
+
+fn digest_pair(first: &Value, second: &Value) -> String {
+    use std::io::Write;
+    digest_py(|out| {
+        out.write_all(b"[").unwrap();
+        write_py_json(out, first, false, false);
+        out.write_all(b", ").unwrap();
+        write_py_json(out, second, false, false);
+        out.write_all(b"]").unwrap();
+    })
+}
+
+fn digest_slice(items: &[&Value], ascii: bool) -> String {
+    use std::io::Write;
+    digest_py(|out| {
+        out.write_all(b"[").unwrap();
+        for (idx, item) in items.iter().enumerate() {
+            if idx > 0 {
+                out.write_all(b", ").unwrap();
+            }
+            write_py_json(out, item, ascii, false);
+        }
+        out.write_all(b"]").unwrap();
+    })
+}
+
+pub fn py_json(value: &Value, ascii: bool, compact: bool) -> String {
+    let mut out = Vec::with_capacity(128);
+    write_py_json(&mut out, value, ascii, compact);
+    String::from_utf8(out).expect("valid utf-8 json")
 }
 
 pub fn sha256(bytes: impl AsRef<[u8]>) -> String {
     format!("{:x}", Sha256::digest(bytes.as_ref()))
 }
 pub fn digest(value: &Value) -> String {
-    sha256(py_json(value, false, false))
+    digest_py(|out| write_py_json(out, value, false, false))
 }
 pub fn config_revision(value: &Value) -> String {
-    sha256(py_json(value, true, false))
+    digest_py(|out| write_py_json(out, value, true, false))
 }
 pub fn pick(value: &Value, keys: &[&str]) -> Value {
     Value::Object(
@@ -222,69 +281,79 @@ pub fn operation_versions(row: &Value) -> Value {
         ],
     );
     let extra = &row["extra"];
-    let reset: Map<String, Value> = extra
-        .as_object()
-        .into_iter()
-        .flatten()
-        .filter(|(k, _)| k.contains("reset_credit") || k.contains("reset_quota"))
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
+    let reset = Value::Object(
+        extra
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter(|(k, _)| k.contains("reset_credit") || k.contains("reset_quota"))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
+    );
     let mapping = if truthy(&row["model_mapping_version"]) {
-        row["model_mapping_version"].clone()
+        &row["model_mapping_version"]
     } else {
-        row["credential_version"].clone()
+        &row["credential_version"]
     };
-    let values = json!({
-        "schedulable":[row["schedulable"]],
-        "groups":groups,
-        "recover":limits,
-        "delete":[row["name"],row["status"],row["schedulable"],groups],
-        "usage":null,
-        "reset_quota":[limits,reset],
-        "test":[groups,row["model_catalog_version"]],
-        "model_test":[groups,row["model_catalog_version"]],
-        "account_template":[mapping]
-    });
-    let mut result: Map<String, Value> = values
-        .as_object()
-        .expect("object")
-        .iter()
-        .map(|(k, v)| (k.clone(), digest(&json!([identity, v])).into()))
-        .collect();
+    let schedulable = Value::Array(vec![row["schedulable"].clone()]);
+    let delete_val = Value::Array(vec![
+        row["name"].clone(),
+        row["status"].clone(),
+        row["schedulable"].clone(),
+        groups.clone(),
+    ]);
+    let reset_quota = Value::Array(vec![limits.clone(), reset]);
+    let test_val = Value::Array(vec![groups.clone(), row["model_catalog_version"].clone()]);
+    let tpl_val = Value::Array(vec![mapping.clone()]);
+    let mut result = Map::with_capacity(15);
+    for (k, v) in [
+        ("schedulable", &schedulable),
+        ("groups", &groups),
+        ("recover", &limits),
+        ("delete", &delete_val),
+        ("usage", &Value::Null),
+        ("reset_quota", &reset_quota),
+        ("test", &test_val),
+        ("model_test", &test_val),
+        ("account_template", &tpl_val),
+    ] {
+        result.insert(k.to_owned(), digest_pair(&identity, v).into());
+    }
     let mut stable = pick(row, &["id", "platform", "type", "parent_account_id"]);
     if !truthy(&stable["parent_account_id"]) {
         stable["parent_account_id"] = extra["parent_account_id"].clone();
     }
+    let zero = json!(0);
     for field in ["priority", "concurrency", "load_factor"] {
         let fallback = if field == "priority" {
-            json!(0)
+            &zero
         } else {
-            Value::Null
+            &Value::Null
         };
-        let value = row.get(field).unwrap_or(&fallback);
-        result.insert(field.to_owned(), digest(&json!([stable, value])).into());
+        let value = row.get(field).unwrap_or(fallback);
+        result.insert(field.to_owned(), digest_pair(&stable, value).into());
     }
     result.insert(
         "proxy".to_owned(),
-        digest(&json!([stable, row["proxy_id"]])).into(),
+        digest_pair(&stable, &row["proxy_id"]).into(),
     );
-    let guard = json!([
+    let guard = Value::Array(vec![
         stable,
-        row["credential_settings_version"],
-        pick(extra, &["openai_passthrough", "openai_oauth_passthrough"])
+        row["credential_settings_version"].clone(),
+        pick(extra, &["openai_passthrough", "openai_oauth_passthrough"]),
     ]);
+    let empty_obj = Value::Object(Map::new());
     let model_mapping = [&row["model_mapping_version"], &row["model_mapping"]]
         .into_iter()
         .find(|v| truthy(v))
-        .cloned()
-        .unwrap_or(json!({}));
+        .unwrap_or(&empty_obj);
     result.insert(
         "model_config".to_owned(),
-        digest(&json!([guard, model_mapping])).into(),
+        digest_pair(&guard, model_mapping).into(),
     );
     result.insert(
         "sync_models".to_owned(),
-        digest(&json!([identity, guard, row["model_sync_project"]])).into(),
+        digest_slice(&[&identity, &guard, &row["model_sync_project"]], false).into(),
     );
     Value::Object(result)
 }
@@ -296,25 +365,25 @@ pub fn priority_version(row: &Value) -> String {
     }
     let fallback = json!(0);
     let value = row.get("priority").unwrap_or(&fallback);
-    digest(&json!([stable, value]))
+    digest_pair(&stable, value)
 }
 
 pub fn account_version(row: &Value) -> String {
     let mut groups = row["group_ids"].as_array().cloned().unwrap_or_default();
     sort_groups(&mut groups);
-    sha256(py_json(
-        &json!([
-            row["id"],
-            row["platform"],
-            row["type"],
-            row["schedulable"],
-            row["updated_at"],
-            row["priority"],
-            groups
-        ]),
+    let groups = Value::Array(groups);
+    digest_slice(
+        &[
+            &row["id"],
+            &row["platform"],
+            &row["type"],
+            &row["schedulable"],
+            &row["updated_at"],
+            &row["priority"],
+            &groups,
+        ],
         true,
-        false,
-    ))
+    )
 }
 
 fn sort_groups(groups: &mut [Value]) {

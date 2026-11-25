@@ -7,20 +7,31 @@ use std::{
     collections::{BTreeSet, HashMap},
     sync::{Arc, Mutex},
 };
-use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
+use tokio::sync::{futures::Notified, Mutex as AsyncMutex, Notify, OwnedMutexGuard};
 
 #[derive(Clone, Default)]
 pub struct AccountLocks {
     accounts: Arc<Mutex<HashMap<i64, Arc<AsyncMutex<()>>>>>,
     controls: Arc<Mutex<HashMap<i64, Arc<AsyncMutex<()>>>>>,
+    released: Arc<Notify>,
 }
 pub struct Lease {
-    _guards: Vec<OwnedMutexGuard<()>>,
+    guards: Vec<OwnedMutexGuard<()>>,
+    released: Arc<Notify>,
+}
+impl Drop for Lease {
+    fn drop(&mut self) {
+        self.guards.clear();
+        self.released.notify_waiters();
+    }
 }
 pub fn busy() -> Error {
     Error::new(409, json!({"code":"account_busy","message":"等待账号空闲"}))
 }
 impl AccountLocks {
+    pub fn notified(&self) -> Notified<'_> {
+        self.released.notified()
+    }
     fn lock(&self, id: i64, control: bool) -> Arc<AsyncMutex<()>> {
         let locks = if control {
             &self.controls
@@ -45,7 +56,10 @@ impl AccountLocks {
         {
             guards.push(self.lock(id, false).try_lock_owned().map_err(|_| busy())?);
         }
-        Ok(Lease { _guards: guards })
+        Ok(Lease {
+            guards,
+            released: self.released.clone(),
+        })
     }
     pub fn try_account(&self, row: &Value) -> Result<Lease> {
         self.try_ids([
@@ -57,18 +71,21 @@ impl AccountLocks {
     }
     pub async fn account(&self, id: i64) -> Lease {
         Lease {
-            _guards: vec![self.lock(id, false).lock_owned().await],
+            guards: vec![self.lock(id, false).lock_owned().await],
+            released: self.released.clone(),
         }
     }
     // Manual controls must not queue behind a billable upstream request.
     pub async fn control(&self, id: i64) -> Lease {
         Lease {
-            _guards: vec![self.lock(id, true).lock_owned().await],
+            guards: vec![self.lock(id, true).lock_owned().await],
+            released: self.released.clone(),
         }
     }
     pub fn try_control(&self, id: i64) -> Result<Lease> {
         Ok(Lease {
-            _guards: vec![self.lock(id, true).try_lock_owned().map_err(|_| busy())?],
+            guards: vec![self.lock(id, true).try_lock_owned().map_err(|_| busy())?],
+            released: self.released.clone(),
         })
     }
 }

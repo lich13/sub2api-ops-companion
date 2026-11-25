@@ -18,7 +18,7 @@ use std::{
     },
     time::Duration,
 };
-use tokio::sync::{Mutex as AsyncMutex, Semaphore};
+use tokio::sync::{Mutex as AsyncMutex, Notify, Semaphore};
 
 pub const ACTIVE: &[&str] = &["queued", "running", "retrying"];
 pub fn error_text(code: &str) -> &'static str {
@@ -88,6 +88,7 @@ pub struct ModelTests {
     pub(crate) contexts: Arc<Mutex<BTreeMap<String, Arc<Context>>>>,
     start: Arc<AsyncMutex<()>>,
     jobs: Arc<Semaphore>,
+    wake: Arc<Notify>,
     pub(crate) closing: Arc<AtomicBool>,
     #[cfg(any(test, feature = "test-fixtures"))]
     test_endpoint: Arc<Mutex<Option<String>>>,
@@ -247,6 +248,7 @@ impl ModelTests {
             contexts: Arc::new(Mutex::new(BTreeMap::new())),
             start: Arc::new(AsyncMutex::new(())),
             jobs: Arc::new(Semaphore::new(2)),
+            wake: Arc::new(Notify::new()),
             closing: Arc::new(AtomicBool::new(false)),
             #[cfg(any(test, feature = "test-fixtures"))]
             test_endpoint: Arc::new(Mutex::new(None)),
@@ -432,6 +434,7 @@ impl ModelTests {
                 c.progress.lock().unwrap_or_else(|e| e.into_inner()).clear();
             }
         }
+        self.wake.notify_waiters();
         Ok(result)
     }
     pub fn startup(&self) -> Result<()> {
@@ -707,6 +710,7 @@ impl ModelTests {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .remove(&cleanup_id);
+            cleanup.wake.notify_waiters();
         });
         let handle = self.actions.supervisor.spawn("model_test", async move {
             let _registration = registration;
@@ -781,15 +785,21 @@ impl ModelTests {
                     continue;
                 }
             }
+            let lock_notified = self.actions.locks.notified();
+            let model_notified = self.wake.notified();
+            tokio::pin!(lock_notified);
+            tokio::pin!(model_notified);
+            lock_notified.as_mut().enable();
+            model_notified.as_mut().enable();
             let Ok(slot) = self.jobs.clone().try_acquire_owned() else {
                 waited = true;
-                tokio::time::sleep(Duration::from_millis(250)).await;
+                let _ = self.jobs.clone().acquire_owned().await;
                 continue;
             };
             let Ok(budget) = self.budget.clone().try_acquire_owned() else {
                 drop(slot);
                 waited = true;
-                tokio::time::sleep(Duration::from_millis(250)).await;
+                let _ = self.budget.clone().acquire_owned().await;
                 continue;
             };
             let mut manual_waiting = false;
@@ -831,7 +841,11 @@ impl ModelTests {
             }
             drop((slot, budget));
             waited = true;
-            tokio::time::sleep(Duration::from_millis(250)).await;
+            tokio::select! {
+                _ = lock_notified => {}
+                _ = model_notified => {}
+                _ = tokio::time::sleep(Duration::from_millis(250)) => {}
+            }
         };
         let row = if job["automatic"] == true {
             self.hooks.guard(self.get(id)?, Some(row)).await?
@@ -1081,6 +1095,7 @@ impl ModelTests {
     }
     pub async fn close(&self) {
         self.closing.store(true, Ordering::Release);
+        self.wake.notify_waiters();
         let tasks = std::mem::take(&mut *self.tasks.lock().unwrap_or_else(|e| e.into_inner()));
         for (id, handle) in tasks {
             handle.abort();

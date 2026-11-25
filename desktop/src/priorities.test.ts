@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  groupPriorityAccounts,
   movePriority,
   prioritySlots,
   movePrioritySlot,
@@ -10,6 +9,7 @@ import {
   sortPriorityPlatforms,
   type PriorityAccount,
 } from "./priorities";
+import { groupPriorityAccounts } from "./priorityPreview";
 
 const account = (
   id: number,

@@ -76,10 +76,6 @@ public final class OperationStore {
         rows.filter(Self.isPending)
     }
 
-    public func pendingForAccount(_ accountId: Int) -> [Operation] {
-        pendingByAccount[accountId] ?? []
-    }
-
     public func bindConnection(_ key: String) {
         guard connectionKey != key else { return }
         pollingTask?.cancel()

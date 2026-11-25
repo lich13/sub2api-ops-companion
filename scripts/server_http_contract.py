@@ -575,7 +575,19 @@ class ContractSuite:
         account = next(row for row in accounts if row.get("id") == 4001)
         require("credentials" not in account, "account DTO exposed credentials")
         require(all("quality" not in row for row in accounts), "retired account score remains in snapshot")
-        return {"account_count": len(accounts), "synthetic_account_present": True, "private_markers_returned": 0}
+        etag = response.headers.get("etag", "")
+        require(etag.startswith('W/"') and etag.endswith('"'), "snapshot response lacks weak ETag")
+        require(bool(response.headers.get("x-observed-at")), "snapshot response lacks x-observed-at header")
+        not_modified = self.expect_status(
+            "GET",
+            API + "/snapshot",
+            (304,),
+            headers={**self.admin_headers(), "If-None-Match": etag},
+        )
+        require(not_modified.body is None, "304 snapshot response must have an empty body")
+        require(not_modified.headers.get("etag") == etag, "304 snapshot response must echo ETag")
+        require(bool(not_modified.headers.get("x-observed-at")), "304 snapshot response lacks x-observed-at")
+        return {"account_count": len(accounts), "synthetic_account_present": True, "private_markers_returned": 0, "conditional_304": True}
 
     def _config(self) -> dict[str, object]:
         response = self.expect_status("GET", API + "/config", (200,), headers=self.admin_headers())

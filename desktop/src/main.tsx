@@ -7,11 +7,13 @@ import {
 import { accountDialog, closedDialog } from "./accountDialog";
 import React, {
   Suspense,
+  useCallback,
   useReducer,
   useEffect,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import {
   Check,
@@ -38,6 +40,7 @@ import {
   X,
 } from "lucide-react";
 import { api, command, preview, subscribe } from "./bridge";
+import { subscribeObserved } from "./tauriEvents";
 import { isAccountSort, readAccountSort, saveAccountSort } from "./accountSort";
 import {
   filterAccounts,
@@ -75,11 +78,11 @@ import {
 } from "./accountOperations";
 import { bindAccountModelsConnection } from "./accountModels";
 import MobileAccounts from "./MobileAccounts";
-import GroupManager from "./GroupManager";
-import PriorityManager from "./PriorityManager";
 import ConnectionStatusCard from "./ConnectionStatusCard";
 import ConnectionView from "./ConnectionView";
-import SettingsView, { SwitchControl as Switch } from "./SettingsView";
+import ClientUpdateCard from "./ClientUpdateCard";
+import SettingsView from "./SettingsView";
+import { SwitchControl as Switch } from "./SwitchControl";
 import DegradationAction, { DegradationBadge } from "./DegradationMark";
 import { useDialogFocus } from "./dialogFocus";
 import { listenBack, useBackAction } from "./mobile";
@@ -148,11 +151,15 @@ const LazyDeleteAccountsDialog = lazyWithPreload(async () => ({
 const LazyResetCreditsDialog = lazyWithPreload(async () => ({
   default: (await import("./AccountManagement")).ResetCreditsDialog,
 }));
+const LazyGroupManager = lazyWithPreload(() => import("./GroupManager"));
+const LazyPriorityManager = lazyWithPreload(() => import("./PriorityManager"));
 const LazyUsageRecords = lazyWithPreload(() => import("./UsageRecords"));
 const LazyDetectionLogs = lazyWithPreload(() => import("./DetectionLogs"));
 const LazyRecoveryHistory = lazyWithPreload(() => import("./RecoveryHistory"));
 
 const secondarySurfaces = [
+  LazyGroupManager,
+  LazyPriorityManager,
   LazyUsageRecords,
   LazyDetectionLogs,
   LazyRecoveryHistory,
@@ -170,16 +177,44 @@ let secondaryPrewarmed = false;
 function prewarmSecondarySurfaces() {
   if (secondaryPrewarmed) return;
   secondaryPrewarmed = true;
-  for (const surface of secondarySurfaces) {
-    void surface.preload().catch(() => {});
+  if (import.meta.env.MODE === "test") {
+    for (const surface of secondarySurfaces) {
+      void surface.preload().catch(() => {});
+    }
+    return;
   }
+  void (async () => {
+    for (const surface of secondarySurfaces) {
+      await surface.preload().catch(() => {});
+    }
+  })();
 }
 
 if (typeof window !== "undefined" && import.meta.env.MODE === "test") {
-  queueMicrotask(prewarmSecondarySurfaces);
+  prewarmSecondarySurfaces();
+}
+
+let latestObservedAt = "";
+const observedSubscribers = new Set<() => void>();
+function publishObservedAt(next: string | null | undefined) {
+  const value = next ?? "";
+  if (value !== latestObservedAt) {
+    latestObservedAt = value;
+    for (const cb of observedSubscribers) cb();
+  }
+}
+function subscribeObservedStore(cb: () => void) {
+  observedSubscribers.add(cb);
+  return () => {
+    observedSubscribers.delete(cb);
+  };
+}
+function getObservedSnapshot() {
+  return latestObservedAt;
 }
 
 function mergeIncomingState(prev: ViewState, next: ViewState): ViewState {
+  publishObservedAt(next.snapshot?.observed_at);
   const prevKey = `${prev.preferences.base_url}:${prev.connected}:${prev.connection_revision ?? 0}`;
   const nextKey = `${next.preferences.base_url}:${next.connected}:${next.connection_revision ?? 0}`;
   if (
@@ -189,16 +224,18 @@ function mergeIncomingState(prev: ViewState, next: ViewState): ViewState {
     prev.snapshot_revision &&
     prev.snapshot_revision === next.snapshot_revision
   ) {
-    if (prev.snapshot.observed_at === next.snapshot.observed_at) {
-      return { ...next, snapshot: prev.snapshot };
+    if (
+      prev.online === next.online &&
+      prev.error === next.error &&
+      prev.foreground === next.foreground &&
+      prev.initializing === next.initializing &&
+      JSON.stringify(prev.preferences) === JSON.stringify(next.preferences) &&
+      JSON.stringify(prev.upstream_connection ?? null) ===
+        JSON.stringify(next.upstream_connection ?? null)
+    ) {
+      return prev;
     }
-    return {
-      ...next,
-      snapshot: {
-        ...prev.snapshot,
-        observed_at: next.snapshot.observed_at,
-      },
-    };
+    return { ...next, snapshot: prev.snapshot };
   }
   return next;
 }
@@ -255,6 +292,13 @@ const pages: { id: Page; label: string; icon: typeof Activity }[] = [
 ];
 function Time({ at }: { at: string | null | undefined }) {
   return <time>{fullTime(at)}</time>;
+}
+function SnapshotObservedTime({ fallback }: { fallback?: string | null }) {
+  const observed = useSyncExternalStore(
+    subscribeObservedStore,
+    getObservedSnapshot,
+  );
+  return <Time at={observed || fallback} />;
 }
 export default function App() {
   const [state, setState] = useState<ViewState>(initialState),
@@ -493,9 +537,9 @@ export default function App() {
       return null;
     });
   }, [connectionKey]);
-  const report = (e: unknown) => {
+  const report = useCallback((e: unknown) => {
     if (!ignoredFailure(e)) setToast(errorMessage(e));
-  };
+  }, []);
   const accountActions = useAccountActions({
     online: state.online,
     connectionKey,
@@ -521,16 +565,23 @@ export default function App() {
   useEffect(() => {
     let disposed = false;
     let un: () => void = () => {};
+    let unObserved: () => void = () => {};
     void (async () => {
-      un = await subscribe((s) => {
-        if (!disposed) setState((prev) => mergeIncomingState(prev, s));
-      });
+      [un, unObserved] = await Promise.all([
+        subscribe((s) => {
+          if (!disposed) setState((prev) => mergeIncomingState(prev, s));
+        }),
+        subscribeObserved((obs) => {
+          if (!disposed) publishObservedAt(obs);
+        }),
+      ]);
       const s = await command("get_state");
       if (!disposed) {
         setState((prev) => mergeIncomingState(prev, s));
         setReady(true);
       } else {
         un();
+        unObserved();
       }
     })().catch(report);
     const online = () => void command("refresh").catch(report);
@@ -538,9 +589,10 @@ export default function App() {
     return () => {
       disposed = true;
       un();
+      unObserved();
       window.removeEventListener("online", online);
     };
-  }, []);
+  }, [report]);
   useEffect(() => {
     if (toast) {
       const id = setTimeout(() => setToast(""), 6000);
@@ -595,7 +647,7 @@ export default function App() {
     return () => {
       disposed = true;
     };
-  }, [page, state.online, connectionKey]);
+  }, [page, state.online, connectionKey, report]);
   const degradationFeed = useErrorFeed(
     "degradation",
     page === "events" && eventTab === "degradation",
@@ -615,6 +667,10 @@ export default function App() {
   const accounts = useMemo(
     () => (snap?.accounts ?? []).filter((a) => !removedIds.has(a.id)),
     [snap?.accounts, removedIds],
+  );
+  const accountById = useMemo(
+    () => new Map(accounts.map((a) => [a.id, a])),
+    [accounts],
   );
   const filteredAccounts = useMemo(
     () =>
@@ -672,61 +728,74 @@ export default function App() {
       report(e);
     }
   }
-  async function toggle(a: Account) {
-    if (!state.online || schedulePending.current) return;
-    const epoch = operationEpoch();
-    schedulePending.current = true;
-    setBusy(a.id);
-    try {
-      const result = await accountOperation<{ verified: boolean }>(
-        a,
-        "schedulable",
-        {
-          schedulable: !a.schedulable,
-        },
-      );
-      if (!result.verified)
-        throw new Error("调度写入未确认，请刷新查看实际状态");
-      if (operationEpoch() === epoch) {
-        setToast(`${a.name}：${a.schedulable ? "已关闭" : "已打开"}调度`);
+  const toggle = useCallback(
+    async (a: Account) => {
+      if (!state.online || schedulePending.current) return;
+      const epoch = operationEpoch();
+      schedulePending.current = true;
+      setBusy(a.id);
+      try {
+        const result = await accountOperation<{ verified: boolean }>(
+          a,
+          "schedulable",
+          {
+            schedulable: !a.schedulable,
+          },
+        );
+        if (!result.verified)
+          throw new Error("调度写入未确认，请刷新查看实际状态");
+        if (operationEpoch() === epoch) {
+          setToast(`${a.name}：${a.schedulable ? "已关闭" : "已打开"}调度`);
+        }
+      } catch (e) {
+        if (operationEpoch() === epoch) {
+          report(e);
+          void command("refresh");
+        }
+      } finally {
+        if (operationEpoch() === epoch) {
+          schedulePending.current = false;
+          setBusy(null);
+        }
       }
-    } catch (e) {
-      if (operationEpoch() === epoch) {
-        report(e);
-        void command("refresh");
+    },
+    [state.online, report],
+  );
+  const openError = useCallback(
+    async (id: number, category?: ErrorCategory) => {
+      const generation = ++detailGeneration.current;
+      detailAbort.current?.abort();
+      const controller = new AbortController();
+      detailAbort.current = controller;
+      setDetailBusy(true);
+      try {
+        const value = await api<OpsError>(
+          "GET",
+          `/errors/${id}${category ? `?category=${category}` : ""}`,
+        );
+        if (
+          generation === detailGeneration.current &&
+          !controller.signal.aborted
+        )
+          setDetail(value);
+      } catch (e) {
+        if (
+          generation === detailGeneration.current &&
+          !controller.signal.aborted
+        )
+          report(e);
+      } finally {
+        if (generation === detailGeneration.current) {
+          detailAbort.current = null;
+          setDetailBusy(false);
+        }
       }
-    } finally {
-      if (operationEpoch() === epoch) {
-        schedulePending.current = false;
-        setBusy(null);
-      }
-    }
-  }
-  async function openError(id: number, category?: ErrorCategory) {
-    const generation = ++detailGeneration.current;
-    detailAbort.current?.abort();
-    const controller = new AbortController();
-    detailAbort.current = controller;
-    setDetailBusy(true);
-    try {
-      const value = await api<OpsError>(
-        "GET",
-        `/errors/${id}${category ? `?category=${category}` : ""}`,
-      );
-      if (generation === detailGeneration.current && !controller.signal.aborted)
-        setDetail(value);
-    } catch (e) {
-      if (generation === detailGeneration.current && !controller.signal.aborted)
-        report(e);
-    } finally {
-      if (generation === detailGeneration.current) {
-        detailAbort.current = null;
-        setDetailBusy(false);
-      }
-    }
-  }
+    },
+    [report],
+  );
   function errorState(error: OpsError) {
-    const account = accounts.find((item) => item.id === error.account_id);
+    const account =
+      error.account_id != null ? accountById.get(error.account_id) : undefined;
     if (
       account?.last_error_id === error.id &&
       !error.resolved &&
@@ -735,19 +804,36 @@ export default function App() {
       return "当前";
     return error.resolved ? "已解决" : "历史";
   }
-  function schedule(a: Account, disabled = false) {
-    return (
-      <div className="switch-cell">
-        {busy === a.id ? <LoaderCircle size={14} className="spin" /> : null}
-        <Switch
-          on={a.schedulable}
-          disabled={disabled || !state.online || busy !== null}
-          label={`${a.name}调度`}
-          onChange={() => void toggle(a)}
-        />
-      </div>
-    );
-  }
+  const schedule = useCallback(
+    function scheduleCell(a: Account, disabled = false) {
+      return (
+        <div className="switch-cell">
+          {busy === a.id ? <LoaderCircle size={14} className="spin" /> : null}
+          <Switch
+            on={a.schedulable}
+            disabled={disabled || !state.online || busy !== null}
+            label={`${a.name}调度`}
+            onChange={() => void toggle(a)}
+          />
+        </div>
+      );
+    },
+    [busy, state.online, toggle],
+  );
+  const toggleSelect = useCallback((id: number, checked: boolean) => {
+    setSelected((old) => {
+      const next = new Set(old);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+  const handleAccountError = useCallback(
+    (id: number) => {
+      void openError(id);
+    },
+    [openError],
+  );
   function groupRow(g: Group) {
     const recent = g.recent_accounts;
     return (
@@ -761,7 +847,10 @@ export default function App() {
         </div>
         <div className="recent-accounts">
           {recent.map((call) => {
-            const a = accounts.find((item) => item.id === call.account_id);
+            const a =
+              call.account_id != null
+                ? accountById.get(call.account_id)
+                : undefined;
             return (
               <div className="recent-account" key={call.account_id}>
                 {
@@ -956,9 +1045,10 @@ export default function App() {
     () => (groupsOpen ? currentGroups(groups, accounts) : []),
     [groupsOpen, groups, accounts],
   );
-  const detailAccount = detail
-    ? accounts.find((a) => a.id === detail.account_id)
-    : undefined;
+  const detailAccount =
+    detail && detail.account_id != null
+      ? accountById.get(detail.account_id)
+      : undefined;
   return (
     <div className="app mobile">
       <main className="main">
@@ -1001,7 +1091,8 @@ export default function App() {
               {snap && (
                 <>
                   {" "}
-                  · 上次更新 <Time at={snap.observed_at} />
+                  · 上次更新{" "}
+                  <SnapshotObservedTime fallback={snap.observed_at} />
                 </>
               )}
             </span>
@@ -1024,18 +1115,28 @@ export default function App() {
                 正在加载客户端
               </div>
             ) : !state.connected ? (
-              <ConnectionView
-                state={state}
-                onError={report}
-                onSwitchSaved={(item) => void switchConnection(item)}
-                switchingUrl={switchingUrl}
-              />
+              <div className="unconnected-shell">
+                <ConnectionView
+                  state={state}
+                  onError={report}
+                  onSwitchSaved={(item) => void switchConnection(item)}
+                  switchingUrl={switchingUrl}
+                />
+                <ClientUpdateCard
+                  runtimeVersion={runtimeVersion}
+                  onError={report}
+                />
+              </div>
             ) : !snap ? (
               <div className="empty">
                 <Plug size={28} />
                 <h2>等待云端数据</h2>
                 <p>{state.error || "正在连接运维服务"}</p>
                 <button onClick={() => setPage("settings")}>连接设置</button>
+                <ClientUpdateCard
+                  runtimeVersion={runtimeVersion}
+                  onError={report}
+                />
                 {page === "settings" && (
                   <>
                     <ConnectionStatusCard connectionKey={connectionKey} />
@@ -1054,7 +1155,7 @@ export default function App() {
                 {(page === "groups" ||
                   (visitedRetained.key === connectionKey &&
                     visitedRetained.groups)) && (
-                  <GroupManager
+                  <LazyGroupManager
                     key={connectionKey}
                     connectionKey={connectionKey}
                     active={page === "groups"}
@@ -1073,7 +1174,7 @@ export default function App() {
                 {(page === "priorities" ||
                   (visitedRetained.key === connectionKey &&
                     visitedRetained.priorities)) && (
-                  <PriorityManager
+                  <LazyPriorityManager
                     key={`priorities:${connectionKey}`}
                     connectionKey={connectionKey}
                     active={page === "priorities"}
@@ -1097,7 +1198,8 @@ export default function App() {
                     {page !== "records" && (
                       <span className="updated">
                         <Clock3 size={13} />
-                        更新于 <Time at={snap.observed_at} />
+                        更新于{" "}
+                        <SnapshotObservedTime fallback={snap.observed_at} />
                       </span>
                     )}
                   </div>
@@ -1390,17 +1492,10 @@ export default function App() {
                           accounts={filteredAccounts}
                           online={state.online}
                           selected={selected}
-                          select={(id, checked) =>
-                            setSelected((old) => {
-                              const next = new Set(old);
-                              if (checked) next.add(id);
-                              else next.delete(id);
-                              return next;
-                            })
-                          }
+                          select={toggleSelect}
                           schedule={schedule}
                           accountActions={accountActions}
-                          error={(id) => void openError(id)}
+                          error={handleAccountError}
                           report={report}
                         />
                       </div>
@@ -1557,15 +1652,23 @@ export default function App() {
                         switchingUrl={switchingUrl}
                       />
                     ) : page === "settings" ? (
-                      <section className="settings-card">
-                        <ConnectionView
-                          state={state}
+                      <div className="settings-stack">
+                        <ClientUpdateCard
+                          runtimeVersion={runtimeVersion}
                           onError={report}
-                          beforeChange={beforeConnectionChange}
-                          onSwitchSaved={(item) => void switchConnection(item)}
-                          switchingUrl={switchingUrl}
                         />
-                      </section>
+                        <section className="settings-card">
+                          <ConnectionView
+                            state={state}
+                            onError={report}
+                            beforeChange={beforeConnectionChange}
+                            onSwitchSaved={(item) =>
+                              void switchConnection(item)
+                            }
+                            switchingUrl={switchingUrl}
+                          />
+                        </section>
+                      </div>
                     ) : (
                       <Empty text="正在读取设置" />
                     ))}
@@ -1587,6 +1690,11 @@ export default function App() {
                 key={p.id}
                 className={selected ? "active" : ""}
                 aria-current={selected ? "page" : undefined}
+                onPointerDown={() => {
+                  if (p.id === "records") {
+                    void LazyUsageRecords.preload().catch(() => {});
+                  }
+                }}
                 onClick={() => setPage(p.id)}
               >
                 <p.icon size={21} />

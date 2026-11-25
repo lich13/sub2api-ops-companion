@@ -141,6 +141,11 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
         route.parse_numbers(|id| validation::coercible_integer(&json!(id), i64::MIN, i64::MAX))?;
     let query = QueryParams::parse(&request, route)?;
     let accepts_gzip = accepts_gzip(request.headers());
+    let if_none_match = request
+        .headers()
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
     let key = request
         .headers()
         .get("x-api-key")
@@ -161,6 +166,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
         method: &method,
         payload: &payload,
         accepts_gzip,
+        if_none_match: if_none_match.as_deref(),
     };
     let action = call.prepare(route)?;
     if route == Route::ConnectionStatus {

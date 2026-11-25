@@ -784,11 +784,6 @@ td strong {
   width: 120px;
   font-variant-numeric: tabular-nums;
 }
-.platform-settings + .platform-settings {
-  margin-top: 15px;
-  border-top: 1px solid var(--line);
-  padding-top: 6px;
-}
 .check-account {
   display: flex;
   align-items: center;
@@ -3125,4 +3120,70 @@ td strong {
   min-height: var(--control-h-compact);
   padding: 4px 10px;
   font-size: 12px;
+}
+
+.unconnected-shell > .client-update-card {
+  max-width: 420px;
+  width: 100%;
+  margin: 0 auto 32px;
+  text-align: left;
+}
+.empty > .client-update-card {
+  max-width: 420px;
+  width: 100%;
+  margin: 12px auto 0;
+  text-align: left;
+}
+.client-update-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.app.mobile .client-update-actions button {
+  min-width: 48px;
+}
+.client-version-chip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+.client-update-progress {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding-top: 6px;
+  min-width: 0;
+}
+.client-update-progress progress {
+  flex: 1 1 160px;
+  min-width: 0;
+  width: 100%;
+  height: 6px;
+  accent-color: var(--accent);
+}
+.client-update-bytes {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.client-update-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.client-update-status > svg {
+  flex-shrink: 0;
 }

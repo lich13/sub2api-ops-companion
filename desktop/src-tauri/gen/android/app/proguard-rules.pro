@@ -1,2 +1,4 @@
 -keep class com.lich13.sub2ops.SecureStorePlugin { *; }
 -keep class com.lich13.sub2ops.CredentialArgs { *; }
+-keep class com.lich13.sub2ops.AppUpdaterPlugin { *; }
+-keep class com.lich13.sub2ops.InstallApkArgs { *; }

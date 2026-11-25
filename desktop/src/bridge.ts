@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { ViewState, Preferences } from "./types";
+import type { AppUpdateSnapshot, ViewState, Preferences } from "./types";
 import { bridgeFailure, BridgeError } from "./bridgeError";
 
 type Commands = {
@@ -8,7 +8,10 @@ type Commands = {
   refresh: [[], void];
   disconnect: [[], void];
   background: [[], void];
-  check_updates: [[], string];
+  get_app_update_state: [[], AppUpdateSnapshot];
+  start_app_update: [[], AppUpdateSnapshot];
+  cancel_app_update: [[], AppUpdateSnapshot];
+  install_app_update: [[], AppUpdateSnapshot];
   connect: [[{ baseUrl: string; apiKey: string; name?: string }], void];
   save_connection_profile: [[{ baseUrl: string; name: string }], void];
   remove_connection: [[{ baseUrl: string }], void];

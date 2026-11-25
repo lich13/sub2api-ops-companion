@@ -123,6 +123,47 @@ fn model_directory_request(method: &str, path: &str) -> bool {
     }
 }
 
+#[derive(Debug)]
+pub(crate) enum SnapshotFetch {
+    Full {
+        data: Value,
+        etag: Option<String>,
+    },
+    NotModified {
+        etag: Option<String>,
+        observed_at: Option<String>,
+    },
+}
+
+struct RequestSpec<'a> {
+    method: &'a str,
+    path: &'a str,
+    body: Option<Value>,
+    if_none_match: Option<&'a str>,
+}
+
+pub(crate) async fn http_snapshot(
+    client: &reqwest::Client,
+    base: &str,
+    key: &str,
+    if_none_match: Option<&str>,
+    log: &Path,
+) -> Result<SnapshotFetch, HttpFailure> {
+    http_detailed_inner(
+        client,
+        base,
+        key,
+        RequestSpec {
+            method: "GET",
+            path: "/snapshot",
+            body: None,
+            if_none_match,
+        },
+        log,
+    )
+    .await
+}
+
 pub(crate) async fn http_detailed(
     client: &reqwest::Client,
     base: &str,
@@ -132,12 +173,40 @@ pub(crate) async fn http_detailed(
     body: Option<Value>,
     log: &Path,
 ) -> Result<Value, HttpFailure> {
+    let spec = RequestSpec {
+        method,
+        path,
+        body,
+        if_none_match: None,
+    };
+    match http_detailed_inner(client, base, key, spec, log).await? {
+        SnapshotFetch::Full { data, .. } => Ok(data),
+        SnapshotFetch::NotModified { .. } => Err(HttpFailure::new("http", "请求失败 [304]")),
+    }
+}
+
+async fn http_detailed_inner(
+    client: &reqwest::Client,
+    base: &str,
+    key: &str,
+    spec: RequestSpec<'_>,
+    log: &Path,
+) -> Result<SnapshotFetch, HttpFailure> {
+    let RequestSpec {
+        method,
+        path,
+        body,
+        if_none_match,
+    } = spec;
     let parsed_method =
         reqwest::Method::from_bytes(method.as_bytes()).map_err(|_| "请求方式无效")?;
     let mut req = client
         .request(parsed_method, format!("{base}/api/desktop/v1{path}"))
         .header("x-api-key", key)
         .header("Accept", "application/json");
+    if let Some(tag) = if_none_match.filter(|t| !t.is_empty()) {
+        req = req.header(reqwest::header::IF_NONE_MATCH, tag);
+    }
     if path == "/sub2api-system/update" {
         req = req.timeout(Duration::from_secs(930));
     }
@@ -187,6 +256,20 @@ pub(crate) async fn http_detailed(
         }
     })?;
     let status = response.status().as_u16();
+    let etag = response
+        .headers()
+        .get(reqwest::header::ETAG)
+        .and_then(|h| h.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && s.len() <= 256 && s.is_ascii())
+        .map(str::to_owned);
+    let observed_at = response
+        .headers()
+        .get("x-observed-at")
+        .and_then(|h| h.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && s.len() <= 64 && s.bytes().all(|b| b.is_ascii_graphic()))
+        .map(str::to_owned);
     let kind = response_kind(
         response
             .headers()
@@ -232,6 +315,9 @@ pub(crate) async fn http_detailed(
             return Err(fail("size", "服务响应超过大小限制"));
         }
         bytes.extend_from_slice(&chunk);
+    }
+    if status == 304 && if_none_match.is_some() {
+        return Ok(SnapshotFetch::NotModified { etag, observed_at });
     }
     let parsed = serde_json::from_slice::<Value>(&bytes);
     if !(200..300).contains(&status) {
@@ -289,8 +375,12 @@ pub(crate) async fn http_detailed(
         return Err(fail("content_type", "服务返回了非 JSON 响应"));
     }
     let data = parsed.map_err(|_| fail("json", "服务 JSON 响应不完整或格式无效"))?;
-    sub2ops_protocol::response::client_response(method, path, data)
-        .ok_or_else(|| fail("schema", "服务数据结构不兼容，请检查客户端与服务版本"))
+    let projected = sub2ops_protocol::response::client_response(method, path, data)
+        .ok_or_else(|| fail("schema", "服务数据结构不兼容，请检查客户端与服务版本"))?;
+    Ok(SnapshotFetch::Full {
+        data: projected,
+        etag,
+    })
 }
 
 #[cfg(test)]
@@ -730,6 +820,43 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(result["need_restart"], true);
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn conditional_snapshot_returns_not_modified_with_etag_and_observed_at() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            let count = socket.read(&mut request).unwrap();
+            let req_text = String::from_utf8_lossy(&request[..count]).to_ascii_lowercase();
+            assert!(req_text.contains("if-none-match: w/\"snap-tag-1\""));
+            write!(
+                socket,
+                "HTTP/1.1 304 Not Modified\r\nETag: W/\"snap-tag-1\"\r\nx-observed-at: 2026-11-25T00:00:02Z\r\nConnection: close\r\n\r\n"
+            )
+            .unwrap();
+        });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let outcome = http_snapshot(
+            &client,
+            &base,
+            "fixture-key",
+            Some("W/\"snap-tag-1\""),
+            &dir.path().join("network.log"),
+        )
+        .await
+        .unwrap();
+        match outcome {
+            SnapshotFetch::NotModified { etag, observed_at } => {
+                assert_eq!(etag.as_deref(), Some("W/\"snap-tag-1\""));
+                assert_eq!(observed_at.as_deref(), Some("2026-11-25T00:00:02Z"));
+            }
+            SnapshotFetch::Full { .. } => panic!("expected 304 NotModified"),
+        }
         server.join().unwrap();
     }
 }

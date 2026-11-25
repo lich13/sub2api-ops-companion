@@ -121,10 +121,10 @@ struct BridgeAndLayoutTests {
             Operation(id: "op-1", account_id: 101, account_name: "Codex", action: "schedulable", status: "running"),
             Operation(id: "op-2", account_id: 101, account_name: "Codex", action: "recover", status: "completed"),
         ])
-        #expect(opStore.pendingForAccount(101).map(\.id) == ["op-1"])
-        #expect(opStore.pendingForAccount(999).isEmpty)
+        #expect(opStore.pendingByAccount[101]?.map(\.id) == ["op-1"])
+        #expect(opStore.pendingByAccount[999] == nil)
         opStore.bindConnection("https://b.example.invalid:true:2")
-        #expect(opStore.pendingForAccount(101).isEmpty)
+        #expect(opStore.pendingByAccount[101] == nil)
 
         let backdropGuard = ModalBackdropGuard()
         var closedCount = 0
@@ -133,7 +133,7 @@ struct BridgeAndLayoutTests {
         backdropGuard.attemptDismiss { closedCount += 1 }
         #expect(closedCount == 0)
 
-        backdropGuard.updateCanDismiss(true)
+        backdropGuard.bind(canDismiss: true, onBackdrop: nil)
         backdropGuard.attemptDismiss { closedCount += 1 }
         #expect(closedCount == 1)
 
@@ -188,6 +188,72 @@ struct BridgeAndLayoutTests {
 
         // Zero-length slice with nil pointer must not crash
         sub2ops_macos_on_event(kind: 4, ptr: nil, len: 0)
+    }
+
+    @Test("ObservedClock updates via EVENT_OBSERVED_AT and NativeUsageReader honors composite identity and cooldown")
+    @MainActor
+    func observedClockAndNativeUsageIdentityContract() async throws {
+        RustBridge.shared.setMockHandler { cmd, _ in
+            if cmd == "get_state" {
+                return #"{"platform":"macos","foreground":true,"initializing":false,"connection_revision":1,"snapshot_revision":7,"connected":true,"online":true,"error":"","preferences":{"base_url":"https://a.example.invalid","connections":[]},"snapshot":{"observed_at":"2026-11-25T01:00:00Z","accounts":[],"groups":[],"errors":[],"recoveries":[]}}"#
+            }
+            return "null"
+        }
+        let store = AppStore()
+        store.bindBridge()
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(store.observedClock.raw == "2026-11-25T01:00:00Z")
+
+        let stamp = Array("2026-11-25T01:00:04Z".utf8)
+        stamp.withUnsafeBufferPointer { buf in
+            sub2ops_macos_on_event(kind: 5, ptr: buf.baseAddress, len: buf.count)
+        }
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(store.observedClock.raw == "2026-11-25T01:00:04Z")
+
+        let reader = NativeUsageReader()
+        reader.bindConnection("https://a.example.invalid:true:1")
+        let parentV1 = Account(id: 1, name: "Parent", type: "oauth", operation_versions: ["usage": "p-v1"])
+        let child = Account(
+            id: 2,
+            name: "ChildKey",
+            type: "apikey",
+            parent_account_id: 1,
+            operation_versions: ["usage": "c-v1"],
+            usage: UsageSummary(
+                branch: "apikey",
+                windows: [],
+                today: UsageStats(requests: 12, tokens: 500, cost: 0.5, standard_cost: 0.5, user_cost: 0.5),
+                native_read: true,
+                stats_status: "ok"
+            )
+        )
+        let lookupV1 = [1: parentV1, 2: child]
+        let idV1 = reader.usageIdentity(for: child, accountById: lookupV1)
+        let cachedSummary = UsageSummary(
+            branch: "apikey",
+            windows: [UsageWindow(key: "5h", label: "5h", used_percent: 42, reset_at: nil)],
+            today: UsageStats(requests: 1, tokens: 10, cost: 0.01, standard_cost: 0.01, user_cost: 0.01),
+            native_read: true,
+            stats_status: "ok"
+        )
+        reader.storeCachedForTest(accountId: 2, identity: idV1, summary: cachedSummary)
+        let merged = reader.resolvedUsage(for: child, accountById: lookupV1)
+        #expect(merged?.windows.count == 1)
+        #expect(merged?.today?.requests == 12)
+
+        // Parent usage version rotation invalidates stale override
+        let parentV2 = Account(id: 1, name: "Parent", type: "oauth", operation_versions: ["usage": "p-v2"])
+        let lookupV2 = [1: parentV2, 2: child]
+        #expect(reader.resolvedUsage(for: child, accountById: lookupV2)?.windows.isEmpty == true)
+
+        // Failure cooldown suppresses immediate retry storm for 60s even when online
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let idV2 = reader.usageIdentity(for: child, accountById: lookupV2)
+        reader.recordFailureForTest(accountId: 2, identity: idV2, message: "暂不可用", now: now)
+        reader.enqueueIfNeeded(accounts: [parentV2, child], accountById: lookupV2, online: true, now: now.addingTimeInterval(5))
+        #expect(reader.queuedAccountIdsForTest.isEmpty)
+        #expect(reader.error(for: child, accountById: lookupV2) == "暂不可用")
     }
 }
 }
