@@ -38,7 +38,11 @@ public final class RecordFeedStore {
     private var epoch: UInt64 = 0
     private var pageRevision: UInt64 = 0
     private var consumedCursors: Set<String> = []
-    private var pollTask: Task<Void, Never>?
+    @ObservationIgnored nonisolated(unsafe) private var pollTask: Task<Void, Never>?
+
+    deinit {
+        pollTask?.cancel()
+    }
 
     public init() {}
 

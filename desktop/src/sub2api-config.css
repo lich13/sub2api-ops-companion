@@ -1,25 +1,3 @@
-/* Keep the active configuration workspace inside the remaining window. */
-.content:has(#feature-panel-sub2api:not([hidden])),
-.content:has(#feature-panel-sub2api:not([hidden])) .content-inner,
-.page-surface[data-page="features"]:has(#feature-panel-sub2api:not([hidden])),
-.features-stack:has(#feature-panel-sub2api:not([hidden])),
-#feature-panel-sub2api:not([hidden]) {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-  overflow: hidden;
-}
-.content:has(#feature-panel-sub2api:not([hidden])) .page-heading {
-  display: none;
-}
-.features-stack:has(#feature-panel-sub2api:not([hidden])) {
-  gap: 12px;
-}
-.features-stack:has(#feature-panel-sub2api:not([hidden])) > .feature-tabs {
-  flex-shrink: 0;
-}
 .sub2api-config {
   display: flex;
   flex: 1;

@@ -323,6 +323,7 @@ struct AccountsAndActionsTests {
             )
         )
         let store = AppStore()
+        defer { store.stop() }
         store.ready = true
         store.applyViewState(
             ViewState(
@@ -344,7 +345,7 @@ struct AccountsAndActionsTests {
             )
             window.appearance = appearance
             window.isReleasedWhenClosed = false
-            defer { window.orderOut(nil) }
+            defer { SnapshotRenderUtility.teardownWindow(window) }
 
             let cell = ZStack(alignment: .topLeading) {
                 DS.surface
@@ -769,6 +770,10 @@ struct AccountsAndActionsTests {
         )
 
         let store = AppStore()
+        defer {
+            store.stop()
+            RustBridge.shared.setMockHandler(nil)
+        }
         store.ready = true
         store.page = .accounts
         store.applyViewState(

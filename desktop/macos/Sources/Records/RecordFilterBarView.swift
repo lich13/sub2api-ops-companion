@@ -262,7 +262,11 @@ final class RecordOptionDirectory {
     private(set) var loading = false
     private(set) var error = ""
     private var filters: [URLQueryItem] = []
-    private var request: Task<Void, Never>?
+    @ObservationIgnored nonisolated(unsafe) private var request: Task<Void, Never>?
+
+    deinit {
+        request?.cancel()
+    }
 
     func stop() {
         request?.cancel()
@@ -293,19 +297,20 @@ final class RecordOptionDirectory {
         let path = "/usage-record-options?\(url.percentEncodedQuery ?? "")"
         loading = true
         error = ""
-        request = Task {
+        request = Task { @MainActor [weak self] in
+            guard let self else { return }
             do {
                 if debounce { try await Task.sleep(for: .milliseconds(250)) }
                 let page: RecordOptionPage = try await RustBridge.shared.api("GET", path)
                 try Task.checkCancellation()
-                var seen = Set(items.map(\.id))
-                items.append(contentsOf: page.items.filter { !$0.deleted && seen.insert($0.id).inserted })
-                cursor = page.next_cursor
+                var seen = Set(self.items.map(\.id))
+                self.items.append(contentsOf: page.items.filter { !$0.deleted && seen.insert($0.id).inserted })
+                self.cursor = page.next_cursor
             } catch {
                 guard !Task.isCancelled else { return }
                 self.error = error.localizedDescription
             }
-            loading = false
+            self.loading = false
         }
     }
 }

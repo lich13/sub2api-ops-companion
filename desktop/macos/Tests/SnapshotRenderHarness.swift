@@ -13,6 +13,19 @@ enum SnapshotRenderUtility {
         }
     }
 
+    static func teardownWindow(_ window: NSWindow) {
+        window.contentView = nil
+        for child in window.childWindows ?? [] {
+            child.isReleasedWhenClosed = false
+            window.removeChildWindow(child)
+            child.orderOut(nil)
+            child.close()
+        }
+        window.isReleasedWhenClosed = false
+        window.orderOut(nil)
+        window.close()
+    }
+
     static func renderPNG<V: View>(
         view: V,
         size: CGSize,
@@ -34,6 +47,7 @@ enum SnapshotRenderUtility {
             ? NSColor(srgbRed: 0x17 / 255.0, green: 0x19 / 255.0, blue: 0x1F / 255.0, alpha: 1.0)
             : NSColor(srgbRed: 0xF5 / 255.0, green: 0xF6 / 255.0, blue: 0xF9 / 255.0, alpha: 1.0)
         window.isReleasedWhenClosed = false
+        defer { teardownWindow(window) }
 
         let themedView = view
             .environment(\.colorScheme, dark ? .dark : .light)
@@ -61,7 +75,6 @@ enum SnapshotRenderUtility {
             )
             try pngData.write(to: outputURL)
         }
-        window.orderOut(nil)
     }
 
     static func renderPNGAsync<V: View>(
@@ -86,6 +99,7 @@ enum SnapshotRenderUtility {
             ? NSColor(srgbRed: 0x17 / 255.0, green: 0x19 / 255.0, blue: 0x1F / 255.0, alpha: 1.0)
             : NSColor(srgbRed: 0xF5 / 255.0, green: 0xF6 / 255.0, blue: 0xF9 / 255.0, alpha: 1.0)
         window.isReleasedWhenClosed = false
+        defer { teardownWindow(window) }
 
         let themedView = view
             .environment(\.colorScheme, dark ? .dark : .light)
@@ -124,7 +138,6 @@ enum SnapshotRenderUtility {
             )
             try pngData.write(to: outputURL)
         }
-        window.orderOut(nil)
     }
 
     private static func assertNonBlankBitmap(_ rep: NSBitmapImageRep, outputURL: URL) {
@@ -172,9 +185,17 @@ struct SnapshotRenderTests {
             }
             return "null"
         }
+        let onboardingStore = AppStore()
+        let shellStore = AppStore()
+        let opsOnlineStore = AppStore()
+        defer {
+            onboardingStore.stop()
+            shellStore.stop()
+            opsOnlineStore.stop()
+            RustBridge.shared.setMockHandler(nil)
+        }
 
         // 1. Disconnected Onboarding Shell
-        let onboardingStore = AppStore()
         onboardingStore.ready = true
         onboardingStore.applyViewState(
             ViewState(
@@ -191,7 +212,6 @@ struct SnapshotRenderTests {
         )
 
         // 2. Connected Shell (Settings + Offline Banner + Pending Operations Badge)
-        let shellStore = AppStore()
         shellStore.ready = true
         shellStore.page = .settings
         shellStore.applyViewState(
@@ -234,7 +254,6 @@ struct SnapshotRenderTests {
             ),
         ])
 
-        let opsOnlineStore = AppStore()
         opsOnlineStore.ready = true
         opsOnlineStore.applyViewState(
             ViewState(

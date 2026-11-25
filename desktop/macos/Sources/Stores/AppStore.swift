@@ -186,12 +186,22 @@ public final class AppStore {
     public var config: [String: JSONValue]?
     public let operations = OperationStore()
 
-    private var toastClearTask: Task<Void, Never>?
+    @ObservationIgnored nonisolated(unsafe) private var bridgeHandlerToken: UInt64 = 0
+    @ObservationIgnored nonisolated(unsafe) private var initialStateTask: Task<Void, Never>?
+    @ObservationIgnored nonisolated(unsafe) private var toastClearTask: Task<Void, Never>?
     public var onReopenMainWindow: (@MainActor () -> Void)?
     public var onShowQuickPanel: (@MainActor () -> Void)?
     public var onHideQuickPanel: (@MainActor () -> Void)?
     public var onOpenModelTest: (@MainActor (Account) -> Void)?
     public var onOpenTemplates: (@MainActor (Account?) -> Void)?
+
+    deinit {
+        initialStateTask?.cancel()
+        toastClearTask?.cancel()
+        if bridgeHandlerToken != 0 {
+            RustBridge.shared.clearEventHandler(token: bridgeHandlerToken)
+        }
+    }
 
     public init() {
         self.onOpenModelTest = { [weak self] acc in
@@ -261,7 +271,7 @@ public final class AppStore {
     }
 
     public func bindBridge() {
-        RustBridge.shared.setEventHandler { [weak self] event in
+        bridgeHandlerToken = RustBridge.shared.setEventHandler { [weak self] event in
             guard let self else { return }
             switch event {
             case .opsState(let seq, let next):
@@ -282,18 +292,34 @@ public final class AppStore {
                 }
             }
         }
-        Task { @MainActor [weak self] in
+        initialStateTask?.cancel()
+        initialStateTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 let initial: ViewState = try await RustBridge.shared.command("get_state")
+                guard !Task.isCancelled else { return }
                 if self.lastOpsStateSeq == 0 {
                     self.applyViewState(initial)
                 }
                 self.ready = true
             } catch {
+                guard !Task.isCancelled else { return }
                 self.ready = true
                 self.report(error)
             }
+        }
+    }
+
+    public func stop() {
+        initialStateTask?.cancel()
+        initialStateTask = nil
+        operations.stop()
+        toastClearTask?.cancel()
+        toastClearTask = nil
+        if bridgeHandlerToken != 0 {
+            let token = bridgeHandlerToken
+            bridgeHandlerToken = 0
+            RustBridge.shared.clearEventHandler(token: token)
         }
     }
 

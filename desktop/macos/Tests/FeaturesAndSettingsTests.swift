@@ -409,6 +409,12 @@ struct FeaturesAndSettingsTests {
         let acc2 = Account(id: 102, name: "Codex · 备用", priority: 2, platform: "openai", type: "oauth")
 
         let featStore = AppStore()
+        let setStore = AppStore()
+        defer {
+            featStore.stop()
+            setStore.stop()
+            RustBridge.shared.setMockHandler(nil)
+        }
         featStore.ready = true
         featStore.page = .features
         featStore.applyViewState(
@@ -428,7 +434,6 @@ struct FeaturesAndSettingsTests {
         )
         await featStore.reloadConfig()
 
-        let setStore = AppStore()
         setStore.ready = true
         setStore.page = .settings
         setStore.applyViewState(featStore.state)

@@ -34,10 +34,14 @@ public final class OperationStore {
     }
 
     private var memoryClientId: String = ""
-    private var pollingTask: Task<Void, Never>?
+    @ObservationIgnored nonisolated(unsafe) private var pollingTask: Task<Void, Never>?
     private var activePollingKey: PollingKey?
     private var lastOnline: Bool = false
     private var lastActive: Bool = false
+
+    deinit {
+        pollingTask?.cancel()
+    }
 
     private static let terminalStatuses: Set<String> = [
         "completed", "failed", "cancelled", "superseded", "needs_confirmation",
@@ -74,6 +78,15 @@ public final class OperationStore {
 
     public var pendingOperations: [Operation] {
         rows.filter(Self.isPending)
+    }
+
+    public func stop() {
+        epoch &+= 1
+        pollingTask?.cancel()
+        pollingTask = nil
+        activePollingKey = nil
+        lastOnline = false
+        lastActive = false
     }
 
     public func bindConnection(_ key: String) {

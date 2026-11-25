@@ -79,6 +79,8 @@ public final class RustBridge: Sendable {
         var callbacks: Sub2OpsHostCallbacks?
         var nextRequestId: UInt64 = 1
         var nextEventSeq: UInt64 = 0
+        var nextEventHandlerToken: UInt64 = 0
+        var activeEventHandlerToken: UInt64 = 0
         var pending: [UInt64: CheckedContinuation<Data, Error>] = [:]
         var appActive: Bool = false
         var mockHandler: MockHandler?
@@ -89,7 +91,7 @@ public final class RustBridge: Sendable {
 
     private init() {}
 
-    public func installHostCallbacks(_ callbacks: Sub2OpsHostCallbacks) {
+    public func installHostCallbacks(_ callbacks: Sub2OpsHostCallbacks?) {
         state.withLock { s in
             s.callbacks = callbacks
         }
@@ -101,9 +103,24 @@ public final class RustBridge: Sendable {
         }
     }
 
-    public func setEventHandler(_ handler: (@MainActor @Sendable (InboundEvent) -> Void)?) {
+    @discardableResult
+    public func setEventHandler(_ handler: (@MainActor @Sendable (InboundEvent) -> Void)?) -> UInt64 {
         state.withLock { s in
+            s.nextEventHandlerToken &+= 1
+            let token = handler == nil ? 0 : s.nextEventHandlerToken
+            s.activeEventHandlerToken = token
             s.eventHandler = handler
+            return token
+        }
+    }
+
+    public func clearEventHandler(token: UInt64) {
+        guard token != 0 else { return }
+        state.withLock { s in
+            if s.activeEventHandlerToken == token {
+                s.activeEventHandlerToken = 0
+                s.eventHandler = nil
+            }
         }
     }
 

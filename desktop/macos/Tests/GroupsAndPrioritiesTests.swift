@@ -110,6 +110,12 @@ struct GroupsAndPrioritiesTests {
         ]
 
         let groupStore = AppStore()
+        let prioStore = AppStore()
+        defer {
+            groupStore.stop()
+            prioStore.stop()
+            RustBridge.shared.setMockHandler(nil)
+        }
         groupStore.ready = true
         groupStore.page = .groups
         groupStore.applyViewState(
@@ -128,7 +134,6 @@ struct GroupsAndPrioritiesTests {
             )
         )
 
-        let prioStore = AppStore()
         prioStore.ready = true
         prioStore.page = .priorities
         prioStore.applyViewState(groupStore.state)

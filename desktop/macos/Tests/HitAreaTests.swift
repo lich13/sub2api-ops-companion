@@ -51,6 +51,10 @@ enum SyntheticClick {
         NSApp.sendEvent(up)
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
     }
+
+    static func teardown(_ window: NSWindow) {
+        SnapshotRenderUtility.teardownWindow(window)
+    }
 }
 
 @MainActor
@@ -77,7 +81,7 @@ struct HitAreaTests {
         }
         .frame(width: 160)
         let window = SyntheticClick.host(view, size: CGSize(width: 160, height: 200))
-        defer { window.orderOut(nil) }
+        defer { SyntheticClick.teardown(window) }
 
         // Empty area far from the glyph.
         SyntheticClick.click(window, at: CGPoint(x: 140, y: 18))
@@ -94,6 +98,7 @@ struct HitAreaTests {
     @MainActor
     func sidebarRowsAreClickableBesideLabel() {
         let store = AppStore()
+        defer { store.stop() }
         store.ready = true
         store.page = .accounts
         store.applyViewState(
@@ -109,7 +114,7 @@ struct HitAreaTests {
             )
         )
         let window = SyntheticClick.host(MainShellView(store: store), size: CGSize(width: 1310, height: 860))
-        defer { window.orderOut(nil) }
+        defer { SyntheticClick.teardown(window) }
 
         // The 1310pt window uses the compact sidebar. Sweep up the right edge of the
         // navigation list, well clear of every icon and label; each row must navigate even
@@ -129,6 +134,7 @@ struct HitAreaTests {
     @MainActor
     func schedulingParametersFullRightSlotHitArea() {
         let store = AppStore()
+        defer { store.stop() }
         store.ready = true
         let account = Account(
             id: 101,
@@ -153,7 +159,7 @@ struct HitAreaTests {
             Spacer()
         }
         let window = SyntheticClick.host(view, size: CGSize(width: 100, height: 120))
-        defer { window.orderOut(nil) }
+        defer { SyntheticClick.teardown(window) }
 
         let beforeChildren = window.childWindows?.count ?? 0
         // Row 2 ("并发") spans y ≈ 24...46; x = 58 is in the left empty portion of the right value slot [51...100],

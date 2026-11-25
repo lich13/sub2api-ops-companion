@@ -221,43 +221,6 @@
   align-items: center;
   gap: 8px;
 }
-.proxy-dialog {
-  width: min(640px, calc(100vw - 40px));
-  max-height: calc(100dvh - 64px);
-  padding: 20px 24px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  border-radius: 12px;
-}
-.proxy-dialog.wide {
-  width: min(850px, calc(100vw - 40px));
-}
-.proxy-dialog > header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 22px;
-}
-.proxy-dialog h2 {
-  margin: 0;
-  font-size: 17px;
-  overflow-wrap: anywhere;
-}
-.proxy-dialog p {
-  line-height: 1.6;
-}
-.proxy-dialog footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding-top: 16px;
-  margin-top: 20px;
-  border-top: 1px solid var(--line);
-}
 .proxy-dialog .field {
   flex-direction: column;
   align-items: stretch;
@@ -403,11 +366,6 @@
   overflow-wrap: anywhere;
   user-select: text;
 }
-.proxy-dialog .danger {
-  background: var(--bad);
-  color: var(--surface);
-  border-color: transparent;
-}
 .proxy-mobile-sort {
   display: block;
   flex: 1 1 100%;
@@ -417,14 +375,10 @@
 }
 .mobile .proxy-management button,
 .mobile .proxy-management input:not([type="checkbox"]),
-.mobile .proxy-management select,
-.mobile .proxy-dialog button,
-.mobile .proxy-dialog input:not([type="checkbox"]),
-.mobile .proxy-dialog select {
+.mobile .proxy-management select {
   min-height: 48px;
 }
-.mobile .proxy-management input[type="checkbox"],
-.mobile .proxy-dialog input[type="checkbox"] {
+.mobile .proxy-management input[type="checkbox"] {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
@@ -540,33 +494,11 @@
 .mobile .proxy-pagination label {
   flex: 1 1 55%;
 }
-.mobile .proxy-dialog,
-.mobile .proxy-dialog.wide {
-  width: 100%;
-  height: 100dvh;
-  max-height: 100dvh;
-  border: 0;
-  border-radius: 0;
-  padding: max(16px, env(safe-area-inset-top)) 16px
-    max(24px, env(safe-area-inset-bottom));
-}
-.mobile .proxy-dialog > header {
-  margin-bottom: 20px;
-}
-.mobile .proxy-dialog > header .icon-button {
-  min-width: 48px;
-}
 .mobile .proxy-form {
   grid-template-columns: minmax(0, 1fr);
 }
 .mobile .proxy-check {
   min-height: 48px;
-}
-.mobile .proxy-dialog footer {
-  flex-wrap: wrap;
-}
-.mobile .proxy-dialog footer button {
-  flex: 1;
 }
 .mobile .proxy-report-table table,
 .mobile .proxy-report-table tbody,
@@ -606,38 +538,10 @@
 .proxy-quality-link .bad {
   color: var(--bad);
 }
-
-.diagnostic-text {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  min-width: 0;
-  flex-wrap: wrap;
-  white-space: normal;
-}
-.diagnostic-text > span {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  min-width: 0;
-  flex: 1;
-}
-.diagnostic-text > button {
-  flex-shrink: 0;
-  padding: 4px;
-  min-width: 26px;
-  min-height: 26px;
-}
-.diagnostic-text > small {
-  flex-basis: 100%;
-}
 .proxy-report-table td:last-child {
   white-space: normal;
   min-width: 220px;
 }
 .proxy-result-list .diagnostic-text {
   width: 100%;
-}
-
-.proxy-quality-item .diagnostic-text {
-  grid-column: 1/-1;
 }

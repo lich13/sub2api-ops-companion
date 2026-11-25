@@ -178,6 +178,7 @@ struct BridgeAndLayoutTests {
             quit: {}
         )
         RustBridge.shared.installHostCallbacks(callbacks)
+        defer { RustBridge.shared.installHostCallbacks(nil) }
 
         let pong: String = try await RustBridge.shared.command("sync_ok")
         #expect(pong == "pong")
@@ -190,6 +191,15 @@ struct BridgeAndLayoutTests {
         sub2ops_macos_on_event(kind: 4, ptr: nil, len: 0)
     }
 
+    @MainActor
+    private func waitFor(_ condition: () -> Bool) async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(3)
+        while !condition() && ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return condition()
+    }
+
     @Test("ObservedClock updates via EVENT_OBSERVED_AT and NativeUsageReader honors composite identity and cooldown")
     @MainActor
     func observedClockAndNativeUsageIdentityContract() async throws {
@@ -200,16 +210,18 @@ struct BridgeAndLayoutTests {
             return "null"
         }
         let store = AppStore()
+        defer {
+            store.stop()
+            RustBridge.shared.setMockHandler(nil)
+        }
         store.bindBridge()
-        try await Task.sleep(for: .milliseconds(30))
-        #expect(store.observedClock.raw == "2026-11-25T01:00:00Z")
+        #expect(await waitFor { store.observedClock.raw == "2026-11-25T01:00:00Z" })
 
         let stamp = Array("2026-11-25T01:00:04Z".utf8)
         stamp.withUnsafeBufferPointer { buf in
             sub2ops_macos_on_event(kind: 5, ptr: buf.baseAddress, len: buf.count)
         }
-        try await Task.sleep(for: .milliseconds(30))
-        #expect(store.observedClock.raw == "2026-11-25T01:00:04Z")
+        #expect(await waitFor { store.observedClock.raw == "2026-11-25T01:00:04Z" })
 
         let reader = NativeUsageReader()
         reader.bindConnection("https://a.example.invalid:true:1")

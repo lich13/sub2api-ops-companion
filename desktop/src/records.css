@@ -1,21 +1,7 @@
-.records-content,
-.records-content .content-inner,
 .records-view {
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-.records-content .page-heading {
-  flex-shrink: 0;
-  margin-bottom: 8px;
-}
-.records-content .page-surface {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;

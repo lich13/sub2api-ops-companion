@@ -128,7 +128,7 @@ struct RecordsAndEventsTests {
             let view = RecordOptionPickerView(kind: .users, active: true, selected: nil) { _ in }
                 .environment(\.colorScheme, dark ? .dark : .light)
             let window = SyntheticClick.host(view, size: CGSize(width: 250, height: 100))
-            defer { window.close(); RustBridge.shared.setMockHandler(nil) }
+            defer { SyntheticClick.teardown(window); RustBridge.shared.setMockHandler(nil) }
             window.setFrameOrigin(CGPoint(x: 200, y: 450))
             window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             let original = Set(NSApp.windows.filter(\.isVisible).map(ObjectIdentifier.init))
@@ -171,7 +171,7 @@ struct RecordsAndEventsTests {
         window.isReleasedWhenClosed = false
         window.contentView = view
         window.orderFrontRegardless()
-        defer { window.close() }
+        defer { SnapshotRenderUtility.teardownWindow(window) }
         #expect(await waitFor { counts.withLock { $0["trace", default: 0] >= 1 } })
         view.rootView = panel(.lm_detector, "first")
         #expect(await waitFor { counts.withLock { $0["lm", default: 0] >= 1 } })
@@ -436,6 +436,12 @@ struct RecordsAndEventsTests {
 
         let acc1 = Account(id: 101, name: "Codex · 主力", priority: 1, platform: "openai", type: "oauth")
         let recStore = AppStore()
+        let eventsStore = AppStore()
+        defer {
+            recStore.stop()
+            eventsStore.stop()
+            RustBridge.shared.setMockHandler(nil)
+        }
         recStore.ready = true
         recStore.page = .records
         recStore.applyViewState(
@@ -450,7 +456,6 @@ struct RecordsAndEventsTests {
             )
         )
 
-        let eventsStore = AppStore()
         eventsStore.ready = true
         eventsStore.page = .events
         eventsStore.applyViewState(recStore.state)
@@ -563,6 +568,7 @@ struct RecordsAndEventsTests {
         """
         RustBridge.shared.setMockHandler { _, _ in manyRecordsJSON }
         let scrollRecStore = AppStore()
+        defer { scrollRecStore.stop() }
         scrollRecStore.ready = true
         scrollRecStore.page = .records
         scrollRecStore.applyViewState(eventsStore.state)
