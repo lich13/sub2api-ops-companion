@@ -8,7 +8,6 @@ use crate::{
     credit::CreditController,
     db::Database,
     error::{Error, Result},
-    execution::{DiskLease, TestSlots},
     fingerprint_bank::FingerprintBank,
     keepalive::Keepalive,
     model_detection::Detection,
@@ -17,6 +16,7 @@ use crate::{
     oauth_queries::Coordinator,
     oauth_state::OAuthState,
     operations::Operations,
+    operations::{DiskLease, TestSlots},
     proxy_diagnostics::ProxyDiagnostics,
     queries::Queries,
     runtime_hooks::Hooks,
@@ -73,14 +73,68 @@ pub struct Runtime {
     pub(crate) usage_flights:
         Mutex<std::collections::BTreeMap<i64, crate::manual_actions::UsageFlight>>,
     pub(crate) requests: crate::tasks::Tasks,
+    real_wall_clock: bool,
+    last_orphan_reconcile: Mutex<Option<std::time::Instant>>,
     tasks: Mutex<Vec<JoinHandle<()>>>,
     stop: watch::Sender<bool>,
     _instance: DiskLease,
 }
 
+fn disposition_schedule_delay(
+    snap: &Value,
+    bark_valid: bool,
+    bark_enabled: bool,
+    now: chrono::DateTime<chrono::Utc>,
+    real_wall_clock: bool,
+) -> Option<Duration> {
+    if !bark_valid {
+        return None;
+    }
+    let mut earliest: Option<chrono::DateTime<chrono::Utc>> = None;
+    let mut has_immediate = false;
+    for (_, val) in snap["disposition_notifications"]
+        .as_object()
+        .into_iter()
+        .flatten()
+    {
+        let status = crate::compat::string(&val["status"]);
+        if !matches!(status, "queued" | "retry") {
+            continue;
+        }
+        if !bark_enabled {
+            has_immediate = true;
+            break;
+        }
+        match crate::compat::parse_datetime(&val["next_at"]) {
+            None => has_immediate = true,
+            Some(t) if t <= now => has_immediate = true,
+            Some(t) => earliest = Some(earliest.map_or(t, |prev| prev.min(t))),
+        }
+    }
+    if has_immediate {
+        Some(Duration::from_millis(100))
+    } else {
+        earliest.map(|due| {
+            if !real_wall_clock {
+                return Duration::from_secs(2);
+            }
+            (due - now)
+                .to_std()
+                .unwrap_or(Duration::from_millis(50))
+                .clamp(Duration::from_millis(50), Duration::from_secs(300))
+        })
+    }
+}
+
 impl Runtime {
     pub async fn new(settings: Settings) -> Result<Arc<Self>> {
-        Self::new_with_clock(settings, Arc::new(chrono::Utc::now)).await
+        Self::new_inner(
+            settings,
+            Arc::new(chrono::Utc::now),
+            Arc::new(std::time::Instant::now),
+            true,
+        )
+        .await
     }
 
     /// Share the scheduler clock before constructing hooks and task owners.
@@ -88,7 +142,7 @@ impl Runtime {
         settings: Settings,
         clock: Arc<dyn Fn() -> chrono::DateTime<chrono::Utc> + Send + Sync>,
     ) -> Result<Arc<Self>> {
-        Self::new_with_clocks(settings, clock, Arc::new(std::time::Instant::now)).await
+        Self::new_inner(settings, clock, Arc::new(std::time::Instant::now), false).await
     }
 
     /// Keep cache expiry monotonic while allowing deterministic lifecycle tests.
@@ -96,6 +150,15 @@ impl Runtime {
         settings: Settings,
         clock: Arc<dyn Fn() -> chrono::DateTime<chrono::Utc> + Send + Sync>,
         monotonic: Arc<dyn Fn() -> std::time::Instant + Send + Sync>,
+    ) -> Result<Arc<Self>> {
+        Self::new_inner(settings, clock, monotonic, false).await
+    }
+
+    async fn new_inner(
+        settings: Settings,
+        clock: Arc<dyn Fn() -> chrono::DateTime<chrono::Utc> + Send + Sync>,
+        monotonic: Arc<dyn Fn() -> std::time::Instant + Send + Sync>,
+        real_wall_clock: bool,
     ) -> Result<Arc<Self>> {
         let settings = Arc::new(settings);
         for (resource, path) in [
@@ -259,6 +322,8 @@ impl Runtime {
             quota_task: Mutex::new(None),
             usage_flights: Mutex::new(Default::default()),
             requests,
+            real_wall_clock,
+            last_orphan_reconcile: Mutex::new(None),
             tasks: Mutex::new(vec![]),
             stop,
             _instance: instance,
@@ -295,6 +360,242 @@ impl Runtime {
         self.actions.queries.groups(&accounts).await?;
         self.actions.queries.errors(None, None, 1, None).await?;
         Ok(())
+    }
+
+    pub(crate) fn idle_task_schedule(
+        &self,
+        kind: &str,
+        default_interval: Duration,
+    ) -> Option<Duration> {
+        let now = self.monitor.now();
+        let clamp_due = |due: chrono::DateTime<chrono::Utc>| -> Duration {
+            if !self.real_wall_clock {
+                return Duration::from_secs(2);
+            }
+            (due - now)
+                .to_std()
+                .unwrap_or(Duration::from_millis(50))
+                .clamp(Duration::from_millis(50), Duration::from_secs(300))
+        };
+        match kind {
+            "operations" => self
+                .operations
+                .has_pending_work()
+                .then_some(default_interval),
+            "priority_orders" => self
+                .priorities
+                .has_pending_work()
+                .then_some(default_interval),
+            "daily" => {
+                if !self.real_wall_clock {
+                    return Some(default_interval);
+                }
+                let Ok(snap) = self.monitor.store.shared_snapshot() else {
+                    return Some(default_interval);
+                };
+                let daily = &snap["daily_test"];
+                if daily["enabled"] == false {
+                    return None;
+                }
+                match crate::compat::parse_datetime(&daily["next_run_at"]) {
+                    Some(target) => Some(
+                        (target - now)
+                            .to_std()
+                            .unwrap_or(Duration::from_millis(50))
+                            .clamp(Duration::from_millis(50), Duration::from_secs(30)),
+                    ),
+                    None => Some(default_interval),
+                }
+            }
+            "notifications" => {
+                if !self.config.bark.runtime().valid {
+                    return None;
+                }
+                let Ok(snap) = self.monitor.store.shared_snapshot() else {
+                    return Some(default_interval);
+                };
+                snap["pending_events"]
+                    .as_object()
+                    .is_some_and(|m| !m.is_empty())
+                    .then_some(default_interval)
+            }
+            "credit_notifications" => {
+                let bark = self.config.bark.runtime();
+                if !bark.valid {
+                    return None;
+                }
+                let Ok(snap) = self.monitor.store.shared_snapshot() else {
+                    return Some(default_interval);
+                };
+                let mut earliest: Option<chrono::DateTime<chrono::Utc>> = None;
+                let mut has_immediate = false;
+                for (_, meta) in snap["scheduler"].as_object().into_iter().flatten() {
+                    for (_, notice) in meta["credit_result_notifications"]
+                        .as_object()
+                        .into_iter()
+                        .flatten()
+                    {
+                        if notice["status"] != "pending" {
+                            continue;
+                        }
+                        if !bark.enabled {
+                            has_immediate = true;
+                            break;
+                        }
+                        match crate::compat::parse_datetime(&notice["next_at"]) {
+                            None => has_immediate = true,
+                            Some(t) if t <= now => has_immediate = true,
+                            Some(t) => earliest = Some(earliest.map_or(t, |prev| prev.min(t))),
+                        }
+                    }
+                    if has_immediate {
+                        break;
+                    }
+                }
+                if has_immediate {
+                    Some(Duration::from_millis(100))
+                } else {
+                    earliest.map(clamp_due)
+                }
+            }
+            "keepalive_notifications" => {
+                let bark = self.config.bark.runtime();
+                if !bark.valid {
+                    return None;
+                }
+                let Ok(snap) = self.keepalive.store.read_shared() else {
+                    return Some(default_interval);
+                };
+                let mut earliest: Option<chrono::DateTime<chrono::Utc>> = None;
+                let mut has_immediate = false;
+                for (_, val) in snap["accounts"].as_object().into_iter().flatten() {
+                    for notice in val["notifications"].as_array().into_iter().flatten() {
+                        if notice["status"] != "pending" {
+                            continue;
+                        }
+                        if !bark.enabled {
+                            has_immediate = true;
+                            break;
+                        }
+                        match crate::compat::parse_datetime(&notice["next_at"]) {
+                            None => has_immediate = true,
+                            Some(t) if t <= now => has_immediate = true,
+                            Some(t) => earliest = Some(earliest.map_or(t, |prev| prev.min(t))),
+                        }
+                    }
+                    if has_immediate {
+                        break;
+                    }
+                }
+                if has_immediate {
+                    Some(Duration::from_millis(100))
+                } else {
+                    earliest.map(clamp_due)
+                }
+            }
+            "disposition" => {
+                let bark = self.config.bark.runtime();
+                if !bark.valid {
+                    return None;
+                }
+                let Ok(snap) = self.detection.store.read_shared() else {
+                    return Some(default_interval);
+                };
+                disposition_schedule_delay(
+                    &snap,
+                    bark.valid,
+                    bark.enabled,
+                    now,
+                    self.real_wall_clock,
+                )
+            }
+            _ => Some(default_interval),
+        }
+    }
+
+    async fn reconcile_deleted_accounts(&self) {
+        let due = {
+            let mut guard = self
+                .last_orphan_reconcile
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if guard.is_some_and(|last| last.elapsed() < Duration::from_secs(300)) {
+                false
+            } else {
+                *guard = Some(std::time::Instant::now());
+                true
+            }
+        };
+        if !due {
+            return;
+        }
+        let Ok(rows) = self
+            .db
+            .all("SELECT id FROM accounts WHERE deleted_at IS NOT NULL", &[])
+            .await
+        else {
+            return;
+        };
+        let deleted: std::collections::BTreeSet<String> = rows
+            .iter()
+            .filter_map(|r| crate::compat::integer(&r["id"]).map(|id| id.to_string()))
+            .collect();
+        if deleted.is_empty() {
+            return;
+        }
+        if let Ok(snap) = self.keepalive.store.read_shared() {
+            if snap["accounts"]
+                .as_object()
+                .is_some_and(|m| m.keys().any(|k| deleted.contains(k)))
+            {
+                let _ = self.keepalive.store.transaction(|data| {
+                    if let Some(m) = data["accounts"].as_object_mut() {
+                        m.retain(|k, _| !deleted.contains(k));
+                    }
+                    Ok(())
+                });
+            }
+        }
+        if let Ok(snap) = self.detection.store.read_shared() {
+            let has_orphan = snap["accounts"]
+                .as_object()
+                .is_some_and(|m| m.keys().any(|k| deleted.contains(k)))
+                || snap["automatic_starts"]
+                    .as_object()
+                    .is_some_and(|m| m.keys().any(|k| deleted.contains(k)));
+            if has_orphan {
+                let _ = self.detection.store.transaction(|data| {
+                    if let Some(m) = data["accounts"].as_object_mut() {
+                        m.retain(|k, v| {
+                            !deleted.contains(k) || v["disposition"]["status"] == "pending"
+                        });
+                    }
+                    if let Some(m) = data["automatic_starts"].as_object_mut() {
+                        m.retain(|k, _| !deleted.contains(k));
+                    }
+                    Ok(())
+                });
+            }
+        }
+        if let Ok(snap) = self.detection.capacity.store.shared_snapshot() {
+            let has_orphan = snap["marks"]
+                .as_object()
+                .is_some_and(|m| m.keys().any(|k| deleted.contains(k)))
+                || snap["slow_ttft"]
+                    .as_object()
+                    .is_some_and(|m| m.keys().any(|k| deleted.contains(k)));
+            if has_orphan {
+                let _ = self.detection.capacity.store.transaction(|data| {
+                    if let Some(m) = data["marks"].as_object_mut() {
+                        m.retain(|k, _| !deleted.contains(k));
+                    }
+                    if let Some(m) = data["slow_ttft"].as_object_mut() {
+                        m.retain(|k, _| !deleted.contains(k));
+                    }
+                    Ok(())
+                });
+            }
+        }
     }
 
     pub async fn start(self: &Arc<Self>) -> Result<()> {
@@ -360,6 +661,7 @@ impl Runtime {
                         "disposition" => runtime.detection.deliver_notifications().await,
                         "route" => {
                             runtime.refresh_route().await;
+                            runtime.reconcile_deleted_accounts().await;
                             Ok(())
                         }
                         "bank" => {
@@ -379,33 +681,66 @@ impl Runtime {
                         failures = 0;
                     }
                     let interval = Duration::from_millis(milliseconds);
-                    let delay = match kind {
-                        "oauth" => interval
-                            .saturating_sub(started.elapsed())
-                            .max(Duration::from_millis(50)),
-                        "capacity" => Duration::from_secs((1_u64 << (failures + 1)).min(30)),
-                        _ => interval,
+                    let primary_wake = match kind {
+                        "operations" => Some(runtime.operations.wake.notified()),
+                        "priority_orders" => Some(runtime.priorities.wake.notified()),
+                        "daily" => Some(runtime.config.oauth.notified()),
+                        "notifications" | "credit_notifications" => {
+                            Some(runtime.monitor.store.0.notified())
+                        }
+                        "keepalive_notifications" => Some(runtime.keepalive.store.notified()),
+                        "disposition" => Some(runtime.detection.store.notified()),
+                        _ => None,
                     };
-                    let suspend_until_wake = failures == 0
-                        && match kind {
-                            "operations" => !runtime.operations.has_pending_work(),
-                            "priority_orders" => !runtime.priorities.has_pending_work(),
-                            _ => false,
-                        };
+                    let secondary_wake = match kind {
+                        "daily" => Some(runtime.monitor.store.0.notified()),
+                        "notifications"
+                        | "credit_notifications"
+                        | "keepalive_notifications"
+                        | "disposition" => Some(runtime.config.bark.wake.notified()),
+                        _ => None,
+                    };
+                    tokio::pin!(primary_wake);
+                    tokio::pin!(secondary_wake);
+                    if let Some(w) = primary_wake.as_mut().as_pin_mut() {
+                        w.enable();
+                    }
+                    if let Some(w) = secondary_wake.as_mut().as_pin_mut() {
+                        w.enable();
+                    }
+                    let scheduled = if failures == 0 {
+                        match kind {
+                            "oauth" => Some(
+                                interval
+                                    .saturating_sub(started.elapsed())
+                                    .max(Duration::from_millis(50)),
+                            ),
+                            "capacity" => Some(Duration::from_secs(2)),
+                            _ => runtime.idle_task_schedule(kind, interval),
+                        }
+                    } else if kind == "capacity" {
+                        Some(Duration::from_secs((1_u64 << (failures + 1)).min(30)))
+                    } else {
+                        Some(interval)
+                    };
                     tokio::select! {
                         _ = async {
-                            if suspend_until_wake {
-                                std::future::pending::<()>().await;
-                            } else {
-                                tokio::time::sleep(delay).await;
+                            match scheduled {
+                                Some(delay) => tokio::time::sleep(delay).await,
+                                None => std::future::pending::<()>().await,
                             }
                         } => {},
                         _ = stop.changed() => {},
                         _ = async {
-                            match kind {
-                                "operations" => runtime.operations.wake.notified().await,
-                                "priority_orders" => runtime.priorities.wake.notified().await,
-                                _ => std::future::pending::<()>().await,
+                            match primary_wake.as_mut().as_pin_mut() {
+                                Some(w) => w.await,
+                                None => std::future::pending::<()>().await,
+                            }
+                        } => {},
+                        _ = async {
+                            match secondary_wake.as_mut().as_pin_mut() {
+                                Some(w) => w.await,
+                                None => std::future::pending::<()>().await,
                             }
                         } => {},
                     }
@@ -541,5 +876,45 @@ impl Runtime {
             .unwrap_or_else(|e| e.into_inner())
             .clear();
         let _ = tokio::time::timeout(Duration::from_secs(2), self.db.close()).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::disposition_schedule_delay;
+    use chrono::{Duration as ChronoDuration, TimeZone, Utc};
+    use serde_json::json;
+    use std::time::Duration;
+
+    #[test]
+    fn disposition_retry_schedule_reads_next_at_and_sleeps_until_due() {
+        let now = Utc.with_ymd_and_hms(2026, 11, 26, 5, 0, 0).unwrap();
+        let future = crate::compat::datetime(now + ChronoDuration::seconds(30));
+        let snap = json!({
+            "disposition_notifications": {
+                "job-retry-1": {
+                    "status": "retry",
+                    "next_at": future,
+                }
+            }
+        });
+        assert_eq!(
+            disposition_schedule_delay(&snap, true, true, now, true),
+            Some(Duration::from_secs(30))
+        );
+        assert_eq!(
+            disposition_schedule_delay(&snap, true, false, now, true),
+            Some(Duration::from_millis(100))
+        );
+        assert_eq!(
+            disposition_schedule_delay(
+                &json!({"disposition_notifications": {"job-retry-1": {"status": "suppressed", "next_at": future}}}),
+                true,
+                false,
+                now,
+                true,
+            ),
+            None
+        );
     }
 }

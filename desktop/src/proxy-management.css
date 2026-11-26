@@ -5,16 +5,6 @@
   border-radius: 8px;
   box-shadow: var(--shadow-sm);
 }
-.proxy-management button,
-.proxy-management input:not([type="checkbox"]),
-.proxy-management select {
-  min-height: 48px;
-}
-.proxy-management input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-}
 .proxy-filterbar,
 .proxy-toolbar {
   display: flex;
@@ -153,11 +143,6 @@
   color: var(--bad);
   background: var(--bad-bg);
 }
-.proxy-management .icon-button {
-  padding: 6px;
-  min-width: 48px;
-  min-height: 48px;
-}
 .proxy-auth {
   min-height: 26px;
   border: 0;
@@ -167,9 +152,9 @@
 }
 .proxy-quality-cell {
   display: flex;
-  flex-direction: column;
-  gap: 5px;
-  align-items: flex-start;
+  flex-direction: row;
+  gap: 12px;
+  align-items: center;
   min-width: 110px;
 }
 .proxy-quality-link {
@@ -302,11 +287,6 @@
 .proxy-mobile-facts button {
   border: 0;
   background: transparent;
-}
-.proxy-mobile-list .proxy-quality-cell {
-  flex-direction: row;
-  align-items: center;
-  gap: 12px;
 }
 .proxy-mobile-select {
   display: flex;

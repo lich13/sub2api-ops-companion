@@ -95,19 +95,6 @@ pub fn detection_model(value: &Value) -> Result<String> {
     Ok(model.to_owned())
 }
 
-fn bool_value(value: &Value, default: bool) -> bool {
-    if value.is_null() {
-        return default;
-    }
-    if let Some(value) = value.as_bool() {
-        return value;
-    }
-    matches!(
-        text(value).trim().to_lowercase().as_str(),
-        "1" | "true" | "yes" | "on"
-    )
-}
-
 pub fn strict_bool(value: &Value, default: bool) -> (bool, bool) {
     if value.is_null() {
         return (default, true);
@@ -167,8 +154,13 @@ impl Settings {
     }
 
     pub fn from_env(env: &BTreeMap<String, String>) -> Result<Self> {
-        let get =
-            |key: &str, default: &str| env.get(key).cloned().unwrap_or_else(|| default.to_owned());
+        let get = |key: &str, default: &str| {
+            env.get(key)
+                .map(String::as_str)
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or(default)
+                .to_owned()
+        };
         let oauth_path = PathBuf::from(get("OAUTH_CONFIG_PATH", "/data/oauth-config.json"));
         let bark_path = PathBuf::from(get("BARK_CONFIG_PATH", "/data/bark-config.json"));
         let config = read_config(&oauth_path).inspect_err(|_| {
@@ -178,6 +170,7 @@ impl Settings {
         let configured = |key: &str| {
             config.get(key).cloned().unwrap_or_else(|| {
                 env.get(&key.to_uppercase())
+                    .filter(|v| !v.trim().is_empty())
                     .map(|v| json!(v))
                     .unwrap_or(Value::Null)
             })
@@ -188,7 +181,7 @@ impl Settings {
             ("oauth_daily_test_enabled", true),
             ("oauth_early_reset_enabled", false),
         ] {
-            oauth[key] = bool_value(&configured(key), default).into();
+            oauth[key] = strict_bool(&configured(key), default).0.into();
         }
         for (key, default, min, max) in [
             ("connection_test_retry_interval_seconds", 10, 1, 3600),
@@ -214,7 +207,7 @@ impl Settings {
         let model = configured("oauth_recovery_test_model_id");
         let model = string(&model).trim();
         oauth["oauth_recovery_test_model_id"] = if model.is_empty() {
-            crate::model_downgrade::DEFAULT_TEST_MODEL
+            crate::model_verdict::DEFAULT_TEST_MODEL
         } else {
             model
         }
@@ -275,16 +268,22 @@ impl Settings {
         Ok(Self {
             database_url: env
                 .get("DATABASE_URL")
+                .map(|v| v.trim())
                 .filter(|v| !v.is_empty())
-                .cloned()
+                .map(str::to_owned)
                 .ok_or_else(|| Error::new(503, "未配置数据库连接"))?,
-            bind: env.get("SUB2OPS_BIND").cloned().unwrap_or_else(|| {
-                format!(
-                    "{}:{}",
-                    get("HOST", "0.0.0.0"),
-                    get("PORT", &get("APP_PORT", "18081"))
-                )
-            }),
+            bind: env
+                .get("SUB2OPS_BIND")
+                .map(|v| v.trim())
+                .filter(|v| !v.is_empty())
+                .map(str::to_owned)
+                .unwrap_or_else(|| {
+                    format!(
+                        "{}:{}",
+                        get("HOST", "0.0.0.0"),
+                        get("PORT", &get("APP_PORT", "18081"))
+                    )
+                }),
             audit_path: get("AUDIT_PATH", "/data/audit.jsonl").into(),
             usage_path: get("USAGE_QUERY_STATE_PATH", "/data/usage-query-state.json").into(),
             oauth_path,

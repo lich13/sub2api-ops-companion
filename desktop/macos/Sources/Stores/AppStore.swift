@@ -259,7 +259,7 @@ public final class AppStore {
             groups = nextGroups
         }
         if accountsChanged || groupsChanged || (activeGroups.isEmpty && !nextGroups.isEmpty) {
-            let computed = computeCurrentGroups(nextGroups, accounts: nextAccounts)
+            let computed = computeCurrentGroups(nextGroups, accounts: nextAccounts, accountById: accountById)
             if activeGroups != computed {
                 activeGroups = computed
             }

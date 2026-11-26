@@ -60,4 +60,34 @@ fn main() {
     )
     .expect("LM metadata checksum");
     fs::write(output.join("lm-detector-bank.json"), bytes).expect("LM metadata output");
+
+    println!("cargo:rerun-if-changed=resources/sub2api-config.json");
+    let config_raw =
+        fs::read("resources/sub2api-config.json").expect("sub2api-config.json resource");
+    let catalog: Value =
+        serde_json::from_slice(&config_raw).expect("valid sub2api-config.json catalogue");
+    let compact_catalog = serde_json::to_vec(&catalog).expect("compact sub2api-config.json");
+    fs::write(output.join("sub2api-config.compact.json"), compact_catalog)
+        .expect("sub2api-config.compact.json output");
+
+    let fields = catalog["fields"]
+        .as_array()
+        .expect("sub2api-config.json fields");
+    let mut editable_paths: Vec<String> = fields
+        .iter()
+        .filter(|f| f["editable"] == Value::Bool(true))
+        .filter_map(|f| f["path"].as_str().map(str::to_owned))
+        .collect();
+    editable_paths.sort();
+    editable_paths.dedup();
+    let mut generated = format!(
+        "const CATALOG_FIELD_COUNT: usize = {};\nstatic EDITABLE_CONFIG_PATHS: &[&str] = &[\n",
+        fields.len()
+    );
+    for path in &editable_paths {
+        generated.push_str(&format!("    {path:?},\n"));
+    }
+    generated.push_str("];\n");
+    fs::write(output.join("sub2api-config-paths.rs"), generated)
+        .expect("sub2api-config-paths.rs output");
 }

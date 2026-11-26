@@ -3,7 +3,6 @@ use crate::{
     compat::{integer, string},
     db::Param,
     error::{Error, Result},
-    keepalive_state::{self as state, Control, Intent, Notice, CONCURRENCY, LIMIT},
     model_detection::Detection,
     operations::Operations,
     store::Store,
@@ -12,11 +11,260 @@ use crate::{
 use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use state::{Control, Intent, Notice, CONCURRENCY, LIMIT};
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{Arc, Mutex},
 };
 use tokio::sync::Semaphore;
+
+pub(crate) mod state {
+    use crate::{
+        compat::{digest, parse_datetime, string, truthy},
+        error::{Error, Result},
+    };
+    use chrono::{DateTime, Duration, Utc};
+    use serde::{Deserialize, Serialize};
+    use serde_json::{json, Value};
+
+    pub(super) const LIMIT: usize = 5;
+    pub(super) const CONCURRENCY: usize = 8;
+
+    #[derive(Clone, Default, Deserialize, Serialize)]
+    pub struct Control {
+        pub enabled: bool,
+        pub generation: u64,
+        #[serde(default)]
+        pub last_restore_at: Option<DateTime<Utc>>,
+        #[serde(default)]
+        pub restores: Vec<DateTime<Utc>>,
+        #[serde(default)]
+        pub paused_reason: String,
+        #[serde(default)]
+        pub failures: u32,
+        #[serde(default)]
+        pub retry_at: Option<DateTime<Utc>>,
+        #[serde(default)]
+        pub notifications: Vec<Notice>,
+    }
+
+    #[derive(Clone, Deserialize, Serialize)]
+    pub(super) struct Intent {
+        pub id: String,
+        pub generation: u64,
+        pub fingerprint: String,
+        pub before_until: DateTime<Utc>,
+        pub reason: String,
+        pub dispatched_at: DateTime<Utc>,
+    }
+
+    #[derive(Clone, Deserialize, Serialize)]
+    pub struct Notice {
+        pub id: String,
+        pub generation: u64,
+        pub status: String,
+        pub attempts: u32,
+        pub next_at: Option<DateTime<Utc>>,
+    }
+
+    pub(super) fn invalid() -> Error {
+        Error::new(503, "账号保活状态无效")
+    }
+
+    pub(super) fn validate(value: &Value) -> Result<()> {
+        if value["version"] != 1 {
+            return Err(invalid());
+        }
+        let accounts = value["accounts"].as_object().ok_or_else(invalid)?;
+        for (id, value) in accounts {
+            if !id
+                .parse::<i64>()
+                .is_ok_and(|number| number > 0 && number.to_string() == *id)
+            {
+                return Err(invalid());
+            }
+            let control: Control = Control::deserialize(value).map_err(|_| invalid())?;
+            if control.generation > 9_007_199_254_740_991
+                || !matches!(control.paused_reason.as_str(), "" | "恢复过于频繁")
+                || control.restores.len() > LIMIT
+                || control.notifications.iter().any(|n| {
+                    n.attempts > 5
+                        || n.id.is_empty()
+                        || !matches!(
+                            n.status.as_str(),
+                            "pending" | "delivered" | "failed" | "suppressed"
+                        )
+                })
+            {
+                return Err(invalid());
+            }
+        }
+        Ok(())
+    }
+
+    impl Control {
+        pub(super) fn version(&self) -> String {
+            digest(&json!({"enabled":self.enabled,"generation":self.generation}))
+        }
+        pub(super) fn prune(&mut self, at: DateTime<Utc>) {
+            self.restores
+                .retain(|v| at.signed_duration_since(*v) < Duration::hours(1));
+            let mut completed = 0;
+            self.notifications.reverse();
+            self.notifications.retain(|n| {
+                if n.status == "pending" {
+                    true
+                } else {
+                    completed += 1;
+                    completed <= 32
+                }
+            });
+            self.notifications.reverse();
+        }
+        pub(crate) fn used(&self, at: DateTime<Utc>) -> usize {
+            self.restores
+                .iter()
+                .filter(|t| at.signed_duration_since(**t) < Duration::hours(1))
+                .count()
+        }
+        pub(super) fn next_allowed(&self, at: DateTime<Utc>) -> Option<DateTime<Utc>> {
+            let mut next = self
+                .last_restore_at
+                .into_iter()
+                .filter_map(|t| t.checked_add_signed(Duration::seconds(60)))
+                .max();
+            if self.used(at) >= LIMIT {
+                let oldest = self
+                    .restores
+                    .iter()
+                    .copied()
+                    .filter(|t| at.signed_duration_since(*t) < Duration::hours(1))
+                    .min();
+                next = next
+                    .into_iter()
+                    .chain(oldest.and_then(|t| t.checked_add_signed(Duration::hours(1))))
+                    .max();
+            }
+            next.into_iter()
+                .chain(self.retry_at)
+                .max()
+                .filter(|t| *t > at)
+        }
+        pub(super) fn waiting(&self, at: DateTime<Utc>) -> bool {
+            self.used(at) >= LIMIT
+                || self.retry_at.is_some_and(|t| t > at)
+                || self
+                    .last_restore_at
+                    .into_iter()
+                    .any(|t| at.signed_duration_since(t) < Duration::seconds(60))
+        }
+    }
+
+    pub(super) fn fingerprint(row: &Value) -> String {
+        digest(&json!([
+            row["temp_unschedulable_until"],
+            row["temp_unschedulable_reason"]
+        ]))
+    }
+
+    /// Only recognized native error-policy records are eligible. A threshold source
+    /// is excluded before inspecting its optional details, even if those are broken.
+    pub(crate) fn eligible_reason(row: &Value) -> std::result::Result<&'static str, &'static str> {
+        let raw = string(&row["temp_unschedulable_reason"]);
+        if raw.len() > 16_384 {
+            return Err("暂停原因无法识别");
+        }
+        let value: Value = serde_json::from_str(raw).map_err(|_| "暂停原因无法识别")?;
+        if value["source"] == "account_scheduling_threshold" {
+            return Err("额度阈值暂停不参与保活");
+        }
+        if !value.is_object() || truthy(&value["source"]) {
+            return Err("暂停原因无法识别");
+        }
+        let code = value["status_code"].as_i64().ok_or("暂停原因无法识别")?;
+        let rule = value["rule_index"].as_i64().ok_or("暂停原因无法识别")?;
+        let keyword = value["matched_keyword"]
+            .as_str()
+            .ok_or("暂停原因无法识别")?;
+        let message = value["error_message"].as_str().ok_or("暂停原因无法识别")?;
+        let until = value["until_unix"].as_i64().ok_or("暂停原因无法识别")?;
+        let triggered = value["triggered_at_unix"]
+            .as_i64()
+            .ok_or("暂停原因无法识别")?;
+        if triggered <= 0
+            || until < triggered
+            || parse_datetime(&row["temp_unschedulable_until"])
+                .is_none_or(|t| t.timestamp() != until)
+            || !(rule >= 0 && (400..=599).contains(&code)
+                || rule == -1 && code == 0 && keyword == "stream_timeout")
+        {
+            return Err("暂停原因无法识别");
+        }
+        let text = format!("{keyword} {message}").to_lowercase();
+        if matches!(code, 401..=403)
+            || [
+                "banned",
+                "deactivated",
+                "suspended",
+                "organization has been disabled",
+                "account disabled",
+                "invalid_api_key",
+                "unauthorized",
+                "authentication",
+                "credential",
+                "token_revoked",
+                "token_invalidated",
+                "token expired",
+                "invalid_grant",
+                "needs_reauth",
+                "identity verification",
+                "usage_limit_reached",
+                "usage limit has been reached",
+                "insufficient_quota",
+                "quota_exceeded",
+                "quota exhausted",
+                "quota exceeded",
+                "credit balance",
+                "credits exhausted",
+                "weekly limit reached",
+                "monthly limit reached",
+                "额度耗尽",
+                "额度已用尽",
+                "余额不足",
+                "封禁",
+                "凭证失效",
+            ]
+            .iter()
+            .any(|term| text.contains(term))
+        {
+            return Err("认证、封禁或额度异常不参与保活");
+        }
+        Ok(if code == 0 {
+            "流响应超时"
+        } else {
+            "临时错误策略"
+        })
+    }
+
+    pub(crate) fn row_reason(row: &Value, at: DateTime<Utc>) -> &'static str {
+        if !row.is_object() || truthy(&row["deleted_at"]) {
+            return "账号已删除";
+        }
+        if row["status"] != "active" {
+            return "账号停用或认证异常";
+        }
+        if row["schedulable"] != true {
+            return "调度已关闭";
+        }
+        if !row["rate_limited_at"].is_null() || !row["overload_until"].is_null() {
+            return "账号限流或过载不参与保活";
+        }
+        if parse_datetime(&row["temp_unschedulable_until"]).is_none_or(|t| t <= at) {
+            return "等待临时不可调度";
+        }
+        eligible_reason(row).err().unwrap_or("")
+    }
+}
 
 const SELECT: &str = "SELECT id,status,schedulable,temp_unschedulable_until,temp_unschedulable_reason,rate_limited_at,overload_until,error_message,updated_at,nullif(to_jsonb(accounts)->>'parent_account_id','')::bigint AS parent_account_id,jsonb_build_object('parent_account_id',extra->'parent_account_id') AS extra FROM accounts WHERE deleted_at IS NULL";
 
@@ -187,7 +435,7 @@ impl Keepalive {
             }
             let credit = &meta["auto_reset_credit"];
             if credit.is_object()
-                && !crate::credit_rules::TERMINAL.contains(&string(&credit["stage"]))
+                && !crate::credit::rules::TERMINAL.contains(&string(&credit["stage"]))
             {
                 return "等待用卡任务完成或核对";
             }
@@ -266,8 +514,11 @@ impl Keepalive {
         let data = self.store.read_shared()?;
         let mut controls = BTreeMap::new();
         for (id, value) in data["accounts"].as_object().into_iter().flatten() {
+            if value["enabled"] != true {
+                continue;
+            }
             let control: Control = Control::deserialize(value).map_err(|_| state::invalid())?;
-            if control.enabled && !control.waiting(self.now()) {
+            if !control.waiting(self.now()) {
                 controls.insert(id.parse::<i64>().map_err(|_| state::invalid())?, control);
             }
         }
@@ -437,7 +688,7 @@ impl Keepalive {
                     }
                 }
                 Outcome::Failed => {
-                    let delay = crate::execution::retry_delay(control.failures.into());
+                    let delay = crate::operations::retry_delay(control.failures.into());
                     control.failures = control.failures.saturating_add(1);
                     control.retry_at = Some(at + Duration::seconds(delay));
                 }
@@ -463,13 +714,22 @@ impl Keepalive {
         }
         let data = self.store.read_shared()?;
         for (id, value) in data["accounts"].as_object().into_iter().flatten() {
+            if !value["notifications"]
+                .as_array()
+                .is_some_and(|list| list.iter().any(|n| n["status"] == "pending"))
+            {
+                continue;
+            }
             let control: Control = Control::deserialize(value).map_err(|_| state::invalid())?;
             let id: i64 = id.parse().map_err(|_| state::invalid())?;
             for notice in control.notifications {
-                if notice.status != "pending" || notice.next_at.is_some_and(|t| t > self.now()) {
+                if notice.status != "pending"
+                    || (config.enabled && notice.next_at.is_some_and(|t| t > self.now()))
+                {
                     continue;
                 }
                 let reserved = self.change(id, |control| {
+                    let stale = control.generation != notice.generation || control.enabled;
                     let Some(current) = control
                         .notifications
                         .iter_mut()
@@ -477,7 +737,7 @@ impl Keepalive {
                     else {
                         return Ok(false);
                     };
-                    if !config.enabled {
+                    if stale || !config.enabled {
                         current.status = "suppressed".into();
                         current.next_at = None;
                         return Ok(false);
@@ -490,7 +750,7 @@ impl Keepalive {
                     current.attempts += 1;
                     current.next_at = Some(
                         self.now()
-                            + Duration::seconds(crate::execution::retry_delay(
+                            + Duration::seconds(crate::operations::retry_delay(
                                 current.attempts.saturating_sub(1).into(),
                             )),
                     );
@@ -522,7 +782,7 @@ impl Keepalive {
                         current.next_at = if current.status == "pending" {
                             Some(
                                 self.now()
-                                    + Duration::seconds(crate::execution::retry_delay(
+                                    + Duration::seconds(crate::operations::retry_delay(
                                         current.attempts.saturating_sub(1).into(),
                                     )),
                             )

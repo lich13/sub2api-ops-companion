@@ -7,6 +7,8 @@ type ErrorsPage = { items: OpsError[]; next_cursor: number | null };
 
 export type ErrorCategory = "degradation" | "other";
 
+const EMPTY_ERRORS: OpsError[] = [];
+
 /** Each category owns its cursor and generation; snapshots never seed history. */
 export function useErrorFeed(
   category: ErrorCategory,
@@ -14,11 +16,17 @@ export function useErrorFeed(
   online: boolean,
   connectionKey: string,
 ) {
-  const [items, setItems] = useState<OpsError[]>([]);
-  const [cursor, setCursor] = useState<number | null>(null);
+  const [feed, setFeed] = useState<{
+    key: string;
+    items: OpsError[];
+    cursor: number | null;
+    error: string;
+  }>({ key: connectionKey, items: EMPTY_ERRORS, cursor: null, error: "" });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const cursorRef = useRef<number | null>(null);
+  const cursorState = useRef<{ key: string; cursor: number | null }>({
+    key: connectionKey,
+    cursor: null,
+  });
   const generation = useRef(0);
   const controller = useRef<AbortController | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -28,14 +36,28 @@ export function useErrorFeed(
     (mode: "replace" | "more" = "replace") => {
       if (!current.current.active || !current.current.online)
         return Promise.resolve(false);
-      const before = mode === "more" ? cursorRef.current : null;
+      const before =
+        mode === "more" && cursorState.current.key === connectionKey
+          ? cursorState.current.cursor
+          : null;
       if (mode === "more" && before === null) return Promise.resolve(false);
       const epoch = ++generation.current;
       controller.current?.abort();
       const request = new AbortController();
       controller.current = request;
       setLoading(true);
-      setError("");
+      setFeed((prev) =>
+        prev.key === connectionKey
+          ? prev.error
+            ? { ...prev, error: "" }
+            : prev
+          : {
+              key: connectionKey,
+              items: EMPTY_ERRORS,
+              cursor: null,
+              error: "",
+            },
+      );
       const valid = () =>
         !request.signal.aborted &&
         epoch === generation.current &&
@@ -50,21 +72,33 @@ export function useErrorFeed(
             `/errors?category=${category}${before === null ? "" : `&before_id=${before}`}`,
           );
           if (!valid()) return false;
-          setItems((old) =>
-            [
+          cursorState.current = {
+            key: connectionKey,
+            cursor: response.next_cursor,
+          };
+          setFeed((prev) => ({
+            key: connectionKey,
+            items: [
               ...new Map(
-                (mode === "more"
-                  ? [...old, ...response.items]
+                (mode === "more" && prev.key === connectionKey
+                  ? [...prev.items, ...response.items]
                   : response.items
                 ).map((item) => [item.id, item]),
               ).values(),
             ].sort((a, b) => b.id - a.id),
-          );
-          cursorRef.current = response.next_cursor;
-          setCursor(response.next_cursor);
+            cursor: response.next_cursor,
+            error: "",
+          }));
           return true;
         } catch (reason) {
-          if (valid()) setError(errorMessage(reason));
+          if (valid()) {
+            setFeed((prev) => ({
+              key: connectionKey,
+              items: prev.key === connectionKey ? prev.items : EMPTY_ERRORS,
+              cursor: prev.key === connectionKey ? prev.cursor : null,
+              error: errorMessage(reason),
+            }));
+          }
           return false;
         } finally {
           if (valid()) {
@@ -80,12 +114,6 @@ export function useErrorFeed(
     [category, connectionKey],
   );
   useEffect(() => {
-    setItems([]);
-    setCursor(null);
-    cursorRef.current = null;
-    setError("");
-  }, [connectionKey]);
-  useEffect(() => {
     if (active && online) void load();
     else setLoading(false);
     return () => {
@@ -94,5 +122,12 @@ export function useErrorFeed(
       controller.current = null;
     };
   }, [active, online, connectionKey, load]);
-  return { items, cursor, loading, error, load };
+  const sameKey = feed.key === connectionKey;
+  return {
+    items: sameKey ? feed.items : EMPTY_ERRORS,
+    cursor: sameKey ? feed.cursor : null,
+    loading,
+    error: sameKey ? feed.error : "",
+    load,
+  };
 }

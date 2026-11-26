@@ -2,15 +2,15 @@ use crate::{
     actions::Actions,
     compat::{datetime, integer, parse_datetime, string, truthy},
     config_service::ConfigService,
+    credit,
     credit::{CreditController, Hooks},
-    credit_ownership,
-    daily_test::Schedule,
     error::{Error, Result},
-    execution::TestSlots,
     oauth_admission,
+    oauth_daily::Schedule,
     oauth_queries::{Coordinator, QueryOptions, Source},
     oauth_state::{OAuthState, Update},
-    quota, recovery_events, recovery_policy, recovery_rules,
+    operations::TestSlots,
+    quota, recovery_events, recovery_rules,
 };
 use chrono::{DateTime, Duration, Utc};
 use futures_util::future::BoxFuture;
@@ -103,10 +103,7 @@ impl Monitor {
         self.store.shared_snapshot()
     }
     pub fn generation(&self, id: i64) -> Result<i64> {
-        Ok(credit_ownership::generation(
-            self.shared_state()?.as_ref(),
-            id,
-        ))
+        Ok(credit::generation(self.shared_state()?.as_ref(), id))
     }
     pub fn model(&self) -> Result<String> {
         Ok(string(&self.config.current()?["oauth_recovery_test_model_id"]).to_owned())
@@ -115,7 +112,7 @@ impl Monitor {
         self.actions.audit(event, value);
     }
     pub async fn row(&self, id: i64) -> Result<Value> {
-        credit_ownership::account(&self.actions.queries.db, id).await
+        credit::account(&self.actions.queries.db, id).await
     }
     pub fn lease(&self, row: &Value) -> Result<crate::account_locks::Lease> {
         let parent = integer(&row["parent_account_id"])
@@ -127,7 +124,7 @@ impl Monitor {
     pub async fn inventory(&self, refresh: bool) -> Result<Arc<Vec<Value>>> {
         let mut cache = self.inventory.lock().await;
         if refresh || cache.0.is_none_or(|at| at.elapsed().as_secs() >= 60) {
-            let rows=self.actions.queries.db.all(&format!("{} AND lower(coalesce(platform,''))='openai' AND lower(coalesce(type,''))='oauth' ORDER BY id",credit_ownership::ACCOUNT_SELECT),&[]).await?;
+            let rows=self.actions.queries.db.all(&format!("{} AND lower(coalesce(platform,''))='openai' AND lower(coalesce(type,''))='oauth' ORDER BY id",credit::ACCOUNT_SELECT),&[]).await?;
             self.config.reconcile(&rows).await?;
             self.initialize_queries(&rows)?;
             self.queries.retain_accounts(&rows);
@@ -252,7 +249,7 @@ impl Monitor {
             return Ok(());
         }
         self.store.transaction(|state| {
-            if credit_ownership::generation(state, id) != generation {
+            if credit::generation(state, id) != generation {
                 return Ok(());
             }
             let intent = &mut state["scheduler"][id.to_string()]["recovery_intent"];
@@ -314,7 +311,7 @@ impl Monitor {
         self.tick_early_reset(&all_live, &config, now, limits.usage + limits.recovery)
             .await?;
         let early_state = self.shared_state()?;
-        let methods = recovery_policy::MethodIndex::from_config(&config);
+        let methods = recovery_rules::MethodIndex::from_config(&config);
         let rows = all_live
             .into_iter()
             .filter(|row| {
@@ -603,7 +600,7 @@ impl Monitor {
         update.methods = Some(BTreeMap::from([(id, method_generation)]));
         self.store.commit(update)?;
         let tested = if let Some(intent) = intent {
-            if let Some(method) = recovery_policy::method(&config, id) {
+            if let Some(method) = recovery_rules::method(&config, id) {
                 self.verify_recovery(
                     id,
                     &intent,

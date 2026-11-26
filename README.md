@@ -12,7 +12,7 @@
 
 ### 1. 多 Sub2API 实例管理与丝滑切换
 - **多实例档案管理**：支持保存多个 Sub2API 实例（自定义备注名与实例地址），集中管理主力、备用或多区域节点。
-- **系统级凭据隔离**：各实例的管理员 API Key 按规范化 `base_url` 独立存入系统安全凭据库（macOS Keychain / Android Keystore），绝不落盘明文配置文件。
+- **本机独立受保护凭据**：各实例的管理员 API Key 按规范化 `base_url` 独立存储（macOS 端以 `0600` 权限原子写入 `~/Library/Application Support/com.lich13.sub2ops/credentials.json`，不调用系统钥匙串，升级重装零授权弹窗；Android 端使用系统 Keystore 不可导出密钥加密存储），绝不混入普通偏好设置或前端持久化。
 - **全场景一键切换**：桌面侧栏、顶栏、设置页以及 **macOS 菜单栏快捷面板**均内置实例切换器，切换时自动调取本机凭据校验并刷新实时快照，无需重复输入密钥；凭据失效时自动弹出预填连接面板。
 
 ### 2. OAuth 与 API Key 智能额度监控与自动恢复
@@ -117,5 +117,5 @@ API 路由和传输类型定义在 `server/protocol`。修改类型后运行 `sh
 ## 安全规范
 
 - **最小暴露面**：Companion 具备账号调度与配置写权限，切勿直接暴露于公网。请仅绑定回环地址或受控容器内网，并通过 TLS 反向代理向客户端提供服务。
-- **凭据文件权限**：服务端管理员 API Key 与 Bark Device Key 写入时强制设置文件及锁权限为 `0600`，密钥绝不进入 URL、日志、审计输出或前端回显；客户端各实例的管理员 API Key 独立保存在系统级 Keychain / Keystore 中。
+- **凭据文件权限**：服务端管理员 API Key 与 Bark Device Key 写入时强制设置文件及锁权限为 `0600`，密钥绝不进入 URL、日志、审计输出或前端回显；客户端各实例的管理员 API Key 在 macOS 端以 `0600` 权限独立保存在应用专属目录 `credentials.json` 中，在 Android 端保存在系统 Keystore 加密私有目录中。
 - **Bark SSRF 防护**：Bark HTTPS 目标严格拒绝非公网字面 IP（含 IPv4 映射及特殊进制写法），支持官方 `api.day.app` 与公网自建域名（保留本地测试所需的 HTTP loopback）。

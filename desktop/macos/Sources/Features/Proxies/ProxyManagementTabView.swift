@@ -15,7 +15,7 @@ public struct ProxyManagementTabView: View {
         case confirmDelete([ProxyManagedRow])
         case quality(ProxyManagedRow, ProxyQualityResult)
         case credentials(ProxyManagedRow, ProxyCredentialsDTO)
-        case accounts(ProxyManagedRow, [ProxyAssociatedAccount])
+        case accounts(ProxyManagedRow, [AccountIdentity])
         case results(String, [(name: String, ok: Bool, message: String)])
 
         var id: String {

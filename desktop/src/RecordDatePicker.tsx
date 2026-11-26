@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CalendarDays, ChevronDown, X } from "lucide-react";
+import { isCleanEscape, useDialogFocus } from "./dialogFocus";
 import { useBackAction } from "./mobile";
 import {
   datePresets,
@@ -24,7 +25,9 @@ export default function RecordDatePicker({
     [draft, setDraft] = useState(value),
     [error, setError] = useState("");
   const root = useRef<HTMLDivElement>(null),
-    trigger = useRef<HTMLButtonElement>(null);
+    trigger = useRef<HTMLButtonElement>(null),
+    popover = useRef<HTMLDivElement>(null);
+  useDialogFocus(popover, open);
   const close = () => {
     setOpen(false);
     trigger.current?.focus({ preventScroll: true });
@@ -50,7 +53,7 @@ export default function RecordDatePicker({
       className="records-date-picker"
       ref={root}
       onKeyDown={(event) => {
-        if (event.key === "Escape" && open) {
+        if (open && isCleanEscape(event)) {
           event.stopPropagation();
           close();
         }
@@ -77,6 +80,7 @@ export default function RecordDatePicker({
       </button>
       {open && (
         <div
+          ref={popover}
           className="records-date-popover"
           role="dialog"
           aria-label="时间范围"

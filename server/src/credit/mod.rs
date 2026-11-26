@@ -1,20 +1,206 @@
+mod execution;
+pub mod rules;
+
 use crate::{
     actions::Actions,
     bark::Bark,
-    compat::{datetime, integer, parse_datetime, string, truthy},
-    credit_ownership, credit_rules,
+    compat::{config_revision, datetime, integer, parse_datetime, pick, string, truthy},
+    db::Database,
     error::{Error, Result},
-    execution::TestSlots,
     oauth_admission::{self, credential_fingerprint, AUTH_ERRORS},
     oauth_queries::Coordinator,
-    oauth_state::{available_credits, OAuthState},
-    quota, recovery_policy, recovery_rules,
+    oauth_state::{available_credits, validate_credit, OAuthState},
+    operations::TestSlots,
+    quota, recovery_rules,
 };
 use chrono::{DateTime, Duration, Utc};
 use futures_util::future::BoxFuture;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
+pub const ACCOUNT_SELECT: &str = "SELECT id,name,platform,type,credentials,nullif(to_jsonb(accounts)->>'parent_account_id','')::bigint AS parent_account_id,extra,status,schedulable,priority AS account_priority,concurrency,load_factor,proxy_id,temp_unschedulable_until,temp_unschedulable_reason,rate_limited_at,rate_limit_reset_at,overload_until,error_message,expires_at,auto_pause_on_expired,updated_at,(SELECT created_at FROM usage_logs WHERE account_id=accounts.id ORDER BY created_at DESC,id DESC LIMIT 1) AS last_success_at FROM accounts WHERE deleted_at IS NULL";
+
+pub async fn account(db: &Database, id: i64) -> Result<Value> {
+    db.one(&format!("{ACCOUNT_SELECT} AND id=$1"), &[id.into()])
+        .await?
+        .ok_or_else(|| Error::new(404, "账号不存在"))
+}
+
+pub fn signature(row: &Value) -> String {
+    let mut stable = pick(
+        row,
+        &[
+            "id",
+            "name",
+            "platform",
+            "type",
+            "parent_account_id",
+            "account_priority",
+            "priority",
+            "concurrency",
+            "expires_at",
+            "auto_pause_on_expired",
+        ],
+    );
+    stable["account_priority"] = priority(row).clone();
+    stable["priority"] = Value::Null;
+    stable["identity"] = identity(row);
+    stable["extra"] = row["extra"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(key, _)| !quota_extra(key))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect::<serde_json::Map<_, _>>()
+        .into();
+    config_revision(&stable)
+}
+
+fn quota_extra(key: &str) -> bool {
+    [
+        "codex_5h_",
+        "codex_7d_",
+        "codex_primary_",
+        "codex_secondary_",
+        "codex_spark_",
+        "codex_usage_",
+        "codex_reset_credit_",
+        "codex_credits_",
+        "codex_turn_ticket:",
+        "passive_usage_",
+    ]
+    .iter()
+    .any(|prefix| key.starts_with(prefix))
+        || matches!(
+            key,
+            "codex_auto_reset_credit_state"
+                | "codex_referral_snapshot"
+                | "codex_degradation_check"
+                | "codex_fingerprint_seed"
+                | "model_rate_limits"
+                | "antigravity_quota_scopes"
+                | "session_window_utilization"
+                | "upstream_billing_probe"
+                | "upstream_billing_rate_sync"
+                | "ollama_cloud_usage"
+                | "ollama_cloud_usage_snapshot"
+                | "ollama_cloud_usage_session"
+                | "opencode_go_usage_snapshot"
+                | "grok_billing_snapshot"
+                | "grok_usage_snapshot"
+                | "grok_quota_snapshot"
+                | "grok_sched_reset_at"
+                | "privacy_mode"
+                | "openai_compact_supported"
+                | "openai_compact_last_status"
+                | "openai_compact_last_error"
+                | "upstream_model_metadata"
+                | "quota_used"
+                | "quota_daily_used"
+                | "quota_daily_start"
+                | "quota_daily_reset_at"
+                | "quota_weekly_used"
+                | "quota_weekly_start"
+                | "quota_weekly_reset_at"
+                | "crs_synced_at"
+        )
+}
+
+fn priority(row: &Value) -> &Value {
+    row.get("account_priority").unwrap_or(&row["priority"])
+}
+
+pub fn identity(row: &Value) -> Value {
+    row.get("account_identity").cloned().unwrap_or_else(|| {
+        pick(
+            &row["credentials"],
+            &["plan_type", "chatgpt_account_id", "email"],
+        )
+    })
+}
+
+pub fn generation(state: &Value, id: i64) -> i64 {
+    integer(&state["scheduler"][id.to_string()]["manual_control"]["generation"]).unwrap_or(0)
+}
+
+pub fn owned(row: &Value, task: &Value, state: &Value) -> bool {
+    truthy(task)
+        && task["owns_pause"] == true
+        && row["schedulable"] == false
+        && task["signature"] == signature(row)
+        && (task["control_generation"].is_null()
+            || integer(&task["control_generation"])
+                == Some(generation(state, integer(&row["id"]).unwrap_or(0))))
+}
+
+pub fn save(store: &OAuthState, id: i64, task: &Value, changes: Value) -> Result<Value> {
+    let mut updated = task.clone();
+    updated
+        .as_object_mut()
+        .ok_or_else(Error::internal)?
+        .extend(changes.as_object().cloned().ok_or_else(Error::internal)?);
+    updated["revision"] = (integer(&task["revision"]).unwrap_or(0) + 1).into();
+    crate::oauth_state::retire_credit_fields(&mut updated);
+    validate_credit(&updated)?;
+    store.transaction(|state| {
+        let meta = &mut state["scheduler"][id.to_string()];
+        if !meta.is_object() {
+            *meta = json!({});
+        }
+        let current = &meta["auto_reset_credit"];
+        if !current["episode"].is_null() && current["episode"] != task["episode"]
+            || integer(&current["revision"]).unwrap_or(0) != integer(&task["revision"]).unwrap_or(0)
+        {
+            return Err(Error::new(409, "自动用卡任务已变化"));
+        }
+        if changes.get("model_test_job_id").is_none() && truthy(&current["model_test_job_id"]) {
+            updated["model_test_job_id"] = current["model_test_job_id"].clone();
+        }
+        meta["auto_reset_credit"] = updated.clone();
+        Ok(updated.clone())
+    })
+}
+
+pub(crate) fn parameter_change(store: &OAuthState, row: &Value) -> Result<Option<Value>> {
+    let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
+    let state = store.shared_snapshot()?;
+    let task = &state["scheduler"][id.to_string()]["auto_reset_credit"];
+    if task["owns_pause"] != true {
+        return Ok(None);
+    }
+    if !owned(row, task, &state) {
+        return Err(Error::new(409, "用卡暂停归属待核对，未修改参数"));
+    }
+    Ok(Some(task.clone()))
+}
+
+pub(crate) fn finish_parameter_change(store: &OAuthState, row: &Value, task: &Value) -> Result<()> {
+    let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
+    let state = store.shared_snapshot()?;
+    if row["schedulable"] != false
+        || task["control_generation"]
+            .as_i64()
+            .is_some_and(|expected| expected != generation(&state, id))
+    {
+        return Err(Error::new(409, "改参后的用卡暂停归属已变化，请重新核对"));
+    }
+    save(store, id, task, json!({"signature":signature(row)}))?;
+    Ok(())
+}
+
+pub(crate) fn cancel(store: &OAuthState, id: i64, at: DateTime<Utc>) -> Result<()> {
+    let state = store.shared_snapshot()?;
+    let task = &state["scheduler"][id.to_string()]["auto_reset_credit"];
+    if truthy(task) && string(&task["stage"]) != "recovered" {
+        save(
+            store,
+            id,
+            task,
+            json!({"stage":"manual","owns_pause":false,"next_at":null,"error_code":"","manual_at":datetime(at)}),
+        )?;
+    }
+    Ok(())
+}
 pub trait Hooks: Send + Sync {
     fn config(&self) -> Result<Value>;
     fn detection_held(&self, id: i64) -> Result<bool>;
@@ -37,6 +223,7 @@ pub trait Hooks: Send + Sync {
     ) -> BoxFuture<'_, Result<Value>>;
     fn recover(&self, id: i64, key: String) -> BoxFuture<'_, Result<Value>>;
 }
+
 #[derive(Clone)]
 pub struct CreditController {
     pub actions: Actions,
@@ -48,6 +235,7 @@ pub struct CreditController {
     pub clock: Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>,
     pub notice_lock: Arc<tokio::sync::Mutex<()>>,
 }
+
 impl CreditController {
     pub fn new(
         actions: Actions,
@@ -80,13 +268,13 @@ impl CreditController {
         )
     }
     pub async fn row(&self, id: i64) -> Result<Value> {
-        match credit_ownership::account(&self.actions.queries.db, id).await {
+        match account(&self.actions.queries.db, id).await {
             Err(e) if e.status.as_u16() == 404 => Ok(Value::Null),
             other => other,
         }
     }
     pub fn save(&self, id: i64, task: &Value, changes: Value) -> Result<Value> {
-        credit_ownership::save(&self.store, id, task, changes)
+        save(&self.store, id, task, changes)
     }
     pub fn audit(&self, id: i64, action: &str, fields: Value) {
         let mut payload = json!({"account_id":id,"action":action});
@@ -107,7 +295,7 @@ impl CreditController {
         let id = integer(&row["id"]).unwrap_or(0);
         let config = self.hooks.config()?;
         if !row.is_object()
-            || recovery_policy::method(&config, id).is_none()
+            || recovery_rules::method(&config, id).is_none()
             || config["oauth_recovery_monitor_enabled"] == false
             || self.hooks.detection_held(id)?
             || truthy(&row["parent_account_id"])
@@ -122,21 +310,15 @@ impl CreditController {
         Ok(oauth_admission::automatic_eligible(&candidate, at))
     }
     pub fn owned(&self, row: &Value, task: &Value) -> Result<bool> {
-        Ok(credit_ownership::owned(
-            row,
-            task,
-            self.store.shared_snapshot()?.as_ref(),
-        ))
+        Ok(owned(row, task, self.store.shared_snapshot()?.as_ref()))
     }
     pub fn available(&self, row: &Value, task: &Value, at: DateTime<Utc>) -> Result<bool> {
-        Ok(credit_rules::available(
-            row,
-            &self.saved_quota(row, at)?,
-            task,
-            at,
-        ))
+        Ok(rules::available(row, &self.saved_quota(row, at)?, task, at))
     }
     pub async fn depletion(&self, row: &Value, at: DateTime<Utc>, held: bool) -> Result<Value> {
+        if parse_datetime(&row["rate_limit_reset_at"]).is_none_or(|t| t <= at) {
+            return Ok(Value::Null);
+        }
         if !self.eligible(row, at, held)? {
             return Ok(Value::Null);
         }
@@ -153,17 +335,16 @@ impl CreditController {
         let summary = quota::summary_from_result(row, &saved);
         let windows = quota::windows_by_key(&summary["ui_windows"]);
         let seven = windows.get("codex_7d").unwrap_or(&Value::Null);
-        if parse_datetime(&row["rate_limit_reset_at"]).is_none_or(|t| t <= at)
-            || !truthy(&saved["success"])
+        if !truthy(&saved["success"])
             || !quota::percent(&seven["used_percent"]).is_some_and(|p| p >= 100.0)
         {
             return Ok(Value::Null);
         }
-        let evidence = credit_rules::upstream_evidence(&self.actions.queries.db, row, at).await?;
+        let evidence = rules::upstream_evidence(&self.actions.queries.db, row, at).await?;
         if evidence["source"] != "upstream_error" {
             return Ok(Value::Null);
         }
-        Ok(credit_rules::depletion_evidence(row, &saved, &evidence, at))
+        Ok(rules::depletion_evidence(row, &saved, &evidence, at))
     }
     pub(crate) fn positive_credit_reason(&self, row: &Value, at: DateTime<Utc>) -> &'static str {
         match available_credits(&row["extra"]["codex_reset_credit_snapshot"], at) {
@@ -183,22 +364,77 @@ impl CreditController {
         let Some(observed) = parse_datetime(&evidence["evidence_at"]) else {
             return Ok(Value::Null);
         };
-        // The evidence always lies inside the current 7d window, so an earlier
-        // trigger from before that window belongs to a finished round even when
-        // its recovery was never observed (feature off or service down).
         let window_start = parse_datetime(&evidence["reset_at"])
             .zip(quota::number(&evidence["window_minutes"]))
             .map(|(reset, minutes)| reset - Duration::milliseconds((minutes * 60000.0) as i64));
         let mut changed = false;
-        let result=self.store.transaction(|state| {let meta=&mut state["scheduler"][id.to_string()];if !meta.is_object() {*meta=json!({});}let previous=&meta["credit_admission"];let recovered=parse_datetime(&previous["recovered_at"]);let is_new=!truthy(previous) || recovered.is_some_and(|t|observed>t) || parse_datetime(&previous["trigger_at"]).zip(window_start).is_some_and(|(old,start)|old<start);
-            let trigger=if is_new {Some(observed)} else {parse_datetime(&previous["trigger_at"])};let checked=at;
-            let why=if trigger.is_none_or(|t|checked>=t+Duration::seconds(300)) {"consume_deadline"} else if recovered.is_some_and(|t|observed<=t) {"block_cleared"} else {reason};
-            let trigger=trigger.ok_or_else(||Error::new(503,"自动用卡触发时间无效"))?;let mut value=json!({"trigger_at":datetime(trigger),"checked_at":datetime(checked),"reason":why,"evidence_fingerprint":if is_new {&evidence["evidence_fingerprint"]} else {&previous["evidence_fingerprint"]}});if !is_new {if let Some(recovered)=recovered {value["recovered_at"]=datetime(recovered).into();}}
-            let without_clock=|v:&Value|v.as_object().into_iter().flatten().filter(|(key,_)|key.as_str()!="checked_at").map(|(k,v)|(k.clone(),v.clone())).collect::<serde_json::Map<_,_>>();changed=without_clock(previous)!=without_clock(&value);if changed {meta["credit_admission"]=value;}
-            if !why.is_empty() {Ok(Value::Null)} else {let mut evidence=evidence.clone();evidence["evidence_at"]=datetime(trigger).into();Ok(evidence)}
+        let result = self.store.transaction(|state| {
+            let meta = &mut state["scheduler"][id.to_string()];
+            if !meta.is_object() {
+                *meta = json!({});
+            }
+            let previous = &meta["credit_admission"];
+            let recovered = parse_datetime(&previous["recovered_at"]);
+            let is_new = !truthy(previous)
+                || recovered.is_some_and(|t| observed > t)
+                || parse_datetime(&previous["trigger_at"])
+                    .zip(window_start)
+                    .is_some_and(|(old, start)| old < start);
+            let trigger = if is_new {
+                Some(observed)
+            } else {
+                parse_datetime(&previous["trigger_at"])
+            };
+            let checked = at;
+            let why = if trigger.is_none_or(|t| checked >= t + Duration::seconds(300)) {
+                "consume_deadline"
+            } else if recovered.is_some_and(|t| observed <= t) {
+                "block_cleared"
+            } else {
+                reason
+            };
+            let trigger = trigger.ok_or_else(|| Error::new(503, "自动用卡触发时间无效"))?;
+            let mut value = json!({
+                "trigger_at": datetime(trigger),
+                "checked_at": datetime(checked),
+                "reason": why,
+                "evidence_fingerprint": if is_new { &evidence["evidence_fingerprint"] } else { &previous["evidence_fingerprint"] }
+            });
+            if !is_new {
+                if let Some(recovered) = recovered {
+                    value["recovered_at"] = datetime(recovered).into();
+                }
+            }
+            let without_clock = |v: &Value| {
+                v.as_object()
+                    .into_iter()
+                    .flatten()
+                    .filter(|(key, _)| key.as_str() != "checked_at")
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect::<serde_json::Map<_, _>>()
+            };
+            changed = without_clock(previous) != without_clock(&value);
+            if changed {
+                meta["credit_admission"] = value;
+            }
+            if !why.is_empty() {
+                Ok(Value::Null)
+            } else {
+                let mut evidence = evidence.clone();
+                evidence["evidence_at"] = datetime(trigger).into();
+                Ok(evidence)
+            }
         })?;
         if changed {
-            self.audit(id,if result.is_null() {"credit_skipped"} else {"credit_admitted"},json!({"reason":self.store.shared_snapshot()?["scheduler"][id.to_string()]["credit_admission"]["reason"]}));
+            self.audit(
+                id,
+                if result.is_null() {
+                    "credit_skipped"
+                } else {
+                    "credit_admitted"
+                },
+                json!({"reason":self.store.shared_snapshot()?["scheduler"][id.to_string()]["credit_admission"]["reason"]}),
+            );
         }
         Ok(result)
     }
@@ -242,7 +478,77 @@ impl CreditController {
                     return Ok(false);
                 }
             }
+        } else if rules::manual(&task) {
+            if row.is_object()
+                && self.eligible(row, at, false)?
+                && recovery_rules::confirmed(row)
+                && self.available(row, &task, at)?
+            {
+                return Ok(true);
+            }
+            if self.hooks.config()?["oauth_auto_reset_credit_enabled"] != true {
+                return Ok(false);
+            }
+            let control = self.store.shared_snapshot()?["scheduler"][id.to_string()]
+                ["manual_control"]
+                .clone();
+            let Some(changed) =
+                parse_datetime(&control["at"]).filter(|_| control["enabled"] == true)
+            else {
+                return Ok(false);
+            };
+            if parse_datetime(&row["rate_limit_reset_at"]).is_none_or(|t| t <= at) {
+                self.observe_recovery(row, at)?;
+                return Ok(false);
+            }
+            if parse_datetime(&row["rate_limited_at"]).is_some_and(|rl| rl <= changed)
+                && parse_datetime(&row["updated_at"]).is_some_and(|u| u <= changed)
+                && parse_datetime(&row["rate_limit_reset_at"])
+                    .map(datetime)
+                    .as_deref()
+                    == task["reset_at"].as_str()
+            {
+                return Ok(false);
+            }
+            let evidence = self.depletion(row, at, false).await?;
+            if !truthy(&evidence) {
+                self.observe_recovery(row, at)?;
+                return Ok(false);
+            }
+            if parse_datetime(&evidence["evidence_at"]).is_none_or(|observed| observed <= changed)
+                || evidence["evidence_fingerprint"] == task["evidence_fingerprint"]
+            {
+                return Ok(false);
+            }
+            return Ok(truthy(&self.admit_episode(row, &evidence, at)?));
         } else if truthy(&task) {
+            if parse_datetime(&task["next_at"]).is_some_and(|due| due > at)
+                && self.guard_reason(id, row, &task, at)?.is_empty()
+                && !rules::expired(&task, at)
+                && !truthy(&row["extra"]["auto_reset_credit_enabled"])
+            {
+                if truthy(&task["attempt_at"]) {
+                    return Ok(false);
+                }
+                if task["stage"] != "pausing" && !truthy(&task["owns_pause"]) {
+                    if parse_datetime(&row["rate_limit_reset_at"])
+                        .map(datetime)
+                        .as_deref()
+                        == task["reset_at"].as_str()
+                        && task["signature"] == signature(row)
+                    {
+                        return Ok(false);
+                    }
+                    let evidence = self.depletion(row, at, false).await?;
+                    if truthy(&evidence)
+                        && ["reset_at", "evidence_fingerprint", "evidence_source"]
+                            .iter()
+                            .all(|key| task[*key] == evidence[*key])
+                    {
+                        return Ok(false);
+                    }
+                }
+            }
             return Ok(true);
         }
         if self.hooks.config()?["oauth_auto_reset_credit_enabled"] != true {
@@ -283,7 +589,16 @@ impl CreditController {
             return Ok(json!({}));
         }
         let mut task = evidence;
-        task.as_object_mut().unwrap().extend(json!({"episode":uuid::Uuid::new_v4().simple().to_string(),"stage":"waiting","account_name":string(&row["name"])}).as_object().unwrap().clone());
+        task.as_object_mut().unwrap().extend(
+            json!({
+                "episode": uuid::Uuid::new_v4().simple().to_string(),
+                "stage": "waiting",
+                "account_name": string(&row["name"])
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        );
         let policy = self.policy_fields(row, &task)?;
         task.as_object_mut()
             .unwrap()
@@ -307,11 +622,18 @@ impl CreditController {
         let trigger = parse_datetime(&task["evidence_at"]);
         let state = self.store.shared_snapshot()?;
         let meta = &state["scheduler"][id.to_string()];
-        Ok(
-            json!({"policy_version":1,"trigger_at":trigger.map(datetime),"consume_deadline_at":trigger.map(|t|datetime(t+Duration::seconds(300))),"verification_deadline_at":null,"policy_control_generation":credit_ownership::generation(&state,id),"policy_detection_version":self.hooks.detection_version(id)?,"policy_method":recovery_policy::method(&self.hooks.config()?,id),"policy_method_generation":integer(&meta["recovery_method_generation"]).unwrap_or(0),"verification_dispatched":false}),
-        )
+        Ok(json!({
+            "policy_version": 1,
+            "trigger_at": trigger.map(datetime),
+            "consume_deadline_at": trigger.map(|t| datetime(t + Duration::seconds(300))),
+            "verification_deadline_at": null,
+            "policy_control_generation": generation(&state, id),
+            "policy_detection_version": self.hooks.detection_version(id)?,
+            "policy_method": recovery_rules::method(&self.hooks.config()?, id),
+            "policy_method_generation": integer(&meta["recovery_method_generation"]).unwrap_or(0),
+            "verification_dispatched": false
+        }))
     }
-
     pub fn guard_reason(
         &self,
         id: i64,
@@ -338,10 +660,10 @@ impl CreditController {
             return Ok("auth_paused");
         }
         let config = self.hooks.config()?;
-        if json!(credit_ownership::generation(&state, id)) != task["policy_control_generation"]
+        if json!(generation(&state, id)) != task["policy_control_generation"]
             || json!(integer(&meta["recovery_method_generation"]).unwrap_or(0))
                 != task["policy_method_generation"]
-            || json!(recovery_policy::method(&config, id)) != task["policy_method"]
+            || json!(recovery_rules::method(&config, id)) != task["policy_method"]
         {
             return Ok("manual_intervention");
         }
@@ -366,7 +688,7 @@ impl CreditController {
                 && task["test_success"] == true
                 && truthy(&task["clear_requested_at"])
                 && row["schedulable"] == true
-                && task["signature"] == credit_ownership::signature(row))
+                && task["signature"] == signature(row))
         {
             return Ok("ownership_changed");
         }
@@ -378,7 +700,7 @@ impl CreditController {
         } else {
             string(&task["error_code"])
         };
-        json!({"job_id":task["model_test_job_id"],"episode":task["episode"],"account_id":id,"account_name":if truthy(&row["name"]) {string(&row["name"])} else {string(&task["account_name"])},"outcome":task["outcome"],"reason":credit_rules::reason(code),"reason_code":code,"trigger_at":task["trigger_at"],"attempt_at":task["attempt_at"],"reset_completed_at":task["reset_completed_at"],"completed_at":datetime(at),"verification_method":if truthy(&task["verification_method"]) {&task["verification_method"]} else {&task["policy_method"]},"model_id":task["model_id"],"status":"pending","attempts":0,"next_at":datetime(at)})
+        json!({"job_id":task["model_test_job_id"],"episode":task["episode"],"account_id":id,"account_name":if truthy(&row["name"]) {string(&row["name"])} else {string(&task["account_name"])},"outcome":task["outcome"],"reason":rules::reason(code),"reason_code":code,"trigger_at":task["trigger_at"],"attempt_at":task["attempt_at"],"reset_completed_at":task["reset_completed_at"],"completed_at":datetime(at),"verification_method":if truthy(&task["verification_method"]) {&task["verification_method"]} else {&task["policy_method"]},"model_id":task["model_id"],"status":"pending","attempts":0,"next_at":datetime(at)})
     }
     #[expect(
         clippy::too_many_arguments,
@@ -398,7 +720,7 @@ impl CreditController {
             return Ok(task.clone());
         }
         let mut finished = task.clone();
-        finished.as_object_mut().ok_or_else(Error::internal)?.extend(json!({"revision":integer(&task["revision"]).unwrap_or(0)+1,"stage":"finished","outcome":credit_rules::outcome(task),"result_reason":reason,"error_code":reason,"completed_at":datetime(at),"next_at":null}).as_object().unwrap().clone());
+        finished.as_object_mut().ok_or_else(Error::internal)?.extend(json!({"revision":integer(&task["revision"]).unwrap_or(0)+1,"stage":"finished","outcome":rules::outcome(task),"result_reason":reason,"error_code":reason,"completed_at":datetime(at),"next_at":null}).as_object().unwrap().clone());
         if matches!(reason, "ownership_changed" | "account_deleted") {
             finished["owns_pause"] = false.into();
         }
@@ -497,14 +819,31 @@ impl CreditController {
     }
     pub fn account_deleted(&self, id: i64, at: DateTime<Utc>) -> Result<()> {
         self.store.transaction(|state| {
-            let Some(meta) = state["scheduler"].get_mut(id.to_string()) else { return Ok(()); };
-            if let Some(task) = meta.get_mut("auto_reset_credit").filter(|task| task.is_object() && !credit_rules::manual(task)
-                && !matches!(string(&task["stage"]), "finished" | "recovered" | "closed")) {
-                let outcome = credit_rules::outcome(task);
-                let revision = integer(&task["revision"]).unwrap_or(0)+1;
-                task.as_object_mut().unwrap().extend(json!({"stage":"finished", "outcome":outcome,
-                    "result_reason":"account_deleted", "error_code":"account_deleted", "completed_at":datetime(at),
-                    "owns_pause":false, "next_at":null, "revision":revision}).as_object().unwrap().clone());
+            let Some(meta) = state["scheduler"].get_mut(id.to_string()) else {
+                return Ok(());
+            };
+            if let Some(task) = meta.get_mut("auto_reset_credit").filter(|task| {
+                task.is_object()
+                    && !rules::manual(task)
+                    && !matches!(string(&task["stage"]), "finished" | "recovered" | "closed")
+            }) {
+                let outcome = rules::outcome(task);
+                let revision = integer(&task["revision"]).unwrap_or(0) + 1;
+                task.as_object_mut().unwrap().extend(
+                    json!({
+                        "stage": "finished",
+                        "outcome": outcome,
+                        "result_reason": "account_deleted",
+                        "error_code": "account_deleted",
+                        "completed_at": datetime(at),
+                        "owns_pause": false,
+                        "next_at": null,
+                        "revision": revision
+                    })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+                );
             }
             suppress_pending_notices(meta);
             Ok(())
@@ -586,7 +925,7 @@ impl CreditController {
                     }
                     item["attempts"] = json!(count + 1);
                     item["next_at"] = datetime(
-                        at + Duration::seconds(crate::execution::retry_delay(count.max(0) as u64)),
+                        at + Duration::seconds(crate::operations::retry_delay(count.max(0) as u64)),
                     )
                     .into();
                     Ok(item.clone())

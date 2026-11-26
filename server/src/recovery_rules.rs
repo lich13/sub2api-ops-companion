@@ -1,12 +1,183 @@
 use crate::{
     compat::{datetime, integer, parse_datetime, string, truthy},
-    error::Result,
+    error::{Error, Result},
     oauth_admission::{self, MIN_QUERY_SECONDS},
     oauth_state::query_metadata,
     quota,
 };
 use chrono::{DateTime, Duration, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::{BTreeSet, HashSet};
+
+pub const CONNECTION_IDS: &str = "oauth_recovery_connection_account_ids";
+pub const MODEL_IDS: &str = "oauth_recovery_model_account_ids";
+pub const SEEN_IDS: &str = "oauth_recovery_seen_account_ids";
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub struct Policy {
+    pub interval_seconds: i64,
+    pub max_retries: i64,
+}
+impl Default for Policy {
+    fn default() -> Self {
+        Self {
+            interval_seconds: 10,
+            max_retries: 3,
+        }
+    }
+}
+impl Policy {
+    pub fn config(config: &Value) -> Result<Self> {
+        let defaults = Self::default();
+        let policy = Self {
+            interval_seconds: integer(&config["connection_test_retry_interval_seconds"])
+                .unwrap_or(defaults.interval_seconds),
+            max_retries: integer(&config["connection_test_max_retries"])
+                .unwrap_or(defaults.max_retries),
+        };
+        policy.validate()?;
+        Ok(policy)
+    }
+    pub fn saved(value: &Value) -> Result<Option<Self>> {
+        value
+            .get("retry_policy")
+            .map(|raw| {
+                let policy: Self = serde_json::from_value(raw.clone())
+                    .map_err(|_| Error::new(503, "连接测试重试配置无效"))?;
+                policy.validate()?;
+                Ok(policy)
+            })
+            .transpose()
+    }
+    fn validate(self) -> Result<()> {
+        if (1..=3600).contains(&self.interval_seconds) && (0..=10).contains(&self.max_retries) {
+            Ok(())
+        } else {
+            Err(Error::new(503, "连接测试重试配置无效"))
+        }
+    }
+    pub fn next(self, completed_attempts: i64, at: DateTime<Utc>) -> Option<String> {
+        (completed_attempts <= self.max_retries)
+            .then(|| datetime(at + Duration::seconds(self.interval_seconds)))
+    }
+}
+
+pub fn retryable(result: &Value) -> bool {
+    let code = string(&result["error_code"]).trim().to_ascii_lowercase();
+    result["success"] == false
+        && !truthy(&result["uncertain"])
+        && !truthy(&result["skipped"])
+        && crate::recovery_events::auth_code(&code).is_empty()
+        && !matches!(
+            code.as_str(),
+            "403"
+                | "http_403"
+                | "account_not_found"
+                | "manual_intervention"
+                | "invalid_grant"
+                | "unauthorized"
+        )
+}
+
+pub struct MethodIndex {
+    default_connection: bool,
+    models: HashSet<i64>,
+    connections: HashSet<i64>,
+}
+
+impl MethodIndex {
+    pub fn from_config(config: &Value) -> Self {
+        let default_connection = config[CONNECTION_IDS].is_null() && config[MODEL_IDS].is_null();
+        let models = config[MODEL_IDS]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(integer)
+            .collect();
+        let connections = config[CONNECTION_IDS]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(integer)
+            .collect();
+        Self {
+            default_connection,
+            models,
+            connections,
+        }
+    }
+
+    pub fn method(&self, id: i64) -> Option<&'static str> {
+        if self.default_connection {
+            return Some("connection");
+        }
+        if self.models.contains(&id) {
+            Some("model")
+        } else if self.connections.contains(&id) {
+            Some("connection")
+        } else {
+            None
+        }
+    }
+}
+
+pub fn account_ids(value: &Value) -> Result<BTreeSet<i64>> {
+    let items = value
+        .as_array()
+        .ok_or_else(|| Error::new(422, "恢复账号必须为正整数 ID 列表"))?;
+    items
+        .iter()
+        .map(|v| {
+            integer(v)
+                .filter(|id| v.is_i64() && *id > 0)
+                .ok_or_else(|| Error::new(422, "恢复账号必须为正整数 ID 列表"))
+        })
+        .collect()
+}
+pub fn method(config: &Value, id: i64) -> Option<&'static str> {
+    if config[CONNECTION_IDS].is_null() && config[MODEL_IDS].is_null() {
+        return Some("connection");
+    }
+    if config[MODEL_IDS]
+        .as_array()
+        .is_some_and(|a| a.iter().any(|v| integer(v) == Some(id)))
+    {
+        Some("model")
+    } else if config[CONNECTION_IDS]
+        .as_array()
+        .is_some_and(|a| a.iter().any(|v| integer(v) == Some(id)))
+    {
+        Some("connection")
+    } else {
+        None
+    }
+}
+pub fn intent_method(config: &Value, id: i64, intent: &Value) -> Option<&'static str> {
+    if intent["kind"] == "early_reset" {
+        (config["oauth_early_reset_enabled"] == true
+            || intent["status"] == "testing"
+            || matches!(
+                string(&intent["waiting_reason"]),
+                "model_verification_pending" | "account_busy"
+            ))
+        .then(|| method(config, id).unwrap_or("connection"))
+    } else {
+        method(config, id)
+    }
+}
+pub fn eligible_ids(rows: &[Value]) -> BTreeSet<i64> {
+    rows.iter()
+        .filter(|row| {
+            row["platform"] == "openai"
+                && row["type"] == "oauth"
+                && !truthy(&row["deleted_at"])
+                && !truthy(&row["parent_account_id"])
+                && !truthy(&row["extra"]["parent_account_id"])
+        })
+        .filter_map(|row| integer(&row["id"]))
+        .collect()
+}
 pub fn threshold(value: &Value) -> Value {
     let payload: Value = serde_json::from_str(string(value).trim()).unwrap_or(Value::Null);
     if !payload.is_object()

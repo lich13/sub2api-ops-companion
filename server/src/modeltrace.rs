@@ -21,17 +21,6 @@ pub fn manifest() -> Value {
     serde_json::from_str(include_str!("../resources/modeltrace/manifest.json"))
         .expect("bundled manifest")
 }
-pub fn bundled() -> Result<(Value, Value)> {
-    let manifest = manifest();
-    let raw = include_str!("../resources/modeltrace/unified_bank.json");
-    let digest = sha256(raw);
-    if manifest["files"]["bank"]["sha256"] != digest {
-        return Err(Error::new(503, "模型指纹库校验失败"));
-    }
-    let data: Value = serde_json::from_str(raw)?;
-    let version = json!({"revision":manifest["revision"],"sha256":digest,"built_at":data["built_at"],"analyzer_version":manifest.get("analyzerVersion").unwrap_or(&json!(1))});
-    Ok((data, version))
-}
 pub fn bundled_compiled() -> Result<(CompiledBank, Value)> {
     let manifest = manifest();
     let raw = include_str!("../resources/modeltrace/unified_bank.json");
@@ -161,14 +150,6 @@ pub fn validate(text: &str) -> Vec<usize> {
         })
         .collect()
 }
-fn vector(value: &Value) -> Vec<f64> {
-    value
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|v| v.as_f64().unwrap_or(0.0))
-        .collect()
-}
 fn mean(v: &[f64]) -> f64 {
     v.iter().sum::<f64>() / v.len().max(1) as f64
 }
@@ -184,9 +165,6 @@ fn dot(a: &[f64], b: &[f64]) -> f64 {
 fn normalized(v: Vec<f64>) -> Vec<f64> {
     let scale = dot(&v, &v).sqrt().max(1e-12);
     v.into_iter().map(|x| x / scale).collect()
-}
-fn matrix(value: &Value) -> Vec<Vec<f64>> {
-    value.as_array().into_iter().flatten().map(vector).collect()
 }
 fn subtract_basis_vec(mut v: Vec<f64>, basis: &[Vec<f64>]) -> Vec<f64> {
     for row in basis {
@@ -210,6 +188,7 @@ fn similarities_vec(unit: &[f64], rows: &[Vec<f64>]) -> Vec<f64> {
     rows.iter().map(|row| dot(unit, row)).collect()
 }
 
+#[derive(Debug, PartialEq)]
 pub struct CompiledBank {
     built_at: Value,
     hellinger_mean: Vec<f64>,
@@ -382,7 +361,7 @@ impl CompiledBank {
         let mut normalized_model_ids = std::collections::HashSet::with_capacity(model_count);
         let mut models = Vec::with_capacity(model_count);
         for m in parsed.models {
-            normalized_model_ids.insert(crate::lm_verdict::normalize(&m.id));
+            normalized_model_ids.insert(crate::model_verdict::normalize(&m.id));
             exact_model_ids.insert(m.id.clone());
             models.push((Value::String(m.id), Value::String(m.display_name)));
         }
@@ -409,55 +388,12 @@ impl CompiledBank {
         })
     }
 
-    pub fn compile(data: &Value) -> Result<Self> {
-        crate::fingerprint_bank::validate(data)?;
-        let invalid = || Error::new(503, "指纹库数据无效");
-        let models = data["models"]
-            .as_array()
-            .ok_or_else(invalid)?
-            .iter()
-            .map(|m| (m["id"].clone(), m["display_name"].clone()))
-            .collect::<Vec<_>>();
-        let exact_model_ids = models
-            .iter()
-            .filter_map(|(id, _)| id.as_str().map(str::to_owned))
-            .collect();
-        let normalized_model_ids = models
-            .iter()
-            .map(|(id, _)| crate::lm_verdict::normalize(crate::compat::string(id)))
-            .collect();
-        let hellinger = &data["robust"]["hellinger"];
-        let ordered = &data["robust"]["ordered_blocks"];
-        Ok(Self {
-            built_at: data["built_at"].clone(),
-            hellinger_mean: vector(&hellinger["feature_mean"]),
-            hellinger_scale: vector(&hellinger["feature_scale"]),
-            hellinger_basis: matrix(&hellinger["nuisance_basis"]),
-            hellinger_centroids: matrix(&hellinger["centroids"]),
-            ordered_weight: ordered["weight"].as_f64().unwrap_or(0.0),
-            ordered_mean: vector(&ordered["feature_mean"]),
-            ordered_scale: vector(&ordered["feature_scale"]),
-            ordered_env_centroids: ordered["environment_centroids"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .map(matrix)
-                .collect(),
-            ordered_basis: matrix(&ordered["nuisance_basis"]),
-            ordered_centroids: matrix(&ordered["centroids"]),
-            models,
-            exact_model_ids,
-            normalized_model_ids,
-            betas: [
-                data["calibration"]["1"]["beta"].as_f64(),
-                data["calibration"]["2"]["beta"].as_f64(),
-                data["calibration"]["3"]["beta"].as_f64(),
-            ],
-        })
-    }
-
     pub fn built_at(&self) -> &Value {
         &self.built_at
+    }
+
+    pub fn models(&self) -> &[(Value, Value)] {
+        &self.models
     }
 
     pub fn contains_exact(&self, model: &str) -> bool {
@@ -465,7 +401,7 @@ impl CompiledBank {
     }
 
     pub fn contains_policy(&self, policy: &Value) -> bool {
-        let target = crate::lm_verdict::normalize(crate::verdict_policy::target(policy));
+        let target = crate::model_verdict::normalize(crate::model_verdict::target(policy));
         self.normalized_model_ids.contains(&target)
     }
 
@@ -606,23 +542,4 @@ impl CompiledBank {
             json!({"prediction":results[0]["model"],"prediction_name":results[0]["display_name"],"probability":results[0]["probability"],"used_outputs":valid.len(),"results":results,"bank_version":version}),
         )
     }
-}
-
-pub fn analyze(outputs: &[String], snapshot: &(Value, Value)) -> Result<Value> {
-    if outputs.len() > 3 {
-        return Err(Error::new(422, "最多分析三组样本"));
-    }
-    let (data, version) = snapshot;
-    let valid = outputs
-        .iter()
-        .map(|text| validate(text))
-        .filter(|numbers| numbers.len() >= 80)
-        .collect::<Vec<_>>();
-    if valid.is_empty() {
-        return Ok(Value::Null);
-    }
-    // Snapshots are normally validated when installed, but analysis must also
-    // reject malformed dimensions and finite inputs that overflow arithmetic.
-    let compiled = CompiledBank::compile(data)?;
-    compiled.analyze_valid(&valid, version)
 }

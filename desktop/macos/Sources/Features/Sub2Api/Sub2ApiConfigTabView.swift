@@ -295,8 +295,6 @@ public struct Sub2ApiConfigTabView: View {
         }
     }
 
-    public typealias ConfigIssue = HostFieldIssue
-
     public struct ConfigDocumentDTO: Codable, Sendable, Equatable {
         public var available: Bool
         public var editable: Bool
@@ -722,7 +720,7 @@ public struct Sub2ApiConfigTabView: View {
         let fields = visibleFields
         let activeGroupLabel = doc.catalog.groups.first(where: { $0.id == selectedGroup })?.label ?? selectedGroup
         let isSearching = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let issuesByPath: [String: [ConfigIssue]] = issues.isEmpty
+        let issuesByPath: [String: [HostFieldIssue]] = issues.isEmpty
             ? [:]
             : Dictionary(grouping: issues, by: \.path)
 
@@ -809,7 +807,7 @@ public struct Sub2ApiConfigTabView: View {
         return runtime?.effective ?? field.default_value
     }
 
-    private func fieldRow(_ field: CatalogField, doc: ConfigDocumentDTO, fieldIssues: [ConfigIssue]) -> some View {
+    private func fieldRow(_ field: CatalogField, doc: ConfigDocumentDTO, fieldIssues: [HostFieldIssue]) -> some View {
         let runtime = doc.values[field.path]
         let change = draft[field.path]
         let configured = change != nil ? (change?.remove != true) : (runtime?.configured == true)

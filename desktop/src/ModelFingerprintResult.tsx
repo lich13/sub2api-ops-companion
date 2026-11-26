@@ -120,9 +120,7 @@ export function TokenizerResult({ job }: { job: ModelTestResult }) {
         )}
       </dl>
       {value?.baseline_drift && (
-        <p className="bad-text">
-          两次基线的输入 Token 用量不一致，分词器结果仅供参考。
-        </p>
+        <p className="bad-text">两次基线的输入 Token 用量不一致。</p>
       )}
       {value?.error && <p className="bad-text">{value.error}</p>}
       {!!report?.candidates.length && (

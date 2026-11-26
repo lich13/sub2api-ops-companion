@@ -161,6 +161,15 @@ pub fn operation_valid(data: &Value) -> bool {
             .is_none_or(|v| data["action"] == "test" && scheduled_at_valid(v))
 }
 
+pub fn valid_template_id(id: &str) -> bool {
+    matches!(id, "full" | "degraded" | "takeover")
+        || id.strip_prefix("custom-").is_some_and(|v| {
+            v.len() == 24
+                && v.bytes()
+                    .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+        })
+}
+
 pub fn templates_valid(data: &Value) -> bool {
     let Some(templates) = data["templates"].as_object() else {
         return false;
@@ -169,13 +178,7 @@ pub fn templates_valid(data: &Value) -> bool {
         && data["version"].is_string()
         && templates.len() <= 32
         && templates.iter().all(|(id, value)| {
-            let builtin = matches!(id.as_str(), "full" | "degraded" | "takeover");
-            let custom = id.strip_prefix("custom-").is_some_and(|v| {
-                v.len() == 24
-                    && v.bytes()
-                        .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-            });
-            (builtin || custom)
+            valid_template_id(id)
                 && value["whitelist"]
                     .as_array()
                     .is_some_and(|v| v.iter().all(Value::is_string))

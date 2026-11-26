@@ -6,6 +6,7 @@ import SwiftUI
 public struct LinearMenuEntry: Identifiable, Sendable {
     public let id: String
     public let title: String
+    public var icon: String?
     public var checked: Bool
     public var destructive: Bool
     public var disabled: Bool
@@ -15,6 +16,7 @@ public struct LinearMenuEntry: Identifiable, Sendable {
     public init(
         id: String,
         title: String,
+        icon: String? = nil,
         checked: Bool = false,
         destructive: Bool = false,
         disabled: Bool = false,
@@ -23,6 +25,7 @@ public struct LinearMenuEntry: Identifiable, Sendable {
     ) {
         self.id = id
         self.title = title
+        self.icon = icon
         self.checked = checked
         self.destructive = destructive
         self.disabled = disabled
@@ -61,6 +64,27 @@ private final class MenuPopupCoordinator: NSObject {
             item.tag = idx
             item.isEnabled = !entry.disabled
             item.state = entry.checked ? .on : .off
+            let destructiveColor = entry.disabled
+                ? NSColor.systemRed.withAlphaComponent(0.45)
+                : NSColor.systemRed
+            if let iconName = entry.icon, let baseImage = NSImage(systemSymbolName: iconName, accessibilityDescription: nil) {
+                var config = NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
+                if entry.destructive {
+                    config = config.applying(NSImage.SymbolConfiguration(paletteColors: [destructiveColor]))
+                }
+                let configured = baseImage.withSymbolConfiguration(config) ?? baseImage
+                configured.isTemplate = !entry.destructive
+                item.image = configured
+            }
+            if entry.destructive {
+                item.attributedTitle = NSAttributedString(
+                    string: entry.title,
+                    attributes: [
+                        .font: NSFont.menuFont(ofSize: 0),
+                        .foregroundColor: destructiveColor,
+                    ]
+                )
+            }
             menu.addItem(item)
         }
         let origin = NSPoint(x: 0, y: anchorView.isFlipped ? anchorView.bounds.height + 4 : -4)

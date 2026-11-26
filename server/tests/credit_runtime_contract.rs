@@ -33,14 +33,13 @@ use sub2ops_server::{
     actions::Actions,
     bark::Bark,
     compat::{datetime, integer, operation_versions, parse_datetime},
-    credit::{CreditController, Hooks},
-    credit_ownership, credit_rules,
+    credit::{self, CreditController, Hooks},
     db::Database,
     error::Result,
-    execution::TestSlots,
     oauth_admission, oauth_native,
     oauth_queries::{Coordinator, QueryOptions, Source},
     oauth_state::OAuthState,
+    operations::TestSlots,
     queries::Queries,
     settings::Settings,
     upstream::Upstream,
@@ -90,7 +89,7 @@ fn pure_quota_projection_and_reason_tables_match_fixed_python_output() {
     let quota_case = &reference["quota_result"]["input"];
     let now = parse_datetime(&quota_case["now"]).unwrap();
     let requested_at = parse_datetime(&quota_case["requested_at"]).unwrap();
-    let actual = credit_rules::quota_result(
+    let actual = credit::rules::quota_result(
         &quota_case["data"],
         &quota_case["row"],
         now,
@@ -105,29 +104,29 @@ fn pure_quota_projection_and_reason_tables_match_fixed_python_output() {
 
     let project_case = &reference["project"]["input"];
     assert_eq!(
-        credit_rules::project(&project_case["task"], &project_case["notices"]),
+        credit::rules::project(&project_case["task"], &project_case["notices"]),
         reference["project"]["expected"]
     );
     for (code, expected) in reference["reason_codes"]["expected"].as_object().unwrap() {
         assert_eq!(
-            credit_rules::reason(code),
+            credit::rules::reason(code),
             expected.as_str().unwrap(),
             "reason {code}"
         );
     }
     for (outcome, expected) in reference["labels"]["expected"].as_object().unwrap() {
         assert_eq!(
-            credit_rules::label(outcome),
+            credit::rules::label(outcome),
             expected.as_str().unwrap(),
             "label {outcome}"
         );
     }
     assert_eq!(
-        credit_rules::reason("fixture_unknown_reason"),
+        credit::rules::reason("fixture_unknown_reason"),
         reference["fallbacks"]["reason"]
     );
     assert_eq!(
-        credit_rules::label("fixture_unknown_outcome"),
+        credit::rules::label("fixture_unknown_outcome"),
         reference["fallbacks"]["label"]
     );
 }
@@ -602,7 +601,7 @@ impl Harness {
         data["rate_limit"]["primary_window"]["used_percent"] = json!(100);
         data["rate_limit"]["secondary_window"]["used_percent"] = json!(100);
         let mut result =
-            credit_rules::quota_result(&data, &row, now, Some(now - Duration::seconds(2)));
+            credit::rules::quota_result(&data, &row, now, Some(now - Duration::seconds(2)));
         result["data"] = data;
         controller
             .store
@@ -891,7 +890,7 @@ async fn automatic_pause_is_read_back_owned_before_consumption_result() {
         .await
         .expect("run one automatic pause and consume attempt");
     let current = harness.controller.state(id).unwrap();
-    let read_back = credit_ownership::account(&harness.db, id).await.unwrap();
+    let read_back = credit::account(&harness.db, id).await.unwrap();
     assert_eq!(
         result["consumption_outcome"], "not_consumed",
         "request result: {result}; state: {current}"
@@ -929,20 +928,23 @@ async fn five_minute_deadlines_and_unknown_unissued_pause_undo_are_read_back_onl
         )
     );
     assert!(policy["verification_deadline_at"].is_null());
-    assert!(!credit_rules::expired(
+    assert!(!credit::rules::expired(
         &policy,
         now + Duration::seconds(239)
     ));
-    assert!(credit_rules::expired(&policy, now + Duration::seconds(240)));
+    assert!(credit::rules::expired(
+        &policy,
+        now + Duration::seconds(240)
+    ));
     let consumed = json!({
         "consumed": true,
         "verification_deadline_at": datetime(now + Duration::seconds(310))
     });
-    assert!(!credit_rules::expired(
+    assert!(!credit::rules::expired(
         &consumed,
         now + Duration::seconds(309)
     ));
-    assert!(credit_rules::expired(
+    assert!(credit::rules::expired(
         &consumed,
         now + Duration::seconds(310)
     ));
@@ -953,13 +955,13 @@ async fn five_minute_deadlines_and_unknown_unissued_pause_undo_are_read_back_onl
         .execute(&harness.db.pool)
         .await
         .expect("set owned pause fixture");
-    let paused_row = credit_ownership::account(&harness.db, id).await.unwrap();
+    let paused_row = credit::account(&harness.db, id).await.unwrap();
     let pause_task = json!({
         "episode": "fixture-unissued-pause",
         "stage": "finished",
         "revision": 0,
         "owns_pause": true,
-        "signature": credit_ownership::signature(&paused_row),
+        "signature": credit::signature(&paused_row),
         "owned_version": paused_row["updated_at"],
         "control_generation": 0,
         "policy_credential_fingerprint": oauth_admission::credential_fingerprint(&paused_row)
@@ -981,7 +983,7 @@ async fn five_minute_deadlines_and_unknown_unissued_pause_undo_are_read_back_onl
         .await
         .expect("read back an unknown pause undo result");
 
-    let final_row = credit_ownership::account(&harness.db, id).await.unwrap();
+    let final_row = credit::account(&harness.db, id).await.unwrap();
     let final_task = harness.controller.state(id).unwrap();
     assert_eq!(
         final_row["schedulable"],
@@ -1020,13 +1022,13 @@ async fn a_truncated_native_sse_receipt_finishes_without_a_second_test() {
         "episode": "fixture-sse-episode",
         "stage": "testing",
         "revision": 0,
-        "policy_version":1,"policy_control_generation":credit_ownership::generation(&state,id),
+        "policy_version":1,"policy_control_generation":credit::generation(&state,id),
         "policy_method_generation":0,"policy_method":"connection","policy_detection_version":harness.controller.hooks.detection_version(id).unwrap(),
         "verification_deadline_at":datetime(now + Duration::seconds(298)),
         "owns_pause": true,
-        "signature": credit_ownership::signature(&row),
+        "signature": credit::signature(&row),
         "owned_version": row["updated_at"],
-        "control_generation": credit_ownership::generation(&state, id),
+        "control_generation": credit::generation(&state, id),
         "consumed": true,
         "attempt_at": datetime(now - Duration::seconds(5)),
         "reset_completed_at": datetime(now - Duration::seconds(2)),
@@ -1103,7 +1105,7 @@ async fn manual_generation_change_keeps_consumption_receipt_and_never_unpauses()
     );
     assert!(receipt_task["receipt"].is_object());
     harness.hooks.bump_generation.store(true, Ordering::SeqCst);
-    let paused_row = credit_ownership::account(&harness.db, id).await.unwrap();
+    let paused_row = credit::account(&harness.db, id).await.unwrap();
     harness
         .controller
         .test(&paused_row, &receipt_task, fixed_now(), false)
@@ -1112,8 +1114,8 @@ async fn manual_generation_change_keeps_consumption_receipt_and_never_unpauses()
 
     let changed = harness.controller.store.shared_snapshot().unwrap();
     let pending = harness.controller.state(id).unwrap();
-    let after_row = credit_ownership::account(&harness.db, id).await.unwrap();
-    assert_eq!(credit_ownership::generation(&changed, id), 1);
+    let after_row = credit::account(&harness.db, id).await.unwrap();
+    assert_eq!(credit::generation(&changed, id), 1);
     assert_eq!(pending["consumed"], true);
     assert!(pending["receipt"].is_object());
     assert_eq!(pending["verification_dispatched"], true);
@@ -1125,7 +1127,7 @@ async fn manual_generation_change_keeps_consumption_receipt_and_never_unpauses()
         .run_account(&paused_row, fixed_now())
         .await
         .expect("stop recovery after manual control generation changes");
-    let final_row = credit_ownership::account(&harness.db, id).await.unwrap();
+    let final_row = credit::account(&harness.db, id).await.unwrap();
     let final_task = harness.controller.state(id).unwrap();
     assert_eq!(final_row["schedulable"], false);
     assert_eq!(final_task["consumed"], true);
@@ -1222,7 +1224,7 @@ async fn write_available_quota(h: &Harness, id: i64, at: DateTime<Utc>) {
     data["fetched_at"] = json!(datetime(at));
     data["rate_limit"]["primary_window"]["used_percent"] = json!(20);
     data["rate_limit"]["secondary_window"]["used_percent"] = json!(20);
-    let mut result = credit_rules::quota_result(&data, &row, at, Some(at));
+    let mut result = credit::rules::quota_result(&data, &row, at, Some(at));
     result["data"] = data;
     h.controller
         .store

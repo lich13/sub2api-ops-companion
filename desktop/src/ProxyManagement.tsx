@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { api, command } from "./bridge";
 import { errorMessage as errorText } from "./bridgeError";
+import { isCleanEscape } from "./dialogFocus";
 import type { DeleteProxyBatchReply } from "./protocol";
 import { fullTime } from "./types";
 import {
@@ -110,7 +111,7 @@ export default function ProxyManagement({
       if (!menuRef.current?.contains(e.target as Node)) setMenu(false);
     };
     const escape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenu(false);
+      if (isCleanEscape(e)) setMenu(false);
     };
     document.addEventListener("pointerdown", dismiss);
     document.addEventListener("keydown", escape);
@@ -183,10 +184,8 @@ export default function ProxyManagement({
         return;
       }
       setData(r);
-      setSelected(
-        (old) =>
-          new Set([...old].filter((id) => r.items.some((p) => p.id === id))),
-      );
+      const itemIds = new Set(r.items.map((p) => p.id));
+      setSelected((old) => new Set([...old].filter((id) => itemIds.has(id))));
     } catch (e) {
       if (alive.current && token === readGeneration.current)
         setError(errorText(e));
@@ -229,10 +228,8 @@ export default function ProxyManagement({
     } catch (e) {
       if (valid()) setError(errorText(e));
     } finally {
-      if (valid()) {
-        operationLock.current = false;
-        setBusy("");
-      }
+      operationLock.current = false;
+      if (valid()) setBusy("");
     }
   }
   const selectedRows = data.items.filter((p) => selected.has(p.id));

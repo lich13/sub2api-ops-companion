@@ -20,16 +20,26 @@ use tokio::{
 };
 
 const MAX_FRAME: usize = 4 * 1024 * 1024;
+const MAX_IPC_CONCURRENCY: usize = 32;
+const IPC_IO_TIMEOUT: Duration = Duration::from_secs(10);
+const IPC_BUSY_WRITE_TIMEOUT: Duration = Duration::from_secs(2);
+
 pub(super) async fn read_frame(stream: &mut UnixStream) -> Result<Value> {
     let n = stream.read_u32().await? as usize;
     if n > MAX_FRAME {
         return Err(Error::invalid());
     }
-    let mut bytes = vec![0; n];
-    stream.read_exact(&mut bytes).await?;
+    let mut bytes = Vec::with_capacity(n.min(64 * 1024));
+    stream.take(n as u64).read_to_end(&mut bytes).await?;
+    if bytes.len() != n {
+        return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
+    }
     serde_json::from_slice(&bytes).map_err(|_| Error::invalid())
 }
-pub(super) async fn write_frame(stream: &mut UnixStream, value: &Value) -> Result<()> {
+pub(super) async fn write_frame<T: serde::Serialize + ?Sized>(
+    stream: &mut UnixStream,
+    value: &T,
+) -> Result<()> {
     let bytes = serde_json::to_vec(value)?;
     if bytes.len() > MAX_FRAME {
         return Err(Error::invalid());
@@ -37,6 +47,34 @@ pub(super) async fn write_frame(stream: &mut UnixStream, value: &Value) -> Resul
     stream.write_u32(bytes.len() as u32).await?;
     stream.write_all(&bytes).await?;
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct SnapshotReply {
+    available: bool,
+    editable: bool,
+    reason: &'static str,
+    version: String,
+    commit: String,
+    healthy: bool,
+    runtime_revision: String,
+    revision: String,
+    catalog: &'static serde_json::value::RawValue,
+    values: Value,
+    unknown: Vec<Value>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(untagged)]
+enum HostPayload {
+    Snapshot(Box<SnapshotReply>),
+    Json(Value),
+}
+
+#[derive(serde::Serialize)]
+struct OkEnvelope {
+    ok: bool,
+    value: HostPayload,
 }
 #[derive(Clone)]
 pub struct Observed {
@@ -216,7 +254,11 @@ impl Host {
         let bytes = self.read()?;
         Ok((o, bytes))
     }
-    async fn snapshot(&self) -> Result<Value> {
+    async fn snapshot_reply(&self) -> Result<SnapshotReply> {
+        static CATALOG_RAW: LazyLock<&'static serde_json::value::RawValue> = LazyLock::new(|| {
+            serde_json::from_str::<&serde_json::value::RawValue>(super::CATALOG_JSON)
+                .expect("valid compact catalog json")
+        });
         let (o, bytes) = self.current().await?;
         let config = parse_yaml(&bytes)?;
         let supported = o.version == CATALOG["version"] && o.commit == CATALOG["revision"];
@@ -252,9 +294,27 @@ impl Host {
             }
         }
         walk(&config, "", &mut unknown);
-        Ok(
-            json!({"available":true,"editable":true,"reason":if supported{""}else{"运行版本与配置说明不同；已有字段仍可编辑，请按运行版本核对新增或变更项。"},"version":o.version,"commit":o.commit,"healthy":o.healthy,"runtime_revision":o.process,"revision":sha256(&bytes),"catalog":*CATALOG,"values":values,"unknown":unknown}),
-        )
+        Ok(SnapshotReply {
+            available: true,
+            editable: true,
+            reason: if supported {
+                ""
+            } else {
+                "运行版本与配置说明不同；已有字段仍可编辑，请按运行版本核对新增或变更项。"
+            },
+            version: o.version,
+            commit: o.commit,
+            healthy: o.healthy,
+            runtime_revision: o.process,
+            revision: sha256(&bytes),
+            catalog: *CATALOG_RAW,
+            values,
+            unknown,
+        })
+    }
+    #[cfg(test)]
+    async fn snapshot(&self) -> Result<Value> {
+        Ok(serde_json::to_value(self.snapshot_reply().await?)?)
     }
     async fn checked(&self, payload: &Value) -> Result<(Observed, Vec<u8>, Vec<u8>)> {
         let (o, before) = self.current().await?;
@@ -364,22 +424,25 @@ impl Host {
             }
         }
     }
-    async fn handle(self: &Arc<Self>, request: &Value) -> Result<Value> {
+    async fn handle_payload(self: &Arc<Self>, request: &Value) -> Result<HostPayload> {
         if !self.targets.iter().any(|s| s == string(&request["target"])) {
             return Err(Error::new(409, "当前连接与宿主机绑定的 Sub2API 不一致"));
         }
         match string(&request["action"]) {
-            "read" => self.snapshot().await,
-            "operation" => Ok(self
-                .operation
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .clone()),
+            "read" => Ok(HostPayload::Snapshot(Box::new(
+                self.snapshot_reply().await?,
+            ))),
+            "operation" => Ok(HostPayload::Json(
+                self.operation
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone(),
+            )),
             "validate" => match self.checked(&request["payload"]).await {
-                Ok(_) => Ok(json!({"valid":true,"errors":[]})),
-                Err(e) => Ok(
+                Ok(_) => Ok(HostPayload::Json(json!({"valid":true,"errors":[]}))),
+                Err(e) => Ok(HostPayload::Json(
                     json!({"valid":false,"errors":e.detail.get("errors").cloned().unwrap_or_else(||json!([{"path":"","message":e.detail.as_str().unwrap_or("配置校验失败")}]))}),
-                ),
+                )),
             },
             "apply" => {
                 let lock = self
@@ -396,10 +459,16 @@ impl Host {
                 self.update("saving", "正在保存配置");
                 // Own the transaction independently of the socket lifetime.
                 tokio::spawn(self.clone().apply(o, before, after, lock));
-                Ok(json!({"status":"saving","message":"正在保存配置"}))
+                Ok(HostPayload::Json(
+                    json!({"status":"saving","message":"正在保存配置"}),
+                ))
             }
             _ => Err(Error::invalid()),
         }
+    }
+    #[cfg(test)]
+    async fn handle(self: &Arc<Self>, request: &Value) -> Result<Value> {
+        Ok(serde_json::to_value(self.handle_payload(request).await?)?)
     }
 }
 fn atomic(path: &Path, bytes: &[u8], original: &Path) -> Result<()> {
@@ -419,6 +488,47 @@ fn atomic(path: &Path, bytes: &[u8], original: &Path) -> Result<()> {
     std::fs::File::open(parent)?.sync_all()?;
     Ok(())
 }
+fn dispatch_ipc_stream(
+    mut stream: UnixStream,
+    host: Arc<Host>,
+    ipc_limit: &Arc<tokio::sync::Semaphore>,
+    busy_limit: &Arc<tokio::sync::Semaphore>,
+    io_timeout: Duration,
+    busy_timeout: Duration,
+) {
+    let Ok(permit) = ipc_limit.clone().try_acquire_owned() else {
+        if let Ok(busy_permit) = busy_limit.clone().try_acquire_owned() {
+            tokio::spawn(async move {
+                let _busy_permit = busy_permit;
+                let reply =
+                    json!({"ok":false,"status":503,"detail":"宿主机配置接口繁忙，请稍后重试"});
+                let _ = tokio::time::timeout(busy_timeout, write_frame(&mut stream, &reply)).await;
+            });
+        }
+        return;
+    };
+    tokio::spawn(async move {
+        let _permit = permit;
+        let result = match tokio::time::timeout(io_timeout, read_frame(&mut stream)).await {
+            Ok(Ok(r)) => host.handle_payload(&r).await,
+            _ => Err(Error::invalid()),
+        };
+        match result {
+            Ok(value) => {
+                let _ = tokio::time::timeout(
+                    io_timeout,
+                    write_frame(&mut stream, &OkEnvelope { ok: true, value }),
+                )
+                .await;
+            }
+            Err(e) => {
+                let reply = json!({"ok":false,"status":e.status.as_u16(),"detail":e.detail});
+                let _ = tokio::time::timeout(io_timeout, write_frame(&mut stream, &reply)).await;
+            }
+        }
+    });
+}
+
 pub async fn run(args: &[String]) -> Result<()> {
     let mut options = BTreeMap::new();
     let mut it = args.iter();
@@ -485,8 +595,17 @@ pub async fn run(args: &[String]) -> Result<()> {
     }
     std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o750))?;
     std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o660))?;
+    let ipc_limit = Arc::new(tokio::sync::Semaphore::new(MAX_IPC_CONCURRENCY));
+    let busy_limit = Arc::new(tokio::sync::Semaphore::new(MAX_IPC_CONCURRENCY));
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
     loop {
-        let Ok((mut stream, _)) = listener.accept().await else {
+        let accepted = tokio::select! {
+            _ = sigterm.recv() => break,
+            _ = sigint.recv() => break,
+            res = listener.accept() => res,
+        };
+        let Ok((stream, _)) = accepted else {
             tokio::time::sleep(Duration::from_millis(10)).await;
             continue;
         };
@@ -496,24 +615,19 @@ pub async fn run(args: &[String]) -> Result<()> {
         if cred.uid() != uid {
             continue;
         }
-        let host = host.clone();
-        tokio::spawn(async move {
-            let result = match tokio::time::timeout(
-                Duration::from_secs(10),
-                read_frame(&mut stream),
-            )
-            .await
-            {
-                Ok(Ok(r)) => host.handle(&r).await,
-                _ => Err(Error::invalid()),
-            };
-            let reply = match result {
-                Ok(value) => json!({"ok":true,"value":value}),
-                Err(e) => json!({"ok":false,"status":e.status.as_u16(),"detail":e.detail}),
-            };
-            let _ = write_frame(&mut stream, &reply).await;
-        });
+        dispatch_ipc_stream(
+            stream,
+            host.clone(),
+            &ipc_limit,
+            &busy_limit,
+            IPC_IO_TIMEOUT,
+            IPC_BUSY_WRITE_TIMEOUT,
+        );
     }
+    drop(listener);
+    let _in_flight = host.gate.lock().await;
+    let _ = std::fs::remove_file(&socket);
+    Ok(())
 }
 
 #[cfg(test)]

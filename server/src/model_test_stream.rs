@@ -118,6 +118,8 @@ pub struct Collector {
     cache_creation: i64,
     parts: BTreeMap<(i64, i64), String>,
     channels: BTreeMap<(i64, i64), bool>,
+    total_bytes: usize,
+    answer_bytes: usize,
     pub completed: bool,
     pub returned_model: Option<String>,
     pub recognized: bool,
@@ -134,6 +136,8 @@ impl Collector {
             cache_creation: 0,
             parts: BTreeMap::new(),
             channels: BTreeMap::new(),
+            total_bytes: 0,
+            answer_bytes: 0,
             completed: false,
             returned_model: None,
             recognized: false,
@@ -229,28 +233,28 @@ impl Collector {
         let Some(value) = value.as_str() else {
             return Ok(());
         };
-        let text = if snapshot {
-            value.to_owned()
+        let old_len = self.parts.get(&key).map_or(0, String::len);
+        let old_reasoning = self.channels.get(&key).copied().unwrap_or(false);
+        let new_len = if snapshot {
+            value.len()
         } else {
-            format!(
-                "{}{value}",
-                self.parts.get(&key).map(String::as_str).unwrap_or("")
-            )
+            old_len + value.len()
         };
-        if self
-            .parts
-            .iter()
-            .filter(|(k, _)| **k != key)
-            .map(|(_, v)| v.len())
-            .sum::<usize>()
-            + text.len()
-            > MAX_TEXT
-        {
+        let next_total = self.total_bytes - old_len + new_len;
+        if next_total > MAX_TEXT {
             return Err(Failure::new("output_limit", true));
         }
-        self.parts.insert(key, text);
+        let entry = self.parts.entry(key).or_default();
+        if snapshot {
+            entry.clear();
+        }
+        entry.push_str(value);
+        self.total_bytes = next_total;
+        let old_answer = if old_reasoning { 0 } else { old_len };
+        let new_answer = if reasoning { 0 } else { new_len };
+        self.answer_bytes = self.answer_bytes - old_answer + new_answer;
         self.channels.insert(key, reasoning);
-        if guard && !snapshot && !reasoning {
+        if guard && !snapshot && !reasoning && self.answer_bytes >= self.expected * 4 {
             let answer = isolated_answer(&self.text());
             let boundary =
                 |c: char| c.is_alphanumeric() || c == '_' || matches!(c, '.' | '+' | '-');
@@ -585,62 +589,64 @@ pub struct Target {
     pub oauth: bool,
     pub protocol: String,
 }
+pub(crate) fn pooled_client(proxy: Option<&str>) -> TransportResult<reqwest::Client> {
+    const MAX_POOLED_PROXY_CLIENTS: usize = 32;
+    static PROXY_CLIENTS: std::sync::LazyLock<
+        std::sync::Mutex<std::collections::VecDeque<(String, reqwest::Client)>>,
+    > = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::VecDeque::new()));
+
+    if let Some(proxy) = proxy {
+        if let Ok(mut pool) = PROXY_CLIENTS.lock() {
+            if let Some(pos) = pool.iter().position(|(k, _)| k == proxy) {
+                let entry = pool.remove(pos).unwrap();
+                let client = entry.1.clone();
+                pool.push_back(entry);
+                return Ok(client);
+            }
+        }
+        let built = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .tcp_nodelay(true)
+            .connect_timeout(Duration::from_secs(10))
+            .proxy(reqwest::Proxy::all(proxy).map_err(|_| Failure::new("network_error", false))?)
+            .build()
+            .map_err(|_| Failure::new("network_error", false))?;
+        if let Ok(mut pool) = PROXY_CLIENTS.lock() {
+            if !pool.iter().any(|(k, _)| k == proxy) {
+                if pool.len() >= MAX_POOLED_PROXY_CLIENTS {
+                    pool.pop_front();
+                }
+                pool.push_back((proxy.to_owned(), built.clone()));
+            }
+        }
+        return Ok(built);
+    }
+    static NO_PROXY_CLIENT: std::sync::LazyLock<Option<reqwest::Client>> =
+        std::sync::LazyLock::new(|| {
+            reqwest::Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .tcp_nodelay(true)
+                .connect_timeout(Duration::from_secs(10))
+                .build()
+                .ok()
+        });
+    match NO_PROXY_CLIENT.as_ref() {
+        Some(shared) => Ok(shared.clone()),
+        None => reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .tcp_nodelay(true)
+            .connect_timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|_| Failure::new("network_error", false)),
+    }
+}
+
 impl Target {
     pub fn client(&self) -> TransportResult<reqwest::Client> {
-        const MAX_POOLED_PROXY_CLIENTS: usize = 32;
-        static PROXY_CLIENTS: std::sync::LazyLock<
-            std::sync::Mutex<std::collections::VecDeque<(String, reqwest::Client)>>,
-        > = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::VecDeque::new()));
-
-        if let Some(proxy) = &self.proxy {
-            if let Ok(mut pool) = PROXY_CLIENTS.lock() {
-                if let Some(pos) = pool.iter().position(|(k, _)| k == proxy) {
-                    let entry = pool.remove(pos).unwrap();
-                    let client = entry.1.clone();
-                    pool.push_back(entry);
-                    return Ok(client);
-                }
-            }
-            let built = reqwest::Client::builder()
-                .no_proxy()
-                .redirect(reqwest::redirect::Policy::none())
-                .tcp_nodelay(true)
-                .connect_timeout(Duration::from_secs(10))
-                .proxy(
-                    reqwest::Proxy::all(proxy).map_err(|_| Failure::new("network_error", false))?,
-                )
-                .build()
-                .map_err(|_| Failure::new("network_error", false))?;
-            if let Ok(mut pool) = PROXY_CLIENTS.lock() {
-                if !pool.iter().any(|(k, _)| k == proxy) {
-                    if pool.len() >= MAX_POOLED_PROXY_CLIENTS {
-                        pool.pop_front();
-                    }
-                    pool.push_back((proxy.clone(), built.clone()));
-                }
-            }
-            return Ok(built);
-        }
-        static NO_PROXY_CLIENT: std::sync::LazyLock<Option<reqwest::Client>> =
-            std::sync::LazyLock::new(|| {
-                reqwest::Client::builder()
-                    .no_proxy()
-                    .redirect(reqwest::redirect::Policy::none())
-                    .tcp_nodelay(true)
-                    .connect_timeout(Duration::from_secs(10))
-                    .build()
-                    .ok()
-            });
-        match NO_PROXY_CLIENT.as_ref() {
-            Some(shared) => Ok(shared.clone()),
-            None => reqwest::Client::builder()
-                .no_proxy()
-                .redirect(reqwest::redirect::Policy::none())
-                .tcp_nodelay(true)
-                .connect_timeout(Duration::from_secs(10))
-                .build()
-                .map_err(|_| Failure::new("network_error", false)),
-        }
+        pooled_client(self.proxy.as_deref())
     }
     pub fn payload(&self, prompt: &str) -> Value {
         if self.protocol == "messages" {
@@ -871,12 +877,15 @@ async fn execute_request(
                 }
                 continue;
             }
-            while let Some(index) = buffer.iter().position(|v| *v == b'\n') {
-                let mut line = buffer.drain(..=index).collect::<Vec<_>>();
-                line.pop();
-                if line.last() == Some(&b'\r') {
-                    line.pop();
+            let mut cursor = 0;
+            while let Some(rel) = buffer[cursor..].iter().position(|v| *v == b'\n') {
+                let end = cursor + rel;
+                let mut line_end = end;
+                if line_end > cursor && buffer[line_end - 1] == b'\r' {
+                    line_end -= 1;
                 }
+                let line = buffer[cursor..line_end].to_vec();
+                cursor = end + 1;
                 frame_size += line.len();
                 if frame_size > MAX_FRAME {
                     return Err(Failure::new("output_limit", true));
@@ -891,6 +900,9 @@ async fn execute_request(
                 } else {
                     lines.push(line);
                 }
+            }
+            if cursor > 0 {
+                buffer.drain(..cursor);
             }
             if buffer.len() + frame_size > MAX_FRAME {
                 return Err(Failure::new("output_limit", true));

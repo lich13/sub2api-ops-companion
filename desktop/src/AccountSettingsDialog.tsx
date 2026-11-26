@@ -20,14 +20,22 @@ import {
   type AccountSettings,
   type SettingsSection,
 } from "./accountDialog";
+import { ConfirmDiscardDialog } from "./ConfirmDiscardDialog";
 import { useBackAction } from "./mobile";
-import { useDialogFocus } from "./dialogFocus";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
 import type { Account } from "./types";
-import { validate as validateProfile, type Profile } from "./AccountTemplates";
+import {
+  normalizeProfile,
+  validate as validateProfile,
+  type Profile,
+} from "./AccountTemplates";
 import "./account-settings.css";
 import ProxyOptions, { type ProxyOption } from "./ProxyOptions";
 
-export { operationLabel, type AccountSettings, type SettingsSection };
 type SyncResult = { models: string[]; warnings: string[]; synced_at: string };
 
 export default function AccountSettingsDialog({
@@ -63,10 +71,8 @@ export default function AccountSettingsDialog({
     submitGuard = useRef(false),
     syncGuard = useRef(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const dialog = useRef<HTMLElement>(null),
-    discardDialog = useRef<HTMLElement>(null);
+  const dialog = useRef<HTMLElement>(null);
   useDialogFocus(dialog, !confirmDiscard);
-  useDialogFocus(discardDialog, confirmDiscard);
   const isProxy = section === "proxy",
     action = isProxy ? "proxy" : "model_config";
   const dirty =
@@ -78,13 +84,16 @@ export default function AccountSettingsDialog({
     if (dirty) setConfirmDiscard(true);
     else close();
   };
+  const backdrop = useBackdropDismiss(() => {
+    if (!dirty) close();
+  });
   useBackAction(true, () => {
     if (confirmDiscard) setConfirmDiscard(false);
     else dismiss();
   });
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.isComposing || e.defaultPrevented) return;
+      if (!isCleanEscape(e)) return;
       e.preventDefault();
       e.stopPropagation();
       if (confirmDiscard) setConfirmDiscard(false);
@@ -155,13 +164,14 @@ export default function AccountSettingsDialog({
     setNotice("");
     const current = generation.current,
       epoch = operationEpoch();
-    const submitted = structuredClone(profile),
+    const submitted = normalizeProfile(profile),
       submittedProxy = proxyId;
+    if (!isProxy) setProfile(submitted);
     try {
       const job = await submitOperation(
         account,
         action,
-        isProxy ? { proxy_id: proxyId } : { ...profile },
+        isProxy ? { proxy_id: proxyId } : { ...submitted },
         settings.versions[action],
       );
       if (current === generation.current) setNotice(operationLabel(job));
@@ -269,13 +279,7 @@ export default function AccountSettingsDialog({
   }
   return (
     <>
-      <div
-        className="modal-backdrop"
-        inert={confirmDiscard}
-        onMouseDown={(e) => {
-          if (e.target === e.currentTarget && !dirty) close();
-        }}
-      >
+      <div className="modal-backdrop" inert={confirmDiscard} {...backdrop}>
         <section
           ref={dialog}
           className="account-settings-dialog"
@@ -414,10 +418,21 @@ export default function AccountSettingsDialog({
                                 setProfile({
                                   ...profile,
                                   whitelist: profile.whitelist.map((m, n) =>
-                                    n === i ? e.target.value.trim() : m,
+                                    n === i ? e.target.value : m,
                                   ),
                                 })
                               }
+                              onBlur={(e) => {
+                                const trimmed = e.target.value.trim();
+                                if (trimmed !== model) {
+                                  setProfile({
+                                    ...profile,
+                                    whitelist: profile.whitelist.map((m, n) =>
+                                      n === i ? trimmed : m,
+                                    ),
+                                  });
+                                }
+                              }}
                             />
                             <button
                               className="icon-button"
@@ -539,11 +554,22 @@ export default function AccountSettingsDialog({
                                   ...profile,
                                   mappings: profile.mappings.map((r, n) =>
                                     n === i
-                                      ? { ...r, source: e.target.value.trim() }
+                                      ? { ...r, source: e.target.value }
                                       : r,
                                   ),
                                 })
                               }
+                              onBlur={(e) => {
+                                const trimmed = e.target.value.trim();
+                                if (trimmed !== rule.source) {
+                                  setProfile({
+                                    ...profile,
+                                    mappings: profile.mappings.map((r, n) =>
+                                      n === i ? { ...r, source: trimmed } : r,
+                                    ),
+                                  });
+                                }
+                              }}
                             />
                             <ArrowRight size={14} />
                             <input
@@ -556,11 +582,22 @@ export default function AccountSettingsDialog({
                                   ...profile,
                                   mappings: profile.mappings.map((r, n) =>
                                     n === i
-                                      ? { ...r, target: e.target.value.trim() }
+                                      ? { ...r, target: e.target.value }
                                       : r,
                                   ),
                                 })
                               }
+                              onBlur={(e) => {
+                                const trimmed = e.target.value.trim();
+                                if (trimmed !== rule.target) {
+                                  setProfile({
+                                    ...profile,
+                                    mappings: profile.mappings.map((r, n) =>
+                                      n === i ? { ...r, target: trimmed } : r,
+                                    ),
+                                  });
+                                }
+                              }}
                             />
                             <button
                               className="icon-button"
@@ -632,25 +669,11 @@ export default function AccountSettingsDialog({
           </footer>
         </section>
       </div>
-      {confirmDiscard && (
-        <div className="modal-backdrop">
-          <section
-            ref={discardDialog}
-            className="discard-groups-dialog"
-            role="alertdialog"
-            aria-modal="true"
-            aria-label="放弃未保存的更改？"
-          >
-            <h2>放弃未保存的更改？</h2>
-            <div>
-              <button onClick={() => setConfirmDiscard(false)}>继续编辑</button>
-              <button className="primary" onClick={close}>
-                放弃修改
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
+      <ConfirmDiscardDialog
+        open={confirmDiscard}
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={close}
+      />
     </>
   );
 }

@@ -28,7 +28,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 8px 12px;
   flex-shrink: 0;
 }
 .account-settings-dialog > header {
@@ -57,7 +57,7 @@
 }
 .account-settings-body {
   overflow: auto;
-  padding: 12px 16px;
+  padding: 10px 12px;
   min-height: 0;
 }
 .proxy-batch-previews {
@@ -103,16 +103,16 @@
 }
 .account-settings-body button,
 .account-settings-dialog > footer button {
-  min-height: 32px;
+  min-height: 48px;
   padding: 5px 10px;
   font-size: 12px;
   gap: 5px;
 }
 .account-settings-body input:not([type="checkbox"]):not([type="radio"]) {
   width: 100%;
-  min-height: var(--control-h);
+  min-height: 48px;
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: 16px;
 }
 .settings-tabs {
   display: flex;
@@ -141,19 +141,38 @@
   font-size: 12px;
   font-weight: 500;
 }
+.settings-section-tools h3 {
+  flex-basis: 100%;
+}
 .settings-model-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px;
+  grid-template-columns: minmax(0, 1fr) 48px;
   gap: 6px;
   align-items: center;
   margin-bottom: 6px;
 }
 .settings-model-row.mapping {
-  grid-template-columns: minmax(0, 1fr) 14px minmax(0, 1fr) 34px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.settings-model-row.mapping > input:first-child {
+  grid-column: 1;
+  grid-row: 1;
+}
+.settings-model-row.mapping > svg {
+  display: none;
+}
+.settings-model-row.mapping > input:nth-of-type(2) {
+  grid-column: 1;
+  grid-row: 2;
+}
+.settings-model-row.mapping > button {
+  grid-column: 2;
+  grid-row: 1 / 3;
 }
 .settings-model-row .icon-button {
-  min-width: 34px;
-  min-height: 34px;
+  min-width: 48px;
+  min-height: 48px;
   padding: 6px;
   justify-content: center;
 }
@@ -177,7 +196,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 32px;
+  min-height: 48px;
   padding: 5px 4px;
   cursor: pointer;
 }
@@ -190,6 +209,8 @@
   color: var(--muted);
   font-size: 10px;
   flex-shrink: 0;
+  max-width: 72px;
+  white-space: normal;
 }
 .settings-model-options input,
 .proxy-options input {
@@ -318,77 +339,28 @@
   padding: 5px 10px;
   gap: 5px;
 }
+.mobile-action-sheet .scheduling-parameters > div {
+  grid-template-columns: 1fr 110px;
+}
+.mobile-action-sheet .scheduling-parameters button {
+  min-height: 48px;
+}
 @media (max-width: 600px), (pointer: coarse) {
-  .account-settings-dialog > header,
-  .account-settings-dialog > footer {
-    padding: 8px 12px;
-  }
-  .account-settings-body {
-    padding: 10px 12px;
-  }
-  .account-settings-dialog button,
   .numeric-editor button {
     min-height: 48px;
   }
-  .account-settings-body input:not([type="checkbox"]):not([type="radio"]),
   .numeric-input-row input {
     min-height: 48px;
+    height: 48px;
     font-size: 16px;
   }
-  .numeric-input-row input {
-    height: 48px;
-  }
-  .account-settings-dialog .icon-button,
   .numeric-editor .icon-button {
     min-width: 48px;
-  }
-  .settings-model-row {
-    grid-template-columns: minmax(0, 1fr) 48px;
-  }
-  .settings-model-row.mapping {
-    grid-template-columns: minmax(0, 1fr) 48px;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--line);
-  }
-  .settings-model-row.mapping > input:first-child {
-    grid-column: 1;
-    grid-row: 1;
-  }
-  .settings-model-row.mapping > svg {
-    display: none;
-  }
-  .settings-model-row.mapping > input:nth-of-type(2) {
-    grid-column: 1;
-    grid-row: 2;
-  }
-  .settings-model-row.mapping > button {
-    grid-column: 2;
-    grid-row: 1 / 3;
-  }
-  .settings-model-options label,
-  .proxy-options label {
-    min-height: 48px;
-  }
-  .settings-model-options small {
-    max-width: 72px;
-    white-space: normal;
-  }
-  .settings-section-tools {
-    gap: 6px;
-  }
-  .settings-section-tools h3 {
-    flex-basis: 100%;
   }
   .numeric-input-row {
     grid-template-columns: 48px minmax(0, 1fr) 48px;
   }
   .numeric-auto {
-    min-height: 48px;
-  }
-  .mobile-action-sheet .scheduling-parameters > div {
-    grid-template-columns: 1fr 110px;
-  }
-  .mobile-action-sheet .scheduling-parameters button {
     min-height: 48px;
   }
 }
@@ -410,6 +382,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 48px;
 }
 .proxy-diagnostic-actions svg {
   flex: 0 0 14px;
@@ -428,9 +401,4 @@
 }
 .proxy-quality-item small {
   grid-column: 1 / -1;
-}
-@media (max-width: 700px) {
-  .proxy-diagnostic-actions button {
-    min-height: 48px;
-  }
 }

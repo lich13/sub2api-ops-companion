@@ -91,9 +91,14 @@ export function QuotaRefresh({
   }, [connectionKey, online, active]);
   const notifyRefreshFinished = useCallback(
     (targetKey: string, result: QuotaBatch) => {
+      const usageByAccount = new Map(
+        result.items.flatMap((item) =>
+          item.usage ? [[item.account_id, item.usage] as const] : [],
+        ),
+      );
       document.dispatchEvent(
         new CustomEvent(usageRefreshEvent, {
-          detail: { connectionKey: targetKey, batch: result },
+          detail: { connectionKey: targetKey, batch: result, usageByAccount },
         }),
       );
       void command("refresh");

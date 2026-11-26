@@ -1,4 +1,4 @@
-#[path = "support/fingerprint_cache.rs"]
+#[path = "common/fingerprint_cache.rs"]
 mod fingerprint_cache;
 #[path = "common/harness.rs"]
 mod test_harness;
@@ -1260,10 +1260,10 @@ async fn credit_pause_ownership_is_reconciled_after_priority_write() {
         .execute(&harness.runtime.db.pool)
         .await
         .expect("pause fixture account scheduling");
-    let row = sub2ops_server::credit_ownership::account(&harness.runtime.db, id)
+    let row = sub2ops_server::credit::account(&harness.runtime.db, id)
         .await
         .expect("read paused fixture account");
-    let signature = sub2ops_server::credit_ownership::signature(&row);
+    let signature = sub2ops_server::credit::signature(&row);
     let owned_version = row["updated_at"].clone();
     harness
         .runtime
@@ -1305,10 +1305,10 @@ async fn credit_pause_ownership_is_reconciled_after_priority_write() {
     let task = &state["scheduler"][id.to_string()]["auto_reset_credit"];
     assert_eq!(task["owns_pause"], true);
     assert!(task["parameter_edit"].is_null());
-    let row = sub2ops_server::credit_ownership::account(&harness.runtime.db, id)
+    let row = sub2ops_server::credit::account(&harness.runtime.db, id)
         .await
         .unwrap();
-    assert!(sub2ops_server::credit_ownership::owned(&row, task, &state));
+    assert!(sub2ops_server::credit::owned(&row, task, &state));
     assert_eq!(task["revision"], 2);
     harness.finish().await;
 }

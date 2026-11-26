@@ -8,6 +8,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { MoreHorizontal } from "lucide-react";
+import { isCleanEscape } from "./dialogFocus";
 import { useBackAction } from "./mobile";
 
 const openedEvent = "sub2ops-account-menu-opened";
@@ -15,14 +16,12 @@ const openedEvent = "sub2ops-account-menu-opened";
 export default function AccountActionMenu({
   label,
   children,
-  iconOnly = false,
   active = true,
   contextKey,
   disabled = false,
 }: {
   label: string;
   children: ReactNode;
-  iconOnly?: boolean;
   active?: boolean;
   contextKey?: string;
   disabled?: boolean;
@@ -90,7 +89,7 @@ export default function AccountActionMenu({
     };
     const resize = () => setOpen(false);
     const key = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (!isCleanEscape(event)) return;
       event.preventDefault();
       event.stopPropagation();
       setOpen(false);
@@ -113,7 +112,7 @@ export default function AccountActionMenu({
       <button
         ref={trigger}
         type="button"
-        className={`account-more-trigger${iconOnly ? " icon-only" : ""}`}
+        className="account-more-trigger icon-only"
         aria-label={label}
         aria-expanded={visible}
         aria-controls={visible ? id : undefined}
@@ -130,8 +129,7 @@ export default function AccountActionMenu({
           setOpen(!visible);
         }}
       >
-        <MoreHorizontal size={iconOnly ? 17 : 12} aria-hidden="true" />
-        {!iconOnly && "更多"}
+        <MoreHorizontal size={17} aria-hidden="true" />
       </button>
       {visible &&
         createPortal(

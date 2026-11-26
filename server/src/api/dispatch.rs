@@ -153,7 +153,7 @@ impl<'a> Call<'a> {
                     _ => return Err(Error::invalid()),
                 };
                 let refresh = q.flag("refresh")?;
-                reply!(models::models(r, key, id, test_models, refresh).await?)
+                reply!(account_models(r, key, id, test_models, refresh).await?)
             }
             SubmitOperation(id) => {
                 let submission = crate::request_schema::submission(p)?;
@@ -186,93 +186,6 @@ impl<'a> Call<'a> {
             ModelTest(id) => reply!(r.tests.get(id)?),
             CancelModelTest(id) => reply!(r.tests.cancel(id).await?),
             RetryModelTest(id) => reply!(r.tests.retry_failed(id, string(&p["request_id"])).await?),
-            Operations
-            | SubmitBatch
-            | ApplyTemplate
-            | CancelBatch(_)
-            | Operation(_)
-            | CancelOperation(_)
-            | Priorities
-            | PriorityOrders
-            | PriorityOrder(_)
-            | CancelOrder(_)
-            | Templates
-            | Template(_)
-            | Proxies
-            | ProbeProxy(_, _)
-            | ManageProxies
-            | ProxyData
-            | ProxyBatch
-            | ProxyCredentials(_)
-            | ProxyAccounts(_)
-            | ManageProxy(_) => self.account_work(route)?,
-            Config => reply!(r.config.snapshot(None)?),
-            GlobalQuota if method == Method::GET => reply!(r.key_quota.settings()?),
-            GlobalQuota => reply!(r.key_quota.save_settings_validated(p, None)?),
-            EditConfig(section) => reply!(
-                r.config
-                    .save(
-                        section,
-                        &p["changes"],
-                        "desktop:admin",
-                        Some(string(&p["expected_revision"]))
-                    )
-                    .await?
-            ),
-            BarkTest => reply!(bark_test(r).await?),
-            QuotaRefresh if method == Method::GET => reply!(r.quota_progress()),
-            QuotaRefresh => reply!(r.start_quota_refresh(key).await?),
-            Bank("lm-detector") => reply!(r.tests.lm_bank.public().await?),
-            Bank(_) => reply!(r.tests.bank.public()),
-            SyncBank("lm-detector") => reply!(r.tests.lm_bank.request_sync().await?),
-            SyncBank(_) => reply!(r.tests.bank.request_sync()?),
-            SystemVersion | CheckUpdates | SystemUpdate | SystemRestart => {
-                reply!(crate::sub2api_system::request(&r.actions, key, path[1], q.map()).await?)
-            }
-            HostConfig | HostOperation | ValidateHost | ApplyHost => {
-                q.empty()?;
-                let action = path.get(1).copied().unwrap_or("read");
-                reply!(
-                    r.sub2api_config
-                        .request(action, &r.upstream.active_url(), key, p)
-                        .await?
-                )
-            }
-            CreateAccount
-            | CreationOptions
-            | CreationSource(_)
-            | CreationCatalog(_)
-            | CreationAuth(_, _)
-            | CreationImport(_)
-            | CreationCheck
-            | CreationModels
-            | CreationGroupPreview => {
-                let sync = route == CreateAccount
-                    && q.map().len() == 1
-                    && q.get("sync_models") == Some("true");
-                if !sync {
-                    q.empty()?;
-                }
-                reply!(crate::account_creation::handle(&r.actions, key, path, p, sync).await?)
-            }
-        };
-        Ok(action)
-    }
-
-    fn account_work(&self, route: Route<&'a str, i64>) -> Result<Action<'a>> {
-        use Route::*;
-        let Self {
-            runtime: r,
-            key,
-            query: q,
-            path,
-            method,
-            payload: p,
-            accepts_gzip: _,
-            if_none_match: _,
-        } = *self;
-        let accepted = StatusCode::ACCEPTED;
-        let action: Action<'a> = match route {
             Operations => reply!(r.operations.listing(q.get("batch_id"))?),
             SubmitBatch | ApplyTemplate => reply!(
                 accepted,
@@ -319,10 +232,190 @@ impl<'a> Call<'a> {
                 crate::proxy_management::handle(&r.actions, key, path, method.clone(), q.map(), p)
                     .await?
             ),
-            _ => return Err(Error::internal()),
+            Config => reply!(r.config.snapshot(None)?),
+            GlobalQuota if method == Method::GET => reply!(r.key_quota.settings()?),
+            GlobalQuota => reply!(r.key_quota.save_settings_validated(p, None)?),
+            EditConfig(section) => reply!(
+                r.config
+                    .save(
+                        section,
+                        &p["changes"],
+                        "desktop:admin",
+                        Some(string(&p["expected_revision"]))
+                    )
+                    .await?
+            ),
+            BarkTest => reply!(bark_test(r).await?),
+            QuotaRefresh if method == Method::GET => reply!(r.quota_progress()),
+            QuotaRefresh => reply!(r.start_quota_refresh(key).await?),
+            Bank("lm-detector") => reply!(r.tests.lm_bank.public().await?),
+            Bank(_) => reply!(r.tests.bank.public()),
+            SyncBank("lm-detector") => reply!(r.tests.lm_bank.request_sync().await?),
+            SyncBank(_) => reply!(r.tests.bank.request_sync()?),
+            SystemVersion | CheckUpdates | SystemUpdate | SystemRestart => {
+                reply!(system_request(&r.actions, key, path[1], q.map()).await?)
+            }
+            HostConfig | HostOperation | ValidateHost | ApplyHost => {
+                q.empty()?;
+                let action = path.get(1).copied().unwrap_or("read");
+                reply!(
+                    r.sub2api_config
+                        .request(action, &r.upstream.active_url(), key, p)
+                        .await?
+                )
+            }
+            CreateAccount
+            | CreationOptions
+            | CreationSource(_)
+            | CreationCatalog(_)
+            | CreationAuth(_, _)
+            | CreationImport(_)
+            | CreationCheck
+            | CreationModels
+            | CreationGroupPreview => {
+                let sync = route == CreateAccount
+                    && q.map().len() == 1
+                    && q.get("sync_models") == Some("true");
+                if !sync {
+                    q.empty()?;
+                }
+                reply!(crate::account_creation::handle(&r.actions, key, path, p, sync).await?)
+            }
         };
         Ok(action)
     }
+}
+
+async fn account_models(
+    runtime: &Runtime,
+    key: &str,
+    account_id: i64,
+    test_models: bool,
+    refresh: bool,
+) -> Result<Value> {
+    Ok(if test_models {
+        let row = runtime.actions.queries.private_account(account_id).await?;
+        if crate::model_target::supported(&row) {
+            json!(
+                runtime
+                    .actions
+                    .model_test_candidates(&row, key, refresh)
+                    .await?
+            )
+        } else {
+            let identity = runtime.actions.candidate_source(&row, key).await?;
+            let actions = runtime.actions.clone();
+            let key = key.to_owned();
+            let fetch = async move {
+                let result: Result<Vec<Value>> = async {
+                    let models = match crate::model_directory::account_models_read(
+                        &actions.queries.db,
+                        account_id,
+                    )
+                    .await
+                    {
+                        Ok(models) => models,
+                        Err(error) if error.status.as_u16() == 422 => {
+                            let data = actions.admin_models(account_id, &key).await?;
+                            let items = data
+                                .as_array()
+                                .ok_or_else(|| Error::new(502, "模型列表格式无效"))?;
+                            if items.len() > 10_000 {
+                                return Err(Error::new(502, "上游模型列表超过限制"));
+                            }
+                            crate::actions::filter_models(items, &[])
+                        }
+                        Err(error) => return Err(error),
+                    };
+                    Ok(models)
+                }
+                .await;
+                result.map_err(|error| {
+                    if error.status.is_server_error()
+                        && error.detail["code"] != crate::model_directory::DIRECTORY_REVOKED
+                    {
+                        crate::model_candidates::Failure::temporary(error)
+                    } else {
+                        crate::model_candidates::Failure::permanent(error)
+                    }
+                })
+            };
+            json!(
+                runtime
+                    .actions
+                    .candidates
+                    .get(identity, refresh, fetch)
+                    .await?
+            )
+        }
+    } else {
+        json!(runtime.actions.models(account_id, key, false).await?)
+    })
+}
+
+async fn system_request(
+    actions: &crate::actions::Actions,
+    key: &str,
+    action: &str,
+    query: &BTreeMap<String, String>,
+) -> Result<Value> {
+    if !query.is_empty()
+        && !(action == "check-updates"
+            && query.len() == 1
+            && query
+                .get("force")
+                .is_some_and(|value| matches!(value.as_str(), "true" | "false")))
+    {
+        return Err(Error::invalid());
+    }
+    let write = matches!(action, "update" | "restart");
+    let path = format!(
+        "system/{action}{}",
+        if query.get("force").is_some_and(|value| value == "true") {
+            "?force=true"
+        } else {
+            ""
+        }
+    );
+    // Native updates can take 15 minutes. Only this operation gets a longer deadline.
+    // Send each write once; native operations continue even after a disconnected client.
+    let response = actions
+        .request(
+            if write {
+                reqwest::Method::POST
+            } else {
+                reqwest::Method::GET
+            },
+            &path,
+            key,
+            None,
+            std::time::Duration::from_secs(if action == "update" { 915 } else { 30 }),
+            false,
+        )
+        .await?;
+    let status = response.status();
+    let body: Value =
+        serde_json::from_slice(&crate::upstream::read_limited(response, 8_000_000).await?)
+            .map_err(|_| Error::new(502, "无法读取 Sub2API 响应"))?;
+    if !status.is_success() || body["code"] != 0 {
+        let message = crate::security::safe_error(&body["message"], 1500);
+        return Err(Error::new(
+            if status.is_success() {
+                502
+            } else {
+                status.as_u16()
+            },
+            if message.is_empty() {
+                "Sub2API 未确认操作成功".into()
+            } else {
+                message
+            },
+        ));
+    }
+    if !body["data"].is_object() {
+        return Err(Error::new(502, "无法读取 Sub2API 响应"));
+    }
+    Ok(body["data"].clone())
 }
 
 async fn bark_test(r: &Runtime) -> Result<Value> {

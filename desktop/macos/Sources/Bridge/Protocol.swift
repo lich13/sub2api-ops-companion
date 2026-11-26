@@ -66,7 +66,12 @@ public struct DegradationMarkRecord: Codable, Sendable, Equatable {
 	}
 }
 
-public struct ModelDetectionLastReportRecord: Codable, Sendable, Equatable {
+public enum ScheduleMode: String, Codable, Sendable, Equatable {
+	case fixed
+	case smart
+}
+
+public struct DetectionReport: Codable, Sendable, Equatable {
 	public let prediction_name: String?
 
 	public init(prediction_name: String?) {
@@ -74,12 +79,12 @@ public struct ModelDetectionLastReportRecord: Codable, Sendable, Equatable {
 	}
 }
 
-public struct ModelDetectionLastResultRecord: Codable, Sendable, Equatable {
+public struct DetectionResult: Codable, Sendable, Equatable {
 	public let status: String?
-	public let report: ModelDetectionLastReportRecord?
+	public let report: DetectionReport?
 	public let completed_at: String?
 
-	public init(status: String?, report: ModelDetectionLastReportRecord?, completed_at: String?) {
+	public init(status: String?, report: DetectionReport?, completed_at: String?) {
 		self.status = status
 		self.report = report
 		self.completed_at = completed_at
@@ -87,7 +92,7 @@ public struct ModelDetectionLastResultRecord: Codable, Sendable, Equatable {
 }
 
 public struct ModelDetectionSummaryRecord: Codable, Sendable, Equatable {
-	public let schedule_mode: String?
+	public let schedule_mode: ScheduleMode?
 	public let min_interval_minutes: Int?
 	public let effective_interval_minutes: Int?
 	public let recent_request_count: Int?
@@ -99,9 +104,9 @@ public struct ModelDetectionSummaryRecord: Codable, Sendable, Equatable {
 	public let next_at: String?
 	public let status: String
 	public let reason: String?
-	public let last_result: ModelDetectionLastResultRecord?
+	public let last_result: DetectionResult?
 
-	public init(schedule_mode: String?, min_interval_minutes: Int?, effective_interval_minutes: Int?, recent_request_count: Int?, last_automatic_started_at: String?, enabled: Bool?, interval_minutes: Int?, model_id: String?, version: String?, next_at: String?, status: String, reason: String?, last_result: ModelDetectionLastResultRecord?) {
+	public init(schedule_mode: ScheduleMode?, min_interval_minutes: Int?, effective_interval_minutes: Int?, recent_request_count: Int?, last_automatic_started_at: String?, enabled: Bool?, interval_minutes: Int?, model_id: String?, version: String?, next_at: String?, status: String, reason: String?, last_result: DetectionResult?) {
 		self.schedule_mode = schedule_mode
 		self.min_interval_minutes = min_interval_minutes
 		self.effective_interval_minutes = effective_interval_minutes
@@ -1212,31 +1217,6 @@ public struct DetectionRecovery: Codable, Sendable, Equatable {
 		self.mark_cleared = mark_cleared
 		self.reason = reason
 	}
-}
-
-public struct DetectionReport: Codable, Sendable, Equatable {
-	public let prediction_name: String?
-
-	public init(prediction_name: String?) {
-		self.prediction_name = prediction_name
-	}
-}
-
-public struct DetectionResult: Codable, Sendable, Equatable {
-	public let status: String?
-	public let report: DetectionReport?
-	public let completed_at: String?
-
-	public init(status: String?, report: DetectionReport?, completed_at: String?) {
-		self.status = status
-		self.report = report
-		self.completed_at = completed_at
-	}
-}
-
-public enum ScheduleMode: String, Codable, Sendable, Equatable {
-	case fixed
-	case smart
 }
 
 public struct DetectionUpdateBody: Codable, Sendable, Equatable {

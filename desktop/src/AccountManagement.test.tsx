@@ -3,11 +3,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { api, command, subscribe } from "./bridge";
-import {
-  DeleteAccountsDialog,
-  RecoverSelectedButton,
-  ResetCreditsDialog,
-} from "./AccountManagement";
+import { DeleteAccountsDialog, ResetCreditsDialog } from "./AccountManagement";
+import { RecoverSelectedButton } from "./AccountRecoveryButton";
 import { bindOperationConnection } from "./accountOperations";
 import { RecoveryHistory } from "./RecoveryHistory";
 import App from "./main";

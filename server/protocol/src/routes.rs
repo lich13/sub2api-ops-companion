@@ -288,16 +288,7 @@ pub fn client_endpoint(method: &str, path: &str) -> Option<&'static Endpoint> {
         {
             None
         }
-        Route::Template(id)
-            if !matches!(id, "full" | "degraded" | "takeover")
-                && !id.strip_prefix("custom-").is_some_and(|s| {
-                    s.len() == 24
-                        && s.bytes()
-                            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-                }) =>
-        {
-            None
-        }
+        Route::Template(id) if !crate::semantics::valid_template_id(id) => None,
         Route::ManageProxy(id) | Route::ProxyAccounts(id) | Route::ProxyCredentials(id)
             if !id.parse::<i64>().is_ok_and(|n| n > 0) =>
         {

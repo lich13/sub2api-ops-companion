@@ -1,11 +1,112 @@
 use super::*;
-use crate::{compat::parse_datetime, credit_rules, quota};
+use crate::{compat::parse_datetime, credit, quota, runtime::Runtime};
 use chrono::{DateTime, Duration as TimeDelta, Timelike, Utc};
 
 pub struct CycleObservation {
     pub row: Value,
     pub windows: Vec<Value>,
     pub stopped: bool,
+}
+
+fn cycle_saved(row: &Value, state: &Value, at: DateTime<Utc>) -> Result<Value> {
+    let id = integer(&row["id"]).unwrap_or(0).to_string();
+    let meta = &state["scheduler"][&id];
+    if meta["quota_query"]["auth_fingerprint"]
+        == crate::oauth_admission::credential_fingerprint(row)
+        || !truthy(&meta["quota_query"]["auth_fingerprint"])
+            && crate::oauth_admission::AUTH_ERRORS.contains(&string(&meta["last_error_code"]))
+    {
+        return Err(Error::new(422, "账号授权失效，请更新授权后重新预约"));
+    }
+    Ok(quota::latest_result(row, &state["oauth_results"][&id], at))
+}
+
+fn cycle_needs_evidence(row: &Value, saved: &Value) -> bool {
+    let summary = quota::summary_from_result(row, saved);
+    let windows = quota::windows_by_key(&summary["ui_windows"]);
+    quota::percent(&windows.get("codex_7d").unwrap_or(&Value::Null)["used_percent"])
+        .is_some_and(|used| used >= 100.0)
+}
+
+pub(crate) async fn runtime_cycle_observation(
+    runtime: &Arc<Runtime>,
+    id: i64,
+    key: &str,
+) -> Result<CycleObservation> {
+    let mut row = runtime.actions.queries.private_account(id).await?;
+    if row["platform"] != "openai" || row["type"] != "oauth" {
+        return Err(Error::new(422, "持续预约仅支持 OpenAI OAuth 账号"));
+    }
+    {
+        let state = runtime.monitor.store.shared_snapshot()?;
+        let saved = cycle_saved(&row, &state, runtime.monitor.now())?;
+        if cycle_needs_evidence(&row, &saved) {
+            let evidence =
+                credit::rules::upstream_evidence(&runtime.db, &row, runtime.monitor.now()).await?;
+            let observation = observe_cycle(&row, &saved, &evidence, runtime.monitor.now())?;
+            if observation.stopped {
+                return Ok(observation);
+            }
+        }
+        let refreshed = runtime
+            .usage_action_result(
+                id,
+                &json!({"action":"query_usage","expected_version":crate::compat::account_version(&row)}),
+                key,
+                None,
+            )
+            .await?;
+        row = refreshed.row.clone();
+    }
+    let at = runtime.monitor.now();
+    let state = runtime.monitor.store.shared_snapshot()?;
+    let saved = cycle_saved(&row, &state, at)?;
+    let evidence = if cycle_needs_evidence(&row, &saved) {
+        credit::rules::upstream_evidence(&runtime.db, &row, at).await?
+    } else {
+        Value::Null
+    };
+    observe_cycle(&row, &saved, &evidence, at)
+}
+
+pub(crate) async fn runtime_cycle_observations(
+    runtime: &Arc<Runtime>,
+    accounts: &[i64],
+) -> Result<BTreeMap<i64, Result<CycleObservation>>> {
+    let rows = runtime
+        .db
+        .all(
+            &format!("{} AND id=ANY($1)", credit::ACCOUNT_SELECT),
+            &[crate::db::Param::Ints(accounts.to_vec())],
+        )
+        .await?;
+    let at = runtime.monitor.now();
+    let state = runtime.monitor.store.shared_snapshot()?;
+    let mut observations = BTreeMap::new();
+    let mut saved_rows = Vec::new();
+    for row in rows {
+        let id = integer(&row["id"]).unwrap_or(0);
+        match cycle_saved(&row, &state, at) {
+            Ok(saved) => saved_rows.push((row, saved)),
+            Err(error) => {
+                observations.insert(id, Err(error));
+            }
+        }
+    }
+    let evidence_rows = saved_rows
+        .iter()
+        .filter(|(row, saved)| cycle_needs_evidence(row, saved))
+        .map(|(row, _)| row.clone())
+        .collect::<Vec<_>>();
+    let evidence = credit::rules::upstream_evidence_batch(&runtime.db, &evidence_rows, at).await?;
+    for (row, saved) in saved_rows {
+        let id = integer(&row["id"]).unwrap_or(0);
+        observations.insert(
+            id,
+            observe_cycle(&row, &saved, evidence.get(&id).unwrap_or(&Value::Null), at),
+        );
+    }
+    Ok(observations)
 }
 
 /// Use the same current-window quota and upstream-limit evidence as credit recovery,
@@ -35,7 +136,7 @@ pub fn observe_cycle(
     Ok(CycleObservation {
         row: row.clone(),
         windows: windows.into_iter().map(|(_, window)| window).collect(),
-        stopped: credit_rules::depletion_evidence(row, saved, evidence, at).is_object(),
+        stopped: credit::rules::depletion_evidence(row, saved, evidence, at).is_object(),
     })
 }
 

@@ -33,18 +33,23 @@ export interface DegradationMarkRecord {
   error?: string;
 }
 
-export interface ModelDetectionLastReportRecord {
+export enum ScheduleMode {
+  Fixed = "fixed",
+  Smart = "smart",
+}
+
+export interface DetectionReport {
   prediction_name?: string;
 }
 
-export interface ModelDetectionLastResultRecord {
+export interface DetectionResult {
   status?: string;
-  report?: ModelDetectionLastReportRecord;
+  report?: DetectionReport;
   completed_at?: string;
 }
 
 export interface ModelDetectionSummaryRecord {
-  schedule_mode?: "fixed" | "smart";
+  schedule_mode?: ScheduleMode;
   min_interval_minutes?: number;
   effective_interval_minutes?: number;
   recent_request_count?: number;
@@ -56,7 +61,7 @@ export interface ModelDetectionSummaryRecord {
   next_at?: string;
   status: string;
   reason?: string;
-  last_result?: ModelDetectionLastResultRecord;
+  last_result?: DetectionResult;
 }
 
 export interface SettingCapabilityRecord {
@@ -613,21 +618,6 @@ export interface DetectionRecovery {
   generation: number;
   mark_cleared: boolean;
   reason?: string;
-}
-
-export interface DetectionReport {
-  prediction_name?: string;
-}
-
-export interface DetectionResult {
-  status?: string;
-  report?: DetectionReport;
-  completed_at?: string;
-}
-
-export enum ScheduleMode {
-  Fixed = "fixed",
-  Smart = "smart",
 }
 
 export interface DetectionUpdateBody {

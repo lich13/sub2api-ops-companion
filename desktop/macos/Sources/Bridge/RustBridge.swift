@@ -136,9 +136,44 @@ public final class RustBridge: Sendable {
 
     // MARK: - Outbound Host Calls (Swift -> Rust)
 
+    private struct ApiEncodableEnvelope<B: Encodable>: Encodable {
+        let method: String
+        let path: String
+        let body: B
+    }
+
+    private static let encoderThreadKey = "com.lich13.sub2ops.bridge.jsonEncoder"
+    private static let decoderThreadKey = "com.lich13.sub2ops.bridge.jsonDecoder"
+
+    private static func threadJSONEncoder() -> JSONEncoder {
+        let dict = Thread.current.threadDictionary
+        if let existing = dict[encoderThreadKey] as? JSONEncoder {
+            return existing
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        dict[encoderThreadKey] = encoder
+        return encoder
+    }
+
+    private static func threadJSONDecoder() -> JSONDecoder {
+        let dict = Thread.current.threadDictionary
+        if let existing = dict[decoderThreadKey] as? JSONDecoder {
+            return existing
+        }
+        let decoder = JSONDecoder()
+        dict[decoderThreadKey] = decoder
+        return decoder
+    }
+
     public func rawCommand(_ name: String, payloadJSON: String = "{}") async throws -> Data {
+        try await rawCommand(name, payloadData: Data(payloadJSON.utf8))
+    }
+
+    public func rawCommand(_ name: String, payloadData: Data) async throws -> Data {
         let mock = state.withLock { $0.mockHandler }
         if let mock {
+            let payloadJSON = payloadData.isEmpty ? "{}" : String(decoding: payloadData, as: UTF8.self)
             let reply = try await mock(name, payloadJSON)
             return Data(reply.utf8)
         }
@@ -162,16 +197,16 @@ public final class RustBridge: Sendable {
             }
 
             let requestId = registration.0
-            let cmdBytes = Array(name.utf8)
-            let payloadBytes = Array(payloadJSON.utf8)
-            cmdBytes.withUnsafeBufferPointer { cmdBuf in
-                payloadBytes.withUnsafeBufferPointer { payloadBuf in
+            var mutableName = name
+            mutableName.withUTF8 { cmdBuf in
+                payloadData.withUnsafeBytes { rawPayload in
+                    let payloadPtr = rawPayload.bindMemory(to: UInt8.self).baseAddress
                     callbacks.invoke(
                         requestId,
                         cmdBuf.baseAddress,
                         cmdBuf.count,
-                        payloadBuf.baseAddress,
-                        payloadBuf.count
+                        payloadPtr,
+                        rawPayload.count
                     )
                 }
             }
@@ -180,7 +215,7 @@ public final class RustBridge: Sendable {
 
     private func decodeCommandResponse<T: Decodable>(_ responseData: Data) throws -> T {
         do {
-            return try JSONDecoder().decode(T.self, from: responseData)
+            return try Self.threadJSONDecoder().decode(T.self, from: responseData)
         } catch let error as DecodingError {
             let path: [any CodingKey]
             switch error {
@@ -196,20 +231,14 @@ public final class RustBridge: Sendable {
     }
 
     public func command<T: Decodable & Sendable>(_ name: String, args: JSONValue = .object([:])) async throws -> T {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.withoutEscapingSlashes]
-        let payloadData = try encoder.encode(args)
-        let payloadJSON = String(data: payloadData, encoding: .utf8) ?? "{}"
-        let responseData = try await rawCommand(name, payloadJSON: payloadJSON)
+        let payloadData = try Self.threadJSONEncoder().encode(args)
+        let responseData = try await rawCommand(name, payloadData: payloadData)
         return try decodeCommandResponse(responseData)
     }
 
     public func commandVoid(_ name: String, args: JSONValue = .object([:])) async throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.withoutEscapingSlashes]
-        let payloadData = try encoder.encode(args)
-        let payloadJSON = String(data: payloadData, encoding: .utf8) ?? "{}"
-        _ = try await rawCommand(name, payloadJSON: payloadJSON)
+        let payloadData = try Self.threadJSONEncoder().encode(args)
+        _ = try await rawCommand(name, payloadData: payloadData)
     }
 
     public func api<T: Decodable & Sendable>(
@@ -232,13 +261,10 @@ public final class RustBridge: Sendable {
         _ path: String,
         encodable body: B
     ) async throws -> T {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.withoutEscapingSlashes]
-        let methodJSON = String(decoding: try encoder.encode(method), as: UTF8.self)
-        let pathJSON = String(decoding: try encoder.encode(path), as: UTF8.self)
-        let bodyJSON = String(decoding: try encoder.encode(body), as: UTF8.self)
-        let payloadJSON = "{\"method\":\(methodJSON),\"path\":\(pathJSON),\"body\":\(bodyJSON)}"
-        let responseData = try await rawCommand("api_request", payloadJSON: payloadJSON)
+        let payloadData = try Self.threadJSONEncoder().encode(
+            ApiEncodableEnvelope(method: method, path: path, body: body)
+        )
+        let responseData = try await rawCommand("api_request", payloadData: payloadData)
         return try decodeCommandResponse(responseData)
     }
 

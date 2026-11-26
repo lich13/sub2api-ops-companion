@@ -1,10 +1,10 @@
 use crate::{
     compat::{integer, string, truthy},
     error::{Error, Result},
-    model_downgrade::{diagnose_prediction, is_downgrade, valid_report},
     model_target,
     model_test_stream::{self, Failure, Progress},
     model_tests::{error_text, Context, ModelTests},
+    model_verdict::{diagnose_prediction, is_downgrade, valid_report},
 };
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use serde_json::{json, Value};
@@ -178,14 +178,14 @@ impl ModelTests {
         } else {
             "completed"
         };
-        if crate::lm_verdict::is_lm(&current) || crate::verdict_policy::relaxed(&current) {
+        if crate::model_verdict::is_lm(&current) || crate::model_verdict::relaxed(&current) {
             let mut finished = current.clone();
             finished["status"] = status.into();
             finished["groups"] = json!(groups);
             finished["can_retry"] = retryable.into();
             finished["uncertain"] = fatal.as_ref().is_some_and(|f| f.uncertain).into();
             finished["error_code"] = json!(fatal.as_ref().map(|f| f.code));
-            let verdict = crate::verdict_policy::classify(&finished);
+            let verdict = crate::model_verdict::classify(&finished);
             current["classification"] = verdict.clone();
             current["groups"] = json!(groups);
             if current["automatic"] == true && verdict["outcome"] == "degraded" {
@@ -199,8 +199,8 @@ impl ModelTests {
                 }
             }
         }
-        if !crate::lm_verdict::is_lm(&current)
-            && !crate::verdict_policy::relaxed(&current)
+        if !crate::model_verdict::is_lm(&current)
+            && !crate::model_verdict::relaxed(&current)
             && status == "completed"
             && current["automatic"] == true
             && crate::model_tests::ACTIVE.contains(&string(&current["status"]))
@@ -655,7 +655,7 @@ impl ModelTests {
         })).map_err(internal)?;
         }
         if context.lm.is_none()
-            && !crate::verdict_policy::relaxed(job)
+            && !crate::model_verdict::relaxed(job)
             && index == 0
             && job["automatic"] == true
             && valid_report(&first)
@@ -680,7 +680,7 @@ impl ModelTests {
             *run.disposition.lock().unwrap_or_else(|e| e.into_inner()) = disposition.clone();
         }
         if context.lm.is_none()
-            && !crate::verdict_policy::relaxed(job)
+            && !crate::model_verdict::relaxed(job)
             && report["probability"]
                 .as_f64()
                 .is_some_and(|value| value >= 0.99)

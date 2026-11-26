@@ -1,4 +1,4 @@
-#[path = "support/fingerprint_cache.rs"]
+#[path = "common/fingerprint_cache.rs"]
 mod fingerprint_cache;
 #[path = "common/harness.rs"]
 mod test_harness;
@@ -21,9 +21,9 @@ use sub2ops_server::{
     capacity_alerts::CapacityStore,
     compat,
     db::{self, Database},
-    execution::DiskLease,
     oauth_queries::{Coordinator, QueryOptions, Source},
     oauth_state::OAuthState,
+    operations::DiskLease,
     queries::Queries,
     runtime::Runtime,
     settings::Settings,

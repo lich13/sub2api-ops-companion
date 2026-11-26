@@ -597,4 +597,142 @@ it("clears unconfigured empty numeric drafts and blocks empty configured non-nul
   await act(async () => button("检查配置").click());
   expect(container.textContent).toContain("使用恢复默认移除配置或填写有效数值");
   expect(changesSent()).toBeUndefined();
+
+  const targetField = fixture.catalog.fields.find(
+    (f) => f.path === "gateway.scheduling.load_batch_cache_ttl_ms",
+  )!;
+  targetField.nullable = true;
+  await act(async () => root.render(<Sub2ApiConfig active online />));
+  await fill(input("搜索配置字段"), "load_batch_cache_ttl_ms");
+  const nullableInt = input("gateway.scheduling.load_batch_cache_ttl_ms");
+  await fill(nullableInt, "1.5");
+  await act(async () => button("检查配置").click());
+  expect(container.textContent).toContain("需要有效整数");
+  expect(changesSent()).toBeUndefined();
+
+  Object.defineProperty(nullableInt, "validity", {
+    value: { badInput: true },
+    configurable: true,
+  });
+  await fill(nullableInt, "");
+  await act(async () => button("检查配置").click());
+  expect(container.textContent).toContain("需要有效整数");
+  expect(changesSent()).toBeUndefined();
+
+  delete (nullableInt as { validity?: unknown }).validity;
+  await fill(nullableInt, "250");
+  await fill(nullableInt, "");
+  await act(async () => button("检查配置").click());
+  expect(changesSent()).toEqual([
+    {
+      path: "gateway.scheduling.load_batch_cache_ttl_ms",
+      remove: false,
+      value: null,
+    },
+  ]);
+});
+
+it("tabs past unconfigured empty structured YAML fields cleanly without blocking unrelated saves", async () => {
+  await act(async () => root.render(<Sub2ApiConfig active online />));
+  await fill(input("搜索配置字段"), "server.trusted_proxies");
+  const proxies = container.querySelector<HTMLTextAreaElement>(
+    'textarea[aria-label="server.trusted_proxies"]',
+  )!;
+  await act(async () => {
+    proxies.focus();
+    proxies.blur();
+  });
+  expect(container.querySelectorAll(".config-field.changed")).toHaveLength(0);
+  expect(proxies.getAttribute("aria-invalid")).toBe("false");
+
+  // Typing whitespace into an untouched unconfigured structured field preserves raw input while focused, then cleans to "" on blur
+  await act(async () => {
+    proxies.focus();
+  });
+  await yaml("server.trusted_proxies", "   ");
+  expect(proxies.value).toBe("   ");
+  await act(async () => {
+    proxies.blur();
+  });
+  expect(proxies.value).toBe("");
+  expect(container.querySelectorAll(".config-field.changed")).toHaveLength(0);
+  expect(proxies.getAttribute("aria-invalid")).toBe("false");
+
+  // Replacing existing draft text with leading indentation preserves raw spaces while editing, and cleans on blur
+  await act(async () => {
+    proxies.focus();
+  });
+  await yaml("server.trusted_proxies", "- 10.0.0.1");
+  expect(container.querySelectorAll(".config-field.changed")).toHaveLength(1);
+  await yaml("server.trusted_proxies", "  ");
+  expect(proxies.value).toBe("  ");
+  await act(async () => {
+    proxies.blur();
+  });
+  expect(proxies.value).toBe("");
+  expect(container.querySelectorAll(".config-field.changed")).toHaveLength(0);
+  expect(proxies.getAttribute("aria-invalid")).toBe("false");
+
+  await fill(input("搜索配置字段"), "server.host");
+  await fill(input("server.host"), "127.0.0.1");
+  await act(async () => button("应用并重启").click());
+  expect(changesSent()).toEqual([
+    { path: "server.host", remove: false, value: "127.0.0.1" },
+  ]);
+  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+});
+
+it("deduplicates in-flight operation polling across visibilitychange events", async () => {
+  vi.useFakeTimers();
+  try {
+    let resolveFirstPoll:
+      ((op: { status: string; message: string }) => void) | null = null;
+    let operationCalls = 0;
+    const baseImpl = vi.mocked(api).getMockImplementation()!;
+    vi.mocked(api).mockImplementation((method, path, body) => {
+      if (path === "/sub2api-config/operation") {
+        operationCalls += 1;
+        if (operationCalls === 1) {
+          return Promise.resolve({
+            status: "restarting",
+            message: "正在重启",
+          } as never);
+        }
+        if (operationCalls === 2) {
+          return new Promise((resolve) => {
+            resolveFirstPoll = resolve as never;
+          });
+        }
+        return Promise.resolve({
+          status: "restarting",
+          message: "仍在重启",
+        } as never);
+      }
+      return baseImpl(method, path, body);
+    });
+
+    await act(async () => root.render(<Sub2ApiConfig active online />));
+    // Initial statusLoaded check returned "restarting", activating the applying poll effect (call #2)
+    expect(operationCalls).toBe(2);
+
+    // Fire visibilitychange repeatedly while call #2 is still in flight
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(operationCalls).toBe(2);
+
+    // Resolve call #2; exactly one 1500ms timer should be scheduled
+    await act(async () => {
+      resolveFirstPoll?.({ status: "restarting", message: "正在重启" });
+    });
+    expect(operationCalls).toBe(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    expect(operationCalls).toBe(3);
+  } finally {
+    vi.useRealTimers();
+  }
 });

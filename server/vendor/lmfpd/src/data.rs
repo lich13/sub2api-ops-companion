@@ -1,7 +1,4 @@
-//! Reference data: offline directories and in-memory byte slices.
-
-use std::fs;
-use std::path::Path;
+//! Reference data: in-memory byte slices.
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -140,47 +137,4 @@ fn decode_data(
 
 pub(crate) fn load_bytes(bank: &[u8], detector: &[u8]) -> Result<ReferenceData, Error> {
     decode_data(bank, detector, BANK, DETECTOR)
-}
-
-/// Reads `unified_bank.json` and `shared_detector.bin` from a local directory.
-pub(crate) fn load_dir(dir: &Path) -> Result<ReferenceData, Error> {
-    let (bank_path, detector_path) = (dir.join(BANK), dir.join(DETECTOR));
-    let read = |path: &Path| {
-        fs::read(path).map_err(|_| Error::new(format!("Cannot read {}.", path.display())))
-    };
-    let bank = read(&bank_path)?;
-    let detector = read(&detector_path)?;
-    decode_data(
-        &bank,
-        &detector,
-        &bank_path.display().to_string(),
-        &detector_path.display().to_string(),
-    )
-}
-
-fn is_url(source: &str) -> bool {
-    let lower = source.get(..8).unwrap_or(source).to_ascii_lowercase();
-    lower.starts_with("http://") || lower.starts_with("https://")
-}
-
-pub(crate) fn load(sources: &[String]) -> Result<ReferenceData, Error> {
-    if let [source] = sources
-        && !is_url(source)
-    {
-        return load_dir(Path::new(source));
-    }
-    Err(Error::new(
-        "lmfpd: URL sources are not supported in offline mode",
-    ))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn offline_load_rejects_remote_sources() {
-        let result = load(&["https://example.invalid/data/".into()]);
-        assert!(matches!(result, Err(error) if error.message().contains("offline mode")));
-    }
 }

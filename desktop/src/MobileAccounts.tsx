@@ -1,5 +1,12 @@
 import { AccountOperationStatus } from "./OperationPanel";
-import { memo, useCallback, useState, type ReactNode } from "react";
+import {
+  memo,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { MoreHorizontal, X } from "lucide-react";
 import { command } from "./bridge";
 import { fullTime, type Account } from "./types";
@@ -7,9 +14,14 @@ import SchedulingParameters from "./SchedulingParameters";
 import {
   AccountActionButton,
   isPrimaryAction,
-  type AccountActionItem,
+  type AccountActionProvider,
 } from "./AccountActions";
 import UsageCell from "./UsageCell";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
 import { useBackAction } from "./mobile";
 import { supportsModelDetection } from "./modelTestTypes";
 import { DegradationBadge } from "./DegradationMark";
@@ -30,7 +42,7 @@ type Props = {
   ) => ReactNode;
   error: (id: number) => void;
   report: (error: unknown) => void;
-  accountActions: (account: Account) => AccountActionItem[];
+  accountActions: AccountActionProvider;
 };
 
 const refreshSnapshot = () => command("refresh");
@@ -40,6 +52,7 @@ const MobileAccountCard = memo(function MobileAccountCard({
   online,
   isSelected,
   isSchedulingBusy,
+  actionState: _actionState,
   active,
   connectionKey,
   select,
@@ -53,6 +66,7 @@ const MobileAccountCard = memo(function MobileAccountCard({
   online: boolean;
   isSelected: boolean;
   isSchedulingBusy: boolean;
+  actionState: string;
   active?: boolean;
   connectionKey?: string;
   select: (id: number, checked: boolean) => void;
@@ -63,7 +77,7 @@ const MobileAccountCard = memo(function MobileAccountCard({
   ) => ReactNode;
   error: (id: number) => void;
   report: (error: unknown) => void;
-  accountActions: (account: Account) => AccountActionItem[];
+  accountActions: AccountActionProvider;
   openActions: (id: number) => void;
 }) {
   return (
@@ -160,8 +174,16 @@ const MobileAccountCard = memo(function MobileAccountCard({
 
 export default function MobileAccounts(props: Props) {
   const [activeId, setActiveId] = useState<number | null>(null);
-  const active = props.accounts.find((a) => a.id === activeId);
-  useBackAction(!!active, () => setActiveId(null));
+  const accountById = useMemo(
+    () => new Map(props.accounts.map((a) => [a.id, a])),
+    [props.accounts],
+  );
+  const active = activeId != null ? accountById.get(activeId) : undefined;
+  const sheetRef = useRef<HTMLElement>(null);
+  useDialogFocus(sheetRef, !!active);
+  const closeSheet = useCallback(() => setActiveId(null), []);
+  const sheetBackdrop = useBackdropDismiss(closeSheet);
+  useBackAction(!!active, closeSheet);
   const openActions = useCallback((id: number) => setActiveId(id), []);
   return (
     <>
@@ -173,6 +195,7 @@ export default function MobileAccounts(props: Props) {
             online={props.online}
             isSelected={props.selected.has(a.id)}
             isSchedulingBusy={props.busyAccountId === a.id}
+            actionState={props.accountActions.getAccountState?.(a.id) ?? ""}
             active={props.active}
             connectionKey={props.connectionKey}
             select={props.select}
@@ -185,13 +208,22 @@ export default function MobileAccounts(props: Props) {
         ))}
       </div>
       {active && (
-        <div className="modal-backdrop" onClick={() => setActiveId(null)}>
+        <div className="modal-backdrop" {...sheetBackdrop}>
           <section
+            ref={sheetRef}
             className="mobile-action-sheet"
             role="dialog"
             aria-modal="true"
             aria-label="账号操作"
+            tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (isCleanEscape(e)) {
+                e.preventDefault();
+                e.stopPropagation();
+                closeSheet();
+              }
+            }}
           >
             <header>
               <h2>{active.name}</h2>

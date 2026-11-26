@@ -177,9 +177,7 @@ pub fn operation_payload(action: &str, payload: &Value) -> Result<Value> {
         }
         "account_template" => {
             let id = text(&value["template_id"], 4, 31)?;
-            if !(matches!(id, "full" | "degraded" | "takeover")
-                || id.starts_with("custom-") && hex(&json!(&id[7..]), 24).is_ok())
-            {
+            if !sub2ops_protocol::semantics::valid_template_id(id) {
                 return Err(Error::invalid());
             }
             text(&value["template_version"], 64, 64)?;

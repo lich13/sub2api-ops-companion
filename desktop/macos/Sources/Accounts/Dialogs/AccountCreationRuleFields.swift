@@ -36,13 +36,12 @@ extension AccountCreationFieldsView {
                         .font(DS.fontCompact)
                         .foregroundStyle(DS.muted)
                         .frame(width: 118, alignment: .leading)
-                    compactField(
-                        Binding(
-                            get: { draft.protocolURLs[name] ?? "" },
-                            set: { draft.protocolURLs[name] = $0 }
-                        ),
+                    ControlledCompactField(
+                        value: draft.protocolURLs[name] ?? "",
                         prompt: "https://"
-                    )
+                    ) { next in
+                        draft.protocolURLs[name] = next
+                    }
                 }
             }
         }
@@ -65,13 +64,12 @@ extension AccountCreationFieldsView {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .bottom, spacing: 8) {
                         captioned("模型匹配") {
-                            compactField(
-                                Binding(
-                                    get: { rule.pattern },
-                                    set: { next in updateProtocolRule(rule.id) { $0.pattern = next } }
-                                ),
+                            ControlledCompactField(
+                                value: rule.pattern,
                                 prompt: "gpt-*"
-                            )
+                            ) { next in
+                                updateProtocolRule(rule.id) { $0.pattern = next }
+                            }
                         }
                         captioned("首选协议") {
                             LinearSelect(
@@ -140,13 +138,6 @@ extension AccountCreationFieldsView {
         change(&draft.pauseRules[index])
     }
 
-    private func pauseBinding(_ rule: PauseRuleDraft, _ keyPath: WritableKeyPath<PauseRuleDraft, String>) -> Binding<String> {
-        Binding(
-            get: { rule[keyPath: keyPath] },
-            set: { next in updatePauseRule(rule.id) { $0[keyPath: keyPath] = next } }
-        )
-    }
-
     func pauseRulesSection(title: String) -> some View {
         collectionCard {
             HStack(spacing: 8) {
@@ -186,10 +177,14 @@ extension AccountCreationFieldsView {
                             )
                         }
                         captioned("状态码") {
-                            compactField(pauseBinding(rule, \.errorCode), prompt: "429", width: 84)
+                            ControlledCompactField(value: rule.errorCode, prompt: "429", width: 84) { next in
+                                updatePauseRule(rule.id) { $0.errorCode = next }
+                            }
                         }
                         captioned("停用分钟") {
-                            compactField(pauseBinding(rule, \.durationMinutes), prompt: "30", width: 84)
+                            ControlledCompactField(value: rule.durationMinutes, prompt: "30", width: 84) { next in
+                                updatePauseRule(rule.id) { $0.durationMinutes = next }
+                            }
                         }
                         Spacer(minLength: 0)
                         ruleControls(
@@ -202,10 +197,14 @@ extension AccountCreationFieldsView {
                     }
                     HStack(alignment: .bottom, spacing: 8) {
                         captioned("关键词（逗号分隔）") {
-                            compactField(pauseBinding(rule, \.keywords), prompt: "rate limit, overloaded")
+                            ControlledCompactField(value: rule.keywords, prompt: "rate limit, overloaded") { next in
+                                updatePauseRule(rule.id) { $0.keywords = next }
+                            }
                         }
                         captioned("说明") {
-                            compactField(pauseBinding(rule, \.description), prompt: "可选")
+                            ControlledCompactField(value: rule.description, prompt: "可选") { next in
+                                updatePauseRule(rule.id) { $0.description = next }
+                            }
                         }
                     }
                 }

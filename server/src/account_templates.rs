@@ -11,7 +11,6 @@ pub static MODEL_ID: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[A-Za-z0-9._:/-]{1,200}$").unwrap());
 static SOURCE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?:[A-Za-z0-9._:/-]{1,199}\*?|\*)$").unwrap());
-static CUSTOM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^custom-[a-f0-9]{24}$").unwrap());
 const BUILTINS: [(&str, &str); 3] = [
     ("full", "满血"),
     ("degraded", "降智"),
@@ -179,7 +178,7 @@ pub fn normalize(mut data: Value) -> Result<Value> {
             .as_str()
             .or(default)
             .unwrap_or("");
-        if default.is_none() && !CUSTOM.is_match(key)
+        if !sub2ops_protocol::semantics::valid_template_id(key)
             || name.trim().is_empty()
             || name.chars().count() > 40
         {

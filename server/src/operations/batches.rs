@@ -1,9 +1,9 @@
+use super::{id, ids, native, native_confirmed, native_reached, Operations};
 use crate::{
     account_templates,
     compat::{digest, integer, string, truthy},
     db::Param,
     error::{Error, Result},
-    operations::{id, ids, native, native_confirmed, native_reached, Operations},
     queries::settings_capabilities,
     security::safe_error,
     upstream::read_limited,
@@ -14,7 +14,7 @@ use std::{
     time::Duration,
 };
 
-pub fn result_ids(
+fn result_ids(
     data: &Value,
     expected: &BTreeSet<i64>,
     action: &str,
@@ -67,9 +67,18 @@ pub fn result_ids(
     }
     Some((success, failed))
 }
+
 impl Operations {
     pub async fn children(&self, ids: &[i64]) -> Result<BTreeMap<i64, Vec<i64>>> {
-        let rows=self.actions.queries.db.all("SELECT a.id,nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id FROM accounts a WHERE a.deleted_at IS NULL AND nullif(to_jsonb(a)->>'parent_account_id','')::bigint=ANY($1)",&[Param::Ints(ids.to_vec())]).await?;
+        let rows = self
+            .actions
+            .queries
+            .db
+            .all(
+                "SELECT a.id,nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id FROM accounts a WHERE a.deleted_at IS NULL AND nullif(to_jsonb(a)->>'parent_account_id','')::bigint=ANY($1)",
+                &[Param::Ints(ids.to_vec())],
+            )
+            .await?;
         let mut result: BTreeMap<_, Vec<_>> = ids.iter().map(|id| (*id, vec![])).collect();
         for row in rows {
             if let Some(values) =
@@ -287,12 +296,10 @@ impl Operations {
                 ids.insert(parent);
             }
             if delete {
-                ids.extend(crate::operations::ids(&job["child_account_ids"]));
+                ids.extend(ids_ref(&job["child_account_ids"]));
             }
             needed.insert(string(&job["id"]).to_owned(), ids);
         }
-        // Acquire individual members of the union once, so two siblings in a
-        // native bulk request share their parent's lease instead of deadlocking.
         let mut held = BTreeMap::new();
         for id in needed.values().flatten().copied().collect::<BTreeSet<_>>() {
             if let Ok(lease) = self.actions.locks.try_ids([id]) {
@@ -473,8 +480,6 @@ impl Operations {
                 }
             }
         }
-        // This durable boundary precedes readback. A DB failure below is an
-        // unknown outcome.
         self.update_many(
             &selected
                 .iter()
@@ -552,4 +557,8 @@ impl Operations {
             self.backend.account_deleted(child_id);
         }
     }
+}
+
+fn ids_ref(value: &Value) -> BTreeSet<i64> {
+    ids(value)
 }

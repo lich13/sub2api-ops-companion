@@ -17,28 +17,6 @@ impl Hooks {
             .and_then(Weak::upgrade)
             .ok_or_else(Error::internal)
     }
-    fn cycle_saved(row: &Value, state: &Value, at: chrono::DateTime<chrono::Utc>) -> Result<Value> {
-        let id = integer(&row["id"]).unwrap_or(0).to_string();
-        let meta = &state["scheduler"][&id];
-        if meta["quota_query"]["auth_fingerprint"]
-            == crate::oauth_admission::credential_fingerprint(row)
-            || !truthy(&meta["quota_query"]["auth_fingerprint"])
-                && crate::oauth_admission::AUTH_ERRORS.contains(&string(&meta["last_error_code"]))
-        {
-            return Err(Error::new(422, "账号授权失效，请更新授权后重新预约"));
-        }
-        Ok(crate::quota::latest_result(
-            row,
-            &state["oauth_results"][&id],
-            at,
-        ))
-    }
-    fn cycle_needs_evidence(row: &Value, saved: &Value) -> bool {
-        let summary = crate::quota::summary_from_result(row, saved);
-        let windows = crate::quota::windows_by_key(&summary["ui_windows"]);
-        crate::quota::percent(&windows.get("codex_7d").unwrap_or(&Value::Null)["used_percent"])
-            .is_some_and(|used| used >= 100.0)
-    }
 }
 impl credit::Hooks for Hooks {
     fn config(&self) -> Result<Value> {
@@ -160,8 +138,8 @@ impl model_tests::ModelHooks for Hooks {
     }
 }
 impl operations::Backend for Hooks {
-    fn retry_config(&self) -> Result<crate::connection_retry::Policy> {
-        crate::connection_retry::Policy::config(&self.runtime()?.config.current()?)
+    fn retry_config(&self) -> Result<crate::recovery_rules::Policy> {
+        crate::recovery_rules::Policy::config(&self.runtime()?.config.current()?)
     }
     fn now(&self) -> chrono::DateTime<chrono::Utc> {
         self.runtime()
@@ -177,39 +155,7 @@ impl operations::Backend for Hooks {
         key: &'a str,
     ) -> BoxFuture<'a, Result<operations::CycleObservation>> {
         Box::pin(async move {
-            let runtime = self.runtime()?;
-            let mut row = runtime.actions.queries.private_account(id).await?;
-            if row["platform"] != "openai" || row["type"] != "oauth" {
-                return Err(Error::new(422, "持续预约仅支持 OpenAI OAuth 账号"));
-            }
-            {
-                let state = runtime.monitor.store.shared_snapshot()?;
-                let saved = Self::cycle_saved(&row, &state, runtime.monitor.now())?;
-                if Self::cycle_needs_evidence(&row, &saved) {
-                    let evidence = crate::credit_rules::upstream_evidence(
-                        &runtime.db,
-                        &row,
-                        runtime.monitor.now(),
-                    )
-                    .await?;
-                    let observation =
-                        operations::observe_cycle(&row, &saved, &evidence, runtime.monitor.now())?;
-                    if observation.stopped {
-                        return Ok(observation);
-                    }
-                }
-                let refreshed = runtime.usage_action_result(id, &json!({"action":"query_usage","expected_version":crate::compat::account_version(&row)}), key, None).await?;
-                row = refreshed.row.clone();
-            }
-            let at = runtime.monitor.now();
-            let state = runtime.monitor.store.shared_snapshot()?;
-            let saved = Self::cycle_saved(&row, &state, at)?;
-            let evidence = if Self::cycle_needs_evidence(&row, &saved) {
-                crate::credit_rules::upstream_evidence(&runtime.db, &row, at).await?
-            } else {
-                Value::Null
-            };
-            operations::observe_cycle(&row, &saved, &evidence, at)
+            operations::cycle::runtime_cycle_observation(&self.runtime()?, id, key).await
         })
     }
     fn cycle_observations<'a>(
@@ -218,48 +164,7 @@ impl operations::Backend for Hooks {
     ) -> BoxFuture<'a, Result<std::collections::BTreeMap<i64, Result<operations::CycleObservation>>>>
     {
         Box::pin(async move {
-            let runtime = self.runtime()?;
-            let rows = runtime
-                .db
-                .all(
-                    &format!("{} AND id=ANY($1)", crate::credit_ownership::ACCOUNT_SELECT),
-                    &[crate::db::Param::Ints(accounts.to_vec())],
-                )
-                .await?;
-            let at = runtime.monitor.now();
-            let state = runtime.monitor.store.shared_snapshot()?;
-            let mut observations = std::collections::BTreeMap::new();
-            let mut saved_rows = Vec::new();
-            for row in rows {
-                let id = integer(&row["id"]).unwrap_or(0);
-                match Self::cycle_saved(&row, &state, at) {
-                    Ok(saved) => saved_rows.push((row, saved)),
-                    Err(error) => {
-                        observations.insert(id, Err(error));
-                    }
-                }
-            }
-            let evidence_rows = saved_rows
-                .iter()
-                .filter(|(row, saved)| Self::cycle_needs_evidence(row, saved))
-                .map(|(row, _)| row.clone())
-                .collect::<Vec<_>>();
-            let evidence =
-                crate::credit_rules::upstream_evidence_batch(&runtime.db, &evidence_rows, at)
-                    .await?;
-            for (row, saved) in saved_rows {
-                let id = integer(&row["id"]).unwrap_or(0);
-                observations.insert(
-                    id,
-                    operations::observe_cycle(
-                        &row,
-                        &saved,
-                        evidence.get(&id).unwrap_or(&Value::Null),
-                        at,
-                    ),
-                );
-            }
-            Ok(observations)
+            operations::cycle::runtime_cycle_observations(&self.runtime()?, accounts).await
         })
     }
     fn dispatch<'a>(
@@ -353,11 +258,11 @@ impl operations::Backend for Hooks {
         let model = if truthy(configured) {
             text(configured).trim().to_owned()
         } else {
-            crate::model_downgrade::DEFAULT_TEST_MODEL.to_owned()
+            crate::model_verdict::DEFAULT_TEST_MODEL.to_owned()
         };
         Ok((model, limits.recovery))
     }
-    fn test_slots(&self) -> Option<crate::execution::TestSlots> {
+    fn test_slots(&self) -> Option<crate::operations::TestSlots> {
         self.runtime().ok().map(|runtime| runtime.slots.clone())
     }
 }

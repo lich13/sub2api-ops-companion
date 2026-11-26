@@ -1,5 +1,5 @@
 import type { Account } from "./types";
-import type { AccountSettings } from "./AccountSettingsDialog";
+import type { AccountSettings } from "./accountDialog";
 import type { Profile } from "./AccountTemplates";
 
 const configs = new Map<number, { model: Profile; proxy: number | null }>();

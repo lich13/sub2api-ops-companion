@@ -157,10 +157,7 @@ public struct RecordOption: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-public struct RecordOptionPage: Codable, Sendable, Equatable {
-    public var items: [RecordOption]
-    public var next_cursor: String?
-}
+public typealias RecordOptionPage = CursorPage<RecordOption, String>
 
 public typealias RecordColumnSpec = RecordColumnId
 
@@ -317,10 +314,22 @@ public enum RecordFormatting {
 
     public static func tokenCount(_ val: Int?) -> String {
         guard let val, val >= 0 else { return "—" }
-        let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.numberStyle = .decimal
-        return formatter.string(from: NSNumber(value: val)) ?? "\(val)"
+        if val < 1_000 { return String(val) }
+        var groups: [String] = []
+        var remaining = val
+        while remaining >= 1_000 {
+            let part = remaining % 1_000
+            remaining /= 1_000
+            if part < 10 {
+                groups.append("00\(part)")
+            } else if part < 100 {
+                groups.append("0\(part)")
+            } else {
+                groups.append(String(part))
+            }
+        }
+        groups.append(String(remaining))
+        return groups.reversed().joined(separator: ",")
     }
 
     public static func cacheTokenCount(_ val: Int?) -> String {

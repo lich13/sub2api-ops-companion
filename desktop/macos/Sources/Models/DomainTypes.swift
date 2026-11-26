@@ -347,13 +347,7 @@ public enum BeijingTime {
 
 public typealias DegradationMark = DegradationMarkRecord
 public typealias AccountKeepalive = KeepaliveReply
-public typealias ModelDetectionLastReport = ModelDetectionLastReportRecord
-public typealias ModelDetectionLastResult = ModelDetectionLastResultRecord
-public typealias ModelDetectionSummary = ModelDetectionSummaryRecord
 public typealias AccountBlocker = AccountBlockerRecord
-public typealias SettingCapability = SettingCapabilityRecord
-public typealias RecoveryMonitorState = RecoveryMonitorStateRecord
-public typealias AutoResetCreditState = AutoResetCreditStateRecord
 
 extension DegradationMarkRecord {
     public init(marked: Bool? = nil, marked_at: String? = nil, version: String? = nil) {

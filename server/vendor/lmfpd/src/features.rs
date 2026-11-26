@@ -42,13 +42,22 @@ fn digit_runs(text: &str) -> impl Iterator<Item = (usize, usize)> + '_ {
     })
 }
 
+fn contains_letter(separator: &str) -> bool {
+    let bytes = separator.as_bytes();
+    if bytes.iter().all(|b| b.is_ascii()) {
+        bytes.iter().any(u8::is_ascii_alphabetic)
+    } else {
+        LETTER.is_match(separator)
+    }
+}
+
 /// The numbers 1 to 355 of the longest run in a reply; letters between numbers split runs.
 pub fn parse_numbers(text: &str) -> Vec<u32> {
     let mut best = Vec::new();
     let mut current = Vec::new();
     let mut previous_end = 0;
     for (start, end) in digit_runs(text) {
-        if !current.is_empty() && LETTER.is_match(&text[previous_end..start]) {
+        if !current.is_empty() && contains_letter(&text[previous_end..start]) {
             if current.len() > best.len() {
                 best = std::mem::take(&mut current);
             } else {

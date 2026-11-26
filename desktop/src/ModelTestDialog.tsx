@@ -1,5 +1,5 @@
 import { useEffectEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   LoaderCircle,
   Play,
@@ -30,7 +30,12 @@ import {
   type ModelTestResult as Result,
   type VerdictMode,
 } from "./modelTestTypes";
-import { useDialogFocus } from "./dialogFocus";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
+import { ConfirmDiscardDialog } from "./ConfirmDiscardDialog";
 import { useBackAction } from "./mobile";
 
 type Model = ModelOption & { type?: string };
@@ -102,19 +107,36 @@ export default function ModelTestDialog({
   const [modelError, setModelError] = useState(""),
     [modelReload, setModelReload] = useState(0);
   const [busy, setBusy] = useState(false),
+    [confirmDiscard, setConfirmDiscard] = useState(false),
+    [visible, setVisible] = useState(!document.hidden),
     generation = useRef(0),
     timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const reportRef = useRef(report),
     dialogRef = useRef<HTMLElement>(null);
   reportRef.current = report;
-  const dismiss = () => {
+  const forceClose = () => {
     scope.current = scope.current + 1;
     generation.current = generation.current + 1;
     clearTimeout(timer.current);
     close();
   };
-  useDialogFocus(dialogRef);
-  useBackAction(true, dismiss);
+  const dismiss = () => {
+    if (policyDirty && !policySaving && !busy) setConfirmDiscard(true);
+    else forceClose();
+  };
+  const backdrop = useBackdropDismiss(() => {
+    if (!policyDirty && !policySaving && !busy) forceClose();
+  });
+  useDialogFocus(dialogRef, !confirmDiscard);
+  useBackAction(true, () => {
+    if (confirmDiscard) setConfirmDiscard(false);
+    else dismiss();
+  });
+  useEffect(() => {
+    const onVisibility = () => setVisible(!document.hidden);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
   const initializeSelection = useEffectEvent(() => {
     setEngine(
       account.platform !== "openai" || preference?.engine === "lm_detector"
@@ -227,7 +249,8 @@ export default function ModelTestDialog({
   const jobId = job?.id,
     jobStatus = job?.status;
   useEffect(() => {
-    if (!jobId || !jobStatus || terminal.has(jobStatus) || !online) return;
+    if (!jobId || !jobStatus || terminal.has(jobStatus) || !online || !visible)
+      return;
     const current = ++generation.current;
     let step = 0;
     const poll = async () => {
@@ -250,7 +273,7 @@ export default function ModelTestDialog({
       generation.current = generation.current + 1;
       clearTimeout(timer.current);
     };
-  }, [jobId, jobStatus, account.id, online]);
+  }, [jobId, jobStatus, account.id, online, visible]);
   async function savePolicy(
     nextMode: VerdictMode,
     nextTarget: string,
@@ -314,7 +337,7 @@ export default function ModelTestDialog({
       policyError ||
       !online ||
       !model ||
-      !models.some((item) => item.id === model)
+      !modelIds.has(model)
     )
       return;
     const current = scope.current;
@@ -385,560 +408,579 @@ export default function ModelTestDialog({
   }
   const running = !!job && !terminal.has(job.status);
   const reportResult = job?.report;
-  const available = models.some((item) => item.id === model);
+  const modelIds = useMemo(
+    () => new Set(models.map((item) => item.id)),
+    [models],
+  );
+  const available = modelIds.has(model);
   return (
-    <div className="modal-backdrop" onClick={dismiss}>
-      <section
-        ref={dialogRef}
-        className="model-test-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="模型测试"
-        tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            e.stopPropagation();
-            dismiss();
-          }
-        }}
-      >
-        <header>
-          <div>
-            <h2>模型测试</h2>
-            <strong>
-              {account.name} <span>#{account.id}</span>
-            </strong>
-          </div>
-          <button
-            className="icon-button"
-            aria-label="关闭模型测试"
-            onClick={dismiss}
-          >
-            <X size={18} />
-          </button>
-        </header>
-        <div className="model-test-content">
-          <div className="model-test-controls">
-            <label className="model-test-model model-test-model-main">
-              模型
-              <span className="model-directory-control">
-                <select
-                  aria-label="测试模型"
-                  value={model}
-                  disabled={
-                    loading || !models.length || running || busy || !online
-                  }
-                  onChange={(e) => {
-                    selectionTouched.current = true;
-                    setModel(e.target.value);
-                  }}
-                >
-                  {model && !available && (
-                    <option value={model}>
-                      {model}
-                      {!loading && !modelError && online
-                        ? "（当前不可用）"
-                        : ""}
-                    </option>
-                  )}
-                  {models.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.display_name || item.id}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label="刷新模型列表"
-                  disabled={loading || running || busy || !online}
-                  onClick={() => {
-                    refreshDirectory.current = true;
-                    setModelReload((value) => value + 1);
-                  }}
-                >
-                  <RefreshCw
-                    size={16}
-                    className={loading ? "spin" : undefined}
-                  />
-                </button>
-              </span>
-              {modelError ? (
-                <span className="bad-text" role="alert">
-                  {modelError}{" "}
+    <>
+      <div className="modal-backdrop" inert={confirmDiscard} {...backdrop}>
+        <section
+          ref={dialogRef}
+          className="model-test-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-label="模型测试"
+          tabIndex={-1}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (isCleanEscape(e)) {
+              e.preventDefault();
+              e.stopPropagation();
+              if (!policyDirty && !policySaving && !busy) forceClose();
+            }
+          }}
+        >
+          <header>
+            <div>
+              <h2>模型测试</h2>
+              <strong>
+                {account.name} <span>#{account.id}</span>
+              </strong>
+            </div>
+            <button
+              className="icon-button"
+              aria-label="关闭模型测试"
+              onClick={dismiss}
+            >
+              <X size={18} />
+            </button>
+          </header>
+          <div className="model-test-content">
+            <div className="model-test-controls">
+              <label className="model-test-model model-test-model-main">
+                模型
+                <span className="model-directory-control">
+                  <select
+                    aria-label="测试模型"
+                    value={model}
+                    disabled={
+                      loading || !models.length || running || busy || !online
+                    }
+                    onChange={(e) => {
+                      selectionTouched.current = true;
+                      setModel(e.target.value);
+                    }}
+                  >
+                    {model && !available && (
+                      <option value={model}>
+                        {model}
+                        {!loading && !modelError && online
+                          ? "（当前不可用）"
+                          : ""}
+                      </option>
+                    )}
+                    {models.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.display_name || item.id}
+                      </option>
+                    ))}
+                  </select>
                   <button
                     type="button"
-                    className="link-button"
+                    className="icon-button"
+                    aria-label="刷新模型列表"
+                    disabled={loading || running || busy || !online}
                     onClick={() => {
                       refreshDirectory.current = true;
-                      setModelError("");
-                      setLoading(true);
                       setModelReload((value) => value + 1);
                     }}
                   >
-                    重试
+                    <RefreshCw
+                      size={16}
+                      className={loading ? "spin" : undefined}
+                    />
                   </button>
                 </span>
-              ) : !loading && !models.length ? (
-                <span className="muted">暂无可用模型</span>
-              ) : null}
-              {!loading && online && !modelError && model && !available && (
-                <span className="bad-text">
-                  所选模型不在当前账号上游模型目录中。
-                </span>
-              )}
-            </label>
-            <label className="model-test-model">
-              检测源
-              <select
-                aria-label="检测源"
-                value={engine}
-                disabled={running || busy || !online}
-                onChange={(e) => setEngine(e.target.value as DetectionEngine)}
-              >
-                {account.platform === "openai" && (
-                  <option value="modeltrace">ModelTrace</option>
+                {modelError ? (
+                  <span className="bad-text" role="alert">
+                    {modelError}{" "}
+                    <button
+                      type="button"
+                      className="link-button"
+                      onClick={() => {
+                        refreshDirectory.current = true;
+                        setModelError("");
+                        setLoading(true);
+                        setModelReload((value) => value + 1);
+                      }}
+                    >
+                      重试
+                    </button>
+                  </span>
+                ) : !loading && !models.length ? (
+                  <span className="muted">暂无可用模型</span>
+                ) : null}
+                {!loading && online && !modelError && model && !available && (
+                  <span className="bad-text">
+                    所选模型不在当前账号上游模型目录中。
+                  </span>
                 )}
-                <option value="lm_detector">LM Detector</option>
-              </select>
-            </label>
-            <label className="model-test-model">
-              组数
-              <select
-                aria-label="采样组数"
-                value={engine === "lm_detector" ? samples : 3}
-                disabled={
-                  engine !== "lm_detector" || running || busy || !online
-                }
-                onChange={(e) => setSamples(Number(e.target.value) as 1 | 3)}
-              >
-                {engine === "lm_detector" && <option value={1}>1 组</option>}
-                <option value={3}>3 组</option>
-              </select>
-            </label>
-            <label className="model-test-model">
-              并发
-              <select
-                aria-label="测试并发"
-                value={slots}
-                disabled={running || busy}
-                onChange={(e) => {
-                  const value = Number(e.target.value);
-                  setSlots(value);
-                  saveConcurrency?.(value);
-                }}
-              >
-                {[1, 2, 3].map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="model-test-policy">
-            <label className="model-test-model">
-              判定模式
-              <select
-                aria-label="判定模式"
-                value={mode}
-                disabled={
-                  defaultsLoading || policySaving || busy || !online || !policy
-                }
-                onChange={(e) => {
-                  const next = e.target.value as VerdictMode;
-                  policyEdited.current = true;
-                  setMode(next);
-                  void savePolicy(next, target);
-                }}
-              >
-                <option value="strict">严格模式</option>
-                <option value="relaxed">宽松模式</option>
-              </select>
-            </label>
-            {mode === "relaxed" && (
-              <label className="model-test-model">
-                降智模型
-                <input
-                  aria-label="降智模型"
-                  value={target}
-                  disabled={defaultsLoading || policySaving || busy || !online}
-                  onChange={(e) => {
-                    policyEdited.current = true;
-                    setTarget(e.target.value);
-                  }}
-                  onBlur={() => {
-                    if (policyDirty) void savePolicy(mode, target);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                      e.preventDefault();
-                      void savePolicy(mode, target);
-                    }
-                  }}
-                />
               </label>
-            )}
-          </div>
-          {policySaving && (
-            <p className="model-test-policy-status" role="status">
-              正在保存判定规则
-            </p>
-          )}
-          {policyError && (
-            <p className="bad-text model-test-policy-status" role="alert">
-              {policyError}{" "}
-              <button
-                className="link-button"
-                disabled={policySaving || !online}
-                onClick={() => void savePolicy(mode, target, true)}
-              >
-                重试
-              </button>
-            </p>
-          )}
-          {engine === "lm_detector" && (
-            <div className="lm-probe-option">
-              <label title="数字采样完成后执行，最多额外 22 次请求，每次最长 90 秒。">
-                <input
-                  type="checkbox"
-                  checked={tokenizer}
+              <label className="model-test-model">
+                检测源
+                <select
+                  aria-label="检测源"
+                  value={engine}
                   disabled={running || busy || !online}
-                  onChange={(e) => setTokenizer(e.target.checked)}
-                />
-                分词器探测
+                  onChange={(e) => setEngine(e.target.value as DetectionEngine)}
+                >
+                  {account.platform === "openai" && (
+                    <option value="modeltrace">ModelTrace</option>
+                  )}
+                  <option value="lm_detector">LM Detector</option>
+                </select>
+              </label>
+              <label className="model-test-model">
+                组数
+                <select
+                  aria-label="采样组数"
+                  value={engine === "lm_detector" ? samples : 3}
+                  disabled={
+                    engine !== "lm_detector" || running || busy || !online
+                  }
+                  onChange={(e) => setSamples(Number(e.target.value) as 1 | 3)}
+                >
+                  {engine === "lm_detector" && <option value={1}>1 组</option>}
+                  <option value={3}>3 组</option>
+                </select>
+              </label>
+              <label className="model-test-model">
+                并发
+                <select
+                  aria-label="测试并发"
+                  value={slots}
+                  disabled={running || busy}
+                  onChange={(e) => {
+                    const value = Number(e.target.value);
+                    setSlots(value);
+                    saveConcurrency?.(value);
+                  }}
+                >
+                  {[1, 2, 3].map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
-          )}
-          {!online && (
-            <p className="muted" role="status">
-              连接离线，恢复连接后可继续操作。
-            </p>
-          )}
-          {job && (
-            <div className="model-test-result" aria-live="polite">
-              <div className="model-test-status">
-                {job.status === "running" || job.status === "retrying" ? (
-                  <LoaderCircle size={16} className="spin" />
-                ) : null}
-                <span>
-                  {job.status === "queued"
-                    ? "已排队"
-                    : job.status === "needs_confirmation"
-                      ? "账号已变化，需重新确认"
-                      : job.status === "completed"
-                        ? job.completion_reason === "automatic_degradation"
-                          ? job.engine === "lm_detector" ||
-                            job.verdict_mode === "relaxed"
-                            ? "检测完成 · 判定降智"
-                            : "首组命中降智模型"
-                          : job.completion_reason === "confidence_99"
-                            ? "已提前完成"
-                            : "已完成"
-                        : job.status === "cancelled"
-                          ? "已停止"
-                          : job.status === "interrupted"
-                            ? "服务重启后中断"
-                            : job.status === "failed"
-                              ? "测试失败"
-                              : job.phase === "tokenizer"
-                                ? "数字采样完成 · 分词器探测中"
-                                : `${job.completed_groups}/${job.planned_groups ?? 3} 组`}
-                </span>
-                <span>{job.attempts} 次请求</span>
-              </div>
-              <p className="model-test-source">
-                {engineName(job.engine)} · {job.planned_groups ?? 3} 组 ·{" "}
-                {job.verdict_mode === "relaxed"
-                  ? `宽松模式 · ${job.degraded_model_id ?? defaultTarget}`
-                  : "严格模式"}
+            <div className="model-test-policy">
+              <label className="model-test-model">
+                判定模式
+                <select
+                  aria-label="判定模式"
+                  value={mode}
+                  disabled={
+                    defaultsLoading ||
+                    policySaving ||
+                    busy ||
+                    !online ||
+                    !policy
+                  }
+                  onChange={(e) => {
+                    const next = e.target.value as VerdictMode;
+                    policyEdited.current = true;
+                    setMode(next);
+                    void savePolicy(next, target);
+                  }}
+                >
+                  <option value="strict">严格模式</option>
+                  <option value="relaxed">宽松模式</option>
+                </select>
+              </label>
+              {mode === "relaxed" && (
+                <label className="model-test-model">
+                  降智模型
+                  <input
+                    aria-label="降智模型"
+                    value={target}
+                    disabled={
+                      defaultsLoading || policySaving || busy || !online
+                    }
+                    onChange={(e) => {
+                      policyEdited.current = true;
+                      setTarget(e.target.value);
+                    }}
+                    onBlur={() => {
+                      if (policyDirty) void savePolicy(mode, target);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        void savePolicy(mode, target);
+                      }
+                    }}
+                  />
+                </label>
+              )}
+            </div>
+            {policySaving && (
+              <p className="model-test-policy-status" role="status">
+                正在保存判定规则
               </p>
-              {job.verdict_mode === "relaxed" &&
-                job.engine !== "lm_detector" &&
-                job.classification &&
-                terminal.has(job.status) && (
-                  <p role="status">
-                    {job.classification.outcome === "degraded"
-                      ? "判定降智"
-                      : job.classification.outcome === "normal"
-                        ? "未命中降智模型"
-                        : "无法判定"}
+            )}
+            {policyError && (
+              <p className="bad-text model-test-policy-status" role="alert">
+                {policyError}{" "}
+                <button
+                  className="link-button"
+                  disabled={policySaving || !online}
+                  onClick={() => void savePolicy(mode, target, true)}
+                >
+                  重试
+                </button>
+              </p>
+            )}
+            {engine === "lm_detector" && (
+              <div className="lm-probe-option">
+                <label title="数字采样完成后执行，最多额外 22 次请求，每次最长 90 秒。">
+                  <input
+                    type="checkbox"
+                    checked={tokenizer}
+                    disabled={running || busy || !online}
+                    onChange={(e) => setTokenizer(e.target.checked)}
+                  />
+                  分词器探测
+                </label>
+              </div>
+            )}
+            {!online && (
+              <p className="muted" role="status">
+                连接离线，恢复连接后可继续操作。
+              </p>
+            )}
+            {job && (
+              <div className="model-test-result" aria-live="polite">
+                <div className="model-test-status">
+                  {job.status === "running" || job.status === "retrying" ? (
+                    <LoaderCircle size={16} className="spin" />
+                  ) : null}
+                  <span>
+                    {job.status === "queued"
+                      ? "已排队"
+                      : job.status === "needs_confirmation"
+                        ? "账号已变化，需重新确认"
+                        : job.status === "completed"
+                          ? job.completion_reason === "automatic_degradation"
+                            ? job.engine === "lm_detector" ||
+                              job.verdict_mode === "relaxed"
+                              ? "检测完成 · 判定降智"
+                              : "首组命中降智模型"
+                            : job.completion_reason === "confidence_99"
+                              ? "已提前完成"
+                              : "已完成"
+                          : job.status === "cancelled"
+                            ? "已停止"
+                            : job.status === "interrupted"
+                              ? "服务重启后中断"
+                              : job.status === "failed"
+                                ? "测试失败"
+                                : job.phase === "tokenizer"
+                                  ? "数字采样完成 · 分词器探测中"
+                                  : `${job.completed_groups}/${job.planned_groups ?? 3} 组`}
+                  </span>
+                  <span>{job.attempts} 次请求</span>
+                </div>
+                <p className="model-test-source">
+                  {engineName(job.engine)} · {job.planned_groups ?? 3} 组 ·{" "}
+                  {job.verdict_mode === "relaxed"
+                    ? `宽松模式 · ${job.degraded_model_id ?? defaultTarget}`
+                    : "严格模式"}
+                </p>
+                {job.verdict_mode === "relaxed" &&
+                  job.engine !== "lm_detector" &&
+                  job.classification &&
+                  terminal.has(job.status) && (
+                    <p role="status">
+                      {job.classification.outcome === "degraded"
+                        ? "判定降智"
+                        : job.classification.outcome === "normal"
+                          ? "未命中降智模型"
+                          : "无法判定"}
+                    </p>
+                  )}
+                {job.engine === "lm_detector" && (
+                  <ModelFingerprintResult key={job.id} job={job} />
+                )}
+                {job.groups && (
+                  <details
+                    className="model-test-group-details"
+                    open={job.engine !== "lm_detector" || running}
+                  >
+                    <summary>各组采样与预测</summary>
+                    <div className="model-test-groups">
+                      {job.groups.map((group) => (
+                        <div key={group.index}>
+                          <strong>第 {group.index} 组</strong>
+                          <span>
+                            {(
+                              {
+                                queued: "等待",
+                                running: "等待响应",
+                                receiving: "接收中",
+                                analyzing: "分析中",
+                                skipped: "提前结束",
+                                retrying: "等待重试",
+                                completed: "完成",
+                                failed: "失败",
+                                cancelled: "已停止",
+                              } as Record<string, string>
+                            )[group.status] ?? group.status}
+                          </span>
+                          <span>{group.attempts} 次</span>
+                          <span>
+                            首字{" "}
+                            {group.ttft_ms == null
+                              ? "—"
+                              : `${(group.ttft_ms / 1000).toFixed(1)}s`}
+                          </span>
+                          <span>
+                            耗时{" "}
+                            {group.duration_ms == null
+                              ? "—"
+                              : `${(group.duration_ms / 1000).toFixed(1)}s`}
+                          </span>
+                          {group.report && (
+                            <span className="model-test-group-prediction">
+                              {group.report.prediction_name || "无排名"}
+                              {group.report.merged_class
+                                ? " · 合并类别，无法区分"
+                                : ""}
+                            </span>
+                          )}
+                          {group.error && (
+                            <span className="bad-text">{group.error}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+                <details
+                  className="model-test-request-details"
+                  open={job.engine !== "lm_detector"}
+                >
+                  <summary>请求模型与耗时</summary>
+                  <dl>
+                    <div>
+                      <dt>请求模型</dt>
+                      <dd>{job.requested_model}</dd>
+                    </div>
+                    <div>
+                      <dt>转发模型</dt>
+                      <dd>{job.forwarded_model}</dd>
+                    </div>
+                    <div>
+                      <dt>返回模型</dt>
+                      <dd>
+                        {job.returned_models.length
+                          ? job.returned_models.join("、")
+                          : "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>指纹推测</dt>
+                      <dd>{reportResult?.prediction_name || "—"}</dd>
+                    </div>
+                    <div>
+                      <dt>匹配度</dt>
+                      <dd>
+                        {reportResult?.probability == null
+                          ? "—"
+                          : `${(reportResult.probability * 100).toFixed(job?.engine === "lm_detector" ? 2 : 1)}%`}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>有效组数</dt>
+                      <dd>
+                        {reportResult?.used_outputs ?? job.valid_groups}/
+                        {job.planned_groups ?? 3}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>耗时</dt>
+                      <dd>
+                        {job.duration_ms
+                          ? `${(job.duration_ms / 1000).toFixed(1)}s`
+                          : "—"}
+                      </dd>
+                    </div>
+                  </dl>
+                </details>
+                <TokenizerResult job={job} />
+                {job.groups?.some((group) => group.diagnostics) && (
+                  <details className="model-test-diagnostics">
+                    <summary>请求诊断</summary>
+                    {job.groups
+                      .filter((group) => group.diagnostics)
+                      .map((group) => (
+                        <dl key={group.index}>
+                          <div>
+                            <dt>第 {group.index} 组</dt>
+                            <dd>
+                              {group.diagnostics?.response_protocol ||
+                                group.diagnostics?.protocol ||
+                                "—"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>HTTP</dt>
+                            <dd>
+                              {group.diagnostics?.http_status ?? "—"} ·{" "}
+                              {group.diagnostics?.content_type || "—"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>首事件</dt>
+                            <dd>
+                              {group.diagnostics?.first_event_type || "—"} ·{" "}
+                              {group.diagnostics?.first_event_ms == null
+                                ? "—"
+                                : `${(group.diagnostics.first_event_ms / 1000).toFixed(2)}s`}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>末事件</dt>
+                            <dd>{group.diagnostics?.last_event_type || "—"}</dd>
+                          </div>
+                          <div>
+                            <dt>输出 Token</dt>
+                            <dd>
+                              {group.diagnostics?.output_tokens ?? "—"}
+                              {group.diagnostics?.max_output_tokens != null
+                                ? ` / ${group.diagnostics.max_output_tokens}`
+                                : ""}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>思考 Token</dt>
+                            <dd>
+                              {group.diagnostics?.reasoning_tokens ?? "—"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>接收</dt>
+                            <dd>{group.diagnostics?.bytes ?? 0} bytes</dd>
+                          </div>
+                          <div>
+                            <dt>结束</dt>
+                            <dd>{group.diagnostics?.end_reason || "—"}</dd>
+                          </div>
+                        </dl>
+                      ))}
+                  </details>
+                )}
+                {job.automatic_disposition && (
+                  <p>
+                    {job.automatic_disposition.basis === "sample_family"
+                      ? `第 ${job.automatic_disposition.group_indexes?.join("、")} 组跨家族证据`
+                      : job.automatic_disposition.basis === "aggregate"
+                        ? "最终汇总"
+                        : "单组"}{" "}
+                    ·{" "}
+                    {job.automatic_disposition.kind === "recheck" ? (
+                      job.automatic_disposition.reason
+                    ) : (
+                      <>
+                        {job.automatic_disposition.marked
+                          ? "标记已保存"
+                          : "标记待核对"}{" "}
+                        ·{" "}
+                        {job.automatic_disposition.schedule_verified
+                          ? "停调度已确认"
+                          : "停调度未确认"}
+                        {job.automatic_disposition.reason &&
+                          `：${job.automatic_disposition.reason}`}
+                      </>
+                    )}
                   </p>
                 )}
-              {job.engine === "lm_detector" && (
-                <ModelFingerprintResult key={job.id} job={job} />
-              )}
-              {job.groups && (
-                <details
-                  className="model-test-group-details"
-                  open={job.engine !== "lm_detector" || running}
-                >
-                  <summary>各组采样与预测</summary>
-                  <div className="model-test-groups">
-                    {job.groups.map((group) => (
-                      <div key={group.index}>
-                        <strong>第 {group.index} 组</strong>
-                        <span>
-                          {(
-                            {
-                              queued: "等待",
-                              running: "等待响应",
-                              receiving: "接收中",
-                              analyzing: "分析中",
-                              skipped: "提前结束",
-                              retrying: "等待重试",
-                              completed: "完成",
-                              failed: "失败",
-                              cancelled: "已停止",
-                            } as Record<string, string>
-                          )[group.status] ?? group.status}
-                        </span>
-                        <span>{group.attempts} 次</span>
-                        <span>
-                          首字{" "}
-                          {group.ttft_ms == null
-                            ? "—"
-                            : `${(group.ttft_ms / 1000).toFixed(1)}s`}
-                        </span>
-                        <span>
-                          耗时{" "}
-                          {group.duration_ms == null
-                            ? "—"
-                            : `${(group.duration_ms / 1000).toFixed(1)}s`}
-                        </span>
-                        {group.report && (
-                          <span className="model-test-group-prediction">
-                            {group.report.prediction_name || "无排名"}
-                            {group.report.merged_class
-                              ? " · 合并类别，无法区分"
-                              : ""}
-                          </span>
-                        )}
-                        {group.error && (
-                          <span className="bad-text">{group.error}</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              )}
-              <details
-                className="model-test-request-details"
-                open={job.engine !== "lm_detector"}
-              >
-                <summary>请求模型与耗时</summary>
-                <dl>
-                  <div>
-                    <dt>请求模型</dt>
-                    <dd>{job.requested_model}</dd>
-                  </div>
-                  <div>
-                    <dt>转发模型</dt>
-                    <dd>{job.forwarded_model}</dd>
-                  </div>
-                  <div>
-                    <dt>返回模型</dt>
-                    <dd>
-                      {job.returned_models.length
-                        ? job.returned_models.join("、")
-                        : "—"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>指纹推测</dt>
-                    <dd>{reportResult?.prediction_name || "—"}</dd>
-                  </div>
-                  <div>
-                    <dt>匹配度</dt>
-                    <dd>
-                      {reportResult?.probability == null
-                        ? "—"
-                        : `${(reportResult.probability * 100).toFixed(job?.engine === "lm_detector" ? 2 : 1)}%`}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>有效组数</dt>
-                    <dd>
-                      {reportResult?.used_outputs ?? job.valid_groups}/
-                      {job.planned_groups ?? 3}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>耗时</dt>
-                    <dd>
-                      {job.duration_ms
-                        ? `${(job.duration_ms / 1000).toFixed(1)}s`
-                        : "—"}
-                    </dd>
-                  </div>
-                </dl>
-              </details>
-              <TokenizerResult job={job} />
-              {job.groups?.some((group) => group.diagnostics) && (
-                <details className="model-test-diagnostics">
-                  <summary>请求诊断</summary>
-                  {job.groups
-                    .filter((group) => group.diagnostics)
-                    .map((group) => (
-                      <dl key={group.index}>
-                        <div>
-                          <dt>第 {group.index} 组</dt>
-                          <dd>
-                            {group.diagnostics?.response_protocol ||
-                              group.diagnostics?.protocol ||
-                              "—"}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>HTTP</dt>
-                          <dd>
-                            {group.diagnostics?.http_status ?? "—"} ·{" "}
-                            {group.diagnostics?.content_type || "—"}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>首事件</dt>
-                          <dd>
-                            {group.diagnostics?.first_event_type || "—"} ·{" "}
-                            {group.diagnostics?.first_event_ms == null
-                              ? "—"
-                              : `${(group.diagnostics.first_event_ms / 1000).toFixed(2)}s`}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>末事件</dt>
-                          <dd>{group.diagnostics?.last_event_type || "—"}</dd>
-                        </div>
-                        <div>
-                          <dt>输出 Token</dt>
-                          <dd>
-                            {group.diagnostics?.output_tokens ?? "—"}
-                            {group.diagnostics?.max_output_tokens != null
-                              ? ` / ${group.diagnostics.max_output_tokens}`
-                              : ""}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>思考 Token</dt>
-                          <dd>{group.diagnostics?.reasoning_tokens ?? "—"}</dd>
-                        </div>
-                        <div>
-                          <dt>接收</dt>
-                          <dd>{group.diagnostics?.bytes ?? 0} bytes</dd>
-                        </div>
-                        <div>
-                          <dt>结束</dt>
-                          <dd>{group.diagnostics?.end_reason || "—"}</dd>
-                        </div>
-                      </dl>
-                    ))}
-                </details>
-              )}
-              {job.automatic_disposition && (
+                {job.error && <p className="bad-text">{job.error}</p>}
+              </div>
+            )}
+            {job?.bank_version && (
+              <details className="model-test-version">
+                <summary>本轮库版本 · {engineName(job.engine)}</summary>
                 <p>
-                  {job.automatic_disposition.basis === "sample_family"
-                    ? `第 ${job.automatic_disposition.group_indexes?.join("、")} 组跨家族证据`
-                    : job.automatic_disposition.basis === "aggregate"
-                      ? "最终汇总"
-                      : "单组"}{" "}
-                  ·{" "}
-                  {job.automatic_disposition.kind === "recheck" ? (
-                    job.automatic_disposition.reason
-                  ) : (
-                    <>
-                      {job.automatic_disposition.marked
-                        ? "标记已保存"
-                        : "标记待核对"}{" "}
-                      ·{" "}
-                      {job.automatic_disposition.schedule_verified
-                        ? "停调度已确认"
-                        : "停调度未确认"}
-                      {job.automatic_disposition.reason &&
-                        `：${job.automatic_disposition.reason}`}
-                    </>
-                  )}
+                  {job.bank_version.revision} ·{" "}
+                  {job.bank_version.analyzer_version}
                 </p>
-              )}
-              {job.error && <p className="bad-text">{job.error}</p>}
-            </div>
-          )}
-          {job?.bank_version && (
-            <details className="model-test-version">
-              <summary>本轮库版本 · {engineName(job.engine)}</summary>
-              <p>
-                {job.bank_version.revision} ·{" "}
-                {job.bank_version.analyzer_version}
-              </p>
-            </details>
-          )}
-          <FingerprintBankStatus
-            key={engine}
-            engine={engine}
-            online={online}
-            taskVersion={
-              job?.engine === engine ||
-              (!job?.engine && engine === "modeltrace")
-                ? job?.bank_version
-                : undefined
-            }
-          />
-        </div>
-        <footer>
-          {job?.can_retry && !running && (
-            <button
-              disabled={busy || policySaving || !online}
-              onClick={() => void retryFailed()}
-            >
-              重试失败组
-            </button>
-          )}
-          {job?.status === "needs_confirmation" && (
-            <button disabled={busy || !online} onClick={() => void cancel()}>
-              取消任务
-            </button>
-          )}
-          {running ? (
-            <button
-              className="danger-text"
-              disabled={busy || !online}
-              onClick={() => void cancel()}
-            >
-              <Square size={15} />
-              停止
-            </button>
-          ) : (
-            <>
+              </details>
+            )}
+            <FingerprintBankStatus
+              key={engine}
+              engine={engine}
+              online={online}
+              taskVersion={
+                job?.engine === engine ||
+                (!job?.engine && engine === "modeltrace")
+                  ? job?.bank_version
+                  : undefined
+              }
+            />
+          </div>
+          <footer>
+            {job?.can_retry && !running && (
               <button
-                disabled={
-                  loading ||
-                  defaultsLoading ||
-                  policySaving ||
-                  !policy ||
-                  policyDirty ||
-                  !!policyError ||
-                  !models.length ||
-                  busy ||
-                  !model ||
-                  !available ||
-                  !online
-                }
-                onClick={() => void start()}
+                disabled={busy || policySaving || !online}
+                onClick={() => void retryFailed()}
               >
-                {busy ? (
-                  <LoaderCircle size={15} className="spin" />
-                ) : job ? (
-                  <RotateCcw size={15} />
-                ) : (
-                  <Play size={15} />
-                )}{" "}
-                {job ? "重新测试" : "开始测试"}
+                重试失败组
               </button>
-            </>
-          )}
-        </footer>
-      </section>
-    </div>
+            )}
+            {job?.status === "needs_confirmation" && (
+              <button disabled={busy || !online} onClick={() => void cancel()}>
+                取消任务
+              </button>
+            )}
+            {running ? (
+              <button
+                className="danger-text"
+                disabled={busy || !online}
+                onClick={() => void cancel()}
+              >
+                <Square size={15} />
+                停止
+              </button>
+            ) : (
+              <>
+                <button
+                  disabled={
+                    loading ||
+                    defaultsLoading ||
+                    policySaving ||
+                    !policy ||
+                    policyDirty ||
+                    !!policyError ||
+                    !models.length ||
+                    busy ||
+                    !model ||
+                    !available ||
+                    !online
+                  }
+                  onClick={() => void start()}
+                >
+                  {busy ? (
+                    <LoaderCircle size={15} className="spin" />
+                  ) : job ? (
+                    <RotateCcw size={15} />
+                  ) : (
+                    <Play size={15} />
+                  )}{" "}
+                  {job ? "重新测试" : "开始测试"}
+                </button>
+              </>
+            )}
+          </footer>
+        </section>
+      </div>
+      <ConfirmDiscardDialog
+        open={confirmDiscard}
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={forceClose}
+      />
+    </>
   );
 }

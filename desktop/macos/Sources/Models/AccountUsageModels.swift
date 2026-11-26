@@ -5,7 +5,6 @@ public typealias QuotaPlan = QuotaPlanRecord
 public typealias QuotaSubscription = QuotaSubscriptionRecord
 public typealias KeyQuotaUsage = KeyQuotaUsageRecord
 public typealias KeyQuota = KeyQuotaRecord
-public typealias UsageBalance = UsageBalanceRecord
 public typealias ResetCreditsInfo = ResetCreditsInfoRecord
 public typealias UsageWindow = UsageWindowRecord
 public typealias UsageSummary = UsageSummaryRecord

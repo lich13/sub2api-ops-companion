@@ -196,7 +196,7 @@ async fn read_http_timeout(
 async fn source_catalog_read(db: &Database, account: &Value) -> Result<Value> {
     let timeout = Duration::from_secs(8);
     let (url, headers) = catalog_request(db, account).await?;
-    let client = catalog_client(db, account, timeout).await?;
+    let client = catalog_client(db, account).await?;
     let mut data = catalog_pages(
         &client,
         &url,
@@ -371,17 +371,7 @@ async fn catalog_request(db: &Database, account: &Value) -> Result<(reqwest::Url
     Ok((parsed, headers))
 }
 
-async fn catalog_client(
-    db: &Database,
-    account: &Value,
-    timeout: Duration,
-) -> Result<reqwest::Client> {
-    const MAX_POOLED_CLIENTS: usize = 32;
-    type ClientKey = (Option<String>, u64);
-    static CLIENT_POOL: std::sync::LazyLock<
-        std::sync::Mutex<std::collections::VecDeque<(ClientKey, reqwest::Client)>>,
-    > = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::VecDeque::new()));
-
+async fn catalog_client(db: &Database, account: &Value) -> Result<reqwest::Client> {
     let proxy_url = if let Some(id) = integer(&account["proxy_id"]).filter(|v| *v != 0) {
         let proxy = db
             .one(
@@ -390,60 +380,15 @@ async fn catalog_client(
             )
             .await?
             .ok_or_else(|| Error::new(422, "账号代理不可用"))?;
-        let host = string(&proxy["host"]);
-        let host = if host.contains(':') && !host.starts_with('[') {
-            format!("[{host}]")
-        } else {
-            host.into()
-        };
-        let mut url = reqwest::Url::parse(&format!(
-            "{}://{}:{}",
-            string(&proxy["protocol"]),
-            host,
-            integer(&proxy["port"]).unwrap_or(0)
-        ))
-        .map_err(|_| Error::new(422, "账号代理不可用"))?;
-        if truthy(&proxy["username"]) {
-            url.set_username(string(&proxy["username"]))
-                .map_err(|_| Error::new(422, "账号代理不可用"))?;
-            url.set_password(Some(string(&proxy["password"])))
-                .map_err(|_| Error::new(422, "账号代理不可用"))?;
-        }
-        Some(url.into())
+        Some(
+            crate::model_target::format_proxy_url(&proxy)
+                .map_err(|_| Error::new(422, "账号代理不可用"))?,
+        )
     } else {
         None
     };
-
-    let key: ClientKey = (proxy_url, timeout.as_millis() as u64);
-    if let Ok(mut pool) = CLIENT_POOL.lock() {
-        if let Some(pos) = pool.iter().position(|(k, _)| k == &key) {
-            let entry = pool.remove(pos).unwrap();
-            let client = entry.1.clone();
-            pool.push_back(entry);
-            return Ok(client);
-        }
-    }
-
-    let mut builder = reqwest::Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .tcp_nodelay(true)
-        .timeout(timeout);
-    if let Some(ref url) = key.0 {
-        builder = builder.proxy(
-            reqwest::Proxy::all(url.as_str()).map_err(|_| Error::new(422, "账号代理不可用"))?,
-        );
-    }
-    let client = builder.build()?;
-    if let Ok(mut pool) = CLIENT_POOL.lock() {
-        if !pool.iter().any(|(k, _)| k == &key) {
-            if pool.len() >= MAX_POOLED_CLIENTS {
-                pool.pop_front();
-            }
-            pool.push_back((key, client.clone()));
-        }
-    }
-    Ok(client)
+    crate::model_test_stream::pooled_client(proxy_url.as_deref())
+        .map_err(|_| Error::new(422, "账号代理不可用"))
 }
 
 pub(crate) const DIRECTORY_REVOKED: &str = "model_directory_revoked";

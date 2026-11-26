@@ -8,8 +8,6 @@ mod error;
 mod features;
 mod ranker;
 
-use std::path::Path;
-
 use serde::{Deserialize, Serialize};
 
 pub use challenge::generate_challenges;
@@ -120,33 +118,12 @@ pub struct Analysis {
     pub evidence: Evidence,
 }
 
-/// Where [`Detector::load`] gets the reference data.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct LoadOptions {
-    /// A single local directory holding `unified_bank.json` and `shared_detector.bin`.
-    pub sources: Vec<String>,
-}
-
 /// A loaded reference bank and detector.
 pub struct Detector {
     data: data::ReferenceData,
 }
 
 impl Detector {
-    /// Loads the reference data from a single local directory.
-    pub fn load(options: &LoadOptions) -> Result<Self, Error> {
-        Ok(Self {
-            data: data::load(&options.sources)?,
-        })
-    }
-
-    /// Loads the reference data directly from a local directory path.
-    pub fn load_dir(dir: &Path) -> Result<Self, Error> {
-        Ok(Self {
-            data: data::load_dir(dir)?,
-        })
-    }
-
     /// Loads the reference data directly from in-memory `unified_bank.json` and `shared_detector.bin` bytes.
     pub fn load_bytes(bank_json: &[u8], detector_bin: &[u8]) -> Result<Self, Error> {
         Ok(Self {

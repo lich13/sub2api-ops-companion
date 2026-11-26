@@ -5,7 +5,7 @@ use crate::{
     error::{Error, Result},
     oauth_state::OAuthState,
     queries::Queries,
-    recovery_policy::{self, CONNECTION_IDS, MODEL_IDS, SEEN_IDS},
+    recovery_rules::{self, CONNECTION_IDS, MODEL_IDS, SEEN_IDS},
     settings::{daily_time, Concurrency, Settings, OAUTH_FIELDS},
     store::{valid_object, Store},
 };
@@ -67,7 +67,7 @@ impl ConfigService {
                 .into();
         values["model_detection_platforms"] =
             crate::settings::detection_platforms(&values["model_detection_platforms"])?;
-        let retry = crate::connection_retry::Policy::config(&values)?;
+        let retry = crate::recovery_rules::Policy::config(&values)?;
         values["connection_test_retry_interval_seconds"] = retry.interval_seconds.into();
         values["connection_test_max_retries"] = retry.max_retries.into();
         let limits = Concurrency::read(&mut values, 503)?;
@@ -135,13 +135,13 @@ impl ConfigService {
     }
     pub async fn reconcile(&self, rows: &[Value]) -> Result<bool> {
         let _guard = self.lock.lock().await;
-        let eligible = recovery_policy::eligible_ids(rows);
+        let eligible = recovery_rules::eligible_ids(rows);
         let before = self.oauth.read_shared()?;
         let (connection, models) =
             if before.get(CONNECTION_IDS).is_some() || before.get(MODEL_IDS).is_some() {
                 (
-                    recovery_policy::account_ids(before.get(CONNECTION_IDS).unwrap_or(&json!([])))?,
-                    recovery_policy::account_ids(before.get(MODEL_IDS).unwrap_or(&json!([])))?,
+                    recovery_rules::account_ids(before.get(CONNECTION_IDS).unwrap_or(&json!([])))?,
+                    recovery_rules::account_ids(before.get(MODEL_IDS).unwrap_or(&json!([])))?,
                 )
             } else {
                 (eligible.clone(), BTreeSet::new())
@@ -150,7 +150,7 @@ impl ConfigService {
             return Err(Error::new(503, "两类恢复账号不能重复"));
         }
         let seen = if let Some(v) = before.get(SEEN_IDS) {
-            recovery_policy::account_ids(v)?
+            recovery_rules::account_ids(v)?
         } else {
             eligible.clone()
         };
@@ -222,7 +222,7 @@ impl ConfigService {
                         if !value.is_object() {
                             return Err(Error::new(422, "检测源平台配置无效"));
                         }
-                        values[key] = crate::model_rules::merge(&values[key], value);
+                        values[key] = merge_json_objects(&values[key], value);
                     } else {
                         values[key] = value.clone();
                     }
@@ -268,10 +268,10 @@ impl ConfigService {
                     } else {
                         values[field].clone()
                     };
-                    values[field] = json!(recovery_policy::account_ids(&value)?);
+                    values[field] = json!(recovery_rules::account_ids(&value)?);
                 }
-                let connection = recovery_policy::account_ids(&values[CONNECTION_IDS])?;
-                let models = recovery_policy::account_ids(&values[MODEL_IDS])?;
+                let connection = recovery_rules::account_ids(&values[CONNECTION_IDS])?;
+                let models = recovery_rules::account_ids(&values[MODEL_IDS])?;
                 if !connection.is_disjoint(&models) {
                     return Err(Error::new(422, "账号只能选择一种恢复验证方式"));
                 }
@@ -286,7 +286,7 @@ impl ConfigService {
                     .filter_map(integer)
                     .collect::<BTreeSet<_>>();
                 if selection_changed && !selected.is_empty() {
-                    let eligible = recovery_policy::eligible_ids(&self.queries.accounts().await?);
+                    let eligible = recovery_rules::eligible_ids(&self.queries.accounts().await?);
                     if selected
                         .difference(&previous)
                         .any(|id| !eligible.contains(id))
@@ -314,7 +314,7 @@ impl ConfigService {
                     {
                         return Err(Error::new(409, "修改恢复账号前请刷新设置并提交配置版本"));
                     }
-                    payload[SEEN_IDS] = json!(recovery_policy::account_ids(&raw[SEEN_IDS])?
+                    payload[SEEN_IDS] = json!(recovery_rules::account_ids(&raw[SEEN_IDS])?
                         .union(&selected)
                         .copied()
                         .collect::<BTreeSet<_>>());
@@ -332,8 +332,8 @@ impl ConfigService {
                     .union(&selected)
                     .copied()
                     .filter(|id| {
-                        recovery_policy::method(&current[section], *id)
-                            != recovery_policy::method(&values, *id)
+                        recovery_rules::method(&current[section], *id)
+                            != recovery_rules::method(&values, *id)
                     })
                     .collect::<Vec<_>>();
                 self.oauth.transaction(|on_disk| {
@@ -427,5 +427,52 @@ impl ConfigService {
             (self.clock)(),
         );
         Ok(self.snapshot(Some(section))?[section].clone())
+    }
+}
+
+fn merge_json_objects(base: &Value, patch: &Value) -> Value {
+    let mut base = base
+        .as_object()
+        .cloned()
+        .map(Value::Object)
+        .unwrap_or(json!({}));
+    for (key, value) in patch.as_object().into_iter().flatten() {
+        base[key] = if value.is_object() && base[key].is_object() {
+            merge_json_objects(&base[key], value)
+        } else {
+            value.clone()
+        };
+    }
+    base
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::*;
+
+    #[test]
+    fn recursive_merge_replaces_arrays_and_preserves_explicit_null_and_false() {
+        let base = json!({
+            "nested": {"keep": 1, "replace": true, "clear": "old"},
+            "items": ["a", "b"],
+            "flag": true,
+        });
+        let patch = json!({
+            "nested": {"replace": false, "clear": null, "added": "new"},
+            "items": ["c"],
+            "flag": false,
+        });
+        assert_eq!(
+            merge_json_objects(&base, &patch),
+            json!({
+                "nested": {"keep": 1, "replace": false, "clear": null, "added": "new"},
+                "items": ["c"],
+                "flag": false,
+            })
+        );
+        assert_eq!(
+            merge_json_objects(&Value::Null, &json!({"k": 1})),
+            json!({"k": 1})
+        );
     }
 }

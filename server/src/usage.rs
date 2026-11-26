@@ -305,6 +305,59 @@ pub fn stats_specs(id: i64, usage: &Value) -> Vec<Value> {
     }
     specs
 }
+pub fn hash_stats_signature(id: i64, usage: &Value, at: DateTime<Utc>, hasher: &mut sha2::Sha256) {
+    use sha2::Digest;
+    for v in usage["windows"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|v| truthy(&v["stats_start"]))
+    {
+        let key = string(&v["key"]);
+        let duration = v["window_minutes"]
+            .as_i64()
+            .map(Duration::minutes)
+            .unwrap_or_else(|| {
+                if matches!(key, "codex_5h" | "five_hour") {
+                    Duration::hours(5)
+                } else {
+                    Duration::days(7)
+                }
+            });
+        let fixed = v["source"] == "billing_probe"
+            || parse_datetime(&v["reset_at"])
+                .filter(|r| *r > at)
+                .and_then(|r| r.checked_sub_signed(duration))
+                .is_some_and(|s| s <= at);
+        hasher.update(id.to_le_bytes());
+        hasher.update(b"\x1f");
+        hasher.update(key.as_bytes());
+        hasher.update(b"\x1f");
+        if fixed {
+            let start = string(&v["stats_start"]);
+            let prefix_end = start
+                .char_indices()
+                .nth(16)
+                .map_or(start.len(), |(idx, _)| idx);
+            hasher.update(&start.as_bytes()[..prefix_end]);
+        } else {
+            hasher.update(b"rolling");
+        }
+        hasher.update(b"\x1e");
+    }
+    if truthy(&usage["today_start"]) {
+        let start = string(&usage["today_start"]);
+        let prefix_end = start
+            .char_indices()
+            .nth(16)
+            .map_or(start.len(), |(idx, _)| idx);
+        hasher.update(id.to_le_bytes());
+        hasher.update(b"\x1ftoday\x1f");
+        hasher.update(&start.as_bytes()[..prefix_end]);
+        hasher.update(b"\x1e");
+    }
+}
+
 pub fn stats_signature(id: i64, usage: &Value, at: DateTime<Utc>) -> Vec<Value> {
     let mut entries: Vec<Value> = usage["windows"]
         .as_array()

@@ -3,7 +3,7 @@ use crate::{
     compat::{datetime, integer, parse_datetime, string},
     error::{Error, Result},
     model_detection::Detection,
-    model_downgrade::{is_downgrade, valid_report},
+    model_verdict::{is_downgrade, valid_report},
     security::safe_error,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -23,7 +23,7 @@ pub(crate) fn valid_summary(value: &Value) -> bool {
         return true;
     }
     value.is_object()
-        && crate::verdict_policy::validate(value).is_ok()
+        && crate::model_verdict::validate(value).is_ok()
         && ["outcome", "first_prediction", "prediction"]
             .iter()
             .all(|key| value.get(*key).is_none_or(|v| v.is_null() || v.is_string()))
@@ -117,7 +117,7 @@ pub fn summary(job: &Value) -> Value {
     } else {
         json!({})
     };
-    crate::verdict_policy::copy(job, &mut out);
+    crate::model_verdict::copy(job, &mut out);
     if job["engine"].is_string() {
         out["engine"] = job["engine"].clone();
         out["sample_count"] = job["planned_groups"].clone();
@@ -174,11 +174,11 @@ pub fn summary(job: &Value) -> Value {
             "normal".into()
         };
     }
-    if crate::lm_verdict::is_lm(job) || crate::verdict_policy::relaxed(job) {
+    if crate::model_verdict::is_lm(job) || crate::model_verdict::relaxed(job) {
         let classification = if job["classification"].is_object() {
             job["classification"].clone()
         } else {
-            crate::verdict_policy::classify(job)
+            crate::model_verdict::classify(job)
         };
         out["engine"] = job["engine"].clone();
         out["sample_count"] = job["planned_groups"].clone();

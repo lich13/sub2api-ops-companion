@@ -3,8 +3,13 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Eye, EyeOff, LoaderCircle, X } from "lucide-react";
 import { api } from "./bridge";
 import { bridgeFailure, errorMessage } from "./bridgeError";
+import { ConfirmDiscardDialog } from "./ConfirmDiscardDialog";
 import type { CreateProxyBatchReply } from "./protocol";
-import { useDialogFocus } from "./dialogFocus";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
 import { useBackAction } from "./mobile";
 import { fullTime } from "./types";
 import {
@@ -20,53 +25,70 @@ export function ProxyDialog({
   children,
   wide = false,
   busy = false,
+  dirty = false,
+  confirmDiscard = false,
+  onConfirmDiscard,
+  onCancelDiscard,
 }: {
   title: string;
   close: () => void;
   children: ReactNode;
   wide?: boolean;
   busy?: boolean;
+  dirty?: boolean;
+  confirmDiscard?: boolean;
+  onConfirmDiscard?: () => void;
+  onCancelDiscard?: () => void;
 }) {
   const ref = useRef<HTMLElement>(null);
-  useDialogFocus(ref);
+  useDialogFocus(ref, !confirmDiscard);
+  const backdrop = useBackdropDismiss(() => {
+    if (!busy && !dirty) close();
+  });
   useBackAction(true, () => {
-    if (!busy) close();
+    if (confirmDiscard) onCancelDiscard?.();
+    else if (!busy) close();
   });
   return (
-    <div
-      className="modal-backdrop"
-      onClick={() => {
-        if (!busy) close();
-      }}
-    >
-      <section
-        ref={ref}
-        className={`proxy-dialog${wide ? " wide" : ""}`}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && !e.nativeEvent.isComposing && !busy) {
-            e.stopPropagation();
-            close();
-          }
-        }}
-      >
-        <header>
-          <h2>{title}</h2>
-          <button
-            className="icon-button"
-            aria-label="关闭"
-            disabled={busy}
-            onClick={close}
-          >
-            <X size={19} />
-          </button>
-        </header>
-        {children}
-      </section>
-    </div>
+    <>
+      <div className="modal-backdrop" inert={confirmDiscard} {...backdrop}>
+        <section
+          ref={ref}
+          className={`proxy-dialog${wide ? " wide" : ""}`}
+          role="dialog"
+          aria-modal="true"
+          aria-label={title}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (isCleanEscape(e) && !busy) {
+              e.stopPropagation();
+              if (confirmDiscard) onCancelDiscard?.();
+              else if (!dirty) close();
+            }
+          }}
+        >
+          <header>
+            <h2>{title}</h2>
+            <button
+              className="icon-button"
+              aria-label="关闭"
+              disabled={busy}
+              onClick={close}
+            >
+              <X size={19} />
+            </button>
+          </header>
+          {children}
+        </section>
+      </div>
+      {onConfirmDiscard && onCancelDiscard && (
+        <ConfirmDiscardDialog
+          open={confirmDiscard}
+          onCancel={onCancelDiscard}
+          onConfirm={onConfirmDiscard}
+        />
+      )}
+    </>
   );
 }
 function dateInput(value?: string | null) {
@@ -108,7 +130,25 @@ export function ProxyEditor({
   const [options, setOptions] = useState<ProxyRow[]>([]),
     [backupError, setBackupError] = useState("");
   const [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [confirmDiscard, setConfirmDiscard] = useState(false);
+  const initialForm = useRef(form);
+  const dirty =
+    usernameDirty ||
+    expiryDirty ||
+    clearAuth ||
+    (Object.keys(form) as (keyof typeof form)[]).some(
+      (k) => form[k] !== initialForm.current[k],
+    );
+  const optionIds = useMemo(
+    () => new Set(options.map((p) => String(p.id))),
+    [options],
+  );
+  const dismiss = () => {
+    if (busy) return;
+    if (dirty) setConfirmDiscard(true);
+    else close();
+  };
   const alive = useRef(true),
     lock = useRef(false),
     connected = useRef(online);
@@ -211,7 +251,15 @@ export function ProxyEditor({
     }
   }
   return (
-    <ProxyDialog title={row ? "编辑 IP" : "新增 IP"} close={close} busy={busy}>
+    <ProxyDialog
+      title={row ? "编辑 IP" : "新增 IP"}
+      close={dismiss}
+      busy={busy}
+      dirty={dirty}
+      confirmDiscard={confirmDiscard}
+      onCancelDiscard={() => setConfirmDiscard(false)}
+      onConfirmDiscard={close}
+    >
       <form onSubmit={(e) => void submit(e)}>
         <fieldset disabled={!online || busy} className="proxy-form">
           <label className="field span-2">
@@ -355,10 +403,9 @@ export function ProxyEditor({
                 onChange={(e) => field("backup", e.target.value)}
               >
                 <option value="">选择备用代理</option>
-                {form.backup &&
-                  !options.some((p) => String(p.id) === form.backup) && (
-                    <option value={form.backup}>当前代理 #{form.backup}</option>
-                  )}
+                {form.backup && !optionIds.has(form.backup) && (
+                  <option value={form.backup}>当前代理 #{form.backup}</option>
+                )}
                 {options.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -380,7 +427,7 @@ export function ProxyEditor({
           </p>
         )}
         <footer>
-          <button type="button" disabled={busy} onClick={close}>
+          <button type="button" disabled={busy} onClick={dismiss}>
             取消
           </button>
           <button type="submit" className="primary" disabled={!online || busy}>
@@ -402,7 +449,8 @@ export function ProxyBatchAdd({
   saved: (message: string) => void;
 }) {
   const [text, setText] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [confirmDiscard, setConfirmDiscard] = useState(false);
   const [results, setResults] = useState<
     { index: number; address: string; ok: boolean; message: string }[]
   >([]);
@@ -509,14 +557,27 @@ export function ProxyBatchAdd({
     )
       saved(`已添加 ${succeeded} 个 IP`);
   }
-  const done = () =>
-    results.length
-      ? saved(
-          `添加完成：${results.filter((r) => r.ok).length} 个成功，${results.filter((r) => !r.ok).length} 个需核对`,
-        )
-      : close();
+  const dirty = !results.length && text.trim().length > 0;
+  const done = () => {
+    if (results.length) {
+      saved(
+        `添加完成：${results.filter((r) => r.ok).length} 个成功，${results.filter((r) => !r.ok).length} 个需核对`,
+      );
+      return;
+    }
+    if (dirty) setConfirmDiscard(true);
+    else close();
+  };
   return (
-    <ProxyDialog title="批量添加 IP" close={done} busy={busy}>
+    <ProxyDialog
+      title="批量添加 IP"
+      close={done}
+      busy={busy}
+      dirty={dirty}
+      confirmDiscard={confirmDiscard}
+      onCancelDiscard={() => setConfirmDiscard(false)}
+      onConfirmDiscard={close}
+    >
       {!results.length && (
         <>
           <label className="field">

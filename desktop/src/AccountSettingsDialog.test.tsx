@@ -2,9 +2,8 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import AccountSettingsDialog, {
-  type AccountSettings,
-} from "./AccountSettingsDialog";
+import AccountSettingsDialog from "./AccountSettingsDialog";
+import type { AccountSettings } from "./accountDialog";
 import { api, command } from "./bridge";
 import {
   followOperation,

@@ -1,7 +1,7 @@
 use crate::{
     actions::Actions,
     compat::{datetime, integer, parse_datetime, string, truthy},
-    credit_ownership,
+    credit,
     error::{Error, Result},
     oauth_admission::{
         self, automatic_gate, credential_fingerprint, quota_complete, AUTH_ERRORS,
@@ -194,29 +194,33 @@ impl Coordinator {
         scheduler: &Value,
         at: DateTime<Utc>,
     ) -> Result<()> {
-        for row in rows {
-            let row = row.borrow();
-            let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
-            let saved = quota::latest_result(row, &results[id.to_string()], at);
-            let (blocked, deadline) =
-                automatic_gate(row, &saved, &scheduler[id.to_string()], at, true, false)?;
-            let value = (blocked.to_owned(), deadline.map(datetime));
-            let changed = {
-                let mut flights = self.flights.lock().unwrap_or_else(|e| e.into_inner());
+        let mut deferred_audits = Vec::new();
+        {
+            let mut flights = self.flights.lock().unwrap_or_else(|e| e.into_inner());
+            for row in rows {
+                let row = row.borrow();
+                let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
+                let saved = quota::latest_result(row, &results[id.to_string()], at);
+                let (blocked, deadline) =
+                    automatic_gate(row, &saved, &scheduler[id.to_string()], at, true, false)?;
+                let value = (blocked.to_owned(), deadline.map(datetime));
                 let changed = flights.deferred.get(&id) != Some(&value);
                 flights.deferred.insert(id, value.clone());
-                changed
-            };
-            if !blocked.is_empty() && changed {
-                self.actions.audit("oauth_usage_deferred",
-                    json!({"account_id":id,"source":"automatic","reason":blocked,"next_query_at":value.1}),
-                );
+                if !blocked.is_empty() && changed {
+                    deferred_audits.push((id, blocked, value.1));
+                }
             }
+        }
+        for (id, blocked, next_query_at) in deferred_audits {
+            self.actions.audit(
+                "oauth_usage_deferred",
+                json!({"account_id":id,"source":"automatic","reason":blocked,"next_query_at":next_query_at}),
+            );
         }
         Ok(())
     }
     pub async fn query(&self, id: i64, key: &str, options: QueryOptions) -> Value {
-        let row = match credit_ownership::account(&self.actions.queries.db, id).await {
+        let row = match credit::account(&self.actions.queries.db, id).await {
             Ok(row) => row,
             Err(_) => return skipped("account_read_failed"),
         };

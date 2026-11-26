@@ -381,7 +381,7 @@ pub(crate) async fn connection(
     ))
 }
 
-fn format_proxy_url(p: &Value) -> Result<String> {
+pub(crate) fn format_proxy_url(p: &Value) -> Result<String> {
     let host = string(&p["host"]);
     let host = if host.contains(':') && !host.starts_with('[') {
         format!("[{host}]")

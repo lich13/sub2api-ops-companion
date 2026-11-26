@@ -97,9 +97,8 @@ fn fixture_is_pinned_and_contains_only_synthetic_inputs() {
 fn modeltrace_validation_scores_analysis_and_challenges_match_pinned_python() {
     let fixture = fixtures();
     let model = &fixture["modeltrace"];
-    let snapshot = modeltrace::bundled().expect("bundled ModelTrace bank");
-    fingerprint_bank::validate(&snapshot.0).expect("bundled bank schema");
-    assert_eq!(snapshot.1, model["bank_version"]);
+    let (compiled, version) = modeltrace::bundled_compiled().expect("bundled ModelTrace bank");
+    assert_eq!(version, model["bank_version"]);
 
     for case in model["validation_cases"].as_array().unwrap() {
         let actual = modeltrace::validate(case["input"].as_str().unwrap());
@@ -112,10 +111,9 @@ fn modeltrace_validation_scores_analysis_and_challenges_match_pinned_python() {
         assert_eq!(actual, expected, "validation case {}", case["id"]);
     }
 
-    let compiled = modeltrace::CompiledBank::compile(&snapshot.0).expect("compile bundled bank");
     let compiled_from_str =
         modeltrace::CompiledBank::compile_str(BUNDLED_BANK).expect("compile_str bundled bank");
-    assert_eq!(compiled_from_str.built_at(), compiled.built_at());
+    assert_eq!(compiled_from_str, compiled);
     for case in model["scoring_cases"].as_array().unwrap() {
         let numbers = case["numbers"]
             .as_array()
@@ -124,7 +122,6 @@ fn modeltrace_validation_scores_analysis_and_challenges_match_pinned_python() {
             .map(|number| number.as_u64().unwrap() as usize)
             .collect::<Vec<_>>();
         let actual = compiled.scores(&numbers);
-        let actual_from_str = compiled_from_str.scores(&numbers);
         let expected = case["expected_scores"].as_array().unwrap();
         assert_eq!(
             actual.len(),
@@ -132,29 +129,12 @@ fn modeltrace_validation_scores_analysis_and_challenges_match_pinned_python() {
             "score count for {}",
             case["id"]
         );
-        assert_eq!(
-            actual_from_str.len(),
-            expected.len(),
-            "compile_str score count for {}",
-            case["id"]
-        );
-        for (index, ((actual, actual_str), expected)) in actual
-            .iter()
-            .zip(&actual_from_str)
-            .zip(expected)
-            .enumerate()
-        {
+        for (index, (actual, expected)) in actual.iter().zip(expected).enumerate() {
             close(
                 *actual,
                 expected.as_f64().unwrap(),
                 1.0e-12,
                 &format!("{} model index {index}", case["id"]),
-            );
-            close(
-                *actual_str,
-                expected.as_f64().unwrap(),
-                1.0e-12,
-                &format!("{} compile_str model index {index}", case["id"]),
             );
         }
     }
@@ -166,7 +146,7 @@ fn modeltrace_validation_scores_analysis_and_challenges_match_pinned_python() {
             .iter()
             .map(|output| output.as_str().unwrap().to_owned())
             .collect::<Vec<_>>();
-        let actual = modeltrace::analyze(&outputs, &snapshot).unwrap();
+        let actual = compiled.analyze(&outputs, &version).unwrap();
         let expected = &case["expected"];
         if expected.is_null() {
             assert!(actual.is_null(), "analysis case {}", case["id"]);
@@ -237,7 +217,7 @@ fn modeltrace_validation_scores_analysis_and_challenges_match_pinned_python() {
     }
 
     let too_many = vec!["1".to_owned(); 4];
-    let error = modeltrace::analyze(&too_many, &snapshot).unwrap_err();
+    let error = compiled.analyze(&too_many, &version).unwrap_err();
     assert_eq!(error.status.as_u16(), 422);
     assert_eq!(error.detail, "最多分析三组样本");
 
@@ -361,7 +341,7 @@ fn hex_bytes(input: &str) -> Vec<u8> {
 #[test]
 fn fingerprint_bank_validation_and_git_fixtures_match_pinned_python() {
     let fixture = fixtures();
-    let (bank, _) = modeltrace::bundled().unwrap();
+    let bank: Value = serde_json::from_str(BUNDLED_BANK).unwrap();
     let mut mismatches = Vec::new();
     for case in fixture["fingerprint_bank"]["validation_cases"]
         .as_array()
@@ -372,28 +352,10 @@ fn fingerprint_bank_validation_and_git_fixtures_match_pinned_python() {
         } else {
             apply_bank_mutation(&bank, &case["mutation"])
         };
-        let actual = fingerprint_bank::validate(&candidate);
         let candidate_raw = serde_json::to_string(&candidate).unwrap();
         let compiled_str = modeltrace::CompiledBank::compile_str(&candidate_raw);
         let expected_valid = case["expected_valid"].as_bool().unwrap();
         let id = case["id"].as_str().unwrap();
-        match actual {
-            Ok(()) if !expected_valid => {
-                mismatches.push(format!("{id}: accepted invalid Python case"))
-            }
-            Err(error) if expected_valid => mismatches.push(format!(
-                "{id}: rejected valid Python case ({})",
-                error.detail
-            )),
-            Err(error) if error.status.as_u16() != 503 || error.detail != "指纹库数据无效" =>
-            {
-                mismatches.push(format!(
-                    "{id}: unexpected error {} {}",
-                    error.status, error.detail
-                ));
-            }
-            _ => {}
-        }
         match compiled_str {
             Ok(_) if !expected_valid => {
                 mismatches.push(format!("{id}: compile_str accepted invalid Python case"))
@@ -454,15 +416,18 @@ fn fingerprint_bank_validation_and_git_fixtures_match_pinned_python() {
 }
 
 fn assert_modeltrace_bank_error(bank: &Value, version: &Value, input: &str, case: &str) {
-    let error =
-        modeltrace::analyze(&[input.to_owned()], &(bank.clone(), version.clone())).expect_err(case);
+    let raw = serde_json::to_string(bank).unwrap();
+    let error = modeltrace::CompiledBank::compile_str(&raw)
+        .and_then(|compiled| compiled.analyze(&[input.to_owned()], version))
+        .expect_err(case);
     assert_eq!(error.status.as_u16(), 503, "{case}");
     assert_eq!(error.detail, "指纹库数据无效", "{case}");
 }
 
 #[test]
 fn modeltrace_analysis_rejects_extreme_finite_results_and_malformed_bank_shapes() {
-    let (bank, version) = modeltrace::bundled().expect("bundled ModelTrace bank");
+    let (_, version) = modeltrace::bundled_compiled().expect("bundled ModelTrace bank");
+    let bank: Value = serde_json::from_str(BUNDLED_BANK).unwrap();
     let input = (1..=100)
         .map(|number| number.to_string())
         .collect::<Vec<_>>()
@@ -470,7 +435,7 @@ fn modeltrace_analysis_rejects_extreme_finite_results_and_malformed_bank_shapes(
 
     let mut extreme_beta = bank.clone();
     extreme_beta["calibration"]["1"]["beta"] = json!(f64::MAX);
-    fingerprint_bank::validate(&extreme_beta)
+    modeltrace::CompiledBank::compile_str(&serde_json::to_string(&extreme_beta).unwrap())
         .expect("finite positive calibration values remain schema-valid");
     assert_modeltrace_bank_error(
         &extreme_beta,
@@ -481,7 +446,7 @@ fn modeltrace_analysis_rejects_extreme_finite_results_and_malformed_bank_shapes(
 
     let mut tiny_scale = bank.clone();
     tiny_scale["robust"]["hellinger"]["feature_scale"] = json!(vec![1.0e-320_f64; 355]);
-    fingerprint_bank::validate(&tiny_scale)
+    modeltrace::CompiledBank::compile_str(&serde_json::to_string(&tiny_scale).unwrap())
         .expect("positive finite feature scales remain schema-valid");
     assert_modeltrace_bank_error(
         &tiny_scale,
@@ -492,8 +457,9 @@ fn modeltrace_analysis_rejects_extreme_finite_results_and_malformed_bank_shapes(
 
     let mut malformed_models = bank.clone();
     malformed_models["models"] = json!({"fixture":"not-an-array"});
-    let error = fingerprint_bank::validate(&malformed_models)
-        .expect_err("malformed model collection must be rejected");
+    let error =
+        modeltrace::CompiledBank::compile_str(&serde_json::to_string(&malformed_models).unwrap())
+            .expect_err("malformed model collection must be rejected");
     assert_eq!(error.status.as_u16(), 503);
     assert_eq!(error.detail, "指纹库数据无效");
     assert_modeltrace_bank_error(
@@ -505,8 +471,10 @@ fn modeltrace_analysis_rejects_extreme_finite_results_and_malformed_bank_shapes(
 
     let mut malformed_dimension = bank;
     malformed_dimension["robust"]["hellinger"]["feature_mean"] = json!([0.0]);
-    let error = fingerprint_bank::validate(&malformed_dimension)
-        .expect_err("malformed feature dimension must be rejected");
+    let error = modeltrace::CompiledBank::compile_str(
+        &serde_json::to_string(&malformed_dimension).unwrap(),
+    )
+    .expect_err("malformed feature dimension must be rejected");
     assert_eq!(error.status.as_u16(), 503);
     assert_eq!(error.detail, "指纹库数据无效");
     assert_modeltrace_bank_error(
@@ -565,7 +533,7 @@ async fn desktop_decodes_each_fingerprint_bank_status_and_sync_reply() {
 }
 
 fn valid_cache_state() -> Value {
-    let (_, mut version) = modeltrace::bundled().unwrap();
+    let (_, mut version) = modeltrace::bundled_compiled().unwrap();
     let manifest = modeltrace::manifest();
     version["core_blob"] = manifest["files"]["core"]["gitBlob"].clone();
     version["challenge_blob"] = manifest["files"]["challenge"]["gitBlob"].clone();
@@ -677,7 +645,7 @@ fn fingerprint_bank_cache_is_read_only_and_rejects_lost_or_corrupt_state() {
 fn fingerprint_bank_cache_older_than_the_bundle_is_replaced_and_compatible_sources_are_kept() {
     let expectations = fixtures()["fingerprint_bank"]["cache_expectations"].clone();
     let manifest = modeltrace::manifest();
-    let (_, bundled_version) = modeltrace::bundled().unwrap();
+    let (_, bundled_version) = modeltrace::bundled_compiled().unwrap();
 
     let older = tempfile::tempdir().unwrap();
     let older_path = older.path().join("modeltrace-bank-state.json");
@@ -695,7 +663,10 @@ fn fingerprint_bank_cache_older_than_the_bundle_is_replaced_and_compatible_sourc
     let public = bank.public();
     assert_eq!(public["source"], "bundled");
     assert_eq!(public["status"], "idle");
-    assert_eq!(bank.snapshot().1["built_at"], bundled_version["built_at"]);
+    assert_eq!(
+        bank.compiled_version().0["built_at"],
+        bundled_version["built_at"]
+    );
     assert_eq!(fs::read(&older_path).unwrap(), before);
     bank.adopt_bundled().unwrap();
     let saved: Value = serde_json::from_slice(&fs::read(&older_path).unwrap()).unwrap();
@@ -751,8 +722,6 @@ fn fingerprint_bank_cache_older_than_the_bundle_is_replaced_and_compatible_sourc
         }
     }
 
-    // Transiently unreadable or tampered remote cache must never poison OnceLock with a
-    // mismatched (bundled_bank, remote_version) pair.
     let remote_dir = tempfile::tempdir().unwrap();
     let remote_path = remote_dir.path().join("modeltrace-bank-state.json");
     let mut remote_bank: Value = serde_json::from_str(BUNDLED_BANK).unwrap();
@@ -766,31 +735,15 @@ fn fingerprint_bank_cache_older_than_the_bundle_is_replaced_and_compatible_sourc
     remote_state["active"]["version"]["revision"] = "f".repeat(40).into();
     remote_state["active"]["version"]["built_at"] = remote_bank["built_at"].clone();
     remote_state["active"]["version"]["sha256"] = remote_sha.clone().into();
-    let valid_remote_bytes = serde_json::to_vec(&remote_state).unwrap();
-    fs::write(&remote_path, &valid_remote_bytes).unwrap();
+    fs::write(&remote_path, serde_json::to_vec(&remote_state).unwrap()).unwrap();
 
     let bank = fingerprint_bank::FingerprintBank::new(settings_at(remote_dir.path())).unwrap();
     assert_eq!(bank.public()["source"], "cache");
     assert_eq!(bank.public()["version"]["sha256"], remote_sha);
-
-    let mut tampered = remote_state;
-    tampered["active"]["raw_bank"] = BUNDLED_BANK.into();
-    fs::write(&remote_path, serde_json::to_vec(&tampered).unwrap()).unwrap();
-    let fallback_snap = bank.snapshot();
-    assert_eq!(
-        fallback_snap.0["models"][0]["display_name"],
-        modeltrace::bundled().unwrap().0["models"][0]["display_name"]
-    );
-    assert_eq!(fallback_snap.1, bundled_version);
-
-    fs::write(&remote_path, &valid_remote_bytes).unwrap();
-    let recovered_snap = bank.snapshot();
-    assert_eq!(
-        recovered_snap.0["models"][0]["display_name"],
-        "Remote Fixture Model"
-    );
-    assert_eq!(recovered_snap.1["sha256"], remote_sha);
-    assert!(Arc::ptr_eq(&recovered_snap, &bank.snapshot()));
+    let (active_ver, active_compiled) = bank.compiled_version();
+    assert_eq!(active_compiled.models()[0].1, "Remote Fixture Model");
+    assert_eq!(active_ver["sha256"], remote_sha);
+    assert!(Arc::ptr_eq(&active_compiled, &bank.compiled()));
 }
 
 #[tokio::test]
@@ -812,7 +765,7 @@ async fn superseded_older_cache_never_pairs_stale_raw_bank_with_bundled_version_
         }
     }
 
-    let (_, bundled_version) = modeltrace::bundled().unwrap();
+    let (_, bundled_version) = modeltrace::bundled_compiled().unwrap();
     let older = tempfile::tempdir().unwrap();
     let older_path = older.path().join("modeltrace-bank-state.json");
     let mut older_state = valid_cache_state();

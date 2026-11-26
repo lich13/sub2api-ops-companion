@@ -44,12 +44,12 @@ fn bank_settings(directory: &std::path::Path) -> Arc<Settings> {
 }
 
 fn valid_bank_cache_state() -> Value {
-    let (bank, mut version) = modeltrace::bundled().expect("bundled ModelTrace snapshot");
+    let (_, mut version) = modeltrace::bundled_compiled().expect("bundled ModelTrace snapshot");
     let manifest = modeltrace::manifest();
     version["core_blob"] = manifest["files"]["core"]["gitBlob"].clone();
     version["challenge_blob"] = manifest["files"]["challenge"]["gitBlob"].clone();
-    let raw_bank = serde_json::to_string(&bank).unwrap();
-    version["sha256"] = sub2ops_server::compat::sha256(&raw_bank).into();
+    let raw_bank = include_str!("../resources/modeltrace/unified_bank.json");
+    version["sha256"] = sub2ops_server::compat::sha256(raw_bank).into();
     json!({
         "version":1,
         "active":{"raw_bank":raw_bank,"version":version},
@@ -1560,7 +1560,7 @@ fn runtime_fixture_is_pinned_and_synthetic() {
 #[test]
 fn pinned_legacy_80_number_vectors_match_validation_and_analysis() {
     let fixture = runtime_fixtures()["modeltrace_runtime"]["legacy_80_number_vectors"].clone();
-    let (bank, version) = modeltrace::bundled().expect("pinned bundled bank");
+    let (compiled, version) = modeltrace::bundled_compiled().expect("pinned bundled bank");
     assert_eq!(fixture["bank_is_pinned"], true);
     assert_eq!(fixture["bank_sha256"], version["sha256"]);
 
@@ -1568,7 +1568,8 @@ fn pinned_legacy_80_number_vectors_match_validation_and_analysis() {
     let numbers = modeltrace::validate(output);
     assert_eq!(numbers.len(), fixture["valid_sequence"]["validated_count"]);
     assert_eq!(numbers.len(), 80);
-    let report = modeltrace::analyze(&[output.to_owned()], &(bank.clone(), version.clone()))
+    let report = compiled
+        .analyze(&[output.to_owned()], &version)
         .expect("analyze the exact pinned 80-number sequence");
     assert_report(
         &report,
@@ -1590,9 +1591,11 @@ fn pinned_legacy_80_number_vectors_match_validation_and_analysis() {
         thought["invalid_mixed_count"]
     );
     assert!(modeltrace::validate(thought["invalid_mixed_text"].as_str().unwrap()).is_empty());
-    let plain_report = modeltrace::analyze(&[plain.to_owned()], &(bank.clone(), version.clone()))
+    let plain_report = compiled
+        .analyze(&[plain.to_owned()], &version)
         .expect("analyze the plain pinned sequence");
-    let wrapped_report = modeltrace::analyze(&[wrapped.to_owned()], &(bank, version))
+    let wrapped_report = compiled
+        .analyze(&[wrapped.to_owned()], &version)
         .expect("analyze the thought/fence wrapped pinned sequence");
     assert_report(
         &plain_report,
@@ -3140,12 +3143,9 @@ fn offline_fingerprint_bank_cache_preserves_hash_schema_rate_state_and_snapshot(
         public["version"]["sha256"],
         sub2ops_server::compat::sha256(state["active"]["raw_bank"].as_str().unwrap())
     );
-    let bundled = modeltrace::bundled().unwrap();
-    assert_eq!(bank.snapshot().0, bundled.0);
-    assert!(Arc::ptr_eq(&bank.snapshot(), &bank.snapshot()));
-    let mut isolated = bank.snapshot().0.clone();
-    isolated["models"][0]["id"] = "fixture-mutated-model".into();
-    assert_eq!(bank.snapshot().0, bundled.0);
+    let (bundled, _) = modeltrace::bundled_compiled().unwrap();
+    assert_eq!(*bank.compiled(), bundled);
+    assert!(Arc::ptr_eq(&bank.compiled(), &bank.compiled()));
     assert_eq!(
         fs::read(&path).unwrap(),
         before,
@@ -3195,7 +3195,7 @@ fn offline_fingerprint_bank_cache_preserves_hash_schema_rate_state_and_snapshot(
     assert_eq!(error.detail, "指纹库数据无效");
 }
 
-#[path = "support/lm_detector_runtime.rs"]
+#[path = "common/lm_detector_runtime.rs"]
 mod lm_detector_runtime;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

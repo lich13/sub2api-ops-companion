@@ -12,8 +12,14 @@ import {
 import { Copy, EyeOff, Settings2, X } from "lucide-react";
 import { api } from "./bridge";
 import { errorMessage } from "./bridgeError";
+import { ConfirmDiscardDialog } from "./ConfirmDiscardDialog";
+import { NumberFieldInput } from "./NumberFieldInput";
 import { useBackAction } from "./mobile";
-import { useDialogFocus } from "./dialogFocus";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
 import type { Account } from "./types";
 
 import type {
@@ -140,22 +146,37 @@ export function KeyQuotaSettingsDialog({
   saved: (value: Settings | TokenSettings) => void;
 }) {
   const [value, setValue] = useState<Settings | TokenSettings | null>(null),
-    [seconds, setSeconds] = useState("60"),
+    [seconds, setSeconds] = useState<number>(60),
     [enabled, setEnabled] = useState(true);
   const [token, setToken] = useState(""),
     [revealed, setRevealed] = useState(""),
     [visible, setVisible] = useState(false),
     [copied, setCopied] = useState(false),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [confirmDiscard, setConfirmDiscard] = useState(false);
   const alive = useRef(true),
     guard = useRef(false),
     dialog = useRef<HTMLElement>(null);
-  useDialogFocus(dialog);
+  const dirty = account
+    ? token.trim().length > 0
+    : !!value &&
+      "seconds" in value &&
+      (enabled !== (value.seconds !== 0) ||
+        (enabled && seconds !== (value.seconds || 60)));
+  useDialogFocus(dialog, !confirmDiscard);
   const dismiss = () => {
-    if (!guard.current) close();
+    if (guard.current) return;
+    if (dirty) setConfirmDiscard(true);
+    else close();
   };
-  useBackAction(true, dismiss);
+  const backdrop = useBackdropDismiss(() => {
+    if (!guard.current && !dirty) close();
+  });
+  useBackAction(true, () => {
+    if (confirmDiscard) setConfirmDiscard(false);
+    else dismiss();
+  });
   const path = account
     ? `/accounts/${account.id}/key-quota-settings`
     : "/config/key-quota";
@@ -169,7 +190,7 @@ export function KeyQuotaSettingsDialog({
         setValue(v);
         if ("seconds" in v) {
           setEnabled(v.seconds !== 0);
-          setSeconds(String(v.seconds || 60));
+          setSeconds(v.seconds || 60);
         }
       }
     } catch (e) {
@@ -255,134 +276,145 @@ export function KeyQuotaSettingsDialog({
     }
   }
   return (
-    <div className="modal-backdrop" onClick={dismiss}>
-      <section
-        ref={dialog}
-        className="modal key-quota-settings"
-        role="dialog"
-        aria-modal="true"
-        aria-label={account ? "余额查询设置" : "余额刷新设置"}
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && !e.nativeEvent.isComposing) {
-            e.stopPropagation();
-            dismiss();
-          }
-        }}
-      >
-        <header>
-          <h2>{account ? "余额查询设置" : "余额刷新设置"}</h2>
-          <button
-            className="icon-button"
-            aria-label="关闭余额设置"
-            disabled={busy}
-            onClick={dismiss}
-          >
-            <X size={18} />
-          </button>
-        </header>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void save();
+    <>
+      <div className="modal-backdrop" inert={confirmDiscard} {...backdrop}>
+        <section
+          ref={dialog}
+          className="modal key-quota-settings"
+          role="dialog"
+          aria-modal="true"
+          aria-label={account ? "余额查询设置" : "余额刷新设置"}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (isCleanEscape(e)) {
+              e.stopPropagation();
+              if (confirmDiscard) setConfirmDiscard(false);
+              else if (!guard.current && !dirty) close();
+            }
           }}
         >
-          {account ? (
-            <>
-              <p>{account.name}</p>
-              <label className="field">
-                <span>New API 账户访问令牌</span>
-                <input
-                  aria-label="账户访问令牌"
-                  type={visible ? "text" : "password"}
-                  autoComplete="off"
-                  value={token || revealed}
-                  disabled={busy || !online}
-                  placeholder={
-                    value &&
-                    "has_access_token" in value &&
-                    value.has_access_token
-                      ? "已配置，留空保留"
-                      : "可选，用于查询账户余额"
-                  }
-                  onChange={(e) => {
-                    setToken(e.target.value);
-                    setRevealed("");
-                    setCopied(false);
-                  }}
-                />
-              </label>
-              <div className="key-quota-token-actions">
-                <button
-                  type="button"
-                  disabled={busy || !online}
-                  onClick={() => void revealAndCopy()}
-                >
-                  <Copy size={14} />
-                  {copied ? "已复制" : "显示并复制"}
-                </button>
-                {visible && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      setVisible(false);
+          <header>
+            <h2>{account ? "余额查询设置" : "余额刷新设置"}</h2>
+            <button
+              className="icon-button"
+              aria-label="关闭余额设置"
+              disabled={busy}
+              onClick={dismiss}
+            >
+              <X size={18} />
+            </button>
+          </header>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void save();
+            }}
+          >
+            {account ? (
+              <>
+                <p>{account.name}</p>
+                <label className="field">
+                  <span>New API 账户访问令牌</span>
+                  <input
+                    aria-label="账户访问令牌"
+                    type={visible ? "text" : "password"}
+                    autoComplete="off"
+                    value={token || revealed}
+                    disabled={busy || !online}
+                    placeholder={
+                      value &&
+                      "has_access_token" in value &&
+                      value.has_access_token
+                        ? "已配置，留空保留"
+                        : "可选，用于查询账户余额"
+                    }
+                    onChange={(e) => {
+                      setToken(e.target.value);
                       setRevealed("");
                       setCopied(false);
                     }}
-                  >
-                    <EyeOff size={14} />
-                    隐藏
-                  </button>
-                )}
-              </div>
-            </>
-          ) : (
-            <>
-              <label className="switch-row">
-                <span>余额自动刷新</span>
-                <input
-                  type="checkbox"
-                  checked={enabled}
-                  disabled={busy || !online}
-                  onChange={(e) => setEnabled(e.target.checked)}
-                />
-              </label>
-              {enabled && (
-                <label className="field">
-                  <span>间隔 / 秒</span>
-                  <input
-                    aria-label="余额刷新间隔"
-                    type="number"
-                    min={10}
-                    max={86400}
-                    step={1}
-                    value={seconds}
-                    disabled={busy || !online}
-                    onChange={(e) => setSeconds(e.target.value)}
                   />
                 </label>
-              )}
-            </>
-          )}
-          {error && (
-            <p role="alert" className="bad-text">
-              {error}{" "}
-              <button type="button" disabled={busy} onClick={() => void read()}>
-                重新读取
+                <div className="key-quota-token-actions">
+                  <button
+                    type="button"
+                    disabled={busy || !online}
+                    onClick={() => void revealAndCopy()}
+                  >
+                    <Copy size={14} />
+                    {copied ? "已复制" : "显示并复制"}
+                  </button>
+                  {visible && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setVisible(false);
+                        setRevealed("");
+                        setCopied(false);
+                      }}
+                    >
+                      <EyeOff size={14} />
+                      隐藏
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <label className="switch-row">
+                  <span>余额自动刷新</span>
+                  <input
+                    type="checkbox"
+                    checked={enabled}
+                    disabled={busy || !online}
+                    onChange={(e) => setEnabled(e.target.checked)}
+                  />
+                </label>
+                {enabled && (
+                  <label className="field">
+                    <span>间隔 / 秒</span>
+                    <NumberFieldInput
+                      aria-label="余额刷新间隔"
+                      min={10}
+                      max={86400}
+                      step={1}
+                      value={seconds}
+                      disabled={busy || !online}
+                      onChange={(next) => setSeconds(next ?? Number.NaN)}
+                    />
+                  </label>
+                )}
+              </>
+            )}
+            {error && (
+              <p role="alert" className="bad-text">
+                {error}{" "}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void read()}
+                >
+                  重新读取
+                </button>
+              </p>
+            )}
+            <footer>
+              <button type="button" disabled={busy} onClick={dismiss}>
+                取消
               </button>
-            </p>
-          )}
-          <footer>
-            <button type="button" disabled={busy} onClick={dismiss}>
-              取消
-            </button>
-            <button className="primary" disabled={busy || !online || !value}>
-              {busy ? "保存中…" : "保存"}
-            </button>
-          </footer>
-        </form>
-      </section>
-    </div>
+              <button className="primary" disabled={busy || !online || !value}>
+                {busy ? "保存中…" : "保存"}
+              </button>
+            </footer>
+          </form>
+        </section>
+      </div>
+      <ConfirmDiscardDialog
+        open={confirmDiscard}
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={close}
+      />
+    </>
   );
 }

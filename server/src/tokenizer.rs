@@ -44,10 +44,12 @@ struct RawBank {
     pub classes: Vec<Class>,
     api_models: Vec<ApiModel>,
 }
-type Roots = BTreeMap<(usize, usize, u8), Arc<[f64]>>;
+type RootKey = (usize, usize, u8);
+type Roots = BTreeMap<RootKey, Arc<[f64]>>;
 pub struct Bank {
     raw: RawBank,
     values: Vec<Vec<Vec<f64>>>,
+    bounds: Vec<(i64, i64)>,
     scales: Vec<f64>,
     aliases: Vec<Vec<Regex>>,
     api_patterns: Vec<Regex>,
@@ -130,7 +132,7 @@ impl Bank {
             .iter()
             .map(|m| regex(&m.pattern))
             .collect::<Result<Vec<_>>>()?;
-        let values = raw
+        let values: Vec<Vec<Vec<f64>>> = raw
             .classes
             .iter()
             .map(|c| {
@@ -149,6 +151,13 @@ impl Bank {
                     .collect()
             })
             .collect();
+        let bounds = (0..n)
+            .map(|j| {
+                let low = values.iter().map(|v| v[j][0] as i64).min().unwrap() - 24;
+                let high = values.iter().map(|v| v[j][0] as i64).max().unwrap() + 24;
+                (low, high)
+            })
+            .collect();
         let scales = (0..n)
             .map(|j| {
                 let mut values = raw.classes.iter().map(|c| c.counts[j]).collect::<Vec<_>>();
@@ -159,6 +168,7 @@ impl Bank {
         Ok(Self {
             raw,
             values,
+            bounds,
             scales,
             aliases,
             api_patterns,
@@ -352,16 +362,46 @@ impl Bank {
                 }
             }
         }
-        let candidates = self
+        let unasked: Vec<(usize, &Probe)> = self
             .raw
             .probes
             .iter()
             .enumerate()
             .filter(|(_, p)| !asked.contains(&p.id))
+            .collect();
+        let mut needed = BTreeSet::new();
+        let mut local_roots: Roots = {
+            let cache = self.roots.lock().unwrap_or_else(|e| e.into_inner());
+            let mut found = BTreeMap::new();
+            for &(j, _) in &unasked {
+                for &(c, k, _, _) in &atoms {
+                    let key = (j, c, k);
+                    if let Some(v) = cache.get(&key) {
+                        found.insert(key, v.clone());
+                    } else {
+                        needed.insert(key);
+                    }
+                }
+            }
+            found
+        };
+        if !needed.is_empty() {
+            let computed: Vec<(RootKey, Arc<[f64]>)> = needed
+                .into_iter()
+                .map(|key @ (j, c, k)| (key, self.compute_roots(j, c, k)))
+                .collect();
+            let mut cache = self.roots.lock().unwrap_or_else(|e| e.into_inner());
+            for (key, raw) in computed {
+                let entry = cache.entry(key).or_insert_with(|| raw.clone()).clone();
+                local_roots.insert(key, entry);
+            }
+        }
+        let candidates = unasked
+            .into_iter()
             .map(|(j, p)| {
                 let roots = atoms
                     .iter()
-                    .map(|(c, k, _, _)| self.roots(j, *c, *k))
+                    .map(|(c, k, _, _)| local_roots[&(j, *c, *k)].clone())
                     .collect::<Vec<_>>();
                 (
                     p.id.clone(),
@@ -408,14 +448,8 @@ impl Bank {
         }
         chosen
     }
-    fn roots(&self, j: usize, c: usize, kind: u8) -> Arc<[f64]> {
-        let key = (j, c, kind);
-        let mut cache = self.roots.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(v) = cache.get(&key) {
-            return v.clone();
-        }
-        let low = self.values.iter().map(|v| v[j][0] as i64).min().unwrap() - 24;
-        let high = self.values.iter().map(|v| v[j][0] as i64).max().unwrap() + 24;
+    fn compute_roots(&self, j: usize, c: usize, kind: u8) -> Arc<[f64]> {
+        let (low, high) = self.bounds[j];
         let mut raw = (low..=high)
             .map(|y| {
                 if kind == 2 {
@@ -436,9 +470,7 @@ impl Bank {
         for v in &mut raw {
             *v = (*v / norm).sqrt();
         }
-        let raw: Arc<[f64]> = raw.into();
-        cache.insert(key, raw.clone());
-        raw
+        raw.into()
     }
     pub fn report(&self, p: &Posterior, model: &str) -> Value {
         let best = |related: bool| {
@@ -513,6 +545,150 @@ impl Bank {
 }
 pub fn done(p: &Posterior) -> bool {
     p.answered >= 20 || p.answered >= 4 && p.classes[0].exact.max(p.unknown) >= 0.99
+}
+
+impl crate::model_tests::ModelTests {
+    pub(crate) async fn run_tokenizer(
+        &self,
+        job: &Value,
+        context: Arc<crate::model_tests::Context>,
+    ) -> Result<()> {
+        use crate::compat::string;
+        use futures_util::{stream::FuturesUnordered, StreamExt};
+        use std::time::{Duration, Instant};
+
+        let Some(snapshot) = context.lm.clone() else {
+            return Ok(());
+        };
+        let id = string(&job["id"]);
+        let client = context
+            .target
+            .client()
+            .map_err(|_| Error::new(502, "账号代理或连接不可用"))?;
+        let started = Instant::now();
+        let mut observations: Vec<Observation> = vec![];
+        let mut steps: Vec<Value> = vec![];
+        let mut posterior: Option<Posterior> = None;
+        let mut asked = BTreeSet::new();
+        let mut error = String::new();
+        let mut baseline_drift = false;
+        let mut next: Vec<Option<String>> = vec![None];
+        let mut ending = false;
+        loop {
+            let mut pending = FuturesUnordered::new();
+            for probe in &next {
+                let index = steps.len();
+                steps.push(json!({"probe":probe,"status":"requesting"}));
+                if let Some(probe) = probe {
+                    asked.insert(probe.clone());
+                }
+                let prompt = snapshot.tokenizer.text(probe.as_deref())?;
+                let client = client.clone();
+                let context = context.clone();
+                let probe = probe.clone();
+                pending.push(async move {
+                    let mut diag = json!({});
+                    let value = tokio::time::timeout(
+                        Duration::from_secs(90),
+                        crate::model_test_stream::execute_probe(
+                            &context.target,
+                            &prompt,
+                            &client,
+                            &mut diag,
+                        ),
+                    )
+                    .await;
+                    let value = match value {
+                        Ok(Ok(n)) => Ok(n),
+                        Ok(Err(f)) => Err(if f.code == "no_usage" {
+                            "接口未提供输入 Token 用量，无法探测"
+                        } else {
+                            crate::model_tests::error_text(f.code)
+                        }
+                        .into()),
+                        Err(_) => Err("分词器请求超时".into()),
+                    };
+                    (index, probe, value)
+                });
+            }
+            self.display_progress(
+                id,
+                json!({"tokenizer":{"status":"running","steps":steps,"requests":steps.len(),"report":Value::Null}}),
+            )?;
+            while let Some((index, probe, result)) = pending.next().await {
+                match result {
+                    Ok(tokens) => {
+                        steps[index] =
+                            json!({"probe":probe,"status":"completed","input_tokens":tokens});
+                        observations.push(Observation { probe, tokens });
+                    }
+                    Err(reason) => {
+                        steps[index] = json!({"probe":probe,"status":"failed","error":reason});
+                        if error.is_empty() {
+                            error = reason;
+                        }
+                    }
+                }
+                let bank = snapshot.clone();
+                let values = observations.clone();
+                posterior = crate::supervision::join(tokio::task::spawn_blocking(move || {
+                    bank.tokenizer.posterior(&values)
+                }))
+                .await
+                .map_err(|_| Error::internal())?;
+                let report = posterior.as_ref().filter(|p| p.answered > 0).map(|p| {
+                    snapshot
+                        .tokenizer
+                        .report(p, string(&job["requested_model"]))
+                });
+                self.display_progress(
+                    id,
+                    json!({"tokenizer":{"status":"running","steps":steps,"requests":steps.len(),"report":report,"error":error}}),
+                )?;
+            }
+            if !error.is_empty() || ending {
+                break;
+            }
+            let finished = posterior.as_ref().is_some_and(done);
+            let bank = snapshot.clone();
+            let p = posterior.clone();
+            let seen = asked.clone();
+            let count = usize::from(asked.len() < 20);
+            let probes = if finished {
+                vec![]
+            } else {
+                crate::supervision::join(tokio::task::spawn_blocking(move || {
+                    bank.tokenizer.next(p.as_ref(), &seen, count)
+                }))
+                .await
+                .map_err(|_| Error::internal())?
+            };
+            if probes.is_empty() {
+                ending = true;
+                next = vec![None];
+            } else {
+                next = probes.into_iter().map(Some).collect();
+            }
+        }
+        let baselines = observations
+            .iter()
+            .filter(|o| o.probe.is_none())
+            .map(|o| o.tokens)
+            .collect::<Vec<_>>();
+        if baselines.len() == 2 && baselines[0] != baselines[1] {
+            baseline_drift = true;
+        }
+        let report = posterior.as_ref().filter(|p| p.answered > 0).map(|p| {
+            snapshot
+                .tokenizer
+                .report(p, string(&job["requested_model"]))
+        });
+        self.display_progress(
+            id,
+            json!({"tokenizer":{"status":if error.is_empty(){"completed"}else{"failed"},"steps":steps,"requests":steps.len(),"report":report,"baseline_drift":baseline_drift,"error":error,"duration_ms":started.elapsed().as_millis(),"bank_version":snapshot.version}}),
+        )?;
+        Ok(())
+    }
 }
 fn lse(values: &[f64]) -> f64 {
     let top = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);

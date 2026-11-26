@@ -1,11 +1,18 @@
 import Foundation
 
-public typealias ErrorDispositionNotification = ErrorDispositionNotificationRecord
-public typealias ErrorClueNotification = ErrorClueNotificationRecord
 public typealias OpsError = OpsErrorRecord
-public typealias RecoveryResetCredit = RecoveryResetCreditRecord
 public typealias Recovery = RecoveryRecord
 public typealias Snapshot = SnapshotRecord
+
+public struct CursorPage<Item: Codable & Sendable & Equatable, Cursor: Codable & Sendable & Equatable>: Codable, Sendable, Equatable {
+    public var items: [Item]
+    public var next_cursor: Cursor?
+
+    public init(items: [Item], next_cursor: Cursor? = nil) {
+        self.items = items
+        self.next_cursor = next_cursor
+    }
+}
 
 extension OpsErrorRecord: Identifiable {
     public var recordId: Int { id ?? 0 }

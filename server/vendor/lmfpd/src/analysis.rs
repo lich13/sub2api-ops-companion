@@ -38,51 +38,49 @@ pub(crate) fn analyze_outputs(
             "Each input round must contain one to three outputs with text and a positive integer expected_count.",
         ));
     }
-    let prepared: Vec<(String, u64)> = outputs
+    let prepared: Vec<(String, u64, Vec<u32>)> = outputs
         .iter()
         .map(|output| {
-            let numbers = parse_numbers(&output.text);
+            let mut numbers = parse_numbers(&output.text);
             let expected = output.expected_count;
             let text = if (numbers.len() as u64) < minimum_numbers(expected) {
+                numbers.clear();
                 String::new()
             } else if !strict && numbers.len() as u64 > expected {
-                join(&numbers[..expected as usize])
+                numbers.truncate(expected as usize);
+                join(&numbers)
             } else {
                 output.text.clone()
             };
-            (text, expected)
+            (text, expected, numbers)
         })
         .collect();
-    let prepared: Vec<(&str, u64)> = prepared
-        .iter()
-        .map(|(text, expected)| (text.as_str(), *expected))
-        .collect();
-    score(&prepared, data, strict)
+    score_parsed(&prepared, data, strict)
 }
 
 pub(crate) fn join(numbers: &[u32]) -> String {
-    numbers
-        .iter()
-        .map(u32::to_string)
-        .collect::<Vec<_>>()
-        .join(", ")
+    let mut out = String::with_capacity(numbers.len() * 5);
+    for (i, n) in numbers.iter().enumerate() {
+        if i > 0 {
+            out.push_str(", ");
+        }
+        use std::fmt::Write;
+        let _ = write!(&mut out, "{n}");
+    }
+    out
 }
 
-/// Scores `(text, expected_count)` replies as they are. Fails only when the ranking is not finite.
-pub(crate) fn score(
-    outputs: &[(&str, u64)],
+/// Scores `(text, expected_count, parsed_numbers)` replies as they are. Fails only when the ranking is not finite.
+pub(crate) fn score_parsed(
+    outputs: &[(String, u64, Vec<u32>)],
     data: &ReferenceData,
     strict: bool,
 ) -> Result<Analysis, Error> {
-    let parsed: Vec<Vec<u32>> = outputs
-        .iter()
-        .map(|(text, _)| parse_numbers(text))
-        .collect();
+    let parsed: Vec<Vec<u32>> = outputs.iter().map(|(_, _, n)| n.clone()).collect();
     let diagnostics: Vec<Diagnostic> = outputs
         .iter()
-        .zip(&parsed)
         .enumerate()
-        .map(|(index, ((text, expected), numbers))| {
+        .map(|(index, (text, expected, numbers))| {
             let minimum = minimum_numbers(*expected);
             Diagnostic {
                 index,

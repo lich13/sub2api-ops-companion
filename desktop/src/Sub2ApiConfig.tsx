@@ -12,6 +12,7 @@ import type {
 } from "./protocol";
 import Sub2ApiVersion from "./Sub2ApiVersion";
 import { ProxyDialog } from "./ProxyDialogs";
+import { NumberFieldInput } from "./NumberFieldInput";
 import "./sub2api-config.css";
 
 type ConfigField = {
@@ -78,6 +79,13 @@ const containsPath = (parent: string, path: string) =>
   path === parent ||
   path.startsWith(`${parent}.`) ||
   path.startsWith(`${parent}[`);
+function pathAncestors(path: string): string[] {
+  const out = [path];
+  for (let i = path.length - 1; i > 0; i--) {
+    if (path[i] === "." || path[i] === "[") out.push(path.slice(0, i));
+  }
+  return out;
+}
 const summary = (description: string) => {
   const first = description.split(/[。\n]/)[0];
   return first.length > 90 ? `${first.slice(0, 90)}…` : first;
@@ -111,12 +119,14 @@ export function structuredValue(text: string, type: string) {
 function FieldEditor({
   field,
   value,
+  unconfigured = false,
   disabled,
   change,
   invalid = false,
 }: {
   field: ConfigField;
   value: unknown;
+  unconfigured?: boolean;
   disabled: boolean;
   change: (value: unknown) => void;
   invalid?: boolean;
@@ -125,27 +135,28 @@ function FieldEditor({
   const structured = field.type === "array" || field.type === "object";
   const numeric = field.type === "integer" || field.type === "number";
   const [yaml, setYaml] = useState(() => structuredText(value));
-  const [raw, setRaw] = useState(() => (value == null ? "" : String(value)));
   const [error, setError] = useState(() =>
-    structured && typeof value === "string"
+    structured &&
+    typeof value === "string" &&
+    !(unconfigured && value.trim() === "")
       ? structuredValue(value, field.type).error
       : "",
+  );
+  const dirty = useRef(
+    structured && typeof value === "string" && !(unconfigured && value === ""),
   );
   const emitted = useRef<unknown>(value);
   useEffect(() => {
     if (structured && emitted.current !== value) {
       setYaml(structuredText(value));
-      setError(
-        typeof value === "string"
-          ? structuredValue(value, field.type).error
-          : "",
-      );
-    }
-    if (numeric && emitted.current !== value) {
-      setRaw(value == null ? "" : String(value));
+      const hasError =
+        typeof value === "string" && !(unconfigured && value.trim() === "");
+      setError(hasError ? structuredValue(value, field.type).error : "");
+      dirty.current =
+        typeof value === "string" && !(unconfigured && value === "");
       emitted.current = value;
     }
-  }, [value, structured, numeric, field.type]);
+  }, [value, structured, field.type, unconfigured]);
   const id = `config-${field.path}`;
   const a11y = {
     "aria-describedby": `${id}-help ${id}-errors${error && !invalid ? ` ${id}-syntax` : ""}`,
@@ -207,9 +218,33 @@ function FieldEditor({
           }
           onChange={(e) => {
             const text = e.target.value;
+            if (unconfigured && text === "") {
+              dirty.current = false;
+              setYaml("");
+              if (error) setError("");
+              emitted.current = null;
+              change("");
+              return;
+            }
+            dirty.current = true;
             setYaml(text);
-            const result = structuredValue(text, field.type);
+            if (error) setError("");
+            emitted.current = text;
+            change(text);
+          }}
+          onBlur={() => {
+            if (!dirty.current) return;
+            if (unconfigured && yaml.trim() === "") {
+              dirty.current = false;
+              setYaml("");
+              setError("");
+              emitted.current = null;
+              change("");
+              return;
+            }
+            const result = structuredValue(yaml, field.type);
             setError(result.error);
+            dirty.current = !!result.error;
             emitted.current = result.value;
             change(result.value);
           }}
@@ -223,42 +258,47 @@ function FieldEditor({
     );
   return (
     <div className="config-input">
-      <input
-        id={id}
-        aria-label={field.path}
-        {...a11y}
-        disabled={disabled}
-        type={
-          field.sensitive && !reveal ? "password" : numeric ? "number" : "text"
-        }
-        step={field.type === "integer" ? 1 : "any"}
-        value={numeric ? raw : value == null ? "" : String(value)}
-        autoComplete="off"
-        spellCheck={false}
-        placeholder={
-          value == null
-            ? "未配置"
-            : typeof value === "string" && !value
-              ? "空字符串"
-              : undefined
-        }
-        onChange={(e) => {
-          const text = e.target.value;
-          if (numeric) {
-            setRaw(text);
-            const next = text === "" ? null : Number(text);
-            emitted.current = next === null ? field.default_value : next;
-            change(next);
-          } else {
-            change(text);
+      {numeric && (!field.sensitive || reveal) ? (
+        <NumberFieldInput
+          id={id}
+          aria-label={field.path}
+          {...a11y}
+          disabled={disabled}
+          step={field.type === "integer" ? 1 : "any"}
+          value={typeof value === "number" ? value : null}
+          allowEmpty
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={value == null ? "未配置" : undefined}
+          onChange={(next) => change(next)}
+        />
+      ) : (
+        <input
+          id={id}
+          aria-label={field.path}
+          {...a11y}
+          disabled={disabled}
+          type={field.sensitive && !reveal ? "password" : "text"}
+          value={value == null ? "" : String(value)}
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={
+            value == null
+              ? "未配置"
+              : typeof value === "string" && !value
+                ? "空字符串"
+                : undefined
           }
-        }}
-        onBlur={() => {
-          if (numeric && raw === "" && value != null) {
-            setRaw(String(value));
-          }
-        }}
-      />
+          onChange={(e) => {
+            const text = e.target.value;
+            if (numeric) {
+              change(text === "" ? null : Number(text));
+            } else {
+              change(text);
+            }
+          }}
+        />
+      )}
       {field.sensitive && (
         <button
           type="button"
@@ -383,6 +423,9 @@ const ConfigFieldRow = memo(function ConfigFieldRow({
           key={`${field.path}:${change?.remove ?? false}:${current?.configured}`}
           field={field}
           value={value}
+          unconfigured={
+            !current?.configured && !change?.remove && !field.has_default
+          }
           disabled={blocked || !editable || overridden}
           invalid={issues.length > 0}
           change={handleEdit}
@@ -570,12 +613,24 @@ export default function Sub2ApiConfig({
   useEffect(() => {
     if (!applying) return;
     let cancelled = false,
-      timer: ReturnType<typeof setTimeout>;
+      inFlight = false,
+      timer: ReturnType<typeof setTimeout> | undefined;
+    const clearScheduled = () => {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+    };
     async function poll() {
+      if (cancelled || inFlight) return;
+      clearScheduled();
+      inFlight = true;
+      let shouldContinue = true;
       try {
         const value = await api<Operation>("GET", "/sub2api-config/operation");
         if (cancelled || !alive.current) return;
         if (!running(value) && uncertain.current) {
+          shouldContinue = false;
           setOperation({
             status: "failed",
             message: `提交结果未确认；宿主机当前状态：${value.message || (value.status === "idle" ? "无操作记录" : value.status)}。草稿已保留。`,
@@ -587,6 +642,7 @@ export default function Sub2ApiConfig({
         setOperation(value);
         setError("");
         if (!running(value)) {
+          shouldContinue = false;
           if (value.status === "succeeded") await load(true);
           else await load();
           return;
@@ -594,20 +650,44 @@ export default function Sub2ApiConfig({
       } catch (e) {
         if (!cancelled && alive.current)
           setError(`${errorText(e)}；应用结果待确认，请保持此页或稍后查询状态`);
+      } finally {
+        inFlight = false;
       }
-      if (!cancelled) timer = setTimeout(() => void poll(), 1500);
+      if (
+        shouldContinue &&
+        !cancelled &&
+        alive.current &&
+        !globalThis.document.hidden
+      ) {
+        clearScheduled();
+        timer = setTimeout(() => {
+          timer = undefined;
+          void poll();
+        }, 1500);
+      }
     }
-    void poll();
+    const onVisibility = () => {
+      clearScheduled();
+      if (!cancelled && !globalThis.document.hidden && !inFlight) void poll();
+    };
+    globalThis.document.addEventListener("visibilitychange", onVisibility);
+    if (!globalThis.document.hidden) void poll();
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      clearScheduled();
+      globalThis.document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [applying]);
+  const fieldByPath = useMemo(
+    () => new Map(document?.catalog.fields.map((f) => [f.path, f]) ?? []),
+    [document],
+  );
   const changes = Object.values(draft),
     blocked = busy || applying || !online || !document?.editable;
   const edit = useCallback(
     (field: ConfigField, value: unknown, explicit = false) => {
       const numeric = field.type === "integer" || field.type === "number";
+      const structured = field.type === "array" || field.type === "object";
       setDraft((old) => {
         const next = { ...old },
           current = documentRef.current?.values[field.path];
@@ -617,7 +697,9 @@ export default function Sub2ApiConfig({
             ? equal(current.yaml, value)
             : numeric && value === null && !field.nullable
               ? true
-              : field.has_default && equal(field.default_value, value))
+              : structured && !field.has_default && value === ""
+                ? true
+                : field.has_default && equal(field.default_value, value))
         )
           delete next[field.path];
         else next[field.path] = { path: field.path, remove: false, value };
@@ -628,57 +710,86 @@ export default function Sub2ApiConfig({
     },
     [],
   );
-  function payload() {
+  function payload(resolvedChanges = changes) {
     return {
       expected_revision: document!.revision,
       runtime_revision: document!.runtime_revision,
-      changes,
+      changes: resolvedChanges,
     };
   }
   async function validate(openConfirm: boolean) {
     if (blocked || !changes.length) return;
-    const localIssues = changes.flatMap((c) => {
-      const field = document!.catalog.fields.find((f) => f.path === c.path)!;
+    const resolvedChanges: Change[] = [];
+    const localIssues: Issue[] = [];
+    let normalizedDraft: Record<string, Change> | null = null;
+    for (const c of changes) {
+      const field = fieldByPath.get(c.path)!;
       if (
         !c.remove &&
         (field.type === "array" || field.type === "object") &&
         typeof c.value === "string"
-      )
-        return [
-          {
+      ) {
+        const current = document!.values[field.path];
+        if (
+          !current?.configured &&
+          !field.has_default &&
+          c.value.trim() === ""
+        ) {
+          normalizedDraft ??= { ...draft };
+          delete normalizedDraft[field.path];
+          continue;
+        }
+        const parsed = structuredValue(c.value, field.type);
+        if (parsed.error) {
+          localIssues.push({
             path: c.path,
-            message:
-              structuredValue(c.value, field.type).error ||
-              "需要有效的 YAML 结构",
-          },
-        ];
+            message: parsed.error || "需要有效的 YAML 结构",
+          });
+          resolvedChanges.push(c);
+          continue;
+        }
+        normalizedDraft ??= { ...draft };
+        if (
+          current?.configured
+            ? equal(current.yaml, parsed.value)
+            : field.has_default && equal(field.default_value, parsed.value)
+        ) {
+          delete normalizedDraft[field.path];
+        } else {
+          const nextChange: Change = { ...c, value: parsed.value };
+          normalizedDraft[field.path] = nextChange;
+          resolvedChanges.push(nextChange);
+        }
+        continue;
+      }
       if (
         !c.remove &&
         (field.type === "integer" || field.type === "number") &&
-        !field.nullable &&
-        (c.value === null ||
-          typeof c.value !== "number" ||
-          !Number.isFinite(c.value) ||
-          (field.type === "integer" && !Number.isInteger(c.value)))
-      )
-        return [
-          {
-            path: c.path,
-            message:
-              c.value === null
-                ? "使用恢复默认移除配置或填写有效数值"
-                : field.type === "integer"
-                  ? "需要有效整数"
-                  : "需要有效数值",
-          },
-        ];
-      return [];
-    });
+        (c.value === null
+          ? !field.nullable
+          : typeof c.value !== "number" ||
+            !Number.isFinite(c.value) ||
+            (field.type === "integer" && !Number.isInteger(c.value)))
+      ) {
+        localIssues.push({
+          path: c.path,
+          message:
+            c.value === null
+              ? "使用恢复默认移除配置或填写有效数值"
+              : field.type === "integer"
+                ? "需要有效整数"
+                : "需要有效数值",
+        });
+      }
+      resolvedChanges.push(c);
+    }
+    if (normalizedDraft) setDraft(normalizedDraft);
     if (localIssues.length) {
       setIssues(localIssues);
       locate(localIssues[0].path);
       return;
     }
+    if (!resolvedChanges.length) return;
     setBusy(true);
     setError("");
     setMessage("");
@@ -686,7 +797,7 @@ export default function Sub2ApiConfig({
       const result = await api<HostValidationReply>(
         "POST",
         "/sub2api-config/validate",
-        payload(),
+        payload(resolvedChanges),
       );
       if (!alive.current) return;
       setIssues(result.errors);
@@ -731,28 +842,32 @@ export default function Sub2ApiConfig({
       if (alive.current) setBusy(false);
     }
   }
-  const searchIndex = useMemo(() => {
+  const { searchIndex, childrenByPath, splitGroups } = useMemo(() => {
     const index = new Map<string, string>();
-    for (const f of document?.catalog.fields ?? []) {
+    const children = new Map<string, ConfigField[]>();
+    const groupTotals = new Map<string, number>();
+    const catalogFields = document?.catalog.fields ?? [];
+    for (const f of catalogFields) {
       index.set(f.path, `${f.path} ${f.description}`.toLowerCase());
+      if (!f.internal) {
+        children.set(f.path, EMPTY_CHILDREN);
+        groupTotals.set(f.group, (groupTotals.get(f.group) ?? 0) + 1);
+      }
     }
-    return index;
-  }, [document]);
-  const childrenByPath = useMemo(() => {
-    const fields = document?.catalog.fields ?? [];
-    const internalFields = fields.filter(
-      (c) => c.internal && c.status === "internal",
-    );
-    return new Map(
-      fields
-        .filter((f) => !f.internal)
-        .map((f) => {
-          const matched = internalFields.filter((c) =>
-            containsPath(f.path, c.path),
-          );
-          return [f.path, matched.length ? matched : EMPTY_CHILDREN] as const;
-        }),
-    );
+    for (const c of catalogFields) {
+      if (!c.internal || c.status !== "internal") continue;
+      for (const anc of pathAncestors(c.path)) {
+        const list = children.get(anc);
+        if (!list) continue;
+        if (list === EMPTY_CHILDREN) children.set(anc, [c]);
+        else list.push(c);
+      }
+    }
+    const split = new Set<string>();
+    for (const [gid, total] of groupTotals) {
+      if (total >= 24) split.add(gid);
+    }
+    return { searchIndex: index, childrenByPath: children, splitGroups: split };
   }, [document]);
   const needle = query.trim().toLowerCase();
   const matches = useCallback(
@@ -787,21 +902,41 @@ export default function Sub2ApiConfig({
   const issuesByPath = useMemo(() => {
     if (!issues.length || !document) return new Map<string, Issue[]>();
     const map = new Map<string, Issue[]>();
-    for (const f of document.catalog.fields) {
-      if (f.internal) continue;
-      const matched = issues.filter((issue) =>
-        containsPath(f.path, issue.path),
-      );
-      if (matched.length) map.set(f.path, matched);
+    for (const issue of issues) {
+      if (!issue.path) continue;
+      for (const anc of pathAncestors(issue.path)) {
+        const target = fieldByPath.get(anc);
+        if (!target || target.internal) continue;
+        const list = map.get(anc);
+        if (list) list.push(issue);
+        else map.set(anc, [issue]);
+      }
     }
     return map;
-  }, [issues, document]);
-  const groupCounts = useMemo(() => {
+  }, [issues, document, fieldByPath]);
+  const { groupCounts, fieldsByGroup } = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const field of fields)
+    const grouped = new Map<
+      string,
+      { list: ConfigField[]; sections: Map<string, ConfigField[]> }
+    >();
+    for (const field of fields) {
       counts.set(field.group, (counts.get(field.group) ?? 0) + 1);
-    return counts;
-  }, [fields]);
+      let bucket = grouped.get(field.group);
+      if (!bucket) {
+        bucket = { list: [], sections: new Map() };
+        grouped.set(field.group, bucket);
+      }
+      bucket.list.push(field);
+      const secKey = splitGroups.has(field.group)
+        ? subsection(field)
+        : field.group;
+      const secList = bucket.sections.get(secKey);
+      if (secList) secList.push(field);
+      else bucket.sections.set(secKey, [field]);
+    }
+    return { groupCounts: counts, fieldsByGroup: grouped };
+  }, [fields, splitGroups]);
   const groups = useMemo(
     () =>
       document
@@ -836,10 +971,18 @@ export default function Sub2ApiConfig({
     setFilter(value);
     setScopeGroup("");
   }
+  const findPublicOwner = useCallback(
+    (path: string): ConfigField | undefined => {
+      for (const anc of pathAncestors(path)) {
+        const target = fieldByPath.get(anc);
+        if (target && !target.internal) return target;
+      }
+      return undefined;
+    },
+    [fieldByPath],
+  );
   function locate(path: string) {
-    const field = document?.catalog.fields.find(
-      (f) => !f.internal && containsPath(f.path, path),
-    );
+    const field = findPublicOwner(path);
     if (!field) return;
     setQuery(field.path);
     setFilter("all");
@@ -853,15 +996,17 @@ export default function Sub2ApiConfig({
   }, [query, filter, selectedGroup]);
   useEffect(() => {
     if (!focusTarget) return;
-    const field = document?.catalog.fields.find(
-      (f) => !f.internal && containsPath(f.path, focusTarget.path),
-    );
+    const field =
+      findPublicOwner(focusTarget.path) ??
+      document?.catalog.fields.find(
+        (f) => !f.internal && containsPath(f.path, focusTarget.path),
+      );
     const input =
       field &&
       rootRef.current?.ownerDocument.getElementById(`config-${field.path}`);
     input?.focus({ preventScroll: true });
     input?.scrollIntoView?.({ block: "nearest" });
-  }, [focusTarget, document?.catalog.fields]);
+  }, [focusTarget, document?.catalog.fields, findPublicOwner]);
   const undo = useCallback((path: string) => {
     setDraft((old) => {
       const next = { ...old };
@@ -1053,16 +1198,10 @@ export default function Sub2ApiConfig({
                   </div>
                 )}
                 {shownGroups.map((g) => {
-                  const groupFields = fields.filter((f) => f.group === g.id);
-                  const split =
-                    document.catalog.fields.filter(
-                      (f) => !f.internal && f.group === g.id,
-                    ).length >= 24;
-                  const sections = new Map<string, ConfigField[]>();
-                  for (const field of groupFields) {
-                    const key = split ? subsection(field) : g.id;
-                    sections.set(key, [...(sections.get(key) ?? []), field]);
-                  }
+                  const bucket = fieldsByGroup.get(g.id);
+                  const groupFields = bucket?.list ?? EMPTY_CHILDREN;
+                  const sections =
+                    bucket?.sections ?? new Map<string, ConfigField[]>();
                   return (
                     <section
                       className="config-field-group"
@@ -1225,9 +1364,7 @@ export default function Sub2ApiConfig({
           </p>
           <ul className="config-diff">
             {changes.map((c) => {
-              const field = document.catalog.fields.find(
-                (f) => f.path === c.path,
-              )!;
+              const field = fieldByPath.get(c.path)!;
               const current = document.values[c.path];
               return (
                 <li key={c.path}>

@@ -179,6 +179,16 @@ describe("scheduling parameters", () => {
 
     await act(async () =>
       form.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          isComposing: true,
+          bubbles: true,
+        }),
+      ),
+    );
+    expect(editor("并发")).not.toBeNull();
+    await act(async () =>
+      form.dispatchEvent(
         new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
       ),
     );

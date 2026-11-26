@@ -14,6 +14,14 @@ struct RecordsAndEventsTests {
         #expect(RecordFormatting.money("0.1234567", digits: 6) == "$0.123457")
         #expect(RecordFormatting.decimal(nil, digits: 2) == "—")
         #expect(RecordFormatting.cacheTokenCount(46_900_000) == "46.9M")
+        #expect(RecordFormatting.tokenCount(nil) == "—")
+        #expect(RecordFormatting.tokenCount(-1) == "—")
+        #expect(RecordFormatting.tokenCount(0) == "0")
+        #expect(RecordFormatting.tokenCount(999) == "999")
+        #expect(RecordFormatting.tokenCount(1_000) == "1,000")
+        #expect(RecordFormatting.tokenCount(1_005) == "1,005")
+        #expect(RecordFormatting.tokenCount(1_025) == "1,025")
+        #expect(RecordFormatting.tokenCount(1_234_567) == "1,234,567")
 
         // 2026-10-01 01:00:00 Beijing = 2026-09-30 17:00:00 UTC
         let ref = BeijingTime.parseISO("2026-09-30T17:00:00Z")!

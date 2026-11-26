@@ -30,12 +30,14 @@ import { command } from "./bridge";
 import { DegradationBadge } from "./DegradationMark";
 import AccountActions, { type AccountActionItem } from "./AccountActions";
 import {
+  draftConflict,
   membershipZone,
   moveAccount,
   platformGroups,
   type Drafts,
   type Zone,
 } from "./groupDraft";
+import { isCleanEscape } from "./dialogFocus";
 import "./group-manager.css";
 import { priorityPlatformName, sortPriorityPlatforms } from "./priorities";
 
@@ -121,12 +123,7 @@ function GroupManagerImpl(props: Props) {
     const out = new Set<number>();
     if (!active) return out;
     for (const d of pending) {
-      const account = accountById.get(d.id);
-      if (
-        !account ||
-        account.operation_versions.groups !== d.version ||
-        d.scope.some((id) => groupById.get(id)?.platform !== account.platform)
-      ) {
+      if (draftConflict(d, accountById, groupById)) {
         out.add(d.id);
       }
     }
@@ -202,7 +199,7 @@ function GroupManagerImpl(props: Props) {
   }
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (active && event.key === "Escape") {
+      if (active && isCleanEscape(event)) {
         clearTimeout(pointer.current?.timer);
         pointer.current = null;
         setDrag(null);
@@ -231,8 +228,7 @@ function GroupManagerImpl(props: Props) {
   function updateGhostCoords(x: number, y: number) {
     dragCoordsRef.current = { x, y };
     if (ghostRef.current) {
-      ghostRef.current.style.left = `${x + 12}px`;
-      ghostRef.current.style.top = `${y + 12}px`;
+      ghostRef.current.style.transform = `translate3d(${x + 12}px, ${y + 12}px, 0)`;
     }
   }
   function pointerDown(event: React.PointerEvent, id: number) {
@@ -332,10 +328,11 @@ function GroupManagerImpl(props: Props) {
           const completed = value.items.filter(
             (j) => j.status === "completed" && j.result?.verified,
           );
+          const pendingById = new Map(pending.map((d) => [d.id, d]));
           setDrafts((all) => {
             const next = { ...all };
             for (const job of completed) {
-              const original = pending.find((d) => d.id === job.account_id);
+              const original = pendingById.get(job.account_id);
               if (
                 original &&
                 JSON.stringify(next[job.account_id]) ===
@@ -654,8 +651,9 @@ function GroupManagerImpl(props: Props) {
           ref={ghostRef}
           className="group-drag-ghost"
           style={{
-            left: dragCoordsRef.current.x + 12,
-            top: dragCoordsRef.current.y + 12,
+            left: 0,
+            top: 0,
+            transform: `translate3d(${dragCoordsRef.current.x + 12}px, ${dragCoordsRef.current.y + 12}px, 0)`,
           }}
         >
           {accountById.get(drag.id)?.name}

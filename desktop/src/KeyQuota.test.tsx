@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { api } from "./bridge";
 import { accountOperation } from "./accountOperations";
-import KeyQuotaView, { KeyQuotaSummary } from "./KeyQuota";
+import KeyQuotaView from "./KeyQuota";
 import {
   KeyQuotaProvider,
   KeyQuotaRefreshSettings,
@@ -224,13 +224,22 @@ it.each([
     "Key 配额无限制",
   ],
 ] as const)(
-  "keeps the compact balance distinct from zero, unknown and unlimited",
+  "keeps the headline balance distinct from zero, unknown and unlimited",
   async (value, expected) => {
     await act(async () =>
-      root.render(<KeyQuotaSummary quota={value} busy={false} />),
+      root.render(
+        <KeyQuotaView
+          quota={value}
+          busy={false}
+          online
+          refresh={() => {}}
+          settings={() => {}}
+        />,
+      ),
     );
-    expect(container.textContent).toBe(expected);
-    expect(container.querySelector("button, table, details")).toBeNull();
+    expect(
+      container.querySelector(".key-quota-heading strong")?.textContent,
+    ).toBe(expected);
   },
 );
 it("refreshes due results only while visible and preserves the last balance through a failed read", async () => {

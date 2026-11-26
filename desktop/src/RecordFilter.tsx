@@ -1,7 +1,8 @@
 import { useEffectEvent } from "react";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Check, ChevronDown, Search, X } from "lucide-react";
 import { api } from "./bridge";
+import { isCleanEscape } from "./dialogFocus";
 import type { RecordOption, RecordOptionPage } from "./records";
 import { useBackAction } from "./mobile";
 
@@ -33,7 +34,6 @@ export default function RecordFilter({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [focused, setFocused] = useState(-1);
-  const [placement, setPlacement] = useState({ left: 0, width: 328 });
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -129,36 +129,14 @@ export default function RecordFilter({
   useEffect(() => {
     if (!active) setOpen(false);
   }, [active]);
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!open) return;
-    const position = () => {
-      const rect = root.current?.getBoundingClientRect();
-      if (!rect) return;
-      const container = root.current
-        ?.closest(".records-view")
-        ?.getBoundingClientRect();
-      const left = container?.width ? container.left : 8;
-      const right = container?.width ? container.right : window.innerWidth - 8;
-      const width = Math.min(328, right - left);
-      setPlacement({
-        width,
-        left: Math.max(
-          left - rect.left,
-          Math.min(0, right - rect.left - width),
-        ),
-      });
-    };
-    position();
     input.current?.focus({ preventScroll: true });
-    window.addEventListener("resize", position);
     const outside = (event: PointerEvent) => {
       if (!root.current?.contains(event.target as Node)) setOpen(false);
     };
     document.addEventListener("pointerdown", outside);
-    return () => {
-      document.removeEventListener("pointerdown", outside);
-      window.removeEventListener("resize", position);
-    };
+    return () => document.removeEventListener("pointerdown", outside);
   }, [open]);
   useEffect(() => {
     const box = list.current;
@@ -221,13 +199,12 @@ export default function RecordFilter({
       {open && (
         <div
           className="record-filter-popover"
-          style={placement}
           onKeyDown={(event) => {
             if (event.key === "Tab") {
               // Continue the page's normal tab order from the trigger, even when
               // the browser makes a scrollable list keyboard-focusable.
               close();
-            } else if (event.key === "Escape") {
+            } else if (isCleanEscape(event)) {
               event.preventDefault();
               event.stopPropagation();
               close();

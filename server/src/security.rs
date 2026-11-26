@@ -121,7 +121,7 @@ pub fn redact_json(value: &Value) -> Value {
     }
 }
 
-pub fn sanitize(value: &str, limit: usize) -> String {
+fn sanitize_tracked(value: &str, limit: usize) -> (String, bool) {
     let mut text = if value.is_empty() {
         "-".to_owned()
     } else {
@@ -129,7 +129,9 @@ pub fn sanitize(value: &str, limit: usize) -> String {
     };
     text = redact_text(&text);
     text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut truncated = false;
     if text.len() > limit {
+        truncated = true;
         if limit <= 3 {
             text = ".".repeat(limit);
         } else {
@@ -142,10 +144,14 @@ pub fn sanitize(value: &str, limit: usize) -> String {
         }
     }
     if text.is_empty() {
-        "-".into()
+        ("-".into(), truncated)
     } else {
-        text
+        (text, truncated)
     }
+}
+
+pub fn sanitize(value: &str, limit: usize) -> String {
+    sanitize_tracked(value, limit).0
 }
 
 pub fn clean(value: &Value, limit: usize) -> String {
@@ -156,21 +162,25 @@ pub fn clean(value: &Value, limit: usize) -> String {
     }
 }
 
-pub fn safe_error(value: &Value, limit: usize) -> String {
+fn safe_error_tracked(value: &Value, limit: usize) -> (String, bool) {
     if value.is_null() {
-        return String::new();
+        return (String::new(), false);
     }
     let text = crate::compat::text(value);
     if text.is_empty() {
-        String::new()
+        (String::new(), false)
     } else if contains_request_data(&text) {
-        "上游错误包含请求或凭据数据，详细内容已隐藏".into()
+        ("上游错误包含请求或凭据数据，详细内容已隐藏".into(), false)
     } else {
-        sanitize(&text, limit)
+        sanitize_tracked(&text, limit)
     }
 }
 
-pub fn safe_error_body(value: &Value) -> String {
+pub fn safe_error(value: &Value, limit: usize) -> String {
+    safe_error_tracked(value, limit).0
+}
+
+pub(crate) fn safe_error_body_limited(value: &Value) -> (String, bool) {
     let parsed;
     let value = if let Some(text) = value.as_str() {
         match serde_json::from_str::<Value>(text) {
@@ -179,16 +189,15 @@ pub fn safe_error_body(value: &Value) -> String {
                 &parsed
             }
             Err(_) => {
-                return safe_error(
-                    &Value::String(text.lines().next().unwrap_or("").into()),
-                    1200,
-                )
+                let first_line = text.lines().next().unwrap_or("");
+                let (out, truncated) = safe_error_tracked(&Value::String(first_line.into()), 1200);
+                return (out, truncated);
             }
         }
     } else {
         value
     };
-    fn scrub(value: &Value) -> Value {
+    fn scrub(value: &Value, limited: &mut bool) -> Value {
         match value {
             Value::Object(object) => Value::Object(
                 object
@@ -199,24 +208,39 @@ pub fn safe_error_body(value: &Value) -> String {
                             "error" | "code" | "type" | "message" | "detail" | "reason" | "status"
                         )
                     })
-                    .map(|(key, value)| (key.clone(), scrub(value)))
+                    .map(|(key, value)| (key.clone(), scrub(value, limited)))
                     .collect::<Map<_, _>>(),
             ),
-            Value::Array(items) => Value::Array(items.iter().take(10).map(scrub).collect()),
-            _ => safe_error(value, 1500).into(),
+            Value::Array(items) => {
+                if items.len() > 10 {
+                    *limited = true;
+                }
+                Value::Array(items.iter().take(10).map(|v| scrub(v, limited)).collect())
+            }
+            _ => {
+                let (s, truncated) = safe_error_tracked(value, 1500);
+                *limited |= truncated;
+                s.into()
+            }
         }
     }
     if !value.is_object() {
-        return String::new();
+        return (String::new(), false);
     }
-    let allowed = scrub(value);
+    let mut limited = false;
+    let allowed = scrub(value, &mut limited);
     if allowed.as_object().is_none_or(|v| v.is_empty()) {
-        return String::new();
+        return (String::new(), false);
     }
-    sanitize(
+    let (body, outer_truncated) = sanitize_tracked(
         &serde_json::to_string_pretty(&allowed).expect("error DTO"),
         6000,
-    )
+    );
+    (body, limited || outer_truncated)
+}
+
+pub fn safe_error_body(value: &Value) -> String {
+    safe_error_body_limited(value).0
 }
 
 #[cfg(test)]

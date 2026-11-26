@@ -32,16 +32,14 @@ use sub2ops_server::{
     actions::Actions,
     bark::Bark,
     compat::{datetime, integer, parse_datetime},
-    credit::{CreditController, Hooks},
-    credit_ownership, credit_rules,
+    credit::{self, CreditController, Hooks},
     db::Database,
     error::Result,
-    execution::TestSlots,
     oauth_admission, oauth_native,
     oauth_queries::{Coordinator, QueryOptions, Source},
     oauth_state::OAuthState,
+    operations::TestSlots,
     queries::Queries,
-    reset_credit_observation,
     settings::Settings,
     upstream::Upstream,
 };
@@ -484,8 +482,7 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
                     "data": {"code": "success", "windows_reset": 1, "credit": {"status": "redeemed"}}
                 }),
             });
-        if reset_credit_observation::consumption_result(&scenario.body["data"])["consumed"] == true
-        {
+        if credit::rules::consumption_result(&scenario.body["data"])["consumed"] == true {
             sqlx::query(
                 "UPDATE accounts SET extra=jsonb_set(COALESCE(extra,'{}'::jsonb),'{codex_reset_credit_snapshot}',$1,true),updated_at=$2 WHERE id=$3",
             )
@@ -689,7 +686,7 @@ impl Hooks for FixtureHooks {
                 config["oauth_recovery_model_account_ids"] = json!([id]);
             }
             if shared.manual_after_test.swap(false, Ordering::SeqCst) {
-                let row = credit_ownership::account(&actions.queries.db, id).await?;
+                let row = credit::account(&actions.queries.db, id).await?;
                 let at = *clock.lock().unwrap();
                 state.manual_control(&row, false, at, "manual")?;
             }
@@ -876,7 +873,7 @@ impl Harness {
         data["rate_limit"]["primary_window"]["used_percent"] = json!(100);
         data["rate_limit"]["secondary_window"]["used_percent"] = json!(100);
         let mut result =
-            credit_rules::quota_result(&data, &row, now, Some(now - Duration::seconds(2)));
+            credit::rules::quota_result(&data, &row, now, Some(now - Duration::seconds(2)));
         result["data"] = data;
         controller
             .store
@@ -1011,7 +1008,7 @@ fn usage_response(
 }
 
 async fn reload_account(harness: &Harness, id: i64) -> Value {
-    credit_ownership::account(&harness.db, id)
+    credit::account(&harness.db, id)
         .await
         .expect("reload synthetic account from PostgreSQL")
 }
@@ -1029,7 +1026,7 @@ async fn set_credit_snapshot(harness: &Harness, id: i64, value: Value) -> Value 
 }
 
 fn reset_stored_quota(controller: &CreditController, row: &Value, at: DateTime<Utc>, data: Value) {
-    let mut result = credit_rules::quota_result(&data, row, at, Some(at - Duration::seconds(2)));
+    let mut result = credit::rules::quota_result(&data, row, at, Some(at - Duration::seconds(2)));
     result["data"] = data;
     controller
         .store
@@ -1744,11 +1741,11 @@ async fn provider_error_and_account_fallback_evidence_are_distinct_and_redacted(
         .execute(&harness.db.pool)
         .await
         .unwrap();
-    let raw_fallback = credit_rules::upstream_evidence(&harness.db, &row, now)
+    let raw_fallback = credit::rules::upstream_evidence(&harness.db, &row, now)
         .await
         .unwrap();
     let saved = harness.controller.saved_quota(&row, now).unwrap();
-    let fallback = credit_rules::depletion_evidence(&row, &saved, &raw_fallback, now);
+    let fallback = credit::rules::depletion_evidence(&row, &saved, &raw_fallback, now);
     assert_eq!(fallback["evidence_source"], "account_rate_limit");
     assert!(fallback["evidence_id"]
         .as_str()
@@ -1859,12 +1856,12 @@ async fn provider_error_and_account_fallback_evidence_are_distinct_and_redacted(
         .execute(&harness.db.pool)
         .await
         .unwrap();
-    let raw_fallback = credit_rules::upstream_evidence(&harness.db, &fallback_row, now)
+    let raw_fallback = credit::rules::upstream_evidence(&harness.db, &fallback_row, now)
         .await
         .unwrap();
     let fallback_saved = harness.controller.saved_quota(&fallback_row, now).unwrap();
     let fallback_evidence =
-        credit_rules::depletion_evidence(&fallback_row, &fallback_saved, &raw_fallback, now);
+        credit::rules::depletion_evidence(&fallback_row, &fallback_saved, &raw_fallback, now);
     assert_eq!(fallback_evidence["evidence_source"], "account_rate_limit");
     assert_eq!(
         parse_datetime(&fallback_evidence["evidence_at"]),
@@ -1949,12 +1946,16 @@ async fn provider_error_and_account_fallback_evidence_are_distinct_and_redacted(
             "depletion incorrectly accepted {name}: {blocked}"
         );
         if name != "expired_account" {
-            let candidate_raw = credit_rules::upstream_evidence(&harness.db, &candidate, now)
+            let candidate_raw = credit::rules::upstream_evidence(&harness.db, &candidate, now)
                 .await
                 .unwrap();
             let candidate_saved = harness.controller.saved_quota(&candidate, now).unwrap();
-            let cycle_blocked =
-                credit_rules::depletion_evidence(&candidate, &candidate_saved, &candidate_raw, now);
+            let cycle_blocked = credit::rules::depletion_evidence(
+                &candidate,
+                &candidate_saved,
+                &candidate_raw,
+                now,
+            );
             assert!(
                 cycle_blocked.is_null(),
                 "fallback incorrectly accepted {name}: {cycle_blocked}"
@@ -2024,13 +2025,13 @@ async fn reset_quota_runtime_extra_writes_preserve_ownership_and_complete_recove
     assert_eq!(final_row["schedulable"], true);
 
     // Config keys in extra (e.g., *_enabled, quota_*_limit) must still affect signature.
-    let before_sig = credit_ownership::signature(&final_row);
+    let before_sig = credit::signature(&final_row);
     let mut config_modified = final_row.clone();
     config_modified["extra"]["codex_auto_reset_credit_enabled"] = json!(false);
-    assert_ne!(credit_ownership::signature(&config_modified), before_sig);
+    assert_ne!(credit::signature(&config_modified), before_sig);
     let mut limit_modified = final_row.clone();
     limit_modified["extra"]["quota_weekly_limit"] = json!(100);
-    assert_ne!(credit_ownership::signature(&limit_modified), before_sig);
+    assert_ne!(credit::signature(&limit_modified), before_sig);
 }
 
 #[tokio::test]
@@ -2133,7 +2134,7 @@ async fn non_weekly_429_variants_do_not_trigger_auto_credit_or_fallback() {
         .await
         .unwrap();
 
-        let single = credit_rules::upstream_evidence(&harness.db, &row, now)
+        let single = credit::rules::upstream_evidence(&harness.db, &row, now)
             .await
             .unwrap();
         assert!(
@@ -2141,7 +2142,7 @@ async fn non_weekly_429_variants_do_not_trigger_auto_credit_or_fallback() {
             "non-weekly case {label} must not fall back to account_rate_limit: {single}"
         );
         let batch =
-            credit_rules::upstream_evidence_batch(&harness.db, std::slice::from_ref(&row), now)
+            credit::rules::upstream_evidence_batch(&harness.db, std::slice::from_ref(&row), now)
                 .await
                 .unwrap();
         assert!(
@@ -5248,7 +5249,7 @@ fn recovery019_free_plan_preserves_the_full_primary_thirty_day_quota_result() {
     let oracle = fixtures["oracle_outputs"]["recovery019_free_primary_thirty_day"].clone();
     let input = &oracle["input"];
     let at = parse_datetime(&input["at"]).expect("fixed legacy observation time");
-    let actual = credit_rules::quota_result(&input["data"], &input["row"], at, None);
+    let actual = credit::rules::quota_result(&input["data"], &input["row"], at, None);
     let mut expected = oracle["expected"].clone();
     expected
         .as_object_mut()

@@ -94,12 +94,12 @@ fn valid_account(value: &Value) -> bool {
     value.is_object()
         && !string(&value["id"]).is_empty()
         && value["account_id"].as_i64().is_some()
-        && crate::verdict_policy::validate(value).is_ok()
+        && crate::model_verdict::validate(value).is_ok()
 }
 fn valid_job(value: &Value) -> bool {
     value.is_object()
         && !string(&value["id"]).is_empty()
-        && crate::verdict_policy::validate(value).is_ok()
+        && crate::model_verdict::validate(value).is_ok()
         && crate::detection_logs::valid_summary(&value["result_summary"])
 }
 fn validate(value: &Value) -> Result<()> {
@@ -236,7 +236,7 @@ impl ModelTests {
         lm: Option<&crate::lm_detector::Snapshot>,
     ) -> Result<()> {
         let present = if let Some(lm) = lm {
-            crate::verdict_policy::lm_contains(lm, policy)
+            crate::model_verdict::lm_contains(lm, policy)
         } else {
             bank.contains_policy(policy)
         };
@@ -597,7 +597,7 @@ impl ModelTests {
         let job_id = uuid::Uuid::new_v4().simple().to_string();
         let auto = automatic.cloned().unwrap_or(json!({}));
         let policy = self.hooks.verdict_policy(id)?;
-        crate::verdict_policy::validate(&policy)?;
+        crate::model_verdict::validate(&policy)?;
         if automatic.is_some() && policy["generation"] != auto["detection_generation"] {
             return Err(Error::new(409, "检测设置已变化，请重新读取"));
         }
@@ -644,8 +644,8 @@ impl ModelTests {
             "groups": (0..groups).map(|i|json!({"index":i+1,"status":"queued","attempts":0,"ttft_ms":null,"duration_ms":null,"error":""})).collect::<Vec<_>>()
         });
         job["engine"] = payload["engine"].clone();
-        crate::verdict_policy::copy(&policy, &mut job);
-        if crate::verdict_policy::relaxed(&policy) {
+        crate::model_verdict::copy(&policy, &mut job);
+        if crate::model_verdict::relaxed(&policy) {
             Self::check_policy_bank(&policy, &self.bank.compiled(), lm.as_deref())?;
         }
         job["sample_count"] = groups.into();
@@ -709,6 +709,11 @@ impl ModelTests {
             || tasks.contains_key(&id)
         {
             return Ok(());
+        }
+        if let Ok(state) = self.shared_data() {
+            if !ACTIVE.contains(&string(&state["jobs"][&id]["status"])) {
+                return Ok(());
+            }
         }
         let this = self.clone();
         let task_id = id.clone();
@@ -776,7 +781,7 @@ impl ModelTests {
         context: Option<Arc<Context>>,
         mut prepared: Option<(Value, Target, Value)>,
     ) -> Result<()> {
-        let prepared_lm = if context.is_none() && crate::lm_verdict::is_lm(job) {
+        let prepared_lm = if context.is_none() && crate::model_verdict::is_lm(job) {
             Some(
                 self.lm_bank
                     .load(string(&job["resource_revision"]).into())
@@ -911,13 +916,13 @@ impl ModelTests {
         } else {
             let lm = prepared_lm;
             let (bank_version, compiled) = self.bank.compiled_version();
-            if crate::verdict_policy::relaxed(job) {
+            if crate::model_verdict::relaxed(job) {
                 Self::check_policy_bank(job, &compiled, lm.as_deref())?;
             }
             if job["automatic"] == true
-                && !crate::verdict_policy::relaxed(job)
+                && !crate::model_verdict::relaxed(job)
                 && lm.is_none()
-                && !compiled.contains_exact(crate::model_downgrade::LEGACY_TARGET)
+                && !compiled.contains_exact(crate::model_verdict::LEGACY_TARGET)
             {
                 return Err(Error::new(409, "当前指纹库缺少降智判定模型"));
             }
@@ -1064,6 +1069,7 @@ impl ModelTests {
         Ok(self.public(stored))
     }
     pub async fn cancel(&self, id: &str) -> Result<Value> {
+        let _guard = self.start.lock().await;
         let handle = self
             .tasks
             .lock()
@@ -1073,11 +1079,11 @@ impl ModelTests {
             handle.abort();
             let _ = handle.await;
             self.finish_cancel(id)?;
-        } else if matches!(
-            string(&self.get(id)?["status"]),
-            "queued" | "needs_confirmation"
-        ) {
-            self.finish_cancel(id)?;
+        } else {
+            let status = string(&self.get(id)?["status"]).to_owned();
+            if ACTIVE.contains(&status.as_str()) || status == "needs_confirmation" {
+                self.finish_cancel(id)?;
+            }
         }
         self.get(id)
     }

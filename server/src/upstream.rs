@@ -188,9 +188,6 @@ impl Upstream {
         }
         values.first().map(|(_, v)| v.clone()).unwrap_or_default()
     }
-    pub fn status(&self) -> Value {
-        json!(self.connection())
-    }
     pub fn connection(&self) -> sub2ops_protocol::dto::ConnectionReply {
         self.cache
             .lock()

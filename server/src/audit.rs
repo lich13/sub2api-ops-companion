@@ -58,6 +58,7 @@ pub fn write_at(path: &Path, event: &str, payload: Value, at: DateTime<Utc>) {
             drop(file);
             fs::rename(path, sibling(path, ".1"))?;
             file = options().open(path)?;
+            crate::store::private_permissions(&file)?;
         }
         file.write_all(&bytes)
     });

@@ -1,19 +1,22 @@
 use crate::{
     actions::Actions,
-    compat::{config_revision, datetime, parse_datetime, sha256, string, text, truthy},
+    compat::{config_revision, datetime, integer, parse_datetime, sha256, string, text, truthy},
     db::Database,
     error::{Error, Result},
-    error_evidence, oauth_admission, quota, reset_credit_observation, sql,
+    error_evidence, oauth_admission, quota, sql,
     upstream::read_limited,
 };
 use chrono::{DateTime, Duration as TimeDelta, Timelike, Utc};
 use serde_json::{json, Value};
 use std::{sync::LazyLock, time::Duration};
+
 static MESSAGES: LazyLock<Value> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../resources/credit-messages.json"))
+    serde_json::from_str(include_str!("../../resources/credit-messages.json"))
         .expect("credit messages")
 });
+
 pub const TERMINAL: [&str; 5] = ["finished", "recovered", "closed", "manual", "blocked"];
+
 pub fn reason(code: &str) -> &'static str {
     if code.is_empty() {
         return "";
@@ -23,11 +26,15 @@ pub fn reason(code: &str) -> &'static str {
         .or_else(|| MESSAGES["ERRORS"][code].as_str())
         .unwrap_or("操作未确认")
 }
-pub fn label(outcome: &str) -> &'static str {
-    MESSAGES["RESULT_LABELS"][outcome]
-        .as_str()
-        .unwrap_or("最近用卡结果")
+
+pub(crate) fn label_opt(outcome: &str) -> Option<&'static str> {
+    MESSAGES["RESULT_LABELS"][outcome].as_str()
 }
+
+pub fn label(outcome: &str) -> &'static str {
+    label_opt(outcome).unwrap_or("最近用卡结果")
+}
+
 pub fn project(value: &Value, notices: &Value) -> Value {
     if !truthy(value) {
         return Value::Null;
@@ -78,6 +85,7 @@ pub fn project(value: &Value, notices: &Value) -> Value {
     }
     out
 }
+
 pub fn manual(task: &Value) -> bool {
     task["source"] == "manual"
         || !truthy(&task["policy_version"])
@@ -86,6 +94,7 @@ pub fn manual(task: &Value) -> bool {
             && !truthy(&task["evidence_at"])
             && !truthy(&task["owns_pause"])
 }
+
 pub fn expired(task: &Value, at: DateTime<Utc>) -> bool {
     if truthy(&task["attempt_at"]) && !truthy(&task["consumed"]) {
         return false;
@@ -99,6 +108,7 @@ pub fn expired(task: &Value, at: DateTime<Utc>) -> bool {
     )
     .is_none_or(|deadline| at >= deadline)
 }
+
 pub fn outcome(task: &Value) -> &'static str {
     if truthy(&task["consumed"]) {
         "unrecovered"
@@ -112,6 +122,7 @@ pub fn outcome(task: &Value) -> &'static str {
         "not_executed"
     }
 }
+
 pub fn verification_retryable(result: &Value, method: &str) -> bool {
     if let Some(value) = result["retryable"].as_bool() {
         return value;
@@ -129,6 +140,7 @@ pub fn verification_retryable(result: &Value, method: &str) -> bool {
         .parse::<u16>()
         .is_ok_and(|status| (500..=599).contains(&status))
 }
+
 pub fn quota_result(
     data: &Value,
     row: &Value,
@@ -179,14 +191,6 @@ pub fn quota_result(
     }
     out
 }
-const EVIDENCE_COLUMNS: &str = "e.id,e.created_at,e.error_owner,e.error_phase,\
-ej.jb->>'model' AS model,ej.jb->>'requested_model' AS requested_model,\
-ej.jb->>'upstream_model' AS upstream_model,ej.jb->>'provider_error_code' AS provider_error_code,\
-ej.jb->>'provider_error_type' AS provider_error_type,ej.jb->>'error_type' AS error_type,\
-ej.jb->>'upstream_error_message' AS upstream_error_message,ej.jb->>'error_message' AS error_message,\
-ej.jb->'error_body' AS error_body,ej.jb->'upstream_error_detail' AS upstream_error_detail,\
-ej.jb->'upstream_errors' AS upstream_errors";
-
 pub async fn upstream_evidence(db: &Database, row: &Value, at: DateTime<Utc>) -> Result<Value> {
     let (Some(start), Some(reset)) = (
         parse_datetime(&row["rate_limited_at"]),
@@ -202,18 +206,21 @@ pub async fn upstream_evidence(db: &Database, row: &Value, at: DateTime<Utc>) ->
         (start - TimeDelta::seconds(5)).into(),
         at.into(),
     ];
-    let sql = format!(
-        "SELECT {EVIDENCE_COLUMNS} FROM (SELECT * FROM ops_error_logs e \
-         WHERE e.account_id=$1 AND e.upstream_status_code=429 AND coalesce(e.error_owner,'') <> 'client' \
-         AND NOT {local} AND e.created_at >= $2 AND e.created_at <= $3 \
-         AND NOT EXISTS (SELECT 1 FROM ops_error_logs x WHERE x.account_id=e.account_id AND x.created_at>e.created_at AND x.upstream_status_code IN (401,402)) \
-         ORDER BY e.created_at DESC,e.id DESC LIMIT 20) e \
-         CROSS JOIN LATERAL (SELECT to_jsonb(e) AS jb OFFSET 0) ej \
-         ORDER BY e.created_at DESC,e.id DESC",
-        local = sql::ERRORS_LOCAL_THROTTLE
-    );
     let candidates = db
-        .all(&sql, &params)
+        .all_with_columns(
+            |cols| {
+                std::borrow::Cow::Owned(format!(
+                    "SELECT {} FROM ops_error_logs e \
+                     WHERE e.account_id=$1 AND e.upstream_status_code=429 AND coalesce(e.error_owner,'') <> 'client' \
+                     AND NOT {} AND e.created_at >= $2 AND e.created_at <= $3 \
+                     AND NOT EXISTS (SELECT 1 FROM ops_error_logs x WHERE x.account_id=e.account_id AND x.created_at>e.created_at AND x.upstream_status_code IN (401,402)) \
+                     ORDER BY e.created_at DESC,e.id DESC LIMIT 20",
+                    sql::evidence_error_fields(cols),
+                    sql::local_throttle_where(cols)
+                ))
+            },
+            &params,
+        )
         .await
         .map_err(|_| Error::new(503, "限流证据无法可靠读取"))?;
     let had_candidates = !candidates.is_empty();
@@ -231,9 +238,18 @@ pub async fn upstream_evidence(db: &Database, row: &Value, at: DateTime<Utc>) ->
     if had_candidates {
         return Ok(Value::Null);
     }
-    let sql=format!("SELECT e.id FROM ops_error_logs e WHERE e.account_id=$1 AND e.created_at >= $2 AND e.created_at <= $3 AND (e.upstream_status_code IN (401,402) OR {} OR (e.error_owner='client' AND (e.status_code=429 OR e.upstream_status_code=429))) ORDER BY e.created_at DESC,e.id DESC LIMIT 1",sql::ERRORS_LOCAL_THROTTLE);
     if db
-        .one(&sql, &params)
+        .one_with_columns(
+            |cols| {
+                std::borrow::Cow::Owned(format!(
+                    "SELECT e.id FROM ops_error_logs e WHERE e.account_id=$1 AND e.created_at >= $2 AND e.created_at <= $3 \
+                     AND (e.upstream_status_code IN (401,402) OR {} OR (e.error_owner='client' AND (e.status_code=429 OR e.upstream_status_code=429))) \
+                     ORDER BY e.created_at DESC,e.id DESC LIMIT 1",
+                    sql::local_throttle_where(cols)
+                ))
+            },
+            &params,
+        )
         .await
         .map_err(|_| Error::new(503, "限流证据无法可靠读取"))?
         .is_some()
@@ -250,6 +266,7 @@ pub async fn upstream_evidence(db: &Database, row: &Value, at: DateTime<Utc>) ->
         json!({"id":format!("account-rate-limit:{fingerprint}"),"created_at":datetime(start),"source":"account_rate_limit"}),
     )
 }
+
 pub async fn upstream_evidence_batch(
     db: &Database,
     rows: &[Value],
@@ -266,20 +283,26 @@ pub async fn upstream_evidence_batch(
     if windows.is_empty() {
         return Ok(evidence);
     }
-    let sql = format!("SELECT w.account_id AS requested_account_id,c.*,
-        EXISTS (SELECT 1 FROM ops_error_logs e WHERE e.account_id=w.account_id AND e.created_at>=w.since AND e.created_at<=$2
-            AND (e.upstream_status_code IN (401,402) OR {local} OR (e.error_owner='client' AND (e.status_code=429 OR e.upstream_status_code=429)))) AS excluded
-        FROM jsonb_to_recordset($1::jsonb) AS w(account_id bigint,since timestamptz)
-        LEFT JOIN LATERAL (SELECT {EVIDENCE_COLUMNS}
-            FROM (SELECT * FROM ops_error_logs e WHERE e.account_id=w.account_id AND e.upstream_status_code=429 AND coalesce(e.error_owner,'')<>'client'
-            AND NOT {local} AND e.created_at>=w.since AND e.created_at<=$2
-            AND NOT EXISTS (SELECT 1 FROM ops_error_logs x WHERE x.account_id=e.account_id AND x.created_at>e.created_at AND x.upstream_status_code IN (401,402))
-            ORDER BY e.created_at DESC,e.id DESC LIMIT 20) e
-            CROSS JOIN LATERAL (SELECT to_jsonb(e) AS jb OFFSET 0) ej
-            ORDER BY e.created_at DESC,e.id DESC) c ON TRUE
-        ORDER BY w.account_id ASC, c.created_at DESC, c.id DESC",local=sql::ERRORS_LOCAL_THROTTLE);
     let results = db
-        .all(&sql, &[crate::db::Param::Json(json!(windows)), at.into()])
+        .all_with_columns(
+            |cols| {
+                let local = sql::local_throttle_where(cols);
+                let fields = sql::evidence_error_fields(cols);
+                std::borrow::Cow::Owned(format!(
+                    "SELECT w.account_id AS requested_account_id,c.*, \
+                     EXISTS (SELECT 1 FROM ops_error_logs e WHERE e.account_id=w.account_id AND e.created_at>=w.since AND e.created_at<=$2 \
+                         AND (e.upstream_status_code IN (401,402) OR {local} OR (e.error_owner='client' AND (e.status_code=429 OR e.upstream_status_code=429)))) AS excluded \
+                     FROM jsonb_to_recordset($1::jsonb) AS w(account_id bigint,since timestamptz) \
+                     LEFT JOIN LATERAL (SELECT {fields} \
+                         FROM ops_error_logs e WHERE e.account_id=w.account_id AND e.upstream_status_code=429 AND coalesce(e.error_owner,'')<>'client' \
+                         AND NOT {local} AND e.created_at>=w.since AND e.created_at<=$2 \
+                         AND NOT EXISTS (SELECT 1 FROM ops_error_logs x WHERE x.account_id=e.account_id AND x.created_at>e.created_at AND x.upstream_status_code IN (401,402)) \
+                         ORDER BY e.created_at DESC,e.id DESC LIMIT 20) c ON TRUE \
+                     ORDER BY w.account_id ASC, c.created_at DESC, c.id DESC"
+                ))
+            },
+            &[crate::db::Param::Json(json!(windows)), at.into()],
+        )
         .await
         .map_err(|_| Error::new(503, "限流证据无法可靠读取"))?;
     let windows: std::collections::BTreeMap<_, _> = windows
@@ -329,11 +352,12 @@ pub async fn upstream_evidence_batch(
                 string(&window["start"]),
                 string(&window["reset"])
             ));
-            evidence.insert(id,json!({"id":format!("account-rate-limit:{fingerprint}"),"created_at":window["start"],"source":"account_rate_limit"}));
+            evidence.insert(id, json!({"id":format!("account-rate-limit:{fingerprint}"),"created_at":window["start"],"source":"account_rate_limit"}));
         }
     }
     Ok(evidence)
 }
+
 pub fn depletion_evidence(
     row: &Value,
     saved: &Value,
@@ -391,6 +415,7 @@ pub fn depletion_evidence(
     );
     json!({"reset_at":datetime(reset),"window_minutes":duration,"evidence_at":datetime(stamp),"evidence_id":text(&evidence["id"]),"evidence_source":evidence.get("source").unwrap_or(&json!("upstream_error")),"evidence_fingerprint":fingerprint})
 }
+
 pub fn available(row: &Value, saved: &Value, task: &Value, at: DateTime<Utc>) -> bool {
     let Some(observed) = parse_datetime(&saved["queried_at"]) else {
         return false;
@@ -413,6 +438,7 @@ pub fn available(row: &Value, saved: &Value, task: &Value, at: DateTime<Utc>) ->
                 < 100.0
         })
 }
+
 pub async fn execute(actions: &Actions, action: &str, id: i64, key: &str, seconds: u64) -> Value {
     let uncertain = action == "reset";
     let path = if uncertain {
@@ -420,7 +446,7 @@ pub async fn execute(actions: &Actions, action: &str, id: i64, key: &str, second
     } else {
         "quota/refresh"
     };
-    let diagnostic = reset_credit_observation::diagnostics(None, &Value::Null);
+    let diagnostic = diagnostics(None, &Value::Null);
     let response = match actions
         .request(
             reqwest::Method::POST,
@@ -445,10 +471,10 @@ pub async fn execute(actions: &Actions, action: &str, id: i64, key: &str, second
         .unwrap_or(Value::Null);
     let data = &body["data"];
     if !(200..300).contains(&status) {
-        return json!({"success":false,"uncertain":uncertain,"error_code":format!("http_{status}"),"diagnostics":reset_credit_observation::diagnostics(Some(status),if data.is_object() {data} else {&body})});
+        return json!({"success":false,"uncertain":uncertain,"error_code":format!("http_{status}"),"diagnostics":diagnostics(Some(status), if data.is_object() { data } else { &body })});
     }
     let envelope = body.is_object() && body["code"].is_i64() && body["code"] == 0;
-    let diagnostic = reset_credit_observation::diagnostics(
+    let diagnostic = diagnostics(
         Some(status),
         if envelope && data.is_object() {
             data
@@ -460,11 +486,80 @@ pub async fn execute(actions: &Actions, action: &str, id: i64, key: &str, second
         return json!({"success":false,"uncertain":uncertain,"error_code":"result_uncertain","diagnostics":diagnostic});
     }
     let mut outcome = if uncertain {
-        reset_credit_observation::consumption_result(data)
+        consumption_result(data)
     } else {
         json!({"success":true,"consumed":false,"uncertain":false,"error_code":""})
     };
     outcome["data"] = data.clone();
     outcome["diagnostics"] = diagnostic;
     outcome
+}
+
+pub fn diagnostics(status: Option<u16>, data: &Value) -> Value {
+    let mut out = json!({"http_status":status});
+    let code = &data["code"];
+    if code.is_i64() {
+        out["business_code"] = code.clone();
+    } else if let Some(code) = code.as_str() {
+        let normalized = code.trim().to_lowercase();
+        out["business_code"] = if [
+            "reset",
+            "nothing_to_reset",
+            "no_credit",
+            "already_redeemed",
+            "success",
+            "ok",
+            "error",
+            "failed",
+            "redeemed",
+        ]
+        .contains(&normalized.as_str())
+        {
+            normalized
+        } else if code.strip_prefix("OPENAI_").is_some_and(|v| {
+            !v.is_empty() && v.len() <= 56 && v.bytes().all(|b| b.is_ascii_uppercase() || b == b'_')
+        }) {
+            code.to_owned()
+        } else {
+            "unrecognized".into()
+        }
+        .into();
+    }
+    if data["windows_reset"].is_i64() {
+        out["windows_reset"] = data["windows_reset"].clone();
+    }
+    for key in [
+        "cache_persisted",
+        "cache_refreshed",
+        "account_state_recovered",
+    ] {
+        if data[key].is_boolean() {
+            out[key] = data[key].clone();
+        }
+    }
+    out
+}
+
+pub fn consumption_result(data: &Value) -> Value {
+    let raw = &data["code"];
+    let code = string(raw).trim().to_lowercase();
+    let windows = integer(&data["windows_reset"]);
+    let credit = &data["credit"];
+    let credit_ok = credit.is_null()
+        || credit.is_object()
+            && (credit["status"].is_null() || matches!(string(&credit["status"]), "" | "redeemed"));
+    let consumed = (raw.is_i64() && raw == 0
+        || raw.is_string() && matches!(code.as_str(), "reset" | "success" | "ok"))
+        && data["windows_reset"].is_i64()
+        && windows.is_some_and(|n| n > 0)
+        && credit_ok;
+    let not_consumed = raw.is_string()
+        && matches!(code.as_str(), "no_credit" | "nothing_to_reset")
+        && data["windows_reset"].is_i64()
+        && windows == Some(0)
+        && (credit.is_null()
+            || credit.is_object()
+                && (credit["status"].is_null()
+                    || matches!(string(&credit["status"]), "" | "available" | "expired")));
+    json!({"success":consumed,"consumed":consumed,"uncertain":!(consumed || not_consumed),"error_code":if consumed {""} else if not_consumed || code=="already_redeemed" {&code} else {"result_uncertain"},"consumption_outcome":if consumed {"consumed"} else if not_consumed {"not_consumed"} else {"unknown"}})
 }

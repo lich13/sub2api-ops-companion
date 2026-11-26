@@ -1,7 +1,7 @@
 use crate::{
     actions::{OperationContext, OPERATION},
     compat::{integer, string, truthy},
-    credit_ownership,
+    credit,
     error::{Error, Result},
     oauth_queries::{QueryOptions, Source},
     runtime::Runtime,
@@ -183,7 +183,7 @@ impl Runtime {
         if !crate::queries::recoverable(&row, self.monitor.now()) {
             return Err(Error::new(409, "账号已无可恢复状态，请刷新"));
         }
-        credit_ownership::cancel(&self.monitor.store, id, self.monitor.now())?;
+        credit::cancel(&self.monitor.store, id, self.monitor.now())?;
         let code = self.manual_account_write(id, true, key).await;
         let live = self.actions.account(id, None).await;
         let verified = live.is_ok_and(|v| {
@@ -306,15 +306,17 @@ impl Runtime {
                 pending.insert(id, (version.to_owned(), receive.clone()));
                 let runtime = Arc::downgrade(self);
                 if let Err(error) = self.requests.spawn(async move {
+                    let _cleanup = crate::supervision::on_drop(move || {
+                        if let Some(runtime) = runtime.upgrade() {
+                            runtime
+                                .usage_flights
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .remove(&id);
+                        }
+                    });
                     let result = operation.await;
                     let _ = send.send(Some(result));
-                    if let Some(runtime) = runtime.upgrade() {
-                        runtime
-                            .usage_flights
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .remove(&id);
-                    }
                 }) {
                     pending.remove(&id);
                     return Err(error);

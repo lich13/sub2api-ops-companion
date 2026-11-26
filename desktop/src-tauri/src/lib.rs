@@ -18,6 +18,7 @@ use tokio::sync::{watch, Mutex, Notify};
 
 mod api_http;
 mod credentials;
+#[cfg(any(mobile, test))]
 mod updater;
 use api_http::{http_detailed, http_snapshot, HttpFailure, SnapshotFetch};
 
@@ -73,7 +74,22 @@ struct ViewState {
     error: String,
     upstream_connection: Option<Value>,
     snapshot: Option<Arc<Box<serde_json::value::RawValue>>>,
+    #[serde(skip)]
+    pending_observed_at: Option<String>,
     preferences: Preferences,
+}
+
+impl ViewState {
+    pub(crate) fn flush_observed_at(&mut self) {
+        let Some(obs) = self.pending_observed_at.take() else {
+            return;
+        };
+        if let Some(existing) = self.snapshot.as_deref() {
+            if let Some(updated) = update_raw_observed_at(existing, &obs) {
+                self.snapshot = Some(updated);
+            }
+        }
+    }
 }
 
 struct Runtime {
@@ -188,27 +204,67 @@ fn normalize_preferences(mut prefs: Preferences) -> Preferences {
     prefs
 }
 
-fn save_preferences(path: &Path, value: &Preferences) -> Result<(), String> {
+#[derive(Debug)]
+pub(crate) enum AtomicWriteError {
+    BeforeRename(#[allow(dead_code)] std::io::Error),
+    AfterRename(#[allow(dead_code)] std::io::Error),
+}
+
+pub(crate) fn write_private_atomic(path: &Path, bytes: &[u8]) -> Result<(), AtomicWriteError> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    let parent = path.parent().ok_or("设置路径无效")?;
-    std::fs::create_dir_all(parent).map_err(|_| "无法创建设置目录")?;
-    let temp = path.with_extension("tmp");
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .mode(0o600)
-        .open(&temp)
-        .map_err(|_| "无法保存设置")?;
-    use std::os::unix::fs::PermissionsExt;
-    file.set_permissions(std::fs::Permissions::from_mode(0o600))
-        .map_err(|_| "无法保护设置文件权限")?;
-    file.write_all(&serde_json::to_vec(value).map_err(|_| "设置格式无效")?)
-        .map_err(|_| "无法保存设置")?;
-    file.sync_all().map_err(|_| "无法同步设置")?;
-    std::fs::rename(&temp, path).map_err(|_| "无法替换设置")?;
-    Ok(())
+    let parent = path.parent().ok_or_else(|| {
+        AtomicWriteError::BeforeRename(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "invalid parent",
+        ))
+    })?;
+    std::fs::create_dir_all(parent).map_err(AtomicWriteError::BeforeRename)?;
+    static NEXT_TMP: AtomicU64 = AtomicU64::new(1);
+    let stem = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("sub2ops");
+    let pid = std::process::id();
+    let (temp, mut file) = loop {
+        let seq = NEXT_TMP.fetch_add(1, Ordering::Relaxed);
+        let candidate = parent.join(format!(".{stem}.tmp-{pid}-{seq}"));
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        match opts.open(&candidate) {
+            Ok(file) => break (candidate, file),
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(err) => return Err(AtomicWriteError::BeforeRename(err)),
+        }
+    };
+    let pre_rename = (|| -> std::io::Result<()> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        }
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&temp, path)?;
+        Ok(())
+    })();
+    if let Err(err) = pre_rename {
+        let _ = std::fs::remove_file(&temp);
+        return Err(AtomicWriteError::BeforeRename(err));
+    }
+    std::fs::File::open(parent)
+        .and_then(|dir| dir.sync_all())
+        .map_err(AtomicWriteError::AfterRename)
+}
+
+fn save_preferences(path: &Path, value: &Preferences) -> Result<(), String> {
+    let bytes = serde_json::to_vec(value).map_err(|_| "设置格式无效".to_string())?;
+    write_private_atomic(path, &bytes).map_err(|_| "无法保存设置".to_string())
 }
 
 async fn save_preferences_async(path: &Path, value: &Preferences) -> Result<(), String> {
@@ -330,11 +386,14 @@ fn update_raw_observed_at(
         .map(Arc::new)
 }
 
-fn publish(_app: &tauri::AppHandle, value: &ViewState) {
+fn publish(_app: &tauri::AppHandle, value: &mut ViewState) {
     // Android's window visibility getter always returns false. Its suspended /
     // resumed events already control polling and carry foreground in ViewState.
     #[cfg(mobile)]
-    let _ = _app.emit("ops-state", value);
+    {
+        value.flush_observed_at();
+        let _ = _app.emit("ops-state", &*value);
+    }
     #[cfg(target_os = "macos")]
     macos_bridge::publish_state(value);
 }
@@ -352,6 +411,7 @@ fn apply_refresh(view: &mut ViewState, result: Result<Value, HttpFailure>) {
             if let Some((rev, raw)) = encode_snapshot(data) {
                 view.snapshot_revision = rev;
                 view.snapshot = Some(raw);
+                view.pending_observed_at = None;
                 view.online = true;
                 view.error.clear();
                 view.upstream_connection = None;
@@ -424,10 +484,9 @@ async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
             view.online = true;
             view.error.clear();
             view.upstream_connection = None;
-            if let (Some(obs), Some(existing)) = (observed_at.as_deref(), view.snapshot.as_deref())
-            {
-                if let Some(updated) = update_raw_observed_at(existing, obs) {
-                    view.snapshot = Some(updated);
+            if let Some(obs) = observed_at.as_deref() {
+                if view.snapshot.is_some() {
+                    view.pending_observed_at = Some(obs.to_owned());
                 }
             }
             #[cfg(target_os = "macos")]
@@ -437,7 +496,7 @@ async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
                     publish_observed(app, obs);
                 }
             } else {
-                publish(app, &view);
+                publish(app, &mut view);
             }
         }
         Ok(SnapshotFetch::Full {
@@ -448,13 +507,13 @@ async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
             apply_refresh(&mut view, Ok(data));
             #[cfg(target_os = "macos")]
             macos_bridge::publish_tooltip(&view);
-            publish(app, &view);
+            publish(app, &mut view);
         }
         Err(error) => {
             apply_refresh(&mut view, Err(error));
             #[cfg(target_os = "macos")]
             macos_bridge::publish_tooltip(&view);
-            publish(app, &view);
+            publish(app, &mut view);
         }
     }
 }
@@ -488,7 +547,7 @@ fn sync_record_activity_with(app: &tauri::AppHandle, state: &Arc<Runtime>) -> bo
         tauri::async_runtime::spawn(async move {
             let mut view = state.view.lock().await;
             view.foreground = state.record_activity.active();
-            publish(&app, &view);
+            publish(&app, &mut view);
         });
     }
     active
@@ -496,7 +555,9 @@ fn sync_record_activity_with(app: &tauri::AppHandle, state: &Arc<Runtime>) -> bo
 
 #[cfg_attr(mobile, tauri::command)]
 async fn get_state(state: State<'_, Arc<Runtime>>) -> Result<ViewState, HttpFailure> {
-    Ok(state.view.lock().await.clone())
+    let mut view = state.view.lock().await;
+    view.flush_observed_at();
+    Ok(view.clone())
 }
 
 #[cfg_attr(mobile, tauri::command)]
@@ -565,6 +626,7 @@ async fn connect(
         view.connection_revision = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
         view.connected = true;
         view.snapshot = None;
+        view.pending_observed_at = None;
         view.snapshot_revision = 0;
         view.error.clear();
         let cap_upstream = data.get("upstream_connection").cloned();
@@ -583,7 +645,7 @@ async fn connect(
         *state.key.lock().await = Some(resolved_key);
         #[cfg(target_os = "macos")]
         macos_bridge::publish_tooltip(&view);
-        publish(&app, &view);
+        publish(&app, &mut view);
         Ok(())
     }
     .await;
@@ -617,7 +679,7 @@ async fn save_connection_profile(
     save_preferences_async(&state.path, &prefs).await?;
     let mut view = state.view.lock().await;
     view.preferences = prefs;
-    publish(&app, &view);
+    publish(&app, &mut view);
     Ok(())
 }
 
@@ -685,8 +747,8 @@ async fn remove_connection(
         credentials::delete(app.clone(), target)
     })
     .await?;
-    let view = state.view.lock().await;
-    publish(&app, &view);
+    let mut view = state.view.lock().await;
+    publish(&app, &mut view);
     Ok(())
 }
 
@@ -707,6 +769,7 @@ async fn disconnect(
     view.connected = false;
     view.online = false;
     view.snapshot = None;
+    view.pending_observed_at = None;
     view.error.clear();
     view.upstream_connection = None;
     let mut prefs = view.preferences.clone();
@@ -715,7 +778,7 @@ async fn disconnect(
     view.preferences = prefs;
     #[cfg(target_os = "macos")]
     macos_bridge::publish_tooltip(&view);
-    publish(&app, &view);
+    publish(&app, &mut view);
     Ok(())
 }
 
@@ -845,7 +908,7 @@ async fn preferences(
     }
     save_preferences_async(&state.path, &prefs).await?;
     view.preferences = prefs;
-    publish(&app, &view);
+    publish(&app, &mut view);
     Ok(())
 }
 
@@ -1097,6 +1160,10 @@ pub fn run() {
     let builder = builder.plugin(updater::plugin());
     let builder = builder.setup(|app| {
         let path = app.path().app_config_dir()?.join("preferences.json");
+        #[cfg(not(target_os = "android"))]
+        app.manage(Arc::new(credentials::CredentialStore::new(
+            path.with_file_name("credentials.json"),
+        )));
         #[cfg(mobile)]
         {
             let cache_dir = app.path().app_cache_dir()?;
@@ -1164,7 +1231,7 @@ pub fn run() {
                 view.initializing = false;
                 #[cfg(target_os = "macos")]
                 macos_bridge::publish_tooltip(&view);
-                publish(&handle, &view);
+                publish(&handle, &mut view);
             }
             loop {
                 if !state.foreground.load(Ordering::SeqCst) {
@@ -1203,7 +1270,7 @@ pub fn run() {
                 view.foreground = state.foreground.load(Ordering::SeqCst);
                 view.online = false;
                 view.error.clear();
-                publish(&handle, &view);
+                publish(&handle, &mut view);
                 state.wake.notify_one();
             });
         }
@@ -1368,6 +1435,24 @@ mod tests {
         assert_eq!(parsed["accounts"][0]["name"], "A\"B");
         let (rev2, _) = encode_snapshot(parsed).unwrap();
         assert_eq!(rev, rev2);
+
+        // Deferred 304 observed_at stays zero-copy until flushed for full export.
+        let mut view = ViewState::default();
+        apply_refresh(
+            &mut view,
+            Ok(serde_json::json!({"observed_at":"2026-09-25T10:00:00Z","accounts":[{"id":1}]})),
+        );
+        let initial_ptr = view.snapshot.clone().unwrap();
+        view.pending_observed_at = Some("2026-09-25T10:00:04Z".into());
+        assert!(Arc::ptr_eq(&initial_ptr, view.snapshot.as_ref().unwrap()));
+        view.flush_observed_at();
+        assert!(view.pending_observed_at.is_none());
+        let flushed_ptr = view.snapshot.clone().unwrap();
+        assert!(!Arc::ptr_eq(&initial_ptr, &flushed_ptr));
+        let exported: Value = serde_json::from_str(flushed_ptr.get()).unwrap();
+        assert_eq!(exported["observed_at"], "2026-09-25T10:00:04Z");
+        view.flush_observed_at();
+        assert!(Arc::ptr_eq(&flushed_ptr, view.snapshot.as_ref().unwrap()));
     }
 
     #[test]
@@ -1647,10 +1732,10 @@ mod tests {
 
         // 4. Partial failure (credential deletion fails) stops and leaves preferences intact.
         let partial = remove_connection_with(&state, "https://beta.example.invalid", |_| async {
-            Err("无法删除钥匙串中的 Key".into())
+            Err("无法删除本地凭据中的 Key".into())
         })
         .await;
-        assert_eq!(partial.unwrap_err(), "无法删除钥匙串中的 Key");
+        assert_eq!(partial.unwrap_err(), "无法删除本地凭据中的 Key");
         assert_eq!(state.view.lock().await.preferences.connections.len(), 2);
         let on_disk: Preferences =
             serde_json::from_slice(&std::fs::read(&state.path).unwrap()).unwrap();

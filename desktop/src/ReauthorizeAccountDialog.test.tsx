@@ -127,18 +127,27 @@ it.each([
   "code=fixture-code&state=fixture-state",
   "?state=fixture-state&code=fixture-code",
   "fixture-code",
-])("extracts %s immediately and accepts raw codes", async (value) => {
-  await render();
-  await click("生成授权链接");
-  await input(value);
-  expect(container.querySelector("textarea")?.value).toBe("fixture-code");
-  await click("完成授权");
-  expect(api).toHaveBeenCalledWith(
-    "POST",
-    "/account-creation/auth/openai/exchange",
-    expect.objectContaining({ code: "fixture-code", state: "fixture-state" }),
-  );
-});
+])(
+  "preserves raw input while editing and extracts %s on blur and submit",
+  async (value) => {
+    await render();
+    await click("生成授权链接");
+    await input(value);
+    expect(container.querySelector("textarea")?.value).toBe(value);
+    await act(async () => {
+      container
+        .querySelector("textarea")!
+        .dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    expect(container.querySelector("textarea")?.value).toBe("fixture-code");
+    await click("完成授权");
+    expect(api).toHaveBeenCalledWith(
+      "POST",
+      "/account-creation/auth/openai/exchange",
+      expect.objectContaining({ code: "fixture-code", state: "fixture-state" }),
+    );
+  },
+);
 it.each([
   "code=a&code=b",
   "state=fixture-state",
@@ -148,11 +157,34 @@ it.each([
   await render();
   await click("生成授权链接");
   await input(value);
+  expect(container.querySelector("textarea")?.value).toBe(value);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  await act(async () => {
+    container
+      .querySelector("textarea")!
+      .dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+  });
   expect(button("完成授权").disabled).toBe(true);
   expect(container.querySelector('[role="alert"]')).not.toBeNull();
   expect(
     vi.mocked(api).mock.calls.some(([, path]) => path.endsWith("/exchange")),
   ).toBe(false);
+});
+it("confirms before discarding a dirty callback draft", async () => {
+  await render();
+  await click("生成授权链接");
+  await input("fixture-draft");
+  await act(async () => {
+    container.querySelector<HTMLElement>(".modal-backdrop")!.click();
+  });
+  expect(close).not.toHaveBeenCalled();
+  await click("取消");
+  expect(container.querySelector('[role="alertdialog"]')).not.toBeNull();
+  await click("继续编辑");
+  expect(container.querySelector('[role="alertdialog"]')).toBeNull();
+  await click("取消");
+  await click("放弃修改");
+  expect(close).toHaveBeenCalledOnce();
 });
 it.each([false, true])(
   "distinguishes exchange failure from a definite save rejection: %s",

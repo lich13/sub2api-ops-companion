@@ -190,3 +190,74 @@ async fn version_or_commit_mismatch_warns_and_preserves_read_validate_apply() {
         );
     }
 }
+
+#[tokio::test]
+async fn stalled_ipc_readers_time_out_and_never_block_dispatch_or_permits() {
+    let (_dir, host, _driver, _before) = fixture(false, false, false);
+
+    // Helper: create a UnixStream pair where `server_stream`'s send buffer is saturated
+    // because `client_stream` never reads.
+    async fn saturated_pair() -> (UnixStream, UnixStream) {
+        let (client, server) = UnixStream::pair().unwrap();
+        let chunk = [b'x'; 16 * 1024];
+        while server.try_write(&chunk).is_ok() {}
+        (client, server)
+    }
+
+    // 1. Busy 503 reply when all MAX_IPC_CONCURRENCY permits are held must not block
+    //    the caller and must release its busy_limit permit after busy_timeout.
+    let exhausted_ipc = Arc::new(tokio::sync::Semaphore::new(0));
+    let busy_limit = Arc::new(tokio::sync::Semaphore::new(1));
+    let (_stalled_client, stalled_server) = saturated_pair().await;
+    let started = Instant::now();
+    dispatch_ipc_stream(
+        stalled_server,
+        host.clone(),
+        &exhausted_ipc,
+        &busy_limit,
+        Duration::from_millis(80),
+        Duration::from_millis(60),
+    );
+    assert!(
+        started.elapsed() < Duration::from_millis(30),
+        "dispatch_ipc_stream must return to accept loop without awaiting 503 write"
+    );
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while busy_limit.available_permits() == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("busy 503 write timed out and released busy permit");
+
+    // 2. Permit-holding worker whose response write stalls must time out and release ipc_limit.
+    let ipc_limit = Arc::new(tokio::sync::Semaphore::new(1));
+    let (mut stalled_reader, server_side) = saturated_pair().await;
+    write_frame(
+        &mut stalled_reader,
+        &json!({"action":"read","target":"http://127.0.0.1","payload":{}}),
+    )
+    .await
+    .unwrap();
+    let worker_started = Instant::now();
+    dispatch_ipc_stream(
+        server_side,
+        host,
+        &ipc_limit,
+        &busy_limit,
+        Duration::from_millis(80),
+        Duration::from_millis(60),
+    );
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while ipc_limit.available_permits() == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("stalled reader must not hold IPC concurrency permit indefinitely");
+    assert!(
+        worker_started.elapsed() >= Duration::from_millis(70),
+        "saturated response write must exercise io_timeout before releasing permit"
+    );
+    drop(stalled_reader);
+}

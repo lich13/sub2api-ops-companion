@@ -17,14 +17,7 @@ use std::{
 
 type Validator = fn(&Value) -> Result<()>;
 type Loader = fn(&mut Value) -> Result<bool>;
-#[derive(Clone)]
-struct Document<S> {
-    raw: Arc<Value>,
-    state: Arc<S>,
-}
-
-type Decoder<S> = fn(&Value) -> Result<S>;
-type CachedSnapshot<S> = Option<(FileStamp, u64, Document<S>, bool)>;
+type CachedSnapshot = Option<(FileStamp, u64, Arc<Value>, bool)>;
 
 static NEXT_CACHE_REVISION: AtomicU64 = AtomicU64::new(1);
 
@@ -56,26 +49,26 @@ impl From<&fs::Metadata> for FileStamp {
     }
 }
 
-enum Defaults<S> {
-    Eager(Result<Document<S>>),
+enum Defaults {
+    Eager(Arc<Value>),
     Lazy(fn() -> Value),
 }
 
-struct Inner<S> {
+struct Inner {
     path: PathBuf,
     lock_path: PathBuf,
-    defaults: Defaults<S>,
-    decode: Decoder<S>,
+    defaults: Defaults,
     default_revision: u64,
     existed: AtomicBool,
     mutex: Mutex<()>,
     validate: Validator,
     load: Loader,
-    cache: Mutex<CachedSnapshot<S>>,
+    cache: Mutex<CachedSnapshot>,
+    wake: tokio::sync::Notify,
 }
 
 #[derive(Clone)]
-pub struct Store<S = ()>(Arc<Inner<S>>);
+pub struct Store(Arc<Inner>);
 
 pub fn valid_object(value: &Value) -> Result<()> {
     if value.is_object() {
@@ -113,13 +106,13 @@ impl Store {
             path,
             lock_path,
             defaults: Defaults::Lazy(defaults),
-            decode: |_| Ok(()),
             default_revision: next_cache_revision(),
             existed: AtomicBool::new(existed),
             mutex: Mutex::new(()),
             validate,
             load: |_| Ok(false),
             cache: Mutex::new(None),
+            wake: tokio::sync::Notify::new(),
         }))
     }
 
@@ -139,59 +132,39 @@ impl Store {
         validate: Validator,
         load: Loader,
     ) -> Self {
-        Self::typed(path, lock_path, defaults, validate, load, |_| Ok(()))
-    }
-
-    pub fn policy(path: impl Into<PathBuf>, mut defaults: Value) -> Self {
-        defaults["version"] = json!(1);
-        Self::new(path, defaults, valid_policy)
-    }
-}
-
-impl<S: Clone> Store<S> {
-    pub(crate) fn typed(
-        path: PathBuf,
-        lock_path: PathBuf,
-        defaults: Value,
-        validate: Validator,
-        load: Loader,
-        decode: Decoder<S>,
-    ) -> Self {
         let existed = path.exists() || lock_path.exists();
-        let state = decode(&defaults);
         Self(Arc::new(Inner {
             path,
             lock_path,
-            defaults: Defaults::Eager(state.map(|state| Document {
-                raw: Arc::new(defaults),
-                state: Arc::new(state),
-            })),
-            decode,
+            defaults: Defaults::Eager(Arc::new(defaults)),
             default_revision: next_cache_revision(),
             existed: AtomicBool::new(existed),
             mutex: Mutex::new(()),
             validate,
             load,
             cache: Mutex::new(None),
+            wake: tokio::sync::Notify::new(),
         }))
     }
 
-    fn default_document(&self) -> Result<Document<S>> {
+    pub fn policy(path: impl Into<PathBuf>, mut defaults: Value) -> Self {
+        defaults["version"] = json!(1);
+        Self::new(path, defaults, valid_policy)
+    }
+
+    fn default_value(&self) -> Arc<Value> {
         match &self.0.defaults {
             Defaults::Eager(doc) => doc.clone(),
-            Defaults::Lazy(build) => {
-                let raw = build();
-                let state = (self.0.decode)(&raw)?;
-                Ok(Document {
-                    raw: Arc::new(raw),
-                    state: Arc::new(state),
-                })
-            }
+            Defaults::Lazy(build) => Arc::new(build()),
         }
     }
 
     pub fn path(&self) -> &Path {
         &self.0.path
+    }
+
+    pub(crate) fn notified(&self) -> tokio::sync::futures::Notified<'_> {
+        self.0.wake.notified()
     }
     pub(crate) fn evict_cache(&self) {
         if let Ok(mut cache) = self.0.cache.lock() {
@@ -211,14 +184,10 @@ impl<S: Clone> Store<S> {
 
     pub(crate) fn read_shared_versioned(&self) -> Result<(u64, Arc<Value>)> {
         let (revision, value, _) = self.read_snapshot()?;
-        Ok((revision, value.raw))
+        Ok((revision, value))
     }
 
-    pub(crate) fn read_state(&self) -> Result<Arc<S>> {
-        Ok(self.read_snapshot()?.1.state)
-    }
-
-    fn read_snapshot(&self) -> Result<(u64, Document<S>, bool)> {
+    fn read_snapshot(&self) -> Result<(u64, Arc<Value>, bool)> {
         match fs::metadata(&self.0.path) {
             Ok(metadata) => {
                 let stamp = FileStamp::from(&metadata);
@@ -233,7 +202,7 @@ impl<S: Clone> Store<S> {
                 if error.kind() == std::io::ErrorKind::NotFound
                     && !self.0.existed.load(Ordering::Acquire) =>
             {
-                return Ok((self.0.default_revision, self.default_document()?, false));
+                return Ok((self.0.default_revision, self.default_value(), false));
             }
             Err(_) => {
                 *self.0.cache.lock().map_err(|_| Error::internal())? = None;
@@ -242,7 +211,7 @@ impl<S: Clone> Store<S> {
         self.read_disk()
     }
 
-    fn read_disk(&self) -> Result<(u64, Document<S>, bool)> {
+    fn read_disk(&self) -> Result<(u64, Arc<Value>, bool)> {
         match File::open(&self.0.path) {
             Ok(mut file) => {
                 let before = FileStamp::from(&file.metadata()?);
@@ -252,11 +221,7 @@ impl<S: Clone> Store<S> {
                     .map_err(|_| Error::new(503, "控制状态文件无效"))?;
                 (self.0.validate)(&value)?;
                 let migrated = (self.0.load)(&mut value)?;
-                let state = (self.0.decode)(&value)?;
-                let value = Document {
-                    raw: Arc::new(value),
-                    state: Arc::new(state),
-                };
+                let value = Arc::new(value);
                 self.0.existed.store(true, Ordering::Release);
                 // Never label bytes with metadata from a replacement file.
                 // Transactions always read under the file lock; read snapshots
@@ -269,7 +234,7 @@ impl<S: Clone> Store<S> {
                     if let Some((cached_stamp, cached_rev, cached_val, cached_migrated)) =
                         cache.as_ref()
                     {
-                        if *cached_stamp == before && cached_val.raw == value.raw {
+                        if *cached_stamp == before && *cached_val == value {
                             return Ok((*cached_rev, cached_val.clone(), *cached_migrated));
                         }
                     }
@@ -285,7 +250,7 @@ impl<S: Clone> Store<S> {
                 if e.kind() == std::io::ErrorKind::NotFound
                     && !self.0.existed.load(Ordering::Acquire) =>
             {
-                Ok((self.0.default_revision, self.default_document()?, false))
+                Ok((self.0.default_revision, self.default_value(), false))
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 Err(Error::new(503, "控制状态文件丢失"))
@@ -302,16 +267,7 @@ impl<S: Clone> Store<S> {
         &self,
         action: impl FnOnce(&mut Value) -> Result<T>,
     ) -> Result<(Option<u64>, T)> {
-        blocking_file_io(|| {
-            self.transaction_blocking(
-                |previous| {
-                    let mut raw = (*previous.raw).clone();
-                    let result = action(&mut raw)?;
-                    Ok((Some(raw), result))
-                },
-                |_, after| (self.0.validate)(after),
-            )
-        })
+        blocking_file_io(|| self.transaction_blocking(action, |_, after| (self.0.validate)(after)))
     }
 
     pub(crate) fn transaction_validated<T>(
@@ -328,47 +284,14 @@ impl<S: Clone> Store<S> {
         validate: impl FnOnce(&Value, &Value) -> Result<()>,
     ) -> Result<T> {
         blocking_file_io(|| {
-            self.transaction_blocking(
-                |previous| {
-                    let mut raw = (*previous.raw).clone();
-                    let result = action(&mut raw)?;
-                    Ok((Some(raw), result))
-                },
-                validate,
-            )
-            .map(|(_, result)| result)
-        })
-    }
-
-    pub(crate) fn edit_state<T>(&self, action: impl FnOnce(&mut S) -> Result<T>) -> Result<T>
-    where
-        S: serde::Serialize + PartialEq,
-    {
-        blocking_file_io(|| {
-            self.transaction_blocking(
-                |previous| {
-                    let mut state = (*previous.state).clone();
-                    let result = action(&mut state)?;
-                    if state == *previous.state {
-                        return Ok((None, result));
-                    }
-                    let mut raw = (*previous.raw).clone();
-                    apply_state_changes(
-                        &mut raw,
-                        serde_json::to_value(&*previous.state)?,
-                        serde_json::to_value(state)?,
-                    );
-                    Ok((Some(raw), result))
-                },
-                |_, after| (self.0.validate)(after),
-            )
-            .map(|(_, result)| result)
+            self.transaction_blocking(action, validate)
+                .map(|(_, result)| result)
         })
     }
 
     fn transaction_blocking<T>(
         &self,
-        action: impl FnOnce(&Document<S>) -> Result<(Option<Value>, T)>,
+        action: impl FnOnce(&mut Value) -> Result<T>,
         validate: impl FnOnce(&Value, &Value) -> Result<()>,
     ) -> Result<(Option<u64>, T)> {
         let _mutex = self.0.mutex.lock().map_err(|_| Error::internal())?;
@@ -384,34 +307,26 @@ impl<S: Clone> Store<S> {
         // Recheck the current file stamp under the cross-process lock. Reuse
         // validated bytes only while that identity is unchanged.
         let (prev_rev, previous, migrated) = self.read_snapshot()?;
-        let (maybe_value, result) = action(&previous)?;
+        let mut value = (*previous).clone();
+        let result = action(&mut value)?;
         let first_write = !self.0.existed.load(Ordering::Acquire);
-        let changed = maybe_value.as_ref().is_some_and(|v| v != &*previous.raw);
+        let changed = value != *previous;
         let committed_rev = if migrated || first_write || changed {
-            let value = maybe_value.unwrap_or_else(|| (*previous.raw).clone());
             if migrated || first_write {
                 (self.0.validate)(&value)?;
             }
             if changed {
-                validate(&previous.raw, &value)?;
+                validate(&previous, &value)?;
             }
-            let state = (self.0.decode)(&value)?;
             write_json(&self.0.path, &value)?;
             let mut next_rev = None;
             let cached = fs::metadata(&self.0.path).ok().map(|metadata| {
                 let rev = next_cache_revision();
                 next_rev = Some(rev);
-                (
-                    FileStamp::from(&metadata),
-                    rev,
-                    Document {
-                        raw: Arc::new(value),
-                        state: Arc::new(state),
-                    },
-                    false,
-                )
+                (FileStamp::from(&metadata), rev, Arc::new(value), false)
             });
             *self.0.cache.lock().map_err(|_| Error::internal())? = cached;
+            self.0.wake.notify_waiters();
             next_rev
         } else {
             Some(prev_rev)
@@ -419,40 +334,6 @@ impl<S: Clone> Store<S> {
         self.0.existed.store(true, Ordering::Release);
         // File drop releases the OS lock on every error path too.
         Ok((committed_rev, result))
-    }
-}
-
-// Preserve the original representation of unchanged fields. Older state may
-// omit a field with a serde default, or explicitly store an optional null.
-fn apply_state_changes(raw: &mut Value, before: Value, after: Value) {
-    if before == after {
-        return;
-    }
-    match (raw, before, after) {
-        (Value::Object(raw), Value::Object(mut before), Value::Object(after)) => {
-            for (key, value) in after {
-                match before.shift_remove(&key) {
-                    Some(old) if old == value => {}
-                    Some(old) if raw.contains_key(&key) => {
-                        apply_state_changes(&mut raw[&key], old, value)
-                    }
-                    _ => {
-                        raw.insert(key, value);
-                    }
-                }
-            }
-            for key in before.keys() {
-                raw.shift_remove(key);
-            }
-        }
-        (Value::Array(raw), Value::Array(before), Value::Array(after))
-            if raw.len() == before.len() && raw.len() == after.len() =>
-        {
-            for ((item, old), new) in raw.iter_mut().zip(before).zip(after) {
-                apply_state_changes(item, old, new);
-            }
-        }
-        (raw, _, after) => *raw = after,
     }
 }
 

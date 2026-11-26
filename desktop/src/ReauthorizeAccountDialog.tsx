@@ -3,8 +3,13 @@ import { Copy, ExternalLink, Link2, LoaderCircle, X } from "lucide-react";
 import { api, command } from "./bridge";
 import type { TokenAuthorization, VerifiedAccountReply } from "./protocol";
 import { tokenIdentity, type RecordValue } from "./accountCreation";
+import { ConfirmDiscardDialog } from "./ConfirmDiscardDialog";
 import { useBackAction } from "./mobile";
-import { useDialogFocus } from "./dialogFocus";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
 import type { Account } from "./types";
 import "./reauthorize-account.css";
 
@@ -65,18 +70,44 @@ export default function ReauthorizeAccountDialog({
   const [callbackState, setCallbackState] = useState<string | undefined>();
   const [inputError, setInputError] = useState("");
   const [error, setError] = useState(""),
-    [copied, setCopied] = useState(false);
+    [copied, setCopied] = useState(false),
+    [confirmDiscard, setConfirmDiscard] = useState(false);
   const alive = useRef(false),
     guard = useRef(false);
   const dialog = useRef<HTMLElement>(null);
-  useDialogFocus(dialog);
-  useBackAction(true, close);
+  const dirty = !submitted && code.trim().length > 0;
+  useDialogFocus(dialog, !confirmDiscard);
+  const dismiss = () => {
+    if (busy) return;
+    if (dirty) setConfirmDiscard(true);
+    else close();
+  };
+  const backdrop = useBackdropDismiss(() => {
+    if (!busy && !dirty) close();
+  });
+  useBackAction(true, () => {
+    if (confirmDiscard) setConfirmDiscard(false);
+    else dismiss();
+  });
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
     };
   }, []);
+  function normalizeInput(raw: string, previousState?: string) {
+    if (!raw.trim()) {
+      setCallbackState(undefined);
+      setInputError("");
+      return null;
+    }
+    const parsed = authorizationInput(raw);
+    const nextState = parsed.state ?? previousState;
+    setCode(parsed.code);
+    setCallbackState(nextState);
+    setInputError("");
+    return { code: parsed.code, state: nextState };
+  }
 
   async function generate() {
     if (!online || guard.current) return;
@@ -144,12 +175,20 @@ export default function ReauthorizeAccountDialog({
       inputError
     )
       return;
-    const value = code.trim(),
-      state = callbackState || authorization.state;
+    let normalized: { code: string; state: string | undefined } | null;
+    try {
+      normalized = normalizeInput(code, callbackState);
+    } catch (failure) {
+      setCallbackState(undefined);
+      setInputError((failure as Error).message);
+      return;
+    }
+    const value = normalized?.code.trim() ?? "",
+      state = normalized?.state || authorization.state;
     if (
-      callbackState &&
+      normalized?.state &&
       authorization.state &&
-      callbackState !== authorization.state
+      normalized.state !== authorization.state
     ) {
       setError("回调地址不属于本次授权，请重新粘贴");
       return;
@@ -215,128 +254,138 @@ export default function ReauthorizeAccountDialog({
     }
   }
   return (
-    <div
-      className="modal-backdrop"
-      onClick={() => {
-        if (!busy) close();
-      }}
-    >
-      <section
-        ref={dialog}
-        className="reauthorize-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="重新授权"
-        tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            e.stopPropagation();
-            if (!busy) close();
-          }
-        }}
-      >
-        <header>
-          <div className="reauthorize-heading">
-            <Link2 size={18} />
-            <h2>重新授权</h2>
-          </div>
-          <button
-            className="icon-button"
-            aria-label="关闭重新授权"
-            onClick={close}
-          >
-            <X size={18} />
-          </button>
-        </header>
-        <div className="reauthorize-body">
-          <div className="reauthorize-account" title={account.name}>
-            {account.name}
-          </div>
-          <button disabled={!online || busy} onClick={() => void generate()}>
-            {busy && !submitted ? (
-              <LoaderCircle size={16} className="spin" />
-            ) : (
-              <Link2 size={16} />
-            )}
-            生成授权链接
-          </button>
-          {authorization && (
-            <>
-              <label>
-                授权链接
-                <input
-                  readOnly
-                  value={authorization.auth_url}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </label>
-              <div className="reauthorize-links">
-                <button disabled={!online || busy} onClick={() => void open()}>
-                  <ExternalLink size={16} />
-                  浏览器授权
-                </button>
-                <button disabled={busy} onClick={() => void copy()}>
-                  <Copy size={16} />
-                  {copied ? "已复制" : "复制链接"}
-                </button>
-              </div>
-              <label>
-                授权码或回调地址
-                <textarea
-                  value={code}
-                  onChange={(e) => {
-                    setError("");
-                    try {
-                      const parsed = authorizationInput(e.target.value);
-                      setCode(parsed.code);
-                      setCallbackState(parsed.state);
-                      setInputError("");
-                    } catch (failure) {
+    <>
+      <div className="modal-backdrop" inert={confirmDiscard} {...backdrop}>
+        <section
+          ref={dialog}
+          className="reauthorize-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-label="重新授权"
+          tabIndex={-1}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (isCleanEscape(e)) {
+              e.preventDefault();
+              e.stopPropagation();
+              if (confirmDiscard) setConfirmDiscard(false);
+              else if (!busy && !dirty) close();
+            }
+          }}
+        >
+          <header>
+            <div className="reauthorize-heading">
+              <Link2 size={18} />
+              <h2>重新授权</h2>
+            </div>
+            <button
+              className="icon-button"
+              aria-label="关闭重新授权"
+              disabled={busy}
+              onClick={dismiss}
+            >
+              <X size={18} />
+            </button>
+          </header>
+          <div className="reauthorize-body">
+            <div className="reauthorize-account" title={account.name}>
+              {account.name}
+            </div>
+            <button disabled={!online || busy} onClick={() => void generate()}>
+              {busy && !submitted ? (
+                <LoaderCircle size={16} className="spin" />
+              ) : (
+                <Link2 size={16} />
+              )}
+              生成授权链接
+            </button>
+            {authorization && (
+              <>
+                <label>
+                  授权链接
+                  <input
+                    readOnly
+                    value={authorization.auth_url}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </label>
+                <div className="reauthorize-links">
+                  <button
+                    disabled={!online || busy}
+                    onClick={() => void open()}
+                  >
+                    <ExternalLink size={16} />
+                    浏览器授权
+                  </button>
+                  <button disabled={busy} onClick={() => void copy()}>
+                    <Copy size={16} />
+                    {copied ? "已复制" : "复制链接"}
+                  </button>
+                </div>
+                <label>
+                  授权码或回调地址
+                  <textarea
+                    value={code}
+                    onChange={(e) => {
                       setCode(e.target.value);
                       setCallbackState(undefined);
-                      setInputError((failure as Error).message);
-                    }
-                  }}
-                  disabled={busy || submitted}
-                  autoComplete="off"
-                  spellCheck={false}
-                  rows={3}
-                />
-              </label>
-            </>
-          )}
-          {(error || inputError) && (
-            <p className="reauthorize-error" role="alert">
-              {error || inputError}
-            </p>
-          )}
-        </div>
-        <footer>
-          <button onClick={close}>取消</button>
-          <button
-            className="primary"
-            disabled={
-              !online ||
-              busy ||
-              submitted ||
-              !authorization ||
-              !code.trim() ||
-              !!inputError
-            }
-            onClick={() => void submit()}
-          >
-            {busy && submitted ? (
-              <LoaderCircle size={16} className="spin" />
-            ) : (
-              <Link2 size={16} />
+                      setError("");
+                      setInputError("");
+                    }}
+                    onBlur={() => {
+                      try {
+                        normalizeInput(code, callbackState);
+                      } catch (failure) {
+                        setCallbackState(undefined);
+                        setInputError((failure as Error).message);
+                      }
+                    }}
+                    disabled={busy || submitted}
+                    autoComplete="off"
+                    spellCheck={false}
+                    rows={3}
+                  />
+                </label>
+              </>
             )}
-            完成授权
-          </button>
-        </footer>
-      </section>
-    </div>
+            {(error || inputError) && (
+              <p className="reauthorize-error" role="alert">
+                {error || inputError}
+              </p>
+            )}
+          </div>
+          <footer>
+            <button disabled={busy} onClick={dismiss}>
+              取消
+            </button>
+            <button
+              className="primary"
+              disabled={
+                !online ||
+                busy ||
+                submitted ||
+                !authorization ||
+                !code.trim() ||
+                !!inputError
+              }
+              onClick={() => void submit()}
+            >
+              {busy && submitted ? (
+                <LoaderCircle size={16} className="spin" />
+              ) : (
+                <Link2 size={16} />
+              )}
+              完成授权
+            </button>
+          </footer>
+        </section>
+      </div>
+      <ConfirmDiscardDialog
+        open={confirmDiscard}
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={close}
+      />
+    </>
   );
 }

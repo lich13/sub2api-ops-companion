@@ -874,8 +874,10 @@ impl Harness {
 }
 
 fn bank_state_without_target() -> Value {
-    let (mut bank, mut version) =
-        modeltrace::bundled().expect("load bundled synthetic bank source");
+    let mut bank: Value =
+        serde_json::from_str(include_str!("../resources/modeltrace/unified_bank.json")).unwrap();
+    let (_, mut version) =
+        modeltrace::bundled_compiled().expect("load bundled synthetic bank source");
     let models = bank["models"].as_array_mut().unwrap();
     let target_index = models
         .iter()
@@ -919,8 +921,10 @@ fn bank_state_without_target() -> Value {
 
 fn bank_state_with_swapped_model_labels(left_id: &str, right_id: &str) -> Value {
     assert_ne!(left_id, right_id);
-    let (mut bank, mut version) =
-        modeltrace::bundled().expect("load bundled synthetic bank source");
+    let mut bank: Value =
+        serde_json::from_str(include_str!("../resources/modeltrace/unified_bank.json")).unwrap();
+    let (_, mut version) =
+        modeltrace::bundled_compiled().expect("load bundled synthetic bank source");
     let models = bank["models"].as_array_mut().unwrap();
     let left_index = models
         .iter()
@@ -1440,7 +1444,7 @@ async fn detection_scheduler_consumes_duplicate_clues_and_honors_exact_persisted
             .detection
             .capacity
             .store
-            .snapshot()
+            .shared_snapshot()
             .unwrap()["detection_events"],
         json!({})
     );
@@ -1482,7 +1486,7 @@ async fn detection_scheduler_consumes_duplicate_clues_and_honors_exact_persisted
             .detection
             .capacity
             .store
-            .snapshot()
+            .shared_snapshot()
             .unwrap()["detection_events"],
         json!({})
     );
@@ -1583,7 +1587,7 @@ async fn cooling_clues_are_consumed_without_later_replay() {
         .detection
         .capacity
         .store
-        .snapshot()
+        .shared_snapshot()
         .unwrap();
     assert!(capacity_state["detection_events"]
         .get(&error_clue)
@@ -1718,11 +1722,12 @@ async fn missing_fingerprint_target_pauses_candidate_without_dispatch_or_recheck
         blocked["candidate_recheck_at"],
         datetime(harness.now() + Duration::minutes(1))
     );
-    assert!(!harness.runtime().tests.bank.snapshot().0["models"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|model| model["id"] == model_detection::TARGET));
+    assert!(!harness
+        .runtime()
+        .tests
+        .bank
+        .compiled()
+        .contains_exact(model_detection::TARGET));
     assert_eq!(
         harness.mock.count("GET", &models_path),
         models_count_before_tick
@@ -2121,7 +2126,7 @@ async fn capacity_provider_and_slow_evidence_survive_bark_config_and_initializat
         .detection
         .capacity
         .store
-        .snapshot()
+        .shared_snapshot()
         .unwrap();
     let observed = state["detection_events"]
         .as_object()
@@ -2158,7 +2163,7 @@ async fn capacity_provider_and_slow_evidence_survive_bark_config_and_initializat
             .detection
             .capacity
             .store
-            .snapshot()
+            .shared_snapshot()
             .unwrap()["detection_events"],
         state["detection_events"]
     );
@@ -2184,7 +2189,7 @@ async fn capacity_provider_and_slow_evidence_survive_bark_config_and_initializat
         .detection
         .capacity
         .store
-        .snapshot()
+        .shared_snapshot()
         .unwrap();
     assert!(disabled_state["detection_events"]
         .get(&disabled_clue)
@@ -2236,7 +2241,7 @@ async fn capacity_provider_and_slow_evidence_survive_bark_config_and_initializat
         .detection
         .capacity
         .store
-        .snapshot()
+        .shared_snapshot()
         .unwrap();
     assert!(repeated["detection_events"].get(&second_clue).is_some());
     let repeated_observed = repeated["detection_events"]
@@ -2277,7 +2282,7 @@ async fn capacity_provider_and_slow_evidence_survive_bark_config_and_initializat
             .detection
             .capacity
             .store
-            .snapshot()
+            .shared_snapshot()
             .unwrap()["detection_events"]
             .as_object()
             .unwrap()
@@ -2291,7 +2296,7 @@ async fn capacity_provider_and_slow_evidence_survive_bark_config_and_initializat
         .detection
         .capacity
         .store
-        .snapshot()
+        .shared_snapshot()
         .unwrap();
     harness
         .runtime()
@@ -2305,7 +2310,7 @@ async fn capacity_provider_and_slow_evidence_survive_bark_config_and_initializat
             .detection
             .capacity
             .store
-            .snapshot()
+            .shared_snapshot()
             .unwrap(),
         before
     );
@@ -2321,12 +2326,9 @@ async fn automatic_sol_prediction_uses_requested_astra_model_and_stops_after_fir
             "gpt-6-sol",
         ))
         .await;
-    let bank = harness.runtime().tests.bank.snapshot();
-    let models = bank.0["models"].as_array().unwrap();
-    assert!(models
-        .iter()
-        .any(|model| model["id"] == model_detection::TARGET));
-    assert!(models.iter().any(|model| model["id"] == "gpt-6-sol"));
+    let bank = harness.runtime().tests.bank.compiled();
+    assert!(bank.contains_exact(model_detection::TARGET));
+    assert!(bank.contains_exact("gpt-6-sol"));
 
     harness.mock.set_models(vec![
         json!({"id":"gpt-6-astra","name":"fixture requested model"}),
@@ -2598,7 +2600,7 @@ async fn automatic_first_group_verdict_confirms_schedulable_write_before_bark_an
         .detection
         .capacity
         .store
-        .snapshot()
+        .shared_snapshot()
         .unwrap()["detection_events"]
         .get(&clue_id)
         .is_none());
@@ -4857,7 +4859,7 @@ async fn manual_generation_change_rejects_a_stale_verdict_without_any_dispositio
             .detection
             .capacity
             .store
-            .snapshot()
+            .shared_snapshot()
             .unwrap()["marks"],
         json!({})
     );
@@ -5740,7 +5742,7 @@ async fn disabling_generation_drops_old_marked_clue_without_model_recheck() {
             .detection
             .capacity
             .store
-            .snapshot()
+            .shared_snapshot()
             .unwrap()["detection_events"],
         json!({})
     );
@@ -7457,7 +7459,7 @@ async fn normal_first_group_still_allows_aggregate_degradation_disposition() {
         .unwrap();
     let job = h.wait_job_terminal(job["id"].as_str().unwrap()).await;
     assert_eq!(job["first_group_valid"], true);
-    assert!(!sub2ops_server::model_downgrade::is_downgrade(
+    assert!(!sub2ops_server::model_verdict::is_downgrade(
         "gpt-6-luna",
         job["first_group_prediction"].as_str().unwrap()
     ));
@@ -7655,7 +7657,13 @@ async fn clue_batch_failure_keeps_completed_acknowledgements_and_unprocessed_eve
     let state = h.runtime().detection.store.read_shared().unwrap();
     assert!(state["consumed"].get("error:processed").is_some());
     assert!(state["consumed"].get("error:remaining").is_none());
-    let alerts = h.runtime().detection.capacity.store.snapshot().unwrap();
+    let alerts = h
+        .runtime()
+        .detection
+        .capacity
+        .store
+        .shared_snapshot()
+        .unwrap();
     assert!(alerts["detection_events"].get("error:processed").is_none());
     assert_eq!(alerts["detection_events"].as_object().unwrap().len(), 2);
     h.runtime()
@@ -7668,12 +7676,16 @@ async fn clue_batch_failure_keeps_completed_acknowledgements_and_unprocessed_eve
         })
         .unwrap();
     h.runtime().detection.tick().await.unwrap();
-    assert!(
-        h.runtime().detection.capacity.store.snapshot().unwrap()["detection_events"]
-            .as_object()
-            .unwrap()
-            .is_empty()
-    );
+    assert!(h
+        .runtime()
+        .detection
+        .capacity
+        .store
+        .shared_snapshot()
+        .unwrap()["detection_events"]
+        .as_object()
+        .unwrap()
+        .is_empty());
     assert_eq!(h.mock.count("POST", "/v1/responses"), 0);
     h.close().await;
 }

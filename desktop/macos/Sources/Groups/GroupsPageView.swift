@@ -543,7 +543,7 @@ public struct GroupsPageView: View {
                             .font(DS.fontCompactSemibold)
                             .monospacedDigit()
                             .foregroundStyle(DS.ink)
-                        Image(systemName: expandedDraftList ? "chevron.up" : "chevron.down")
+                        Image(systemName: expandedDraftList ? "chevron.down" : "chevron.right")
                             .font(DS.iconFont(10, weight: .semibold))
                             .foregroundStyle(DS.muted)
                     }
@@ -617,7 +617,7 @@ public struct GroupsPageView: View {
     private func move(accountId: Int, to zone: GroupMembershipZone) {
         guard store.state.online,
               !saving,
-              let account = store.accountById[accountId] ?? store.accounts.first(where: { $0.id == accountId })
+              let account = store.accountById[accountId]
         else { return }
         let allPlatforms = computePlatforms()
         let activePlatform = allPlatforms.contains(selectedPlatform) ? selectedPlatform : (allPlatforms.first ?? "openai")

@@ -3,7 +3,7 @@ use crate::{
     error::Result,
     oauth_admission,
     oauth_state::{OAuthState, Update},
-    quota, recovery_policy, recovery_rules,
+    quota, recovery_rules,
 };
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{json, Value};
@@ -117,7 +117,7 @@ pub fn discover(
     at: DateTime<Utc>,
 ) -> Result<()> {
     let previous = store.shared_snapshot()?;
-    let methods = recovery_policy::MethodIndex::from_config(config);
+    let methods = recovery_rules::MethodIndex::from_config(config);
     let mut changes = vec![];
     for row in rows {
         let row = row.borrow();

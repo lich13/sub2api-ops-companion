@@ -2,9 +2,9 @@ use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use sub2ops_server::{
-    bark, compat, daily_test, oauth_admission,
+    bark, compat, credit, oauth_admission, oauth_daily,
     oauth_state::{self, OAuthState, Update},
-    recovery_policy, recovery_rules, reset_credit_observation,
+    recovery_rules,
 };
 
 const FIXTURES: &str = include_str!("../../tests/contracts/recovery-fixtures.json");
@@ -683,19 +683,19 @@ fn oauth_admission_matches_pinned_fingerprint_and_time_budget_boundaries() {
 fn recovery_policy_selection_matches_pinned_python_rules() {
     let fixture = fixtures();
     let policy = &fixture["recovery_policy"];
-    let ids = recovery_policy::account_ids(&policy["account_ids_input"]).unwrap();
+    let ids = recovery_rules::account_ids(&policy["account_ids_input"]).unwrap();
     assert_eq!(
         ids.into_iter().collect::<Vec<_>>(),
         integer_values(&policy["account_ids_expected"]),
     );
-    let eligible = recovery_policy::eligible_ids(policy["eligible_rows"].as_array().unwrap());
+    let eligible = recovery_rules::eligible_ids(policy["eligible_rows"].as_array().unwrap());
     assert_eq!(
         eligible.into_iter().collect::<Vec<_>>(),
         integer_values(&policy["eligible_expected"])
     );
 
     for case in policy["methods"].as_array().unwrap() {
-        let actual = recovery_policy::method(&case["config"], case["id"].as_i64().unwrap());
+        let actual = recovery_rules::method(&case["config"], case["id"].as_i64().unwrap());
         assert_eq!(actual, case["expected_method"].as_str(), "{}", case["name"],);
     }
 }
@@ -840,7 +840,7 @@ fn daily_schedule_matches_pinned_on_time_missed_interrupted_and_config_change_st
     for case in daily["times"].as_array().unwrap() {
         assert_eq!(
             compat::datetime(
-                daily_test::next_time(date(&case["now"]), case["time"].as_str().unwrap()).unwrap(),
+                oauth_daily::next_time(date(&case["now"]), case["time"].as_str().unwrap()).unwrap(),
             ),
             case["expected"].as_str().unwrap(),
             "{}",
@@ -849,7 +849,7 @@ fn daily_schedule_matches_pinned_on_time_missed_interrupted_and_config_change_st
     }
     for case in daily["eligibility"].as_array().unwrap() {
         assert_eq!(
-            daily_test::eligible(&case["row"], date(&case["now"])),
+            oauth_daily::eligible(&case["row"], date(&case["now"])),
             case["expected"].as_bool().unwrap(),
             "{}",
             case["name"],
@@ -859,7 +859,7 @@ fn daily_schedule_matches_pinned_on_time_missed_interrupted_and_config_change_st
     let schedule_fixture = &daily["schedule"];
     let temporary = tempfile::tempdir().unwrap();
     let state = OAuthState::new(temporary.path().join("recovery-state.json"));
-    let schedule = daily_test::Schedule::new(state.clone());
+    let schedule = oauth_daily::Schedule::new(state.clone());
     let initial_config = json!({"oauth_daily_test_enabled":true,"oauth_daily_test_time":"05:00"});
     schedule
         .startup(
@@ -906,7 +906,7 @@ fn daily_schedule_matches_pinned_on_time_missed_interrupted_and_config_change_st
         schedule_fixture["claim"]["expected_state"],
     );
 
-    let restarted = daily_test::Schedule::new(state.clone());
+    let restarted = oauth_daily::Schedule::new(state.clone());
     restarted
         .startup(&changed_config, date(&schedule_fixture["restart"]["at"]))
         .unwrap();
@@ -918,7 +918,7 @@ fn daily_schedule_matches_pinned_on_time_missed_interrupted_and_config_change_st
 
     let late_temporary = tempfile::tempdir().unwrap();
     let late_state = OAuthState::new(late_temporary.path().join("recovery-state.json"));
-    let late_schedule = daily_test::Schedule::new(late_state.clone());
+    let late_schedule = oauth_daily::Schedule::new(late_state.clone());
     late_schedule
         .startup(
             &initial_config,
@@ -957,7 +957,7 @@ fn reset_credit_receipt_diagnostics_never_infer_uncertain_consumption() {
     let reset = &fixture["reset_credit"];
     for case in reset["diagnostics"].as_array().unwrap() {
         assert_eq!(
-            reset_credit_observation::diagnostics(
+            credit::rules::diagnostics(
                 case["status"].as_u64().map(|status| status as u16),
                 &case["data"],
             ),
@@ -968,7 +968,7 @@ fn reset_credit_receipt_diagnostics_never_infer_uncertain_consumption() {
     }
     for case in reset["consumption"].as_array().unwrap() {
         assert_eq!(
-            reset_credit_observation::consumption_result(&case["data"]),
+            credit::rules::consumption_result(&case["data"]),
             case["expected"],
             "{}",
             case["name"],

@@ -2,7 +2,7 @@ use crate::{
     compat::{datetime, integer, operation_versions, string, truthy},
     error::{Error, Result},
     model_detection::Detection,
-    model_downgrade::{is_downgrade, valid_report},
+    model_verdict::{is_downgrade, valid_report},
     security::safe_error,
 };
 use serde_json::{json, Value};
@@ -13,10 +13,10 @@ pub fn owns_pause(value: &Value) -> bool {
         && value["disposition"]["schedule_verified"] == true
 }
 pub fn normal_result(job: &Value) -> bool {
-    if crate::lm_verdict::is_lm(job) || crate::verdict_policy::relaxed(job) {
+    if crate::model_verdict::is_lm(job) || crate::model_verdict::relaxed(job) {
         return job["automatic"] == true
             && job["degradation_recheck"] == true
-            && crate::verdict_policy::classify(job)["outcome"] == "normal";
+            && crate::model_verdict::classify(job)["outcome"] == "normal";
     }
     let report = &job["report"];
     let first = string(&job["first_group_prediction"]);

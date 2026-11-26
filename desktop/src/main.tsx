@@ -4,11 +4,10 @@ import {
   errorMessage,
   ignoredFailure,
 } from "./bridgeError";
-import { accountDialog, closedDialog } from "./accountDialog";
+import { closedDialog, type AccountDialog } from "./accountDialog";
 import React, {
   Suspense,
   useCallback,
-  useReducer,
   useEffect,
   useMemo,
   useRef,
@@ -43,6 +42,7 @@ import { api, command, preview, subscribe } from "./bridge";
 import { subscribeObserved } from "./tauriEvents";
 import { isAccountSort, readAccountSort, saveAccountSort } from "./accountSort";
 import {
+  connectionIdentity,
   filterAccounts,
   currentGroups,
   defaultConnectionName,
@@ -83,7 +83,11 @@ import ClientUpdateCard from "./ClientUpdateCard";
 import SettingsView from "./SettingsView";
 import { SwitchControl as Switch } from "./SwitchControl";
 import DegradationAction, { DegradationBadge } from "./DegradationMark";
-import { useDialogFocus } from "./dialogFocus";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
 import { listenBack, useBackAction } from "./mobile";
 import { getVersion as getRuntimeVersion } from "@tauri-apps/api/app";
 
@@ -408,15 +412,18 @@ export default function App() {
     } | null>(null),
     [switcherOpen, setSwitcherOpen] = useState(false),
     discardRef = useRef<HTMLElement>(null),
+    connectionModalRef = useRef<HTMLDivElement>(null),
+    groupsSurfaceRef = useRef<HTMLDivElement>(null),
+    filtersSheetRef = useRef<HTMLDivElement>(null),
+    drawerRef = useRef<HTMLElement>(null),
     schedulePending = useRef(false),
     detailGeneration = useRef(0),
     detailAbort = useRef<AbortController | null>(null);
-  const [dialog, showDialog] = useReducer(accountDialog, closedDialog);
+  const [dialog, showDialog] = useState<AccountDialog>(closedDialog);
   const testAccount = dialog.kind === "test" ? dialog.account : null;
   const modelTestAccount = dialog.kind === "modelTest" ? dialog.account : null;
   const modelDetectionAccount =
     dialog.kind === "detection" ? dialog.account : null;
-  const keepaliveAccount = dialog.kind === "keepalive" ? dialog.account : null;
   const settingsAccount = dialog.kind === "settings" ? dialog : null;
   const reauthorizeAccount = dialog.kind === "reauthorize" ? dialog : null;
   const deleteAccounts = dialog.kind === "delete" ? dialog.accounts : null;
@@ -486,6 +493,18 @@ export default function App() {
     }
   }
   useDialogFocus(discardRef, !!leaveGroups);
+  useDialogFocus(connectionModalRef, !!connectionModal);
+  useDialogFocus(groupsSurfaceRef, groupsOpen);
+  useDialogFocus(filtersSheetRef, filtersOpen);
+  useDialogFocus(drawerRef, !!detail || detailBusy);
+  const leaveGroupsBackdrop = useBackdropDismiss(() => {
+    leaveGroups?.(false);
+    setLeaveGroups(null);
+  });
+  const connectionModalBackdrop = useBackdropDismiss(() =>
+    setConnectionModal(null),
+  );
+  const detailBackdrop = useBackdropDismiss(closeDetail);
   useBackAction(groupsOpen, () => setGroupsOpen(false));
   useBackAction(!!leaveGroups, () => {
     leaveGroups?.(false);
@@ -558,23 +577,34 @@ export default function App() {
     const timer = setTimeout(prewarmSecondarySurfaces, 1500);
     return () => clearTimeout(timer);
   }, [ready, state.connected]);
-  const connectionKey = `${state.preferences.base_url}:${state.connected}:${state.connection_revision ?? 0}`;
+  const connectionKey = connectionIdentity(state);
   const [visitedRetained, setVisitedRetained] = useState<{
     key: string;
     groups: boolean;
     priorities: boolean;
   }>({ key: connectionKey, groups: false, priorities: false });
-  useEffect(() => {
-    setVisitedRetained((prev) => {
-      const sameKey = prev.key === connectionKey;
-      const groups = (sameKey && prev.groups) || page === "groups";
-      const priorities = (sameKey && prev.priorities) || page === "priorities";
-      if (sameKey && prev.groups === groups && prev.priorities === priorities) {
-        return prev;
+  const navigatePage = useCallback(
+    (next: (typeof pages)[number]["id"]) => {
+      setPage(next);
+      if (next === "groups" || next === "priorities") {
+        setVisitedRetained((prev) => {
+          const sameKey = prev.key === connectionKey;
+          const groups = (sameKey && prev.groups) || next === "groups";
+          const priorities =
+            (sameKey && prev.priorities) || next === "priorities";
+          if (
+            sameKey &&
+            prev.groups === groups &&
+            prev.priorities === priorities
+          ) {
+            return prev;
+          }
+          return { key: connectionKey, groups, priorities };
+        });
       }
-      return { key: connectionKey, groups, priorities };
-    });
-  }, [connectionKey, page]);
+    },
+    [connectionKey],
+  );
   useEffect(() => bindOperationConnection(connectionKey), [connectionKey]);
   useEffect(() => bindAccountModelsConnection(connectionKey), [connectionKey]);
   const connectionBatch = useConnectionBatch({
@@ -677,12 +707,33 @@ export default function App() {
       .then(setRuntimeVersion)
       .catch(() => {});
   }, []);
+  const snap = state.snapshot,
+    groups = useMemo(() => snap?.groups ?? [], [snap?.groups]);
+  const accounts = useMemo(
+    () => (snap?.accounts ?? []).filter((a) => !removedIds.has(a.id)),
+    [snap?.accounts, removedIds],
+  );
+  const accountById = useMemo(
+    () => new Map(accounts.map((a) => [a.id, a])),
+    [accounts],
+  );
+  const keepaliveAccount =
+    dialog.kind === "keepalive"
+      ? (accountById.get(dialog.account.id) ?? null)
+      : null;
+  const liveSelected = useMemo(() => {
+    if (!selected.size) return selected;
+    return [...selected].every((id) => accountById.has(id))
+      ? selected
+      : new Set([...selected].filter((id) => accountById.has(id)));
+  }, [selected, accountById]);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.isComposing || event.defaultPrevented)
-        return;
+      if (!isCleanEscape(event)) return;
       if (switcherOpen) setSwitcherOpen(false);
       else if (connectionModal) setConnectionModal(null);
+      else if (groupsOpen) setGroupsOpen(false);
+      else if (filtersOpen) setFiltersOpen(false);
       else if (testAccount) showDialog(closedDialog);
       else if (detail || detailBusy) {
         closeDetail();
@@ -693,18 +744,11 @@ export default function App() {
   }, [
     switcherOpen,
     connectionModal,
+    groupsOpen,
+    filtersOpen,
     detail,
     detailBusy,
     testAccount,
-    leaveGroups,
-    deleteAccounts,
-    resetAccounts,
-    modelTestAccount,
-    modelDetectionAccount,
-    keepaliveAccount,
-    proxyAccounts,
-    reauthorizeAccount,
-    settingsAccount,
   ]);
   useEffect(() => {
     let disposed = false;
@@ -734,16 +778,6 @@ export default function App() {
   );
   const eventFeed = eventTab === "other" ? otherFeed : degradationFeed;
   const loadEvents = eventFeed.load;
-  const snap = state.snapshot,
-    groups = useMemo(() => snap?.groups ?? [], [snap?.groups]);
-  const accounts = useMemo(
-    () => (snap?.accounts ?? []).filter((a) => !removedIds.has(a.id)),
-    [snap?.accounts, removedIds],
-  );
-  const accountById = useMemo(
-    () => new Map(accounts.map((a) => [a.id, a])),
-    [accounts],
-  );
   const filteredAccounts = useMemo(
     () =>
       (sortBy === "recent" ? sortRecentCall : sortPriority)(
@@ -752,15 +786,6 @@ export default function App() {
       ),
     [accounts, query, group, platform, filter, type, ascending, sortBy],
   );
-  useEffect(() => {
-    const live = new Set(accounts.map((a) => a.id));
-    showDialog({ kind: "accountsChanged", ids: live });
-    setSelected((old) =>
-      [...old].every((id) => live.has(id))
-        ? old
-        : new Set([...old].filter((id) => live.has(id))),
-    );
-  }, [accounts]);
   const eventRows = useMemo(
     () =>
       (page === "events" ? eventFeed.items : [])
@@ -781,8 +806,9 @@ export default function App() {
     [accounts],
   );
   const selectedAccounts = useMemo(
-    () => (selected.size ? accounts.filter((a) => selected.has(a.id)) : []),
-    [accounts, selected],
+    () =>
+      liveSelected.size ? accounts.filter((a) => liveSelected.has(a.id)) : [],
+    [accounts, liveSelected],
   );
   const hasSelectedResetCredit = useMemo(
     () => selectedAccounts.some(resetCreditEligible),
@@ -1164,7 +1190,7 @@ export default function App() {
               modelTest={(account) =>
                 showDialog({ kind: "modelTest", account })
               }
-              priorities={() => setPage("priorities")}
+              priorities={() => navigatePage("priorities")}
               template={(a) => {
                 showDialog({ kind: "templates", account: a });
               }}
@@ -1288,9 +1314,6 @@ export default function App() {
                   hidden={page === "groups" || page === "priorities"}
                 >
                   <div className="page-heading">
-                    <div>
-                      <h1>{pages.find((p) => p.id === page)?.label}</h1>
-                    </div>
                     {page !== "records" && (
                       <span className="updated">
                         <Clock3 size={13} />
@@ -1322,12 +1345,12 @@ export default function App() {
                       enabled={hasApiKey}
                     >
                       <div className="mobile-group-entry">
-                        <button onClick={() => setPage("groups")}>
+                        <button onClick={() => navigatePage("groups")}>
                           <Layers3 size={18} />
                           分组管理
                           <ChevronRight size={16} />
                         </button>
-                        <button onClick={() => setPage("priorities")}>
+                        <button onClick={() => navigatePage("priorities")}>
                           <ListOrdered size={18} />
                           优先级管理
                           <ChevronRight size={16} />
@@ -1356,8 +1379,10 @@ export default function App() {
                           />
                         )}
                         <div
+                          ref={filtersSheetRef}
                           className={`filter-options${filtersOpen ? " open" : ""}`}
                           role={filtersOpen ? "dialog" : undefined}
+                          aria-modal={filtersOpen ? "true" : undefined}
                           aria-label="账号筛选"
                         >
                           <header>
@@ -1456,7 +1481,9 @@ export default function App() {
                             aria-label="全选当前筛选账号"
                             checked={
                               filteredAccounts.length > 0 &&
-                              filteredAccounts.every((a) => selected.has(a.id))
+                              filteredAccounts.every((a) =>
+                                liveSelected.has(a.id),
+                              )
                             }
                             disabled={!state.online}
                             onChange={(e) =>
@@ -1482,10 +1509,10 @@ export default function App() {
                         </select>
                       </div>
                       <div className="table-wrap">
-                        {selected.size > 0 && (
+                        {liveSelected.size > 0 && (
                           <div className="selection-bar">
                             <div className="selection-summary">
-                              <span>已选 {selected.size} 个账号</span>
+                              <span>已选 {liveSelected.size} 个账号</span>
                             </div>
                             <div
                               className="selection-actions"
@@ -1494,7 +1521,9 @@ export default function App() {
                             >
                               <button
                                 id="connection-batch-start"
-                                disabled={!state.online || selected.size === 0}
+                                disabled={
+                                  !state.online || liveSelected.size === 0
+                                }
                                 aria-disabled={connectionBatch.busy}
                                 onClick={() =>
                                   void connectionBatch.start(selectedAccounts)
@@ -1524,7 +1553,9 @@ export default function App() {
                                 使用重置卡
                               </button>
                               <button
-                                disabled={!state.online || selected.size === 0}
+                                disabled={
+                                  !state.online || liveSelected.size === 0
+                                }
                                 onClick={() =>
                                   showDialog({
                                     kind: "proxy",
@@ -1536,7 +1567,9 @@ export default function App() {
                                 选择代理
                               </button>
                               <button
-                                disabled={!state.online || selected.size === 0}
+                                disabled={
+                                  !state.online || liveSelected.size === 0
+                                }
                                 onClick={() => {
                                   showDialog({
                                     kind: "templates",
@@ -1550,7 +1583,9 @@ export default function App() {
                               </button>
                               <button
                                 className="danger-text"
-                                disabled={!state.online || selected.size === 0}
+                                disabled={
+                                  !state.online || liveSelected.size === 0
+                                }
                                 onClick={() =>
                                   showDialog({
                                     kind: "delete",
@@ -1570,7 +1605,7 @@ export default function App() {
                           connectionKey={connectionKey}
                           accounts={filteredAccounts}
                           online={state.online}
-                          selected={selected}
+                          selected={liveSelected}
                           busyAccountId={busy}
                           select={toggleSelect}
                           schedule={mobileSchedule}
@@ -1775,7 +1810,7 @@ export default function App() {
                     void LazyUsageRecords.preload().catch(() => {});
                   }
                 }}
-                onClick={() => setPage(p.id)}
+                onClick={() => navigatePage(p.id)}
               >
                 <p.icon size={21} />
                 <span>{p.label}</span>
@@ -1784,7 +1819,7 @@ export default function App() {
           })}
       </nav>
       {leaveGroups && (
-        <div className="modal-backdrop">
+        <div className="modal-backdrop" {...leaveGroupsBackdrop}>
           <section
             ref={discardRef}
             className="discard-groups-dialog"
@@ -1794,8 +1829,9 @@ export default function App() {
               priorityChanges ? "未应用的优先级修改" : "未应用的分组修改"
             }
             tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => {
-              if (e.key === "Escape" && !e.nativeEvent.isComposing) {
+              if (isCleanEscape(e)) {
                 e.preventDefault();
                 e.stopPropagation();
                 leaveGroups(false);
@@ -1831,11 +1867,9 @@ export default function App() {
         </div>
       )}
       {connectionModal && (
-        <div
-          className="modal-backdrop"
-          onClick={() => setConnectionModal(null)}
-        >
+        <div className="modal-backdrop" {...connectionModalBackdrop}>
           <div
+            ref={connectionModalRef}
             className="connection-modal"
             role="dialog"
             aria-modal="true"
@@ -1863,6 +1897,7 @@ export default function App() {
       )}
       {groupsOpen && (
         <div
+          ref={groupsSurfaceRef}
           className="mobile-groups-surface"
           role="dialog"
           aria-modal="true"
@@ -1915,9 +1950,7 @@ export default function App() {
                 new Set(
                   results
                     .filter(
-                      (r) =>
-                        r.status === "failed" &&
-                        accounts.some((a) => a.id === r.id),
+                      (r) => r.status === "failed" && accountById.has(r.id),
                     )
                     .map((r) => r.id),
                 ),
@@ -1928,8 +1961,15 @@ export default function App() {
         </Suspense>
       )}
       {(detail || detailBusy) && (
-        <div className="drawer-backdrop" onClick={closeDetail}>
-          <aside className="drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="drawer-backdrop" {...detailBackdrop}>
+          <aside
+            ref={drawerRef}
+            className="drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="错误详情"
+            onClick={(e) => e.stopPropagation()}
+          >
             <header>
               <div>
                 <span className="eyebrow">错误详情</span>
@@ -2061,9 +2101,7 @@ export default function App() {
         <Suspense fallback={null}>
           <LazyTestDialog
             key={`${connectionKey}:${testAccount.id}`}
-            account={
-              accounts.find((a) => a.id === testAccount.id) ?? testAccount
-            }
+            account={accountById.get(testAccount.id) ?? testAccount}
             online={state.online}
             close={() => showDialog(closedDialog)}
           />
@@ -2073,10 +2111,7 @@ export default function App() {
         <Suspense fallback={null}>
           <LazyModelTestDialog
             key={`${connectionKey}:${modelTestAccount.id}`}
-            account={
-              accounts.find((a) => a.id === modelTestAccount.id) ??
-              modelTestAccount
-            }
+            account={accountById.get(modelTestAccount.id) ?? modelTestAccount}
             online={state.online}
             report={report}
             close={() => showDialog(closedDialog)}
@@ -2131,8 +2166,7 @@ export default function App() {
           <LazyModelDetectionDialog
             key={`${connectionKey}:${modelDetectionAccount.id}`}
             account={
-              accounts.find((a) => a.id === modelDetectionAccount.id) ??
-              modelDetectionAccount
+              accountById.get(modelDetectionAccount.id) ?? modelDetectionAccount
             }
             online={state.online}
             close={() => showDialog(closedDialog)}
@@ -2147,10 +2181,7 @@ export default function App() {
         <Suspense fallback={null}>
           <LazyKeepaliveDialog
             key={`${connectionKey}:${keepaliveAccount.id}`}
-            account={
-              accounts.find((a) => a.id === keepaliveAccount.id) ??
-              keepaliveAccount
-            }
+            account={keepaliveAccount}
             online={state.online}
             connectionKey={connectionKey}
             close={() => showDialog(closedDialog)}

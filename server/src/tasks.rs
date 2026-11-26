@@ -16,6 +16,7 @@ struct State {
 #[derive(Clone, Default)]
 pub struct Tasks {
     state: Arc<Mutex<State>>,
+    closing: Arc<tokio::sync::Mutex<()>>,
     supervisor: crate::supervision::Supervisor,
 }
 
@@ -23,6 +24,7 @@ impl Tasks {
     pub fn supervised(supervisor: crate::supervision::Supervisor) -> Self {
         Self {
             state: Default::default(),
+            closing: Default::default(),
             supervisor,
         }
     }
@@ -53,22 +55,7 @@ impl Tasks {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .closed = true;
-        let _ = tokio::time::timeout(Duration::from_secs(seconds), async {
-            loop {
-                if self
-                    .state
-                    .lock()
-                    .unwrap_or_else(|error| error.into_inner())
-                    .handles
-                    .iter()
-                    .all(JoinHandle::is_finished)
-                {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-        })
-        .await;
+        let _guard = self.closing.lock().await;
         let handles = std::mem::take(
             &mut self
                 .state
@@ -76,11 +63,50 @@ impl Tasks {
                 .unwrap_or_else(|error| error.into_inner())
                 .handles,
         );
-        for handle in &handles {
+        if handles.is_empty() {
+            return;
+        }
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(seconds);
+        let mut remaining = Vec::new();
+        for mut handle in handles {
+            if tokio::time::timeout_at(deadline, &mut handle)
+                .await
+                .is_err()
+            {
+                remaining.push(handle);
+            }
+        }
+        for handle in &remaining {
             handle.abort();
         }
-        for handle in handles {
+        for handle in remaining {
             let _ = handle.await;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Tasks;
+    use std::time::{Duration, Instant};
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn close_never_misses_final_task_completion_wakeup() {
+        for _ in 0..64 {
+            let tasks = Tasks::default();
+            for _ in 0..16 {
+                tasks
+                    .spawn(async {
+                        tokio::task::yield_now().await;
+                    })
+                    .unwrap();
+            }
+            let started = Instant::now();
+            tasks.close(55).await;
+            assert!(
+                started.elapsed() < Duration::from_secs(2),
+                "Tasks::close must finish immediately as JoinHandles complete"
+            );
         }
     }
 }

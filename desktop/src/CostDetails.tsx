@@ -8,6 +8,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Info } from "lucide-react";
+import { isCleanEscape } from "./dialogFocus";
 import { decimal, money, type UsageRecord } from "./records";
 
 const number = (value: string | number | null | undefined) =>
@@ -169,7 +170,7 @@ export default function CostDetails({ row }: { row: UsageRecord }) {
       if (!panel.current?.contains(e.target as Node)) close();
     };
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (isCleanEscape(e)) {
         e.stopPropagation();
         close();
       }

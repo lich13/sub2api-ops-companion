@@ -70,7 +70,7 @@ fn task_terminal(status: &str) -> bool {
     !ACTIVE.contains(&status)
 }
 
-fn validate_store(data: &Value) -> Result<()> {
+fn validate_header(data: &Value) -> Result<()> {
     if data["version"] != 2 || !data["jobs"].is_object() || !data["requests"].is_object() {
         return Err(invalid_state());
     }
@@ -94,124 +94,134 @@ fn validate_store(data: &Value) -> Result<()> {
             return Err(invalid_state());
         }
     }
-    for (id, job) in data["jobs"].as_object().ok_or_else(invalid_state)? {
-        if !id_valid(id)
-            || job["id"] != *id
-            || !job["status"].as_str().is_some_and(|s| {
-                [
-                    "queued",
-                    "running",
-                    "checking",
-                    "completed",
-                    "failed",
-                    "cancelled",
-                    "needs_confirmation",
-                ]
-                .contains(&s)
-            })
-            || !job["cancel_requested"].is_boolean()
-            || validation::hex(&job["request_hash"], 64).is_err()
-            || validation::request_id(&job["client_id"]).is_err()
-            || validation::request_id(&job["request_id"]).is_err()
-            || !job["reason"].is_string()
-            || parse_datetime(&job["created_at"]).is_none()
-            || parse_datetime(&job["updated_at"]).is_none()
-            || if task_terminal(string(&job["status"])) {
-                parse_datetime(&job["completed_at"]).is_none()
-            } else {
-                !job["completed_at"].is_null()
-            }
-            || data["requests"][string(&job["request_id"])] != *id
-            || !job["items"].is_array()
-        {
-            return Err(invalid_state());
-        }
-        if !platform_valid(&job["platform"])
-            || job["base"] != 1
-            || job
-                .get("parallelism")
-                .is_some_and(|value| !value.as_u64().is_some_and(|value| (1..=8).contains(&value)))
-            || !job["waiting_reason"].is_string()
-            || !job["waiting_account_ids"].as_array().is_some_and(|ids| {
-                let accounts: HashSet<_> = job["items"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .filter_map(|item| item["account_id"].as_i64())
-                    .collect();
-                let mut seen = HashSet::new();
-                ids.iter().all(|id| {
-                    id.as_i64()
-                        .is_some_and(|n| n > 0 && seen.insert(n) && accounts.contains(&n))
-                })
-            })
-        {
-            return Err(invalid_state());
-        }
-        let mut ids = BTreeSet::new();
-        let mut target_counts = HashMap::<i64, usize>::new();
-        for (index, item) in job["items"].as_array().unwrap().iter().enumerate() {
-            let target = item["target_priority"].as_i64();
-            let target_valid = if job.get("parallelism").is_some() {
-                target.is_some_and(|value| (0..=i32::MAX as i64).contains(&value))
-            } else {
-                item["target_priority"].as_u64() == Some(index as u64 + 1)
-            };
-            if let Some(target) = target {
-                *target_counts.entry(target).or_default() += 1;
-            }
-            if !item["account_id"]
-                .as_i64()
-                .is_some_and(|id| id > 0 && ids.insert(id))
-                || !target_valid
-                || item["platform"] != job["platform"]
-                || !item["original_priority"].is_i64()
-                || validation::hex(&item["expected_version"], 64).is_err()
-                || validation::hex(&item["identity"], 64).is_err()
-                || !item["account_name"].is_string()
-                || !item["capability"]["editable"].is_boolean()
-                || !item["capability"]["reason"].is_string()
-                || !item["observed_priority"].is_null() && !item["observed_priority"].is_i64()
-                || !item["status"].as_str().is_some_and(|s| {
-                    ["pending", "unchanged", "dispatched", "verified"].contains(&s)
-                })
-                || item["status"] == "verified"
-                    && (validation::hex(&item["verified_version"], 64).is_err()
-                        || item["observed_priority"] != item["target_priority"])
-                || item["status"] == "unchanged"
-                    && (item["original_priority"] != item["target_priority"]
-                        || item["observed_priority"] != item["target_priority"])
-                || item["status"] == "dispatched" && parse_datetime(&item["started_at"]).is_none()
-                || job["status"] == "completed"
-                    && !matches!(string(&item["status"]), "verified" | "unchanged")
-            {
-                return Err(invalid_state());
-            }
-        }
-        if job.get("parallelism").is_some() {
-            let capacity = job["parallelism"].as_u64().unwrap_or(1) as usize;
-            if target_counts.values().any(|count| *count > capacity) {
-                return Err(invalid_state());
-            }
-        }
-        if job["items"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|item| item["status"] == "dispatched")
-            .count()
-            > 1
-        {
-            return Err(invalid_state());
-        }
-        if ACTIVE.contains(&string(&job["status"])) && active(data) != Some(id) {
-            return Err(invalid_state());
-        }
-    }
     if let Some(id) = active(data) {
         if task_terminal(string(&data["jobs"][id]["status"])) {
             return Err(invalid_state());
         }
+    }
+    Ok(())
+}
+
+fn validate_job(data: &Value, id: &str, job: &Value) -> Result<()> {
+    if !id_valid(id)
+        || job["id"] != *id
+        || !job["status"].as_str().is_some_and(|s| {
+            [
+                "queued",
+                "running",
+                "checking",
+                "completed",
+                "failed",
+                "cancelled",
+                "needs_confirmation",
+            ]
+            .contains(&s)
+        })
+        || !job["cancel_requested"].is_boolean()
+        || validation::hex(&job["request_hash"], 64).is_err()
+        || validation::request_id(&job["client_id"]).is_err()
+        || validation::request_id(&job["request_id"]).is_err()
+        || !job["reason"].is_string()
+        || parse_datetime(&job["created_at"]).is_none()
+        || parse_datetime(&job["updated_at"]).is_none()
+        || if task_terminal(string(&job["status"])) {
+            parse_datetime(&job["completed_at"]).is_none()
+        } else {
+            !job["completed_at"].is_null()
+        }
+        || data["requests"][string(&job["request_id"])] != *id
+        || !job["items"].is_array()
+    {
+        return Err(invalid_state());
+    }
+    if !platform_valid(&job["platform"])
+        || job["base"] != 1
+        || job
+            .get("parallelism")
+            .is_some_and(|value| !value.as_u64().is_some_and(|value| (1..=8).contains(&value)))
+        || !job["waiting_reason"].is_string()
+        || !job["waiting_account_ids"].as_array().is_some_and(|ids| {
+            let accounts: HashSet<_> = job["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|item| item["account_id"].as_i64())
+                .collect();
+            let mut seen = HashSet::new();
+            ids.iter().all(|id| {
+                id.as_i64()
+                    .is_some_and(|n| n > 0 && seen.insert(n) && accounts.contains(&n))
+            })
+        })
+    {
+        return Err(invalid_state());
+    }
+    let mut ids = BTreeSet::new();
+    let mut target_counts = HashMap::<i64, usize>::new();
+    for (index, item) in job["items"].as_array().unwrap().iter().enumerate() {
+        let target = item["target_priority"].as_i64();
+        let target_valid = if job.get("parallelism").is_some() {
+            target.is_some_and(|value| (0..=i32::MAX as i64).contains(&value))
+        } else {
+            item["target_priority"].as_u64() == Some(index as u64 + 1)
+        };
+        if let Some(target) = target {
+            *target_counts.entry(target).or_default() += 1;
+        }
+        if !item["account_id"]
+            .as_i64()
+            .is_some_and(|id| id > 0 && ids.insert(id))
+            || !target_valid
+            || item["platform"] != job["platform"]
+            || !item["original_priority"].is_i64()
+            || validation::hex(&item["expected_version"], 64).is_err()
+            || validation::hex(&item["identity"], 64).is_err()
+            || !item["account_name"].is_string()
+            || !item["capability"]["editable"].is_boolean()
+            || !item["capability"]["reason"].is_string()
+            || !item["observed_priority"].is_null() && !item["observed_priority"].is_i64()
+            || !item["status"]
+                .as_str()
+                .is_some_and(|s| ["pending", "unchanged", "dispatched", "verified"].contains(&s))
+            || item["status"] == "verified"
+                && (validation::hex(&item["verified_version"], 64).is_err()
+                    || item["observed_priority"] != item["target_priority"])
+            || item["status"] == "unchanged"
+                && (item["original_priority"] != item["target_priority"]
+                    || item["observed_priority"] != item["target_priority"])
+            || item["status"] == "dispatched" && parse_datetime(&item["started_at"]).is_none()
+            || job["status"] == "completed"
+                && !matches!(string(&item["status"]), "verified" | "unchanged")
+        {
+            return Err(invalid_state());
+        }
+    }
+    if job.get("parallelism").is_some() {
+        let capacity = job["parallelism"].as_u64().unwrap_or(1) as usize;
+        if target_counts.values().any(|count| *count > capacity) {
+            return Err(invalid_state());
+        }
+    }
+    if job["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["status"] == "dispatched")
+        .count()
+        > 1
+    {
+        return Err(invalid_state());
+    }
+    if ACTIVE.contains(&string(&job["status"])) && active(data) != Some(id) {
+        return Err(invalid_state());
+    }
+    Ok(())
+}
+
+fn validate_store(data: &Value) -> Result<()> {
+    validate_header(data)?;
+    for (id, job) in data["jobs"].as_object().ok_or_else(invalid_state)? {
+        validate_job(data, id, job)?;
     }
     for (request, id) in data["requests"].as_object().ok_or_else(invalid_state)? {
         if !id
@@ -224,9 +234,62 @@ fn validate_store(data: &Value) -> Result<()> {
     Ok(())
 }
 
+fn validate_store_incremental(before: &Value, after: &Value) -> Result<()> {
+    validate_header(after)?;
+    let before_jobs = before["jobs"].as_object();
+    let after_jobs = after["jobs"].as_object().ok_or_else(invalid_state)?;
+    let before_active = active(before);
+    let after_active = active(after);
+    for (id, job) in after_jobs {
+        if before_jobs.and_then(|m| m.get(id)) != Some(job)
+            || before_active == Some(id.as_str())
+            || after_active == Some(id.as_str())
+        {
+            validate_job(after, id, job)?;
+        }
+    }
+    let before_reqs = before["requests"].as_object();
+    let after_reqs = after["requests"].as_object().ok_or_else(invalid_state)?;
+    if let Some(prev_jobs) = before_jobs {
+        for (id, prev_job) in prev_jobs {
+            if after_jobs.get(id) != Some(prev_job) {
+                let old_req = string(&prev_job["request_id"]);
+                if let Some(mapped) = after_reqs.get(old_req) {
+                    if !mapped.as_str().is_some_and(|jid| {
+                        after_jobs
+                            .get(jid)
+                            .is_some_and(|j| j["request_id"] == old_req)
+                    }) {
+                        return Err(invalid_state());
+                    }
+                }
+            }
+        }
+    }
+    for (request, id) in after_reqs {
+        if before_reqs.and_then(|m| m.get(request)) != Some(id)
+            && !id.as_str().is_some_and(|id| {
+                after_jobs
+                    .get(id)
+                    .is_some_and(|j| j["request_id"] == *request)
+            })
+        {
+            return Err(invalid_state());
+        }
+    }
+    Ok(())
+}
+
+fn edit_priority_store<T>(
+    store: &Store,
+    action: impl FnOnce(&mut Value) -> Result<T>,
+) -> Result<T> {
+    store.transaction_diff_validated(action, validate_store_incremental)
+}
+
 #[derive(Clone)]
 pub struct PriorityGate {
-    pub store: Store<crate::state_files::PriorityFile>,
+    pub store: Store,
     pub(crate) clock: crate::compat::WallClock,
     admission: Arc<RwLock<()>>,
 }
@@ -237,13 +300,11 @@ impl PriorityGate {
             .with_file_name("account-priority-orders-v2.json");
         let lock = path.with_extension("lock");
         Self {
-            store: Store::typed(
+            store: Store::with_lock(
                 path,
                 lock,
                 json!({"version":2,"active_id":null,"last_id":null,"jobs":{},"requests":{},"parallelism":{}}),
                 validate_store,
-                |_| Ok(false),
-                |raw| serde::Deserialize::deserialize(raw).map_err(|_| invalid_state()),
             ),
             clock: Arc::new(chrono::Utc::now),
             admission: Arc::new(RwLock::new(())),
@@ -251,17 +312,13 @@ impl PriorityGate {
     }
     pub async fn enter(&self) -> Result<OwnedRwLockReadGuard<()>> {
         let guard = self.admission.clone().read_owned().await;
-        let data = self.store.read_state()?;
-        if let Some(id) = data.active_id.as_deref() {
+        let data = self.store.read_shared()?;
+        if let Some(id) = active(&data) {
             if !ORDER.try_with(|owner| owner == id).unwrap_or(false) {
                 return Err(busy());
             }
-            if data
-                .jobs
-                .get(id)
-                .ok_or_else(invalid_state)?
-                .cancel_requested
-            {
+            let job = data["jobs"].get(id).ok_or_else(invalid_state)?;
+            if job["cancel_requested"] == true {
                 return Err(Error::new(409, "已停止剩余优先级修改"));
             }
         } else if ORDER.try_with(|_| ()).is_ok() {
@@ -291,7 +348,7 @@ impl PriorityGate {
                 "账号集合、优先级或编辑资格已变化，剩余修改未执行",
             ));
         }
-        self.store.transaction(|data| {
+        edit_priority_store(&self.store, |data| {
             if active(data) != Some(owner.as_str())
                 || data["jobs"][&owner]["cancel_requested"] == true
             {
@@ -335,7 +392,7 @@ impl PriorityGate {
 }
 
 pub struct PriorityOrders {
-    pub store: Store<crate::state_files::PriorityFile>,
+    pub store: Store,
     actions: Actions,
     operations: Arc<Operations>,
     running: Arc<AtomicBool>,
@@ -399,32 +456,34 @@ fn public_job(job: &Value, details: bool) -> Value {
     result
 }
 fn record_verified(
-    store: &Store<crate::state_files::PriorityFile>,
+    store: &Store,
     id: &str,
     account_id: i64,
     row: &Value,
     stamp: String,
 ) -> Result<()> {
-    store.edit_state(|data| {
-        if data.active_id.as_deref() != Some(id) {
+    edit_priority_store(store, |data| {
+        if active(data) != Some(id) {
             return Err(Error::new(409, "排序任务已结束"));
         }
-        let job = data.jobs.get_mut(id).ok_or_else(invalid_state)?;
-        let item = job
-            .items
+        let job = data["jobs"].get_mut(id).ok_or_else(invalid_state)?;
+        let item = job["items"]
+            .as_array_mut()
+            .ok_or_else(invalid_state)?
             .iter_mut()
-            .find(|item| item.account_id == account_id)
+            .find(|item| item["account_id"] == account_id)
             .ok_or_else(invalid_state)?;
-        if item.status != "dispatched"
-            || row["priority"].as_i64() != Some(item.target_priority)
-            || identity(row) != item.identity
+        let target_priority = item["target_priority"].as_i64().ok_or_else(invalid_state)?;
+        if item["status"] != "dispatched"
+            || row["priority"].as_i64() != Some(target_priority)
+            || identity(row) != item["identity"]
         {
             return Err(Error::new(409, "已派发账号身份或优先级尚未确认"));
         }
-        item.status = "verified".into();
-        item.fields.insert("verified_version".into(), version(row));
-        item.observed_priority = Some(item.target_priority);
-        job.updated_at = stamp;
+        item["status"] = "verified".into();
+        item["verified_version"] = version(row);
+        item["observed_priority"] = target_priority.into();
+        job["updated_at"] = stamp.into();
         Ok(())
     })
 }
@@ -634,7 +693,7 @@ impl PriorityOrders {
         let created = self.actions.timestamp();
         let job = json!({"id":id,"platform":platform,"base":1,"parallelism":width,"waiting_reason":"","waiting_account_ids":[],"status":"queued","reason":"等待执行","cancel_requested":false,"items":items,
             "request_id":rid,"client_id":request["client_id"],"request_hash":signature,"created_at":created,"updated_at":created,"completed_at":null});
-        self.store.transaction(|data| {
+        edit_priority_store(&self.store, |data| {
             if active(data).is_some() {
                 return Err(busy());
             }
@@ -661,7 +720,7 @@ impl PriorityOrders {
             return Err(Error::new(409, "账号集合或优先级已变化，请重新核对"));
         }
         let width = request["parallelism"].as_u64().unwrap();
-        self.store.transaction(|data| {
+        edit_priority_store(&self.store, |data| {
             if active(data).is_some() {
                 return Err(busy());
             }
@@ -675,7 +734,7 @@ impl PriorityOrders {
     }
     fn finish(&self, id: &str, status: &str, reason: &str) -> Result<()> {
         let mut changed = false;
-        self.store.transaction(|data| {
+        edit_priority_store(&self.store, |data| {
             if active(data) != Some(id) {
                 return Ok(());
             }
@@ -698,7 +757,7 @@ impl PriorityOrders {
     pub fn cancel(&self, id: &str) -> Result<Value> {
         self.get(id, true)?;
         let mut notified = false;
-        self.store.transaction(|data| {
+        edit_priority_store(&self.store, |data| {
             if active(data) == Some(id) {
                 data["jobs"][id]["cancel_requested"] = true.into();
                 data["jobs"][id]["reason"] = "正在停止，已派发项仍需核对".into();
@@ -715,7 +774,7 @@ impl PriorityOrders {
     pub fn recover_startup(&self) -> Result<()> {
         let data = self.store.read_shared()?;
         if active(&data).is_some() {
-            self.store.transaction(|data| {
+            edit_priority_store(&self.store, |data| {
                 if let Some(id) = active(data).map(str::to_owned) {
                     data["jobs"][&id]["status"] = "checking".into();
                     data["jobs"][&id]["reason"] = "服务重启，正在核对排序进度".into();
@@ -730,7 +789,7 @@ impl PriorityOrders {
         if self.store.read_shared()?["jobs"][id]["waiting_account_ids"] == value {
             return Ok(());
         }
-        self.store.transaction(|data| {
+        edit_priority_store(&self.store, |data| {
             if active(data) == Some(id) {
                 data["jobs"][id]["waiting_reason"] = if ids.is_empty() {
                     ""
@@ -804,7 +863,7 @@ impl PriorityOrders {
                     return self.finish(id, "needs_confirmation", "已派发账号无法读取，请重新核对");
                 };
                 if row["priority"] != item["target_priority"] || identity(row) != item["identity"] {
-                    self.store.transaction(|data| {
+                    edit_priority_store(&self.store, |data| {
                         let item = data["jobs"][id]["items"]
                             .as_array_mut()
                             .unwrap()

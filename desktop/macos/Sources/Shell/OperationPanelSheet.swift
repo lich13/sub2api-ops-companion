@@ -278,7 +278,7 @@ public struct OperationPanelSheet: View {
             store.page = .priorities
             return
         }
-        guard let account = store.accounts.first(where: { $0.id == job.account_id }) else {
+        guard let account = store.accountById[job.account_id] else {
             store.showToast("账号已删除或无法读取")
             return
         }

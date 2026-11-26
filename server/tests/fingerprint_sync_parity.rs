@@ -263,7 +263,7 @@ fn new_bank_with_data_directory(
 }
 
 fn current_revision() -> String {
-    modeltrace::bundled().unwrap().1["revision"]
+    modeltrace::bundled_compiled().unwrap().1["revision"]
         .as_str()
         .unwrap()
         .to_owned()
@@ -390,10 +390,15 @@ fn fallback_plans(revision: &str, raw_bank: &[u8]) -> Vec<Plan> {
 }
 
 fn non_finite_bank(value: &str) -> Vec<u8> {
-    let (bank, _) = modeltrace::bundled().unwrap();
-    let raw = serde_json::to_string(&bank).unwrap();
-    let marker = "\"feature_mean\":[";
-    let start = raw.find(marker).unwrap() + marker.len();
+    let raw = std::str::from_utf8(PINNED_BANK).unwrap();
+    let marker = "\"feature_mean\": [";
+    let alt_marker = "\"feature_mean\":[";
+    let (m, pos) = raw
+        .find(alt_marker)
+        .map(|p| (alt_marker, p))
+        .or_else(|| raw.find(marker).map(|p| (marker, p)))
+        .expect("feature_mean in PINNED_BANK");
+    let start = pos + m.len();
     let end = start
         + raw[start..]
             .find(',')
@@ -402,7 +407,7 @@ fn non_finite_bank(value: &str) -> Vec<u8> {
 }
 
 fn schema_variant(mutation: &str) -> Vec<u8> {
-    let (mut bank, _) = modeltrace::bundled().unwrap();
+    let mut bank: Value = serde_json::from_slice(PINNED_BANK).unwrap();
     match mutation {
         "dimension" => {
             bank["robust"]["hellinger"]["feature_mean"]
@@ -436,7 +441,7 @@ async fn rejected_remote_bank(raw: Vec<u8>, expected: &str, tree_blob: Option<&s
     };
     assert_eq!(public["status"], expected_status);
     assert_eq!(public["result"], "failed");
-    assert_eq!(bank.snapshot().1["revision"], current_revision());
+    assert_eq!(bank.compiled_version().0["revision"], current_revision());
     assert_eq!(transport.count(), 3);
 }
 
@@ -500,17 +505,10 @@ async fn remote_update_public_contract_daily_gate_and_restart_cache_match_pinned
         ]
     );
 
-    let snapshot = bank.snapshot();
-    assert!(Arc::ptr_eq(&snapshot, &bank.snapshot()));
-    let mut isolated = (*snapshot).clone();
-    isolated.0["models"][0]["id"] = "fixture-mutated-model".into();
-    isolated.1["revision"] = "fixture-mutated-revision".into();
-    assert_ne!(
-        bank.snapshot().0["models"][0]["id"],
-        "fixture-mutated-model"
-    );
-    assert_eq!(snapshot.1["revision"], revision);
-    assert_eq!(bank.snapshot().1["revision"], revision);
+    let (ver, compiled) = bank.compiled_version();
+    assert!(Arc::ptr_eq(&compiled, &bank.compiled()));
+    assert_eq!(ver["revision"], revision);
+    assert_eq!(bank.compiled_version().0["revision"], revision);
     let mut public_copy = bank.public();
     public_copy["version"]["revision"] = "fixture-public-mutation".into();
     assert_eq!(bank.public()["version"]["revision"], revision);
@@ -538,7 +536,10 @@ async fn remote_update_public_contract_daily_gate_and_restart_cache_match_pinned
     assert_eq!(cached["status"], "idle");
     assert_eq!(cached["error"], Value::Null);
     assert_eq!(cached["version"]["revision"], revision);
-    assert_eq!(restarted.snapshot().0, modeltrace::bundled().unwrap().0);
+    assert_eq!(
+        *restarted.compiled(),
+        modeltrace::bundled_compiled().unwrap().0
+    );
     assert_eq!(restarted_transport.count(), 0);
 }
 
@@ -550,8 +551,8 @@ async fn failed_remote_update_after_restart_keeps_the_persisted_last_good_bank()
     let transport = QueueTransport::new(api_update_plans(&revision, PINNED_BANK, None));
     let bank = new_bank(directory.path(), transport.clone(), &clock);
     bank.sync(true).await;
-    let saved = bank.snapshot();
-    assert_eq!(saved.1["revision"], revision);
+    let (saved_ver, saved_compiled) = bank.compiled_version();
+    assert_eq!(saved_ver["revision"], revision);
     assert_eq!(transport.count(), 3);
     clock.advance(3600.0);
     let failures = QueueTransport::new([
@@ -561,12 +562,12 @@ async fn failed_remote_update_after_restart_keeps_the_persisted_last_good_bank()
         Plan::failure(INFO_REFS_PATH, "network"),
     ]);
     let restarted = new_bank(directory.path(), failures.clone(), &clock);
-    assert_eq!(restarted.snapshot().1, saved.1);
+    assert_eq!(restarted.compiled_version().0, saved_ver);
     restarted.sync(true).await;
     assert_eq!(failures.count(), 4);
     assert_eq!(restarted.public()["error"], "network");
-    assert_eq!(restarted.snapshot().1, saved.1);
-    assert_eq!(restarted.snapshot().0, saved.0);
+    assert_eq!(restarted.compiled_version().0, saved_ver);
+    assert_eq!(*restarted.compiled(), *saved_compiled);
 }
 
 #[tokio::test]
@@ -758,8 +759,8 @@ async fn cache_persist_failure_keeps_the_last_good_active_snapshot() {
     let transport = QueueTransport::new(plans);
     let active = new_bank(directory.path(), transport.clone(), &clock);
     active.sync(true).await;
-    let last_good = active.snapshot();
-    assert_eq!(last_good.1["revision"], first_revision);
+    let (last_ver, last_compiled) = active.compiled_version();
+    assert_eq!(last_ver["revision"], first_revision);
 
     let data_dir = directory.path().join("data");
     let saved_dir = directory.path().join("saved-state");
@@ -770,12 +771,12 @@ async fn cache_persist_failure_keeps_the_last_good_active_snapshot() {
     assert_eq!(active.public()["error"], "cache");
     assert_eq!(active.public()["status"], "error");
     assert_eq!(active.public()["cooldown_until"], 1300.0);
-    assert!(Arc::ptr_eq(&last_good, &active.snapshot()));
+    assert!(Arc::ptr_eq(&last_compiled, &active.compiled()));
 
     let restarted = new_bank_with_data_directory(&saved_dir, QueueTransport::new([]), &clock);
     assert_eq!(restarted.public()["source"], "cache");
     assert_eq!(restarted.public()["version"]["revision"], first_revision);
-    assert_eq!(restarted.snapshot().1["revision"], first_revision);
+    assert_eq!(restarted.compiled_version().0["revision"], first_revision);
 }
 
 #[tokio::test]

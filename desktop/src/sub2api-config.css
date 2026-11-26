@@ -20,10 +20,6 @@
   border-bottom: 1px solid var(--line);
 }
 .config-heading-main {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 18px;
   min-width: 0;
 }
 .config-heading h2 {
@@ -35,6 +31,7 @@
   flex-wrap: wrap;
   gap: 4px 10px;
   align-items: center;
+  margin-top: 5px;
   font-size: 11px;
 }
 .config-runtime > span:last-child {
@@ -42,13 +39,13 @@
 }
 .sub2api-config .config-refresh {
   flex-shrink: 0;
-  min-height: var(--control-h-compact);
   padding: 4px 10px;
   font-size: 12px;
 }
 .config-filters {
   display: flex;
   flex-shrink: 0;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
@@ -57,10 +54,9 @@
 .config-search {
   display: flex;
   align-items: center;
-  flex: 1;
+  flex: 1 1 220px;
   gap: 8px;
   min-width: 0;
-  min-height: var(--control-h);
   padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -91,9 +87,11 @@
   outline: none;
   box-shadow: none;
 }
-.sub2api-config .config-search button {
+.sub2api-config .config-search button,
+.app.mobile .sub2api-config .config-search button {
   flex-shrink: 0;
-  min-height: 24px;
+  min-width: 28px;
+  min-height: 28px;
   border: 0;
   background: transparent;
   padding: 4px;
@@ -252,17 +250,13 @@
   width: 100%;
   flex: 1;
   min-width: 0;
-  min-height: var(--control-h-field);
 }
 .config-input button {
   flex-shrink: 0;
-  min-height: var(--control-h-field);
-  min-width: var(--control-h-field);
   padding: 7px;
 }
 .config-field-control > select {
   width: 100%;
-  min-height: var(--control-h-field);
 }
 .config-boolean {
   display: flex;
@@ -519,20 +513,6 @@
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-@media (max-width: 1050px) {
-  .config-heading-main {
-    display: block;
-  }
-  .config-runtime {
-    margin-top: 5px;
-  }
-  .config-filters {
-    flex-wrap: wrap;
-  }
-  .config-search {
-    flex-basis: 220px;
-  }
 }
 @media (max-width: 760px) {
   .config-filters {

@@ -38,6 +38,7 @@ import {
   type PriorityView,
 } from "./priorities";
 import type { Account } from "./types";
+import { isCleanEscape } from "./dialogFocus";
 import "./priority-manager.css";
 
 type Props = {
@@ -52,8 +53,6 @@ type Props = {
 type Drag = {
   id: number;
   platform: string;
-  x: number;
-  y: number;
   target: number | null;
 };
 type Drafts = Record<string, PriorityDraft | undefined>;
@@ -94,12 +93,19 @@ function PriorityManagerImpl(props: Props) {
     latest = useRef(props);
   const draftsRef = useRef(drafts),
     viewRef = useRef(view),
-    dragRef = useRef(drag);
+    dragRef = useRef(drag),
+    dragCoordsRef = useRef({ x: 0, y: 0 }),
+    ghostRef = useRef<HTMLDivElement>(null);
   const lists = useRef(new Map<string, HTMLOListElement>());
   const listScrollOffsets = useRef(new Map<string, number>());
-  const pointer = useRef<
-    (Drag & { ready: boolean; timer?: ReturnType<typeof setTimeout> }) | null
-  >(null);
+  const pointer = useRef<{
+    id: number;
+    platform: string;
+    x: number;
+    y: number;
+    ready: boolean;
+    timer?: ReturnType<typeof setTimeout>;
+  } | null>(null);
   const requests = useRef<
     Record<string, { signature: string; body: Record<string, unknown> }>
   >({});
@@ -292,7 +298,7 @@ function PriorityManagerImpl(props: Props) {
   }, []);
   useEffect(() => {
     const cancel = (event: KeyboardEvent) => {
-      if (active && event.key === "Escape") stopDrag();
+      if (active && isCleanEscape(event)) stopDrag();
     };
     window.addEventListener("keydown", cancel);
     return () => window.removeEventListener("keydown", cancel);
@@ -349,6 +355,11 @@ function PriorityManagerImpl(props: Props) {
           previous?.ids ?? task?.items?.map((item) => item.account_id);
         const same =
           !!group && !!target && samePriorityAccounts(target, group.items);
+        const targetById = task?.items
+          ? new Map(
+              task.items.map((item) => [item.account_id, item.target_priority]),
+            )
+          : null;
         setDrafts((old) => ({
           ...old,
           [reprepare]: same
@@ -356,14 +367,12 @@ function PriorityManagerImpl(props: Props) {
                 ids: target!,
                 slots:
                   previous?.slots ??
-                  ((group!.parallelism ?? 1) > 1 && task?.items
+                  ((group!.parallelism ?? 1) > 1 && targetById
                     ? prioritySlots(
                         group!.items.map((account) => ({
                           ...account,
                           priority:
-                            task!.items!.find(
-                              (item) => item.account_id === account.id,
-                            )?.target_priority ?? account.priority,
+                            targetById.get(account.id) ?? account.priority,
                         })),
                         group!.parallelism ?? 1,
                       )
@@ -559,6 +568,12 @@ function PriorityManagerImpl(props: Props) {
       gap = over + (y >= bounds.top + bounds.height / 2 ? 1 : 0);
     return gap > original ? gap - 1 : gap;
   }
+  function updateGhostCoords(x: number, y: number) {
+    dragCoordsRef.current = { x, y };
+    if (ghostRef.current) {
+      ghostRef.current.style.transform = `translate3d(${x + 12}px, ${y + 12}px, 0)`;
+    }
+  }
   function pointerDown(
     event: React.PointerEvent,
     platform: string,
@@ -569,7 +584,7 @@ function PriorityManagerImpl(props: Props) {
       !group ||
       !state(group).editing ||
       event.button !== 0 ||
-      !state(group).rows.find((a) => a.id === id)?.editable
+      !state(group).byId.get(id)?.editable
     )
       return;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -578,15 +593,16 @@ function PriorityManagerImpl(props: Props) {
       platform,
       x: event.clientX,
       y: event.clientY,
-      target: null,
       ready: event.pointerType !== "touch",
       timer: undefined as ReturnType<typeof setTimeout> | undefined,
     };
     pointer.current = item;
+    updateGhostCoords(item.x, item.y);
     if (!item.ready)
       item.timer = setTimeout(() => {
         item.ready = true;
-        setDrag({ ...item });
+        updateGhostCoords(item.x, item.y);
+        setDrag({ id: item.id, platform: item.platform, target: null });
       }, 350);
   }
   function pointerMove(event: React.PointerEvent) {
@@ -605,13 +621,26 @@ function PriorityManagerImpl(props: Props) {
       stopDrag();
       return;
     }
-    setDrag({
-      id: item.id,
-      platform: item.platform,
-      x: event.clientX,
-      y: event.clientY,
-      target: targetAt(event.clientX, event.clientY, item.platform, item.id),
-    });
+    updateGhostCoords(event.clientX, event.clientY);
+    const nextTarget = targetAt(
+      event.clientX,
+      event.clientY,
+      item.platform,
+      item.id,
+    );
+    const prev = dragRef.current;
+    if (
+      !prev ||
+      prev.id !== item.id ||
+      prev.platform !== item.platform ||
+      prev.target !== nextTarget
+    ) {
+      setDrag({
+        id: item.id,
+        platform: item.platform,
+        target: nextTarget,
+      });
+    }
   }
   function pointerUp(event: React.PointerEvent) {
     const item = pointer.current;
@@ -631,8 +660,9 @@ function PriorityManagerImpl(props: Props) {
         surface = point && lists.current.get(point.platform);
       if (point && surface) {
         const bounds = surface.getBoundingClientRect();
-        if (point.y < bounds.top + 50) surface.scrollTop -= 9;
-        if (point.y > bounds.bottom - 50) surface.scrollTop += 9;
+        const y = dragCoordsRef.current.y;
+        if (y < bounds.top + 50) surface.scrollTop -= 9;
+        if (y > bounds.bottom - 50) surface.scrollTop += 9;
       }
       frame = requestAnimationFrame(scroll);
     };
@@ -1221,14 +1251,15 @@ function PriorityManagerImpl(props: Props) {
       </div>
       {drag && (
         <div
+          ref={ghostRef}
           className="priority-drag-ghost"
-          style={{ left: drag.x + 12, top: drag.y + 12 }}
+          style={{
+            left: 0,
+            top: 0,
+            transform: `translate3d(${dragCoordsRef.current.x + 12}px, ${dragCoordsRef.current.y + 12}px, 0)`,
+          }}
         >
-          {
-            platforms
-              .find((group) => group.platform === drag.platform)
-              ?.items.find((a) => a.id === drag.id)?.name
-          }
+          {states.get(drag.platform)?.byId.get(drag.id)?.name}
         </div>
       )}
     </section>

@@ -1,11 +1,11 @@
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 use sub2ops_server::{
-    compat, credit_rules,
+    compat, credit,
     error::Result,
     error_evidence, model_target,
     oauth_state::{self, OAuthState},
-    queries, quota, recovery_events, recovery_rules, reset_credit_observation,
+    queries, quota, recovery_events, recovery_rules,
 };
 
 fn time(value: &Value) -> DateTime<Utc> {
@@ -80,7 +80,7 @@ fn execute(name: &str, args: &Value) -> Result<Value> {
         "recovery_block_signature" => json!(oauth_state::block_signature(&args["row"])),
 
         "account_recovery_confirmed" => json!(recovery_rules::confirmed(&args["row"])),
-        "receipt_diagnostics" => reset_credit_observation::diagnostics(
+        "receipt_diagnostics" => credit::rules::diagnostics(
             args["status"]
                 .as_u64()
                 .map(|value| u16::try_from(value).unwrap()),
@@ -124,7 +124,7 @@ fn execute(name: &str, args: &Value) -> Result<Value> {
                 Ok(())
             })?;
             let before = std::fs::read(&path).unwrap();
-            let result = credit_rules::project(&args["value"], &args["notices"]);
+            let result = credit::rules::project(&args["value"], &args["notices"]);
             assert_eq!(std::fs::read(&path).unwrap(), before);
             assert_eq!(
                 OAuthState::new(path).shared_snapshot()?["scheduler"]["31"]["auto_reset_credit"],

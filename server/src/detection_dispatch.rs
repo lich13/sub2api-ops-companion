@@ -158,14 +158,16 @@ impl Detection {
         if !matches!(string(&event["status"]), "queued" | "retry") {
             return Ok(());
         }
-        let due =
-            parse_datetime(&event["next_at"]).ok_or_else(|| Error::new(503, "处置通知时间无效"))?;
-        if due > self.now() {
-            return Ok(());
-        }
         let config = self.bark.runtime();
         if !config.valid {
             return Ok(());
+        }
+        if config.enabled {
+            let due = parse_datetime(&event["next_at"])
+                .ok_or_else(|| Error::new(503, "处置通知时间无效"))?;
+            if due > self.now() {
+                return Ok(());
+            }
         }
         let id = integer(&event["account_id"]).ok_or_else(Error::invalid)?;
         let reserved = self.store.transaction(|data| {
@@ -174,8 +176,12 @@ impl Detection {
                 .cloned()
                 .unwrap_or(json!({}));
             let event = &mut data["disposition_notifications"][key];
+            if !matches!(string(&event["status"]), "queued" | "retry") {
+                return Ok(Value::Null);
+            }
             if !config.enabled || !self.notification_current(event, &current)? {
                 event["status"] = "suppressed".into();
+                event["next_at"] = Value::Null;
                 event["reason"] = if !config.enabled {
                     "disabled"
                 } else {
@@ -189,7 +195,7 @@ impl Detection {
             event["attempts"] = attempts.into();
             event["next_at"] = datetime(
                 self.now()
-                    + Duration::seconds(crate::execution::retry_delay(
+                    + Duration::seconds(crate::operations::retry_delay(
                         attempts.saturating_sub(1).max(0) as u64,
                     )),
             )
@@ -203,6 +209,7 @@ impl Detection {
         if !self.notification_current(&latest, &self.control(id)?)? {
             self.store.transaction(|data| {
                 data["disposition_notifications"][key]["status"] = "suppressed".into();
+                data["disposition_notifications"][key]["next_at"] = Value::Null;
                 data["disposition_notifications"][key]["reason"] = "manual_intervention".into();
                 prune_disposition_notifications(data);
                 Ok(())
@@ -235,7 +242,7 @@ impl Detection {
                 return Ok(());
             }
             saved["status"] = final_status.into();
-            if final_status == "failed" {
+            if final_status != "retry" {
                 saved["next_at"] = Value::Null;
             }
             saved["delivered_at"] = if result.success {

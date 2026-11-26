@@ -1,4 +1,44 @@
-import { useEffect, type RefObject } from "react";
+import {
+  useEffect,
+  useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+} from "react";
+
+export function isCleanEscape(
+  event: KeyboardEvent | ReactKeyboardEvent,
+): boolean {
+  if (event.key !== "Escape" || event.defaultPrevented) return false;
+  const composing =
+    "nativeEvent" in event
+      ? event.nativeEvent.isComposing ||
+        (event as unknown as { isComposing?: boolean }).isComposing
+      : event.isComposing;
+  return !composing;
+}
+
+export function useBackdropDismiss(onDismiss: () => void) {
+  const pressedBackdrop = useRef<boolean | null>(null);
+  return {
+    onPointerDown: (event: ReactPointerEvent<HTMLElement>) => {
+      pressedBackdrop.current = event.target === event.currentTarget;
+    },
+    onMouseDown: (event: ReactMouseEvent<HTMLElement>) => {
+      if (pressedBackdrop.current === null) {
+        pressedBackdrop.current = event.target === event.currentTarget;
+      }
+    },
+    onClick: (event: ReactMouseEvent<HTMLElement>) => {
+      const startedOnBackdrop = pressedBackdrop.current;
+      pressedBackdrop.current = null;
+      if (event.target === event.currentTarget && startedOnBackdrop !== false) {
+        onDismiss();
+      }
+    },
+  };
+}
 
 // Keep keyboard editing within the active editor and return to its trigger.
 export function useDialogFocus(

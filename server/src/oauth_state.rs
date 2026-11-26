@@ -273,7 +273,7 @@ fn validate_scheduler_entry(meta: &Value) -> Result<()> {
     }
     let intent = &meta["recovery_intent"];
     if intent.is_object() {
-        crate::connection_retry::Policy::saved(intent)?;
+        crate::recovery_rules::Policy::saved(intent)?;
         if intent
             .get("connection_attempt_count")
             .is_some_and(|value| value.as_u64().is_none())
@@ -548,17 +548,14 @@ impl OAuthState {
     }
     pub(crate) fn recover_interrupted(&self, account: Option<i64>) -> Result<()> {
         let raw = self.shared_snapshot()?;
-        let parsed: crate::state_files::OAuthFile =
-            serde::Deserialize::deserialize(&*raw).map_err(|_| invalid("OAuth 状态文件无效"))?;
-        let applies = |id: &str, meta: &crate::state_files::SchedulerEntry| {
+        let scheduler = raw["scheduler"]
+            .as_object()
+            .ok_or_else(|| invalid("OAuth 状态文件无效"))?;
+        let has_testing = scheduler.iter().any(|(id, meta)| {
             account.is_none_or(|account| id.parse() == Ok(account))
-                && meta
-                    .recovery_intent
-                    .as_ref()
-                    .and_then(|i| i.get("status"))
-                    .is_some_and(|s| s == "testing")
-        };
-        if !parsed.scheduler.iter().any(|(id, meta)| applies(id, meta)) {
+                && meta["recovery_intent"]["status"] == "testing"
+        });
+        if !has_testing {
             return Ok(());
         }
         self.transaction(|state| {

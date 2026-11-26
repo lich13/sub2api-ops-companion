@@ -10,7 +10,11 @@ import {
 } from "./accountOperations";
 import { operationLabel } from "./accountDialog";
 import { useBackAction } from "./mobile";
-import { useDialogFocus } from "./dialogFocus";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
 import type { Account } from "./types";
 import "./account-settings.css";
 
@@ -47,9 +51,19 @@ function NumericEditor({
   useDialogFocus(dialog);
   const min = 1,
     max = field === "load_factor" ? 10000 : 2147483647;
-  function edit(value: string) {
-    setValue(value);
+  const backdrop = useBackdropDismiss(() => {
+    if (!busy) close();
+  });
+  function edit(next: string) {
+    setValue(next);
+    setError("");
     setNotice("");
+  }
+  function step(delta: -1 | 1) {
+    const trimmed = value.trim();
+    const parsed = /^\d+$/.test(trimmed) ? Number(trimmed) : Number.NaN;
+    const next = Number.isSafeInteger(parsed) ? parsed + delta : min;
+    edit(String(Math.min(max, Math.max(min, next))));
   }
   useEffect(() => {
     alive.current = true;
@@ -117,7 +131,7 @@ function NumericEditor({
     Math.min(anchor.bottom + 6, window.innerHeight - 270),
   );
   return createPortal(
-    <div className="numeric-editor-backdrop" onClick={close}>
+    <div className="numeric-editor-backdrop" {...backdrop}>
       <form
         ref={dialog}
         className="numeric-editor"
@@ -131,9 +145,9 @@ function NumericEditor({
           void save();
         }}
         onKeyDown={(e) => {
-          if (e.key === "Escape") {
+          if (isCleanEscape(e)) {
             e.stopPropagation();
-            close();
+            if (!busy) close();
           }
         }}
       >
@@ -143,6 +157,7 @@ function NumericEditor({
             type="button"
             className="icon-button"
             aria-label="关闭参数编辑"
+            disabled={busy}
             onClick={close}
           >
             <X size={16} />
@@ -153,9 +168,7 @@ function NumericEditor({
             type="button"
             aria-label={`减少${labels[field]}`}
             disabled={busy || automatic}
-            onClick={() =>
-              edit(String(Math.max(min, (Number(value) || min) - 1)))
-            }
+            onClick={() => step(-1)}
           >
             <Minus size={16} />
           </button>
@@ -174,9 +187,7 @@ function NumericEditor({
             type="button"
             aria-label={`增加${labels[field]}`}
             disabled={busy || automatic}
-            onClick={() =>
-              edit(String(Math.min(max, (Number(value) || 0) + 1)))
-            }
+            onClick={() => step(1)}
           >
             <Plus size={16} />
           </button>
@@ -189,9 +200,12 @@ function NumericEditor({
               disabled={busy}
               onChange={(e) => {
                 setAutomatic(e.target.checked);
+                setError("");
                 setNotice("");
-                if (!e.target.checked && !value)
-                  setValue(String(account.concurrency || 1));
+                if (!e.target.checked && !value.trim())
+                  setValue(
+                    String(initial.current.value ?? (account.concurrency || 1)),
+                  );
               }}
             />
             自动（随并发）

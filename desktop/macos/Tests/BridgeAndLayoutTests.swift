@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import os
 import Testing
 @testable import Sub2OpsMacOS
 
@@ -223,6 +224,23 @@ struct BridgeAndLayoutTests {
         }
         #expect(await waitFor { store.observedClock.raw == "2026-11-25T01:00:04Z" })
 
+        let usageCalls = OSAllocatedUnfairLock(initialState: 0)
+        RustBridge.shared.setMockHandler { cmd, payload in
+            guard cmd == "api_request", payload.contains("/accounts/2/usage") else {
+                return "{}"
+            }
+            let callIndex = usageCalls.withLock { count -> Int in
+                count += 1
+                return count
+            }
+            if callIndex == 1 {
+                return """
+                {"branch":"apikey","native_read":true,"status":"ok","stats_status":"ok","windows":[{"key":"5h","label":"5h","used_percent":42,"reset_at":null,"status":"ok","source":"oauth"}],"today":{"requests":1,"tokens":10,"cost":0.01,"standard_cost":0.01,"user_cost":0.01},"actions":[]}
+                """
+            }
+            throw RustBridgeError("暂不可用")
+        }
+
         let reader = NativeUsageReader()
         reader.bindConnection("https://a.example.invalid:true:1")
         let parentV1 = Account(id: 1, name: "Parent", type: "oauth", operation_versions: ["usage": "p-v1"])
@@ -241,30 +259,30 @@ struct BridgeAndLayoutTests {
             )
         )
         let lookupV1 = [1: parentV1, 2: child]
-        let idV1 = reader.usageIdentity(for: child, accountById: lookupV1)
-        let cachedSummary = UsageSummary(
-            branch: "apikey",
-            windows: [UsageWindow(key: "5h", label: "5h", used_percent: 42, reset_at: nil)],
-            today: UsageStats(requests: 1, tokens: 10, cost: 0.01, standard_cost: 0.01, user_cost: 0.01),
-            native_read: true,
-            stats_status: "ok"
-        )
-        reader.storeCachedForTest(accountId: 2, identity: idV1, summary: cachedSummary)
+        reader.enqueueIfNeeded(accounts: [parentV1, child], accountById: lookupV1, online: true)
+        #expect(await waitFor { reader.resolvedUsage(for: child, accountById: lookupV1)?.windows.count == 1 })
         let merged = reader.resolvedUsage(for: child, accountById: lookupV1)
         #expect(merged?.windows.count == 1)
         #expect(merged?.today?.requests == 12)
+        #expect(usageCalls.withLock { $0 } == 1)
 
         // Parent usage version rotation invalidates stale override
         let parentV2 = Account(id: 1, name: "Parent", type: "oauth", operation_versions: ["usage": "p-v2"])
         let lookupV2 = [1: parentV2, 2: child]
         #expect(reader.resolvedUsage(for: child, accountById: lookupV2)?.windows.isEmpty == true)
 
-        // Failure cooldown suppresses immediate retry storm for 60s even when online
-        let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let idV2 = reader.usageIdentity(for: child, accountById: lookupV2)
-        reader.recordFailureForTest(accountId: 2, identity: idV2, message: "暂不可用", now: now)
-        reader.enqueueIfNeeded(accounts: [parentV2, child], accountById: lookupV2, online: true, now: now.addingTimeInterval(5))
-        #expect(reader.queuedAccountIdsForTest.isEmpty)
+        // Trigger invalidated re-read -> fails on callIndex == 2 -> 60s failure cooldown suppresses immediate retry storm
+        reader.enqueueIfNeeded(accounts: [parentV2, child], accountById: lookupV2, online: true)
+        #expect(await waitFor { reader.error(for: child, accountById: lookupV2) == "暂不可用" })
+        #expect(usageCalls.withLock { $0 } == 2)
+        reader.enqueueIfNeeded(
+            accounts: [parentV2, child],
+            accountById: lookupV2,
+            online: true,
+            now: Date().addingTimeInterval(5)
+        )
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(usageCalls.withLock { $0 } == 2)
         #expect(reader.error(for: child, accountById: lookupV2) == "暂不可用")
     }
 

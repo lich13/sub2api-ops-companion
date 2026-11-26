@@ -19,9 +19,8 @@ use std::{
 };
 use sub2ops_server::{
     compat::{account_version, datetime, integer, parse_datetime},
-    daily_test,
     db::Database,
-    model_detection, oauth_admission,
+    model_detection, oauth_admission, oauth_daily,
     oauth_state::OAuthState,
     quota, recovery_events, recovery_rules,
     runtime::Runtime,
@@ -501,7 +500,7 @@ async fn seed_recovery(harness: &Harness, uncertain_test: bool) -> (Value, Value
 fn pinned_reference_fixture_and_beijing_time_contract_are_fixed() {
     let reference = fixture();
     assert_eq!(
-        daily_test::next_time(reference_time(), "14:08").unwrap(),
+        oauth_daily::next_time(reference_time(), "14:08").unwrap(),
         parse_datetime(&reference["daily_test"]["scheduled_at"]).unwrap()
     );
     assert_eq!(

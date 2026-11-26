@@ -41,40 +41,6 @@ function quotaHeadline(quota: KeyQuota | undefined, busy: boolean) {
                 ? "余额未知"
                 : "未查询");
 }
-export function KeyQuotaSummary({
-  quota,
-  busy,
-}: {
-  quota?: KeyQuota;
-  busy: boolean;
-}) {
-  const warning = quota?.stale || !!quota?.error;
-  const detail = [
-    quota?.source === "sub2api"
-      ? "Sub2API"
-      : quota?.source === "newapi"
-        ? "New API"
-        : "",
-    ...(quota?.plans ?? []).map((plan) => `${plan.name}：${amount(plan)}`),
-    quota?.success_at != null ? `更新 ${time(quota.success_at)}` : "",
-    quota?.error,
-    quota?.retry_at ? `可重试 ${time(quota.retry_at)}` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  return (
-    <div
-      className={`mini-usage key-quota-compact${warning ? " warning" : ""}`}
-      aria-label="上游余额"
-      title={detail}
-    >
-      <span>
-        {quotaHeadline(quota, busy)}
-        {warning && " · 异常"}
-      </span>
-    </div>
-  );
-}
 const samePlan = (a: QuotaPlan, b: QuotaPlan) =>
   a.name === b.name &&
   a.unit === b.unit &&

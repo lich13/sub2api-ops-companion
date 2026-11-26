@@ -3,8 +3,8 @@ use crate::{
     degradation_rechecks,
     error::{Error, Result},
     model_detection::{Detection, TARGET},
-    model_downgrade::{is_downgrade, valid_report},
     model_tests::ACTIVE,
+    model_verdict::{is_downgrade, valid_report},
     security::safe_error,
 };
 use chrono::Duration;
@@ -273,9 +273,9 @@ impl Detection {
             };
             value = self.control(id)?;
             let report = &job["report"];
-            let valid = if crate::verdict_policy::relaxed(&job) {
+            let valid = if crate::model_verdict::relaxed(&job) {
                 matches!(
-                    string(&crate::verdict_policy::classify(&job)["outcome"]),
+                    string(&crate::model_verdict::classify(&job)["outcome"]),
                     "normal" | "degraded"
                 )
             } else {
@@ -283,9 +283,9 @@ impl Detection {
             };
             // Historical aggregate summaries alone must never initiate disposition.
             let confirmed =
-                if crate::lm_verdict::is_lm(&job) || crate::verdict_policy::relaxed(&job) {
+                if crate::model_verdict::is_lm(&job) || crate::model_verdict::relaxed(&job) {
                     job["automatic_disposition"].is_object()
-                        && crate::verdict_policy::classify(&job)["outcome"] == "degraded"
+                        && crate::model_verdict::classify(&job)["outcome"] == "degraded"
                 } else {
                     valid
                         && (job["first_group_valid"] == true
@@ -435,12 +435,12 @@ impl Detection {
                     .load(self.tests.lm_bank.revision()?)
                     .await
                     .is_ok_and(|bank| {
-                        !crate::verdict_policy::relaxed(value)
-                            || crate::verdict_policy::lm_contains(&bank, value)
+                        !crate::model_verdict::relaxed(value)
+                            || crate::model_verdict::lm_contains(&bank, value)
                     })
             } else {
                 let compiled = self.tests.bank.compiled();
-                if crate::verdict_policy::relaxed(value) {
+                if crate::model_verdict::relaxed(value) {
                     compiled.contains_policy(value)
                 } else {
                     compiled.contains_exact(TARGET)

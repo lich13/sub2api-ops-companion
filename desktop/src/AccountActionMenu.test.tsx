@@ -278,7 +278,7 @@ describe("account action menu", () => {
     await act(async () =>
       root.render(
         <section onClick={destinationClick} onKeyDown={destinationKey}>
-          <AccountActionMenu label={label} iconOnly>
+          <AccountActionMenu label={label}>
             <button type="button" onClick={action}>
               测试连接
             </button>

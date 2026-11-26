@@ -1,12 +1,12 @@
 use crate::{
     account_locks::Lease,
     compat::{datetime, integer, pick, string, truthy},
-    credit_ownership,
+    credit,
     error::Result,
     oauth_admission,
     oauth_monitor::Monitor,
     oauth_state::{block_signature, Update},
-    quota, recovery_events, recovery_policy, recovery_rules,
+    quota, recovery_events, recovery_rules,
     security::safe_error,
 };
 use chrono::Duration;
@@ -34,11 +34,11 @@ impl Monitor {
         method: &str,
     ) -> Result<bool> {
         let state = self.shared_state()?;
-        Ok(credit_ownership::generation(&state, id) == generation
+        Ok(credit::generation(&state, id) == generation
             && integer(&state["scheduler"][id.to_string()]["recovery_method_generation"])
                 .unwrap_or(0)
                 == method_generation
-            && recovery_policy::intent_method(
+            && recovery_rules::intent_method(
                 &self.config.current()?,
                 id,
                 &state["scheduler"][id.to_string()]["recovery_intent"],
@@ -54,7 +54,7 @@ impl Monitor {
     ) -> Result<bool> {
         self.store.transaction(|state| {
             let meta = &state["scheduler"][id.to_string()];
-            if credit_ownership::generation(state, id) != generation
+            if credit::generation(state, id) != generation
                 || integer(&meta["recovery_method_generation"]).unwrap_or(0) != method_generation
                 || meta["recovery_intent"]["fingerprint"] != previous["fingerprint"]
                 || matches!(
@@ -202,9 +202,9 @@ impl Monitor {
             intent["tested_at"] = datetime(self.now()).into();
             intent["attempt_count"] = json!(integer(&intent["attempt_count"]).unwrap_or(0) + 1);
             if method == "connection" {
-                let policy = match crate::connection_retry::Policy::saved(&intent)? {
+                let policy = match crate::recovery_rules::Policy::saved(&intent)? {
                     Some(policy) => policy,
-                    None => crate::connection_retry::Policy::config(&self.config.current()?)?,
+                    None => crate::recovery_rules::Policy::config(&self.config.current()?)?,
                 };
                 intent["retry_policy"] = serde_json::to_value(policy)?;
                 intent["connection_attempt_count"] =
@@ -566,10 +566,10 @@ impl Monitor {
         let mut next = intent.clone();
         let connection = test["recovery_method"] == "connection";
         let retryable = matches!(code, "recovery_state_changed" | "recovery_failed")
-            || crate::connection_retry::retryable(test)
+            || crate::recovery_rules::retryable(test)
             || test["uncertain"] == true;
         let connection_next = if connection && retryable {
-            crate::connection_retry::Policy::saved(intent)?
+            crate::recovery_rules::Policy::saved(intent)?
                 .unwrap_or_default()
                 .next(
                     integer(&intent["connection_attempt_count"]).unwrap_or(1),

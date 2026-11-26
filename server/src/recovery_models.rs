@@ -1,12 +1,12 @@
 use crate::{
     compat::{datetime, digest, integer, operation_versions, parse_datetime, string, truthy},
-    credit_rules,
+    credit,
     error::{Error, Result},
     model_detection::{Detection, TARGET},
-    model_downgrade::{is_downgrade, valid_report},
     model_tests::ACTIVE,
+    model_verdict::{is_downgrade, valid_report},
     oauth_queries::Source,
-    quota, recovery_policy, recovery_rules,
+    quota, recovery_rules,
 };
 use chrono::Duration;
 use serde_json::{json, Value};
@@ -51,9 +51,9 @@ impl Detection {
         let early =
             context["kind"] == "recovery" && meta["recovery_intent"]["kind"] == "early_reset";
         if (if early {
-            recovery_policy::intent_method(&config, id, &meta["recovery_intent"])
+            recovery_rules::intent_method(&config, id, &meta["recovery_intent"])
         } else {
-            recovery_policy::method(&config, id)
+            recovery_rules::method(&config, id)
         }) != Some("model")
             || !early && config["oauth_recovery_monitor_enabled"] == false
         {
@@ -72,7 +72,7 @@ impl Detection {
             let controller = &self.monitor.credits;
             let task = controller.state(id)?;
             if task["stage"] == "finished"
-                || truthy(&task["policy_version"]) && credit_rules::expired(&task, now)
+                || truthy(&task["policy_version"]) && credit::rules::expired(&task, now)
             {
                 return Ok("用卡执行期限已结束".into());
             }
@@ -207,13 +207,13 @@ impl Detection {
                 return Ok(result.clone());
             }
             let report = &job["report"];
-            let policy_verdict = crate::verdict_policy::classify(&job);
-            let valid = if crate::verdict_policy::relaxed(&job) {
+            let policy_verdict = crate::model_verdict::classify(&job);
+            let valid = if crate::model_verdict::relaxed(&job) {
                 matches!(string(&policy_verdict["outcome"]), "normal" | "degraded")
             } else {
                 job["status"] == "completed" && valid_report(report)
             };
-            let degraded = if crate::verdict_policy::relaxed(&job) {
+            let degraded = if crate::model_verdict::relaxed(&job) {
                 policy_verdict["outcome"] == "degraded"
             } else {
                 is_downgrade(
@@ -316,7 +316,7 @@ impl Detection {
             );
         }
         let bank = self.tests.bank.compiled();
-        if if crate::verdict_policy::relaxed(&value) {
+        if if crate::model_verdict::relaxed(&value) {
             !bank.contains_policy(&value)
         } else {
             !bank.contains_exact(TARGET)

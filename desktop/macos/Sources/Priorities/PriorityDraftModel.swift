@@ -1,7 +1,6 @@
 import Foundation
 
 public typealias PriorityAccount = PriorityAccountReply
-public typealias PriorityOrderItem = PriorityItemReply
 public typealias PriorityTask = PriorityTaskReply
 public typealias PriorityPlatformGroup = PriorityPlatformReply
 public typealias PriorityViewEnvelope = PriorityOverviewReply

@@ -28,8 +28,8 @@ use std::{
 };
 use sub2ops_server::{
     compat::{account_version, datetime, integer, parse_datetime},
-    daily_test::{self, Schedule},
     db::Database,
+    oauth_daily::{self, Schedule},
     oauth_native,
     oauth_queries::{Coordinator, QueryOptions, Source},
     oauth_state::OAuthState,
@@ -807,11 +807,11 @@ fn fixed_reference_scope_and_daily_time_contract_are_pinned() {
     assert_eq!(reference["scope"]["base_total"], 85);
     assert_eq!(reference["scope"]["total"], 86);
     assert_eq!(
-        daily_test::next_time(reference_time(), "05:00").unwrap(),
+        oauth_daily::next_time(reference_time(), "05:00").unwrap(),
         parse_datetime(&reference["daily"]["next_at_0500_beijing"]).unwrap()
     );
     assert_eq!(
-        daily_test::next_time(
+        oauth_daily::next_time(
             parse_datetime(&reference["daily"]["before_0500_beijing"]).unwrap(),
             "05:00",
         )
@@ -819,7 +819,7 @@ fn fixed_reference_scope_and_daily_time_contract_are_pinned() {
         parse_datetime(&reference["daily"]["due_0500_beijing"]).unwrap()
     );
     assert_eq!(
-        daily_test::next_time(
+        oauth_daily::next_time(
             parse_datetime(&reference["daily"]["due_0500_beijing"]).unwrap(),
             "00:00",
         )
@@ -831,7 +831,7 @@ fn fixed_reference_scope_and_daily_time_contract_are_pinned() {
             daily_time(&json!(invalid)).is_err(),
             "invalid time {invalid}"
         );
-        assert!(daily_test::next_time(reference_time(), invalid).is_err());
+        assert!(oauth_daily::next_time(reference_time(), invalid).is_err());
     }
 }
 
@@ -2503,13 +2503,13 @@ async fn daily_schedule_hot_update_eligibility_and_missed_restart_never_catch_up
     let reference = fixture();
     let before = parse_datetime(&reference["daily"]["before_0500_beijing"]).unwrap();
     let due = parse_datetime(&reference["daily"]["due_0500_beijing"]).unwrap();
-    assert_eq!(daily_test::next_time(before, "05:00").unwrap(), due);
+    assert_eq!(oauth_daily::next_time(before, "05:00").unwrap(), due);
     assert_eq!(
-        daily_test::next_time(due, "05:00").unwrap(),
+        oauth_daily::next_time(due, "05:00").unwrap(),
         due + Duration::days(1)
     );
     assert_eq!(
-        daily_test::next_time(due, "00:00").unwrap(),
+        oauth_daily::next_time(due, "00:00").unwrap(),
         parse_datetime(&reference["daily"]["next_midnight_beijing"]).unwrap()
     );
 
@@ -2568,7 +2568,7 @@ async fn daily_schedule_hot_update_eligibility_and_missed_restart_never_catch_up
                 .map(|(key, value)| (key.clone(), value.clone())),
         );
         assert!(
-            !daily_test::eligible(&candidate, due),
+            !oauth_daily::eligible(&candidate, due),
             "ineligible delta {changes}"
         );
     }
@@ -4318,7 +4318,7 @@ async fn interrupted_daily_test_with_unknown_response_is_marked_and_not_replayed
     let gate = Gate::new();
     *harness.mock.test_gate.lock().unwrap() = Some(gate.clone());
     let schedule = Schedule::new(harness.runtime.monitor.store.clone());
-    let due = daily_test::next_time(now, "05:00").unwrap();
+    let due = oauth_daily::next_time(now, "05:00").unwrap();
     let config = json!({"oauth_daily_test_enabled":true,"oauth_daily_test_time":"05:00"});
     schedule.startup(&config, due - Duration::hours(1)).unwrap();
     schedule.tick(&config, due).unwrap();

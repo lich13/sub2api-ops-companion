@@ -4,7 +4,7 @@ use test_harness::{
     operation_settings, spawn_loopback, write_loopback_config, OperationsBatchExt,
     OperationsSubmitExt,
 };
-#[path = "support/fingerprint_cache.rs"]
+#[path = "common/fingerprint_cache.rs"]
 mod fingerprint_cache;
 
 use axum::{
@@ -5626,7 +5626,9 @@ async fn management_auth_cache_refresh_and_invalid_keys_never_expose_key_in_url(
         .iter()
         .all(|c| c.method == Method::GET && c.uri == "/api/v1/admin/groups/all"));
     assert!(calls.iter().all(|c| !c.uri.contains(ADMIN_KEY)));
-    assert!(!h.runtime.upstream.status().to_string().contains(ADMIN_KEY));
+    assert!(!serde_json::to_string(&h.runtime.upstream.connection())
+        .unwrap()
+        .contains(ADMIN_KEY));
     assert!(manual_writes(&h).is_empty());
     h.finish().await;
 }

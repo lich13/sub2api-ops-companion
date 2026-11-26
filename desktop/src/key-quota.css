@@ -5,7 +5,7 @@
   flex-direction: column;
   gap: 3px;
   margin-bottom: 5px;
-  font-size: 10px;
+  font-size: 12px;
   white-space: normal;
   overflow-wrap: anywhere;
 }
@@ -58,7 +58,7 @@
   padding: 3px 4px 3px 0;
   border: 0;
   background: transparent;
-  font-size: 10px;
+  font-size: 11px;
   text-align: right;
   white-space: normal;
   font-weight: 400;
@@ -104,27 +104,8 @@
   align-items: center;
   gap: 8px;
 }
-.key-quota-token-actions button {
-  min-height: 48px;
-}
 .key-quota .usage-action {
   min-width: 48px;
   min-height: 48px;
   justify-content: center;
-}
-.key-quota {
-  font-size: 12px;
-}
-.key-quota .key-quota-plans th,
-.key-quota .key-quota-plans td {
-  font-size: 11px;
-}
-.key-quota-compact > span {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.key-quota-compact.warning {
-  color: var(--warn);
 }

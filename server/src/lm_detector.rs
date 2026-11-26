@@ -688,11 +688,23 @@ async fn fetch(client: &reqwest::Client, url: &str, limit: usize) -> Result<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
-    const FULL_BANK: &[u8] = include_bytes!("../resources/lm-detector/unified_bank.json");
+
+    fn full_bank() -> &'static [u8] {
+        static FULL_BANK: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+        FULL_BANK
+            .get_or_init(|| {
+                std::fs::read(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/resources/lm-detector/unified_bank.json"
+                ))
+                .expect("read lm-detector unified_bank.json")
+            })
+            .as_slice()
+    }
 
     fn full_files() -> [(&'static str, &'static [u8], usize); 3] {
         let mut files = FILES;
-        files[0].1 = FULL_BANK;
+        files[0].1 = full_bank();
         files
     }
 
@@ -997,7 +1009,7 @@ mod tests {
             .is_none());
         assert_eq!(
             pub_status["version"]["files"]["unified_bank.json"]["bytes"],
-            FULL_BANK.len() + 1
+            full_bank().len() + 1
         );
         assert_eq!(pinned.version["revision"], REVISION);
         assert_eq!(
@@ -1030,7 +1042,7 @@ mod tests {
             ("3".repeat(40), &mut responses_r3, b"  " as &[u8]),
             ("4".repeat(40), &mut responses_r4, b"   " as &[u8]),
         ] {
-            let mut changed_bank = FULL_BANK.to_vec();
+            let mut changed_bank = full_bank().to_vec();
             changed_bank.extend_from_slice(extra);
             let blob = git_blob_digest(&changed_bank);
             map.insert(
@@ -1309,7 +1321,7 @@ mod tests {
         meta["files"]["shared_detector.bin"]["sha256"] = "0".repeat(64).into();
         assert!(Snapshot::load(root.path(), &meta).is_err());
         meta["files"]["shared_detector.bin"]["sha256"] = sha256(FILES[1].1).into();
-        let mut bank: Value = serde_json::from_slice(FULL_BANK).unwrap();
+        let mut bank: Value = serde_json::from_slice(full_bank()).unwrap();
         bank["models"].as_array_mut().unwrap().swap(0, 1);
         let bytes = serde_json::to_vec(&bank).unwrap();
         std::fs::write(root.path().join("unified_bank.json"), &bytes).unwrap();

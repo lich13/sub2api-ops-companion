@@ -9,6 +9,7 @@ import { Check, LoaderCircle, Plug, Plus, Trash2, Unplug } from "lucide-react";
 import { api, command } from "./bridge";
 import { bridgeFailure } from "./bridgeError";
 import {
+  connectionIdentity,
   savedConnections,
   type Account,
   type Config,
@@ -16,6 +17,7 @@ import {
   type SavedConnection,
   type ViewState,
 } from "./types";
+import { NumberFieldInput } from "./NumberFieldInput";
 import RecoveryAccounts from "./RecoveryAccounts";
 import DetectionPlatformSettings from "./DetectionPlatformSettings";
 import FingerprintBankStatus from "./FingerprintBankStatus";
@@ -82,7 +84,7 @@ export default function SettingsView({
     setFeatureTab(next);
     setVisitedTabs((old) => (old[next] ? old : { ...old, [next]: true }));
   };
-  const connectionKey = `${state.preferences.base_url}:${state.connection_revision ?? 0}`;
+  const connectionKey = connectionIdentity(state);
   const connections = useMemo(
     () => savedConnections(state.preferences),
     [state.preferences],
@@ -453,18 +455,6 @@ function Field({
   disabled?: boolean;
   set: (v: unknown) => void;
 }) {
-  const numeric = typeof value === "number";
-  const [raw, setRaw] = useState(() =>
-    numeric ? (Number.isFinite(value) ? String(value) : "") : "",
-  );
-  useEffect(() => {
-    if (!numeric || !Number.isFinite(value)) return;
-    setRaw((current) =>
-      current.trim() !== "" && Number(current) === value
-        ? current
-        : String(value),
-    );
-  }, [numeric, value]);
   return (
     <label className="field">
       <span>{label}</span>
@@ -475,34 +465,26 @@ function Field({
           disabled={disabled}
           onChange={() => set(!value)}
         />
-      ) : (
-        <input
-          type={type || (numeric ? "number" : "text")}
-          value={numeric ? raw : String(value ?? "")}
+      ) : typeof value === "number" && !type ? (
+        <NumberFieldInput
+          value={value}
           autoComplete="off"
           min={min}
           step={min == null ? undefined : 1}
           disabled={disabled}
-          onChange={(e) => {
-            const text = e.currentTarget.value;
-            if (numeric) {
-              setRaw(text);
-              if (text.trim() !== "" && Number.isFinite(Number(text))) {
-                set(Number(text));
-              }
-            } else {
-              set(text);
-            }
+          onChange={(next) => {
+            if (typeof next === "number" && Number.isFinite(next)) set(next);
           }}
-          onBlur={() => {
-            if (
-              numeric &&
-              (raw.trim() === "" || !Number.isFinite(Number(raw))) &&
-              Number.isFinite(value)
-            ) {
-              setRaw(String(value));
-            }
-          }}
+        />
+      ) : (
+        <input
+          type={type || "text"}
+          value={String(value ?? "")}
+          autoComplete="off"
+          min={min}
+          step={min == null ? undefined : 1}
+          disabled={disabled}
+          onChange={(e) => set(e.currentTarget.value)}
         />
       )}
     </label>

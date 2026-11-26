@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LoaderCircle, Ticket, Trash2 } from "lucide-react";
 import { command } from "./bridge";
 import { errorMessage } from "./bridgeError";
@@ -9,14 +9,14 @@ import {
   operationTerminal,
   submitAccountBatch,
 } from "./accountOperations";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
 import type { Account } from "./types";
 import { useBackAction } from "./mobile";
-import {
-  RecoverSelectedButton,
-  resetCreditEligible,
-} from "./AccountRecoveryButton";
-
-export { RecoverSelectedButton, resetCreditEligible };
+import { resetCreditEligible } from "./AccountRecoveryButton";
 
 type DeleteResult = {
   id: number;
@@ -49,13 +49,37 @@ export function DeleteAccountsDialog({
   const requestId = useRef(crypto.randomUUID()),
     accepted = useRef(false);
   const [error, setError] = useState("");
-  const affected = allAccounts.filter(
-    (a) =>
-      a.parent_account_id &&
-      accounts.some((parent) => parent.id === a.parent_account_id),
+  const dialog = useRef<HTMLElement>(null);
+  useDialogFocus(dialog);
+  const backdrop = useBackdropDismiss(() => {
+    if (phase !== "running") close();
+  });
+  const parentIds = useMemo(
+    () => new Set(accounts.map((a) => a.id)),
+    [accounts],
   );
+  const affected = useMemo(
+    () =>
+      allAccounts.filter(
+        (a) =>
+          a.parent_account_id != null && parentIds.has(a.parent_account_id),
+      ),
+    [allAccounts, parentIds],
+  );
+  const childrenByParent = useMemo(() => {
+    const map = new Map<number, Account[]>();
+    for (const child of affected) {
+      if (child.parent_account_id == null) continue;
+      const list = map.get(child.parent_account_id);
+      if (list) list.push(child);
+      else map.set(child.parent_account_id, [child]);
+    }
+    return map;
+  }, [affected]);
   connected.current = online;
-  useBackAction(true, close);
+  useBackAction(true, () => {
+    if (phase !== "running") close();
+  });
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -64,14 +88,14 @@ export function DeleteAccountsDialog({
   }, []);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.isComposing) {
+      if (isCleanEscape(event) && phase !== "running") {
         event.stopImmediatePropagation();
         close();
       }
     };
     window.addEventListener("keydown", escape, true);
     return () => window.removeEventListener("keydown", escape, true);
-  }, [close]);
+  }, [close, phase]);
   async function start() {
     if (running.current || phase !== "confirm" || !connected.current) return;
     running.current = true;
@@ -92,15 +116,16 @@ export function DeleteAccountsDialog({
       await followAccountBatch(
         batch,
         (value) => {
+          const jobByAccount = new Map(
+            value.items.map((j) => [j.account_id, j]),
+          );
           const outcomes = accounts.map((a): DeleteResult => {
-            const job = value.items.find((j) => j.account_id === a.id);
+            const job = jobByAccount.get(a.id);
             const deleted =
               job?.status === "completed" && job.result?.deleted === true;
             if (deleted) {
               removed(a.id);
-              affected
-                .filter((child) => child.parent_account_id === a.id)
-                .forEach((child) => removed(child.id));
+              childrenByParent.get(a.id)?.forEach((child) => removed(child.id));
             }
             return {
               id: a.id,
@@ -141,12 +166,14 @@ export function DeleteAccountsDialog({
     }
   }
   return (
-    <div className="modal-backdrop">
+    <div className="modal-backdrop" {...backdrop}>
       <section
+        ref={dialog}
         className="modal delete-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="delete-title"
+        onClick={(e) => e.stopPropagation()}
       >
         <Trash2 size={24} />
         <h2 id="delete-title">
@@ -248,7 +275,12 @@ export function ResetCreditsDialog({
   const [phase, setPhase] = useState<"confirm" | "running" | "done">("confirm");
   const running = useRef(false),
     alive = useRef(true),
-    connected = useRef(online);
+    connected = useRef(online),
+    dialog = useRef<HTMLElement>(null);
+  useDialogFocus(dialog);
+  const backdrop = useBackdropDismiss(() => {
+    if (phase !== "running") close();
+  });
   connected.current = online;
   useBackAction(true, close);
   useEffect(() => {
@@ -259,7 +291,7 @@ export function ResetCreditsDialog({
   }, []);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.isComposing) {
+      if (isCleanEscape(event)) {
         event.stopImmediatePropagation();
         close();
       }
@@ -334,12 +366,14 @@ export function ResetCreditsDialog({
   const count = (status: ResetCreditResult["status"]) =>
     results.filter((result) => result.status === status).length;
   return (
-    <div className="modal-backdrop">
+    <div className="modal-backdrop" {...backdrop}>
       <section
+        ref={dialog}
         className="modal delete-dialog reset-credits-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="reset-credits-title"
+        onClick={(e) => e.stopPropagation()}
       >
         <Ticket size={24} />
         <h2 id="reset-credits-title">

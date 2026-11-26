@@ -45,7 +45,11 @@ import {
 } from "./priorities";
 import RecordDatePicker from "./RecordDatePicker";
 import { presetRange, type RecordDateRange } from "./recordDates";
-import { useDialogFocus } from "./dialogFocus";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
 import { useBackAction } from "./mobile";
 import "./records.css";
 import CostDetails from "./CostDetails";
@@ -296,6 +300,7 @@ function RecordDetail({
 }) {
   const panel = useRef<HTMLElement>(null);
   useDialogFocus(panel);
+  const backdrop = useBackdropDismiss(close);
   useBackAction(true, close);
   const pair = (label: string, value: React.ReactNode) => (
     <React.Fragment key={label}>
@@ -305,12 +310,7 @@ function RecordDetail({
   );
   const detailMoney = (value: string | null) => money(value, 8);
   return (
-    <div
-      className="drawer-backdrop"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) close();
-      }}
-    >
+    <div className="drawer-backdrop" {...backdrop}>
       <section
         ref={panel}
         className="drawer record-detail"
@@ -318,8 +318,9 @@ function RecordDetail({
         aria-modal="true"
         aria-label="调用记录详情"
         tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
-          if (e.key === "Escape") {
+          if (isCleanEscape(e)) {
             e.preventDefault();
             e.stopPropagation();
             close();
@@ -558,12 +559,12 @@ export default function UsageRecords({
     [selected, setSelected] = useState<number | null>(null);
   const [detail, setDetail] = useState<UsageRecord | null>(null),
     [detailError, setDetailError] = useState("");
-  const [filterError, setFilterError] = useState(""),
-    [columnError, setColumnError] = useState("");
+  const [columnError, setColumnError] = useState("");
   const [savingColumns, setSavingColumns] = useState(false);
   const scroll = useRef<HTMLDivElement>(null),
     sentinel = useRef<HTMLDivElement>(null),
     menu = useRef<HTMLDetailsElement>(null),
+    filterSheet = useRef<HTMLFormElement>(null),
     detailEpoch = useRef(0);
   const platforms = useMemo(
     () =>
@@ -588,20 +589,23 @@ export default function UsageRecords({
       })),
     [accounts],
   );
+  const accountOptionById = useMemo(
+    () => new Map(accountOptions.map((option) => [String(option.id), option])),
+    [accountOptions],
+  );
   useEffect(() => {
     if (!online) return;
-    const current = new Set(
-      accountOptions.map((account) => String(account.id)),
-    );
     const clearRemoved = (value: typeof defaultFilters) =>
-      value.account && !current.has(value.account)
+      value.account && !accountOptionById.has(value.account)
         ? { ...value, account: "" }
         : value;
     setFilters(clearRemoved);
-  }, [accountOptions, online]);
+  }, [accountOptionById, online]);
   const closeFilters = () => {
     setFiltersOpen(false);
   };
+  useDialogFocus(filterSheet, filtersOpen);
+  const filterBackdrop = useBackdropDismiss(closeFilters);
   useBackAction(filtersOpen, closeFilters);
   useBackAction(columnsOpen, () => {
     if (menu.current) menu.current.open = false;
@@ -812,26 +816,22 @@ export default function UsageRecords({
           筛选
         </button>
         {filtersOpen && (
-          <div
-            className="records-filter-backdrop"
-            onClick={(event) => {
-              if (event.target === event.currentTarget) closeFilters();
-            }}
-          >
+          <div className="records-filter-backdrop" {...filterBackdrop}>
             <form
+              ref={filterSheet}
               className="records-toolbar records-filter-sheet"
               role="dialog"
               aria-label="筛选记录"
               aria-modal
+              onClick={(e) => e.stopPropagation()}
               onKeyDown={(event) => {
-                if (event.key === "Escape") {
+                if (isCleanEscape(event)) {
                   event.stopPropagation();
                   closeFilters();
                 }
               }}
               onSubmit={(e) => {
                 e.preventDefault();
-                setFilterError("");
                 setFilters((previous) => ({
                   ...previous,
                   model: modelFilter.trim(),
@@ -856,9 +856,7 @@ export default function UsageRecords({
                   onChange={(e) => {
                     const platform = e.target.value;
                     setFilters((previous) => {
-                      const selected = accounts.find(
-                        (account) => String(account.id) === previous.account,
-                      );
+                      const selected = accountOptionById.get(previous.account);
                       return {
                         ...previous,
                         platform,
@@ -892,11 +890,7 @@ export default function UsageRecords({
                 kind="accounts"
                 onOpenChange={pickerChanged}
                 active={active}
-                value={
-                  accountOptions.find(
-                    (account) => String(account.id) === filters.account,
-                  ) ?? null
-                }
+                value={accountOptionById.get(filters.account) ?? null}
                 options={accountOptions.filter(
                   (option) =>
                     !filters.platform || option.platform === filters.platform,
@@ -928,7 +922,6 @@ export default function UsageRecords({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.nativeEvent.isComposing) {
                     e.preventDefault();
-                    setFilterError("");
                     setFilters((previous) => ({
                       ...previous,
                       model: modelFilter.trim(),
@@ -985,7 +978,7 @@ export default function UsageRecords({
           ref={menu}
           onToggle={(event) => setColumnsOpen(event.currentTarget.open)}
           onKeyDown={(e) => {
-            if (e.key === "Escape") {
+            if (isCleanEscape(e)) {
               e.currentTarget.open = false;
               e.stopPropagation();
             }
@@ -1034,9 +1027,9 @@ export default function UsageRecords({
           </div>
         </details>
       </div>
-      {(feed.error || filterError || columnError) && (
+      {(feed.error || columnError) && (
         <div className="records-error" role="alert">
-          {filterError || columnError || feed.error}
+          {columnError || feed.error}
           {feed.error && (
             <button
               disabled={!active || feed.loading}

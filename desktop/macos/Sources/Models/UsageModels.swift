@@ -3,7 +3,6 @@ import Observation
 
 public typealias KeyQuotaGlobalConfig = GlobalQuotaReply
 public typealias AccountKeyQuotaSettings = AccountQuotaReply
-public typealias AccountKeyQuotaTokenResponse = AccountTokenReply
 
 @MainActor
 @Observable
@@ -178,24 +177,6 @@ public final class NativeUsageReader {
             }
         }
         pumpQueue()
-    }
-
-    public func storeCachedForTest(accountId: Int, identity: String, summary: UsageSummary) {
-        let s = slot(for: accountId)
-        s.cachedIdentity = identity
-        s.overrideSummary = summary
-    }
-
-    public func recordFailureForTest(accountId: Int, identity: String, message: String, now: Date) {
-        let s = slot(for: accountId)
-        s.errorIdentity = identity
-        s.errorMessage = message
-        s.cooldownIdentity = identity
-        s.cooldownUntil = now.addingTimeInterval(Self.failureCooldown)
-    }
-
-    public var queuedAccountIdsForTest: [Int] {
-        queue.map(\.accountId)
     }
 
     private func pumpQueue() {

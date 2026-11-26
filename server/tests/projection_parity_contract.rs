@@ -22,7 +22,7 @@ use sub2ops_server::{
     account_locks::AccountLocks, account_templates, actions::Actions, capacity_alerts,
     capacity_alerts::CapacityAlerts, compat, db::Database, error_evidence, model_target,
     oauth_state::OAuthState, queries::Queries, quota, recovery_rules, runtime::Runtime,
-    settings::Settings, slow_ttft, upstream::Upstream, usage,
+    settings::Settings, upstream::Upstream, usage,
 };
 
 const FIXTURES: &str = include_str!("../../tests/contracts/projection/fixtures.json");
@@ -591,7 +591,7 @@ async fn apikey_capacity_watermark_clues_mark_suppression_and_restart_match_pinn
         .expect("initialize capacity and API key watermarks without replay");
     let initial = alerts
         .store
-        .snapshot()
+        .shared_snapshot()
         .expect("read initialized watermarks");
     let old_watermark = at(&initial["apikey_since"]);
     alerts
@@ -621,7 +621,7 @@ async fn apikey_capacity_watermark_clues_mark_suppression_and_restart_match_pinn
         .expect("advance the API key watermark without classifying older evidence");
     let after_stale = alerts
         .store
-        .snapshot()
+        .shared_snapshot()
         .expect("read advanced API key watermark");
     assert!(at(&after_stale["apikey_since"]) > stale_created_at);
     assert!(after_stale["notifications"]
@@ -673,7 +673,10 @@ async fn apikey_capacity_watermark_clues_mark_suppression_and_restart_match_pinn
         .poll()
         .await
         .expect("record new provider capacity clues without a notification transport");
-    let clues = alerts.store.snapshot().expect("read first clue state");
+    let clues = alerts
+        .store
+        .shared_snapshot()
+        .expect("read first clue state");
     let expected_events = capacity_ids
         .iter()
         .map(|id| format!("error:{id}"))
@@ -723,7 +726,7 @@ async fn apikey_capacity_watermark_clues_mark_suppression_and_restart_match_pinn
         .expect("resume the persisted cursor and marks after restart");
     let resumed = restarted
         .store
-        .snapshot()
+        .shared_snapshot()
         .expect("read resumed alert state");
     assert_eq!(resumed["marks"][&key]["marked"], true);
     assert_eq!(
@@ -786,7 +789,7 @@ async fn capacity_slow_ttft_poll_persists_one_clue_without_bark() {
         .expect("classify the new slow TTFT sample window");
     let state = alerts
         .store
-        .snapshot()
+        .shared_snapshot()
         .expect("read persisted slow clue state");
     let account_key = ACCOUNT_ID.to_string();
     let slow_state = &state["slow_ttft"][&account_key];
@@ -805,7 +808,7 @@ async fn capacity_slow_ttft_poll_persists_one_clue_without_bark() {
         .expect("repeat polling must not create a duplicate slow clue");
     let repeated = alerts
         .store
-        .snapshot()
+        .shared_snapshot()
         .expect("read deduplicated slow clue state");
     assert_eq!(repeated["detection_events"].as_object().unwrap().len(), 1);
     assert_eq!(repeated["notifications"].as_object().unwrap().len(), 1);
@@ -1917,10 +1920,10 @@ fn slow_ttft_and_local_capacity_evidence_match_pinned_python() {
             .as_array()
             .unwrap()
             .iter()
-            .filter_map(|row| slow_ttft::slow_sample(row, &case["account"]))
+            .filter_map(|row| capacity_alerts::slow_sample(row, &case["account"]))
             .collect::<Vec<_>>();
         assert_eq!(
-            slow_ttft::slow_warning(&samples, now).unwrap_or(Value::Null),
+            capacity_alerts::slow_warning(&samples, now).unwrap_or(Value::Null),
             case["expected_warning"],
             "slow warning {}",
             case["id"]
@@ -1932,7 +1935,7 @@ fn slow_ttft_and_local_capacity_evidence_match_pinned_python() {
             .cloned()
             .unwrap_or_else(|| json!({"id":1,"platform":"openai","type":"oauth"}));
         assert_eq!(
-            slow_ttft::slow_sample(&case["row"], &account).is_some(),
+            capacity_alerts::slow_sample(&case["row"], &account).is_some(),
             !case["expected"].is_null(),
             "slow sample inclusion {}",
             case["id"]

@@ -1,10 +1,5 @@
 import SwiftUI
 
-public struct RecoveryHistoryEnvelope: Decodable, Sendable {
-    public var items: [Recovery]
-    public var next_cursor: Int?
-}
-
 public struct RecoveryHistoryView: View {
     public let online: Bool
     public let connectionKey: String
@@ -232,7 +227,7 @@ public struct RecoveryHistoryView: View {
         defer { loading = false }
         let suffix = (!replace && nextCursor != nil) ? "?before_id=\(nextCursor!)" : ""
         do {
-            let env: RecoveryHistoryEnvelope = try await RustBridge.shared.api("GET", "/recoveries\(suffix)")
+            let env: CursorPage<Recovery, Int> = try await RustBridge.shared.api("GET", "/recoveries\(suffix)")
             if replace {
                 items = env.items
             } else {

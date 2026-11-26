@@ -43,11 +43,7 @@ fn profile(value: &Value) -> Result<()> {
 }
 pub fn template_id(value: &Value) -> Result<()> {
     let id = text(value, 4, 31)?;
-    if matches!(id, "full" | "degraded" | "takeover")
-        || id
-            .strip_prefix("custom-")
-            .is_some_and(|suffix| validation::hex(&json!(suffix), 24).is_ok())
-    {
+    if sub2ops_protocol::semantics::valid_template_id(id) {
         Ok(())
     } else {
         Err(Error::invalid())

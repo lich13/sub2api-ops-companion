@@ -1515,6 +1515,20 @@ async function runScenario(scenario) {
     await h.state(presentation.width === scenario.viewport.width && presentation.height === scenario.viewport.height, "viewport-mismatch");
     await h.state(presentation.colorScheme === scenario.theme && presentation.dark === (scenario.theme === "dark"), "theme-not-applied");
     if (scenario.largeFont) await h.state(presentation.fontSize > initialFont, "font-enlargement-not-applied");
+    const previewBounds = await h.within(page.locator(".preview-label"), "synthetic-preview-indicator", { touch: false, scroll: false });
+    const previewLines = await page.locator(".preview-label").evaluate((el) => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      return range.getClientRects().length;
+    });
+    await h.state(previewLines === 1 && previewBounds.height <= 24, "preview-label-wrapped", page.locator(".preview-label"));
+    const switcher = page.locator(".instance-switcher-trigger");
+    if (await switcher.count() === 1) {
+      const switcherBounds = await h.within(switcher, "instance-switcher-trigger", { touch: false, scroll: false });
+      if (scenario.viewport.width < 380) {
+        await h.state(switcherBounds.width <= 112.5, "instance-switcher-trigger-unclamped", switcher);
+      }
+    }
     const fixture = await fixtureData(page);
     await h.state(fixture.platform === "android", "unexpected-preview-platform");
     await accountChecks(h, fixture);

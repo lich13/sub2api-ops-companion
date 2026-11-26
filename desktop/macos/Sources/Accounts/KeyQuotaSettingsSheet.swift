@@ -163,7 +163,7 @@ public struct KeyQuotaSettingsSheet: View {
 
     private func revealAccountToken(_ accountId: Int) async {
         do {
-            let res: AccountKeyQuotaTokenResponse = try await RustBridge.shared.api("GET", "/accounts/\(accountId)/key-quota-settings/access-token")
+            let res: AccountTokenReply = try await RustBridge.shared.api("GET", "/accounts/\(accountId)/key-quota-settings/access-token")
             revealedToken = res.access_token
         } catch {
             self.error = error.localizedDescription

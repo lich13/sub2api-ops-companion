@@ -26,8 +26,12 @@ use tokio::{
     task::JoinHandle,
 };
 
-mod cycle;
+mod batches;
+pub(crate) mod cycle;
+mod execution;
 pub use cycle::{observe_cycle, repeat_open, CycleObservation};
+pub(crate) use execution::retry_delay;
+pub use execution::{DiskLease, TestPermit, TestSlots};
 
 pub(crate) const PENDING: &[&str] = &["queued", "running", "checking", "needs_confirmation"];
 const SUPERSEDE: &[&str] = &[
@@ -73,7 +77,7 @@ pub fn scheduled_time(value: &Value) -> Result<chrono::DateTime<chrono::Utc>> {
 }
 fn validate_job(data: &Value, job: &Value) -> Result<()> {
     let error = || Error::new(503, "操作状态无法读取");
-    crate::connection_retry::Policy::saved(job)?;
+    crate::recovery_rules::Policy::saved(job)?;
     if job
         .get("attempt_count")
         .is_some_and(|v| v.as_u64().is_none())
@@ -400,14 +404,17 @@ impl OperationStore {
     }
     pub fn recover_startup(&self) -> Result<()> {
         let raw = self.read_shared()?;
-        let data: crate::state_files::OperationFile = serde::Deserialize::deserialize(&*raw)
-            .map_err(|_| Error::new(503, "操作状态无法读取"))?;
-        let needs_recovery = data.jobs.values().any(|job| job.status == "running")
-            || data
-                .batches
-                .values()
-                .flat_map(|batch| batch.chunks.iter().flatten())
-                .any(|chunk| chunk.status == "dispatched");
+        let jobs = raw["jobs"]
+            .as_object()
+            .ok_or_else(|| Error::new(503, "操作状态无法读取"))?;
+        let needs_recovery = jobs.values().any(|job| job["status"] == "running")
+            || raw["batches"]
+                .as_object()
+                .into_iter()
+                .flat_map(|batches| batches.values())
+                .filter_map(|batch| batch["chunks"].as_array())
+                .flatten()
+                .any(|chunk| chunk["status"] == "dispatched");
         if needs_recovery {
             self.transaction(|state| {
                 if let Some(jobs) = state["jobs"].as_object_mut() {
@@ -450,8 +457,8 @@ pub trait Backend: Send + Sync {
     fn model_jobs(&self) -> Result<Vec<Value>>;
     fn model_cancel<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<Value>>;
     fn test_config(&self) -> Result<(String, usize)>;
-    fn retry_config(&self) -> Result<crate::connection_retry::Policy> {
-        Ok(crate::connection_retry::Policy::default())
+    fn retry_config(&self) -> Result<crate::recovery_rules::Policy> {
+        Ok(crate::recovery_rules::Policy::default())
     }
     fn cycle_observation<'a>(
         &'a self,
@@ -466,7 +473,7 @@ pub trait Backend: Send + Sync {
     ) -> BoxFuture<'a, Result<BTreeMap<i64, Result<CycleObservation>>>> {
         Box::pin(async { Err(Error::new(422, "此服务不支持持续预约")) })
     }
-    fn test_slots(&self) -> Option<crate::execution::TestSlots> {
+    fn test_slots(&self) -> Option<TestSlots> {
         None
     }
     fn account_deleted(&self, _id: i64) {}
@@ -961,27 +968,27 @@ impl Operations {
         if repeat.is_some() {
             self.initialize_cycle(&mut job, key).await?;
         }
-        self.store.transaction(|data| {
-            for old in data["jobs"].as_object_mut().unwrap().values_mut() {
-                if old["account_id"] == aid
-                    && old["client_id"] == client
-                    && old["action"] == action
-                    && matches!(string(&old["status"]), "queued" | "needs_confirmation")
-                    && SUPERSEDE.contains(&action)
-                {
-                    old["status"] = "superseded".into();
-                    old["reason"] = "已由本客户端的新请求替代".into();
-                    old["updated_at"] = crate::compat::datetime(self.backend.now()).into();
+        {
+            let mut keys = self.keys.lock().unwrap_or_else(|e| e.into_inner());
+            self.store.transaction(|data| {
+                for old in data["jobs"].as_object_mut().unwrap().values_mut() {
+                    if old["account_id"] == aid
+                        && old["client_id"] == client
+                        && old["action"] == action
+                        && matches!(string(&old["status"]), "queued" | "needs_confirmation")
+                        && SUPERSEDE.contains(&action)
+                    {
+                        old["status"] = "superseded".into();
+                        old["reason"] = "已由本客户端的新请求替代".into();
+                        old["updated_at"] = crate::compat::datetime(self.backend.now()).into();
+                    }
                 }
-            }
-            data["jobs"][&jid] = job.clone();
-            data["requests"][rid] = jid.clone().into();
-            Ok(())
-        })?;
-        self.keys
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(jid, key.into());
+                data["jobs"][&jid] = job.clone();
+                data["requests"][rid] = jid.clone().into();
+                Ok(())
+            })?;
+            keys.insert(jid, key.into());
+        }
         self.audit(&job, "accepted");
         if short(&job) && job["status"] == "queued" {
             self.launch(job.clone(), None, None);
@@ -1158,35 +1165,37 @@ impl Operations {
             self.evaluate_batch_job(&mut job, row, action, proxy_available)?;
             jobs.push(job);
         }
-        self.store.transaction(|data| {
-            let mut batch = json!({
-                "id":bid, "request_hash":signature, "client_id":client, "request_id":rid, "created_at":created,
-                "job_ids": jobs.iter().map(|job| &job["id"]).collect::<Vec<_>>()
-            });
-            if action == "test" { batch["action"] = "test".into(); }
-            data["batches"][&bid] = batch;
-            data["batch_requests"][rid] = bid.clone().into();
-            for job in &jobs {
-                if matches!(action, "proxy" | "groups") && job["status"] == "queued" {
-                    for old in data["jobs"].as_object_mut().ok_or_else(Error::internal)?.values_mut() {
-                        if old["account_id"] == job["account_id"] && old["client_id"] == client && old["action"] == action
-                            && matches!(string(&old["status"]), "queued" | "needs_confirmation") {
-                            old["status"] = "superseded".into();
-                            old["reason"] = "已由本客户端的新请求替代".into();
-                            old["updated_at"] = created.clone().into();
+        {
+            let mut keys = self.keys.lock().unwrap_or_else(|e| e.into_inner());
+            self.store.transaction(|data| {
+                let mut batch = json!({
+                    "id":bid, "request_hash":signature, "client_id":client, "request_id":rid, "created_at":created,
+                    "job_ids": jobs.iter().map(|job| &job["id"]).collect::<Vec<_>>()
+                });
+                if action == "test" { batch["action"] = "test".into(); }
+                data["batches"][&bid] = batch;
+                data["batch_requests"][rid] = bid.clone().into();
+                for job in &jobs {
+                    if matches!(action, "proxy" | "groups") && job["status"] == "queued" {
+                        for old in data["jobs"].as_object_mut().ok_or_else(Error::internal)?.values_mut() {
+                            if old["account_id"] == job["account_id"] && old["client_id"] == client && old["action"] == action
+                                && matches!(string(&old["status"]), "queued" | "needs_confirmation") {
+                                old["status"] = "superseded".into();
+                                old["reason"] = "已由本客户端的新请求替代".into();
+                                old["updated_at"] = created.clone().into();
+                            }
                         }
                     }
+                    data["jobs"][string(&job["id"])] = job.clone();
+                    data["requests"][string(&job["request_id"])] = job["id"].clone();
                 }
-                data["jobs"][string(&job["id"])] = job.clone();
-                data["requests"][string(&job["request_id"])] = job["id"].clone();
+                Ok(())
+            })?;
+            for job in &jobs {
+                keys.insert(string(&job["id"]).into(), key.into());
             }
-            Ok(())
-        })?;
+        }
         for job in &jobs {
-            self.keys
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .insert(string(&job["id"]).into(), key.into());
             self.audit(job, "accepted");
         }
         self.wake.notify_one();
@@ -1670,12 +1679,16 @@ impl Operations {
         self: &Arc<Self>,
         job: Value,
         permit: Option<tokio::sync::OwnedSemaphorePermit>,
-        test_permit: Option<crate::execution::TestPermit>,
+        test_permit: Option<crate::operations::TestPermit>,
     ) {
-        if self.actions.supervisor.is_stopping() {
+        let jid = string(&job["id"]).to_owned();
+        let mut tasks = self.tasks.lock().unwrap_or_else(|e| e.into_inner());
+        if self.closing.load(Ordering::Acquire)
+            || self.actions.supervisor.is_stopping()
+            || tasks.contains_key(&jid)
+        {
             return;
         }
-        let jid = string(&job["id"]).to_owned();
         let queue = self.clone();
         let task_id = jid.clone();
         let (send, ready) = tokio::sync::oneshot::channel();
@@ -1710,14 +1723,16 @@ impl Operations {
                 let _ = queue.run_error(&task_id, error);
             }
         });
-        self.tasks
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(jid, task);
+        tasks.insert(jid, task);
+        drop(tasks);
         let _ = send.send(());
     }
     fn launch_native(self: &Arc<Self>, bid: String, permit: tokio::sync::OwnedSemaphorePermit) {
-        if self.actions.supervisor.is_stopping() {
+        let mut tasks = self.tasks.lock().unwrap_or_else(|e| e.into_inner());
+        if self.closing.load(Ordering::Acquire)
+            || self.actions.supervisor.is_stopping()
+            || tasks.contains_key(&bid)
+        {
             return;
         }
         let queue = self.clone();
@@ -1765,10 +1780,8 @@ impl Operations {
             let _ = queue.refresh_chunks(&task_id);
             queue.backend.invalidate_snapshot();
         });
-        self.tasks
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(bid, task);
+        tasks.insert(bid, task);
+        drop(tasks);
         let _ = send.send(());
     }
     async fn run(&self, jid: &str) -> Result<()> {
@@ -1852,7 +1865,7 @@ impl Operations {
             let policy = if integer(&job["attempt_count"]).unwrap_or(0) == 0 {
                 self.backend.retry_config()?
             } else {
-                match crate::connection_retry::Policy::saved(&job)? {
+                match crate::recovery_rules::Policy::saved(&job)? {
                     Some(policy) => policy,
                     None => self.backend.retry_config()?,
                 }
@@ -2135,10 +2148,10 @@ impl Operations {
     }
 
     fn retry_scheduled(&self, job: &Value, result: &Value) -> Result<bool> {
-        if !crate::connection_retry::retryable(result) {
+        if !crate::recovery_rules::retryable(result) {
             return Ok(false);
         }
-        let policy = crate::connection_retry::Policy::saved(job)?.ok_or_else(Error::internal)?;
+        let policy = crate::recovery_rules::Policy::saved(job)?.ok_or_else(Error::internal)?;
         let attempts = integer(&job["attempt_count"]).unwrap_or(1);
         let Some(next) = policy.next(attempts, self.backend.now()) else {
             return Ok(false);

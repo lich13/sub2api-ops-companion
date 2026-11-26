@@ -1,7 +1,7 @@
 #[path = "common/harness.rs"]
 mod test_harness;
 use test_harness::{runtime_settings, spawn_loopback, write_loopback_config, OperationsSubmitExt};
-#[path = "support/fingerprint_cache.rs"]
+#[path = "common/fingerprint_cache.rs"]
 mod fingerprint_cache;
 
 use axum::{

@@ -198,7 +198,7 @@ public struct PrioritiesPageView: View {
         let draft = drafts[platform]
         let accounts = draft?.accounts ?? group.items
         let byId = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0) })
-        let liveById = Dictionary(uniqueKeysWithValues: store.accounts.map { ($0.id, $0) })
+        let liveById = store.accountById
         let width = max(1, min(8, draft?.parallelism ?? group.parallelism ?? 1))
         let slots: [PrioritySlot] = draft?.slots ?? (width == 1 && draft != nil
             ? draft!.ids.enumerated().map { idx, id in PrioritySlot(priority: idx + 1, id: id) }

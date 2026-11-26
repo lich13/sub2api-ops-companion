@@ -164,9 +164,15 @@ impl References {
                 .zip(&self.norms)
                 .map(|(row, rr)| (xx + rr - 2.0 * dot(x, row)).max(0.0)),
         );
-        distances.sort_unstable_by(f64::total_cmp);
-        let nearest = &distances[..NEIGHBOURS.min(distances.len())];
-        mean(nearest)
+        let k = NEIGHBOURS.min(distances.len());
+        if k < distances.len() {
+            distances.select_nth_unstable_by(k - 1, f64::total_cmp);
+            // Sort only the top-k slice so left-to-right summation matches exact reference order.
+            distances[..k].sort_unstable_by(f64::total_cmp);
+        } else {
+            distances.sort_unstable_by(f64::total_cmp);
+        }
+        mean(&distances[..k])
     }
 }
 

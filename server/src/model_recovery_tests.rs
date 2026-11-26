@@ -1,7 +1,7 @@
 //! Runtime model recovery tests replace only the final HTTP destination with loopback.
 use crate::{
     compat::{account_version, datetime, integer},
-    credit_rules,
+    credit,
     db::Database,
     model_target, modeltrace, oauth_admission, quota, recovery_events, recovery_rules,
     runtime::Runtime,
@@ -76,7 +76,7 @@ fn global_detection_model_has_its_own_default() {
     assert_eq!(settings.oauth["model_detection_model_id"], "gpt-6-luna");
     assert_eq!(
         settings.oauth["oauth_recovery_test_model_id"],
-        crate::model_downgrade::DEFAULT_TEST_MODEL
+        crate::model_verdict::DEFAULT_TEST_MODEL
     );
     assert_ne!(
         settings.oauth["model_detection_model_id"],
@@ -1423,7 +1423,7 @@ async fn lm_uncertain_group_blocks_disposition_then_lower_family_records_exact_e
     assert_eq!(h.runtime.detection.mark(id).unwrap()["marked"], false);
     assert_eq!(h.mock.count("POST", "/schedulable"), 0);
     job["groups"][2]["report"] = report("gpt-6-luna", 1);
-    job["classification"] = crate::lm_verdict::classify(&job);
+    job["classification"] = crate::model_verdict::classify(&job);
     job["disposition_basis"] = job["classification"]["basis"].clone();
     let result = h
         .runtime
@@ -1756,7 +1756,7 @@ async fn seed_credit(h: &Harness) -> (i64, Value) {
         .unwrap();
     let row = h.runtime.monitor.row(id).await.unwrap();
     let data = native_quota(now, 100);
-    let result = credit_rules::quota_result(&data, &row, now, Some(now));
+    let result = credit::rules::quota_result(&data, &row, now, Some(now));
     assert!(oauth_admission::quota_complete(&row, &result));
     h.runtime
         .monitor
@@ -2379,9 +2379,9 @@ async fn enable_keepalive(h: &Harness, id: i64) -> Value {
         .unwrap()
 }
 
-async fn wait_control<F>(h: &Harness, id: i64, mut ready: F) -> crate::keepalive_state::Control
+async fn wait_control<F>(h: &Harness, id: i64, mut ready: F) -> crate::keepalive::state::Control
 where
-    F: FnMut(&crate::keepalive_state::Control) -> bool,
+    F: FnMut(&crate::keepalive::state::Control) -> bool,
 {
     tokio::time::timeout(StdDuration::from_secs(5), async {
         loop {
@@ -2431,58 +2431,58 @@ fn keepalive_requires_six_native_row_conditions_and_exact_reason_shape() {
     let now = reference_time();
     let until = now + Duration::minutes(5);
     let original = keepalive_row(now, until);
-    assert_eq!(crate::keepalive_state::row_reason(&original, now), "");
+    assert_eq!(crate::keepalive::state::row_reason(&original, now), "");
     assert_eq!(
-        crate::keepalive_state::eligible_reason(&original),
+        crate::keepalive::state::eligible_reason(&original),
         Ok("临时错误策略")
     );
 
     let mut deleted = original.clone();
     deleted["deleted_at"] = datetime(now).into();
     assert_eq!(
-        crate::keepalive_state::row_reason(&deleted, now),
+        crate::keepalive::state::row_reason(&deleted, now),
         "账号已删除"
     );
 
     let mut inactive = original.clone();
     inactive["status"] = "disabled".into();
     assert_eq!(
-        crate::keepalive_state::row_reason(&inactive, now),
+        crate::keepalive::state::row_reason(&inactive, now),
         "账号停用或认证异常"
     );
 
     let mut unschedulable = original.clone();
     unschedulable["schedulable"] = false.into();
     assert_eq!(
-        crate::keepalive_state::row_reason(&unschedulable, now),
+        crate::keepalive::state::row_reason(&unschedulable, now),
         "调度已关闭"
     );
 
     let mut rate_limited = original.clone();
     rate_limited["rate_limited_at"] = datetime(now).into();
     assert_eq!(
-        crate::keepalive_state::row_reason(&rate_limited, now),
+        crate::keepalive::state::row_reason(&rate_limited, now),
         "账号限流或过载不参与保活"
     );
 
     let mut overloaded = original.clone();
     overloaded["overload_until"] = datetime(until).into();
     assert_eq!(
-        crate::keepalive_state::row_reason(&overloaded, now),
+        crate::keepalive::state::row_reason(&overloaded, now),
         "账号限流或过载不参与保活"
     );
 
     let mut expired = original.clone();
     expired["temp_unschedulable_until"] = datetime(now - Duration::seconds(1)).into();
     assert_eq!(
-        crate::keepalive_state::row_reason(&expired, now),
+        crate::keepalive::state::row_reason(&expired, now),
         "等待临时不可调度"
     );
 
     let mut malformed = original.clone();
     malformed["temp_unschedulable_reason"] = "{".into();
     assert_eq!(
-        crate::keepalive_state::row_reason(&malformed, now),
+        crate::keepalive::state::row_reason(&malformed, now),
         "暂停原因无法识别"
     );
 
@@ -2490,7 +2490,7 @@ fn keepalive_requires_six_native_row_conditions_and_exact_reason_shape() {
     missing_fields["temp_unschedulable_reason"] =
         json!({"status_code":500,"rule_index":0}).to_string().into();
     assert_eq!(
-        crate::keepalive_state::row_reason(&missing_fields, now),
+        crate::keepalive::state::row_reason(&missing_fields, now),
         "暂停原因无法识别"
     );
 
@@ -2500,7 +2500,7 @@ fn keepalive_requires_six_native_row_conditions_and_exact_reason_shape() {
             .to_string()
             .into();
     assert_eq!(
-        crate::keepalive_state::row_reason(&threshold_missing_fields, now),
+        crate::keepalive::state::row_reason(&threshold_missing_fields, now),
         "额度阈值暂停不参与保活"
     );
 
@@ -2514,7 +2514,7 @@ fn keepalive_requires_six_native_row_conditions_and_exact_reason_shape() {
     reason["until_unix"] = (until.timestamp() + 1).into();
     mismatched_until["temp_unschedulable_reason"] = reason.to_string().into();
     assert_eq!(
-        crate::keepalive_state::row_reason(&mismatched_until, now),
+        crate::keepalive::state::row_reason(&mismatched_until, now),
         "暂停原因无法识别"
     );
 
@@ -2528,9 +2528,12 @@ fn keepalive_requires_six_native_row_conditions_and_exact_reason_shape() {
         "upstream stream exceeded its deadline",
     )
     .into();
-    assert_eq!(crate::keepalive_state::row_reason(&stream_timeout, now), "");
     assert_eq!(
-        crate::keepalive_state::eligible_reason(&stream_timeout),
+        crate::keepalive::state::row_reason(&stream_timeout, now),
+        ""
+    );
+    assert_eq!(
+        crate::keepalive::state::eligible_reason(&stream_timeout),
         Ok("流响应超时")
     );
 }
@@ -2806,10 +2809,10 @@ async fn keepalive_restart_resumes_interrupted_bark_notice_with_backoff() {
         .keepalive
         .store
         .transaction(|data| {
-            let control = crate::keepalive_state::Control {
+            let control = crate::keepalive::state::Control {
                 enabled: false,
                 generation: 3,
-                notifications: vec![crate::keepalive_state::Notice {
+                notifications: vec![crate::keepalive::state::Notice {
                     id: "fixture-interrupted-notice".into(),
                     generation: 3,
                     status: "pending".into(),
@@ -3421,7 +3424,7 @@ async fn monitor_skips_ended_credit_workers_but_records_recovery_and_releases_ow
     h.runtime.monitor.store.transaction(|s| {
         s["scheduler"][id.to_string()]["auto_reset_credit"] = json!({
             "episode":"fixture-unissued","stage":"finished","policy_version":1,"owns_pause":true,
-            "signature":crate::credit_ownership::signature(&paused),"owned_version":paused["updated_at"],
+            "signature":crate::credit::signature(&paused),"owned_version":paused["updated_at"],
             "control_generation":0,"policy_credential_fingerprint":oauth_admission::credential_fingerprint(&paused)
         }); Ok(())
     }).unwrap();
@@ -3455,8 +3458,8 @@ async fn keepalive_notice_failure_retries_at_most_five_times() {
         .store
         .transaction(|data| {
             data["accounts"][id.to_string()] =
-                serde_json::to_value(crate::keepalive_state::Control {
-                    notifications: vec![crate::keepalive_state::Notice {
+                serde_json::to_value(crate::keepalive::state::Control {
+                    notifications: vec![crate::keepalive::state::Notice {
                         id: "fixture-retry-notice".into(),
                         generation: 0,
                         status: "pending".into(),
@@ -3609,4 +3612,140 @@ async fn prepared_credit_evidence_and_available_count_are_rechecked_after_contro
         drop(slots);
         h.close().await;
     }
+}
+
+#[tokio::test]
+async fn disabled_bark_immediately_suppresses_future_keepalive_and_disposition_retries() {
+    let h = Harness::new().await;
+    let account = h.seed_account("oauth", false, false).await;
+    let id = integer(&account["id"]).unwrap();
+    let now = h.now();
+    let future = datetime(now + Duration::seconds(60));
+
+    // Configure Bark as valid but disabled (`enabled: false`)
+    h.runtime.config.bark.configure(
+        &json!({
+            "enabled": false,
+            "device_key": "fixture-bark-device-key",
+            "server_url": h.base_url,
+        }),
+        true,
+    );
+
+    // 1. Seed a future-scheduled pending keepalive notification
+    h.runtime
+        .keepalive
+        .store
+        .transaction(|data| {
+            data["accounts"][id.to_string()] = json!({
+                "enabled": false,
+                "generation": 2,
+                "recoveries": [],
+                "notifications": [{
+                    "id": "ka-notice-1",
+                    "generation": 2,
+                    "status": "pending",
+                    "attempts": 1,
+                    "created_at": datetime(now),
+                    "next_at": future,
+                }]
+            });
+            Ok(())
+        })
+        .unwrap();
+
+    // 2. Seed a future-scheduled retry disposition notification
+    h.runtime
+        .detection
+        .store
+        .transaction(|data| {
+            let mut control = crate::model_detection::defaults();
+            control["generation"] = 1.into();
+            control["hold"] = true.into();
+            control["status"] = "paused".into();
+            control["reason"] = "已标记降智".into();
+            control["disposition"] = json!({
+                "job_id": "disp-job-1",
+                "status": "completed",
+                "marked": true,
+                "schedule_verified": true,
+                "generation": 1,
+            });
+            data["accounts"][id.to_string()] = control;
+            data["disposition_notifications"] = json!({
+                "disp-job-1": {
+                    "job_id": "disp-job-1",
+                    "account_id": id,
+                    "generation": 1,
+                    "status": "retry",
+                    "attempts": 1,
+                    "created_at": datetime(now),
+                    "next_at": future,
+                },
+                "disp-job-missing-next": {
+                    "job_id": "disp-job-1",
+                    "account_id": id,
+                    "generation": 1,
+                    "status": "retry",
+                    "attempts": 1,
+                    "created_at": datetime(now),
+                    "next_at": null,
+                }
+            });
+            Ok(())
+        })
+        .unwrap();
+
+    assert_eq!(
+        h.runtime
+            .idle_task_schedule("keepalive_notifications", StdDuration::from_secs(2)),
+        Some(StdDuration::from_millis(100))
+    );
+    assert_eq!(
+        h.runtime
+            .idle_task_schedule("disposition", StdDuration::from_secs(2)),
+        Some(StdDuration::from_millis(100))
+    );
+
+    // Delivering with `!bark.enabled` suppresses both immediately even though `next_at > now`
+    h.runtime.keepalive.deliver().await.unwrap();
+    h.runtime.detection.deliver_notifications().await.unwrap();
+
+    let ka_state = h.runtime.keepalive.store.read_shared().unwrap();
+    assert_eq!(
+        ka_state["accounts"][id.to_string()]["notifications"][0]["status"],
+        "suppressed"
+    );
+    let disp_state = h.runtime.detection.store.read_shared().unwrap();
+    assert_eq!(
+        disp_state["disposition_notifications"]["disp-job-1"]["status"],
+        "suppressed"
+    );
+    assert_eq!(
+        disp_state["disposition_notifications"]["disp-job-1"]["reason"],
+        "disabled"
+    );
+    assert!(disp_state["disposition_notifications"]["disp-job-1"]["next_at"].is_null());
+    assert_eq!(
+        disp_state["disposition_notifications"]["disp-job-missing-next"]["status"],
+        "suppressed"
+    );
+    assert_eq!(
+        disp_state["disposition_notifications"]["disp-job-missing-next"]["reason"],
+        "disabled"
+    );
+
+    // Scheduler now sleeps indefinitely instead of spinning at 10Hz
+    assert_eq!(
+        h.runtime
+            .idle_task_schedule("keepalive_notifications", StdDuration::from_secs(2)),
+        None
+    );
+    assert_eq!(
+        h.runtime
+            .idle_task_schedule("disposition", StdDuration::from_secs(2)),
+        None
+    );
+
+    h.close().await;
 }

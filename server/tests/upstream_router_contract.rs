@@ -104,7 +104,7 @@ async fn legacy_v0214_envelope_uses_admin_api_key_and_sets_runtime_route() {
         .unwrap();
     assert_eq!(result.state, "ok");
     assert_eq!(router.active_url(), server.url);
-    assert_eq!(router.status()["endpoint"], "verify");
+    assert_eq!(router.connection().endpoint, "verify");
     assert_eq!(
         *server.mock.calls.lock().unwrap(),
         vec![(
@@ -122,7 +122,7 @@ async fn legacy_404_falls_back_to_public_route_but_auth_failure_does_not() {
     let first = router(dir.path(), &verify.url, &public.url);
     first.authenticate("fixture-admin-key", true).await.unwrap();
     assert_eq!(first.active_url(), public.url);
-    assert_eq!(first.status()["endpoint"], "public");
+    assert_eq!(first.connection().endpoint, "public");
     first
         .authenticate("fixture-admin-key", false)
         .await
@@ -138,7 +138,7 @@ async fn legacy_404_falls_back_to_public_route_but_auth_failure_does_not() {
         .err()
         .unwrap();
     assert_eq!(error.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(second.status()["state"], "auth_rejected");
+    assert_eq!(second.connection().state, "auth_rejected");
     assert_eq!(public2.count(), 0);
 }
 
@@ -152,7 +152,7 @@ async fn legacy_protocol_mismatch_is_not_hidden_by_a_second_endpoint() {
         .authenticate("fixture-admin-key", true)
         .await
         .is_err());
-    assert_eq!(router.status()["state"], "protocol_mismatch");
+    assert_eq!(router.connection().state, "protocol_mismatch");
     assert_eq!(public.count(), 0);
 }
 
@@ -163,7 +163,7 @@ async fn legacy_explicit_upstream_error_does_not_try_public_endpoint() {
     let dir = tempfile::tempdir().unwrap();
     let router = router(dir.path(), &verify.url, &public.url);
     assert!(router.authenticate("fixture-key", true).await.is_err());
-    assert_eq!(router.status()["state"], "upstream_error");
+    assert_eq!(router.connection().state, "upstream_error");
     assert_eq!(public.count(), 0);
 }
 
@@ -171,7 +171,7 @@ async fn legacy_explicit_upstream_error_does_not_try_public_endpoint() {
 fn legacy_connection_status_has_no_address_or_key() {
     let dir = tempfile::tempdir().unwrap();
     let router = router(dir.path(), "", "");
-    let status = router.status();
+    let status = serde_json::to_value(router.connection()).unwrap();
     assert_eq!(status["state"], "network_unreachable");
     let rendered = status.to_string().to_lowercase();
     assert!(!rendered.contains("key"));
@@ -208,7 +208,7 @@ async fn legacy_invalid_key_clears_cached_success_and_does_not_report_ok() {
     let router = router(dir.path(), &verify.url, "");
     router.authenticate("fixture-key", false).await.unwrap();
     assert!(router.authenticate("", false).await.is_err());
-    assert_eq!(router.status()["state"], "auth_rejected");
+    assert_eq!(router.connection().state, "auth_rejected");
     assert_eq!(verify.count(), 1);
     router.authenticate("fixture-key", false).await.unwrap();
     assert_eq!(
@@ -262,7 +262,7 @@ async fn legacy_concurrent_reads_share_probe_and_rejected_auth_drops_cache() {
     assert_eq!(verify.count(), 1);
     verify.reply(401, json!({"message":"forbidden"}));
     assert!(router.authenticate("fixture-key", true).await.is_err());
-    assert_eq!(router.status()["state"], "auth_rejected");
+    assert_eq!(router.connection().state, "auth_rejected");
     verify.reply(200, json!({"code":0,"data":[]}));
     router.authenticate("fixture-key", false).await.unwrap();
     assert_eq!(
@@ -280,7 +280,7 @@ async fn legacy_envelope_code_requires_integer_zero() {
     for code in [json!(false), json!("0"), json!(0.0)] {
         verify.reply(200, json!({"code":code,"data":[]}));
         assert!(router.authenticate("fixture-key", true).await.is_err());
-        assert_eq!(router.status()["state"], "protocol_mismatch");
+        assert_eq!(router.connection().state, "protocol_mismatch");
     }
     assert_eq!(verify.count(), 3);
 }

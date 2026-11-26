@@ -76,16 +76,20 @@ export function membershipZone(memberships: number[], pair: number[]): Zone {
 }
 export function draftConflict(
   draft: GroupDraft,
-  accounts: Account[],
-  groups: Group[],
+  accounts: Account[] | ReadonlyMap<number, Account>,
+  groups: Group[] | ReadonlyMap<number, Group>,
 ) {
-  const account = accounts.find((a) => a.id === draft.id);
+  const account = Array.isArray(accounts)
+    ? accounts.find((a) => a.id === draft.id)
+    : (accounts as ReadonlyMap<number, Account>).get(draft.id);
   return (
     !account ||
     account.operation_versions.groups !== draft.version ||
-    draft.scope.some(
-      (id) =>
-        !groups.some((g) => g.id === id && g.platform === account.platform),
+    draft.scope.some((id) =>
+      Array.isArray(groups)
+        ? !groups.some((g) => g.id === id && g.platform === account.platform)
+        : (groups as ReadonlyMap<number, Group>).get(id)?.platform !==
+          account.platform,
     )
   );
 }

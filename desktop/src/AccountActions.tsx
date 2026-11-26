@@ -52,11 +52,15 @@ type Options = {
   ) => void;
 };
 
+export type AccountActionProvider = ((
+  account: Account,
+) => AccountActionItem[]) & {
+  getAccountState?: (id: number) => string;
+};
+
 // Owned by the main window, so closing a popup or changing pages does not
 // discard an accepted operation's refresh and feedback.
-export function useAccountActions(
-  options: Options,
-): (account: Account) => AccountActionItem[] {
+export function useAccountActions(options: Options): AccountActionProvider {
   const current = useRef(options);
   current.current = options;
   const alive = useRef(true);
@@ -67,6 +71,10 @@ export function useAccountActions(
   const [marks, setMarks] = useState<
     Record<number, { base?: string; value: DegradationMark }>
   >({});
+  const runningRef = useRef(runningSnapshot);
+  runningRef.current = runningSnapshot;
+  const marksRef = useRef(marks);
+  marksRef.current = marks;
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -141,16 +149,17 @@ export function useAccountActions(
   const hasReauthorize = Boolean(options.reauthorize);
   const hasSettings = Boolean(options.settings);
 
-  return useCallback(
+  const buildItems = useCallback(
     (account: Account) => {
       const openai =
         account.platform === "openai" &&
         ["oauth", "apikey"].includes(account.type);
       const pending = (action: string) =>
-        runningSnapshot.has(`${connectionKey}:${account.id}:${action}`);
+        runningRef.current.has(`${connectionKey}:${account.id}:${action}`);
+      const savedMark = marksRef.current[account.id];
       const mark =
-        marks[account.id]?.base === account.degradation_mark?.version
-          ? (marks[account.id]?.value ?? account.degradation_mark)
+        savedMark?.base === account.degradation_mark?.version
+          ? (savedMark?.value ?? account.degradation_mark)
           : account.degradation_mark;
       const items: AccountActionItem[] = [];
       if (supportsModelDetection(account))
@@ -276,17 +285,22 @@ export function useAccountActions(
       });
       return items;
     },
-    [
-      online,
-      connectionKey,
-      hasKeepalive,
-      hasReauthorize,
-      hasSettings,
-      marks,
-      runningSnapshot,
-      execute,
-    ],
-  );
+    [online, connectionKey, hasKeepalive, hasReauthorize, hasSettings, execute],
+  ) as AccountActionProvider;
+  buildItems.getAccountState = (id: number) => {
+    const rec = runningSnapshot.has(`${connectionKey}:${id}:recover`)
+      ? "r"
+      : "";
+    const dm = runningSnapshot.has(`${connectionKey}:${id}:degradation_mark`)
+      ? "d"
+      : "";
+    const m = marks[id];
+    const mv = m
+      ? `${m.base ?? ""}:${m.value.version ?? ""}:${m.value.marked}`
+      : "";
+    return rec || dm || mv ? `${rec}|${dm}|${mv}` : "";
+  };
+  return buildItems;
 }
 
 const primaryActions = new Set([
@@ -342,7 +356,6 @@ export default function AccountActions({
     <div className="group-account-menu">
       <AccountActionMenu
         label={label}
-        iconOnly
         active={active}
         contextKey={contextKey}
         disabled={disabled}

@@ -1,9 +1,9 @@
 use crate::{
-    compat::{config_revision, datetime, integer, parse_datetime, truthy},
+    compat::{config_revision, datetime, integer, parse_datetime, string, truthy},
     db::Database,
     error::{Error, Result},
     error_evidence,
-    slow_ttft::{slow_sample, slow_warning},
+    quota::number,
     sql,
     store::Store,
 };
@@ -137,9 +137,6 @@ impl CapacityStore {
             }
         }
     }
-    pub fn snapshot(&self) -> Result<Value> {
-        Ok((*self.shared_snapshot()?).clone())
-    }
     pub fn shared_snapshot(&self) -> Result<std::sync::Arc<Value>> {
         Ok(self.shared_snapshot_versioned()?.1)
     }
@@ -241,13 +238,74 @@ fn prune_notifications(data: &mut Value) {
     }
 }
 
+type SlowPollWatermark = ((i64, i64, i64), i64, i64);
+
 #[derive(Clone)]
 struct SlowPollCache {
     floor_id: i64,
-    watermark: (String, i64, i64),
+    watermark: SlowPollWatermark,
     store_rev: u64,
     scanned_at: DateTime<Utc>,
     earliest_sample_at: Option<DateTime<Utc>>,
+}
+
+struct CursorMemory {
+    disk_rev: u64,
+    cursor: i64,
+    seen: BTreeMap<String, String>,
+    last_flush_at: Option<DateTime<Utc>>,
+}
+
+fn disk_seen_map(state: &Value) -> BTreeMap<String, String> {
+    state["seen"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned())))
+        .collect()
+}
+
+fn sync_cursor_memory<'a>(
+    guard: &'a mut Option<CursorMemory>,
+    rev: u64,
+    state: &Value,
+    disk_cursor: i64,
+    at: DateTime<Utc>,
+) -> &'a mut CursorMemory {
+    match guard {
+        Some(mem) if mem.disk_rev == rev => {}
+        Some(mem) => {
+            let mut merged_seen = disk_seen_map(state);
+            for (k, v) in std::mem::take(&mut mem.seen) {
+                merged_seen
+                    .entry(k)
+                    .and_modify(|existing| {
+                        if v > *existing {
+                            *existing = v.clone();
+                        }
+                    })
+                    .or_insert(v);
+            }
+            mem.cursor = mem.cursor.max(disk_cursor);
+            let cur = mem.cursor;
+            merged_seen.retain(|k, t| {
+                k.parse::<i64>().is_ok_and(|id| id > cur)
+                    || parse_datetime(&Value::String(t.clone()))
+                        .is_some_and(|ts| ts >= at - Duration::minutes(10))
+            });
+            mem.seen = merged_seen;
+            mem.disk_rev = rev;
+        }
+        None => {
+            *guard = Some(CursorMemory {
+                disk_rev: rev,
+                cursor: disk_cursor,
+                seen: disk_seen_map(state),
+                last_flush_at: Some(at),
+            });
+        }
+    }
+    guard.as_mut().unwrap()
 }
 
 #[derive(Clone)]
@@ -257,6 +315,7 @@ pub struct CapacityAlerts {
     db: Database,
     audit_path: PathBuf,
     last_seen_cleanup: std::sync::Arc<std::sync::Mutex<Option<DateTime<Utc>>>>,
+    cursor_mem: std::sync::Arc<std::sync::Mutex<Option<CursorMemory>>>,
     slow_cache: std::sync::Arc<std::sync::Mutex<Option<SlowPollCache>>>,
 }
 impl CapacityAlerts {
@@ -271,6 +330,7 @@ impl CapacityAlerts {
             clock: std::sync::Arc::new(Utc::now),
             audit_path: settings.audit_path.clone(),
             last_seen_cleanup: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            cursor_mem: std::sync::Arc::new(std::sync::Mutex::new(None)),
             slow_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
@@ -299,6 +359,104 @@ impl CapacityAlerts {
             Ok(())
         })
     }
+    fn effective_cursor_and_seen(&self, at: DateTime<Utc>) -> Result<(i64, Vec<i64>)> {
+        let (rev, state) = self.store.shared_snapshot_versioned()?;
+        let disk_cursor = integer(&state["cursor"]).ok_or_else(Error::internal)?;
+        let mut guard = self.cursor_mem.lock().unwrap_or_else(|e| e.into_inner());
+        let mem = sync_cursor_memory(&mut guard, rev, &state, disk_cursor, at);
+        let mut seen_ids = mem
+            .seen
+            .keys()
+            .chain(
+                state["pending"]
+                    .as_object()
+                    .into_iter()
+                    .flat_map(|m| m.keys()),
+            )
+            .filter_map(|key| key.parse::<i64>().ok())
+            .collect::<Vec<_>>();
+        seen_ids.sort_unstable();
+        seen_ids.dedup();
+        Ok((mem.cursor, seen_ids))
+    }
+    fn collect_polled(&self, rows: &[Value], advance: bool, at: DateTime<Utc>) -> Result<()> {
+        let has_match = {
+            let (rev, state) = self.store.shared_snapshot_versioned()?;
+            let disk_cursor = integer(&state["cursor"]).unwrap_or(0);
+            let mut guard = self.cursor_mem.lock().unwrap_or_else(|e| e.into_inner());
+            let mem = sync_cursor_memory(&mut guard, rev, &state, disk_cursor, at);
+            let init_at = parse_datetime(&state["initialized_at"]);
+            let gateway_since = parse_datetime(&state["gateway_since"]).unwrap_or(at);
+            let apikey_since = parse_datetime(&state["apikey_since"]).unwrap_or(at);
+            let would_emit = rows.iter().any(|row| {
+                let Some(id) = integer(&row["id"]) else {
+                    return false;
+                };
+                let key = id.to_string();
+                if mem.seen.contains_key(&key) || state["pending"].get(&key).is_some() {
+                    return false;
+                }
+                if truthy(&row["account_deleted_at"])
+                    || error_evidence::match_message(row).is_none()
+                {
+                    return false;
+                }
+                let Some(created) = parse_datetime(&row["created_at"]) else {
+                    return false;
+                };
+                if init_at.is_none_or(|t| created < t) {
+                    return false;
+                }
+                if row["error_owner"] == "platform" && created < gateway_since
+                    || row["account_type"] == "apikey" && created < apikey_since
+                {
+                    return false;
+                }
+                true
+            });
+            let flush_due = mem
+                .last_flush_at
+                .is_none_or(|last| at - last >= Duration::seconds(60));
+            if !would_emit && !flush_due {
+                let stamp = datetime(at);
+                let mut max_id = mem.cursor;
+                for row in rows {
+                    if let Some(id) = integer(&row["id"]) {
+                        let key = id.to_string();
+                        if !mem.seen.contains_key(&key) && state["pending"].get(&key).is_none() {
+                            mem.seen.insert(key, stamp.clone());
+                        }
+                        if advance && id > max_id {
+                            max_id = id;
+                        }
+                    }
+                }
+                mem.cursor = max_id;
+                let cur = mem.cursor;
+                mem.seen.retain(|k, t| {
+                    k.parse::<i64>().is_ok_and(|id| id > cur)
+                        || parse_datetime(&Value::String(t.clone()))
+                            .is_some_and(|ts| ts >= at - Duration::minutes(10))
+                });
+                return Ok(());
+            }
+            true
+        };
+        debug_assert!(has_match);
+        let mem_snapshot = self
+            .cursor_mem
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(|m| (m.cursor, m.seen.clone()));
+        self.collect_with_buffered(rows, advance, at, mem_snapshot)?;
+        let (new_rev, state) = self.store.shared_snapshot_versioned()?;
+        let new_cursor = integer(&state["cursor"]).unwrap_or(0);
+        let mut guard = self.cursor_mem.lock().unwrap_or_else(|e| e.into_inner());
+        let mem = sync_cursor_memory(&mut guard, new_rev, &state, new_cursor, at);
+        mem.last_flush_at = Some(at);
+        Ok(())
+    }
     pub async fn poll(&self) -> Result<()> {
         let at = (self.clock)();
         let state = self.store.shared_snapshot()?;
@@ -308,74 +466,61 @@ impl CapacityAlerts {
                 .one("SELECT coalesce(max(id),0) AS id FROM ops_error_logs", &[])
                 .await?
                 .ok_or_else(Error::internal)?;
-            self.store.transaction(|data| {
+            let (rev, _) = self.store.transaction_versioned(|data| {
                 if data["cursor"].is_null() {
                     data["cursor"] = row["id"].clone();
                     data["initialized_at"] = datetime(at).into();
                 }
                 Ok(())
             })?;
+            if let Some(rev) = rev {
+                *self.cursor_mem.lock().unwrap_or_else(|e| e.into_inner()) = Some(CursorMemory {
+                    disk_rev: rev,
+                    cursor: integer(&row["id"]).unwrap_or(0),
+                    seen: BTreeMap::new(),
+                    last_flush_at: Some(at),
+                });
+            }
             return Ok(());
         }
         for _ in 0..20 {
-            let cursor =
-                integer(&self.store.shared_snapshot()?["cursor"]).ok_or_else(Error::internal)?;
+            let (cursor, _) = self.effective_cursor_and_seen(at)?;
             let rows = self
                 .db
-                .all(
-                    &format!(
-                        "SELECT {} FROM (SELECT * FROM ops_error_logs WHERE id>$1 ORDER BY id LIMIT 200) e CROSS JOIN LATERAL (SELECT to_jsonb(e) AS jb OFFSET 0) ej LEFT JOIN accounts a ON a.id=e.account_id ORDER BY e.id",
-                        sql::CAPACITY_FIELDS
-                    ),
-                    &[cursor.into()],
-                )
+                .all_with_columns(sql::capacity_poll_sql, &[cursor.into()])
                 .await?;
             if rows.is_empty() {
                 break;
             }
-            self.collect(&rows, true, (self.clock)())?;
+            self.collect_polled(&rows, true, (self.clock)())?;
             if rows.len() < 200 {
                 break;
             }
         }
         let since = (at - Duration::minutes(5))
             .max(parse_datetime(&state["initialized_at"]).ok_or_else(Error::internal)?);
-        let current = self.store.shared_snapshot()?;
-        let upper_cursor = integer(&current["cursor"]).unwrap_or(0);
+        let (upper_cursor, seen_ids) = self.effective_cursor_and_seen(at)?;
         let has_recent = upper_cursor > 0
             && self
                 .db
                 .one(
-                    "SELECT EXISTS (SELECT 1 FROM ops_error_logs WHERE created_at>=$1 AND id<=$2) AS present",
-                    &[since.into(), upper_cursor.into()],
+                    "SELECT EXISTS (SELECT 1 FROM ops_error_logs WHERE created_at>=$1 AND id<=$2 AND NOT (id = ANY($3))) AS present",
+                    &[
+                        since.into(),
+                        upper_cursor.into(),
+                        crate::db::Param::Ints(seen_ids.clone()),
+                    ],
                 )
                 .await?
                 .is_some_and(|row| row["present"] == true);
         let mut collected_any = false;
         if has_recent {
-            let mut seen_ids = current["seen"]
-                .as_object()
-                .into_iter()
-                .flat_map(|m| m.keys())
-                .chain(
-                    current["pending"]
-                        .as_object()
-                        .into_iter()
-                        .flat_map(|m| m.keys()),
-                )
-                .filter_map(|key| key.parse::<i64>().ok())
-                .collect::<Vec<_>>();
-            seen_ids.sort_unstable();
-            seen_ids.dedup();
             let mut after = 0i64;
             loop {
                 let rows = self
                     .db
-                    .all(
-                        &format!(
-                            "SELECT {} FROM (SELECT * FROM ops_error_logs WHERE created_at>=$1 AND id>$2 AND id<=$4 AND NOT (id = ANY($3)) ORDER BY id LIMIT 200) e CROSS JOIN LATERAL (SELECT to_jsonb(e) AS jb OFFSET 0) ej LEFT JOIN accounts a ON a.id=e.account_id ORDER BY e.id",
-                            sql::CAPACITY_FIELDS
-                        ),
+                    .all_with_columns(
+                        sql::capacity_recent_sql,
                         &[
                             since.into(),
                             after.into(),
@@ -388,7 +533,7 @@ impl CapacityAlerts {
                     break;
                 }
                 collected_any = true;
-                self.collect(&rows, false, (self.clock)())?;
+                self.collect_polled(&rows, false, (self.clock)())?;
                 after = integer(&rows.last().unwrap()["id"]).ok_or_else(Error::internal)?;
                 if rows.len() < 200 {
                     break;
@@ -401,13 +546,22 @@ impl CapacityAlerts {
                 .lock()
                 .map_err(|_| Error::internal())?;
             if last.is_none_or(|last| at - last >= Duration::seconds(60)) {
-                self.collect(&[], false, at)?;
+                self.collect_polled(&[], false, at)?;
                 *last = Some(at);
             }
         }
         self.poll_slow((self.clock)()).await
     }
     pub fn collect(&self, rows: &[Value], advance: bool, at: DateTime<Utc>) -> Result<()> {
+        self.collect_with_buffered(rows, advance, at, None)
+    }
+    fn collect_with_buffered(
+        &self,
+        rows: &[Value],
+        advance: bool,
+        at: DateTime<Utc>,
+        buffered: Option<(i64, BTreeMap<String, String>)>,
+    ) -> Result<()> {
         let keep_seen = |key: &str, time: &Value, cursor: i64| {
             key.parse::<i64>().is_ok_and(|id| id > cursor)
                 || parse_datetime(time).is_some_and(|t| t >= at - Duration::minutes(10))
@@ -415,7 +569,16 @@ impl CapacityAlerts {
         {
             let data = self.store.shared_snapshot()?;
             let cursor = integer(&data["cursor"]).unwrap_or(0);
-            if data["cursor"].is_i64()
+            let buffered_clean = buffered.as_ref().is_none_or(|(buf_cursor, buf_seen)| {
+                *buf_cursor <= cursor
+                    && buf_seen.iter().all(|(k, v)| {
+                        data["seen"].get(k).is_some()
+                            || data["pending"].get(k).is_some()
+                            || !keep_seen(k, &Value::String(v.clone()), cursor)
+                    })
+            });
+            if buffered_clean
+                && data["cursor"].is_i64()
                 && rows.iter().filter_map(|row| integer(&row["id"])).all(|id| {
                     (!advance || id <= cursor)
                         && (data["seen"].get(id.to_string()).is_some()
@@ -431,7 +594,20 @@ impl CapacityAlerts {
             }
         }
         let emitted = self.store.transaction(|data| {
-            let cursor = integer(&data["cursor"]).unwrap_or(0);
+            let mut cursor = integer(&data["cursor"]).unwrap_or(0);
+            if let Some((buffered_cursor, buffered_seen)) = &buffered {
+                if *buffered_cursor > cursor {
+                    cursor = *buffered_cursor;
+                    data["cursor"] = json!(cursor);
+                }
+                let map = data["seen"].as_object_mut().unwrap();
+                for (k, v) in buffered_seen {
+                    let val = Value::String(v.clone());
+                    if keep_seen(k, &val, cursor) {
+                        map.entry(k.clone()).or_insert(val);
+                    }
+                }
+            }
             data["seen"]
                 .as_object_mut()
                 .unwrap()
@@ -515,17 +691,19 @@ impl CapacityAlerts {
         }
         Ok(())
     }
-    async fn slow_scan_watermark(&self, at: DateTime<Utc>) -> Option<(i64, (String, i64, i64))> {
+    async fn slow_scan_watermark(&self, at: DateTime<Utc>) -> Option<(i64, SlowPollWatermark)> {
         let row = self
             .db
             .one(
-                "SELECT b.floor_id, s.accounts_sig, t.tail_max_id, t.tail_count \
+                "SELECT b.floor_id, s.accounts_count, s.accounts_max_id, s.accounts_xor, t.tail_max_id, t.tail_count \
                  FROM ( \
                    SELECT m AS global_max_id, GREATEST(m - 4096, 0)::bigint AS floor_id \
                    FROM (SELECT COALESCE(MAX(id), 0)::bigint AS m FROM usage_logs) raw_max \
                  ) b \
                  CROSS JOIN ( \
-                   SELECT md5(COALESCE(jsonb_agg(id ORDER BY id)::text, '[]')) AS accounts_sig \
+                   SELECT COUNT(*)::bigint AS accounts_count, \
+                          COALESCE(MAX(id), 0)::bigint AS accounts_max_id, \
+                          COALESCE(BIT_XOR(hashint8extended(id, 0)), 0)::bigint AS accounts_xor \
                    FROM accounts \
                    WHERE deleted_at IS NULL AND platform='openai' AND type IN ('oauth','apikey') \
                  ) s \
@@ -540,7 +718,11 @@ impl CapacityAlerts {
             .await
             .ok()??;
         let floor_id = integer(&row["floor_id"]).unwrap_or(0);
-        let accounts_sig = row["accounts_sig"].as_str().unwrap_or("").to_owned();
+        let accounts_sig = (
+            integer(&row["accounts_count"]).unwrap_or(0),
+            integer(&row["accounts_max_id"]).unwrap_or(0),
+            integer(&row["accounts_xor"]).unwrap_or(0),
+        );
         let tail_max_id = integer(&row["tail_max_id"]).unwrap_or(0);
         let tail_count = integer(&row["tail_count"]).unwrap_or(0);
         Some((floor_id, (accounts_sig, tail_max_id, tail_count)))
@@ -556,7 +738,7 @@ impl CapacityAlerts {
             .filter(|cached| {
                 cached.store_rev == store_rev
                     && at >= cached.scanned_at
-                    && at < cached.scanned_at + Duration::seconds(30)
+                    && at < cached.scanned_at + Duration::seconds(300)
                     && cached
                         .earliest_sample_at
                         .is_none_or(|earliest| earliest >= window_start)
@@ -566,10 +748,12 @@ impl CapacityAlerts {
             let check = match self
                 .db
                 .one(
-                    "SELECT b.global_max_id, s.accounts_sig, t.tail_max_id, t.tail_count \
+                    "SELECT b.global_max_id, s.accounts_count, s.accounts_max_id, s.accounts_xor, t.tail_max_id, t.tail_count \
                      FROM (SELECT COALESCE(MAX(id), 0)::bigint AS global_max_id FROM usage_logs) b \
                      CROSS JOIN ( \
-                       SELECT md5(COALESCE(jsonb_agg(id ORDER BY id)::text, '[]')) AS accounts_sig \
+                       SELECT COUNT(*)::bigint AS accounts_count, \
+                              COALESCE(MAX(id), 0)::bigint AS accounts_max_id, \
+                              COALESCE(BIT_XOR(hashint8extended(id, 0)), 0)::bigint AS accounts_xor \
                        FROM accounts \
                        WHERE deleted_at IS NULL AND platform='openai' AND type IN ('oauth','apikey') \
                      ) s \
@@ -594,7 +778,11 @@ impl CapacityAlerts {
                 integer(&check["tail_count"]),
             ) {
                 let current_wm = (
-                    check["accounts_sig"].as_str().unwrap_or("").to_owned(),
+                    (
+                        integer(&check["accounts_count"]).unwrap_or(0),
+                        integer(&check["accounts_max_id"]).unwrap_or(0),
+                        integer(&check["accounts_xor"]).unwrap_or(0),
+                    ),
                     tail_max_id,
                     tail_count,
                 );
@@ -634,7 +822,7 @@ impl CapacityAlerts {
         };
         let rows = match self
             .db
-            .all(sql::CAPACITY_SLOW_SQL, &[window_start.into(), at.into()])
+            .all_with_columns(sql::capacity_slow_sql, &[window_start.into(), at.into()])
             .await
         {
             Ok(v) => v,
@@ -778,4 +966,146 @@ fn slow_projection(
         states[key] = state;
     }
     json!({"slow_ttft":states,"alerts":alerts})
+}
+
+const NON_TEXT: &[&str] = &[
+    "/audio", "/images", "/videos", "-image", "-video", "-tts", "-stt", "realtime", "whisper",
+    "dall-e",
+];
+
+fn text_stream(row: &Value) -> Option<String> {
+    if row["stream"] != true {
+        return None;
+    }
+    let model = if truthy(&row["upstream_model"]) {
+        string(&row["upstream_model"])
+    } else {
+        string(&row["model"])
+    }
+    .trim();
+    if model.is_empty()
+        || [
+            "image_count",
+            "image_output_tokens",
+            "video_count",
+            "video_duration_seconds",
+        ]
+        .into_iter()
+        .any(|k| number(&row[k]).is_some_and(|v| v != 0.0))
+    {
+        return None;
+    }
+    let source = format!("{} {}", string(&row["inbound_endpoint"]), model).to_lowercase();
+    if NON_TEXT.iter().any(|v| source.contains(v)) {
+        return None;
+    }
+    Some(model.into())
+}
+
+#[derive(Clone)]
+pub struct SlowSample {
+    pub(crate) id: i64,
+    pub(crate) at: DateTime<Utc>,
+    pub(crate) first: f64,
+}
+
+pub fn slow_sample(row: &Value, account: &Value) -> Option<SlowSample> {
+    if account["platform"] != "openai" || !matches!(string(&account["type"]), "oauth" | "apikey") {
+        return None;
+    }
+    text_stream(row)?;
+    let first = number(&row["first_token_ms"]).filter(|v| *v > 0.0)?;
+    number(&row["duration_ms"]).filter(|v| *v > first)?;
+    number(&row["output_tokens"]).filter(|v| *v >= 0.0)?;
+    Some(SlowSample {
+        id: integer(&row["id"]).unwrap_or(0),
+        at: parse_datetime(&row["created_at"])?,
+        first,
+    })
+}
+
+pub fn slow_warning(samples: &[SlowSample], at: DateTime<Utc>) -> Option<Value> {
+    let mut rows: Vec<_> = samples
+        .iter()
+        .filter(|v| v.at >= at - Duration::days(1) && v.at <= at)
+        .collect();
+    rows.sort_by_key(|v| std::cmp::Reverse((v.at, v.id)));
+    rows.truncate(10);
+    if rows.len() < 10 {
+        return None;
+    }
+    let slow = rows.iter().filter(|v| v.first > 10_000.0).count();
+    Some(
+        json!({"kind":"slow_ttft","sample_count":rows.len(),"slow_count":slow,"threshold_ms":10000,"active":slow >= 8 && rows[0].first > 10_000.0,"latest_sample_id":rows[0].id,"latest_first_token_ms":rows[0].first,"latest_at":datetime(rows[0].at)}),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn unrelated_store_writes_preserve_unflushed_cursor_seen_and_flush_deadline() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = CapacityStore::new(dir.path().join("capacity-alert-state.json"));
+        let t0 = Utc.with_ymd_and_hms(2026, 11, 26, 5, 0, 0).unwrap();
+        let (rev1, _) = store
+            .transaction_versioned(|data| {
+                data["cursor"] = json!(100);
+                data["initialized_at"] = datetime(t0).into();
+                data["seen"] = json!({"100": datetime(t0)});
+                Ok(())
+            })
+            .unwrap();
+        let rev1 = rev1.unwrap();
+
+        let mut guard: Option<CursorMemory> = None;
+        let state1 = store.shared_snapshot().unwrap();
+        {
+            let mem = sync_cursor_memory(&mut guard, rev1, &state1, 100, t0);
+            assert_eq!(mem.cursor, 100);
+            assert_eq!(mem.last_flush_at, Some(t0));
+            // Simulate benign rows advancing in-memory cursor and seen without disk flush
+            mem.cursor = 145;
+            mem.seen
+                .insert("145".into(), datetime(t0 + Duration::seconds(10)));
+        }
+
+        // Unrelated update to `marks` / `slow_ttft` bumps disk_rev while disk cursor stays 100
+        store
+            .transaction(|data| {
+                data["marks"]["7"] = json!({
+                    "account_id": 7,
+                    "marked": true,
+                    "version": 1,
+                    "changed_at": datetime(t0 + Duration::seconds(20))
+                });
+                Ok(())
+            })
+            .unwrap();
+        let (rev2, state2) = store.shared_snapshot_versioned().unwrap();
+        assert_ne!(rev2, rev1);
+        let disk_cursor = integer(&state2["cursor"]).unwrap();
+        assert_eq!(disk_cursor, 100);
+
+        let mem = sync_cursor_memory(
+            &mut guard,
+            rev2,
+            &state2,
+            disk_cursor,
+            t0 + Duration::seconds(25),
+        );
+        assert_eq!(mem.disk_rev, rev2);
+        assert_eq!(mem.cursor, 145, "in-memory cursor must not regress to disk");
+        assert!(
+            mem.seen.contains_key("145") && mem.seen.contains_key("100"),
+            "in-memory seen must merge with disk seen"
+        );
+        assert_eq!(
+            mem.last_flush_at,
+            Some(t0),
+            "unrelated disk_rev change must not postpone last_flush_at"
+        );
+    }
 }

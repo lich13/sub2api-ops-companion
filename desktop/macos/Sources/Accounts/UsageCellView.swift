@@ -360,7 +360,7 @@ public struct UsageCellView: View {
         .opacity(!store.state.online || extraDisabled || (!actionBusy.isEmpty && !isBusy) ? 0.45 : 1.0)
     }
 
-    private func autoResetCreditBlock(_ state: AutoResetCreditState) -> some View {
+    private func autoResetCreditBlock(_ state: AutoResetCreditStateRecord) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Button {
                 creditExpanded.toggle()
@@ -370,7 +370,7 @@ public struct UsageCellView: View {
                     Text(state.label)
                         .font(DS.fontResetTimeMedium)
                         .foregroundStyle(DS.muted)
-                    Image(systemName: creditExpanded ? "chevron.up" : "chevron.down")
+                    Image(systemName: creditExpanded ? "chevron.down" : "chevron.right")
                         .font(DS.iconFont(8, weight: .semibold))
                         .foregroundStyle(DS.muted)
                 }

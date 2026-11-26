@@ -3,7 +3,12 @@ import { useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { Copy, ExternalLink, LoaderCircle, Plus, X } from "lucide-react";
 import { api, command } from "./bridge";
 import { errorMessage as message } from "./bridgeError";
-import { useDialogFocus } from "./dialogFocus";
+import { ConfirmDiscardDialog } from "./ConfirmDiscardDialog";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
 import { useBackAction } from "./mobile";
 import type {
   ChoiceRecord,
@@ -145,8 +150,7 @@ export default function AccountCreationDialog({
     sourceRef = useRef(source);
   draftRef.current = draft;
   sourceRef.current = source;
-  const initialDraft = useRef(draft),
-    discardDialog = useRef<HTMLElement>(null);
+  const initialDraft = useRef(draft);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const dirty =
     JSON.stringify(draft) !== JSON.stringify(initialDraft.current) ||
@@ -158,15 +162,17 @@ export default function AccountCreationDialog({
       else close();
     }
   };
+  const backdrop = useBackdropDismiss(() => {
+    if (!dirty && !guard.current) close();
+  });
   useDialogFocus(dialog, !confirmDiscard);
-  useDialogFocus(discardDialog, confirmDiscard);
   useBackAction(true, () => {
     if (confirmDiscard) setConfirmDiscard(false);
     else dismiss();
   });
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.isComposing || e.defaultPrevented) return;
+      if (!isCleanEscape(e)) return;
       e.preventDefault();
       e.stopPropagation();
       if (confirmDiscard) setConfirmDiscard(false);
@@ -757,13 +763,7 @@ export default function AccountCreationDialog({
     blockedDirect = ledger.current.get("direct:direct")?.status === "unknown";
   return (
     <>
-      <div
-        className="modal-backdrop"
-        inert={confirmDiscard}
-        onMouseDown={(e) => {
-          if (e.target === e.currentTarget && !dirty && !guard.current) close();
-        }}
-      >
+      <div className="modal-backdrop" inert={confirmDiscard} {...backdrop}>
         <section
           className="account-settings-dialog account-creation-dialog"
           ref={dialog}
@@ -1412,25 +1412,11 @@ export default function AccountCreationDialog({
           </footer>
         </section>
       </div>
-      {confirmDiscard && (
-        <div className="modal-backdrop">
-          <section
-            ref={discardDialog}
-            className="discard-groups-dialog"
-            role="alertdialog"
-            aria-modal="true"
-            aria-label="放弃未保存的更改？"
-          >
-            <h2>放弃未保存的更改？</h2>
-            <div>
-              <button onClick={() => setConfirmDiscard(false)}>继续编辑</button>
-              <button className="primary" onClick={close}>
-                放弃修改
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
+      <ConfirmDiscardDialog
+        open={confirmDiscard}
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={close}
+      />
     </>
   );
 }

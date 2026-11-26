@@ -260,6 +260,20 @@ describe("ClientUpdateCard", () => {
     expect(onError).toHaveBeenCalledOnce();
   });
 
+  it("surfaces initial update state read failures instead of swallowing them", async () => {
+    vi.mocked(command).mockRejectedValueOnce(new Error("读取更新状态失败"));
+    await act(async () => {
+      root.render(<ClientUpdateCard runtimeVersion="0.1.105" />);
+    });
+    await flush();
+    const status = container.querySelector('[role="status"]');
+    expect(status?.className).toContain("bad-text");
+    expect(status?.textContent).toContain("读取更新状态失败");
+    expect(container.querySelector("button")?.textContent).toContain(
+      "重试更新",
+    );
+  });
+
   it("renders ClientUpdateCard on unconnected and offline-snapshot screens for self-recovery", async () => {
     let view: ViewState = {
       platform: "android",

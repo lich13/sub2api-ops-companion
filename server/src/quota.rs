@@ -261,49 +261,65 @@ fn sanitize_summary(row: &Value, summary: &Value) -> Value {
 }
 
 pub fn from_usage_data(data: &Value, row: &Value, at: DateTime<Utc>) -> Value {
-    let mut row = row.clone();
-    let mut extra = row["extra"].as_object().cloned().unwrap_or_default();
-    for (source, prefix) in [("five_hour", "codex_5h"), ("seven_day", "codex_7d")] {
-        for suffix in [
-            "used_percent",
-            "reset_at",
-            "reset_after_seconds",
-            "window_minutes",
-            "reset_source",
-        ] {
-            extra.shift_remove(&format!("{prefix}_{suffix}"));
+    let plan = account_plan(row);
+    let updated = datetime(at);
+    let updated_val = Value::String(updated.clone());
+    let mut windows = Vec::with_capacity(2);
+    for (source_key, key, label) in [
+        ("five_hour", "codex_5h", "5h"),
+        ("seven_day", "codex_7d", "7d"),
+    ] {
+        if plan == "free" && key == "codex_5h" {
+            continue;
         }
-        let source = &data[source];
+        let source = &data[source_key];
         if !source.is_object() {
             continue;
         }
-        let used = source
+        let used_raw = source
             .get("utilization")
             .or_else(|| source.get("used_percent"))
             .or_else(|| source.get("used"));
-        if let Some(used) = used.filter(|v| !v.is_null()) {
-            extra.insert(format!("{prefix}_used_percent"), used.clone());
-        }
-        if let Some(reset) =
-            parse_datetime(&source["resets_at"]).or_else(|| parse_datetime(&source["reset_at"]))
-        {
-            extra.insert(format!("{prefix}_reset_at"), datetime(reset).into());
-        }
-        if let Some(remaining) =
-            number(&source["remaining_seconds"]).or_else(|| number(&source["reset_after_seconds"]))
-        {
-            extra.insert(format!("{prefix}_reset_after_seconds"), json!(remaining));
-        }
+        let Some(used) = used_raw.filter(|v| !v.is_null()).and_then(percent) else {
+            continue;
+        };
+        let remaining =
+            number(&source["remaining_seconds"]).or_else(|| number(&source["reset_after_seconds"]));
         let minutes = source
             .get("window_minutes")
             .unwrap_or(&source["window_stats"]["window_minutes"]);
-        if !minutes.is_null() {
-            extra.insert(format!("{prefix}_window_minutes"), minutes.clone());
+        let minutes =
+            number(minutes).filter(|v| (1.0..=5_256_000.0).contains(v) && v.fract() == 0.0);
+        let explicit_reset = parse_datetime(&source["resets_at"])
+            .or_else(|| parse_datetime(&source["reset_at"]))
+            .map(|dt| Value::String(datetime(dt)))
+            .unwrap_or(Value::Null);
+        let (reset, reset_src) =
+            reset_details(&explicit_reset, &json!(remaining), &updated_val, Some(at));
+        let mut value = json!({
+            "key": key,
+            "label": label,
+            "used_percent": used.clamp(0.0, 100.0),
+            "remaining_percent": (100.0 - used).clamp(0.0, 100.0),
+            "depleted": used >= 100.0
+        });
+        if !reset.is_empty() {
+            value["reset_at"] = reset.into();
+            value["reset_source"] = reset_src.into();
         }
+        if let Some(v) = remaining {
+            value["reset_after_seconds"] = (v as i64).into();
+        }
+        if let Some(v) = minutes {
+            value["window_minutes"] = (v as i64).into();
+        }
+        windows.push(value);
     }
-    extra.insert("codex_usage_updated_at".into(), datetime(at).into());
-    row["extra"] = extra.into();
-    quota_windows(&row, Some(at))
+    with_recovery_metadata(json!({
+        "plan_type": plan,
+        "updated_at": updated,
+        "ui_windows": windows
+    }))
 }
 
 pub fn summary_from_result(row: &Value, result: &Value) -> Value {

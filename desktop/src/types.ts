@@ -172,13 +172,13 @@ function callTime(value: string | null): number {
 }
 
 export function currentGroups(groups: Group[], accounts: Account[]): Group[] {
-  const members = new Map(accounts.map((account) => [account.id, account]));
+  const memberGroups = new Map(
+    accounts.map((account) => [account.id, new Set(account.group_ids)]),
+  );
   return groups
     .map((group) => {
       const ordered = group.recent_accounts
-        .filter((call) =>
-          members.get(call.account_id)?.group_ids.includes(group.id),
-        )
+        .filter((call) => memberGroups.get(call.account_id)?.has(group.id))
         .sort(
           (a, b) =>
             callTime(b.called_at) - callTime(a.called_at) ||
@@ -307,6 +307,11 @@ export type ViewState = {
   snapshot: Snapshot | null;
   preferences: Preferences;
 };
+export function connectionIdentity(
+  state: Pick<ViewState, "preferences" | "connected" | "connection_revision">,
+): string {
+  return `${state.preferences.base_url}:${state.connected}:${state.connection_revision ?? 0}`;
+}
 export type AppUpdatePhase =
   | "idle"
   | "checking"

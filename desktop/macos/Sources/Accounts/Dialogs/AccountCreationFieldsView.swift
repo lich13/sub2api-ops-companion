@@ -388,18 +388,51 @@ public struct AccountCreationFieldsView: View {
         }
     }
 
-    func compactField(_ text: Binding<String>, prompt: String, width: CGFloat? = nil) -> some View {
-        TextField(text: text, prompt: Text(verbatim: prompt).foregroundStyle(DS.placeholder)) { EmptyView() }
-            .textFieldStyle(.plain)
-            .font(DS.fontCompact)
-            .monospacedDigit()
-            .foregroundStyle(DS.ink)
-            .padding(.horizontal, 8)
-            .frame(height: DS.controlHeightDense)
-            .frame(width: width)
-            .background(DS.surface)
-            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(DS.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 5))
+    struct ControlledCompactField: View {
+        let value: String
+        let prompt: String
+        var width: CGFloat? = nil
+        let onCommit: (String) -> Void
+
+        @State private var text: String
+
+        init(
+            value: String,
+            prompt: String,
+            width: CGFloat? = nil,
+            onCommit: @escaping (String) -> Void
+        ) {
+            self.value = value
+            self.prompt = prompt
+            self.width = width
+            self.onCommit = onCommit
+            self._text = State(initialValue: value)
+        }
+
+        var body: some View {
+            TextField(text: $text, prompt: Text(verbatim: prompt).foregroundStyle(DS.placeholder)) { EmptyView() }
+                .textFieldStyle(.plain)
+                .font(DS.fontCompact)
+                .monospacedDigit()
+                .foregroundStyle(DS.ink)
+                .padding(.horizontal, 8)
+                .frame(height: DS.controlHeightDense)
+                .frame(width: width)
+                .background(DS.surface)
+                .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(DS.line, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .onAppear { text = value }
+                .onChange(of: value) { _, next in
+                    if text != next {
+                        text = next
+                    }
+                }
+                .onChange(of: text) { _, next in
+                    if next != value {
+                        onCommit(next)
+                    }
+                }
+        }
     }
 
     func captioned<Content: View>(_ caption: String, @ViewBuilder content: () -> Content) -> some View {

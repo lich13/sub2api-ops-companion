@@ -3,7 +3,12 @@ import { api } from "./bridge";
 import { accountOperation } from "./accountOperations";
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, RefreshCw, RotateCw } from "lucide-react";
-import KeyQuotaView, { KeyQuotaSummary } from "./KeyQuota";
+import KeyQuotaView from "./KeyQuota";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
 import {
   useKeyQuotaSettings,
   KeyQuotaSettingsDialog,
@@ -60,7 +65,6 @@ export default function UsageCell({
   report,
   active = true,
   connectionKey = "",
-  compact = false,
 }: {
   account: Account;
   online: boolean;
@@ -68,7 +72,6 @@ export default function UsageCell({
   report: (message: unknown) => void;
   active?: boolean;
   connectionKey?: string;
-  compact?: boolean;
 }) {
   const quotaSettings = useKeyQuotaSettings();
   const [quotaDialog, setQuotaDialog] = useState(false),
@@ -76,6 +79,9 @@ export default function UsageCell({
   const [busy, setBusy] = useState<UsageAction | null>(null);
   const running = useRef(false);
   const [confirm, setConfirm] = useState<{ action: UsageAction } | null>(null);
+  const confirmDialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(confirmDialogRef, !!confirm);
+  const confirmBackdrop = useBackdropDismiss(() => setConfirm(null));
   useBackAction(!!confirm, () => setConfirm(null));
   const [native, setNative] = useState<{
     identity: string;
@@ -141,13 +147,21 @@ export default function UsageCell({
   );
   useEffect(() => {
     const refreshed = (event: Event) => {
-      const { connectionKey: scope, batch } = (
-        event as CustomEvent<{ connectionKey: string; batch: QuotaBatch }>
+      const {
+        connectionKey: scope,
+        batch,
+        usageByAccount,
+      } = (
+        event as CustomEvent<{
+          connectionKey: string;
+          batch: QuotaBatch;
+          usageByAccount?: ReadonlyMap<number, UsageSummary>;
+        }>
       ).detail;
       if (scope !== connectionKey) return;
-      const value = batch.items.find(
-        (item) => item.account_id === account.id,
-      )?.usage;
+      const value = usageByAccount
+        ? usageByAccount.get(account.id)
+        : batch.items.find((item) => item.account_id === account.id)?.usage;
       if (value) {
         request.current = request.current + 1;
         lastRead.current = { identity, at: Date.now() };
@@ -336,8 +350,6 @@ export default function UsageCell({
       setBusy(null);
     }
   }
-  if (compact)
-    return <KeyQuotaSummary quota={usage?.key_quota} busy={quotaBusy} />;
   return (
     <div className="usage-cell">
       {account.type === "apikey" && (
@@ -595,21 +607,25 @@ export default function UsageCell({
       {confirm && (
         <div
           className="modal-backdrop"
+          {...confirmBackdrop}
           onKeyDown={(event) => {
-            if (event.key === "Escape") {
+            if (isCleanEscape(event)) {
               event.stopPropagation();
               setConfirm(null);
             }
           }}
         >
           <section
+            ref={confirmDialogRef}
             className="modal"
             role="alertdialog"
+            aria-modal="true"
             aria-label={
               confirm.action === "reset_quota"
                 ? "确认额度重置"
                 : "确认 Grok 探测"
             }
+            onClick={(event) => event.stopPropagation()}
           >
             <h2>
               {confirm.action === "reset_quota"

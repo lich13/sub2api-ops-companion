@@ -6,11 +6,6 @@ public enum ErrorCategoryKey: String, CaseIterable, Sendable {
     case other
 }
 
-private struct ErrorPageEnvelope: Decodable, Sendable {
-    var items: [OpsError]
-    var next_cursor: Int?
-}
-
 @MainActor
 @Observable
 public final class ErrorFeedStore {
@@ -51,7 +46,7 @@ public final class ErrorFeedStore {
         }
         let suffix = before.map { "&before_id=\($0)" } ?? ""
         do {
-            let res: ErrorPageEnvelope = try await RustBridge.shared.api(
+            let res: CursorPage<OpsError, Int> = try await RustBridge.shared.api(
                 "GET",
                 "/errors?category=\(category.rawValue)\(suffix)"
             )

@@ -1,5 +1,5 @@
 import { useEffectEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LoaderCircle, RefreshCw, X } from "lucide-react";
 import { api, command } from "./bridge";
 import { errorMessage } from "./bridgeError";
@@ -13,7 +13,11 @@ import {
 } from "./accountOperations";
 import { operationLabel, type AccountSettings } from "./accountDialog";
 import { useBackAction } from "./mobile";
-import { useDialogFocus } from "./dialogFocus";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
 import type { Account } from "./types";
 import "./account-settings.css";
 import ProxyOptions from "./ProxyOptions";
@@ -54,17 +58,28 @@ export default function ProxyBatchDialog({
     null,
   );
   useDialogFocus(dialog);
-  useBackAction(true, close);
+  const dismiss = () => {
+    if (!busy) close();
+  };
+  const backdrop = useBackdropDismiss(dismiss);
+  const [pageVisible, setPageVisible] = useState(
+    () => typeof document === "undefined" || !document.hidden,
+  );
+  useEffect(() => {
+    const sync = () => setPageVisible(!document.hidden);
+    document.addEventListener("visibilitychange", sync);
+    return () => document.removeEventListener("visibilitychange", sync);
+  }, []);
+  useBackAction(true, dismiss);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !e.isComposing) {
-        e.stopPropagation();
-        close();
-      }
+      if (!isCleanEscape(e) || busy) return;
+      e.stopPropagation();
+      close();
     };
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);
-  }, [close]);
+  }, [busy, close]);
   async function read() {
     const token = ++generation.current,
       epoch = operationEpoch();
@@ -142,17 +157,26 @@ export default function ProxyBatchDialog({
     pollStep.current = 0;
   }, [batch?.batch_id]);
   useEffect(() => {
-    if (!online || !batch || !pending(batch) || batchError) return;
+    if (!online || !pageVisible || !batch || !pending(batch) || batchError)
+      return;
     const delay = nextAdaptiveDelay(pollStep.current++);
     const timer = setTimeout(() => void pollBatch(batch.batch_id), delay);
     return () => clearTimeout(timer);
-  }, [batch, batchError, online]);
+  }, [batch, batchError, online, pageVisible]);
+  const proxyById = useMemo(
+    () => new Map(proxies.map((p) => [p.id, p])),
+    [proxies],
+  );
+  const jobByAccount = useMemo(
+    () => new Map((batch?.items ?? []).map((j) => [j.account_id, j])),
+    [batch],
+  );
   const editable = accounts.filter(
     (a) => settings[a.id]?.capabilities.proxy.editable,
   );
   const targetValid =
     proxyId === null ||
-    proxies.some((p) => p.id === proxyId && p.status === "active");
+    (proxyId !== undefined && proxyById.get(proxyId)?.status === "active");
   async function apply() {
     if (
       guard.current ||
@@ -208,10 +232,10 @@ export default function ProxyBatchDialog({
       ? "请选择代理"
       : id === null
         ? "不使用代理"
-        : `${proxies.find((p) => p.id === id)?.name ?? "代理"} #${id}`;
+        : `${proxyById.get(id)?.name ?? "代理"} #${id}`;
   const locked = busy || !!batch;
   return (
-    <div className="modal-backdrop" onClick={close}>
+    <div className="modal-backdrop" {...backdrop}>
       <section
         ref={dialog}
         className="account-settings-dialog proxy-batch-dialog"
@@ -228,7 +252,8 @@ export default function ProxyBatchDialog({
           <button
             className="icon-button"
             aria-label="关闭代理选择"
-            onClick={close}
+            disabled={busy}
+            onClick={dismiss}
           >
             <X size={18} />
           </button>
@@ -263,7 +288,7 @@ export default function ProxyBatchDialog({
               <div className="proxy-batch-previews">
                 {accounts.map((account) => {
                   const value = settings[account.id],
-                    job = batch?.items.find((j) => j.account_id === account.id);
+                    job = jobByAccount.get(account.id);
                   return (
                     <article key={account.id}>
                       <header>
@@ -359,7 +384,9 @@ export default function ProxyBatchDialog({
           )}
         </div>
         <footer>
-          <button onClick={close}>关闭</button>
+          <button disabled={busy} onClick={dismiss}>
+            关闭
+          </button>
           {batch ? (
             <button
               disabled={busy || pending(batch) || !online}

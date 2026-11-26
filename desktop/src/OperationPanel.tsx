@@ -2,7 +2,11 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ListChecks, X } from "lucide-react";
 import { api, command } from "./bridge";
 import { errorMessage } from "./bridgeError";
-import { useDialogFocus } from "./dialogFocus";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
 import { fullTime, type Account } from "./types";
 import { useBackAction } from "./mobile";
 import {
@@ -130,6 +134,7 @@ export default function AccountOperations({
     [batchItems, setBatchItems] = useState<Operation[]>([]);
   const dialogRef = useRef<HTMLElement>(null);
   useDialogFocus(dialogRef, open);
+  const backdrop = useBackdropDismiss(() => setOpen(false));
   useBackAction(open, () => (batchId ? setBatchId(null) : setOpen(false)));
   useEffect(() => {
     const sync = () => setVisible(document.visibilityState !== "hidden");
@@ -143,7 +148,7 @@ export default function AccountOperations({
     setBatchItems([]);
   }, [connectionKey]);
   useEffect(() => {
-    if (!online || (!open && (!active || !visible))) return;
+    if (!online || !visible || (!open && !active)) return;
     let alive = true,
       timer: ReturnType<typeof setTimeout>;
     const epoch = operationEpoch();
@@ -259,7 +264,7 @@ export default function AccountOperations({
         </button>
       )}
       {open && (
-        <div className="modal-backdrop" onClick={() => setOpen(false)}>
+        <div className="modal-backdrop" {...backdrop}>
           <section
             ref={dialogRef}
             className="operation-dialog"
@@ -269,7 +274,7 @@ export default function AccountOperations({
             tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => {
-              if (e.key === "Escape") {
+              if (isCleanEscape(e)) {
                 e.preventDefault();
                 e.stopPropagation();
                 if (batchId) setBatchId(null);

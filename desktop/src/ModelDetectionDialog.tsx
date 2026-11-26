@@ -1,54 +1,22 @@
 import { useEffectEvent } from "react";
 import type { ModelDetectionReply } from "./protocol";
-import { useEffect, useRef, useState, type InputHTMLAttributes } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LoaderCircle, RefreshCw, X } from "lucide-react";
 import { readAccountModels, modelDirectoryRevoked } from "./accountModels";
 import { api, command } from "./bridge";
 import { errorMessage as errorText, ignoredFailure } from "./bridgeError";
+import { ConfirmDiscardDialog } from "./ConfirmDiscardDialog";
+import { NumberFieldInput } from "./NumberFieldInput";
 import { nextAdaptiveDelay } from "./pollBackoff";
 import { engineName } from "./modelTestTypes";
-import { useDialogFocus } from "./dialogFocus";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
 import { useBackAction } from "./mobile";
 import { fullTime, type Account } from "./types";
 
-function NumberFieldInput({
-  value,
-  onChange,
-  ...props
-}: Omit<
-  InputHTMLAttributes<HTMLInputElement>,
-  "value" | "onChange" | "type"
-> & {
-  value: number;
-  onChange: (next: number) => void;
-}) {
-  const [raw, setRaw] = useState(() =>
-    Number.isFinite(value) ? String(value) : "",
-  );
-  useEffect(() => {
-    if (!Number.isFinite(value)) return;
-    setRaw((current) =>
-      current.trim() !== "" && Number(current) === value
-        ? current
-        : String(value),
-    );
-  }, [value]);
-  return (
-    <input
-      {...props}
-      type="number"
-      value={raw}
-      onChange={(e) => {
-        const text = e.currentTarget.value;
-        setRaw(text);
-        onChange(text.trim() === "" ? Number.NaN : Number(text));
-      }}
-      onBlur={() => {
-        if (raw.trim() === "" && Number.isFinite(value)) setRaw(String(value));
-      }}
-    />
-  );
-}
 type Model = { id: string; display_name?: string };
 type Detection = Omit<ModelDetectionReply, "model_override"> & {
   model_override?: string | null;
@@ -86,20 +54,45 @@ export default function ModelDetectionDialog({
     [directoryLoading, setDirectoryLoading] = useState(false);
   const [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [confirmDiscard, setConfirmDiscard] = useState(false),
+    [visible, setVisible] = useState(!document.hidden);
   const closed = useRef(false),
     dialogRef = useRef<HTMLElement>(null);
   const generation = useRef(0),
     loadedAccount = useRef(account.id),
     draftRef = useRef(draft);
   draftRef.current = draft;
-  const dismiss = () => {
+  const dirty =
+    !!draft &&
+    !!value &&
+    (draft.enabled !== value.enabled ||
+      draft.schedule_mode !== value.schedule_mode ||
+      draft.interval_minutes !== value.interval_minutes ||
+      draft.min_interval_minutes !== value.min_interval_minutes ||
+      (draft.model_override ?? null) !== (value.model_override ?? null));
+  const forceClose = () => {
     closed.current = true;
     generation.current = generation.current + 1;
     close();
   };
-  useDialogFocus(dialogRef);
-  useBackAction(true, dismiss);
+  const dismiss = () => {
+    if (dirty && !busy) setConfirmDiscard(true);
+    else forceClose();
+  };
+  const backdrop = useBackdropDismiss(() => {
+    if (!dirty && !busy) forceClose();
+  });
+  useDialogFocus(dialogRef, !confirmDiscard);
+  useBackAction(true, () => {
+    if (confirmDiscard) setConfirmDiscard(false);
+    else dismiss();
+  });
+  useEffect(() => {
+    const onVisibility = () => setVisible(!document.hidden);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
   async function read(replaceDraft = false, refresh = false) {
     const current = ++generation.current;
     setDirectoryLoading(true);
@@ -174,8 +167,18 @@ export default function ModelDetectionDialog({
   activeStatusRef.current = ["queued", "running", "handling"].includes(
     value?.status ?? "",
   );
+  const stationary =
+    !!value &&
+    !value.enabled &&
+    !draft?.enabled &&
+    value.status === "disabled" &&
+    value.recheck_recovery?.status !== "pending" &&
+    !["queued", "retry"].includes(
+      value.disposition_notification?.status ?? "",
+    ) &&
+    !["queued", "retry"].includes(value.recovery_notification?.status ?? "");
   useEffect(() => {
-    if (!online || !loaded) return;
+    if (!online || !loaded || !visible || stationary) return;
     let alive = true,
       hadPollError = false,
       step = 0,
@@ -221,7 +224,7 @@ export default function ModelDetectionDialog({
       alive = false;
       clearTimeout(timer);
     };
-  }, [account.id, online, loaded]);
+  }, [account.id, online, loaded, visible, stationary]);
   async function save() {
     if (!draft || busy || !online) return;
     const current = ++generation.current;
@@ -243,7 +246,7 @@ export default function ModelDetectionDialog({
       if (current === generation.current) {
         setValue(result);
         setDraft(result);
-        dismiss();
+        forceClose();
         void command("refresh").catch(report);
       }
     } catch (e) {
@@ -277,7 +280,8 @@ export default function ModelDetectionDialog({
     : !Number.isInteger(draft?.interval_minutes) ||
       (draft?.interval_minutes ?? 0) < 1;
   const selectedModel = draft?.model_override ?? value?.global_model_id ?? "";
-  const available = models.some((m) => m.id === selectedModel);
+  const modelIdSet = useMemo(() => new Set(models.map((m) => m.id)), [models]);
+  const available = modelIdSet.has(selectedModel);
   const changedModel = !!value && !!draft && value.model_id !== draft.model_id;
   const recovery =
     value?.recheck_recovery?.generation === value?.generation
@@ -293,302 +297,320 @@ export default function ModelDetectionDialog({
     ? value?.recovery_notification
     : value?.disposition_notification;
   return (
-    <div className="modal-backdrop" onClick={dismiss}>
-      <section
-        ref={dialogRef}
-        className="model-detection-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="定时检测"
-        tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            e.stopPropagation();
-            dismiss();
-          }
-        }}
-      >
-        <header>
-          <div>
-            <span className="eyebrow">
-              {account.name} #{account.id}
-            </span>
-            <h2>定时检测</h2>
-          </div>
-          <button
-            className="icon-button"
-            aria-label="关闭定时检测"
-            onClick={dismiss}
-          >
-            <X size={19} />
-          </button>
-        </header>
-        {loading ? (
-          <LoaderCircle className="spin" />
-        ) : (
-          draft &&
-          value && (
-            <>
-              <label className="switch-row">
-                <span>启用定时检测</span>
-                <input
-                  type="checkbox"
-                  checked={draft.enabled}
-                  disabled={busy || !online}
-                  onChange={(e) =>
-                    setDraft({ ...draft, enabled: e.target.checked })
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>检测模式</span>
-                <select
-                  aria-label="检测模式"
-                  value={draft.schedule_mode}
-                  disabled={busy || !online}
-                  onChange={(e) =>
-                    setDraft({
-                      ...draft,
-                      schedule_mode: e.target
-                        .value as Detection["schedule_mode"],
-                    })
-                  }
-                >
-                  <option value="smart">智能</option>
-                  <option value="fixed">固定</option>
-                </select>
-              </label>
-              {smart ? (
-                <label className="field">
-                  <span>最小间隔（分钟）</span>
-                  <NumberFieldInput
-                    aria-label="最小间隔"
-                    min={5}
-                    max={30}
-                    step={1}
-                    value={draft.min_interval_minutes}
+    <>
+      <div className="modal-backdrop" inert={confirmDiscard} {...backdrop}>
+        <section
+          ref={dialogRef}
+          className="model-detection-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-label="定时检测"
+          tabIndex={-1}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (isCleanEscape(e)) {
+              e.preventDefault();
+              e.stopPropagation();
+              if (!dirty && !busy) forceClose();
+            }
+          }}
+        >
+          <header>
+            <div>
+              <span className="eyebrow">
+                {account.name} #{account.id}
+              </span>
+              <h2>定时检测</h2>
+            </div>
+            <button
+              className="icon-button"
+              aria-label="关闭定时检测"
+              onClick={dismiss}
+            >
+              <X size={19} />
+            </button>
+          </header>
+          {loading ? (
+            <LoaderCircle className="spin" />
+          ) : (
+            draft &&
+            value && (
+              <>
+                <label className="switch-row">
+                  <span>启用定时检测</span>
+                  <input
+                    type="checkbox"
+                    checked={draft.enabled}
                     disabled={busy || !online}
-                    onChange={(next) =>
-                      setDraft({ ...draft, min_interval_minutes: next })
-                    }
-                  />
-                  <span className="muted">
-                    根据最近一小时调用量在 5–30
-                    分钟内调整，不低于此下限。没有调用时暂停定时检测及降智复查。
-                  </span>
-                </label>
-              ) : (
-                <label className="field">
-                  <span>检测间隔（分钟）</span>
-                  <NumberFieldInput
-                    aria-label="检测间隔"
-                    min={1}
-                    step={1}
-                    value={draft.interval_minutes}
-                    disabled={busy || !online}
-                    onChange={(next) =>
-                      setDraft({ ...draft, interval_minutes: next })
+                    onChange={(e) =>
+                      setDraft({ ...draft, enabled: e.target.checked })
                     }
                   />
                 </label>
-              )}
-              {keyAccount && (
                 <label className="field">
-                  <span>检测模型</span>
-                  <span className="model-directory-control">
-                    <select
-                      aria-label="检测模型"
-                      value={draft.model_override ?? ""}
-                      disabled={busy || !online || !modelsReady}
-                      onChange={(e) =>
+                  <span>检测模式</span>
+                  <select
+                    aria-label="检测模式"
+                    value={draft.schedule_mode}
+                    disabled={busy || !online}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        schedule_mode: e.target
+                          .value as Detection["schedule_mode"],
+                      })
+                    }
+                  >
+                    <option value="smart">智能</option>
+                    <option value="fixed">固定</option>
+                  </select>
+                </label>
+                {smart ? (
+                  <label className="field">
+                    <span>最小间隔（分钟）</span>
+                    <NumberFieldInput
+                      aria-label="最小间隔"
+                      min={5}
+                      max={30}
+                      step={1}
+                      value={draft.min_interval_minutes}
+                      disabled={busy || !online}
+                      onChange={(next) =>
                         setDraft({
                           ...draft,
-                          model_override: e.target.value || null,
+                          min_interval_minutes: next ?? Number.NaN,
                         })
                       }
-                    >
-                      <option value="">
-                        {account.platform === "openai"
-                          ? `跟随全局（${value.global_model_id}）`
-                          : "请选择检测模型"}
-                      </option>
-                      {draft.model_override &&
-                        !models.some((m) => m.id === draft.model_override) && (
-                          <option value={draft.model_override}>
-                            {draft.model_override}（当前不可用）
-                          </option>
-                        )}
-                      {models.map((model) => (
-                        <option key={model.id} value={model.id}>
-                          {model.display_name || model.id}
+                    />
+                    <span className="muted">
+                      根据最近一小时调用量在 5–30
+                      分钟内调整，不低于此下限。没有调用时暂停定时检测及降智复查。
+                    </span>
+                  </label>
+                ) : (
+                  <label className="field">
+                    <span>检测间隔（分钟）</span>
+                    <NumberFieldInput
+                      aria-label="检测间隔"
+                      min={1}
+                      step={1}
+                      value={draft.interval_minutes}
+                      disabled={busy || !online}
+                      onChange={(next) =>
+                        setDraft({
+                          ...draft,
+                          interval_minutes: next ?? Number.NaN,
+                        })
+                      }
+                    />
+                  </label>
+                )}
+                {keyAccount && (
+                  <label className="field">
+                    <span>检测模型</span>
+                    <span className="model-directory-control">
+                      <select
+                        aria-label="检测模型"
+                        value={draft.model_override ?? ""}
+                        disabled={busy || !online || !modelsReady}
+                        onChange={(e) =>
+                          setDraft({
+                            ...draft,
+                            model_override: e.target.value || null,
+                          })
+                        }
+                      >
+                        <option value="">
+                          {account.platform === "openai"
+                            ? `跟随全局（${value.global_model_id}）`
+                            : "请选择检测模型"}
                         </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="icon-button"
-                      aria-label="刷新模型列表"
-                      disabled={busy || !online || directoryLoading}
-                      onClick={() => void read(false, true)}
-                    >
-                      <RefreshCw
-                        size={16}
-                        className={directoryLoading ? "spin" : undefined}
-                      />
-                    </button>
-                  </span>
-                </label>
-              )}
-              {changedModel && (
-                <p className="bad-text">
-                  自动检测模型已变化，请重新读取后保存；当前草稿已保留。
-                </p>
-              )}
-              {modelsReady &&
-                !directoryLoading &&
-                online &&
-                !error &&
-                !available && (
+                        {draft.model_override &&
+                          !modelIdSet.has(draft.model_override) && (
+                            <option value={draft.model_override}>
+                              {draft.model_override}（当前不可用）
+                            </option>
+                          )}
+                        {models.map((model) => (
+                          <option key={model.id} value={model.id}>
+                            {model.display_name || model.id}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label="刷新模型列表"
+                        disabled={busy || !online || directoryLoading}
+                        onClick={() => void read(false, true)}
+                      >
+                        <RefreshCw
+                          size={16}
+                          className={directoryLoading ? "spin" : undefined}
+                        />
+                      </button>
+                    </span>
+                  </label>
+                )}
+                {changedModel && (
                   <p className="bad-text">
-                    {!selectedModel
-                      ? "请先选择该账号的检测模型。"
-                      : "所选模型不在当前账号上游模型目录中。"}
+                    自动检测模型已变化，请重新读取后保存；当前草稿已保留。
                   </p>
                 )}
-              <dl className="detection-meta">
-                <dt>状态</dt>
-                <dd>{status[value.status] || "等待核对"}</dd>
-                <dt>检测源</dt>
-                <dd>
-                  {engineName(value.engine)} · {value.sample_count ?? 3} 组
-                </dd>
-                <dt>上次检测（开始）</dt>
-                <dd>{lastDetection}</dd>
-                {value.schedule_mode === "smart" && (
-                  <>
-                    <dt>最近一小时调用</dt>
-                    <dd>
-                      {value.recent_request_count == null
-                        ? "暂不可用"
-                        : `${value.recent_request_count} 次`}
-                    </dd>
-                    <dt>当前周期</dt>
-                    <dd>
-                      {value.effective_interval_minutes == null
-                        ? value.recent_request_count === 0
-                          ? "无调用，已暂停"
-                          : "等待调用统计"
-                        : `${value.effective_interval_minutes} 分钟`}
-                    </dd>
-                  </>
-                )}
-                <dt>下次执行</dt>
-                <dd>{fullTime(value.next_at)}</dd>
-                {value.reason && (
-                  <>
-                    <dt>原因</dt>
-                    <dd>{value.reason}</dd>
-                  </>
-                )}
-                {value.next_allowed_at &&
-                  Date.parse(value.next_allowed_at) > Date.now() && (
-                    <>
-                      <dt>冷却至</dt>
-                      <dd>{fullTime(value.next_allowed_at)}</dd>
-                    </>
+                {modelsReady &&
+                  !directoryLoading &&
+                  online &&
+                  !error &&
+                  !available && (
+                    <p className="bad-text">
+                      {!selectedModel
+                        ? "请先选择该账号的检测模型。"
+                        : "所选模型不在当前账号上游模型目录中。"}
+                    </p>
                   )}
-                {recovery ? (
-                  <>
-                    <dt>复查结果</dt>
-                    <dd>
-                      {recovery.status === "completed" && recovery.mark_cleared
-                        ? "已取消降智标记 · 调度保持不变"
-                        : recovery.reason || "正在核对标记"}
-                    </dd>
-                  </>
-                ) : (
-                  value.disposition && (
+                <dl className="detection-meta">
+                  <dt>状态</dt>
+                  <dd>{status[value.status] || "等待核对"}</dd>
+                  <dt>检测源</dt>
+                  <dd>
+                    {engineName(value.engine)} · {value.sample_count ?? 3} 组
+                  </dd>
+                  <dt>上次检测（开始）</dt>
+                  <dd>{lastDetection}</dd>
+                  {value.schedule_mode === "smart" && (
                     <>
-                      <dt>处置</dt>
+                      <dt>最近一小时调用</dt>
                       <dd>
-                        {value.disposition.marked ? "标记已保存" : "标记待保存"}{" "}
-                        ·{" "}
-                        {value.disposition.schedule_verified
-                          ? "停调度已确认"
-                          : "停调度待确认"}
+                        {value.recent_request_count == null
+                          ? "暂不可用"
+                          : `${value.recent_request_count} 次`}
+                      </dd>
+                      <dt>当前周期</dt>
+                      <dd>
+                        {value.effective_interval_minutes == null
+                          ? value.recent_request_count === 0
+                            ? "无调用，已暂停"
+                            : "等待调用统计"
+                          : `${value.effective_interval_minutes} 分钟`}
                       </dd>
                     </>
-                  )
-                )}
-                {notification && (
-                  <>
-                    <dt>结果通知</dt>
-                    <dd>
-                      {(
-                        {
-                          queued: "待推送",
-                          retry: "待重试",
-                          delivered: "已推送",
-                          suppressed: "已取消",
-                          failed: "投递失败",
-                        } as Record<string, string>
-                      )[notification.status] ?? "—"}
-                    </dd>
-                  </>
-                )}
-                <dt>最近结果</dt>
-                <dd>
-                  {value.last_result?.report?.prediction_name ||
-                    status[value.last_result?.status || ""] ||
-                    "—"}
-                </dd>
-              </dl>
-              {value.job_id && (
-                <div className="account-template-actions">
-                  <button onClick={showResult}>查看任务</button>
-                  {["queued", "running", "retrying"].includes(value.status) && (
-                    <button
-                      disabled={busy || !online}
-                      onClick={() => void cancel()}
-                    >
-                      取消任务
-                    </button>
                   )}
-                </div>
-              )}
-              <footer>
-                <button
-                  disabled={busy || !online}
-                  onClick={() => void read(true)}
-                >
-                  重新读取
-                </button>
-                <button
-                  className="primary"
-                  disabled={
-                    busy ||
-                    directoryLoading ||
-                    !online ||
-                    changedModel ||
-                    invalidInterval ||
-                    ((!modelsReady || !available || !!error) && draft.enabled)
-                  }
-                  onClick={() => void save()}
-                >
-                  {busy && <LoaderCircle size={15} className="spin" />}保存
-                </button>
-              </footer>
-            </>
-          )
-        )}
-        {error && (
-          <p className="bad-text" role="alert">
-            {error} <button onClick={() => void read()}>重试</button>
-          </p>
-        )}
-      </section>
-    </div>
+                  <dt>下次执行</dt>
+                  <dd>{fullTime(value.next_at)}</dd>
+                  {value.reason && (
+                    <>
+                      <dt>原因</dt>
+                      <dd>{value.reason}</dd>
+                    </>
+                  )}
+                  {value.next_allowed_at &&
+                    Date.parse(value.next_allowed_at) > Date.now() && (
+                      <>
+                        <dt>冷却至</dt>
+                        <dd>{fullTime(value.next_allowed_at)}</dd>
+                      </>
+                    )}
+                  {recovery ? (
+                    <>
+                      <dt>复查结果</dt>
+                      <dd>
+                        {recovery.status === "completed" &&
+                        recovery.mark_cleared
+                          ? "已取消降智标记 · 调度保持不变"
+                          : recovery.reason || "正在核对标记"}
+                      </dd>
+                    </>
+                  ) : (
+                    value.disposition && (
+                      <>
+                        <dt>处置</dt>
+                        <dd>
+                          {value.disposition.marked
+                            ? "标记已保存"
+                            : "标记待保存"}{" "}
+                          ·{" "}
+                          {value.disposition.schedule_verified
+                            ? "停调度已确认"
+                            : "停调度待确认"}
+                        </dd>
+                      </>
+                    )
+                  )}
+                  {notification && (
+                    <>
+                      <dt>结果通知</dt>
+                      <dd>
+                        {(
+                          {
+                            queued: "待推送",
+                            retry: "待重试",
+                            delivered: "已推送",
+                            suppressed: "已取消",
+                            failed: "投递失败",
+                          } as Record<string, string>
+                        )[notification.status] ?? "—"}
+                      </dd>
+                    </>
+                  )}
+                  <dt>最近结果</dt>
+                  <dd>
+                    {value.last_result?.report?.prediction_name ||
+                      status[value.last_result?.status || ""] ||
+                      "—"}
+                  </dd>
+                </dl>
+                {value.job_id && (
+                  <div className="account-template-actions">
+                    <button onClick={showResult}>查看任务</button>
+                    {["queued", "running", "retrying"].includes(
+                      value.status,
+                    ) && (
+                      <button
+                        disabled={busy || !online}
+                        onClick={() => void cancel()}
+                      >
+                        取消任务
+                      </button>
+                    )}
+                  </div>
+                )}
+                <footer>
+                  <button
+                    disabled={busy || !online}
+                    onClick={() => void read(true)}
+                  >
+                    重新读取
+                  </button>
+                  <button
+                    className="primary"
+                    disabled={
+                      busy ||
+                      directoryLoading ||
+                      !online ||
+                      changedModel ||
+                      invalidInterval ||
+                      ((!modelsReady || !available || !!error) && draft.enabled)
+                    }
+                    onClick={() => void save()}
+                  >
+                    {busy && <LoaderCircle size={15} className="spin" />}保存
+                  </button>
+                </footer>
+              </>
+            )
+          )}
+          {error && (
+            <p className="bad-text" role="alert">
+              {error} <button onClick={() => void read()}>重试</button>
+            </p>
+          )}
+        </section>
+      </div>
+      <ConfirmDiscardDialog
+        open={confirmDiscard}
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={forceClose}
+      />
+    </>
   );
 }

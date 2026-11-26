@@ -407,7 +407,7 @@ struct FixtureBackend {
     recover_failures: Mutex<BTreeSet<i64>>,
     test_model: Mutex<String>,
     test_concurrency: AtomicI64,
-    retry_policy: Mutex<sub2ops_server::connection_retry::Policy>,
+    retry_policy: Mutex<sub2ops_server::recovery_rules::Policy>,
 }
 
 impl FixtureBackend {
@@ -433,8 +433,15 @@ impl FixtureBackend {
             }
             let row = self
                 .cycle_db
-                .one(
-                    &sub2ops_server::sql::MODEL_ACCOUNT_SQL.replace("{filter}", "AND a.id=$1"),
+                .one_with_columns(
+                    |cols| {
+                        sub2ops_server::sql::build_account_sql(
+                            cols,
+                            "a.credentials, ",
+                            false,
+                            "AND a.id=$1",
+                        )
+                    },
                     &[id.into()],
                 )
                 .await?
@@ -442,14 +449,14 @@ impl FixtureBackend {
             let at = self.now();
             let saved = sub2ops_server::quota::latest_result(&row, &Value::Null, at);
             let evidence =
-                sub2ops_server::credit_rules::upstream_evidence(&self.cycle_db, &row, at).await?;
+                sub2ops_server::credit::rules::upstream_evidence(&self.cycle_db, &row, at).await?;
             sub2ops_server::operations::observe_cycle(&row, &saved, &evidence, at)
         })
     }
 }
 
 impl Backend for FixtureBackend {
-    fn retry_config(&self) -> Result<sub2ops_server::connection_retry::Policy> {
+    fn retry_config(&self) -> Result<sub2ops_server::recovery_rules::Policy> {
         Ok(*self.retry_policy.lock().unwrap())
     }
     fn now(&self) -> chrono::DateTime<chrono::Utc> {
@@ -3350,7 +3357,7 @@ async fn scheduled_retry_limit_zero_custom_interval_and_cancellation_are_bounded
     {
         let mut h = Harness::new().await;
         let id = h.seed_accounts(1, json!({})).await[0];
-        *h.backend.retry_policy.lock().unwrap() = sub2ops_server::connection_retry::Policy {
+        *h.backend.retry_policy.lock().unwrap() = sub2ops_server::recovery_rules::Policy {
             interval_seconds: interval,
             max_retries: retries,
         };

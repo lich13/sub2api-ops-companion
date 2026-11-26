@@ -157,11 +157,12 @@ pub(crate) fn send_event(kind: u32, payload: &str) {
     }
 }
 
-pub(crate) fn publish_state(value: &ViewState) {
+pub(crate) fn publish_state(value: &mut ViewState) {
     if !any_window_visible() && !value.initializing {
         return;
     }
-    if let Ok(json) = serde_json::to_string(value) {
+    value.flush_observed_at();
+    if let Ok(json) = serde_json::to_string(&*value) {
         send_event(EVENT_OPS_STATE, &json);
     }
 }
@@ -456,6 +457,7 @@ extern "C" fn host_set_visibility(
             tauri::async_runtime::spawn(async move {
                 let mut view = state.view.lock().await;
                 view.foreground = state.record_activity.active();
+                view.flush_observed_at();
                 if let Ok(json) = serde_json::to_string(&*view) {
                     send_event(EVENT_OPS_STATE, &json);
                 }

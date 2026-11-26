@@ -1,6 +1,6 @@
 [package]
 name = "sub2ops-server"
-version = "0.1.107"
+version = "0.1.108"
 edition = "2021"
 rust-version = "1.99"
 publish = false
@@ -9,7 +9,6 @@ publish = false
 test-fixtures = []
 
 [dependencies]
-indexmap = { version = "2", features = ["serde"] }
 sub2ops-protocol = { path = "protocol" }
 lmfpd = { path = "vendor/lmfpd", default-features = false }
 fancy-regex = "0.16"

@@ -21,7 +21,7 @@ use std::{
 };
 use sub2ops_server::{
     compat::datetime,
-    credit_ownership,
+    credit,
     db::Database,
     error::{Error, Result},
     model_detection::{detection_request, Detection},
@@ -254,7 +254,7 @@ pub async fn seed_credit_account(
     .execute(&db.pool)
     .await
     .expect("insert synthetic OAuth account");
-    credit_ownership::account(db, id)
+    credit::account(db, id)
         .await
         .expect("read synthetic OAuth account")
 }

@@ -594,7 +594,7 @@ fn match_fixture_cases(root: &Path, database: Database, cases: &[Value]) -> Valu
     alerts
         .collect(&rows, true, at)
         .expect("collect fixture evidence through production CapacityAlerts");
-    alerts.store.snapshot().expect("read matcher state")
+    (*alerts.store.shared_snapshot().expect("read matcher state")).clone()
 }
 
 fn legacy_pending(account_id: i64, id: i64, at: DateTime<Utc>) -> Value {
@@ -1705,7 +1705,7 @@ async fn capacity_watermark_replay_pagination_and_restart_preserve_clue_events()
     insert_error(&database, &watermark).await;
     let alerts = &runtime.detection.capacity;
     alerts.poll().await.unwrap();
-    let first = alerts.store.snapshot().unwrap();
+    let first = alerts.store.shared_snapshot().unwrap();
     assert_eq!(first["cursor"], base + 2);
     assert!(first["detection_events"].as_object().unwrap().is_empty());
     assert!(first["pending"].as_object().unwrap().is_empty());
@@ -1717,7 +1717,7 @@ async fn capacity_watermark_replay_pagination_and_restart_preserve_clue_events()
     );
     insert_error(&database, &delayed).await;
     alerts.poll().await.unwrap();
-    let replayed = alerts.store.snapshot().unwrap();
+    let replayed = alerts.store.shared_snapshot().unwrap();
     assert!(replayed["detection_events"]
         .get(format!("error:{}", base + 1).as_str())
         .is_some());
@@ -1728,7 +1728,7 @@ async fn capacity_watermark_replay_pagination_and_restart_preserve_clue_events()
         insert_error(&database, &row).await;
     }
     alerts.poll().await.unwrap();
-    let two_new = alerts.store.snapshot().unwrap();
+    let two_new = alerts.store.shared_snapshot().unwrap();
     assert!(two_new["detection_events"]
         .get(format!("error:{}", base + 3).as_str())
         .is_some());
@@ -1739,7 +1739,7 @@ async fn capacity_watermark_replay_pagination_and_restart_preserve_clue_events()
     assert!(two_new["pending"].as_object().unwrap().is_empty());
     alerts.poll().await.unwrap();
     assert_eq!(
-        alerts.store.snapshot().unwrap()["detection_events"]
+        alerts.store.shared_snapshot().unwrap()["detection_events"]
             .as_object()
             .unwrap()
             .len(),
@@ -1753,7 +1753,7 @@ async fn capacity_watermark_replay_pagination_and_restart_preserve_clue_events()
         insert_error(&database, &row).await;
     }
     alerts.poll().await.unwrap();
-    let paged = alerts.store.snapshot().unwrap();
+    let paged = alerts.store.shared_snapshot().unwrap();
     assert_eq!(paged["detection_events"].as_object().unwrap().len(), 402);
     assert_eq!(paged["cursor"], base + 403);
     assert!(paged["pending"].as_object().unwrap().is_empty());
@@ -1762,7 +1762,7 @@ async fn capacity_watermark_replay_pagination_and_restart_preserve_clue_events()
         .is_none());
 
     let restarted = CapacityAlerts::new(database.clone(), &runtime.settings);
-    let restored = restarted.store.snapshot().unwrap();
+    let restored = restarted.store.shared_snapshot().unwrap();
     assert_eq!(restored["cursor"], base + 403);
     assert_eq!(restored["detection_events"].as_object().unwrap().len(), 402);
     let after_restart = ErrorInput::provider(
@@ -1772,7 +1772,7 @@ async fn capacity_watermark_replay_pagination_and_restart_preserve_clue_events()
     );
     insert_error(&database, &after_restart).await;
     restarted.poll().await.unwrap();
-    let resumed = restarted.store.snapshot().unwrap();
+    let resumed = restarted.store.shared_snapshot().unwrap();
     assert_eq!(resumed["cursor"], base + 404);
     assert_eq!(resumed["detection_events"].as_object().unwrap().len(), 403);
     assert!(resumed["pending"].as_object().unwrap().is_empty());
@@ -1796,7 +1796,7 @@ async fn raw_capacity_clues_never_enter_retry_windows_or_bark_request_schedule()
     for delay in reference["capacity"]["retry_windows"].as_array().unwrap() {
         let next_at = at + Duration::seconds(delay.as_i64().unwrap());
         alerts.collect(&[], false, next_at).unwrap();
-        let state = alerts.store.snapshot().unwrap();
+        let state = alerts.store.shared_snapshot().unwrap();
         assert!(state["detection_events"].get(event_key).is_some());
         assert_eq!(state["notifications"]["9991001"]["status"], "clue");
         assert!(state["pending"].as_object().unwrap().is_empty());
@@ -1804,7 +1804,7 @@ async fn raw_capacity_clues_never_enter_retry_windows_or_bark_request_schedule()
         assert_no_bark_call_from_notifications(&runtime, &capture).await;
     }
     assert_eq!(
-        alerts.store.snapshot().unwrap()["notifications"]["9991001"]["status"],
+        alerts.store.shared_snapshot().unwrap()["notifications"]["9991001"]["status"],
         "clue"
     );
     assert_eq!(capture.bark_request_count(), 0);
@@ -1868,12 +1868,12 @@ async fn capacity_save_failures_do_not_advance_or_lose_cursor_and_evidence() {
         );
     }
     assert_eq!(fs::read(&path).unwrap(), initialized);
-    assert!(first_attempt.store.snapshot().unwrap()["cursor"].is_null());
+    assert!(first_attempt.store.shared_snapshot().unwrap()["cursor"].is_null());
     let restarted_after_failed_save = CapacityAlerts::new(database.clone(), &config);
-    assert!(restarted_after_failed_save.store.snapshot().unwrap()["cursor"].is_null());
+    assert!(restarted_after_failed_save.store.shared_snapshot().unwrap()["cursor"].is_null());
 
     first_attempt.poll().await.unwrap();
-    let initial = first_attempt.store.snapshot().unwrap();
+    let initial = first_attempt.store.shared_snapshot().unwrap();
     assert_eq!(initial["cursor"], base + 1);
     let bytes_before = fs::read(&path).unwrap();
     let next = ErrorInput::provider(base + 2, account, Utc::now() + Duration::milliseconds(10));
@@ -1891,7 +1891,7 @@ async fn capacity_save_failures_do_not_advance_or_lose_cursor_and_evidence() {
             "the read-only state directory must reject atomic save"
         );
         assert_eq!(fs::read(&path).unwrap(), bytes_before);
-        let unchanged = first_attempt.store.snapshot().unwrap();
+        let unchanged = first_attempt.store.shared_snapshot().unwrap();
         assert_eq!(unchanged["cursor"], base + 1);
         assert!(unchanged["detection_events"]
             .as_object()
@@ -1899,7 +1899,7 @@ async fn capacity_save_failures_do_not_advance_or_lose_cursor_and_evidence() {
             .is_empty());
         assert!(unchanged["pending"].as_object().unwrap().is_empty());
         first_attempt.poll().await.unwrap();
-        let recovered = first_attempt.store.snapshot().unwrap();
+        let recovered = first_attempt.store.shared_snapshot().unwrap();
         assert_eq!(recovered["cursor"], base + 2);
         assert!(recovered["detection_events"]
             .get(format!("error:{}", base + 2).as_str())
@@ -1943,7 +1943,7 @@ async fn capacity_mark_suppresses_only_its_account_and_preserves_other_clues() {
     alerts
         .collect(&rows, true, at + Duration::seconds(2))
         .unwrap();
-    let state = alerts.store.snapshot().unwrap();
+    let state = alerts.store.shared_snapshot().unwrap();
     assert!(state["detection_events"].get("error:9992001").is_none());
     assert!(state["detection_events"].get("error:9992002").is_some());
     assert_eq!(state["notifications"]["9992001"]["status"], "suppressed");
@@ -1979,7 +1979,7 @@ async fn capacity_mark_clears_legacy_pending_and_retry_only_for_marked_account()
         .unwrap()
         .to_owned();
     alerts.store.set_mark(1, true, &expected, at, None).unwrap();
-    let state = alerts.store.snapshot().unwrap();
+    let state = alerts.store.shared_snapshot().unwrap();
     assert!(state["pending"].get("1").is_none());
     assert!(state["pending"].get("2").is_some());
     assert_eq!(state["notifications"]["1"]["status"], "suppressed");
@@ -2033,7 +2033,7 @@ async fn capacity_mark_scope_uses_account_id_instead_of_parent_or_name() {
     insert_error(&database, &ErrorInput::provider(base + 3, child, event_at)).await;
     tokio::time::sleep(StdDuration::from_millis(25)).await;
     alerts.poll().await.unwrap();
-    let state = alerts.store.snapshot().unwrap();
+    let state = alerts.store.shared_snapshot().unwrap();
     assert!(state["detection_events"]
         .get(format!("error:{}", base + 2).as_str())
         .is_none());
@@ -2104,13 +2104,13 @@ async fn capacity_unmark_allows_only_newer_evidence_and_persists_across_restart(
     alerts
         .collect(&rows, true, changed_at + Duration::seconds(1))
         .unwrap();
-    let state = alerts.store.snapshot().unwrap();
+    let state = alerts.store.shared_snapshot().unwrap();
     assert!(state["detection_events"].get("error:9994001").is_none());
     assert!(state["detection_events"].get("error:9994002").is_some());
     assert_eq!(state["notifications"]["9994001"]["reason"], "mark_changed");
 
     let restarted = CapacityAlerts::new(runtime.db.clone(), &runtime.settings);
-    let restored = restarted.store.snapshot().unwrap();
+    let restored = restarted.store.shared_snapshot().unwrap();
     assert_eq!(restored["marks"]["1"]["marked"], false);
     assert_eq!(restored["marks"]["1"]["changed_at"], datetime(changed_at));
     let delayed = synthetic_provider_row(
@@ -2122,7 +2122,7 @@ async fn capacity_unmark_allows_only_newer_evidence_and_persists_across_restart(
     restarted
         .collect(&[delayed], false, changed_at + Duration::seconds(2))
         .unwrap();
-    let resumed = restarted.store.snapshot().unwrap();
+    let resumed = restarted.store.shared_snapshot().unwrap();
     assert!(resumed["detection_events"].get("error:9994003").is_none());
     assert_eq!(
         alerts
@@ -2189,7 +2189,7 @@ async fn capacity_mark_and_state_transaction_serialize_updates() {
     release_sender.send(()).unwrap();
     guarded.join().unwrap();
     assert_eq!(marking.join().unwrap()["marked"], true);
-    assert!(alerts.store.snapshot().unwrap()["pending"]
+    assert!(alerts.store.shared_snapshot().unwrap()["pending"]
         .as_object()
         .unwrap()
         .is_empty());
@@ -2269,7 +2269,7 @@ async fn gateway_history_remains_queryable_while_upgrade_clues_are_not_backfille
 
     let alerts = &runtime.detection.capacity;
     alerts.poll().await.unwrap();
-    let initial = alerts.store.snapshot().unwrap();
+    let initial = alerts.store.shared_snapshot().unwrap();
     assert_eq!(initial["cursor"], base + 2);
     assert!(initial["detection_events"].as_object().unwrap().is_empty());
     let expected = mark_view(marked_account, &Value::Null)["version"]
@@ -2292,7 +2292,7 @@ async fn gateway_history_remains_queryable_while_upgrade_clues_are_not_backfille
     insert_error(&database, &new_provider).await;
     tokio::time::sleep(StdDuration::from_millis(25)).await;
     alerts.poll().await.unwrap();
-    let state = alerts.store.snapshot().unwrap();
+    let state = alerts.store.shared_snapshot().unwrap();
     assert!(state["detection_events"]
         .get(format!("error:{}", base + 1).as_str())
         .is_none());
@@ -2337,12 +2337,12 @@ async fn runtime_persists_provider_and_gateway_clues_within_three_seconds_withou
     runtime.start().await.unwrap();
 
     let init_started = Instant::now();
-    while runtime.detection.capacity.store.snapshot().unwrap()["cursor"].is_null()
+    while runtime.detection.capacity.store.shared_snapshot().unwrap()["cursor"].is_null()
         && init_started.elapsed() < StdDuration::from_secs(5)
     {
         tokio::time::sleep(StdDuration::from_millis(25)).await;
     }
-    assert!(!runtime.detection.capacity.store.snapshot().unwrap()["cursor"].is_null());
+    assert!(!runtime.detection.capacity.store.shared_snapshot().unwrap()["cursor"].is_null());
     let base = error_base();
     let event_at = Utc::now() + Duration::milliseconds(10);
     let provider = ErrorInput::provider(base + 1, account, event_at);
@@ -2358,10 +2358,10 @@ async fn runtime_persists_provider_and_gateway_clues_within_three_seconds_withou
     let started = Instant::now();
     let provider_key = format!("error:{}", base + 1);
     let gateway_key = format!("error:{}", base + 2);
-    while (runtime.detection.capacity.store.snapshot().unwrap()["detection_events"]
+    while (runtime.detection.capacity.store.shared_snapshot().unwrap()["detection_events"]
         .get(provider_key.as_str())
         .is_none()
-        || runtime.detection.capacity.store.snapshot().unwrap()["detection_events"]
+        || runtime.detection.capacity.store.shared_snapshot().unwrap()["detection_events"]
             .get(gateway_key.as_str())
             .is_none())
         && started.elapsed() < StdDuration::from_secs(3)
@@ -2369,7 +2369,7 @@ async fn runtime_persists_provider_and_gateway_clues_within_three_seconds_withou
         tokio::time::sleep(StdDuration::from_millis(25)).await;
     }
     let elapsed = started.elapsed();
-    let state = runtime.detection.capacity.store.snapshot().unwrap();
+    let state = runtime.detection.capacity.store.shared_snapshot().unwrap();
     assert!(elapsed <= StdDuration::from_secs(3));
     assert!(state["detection_events"]
         .get(provider_key.as_str())
@@ -2406,17 +2406,17 @@ async fn capacity_duplicate_rescans_preserve_progress_cleanup_and_validation() {
     alerts
         .collect(std::slice::from_ref(&row), true, at)
         .unwrap();
-    let first = alerts.store.snapshot().unwrap();
+    let first = alerts.store.shared_snapshot().unwrap();
     alerts
         .collect(std::slice::from_ref(&row), false, at + Duration::seconds(2))
         .unwrap();
-    assert_eq!(alerts.store.snapshot().unwrap(), first);
+    assert_eq!(alerts.store.shared_snapshot().unwrap(), first);
 
     alerts.store.transaction(|data| {
         data["pending"]["15"] = json!({"id":15,"account_id":1,"account_name":"fixture-account","attempts":0,"created_at":datetime(at),"next_at":datetime(at),"requested_model":"fixture-model","upstream_model":"fixture-model","message":"fixture"});
         Ok(())
     }).unwrap();
-    let pending = alerts.store.snapshot().unwrap();
+    let pending = alerts.store.shared_snapshot().unwrap();
     alerts
         .collect(
             &[synthetic_provider_row(15, 1, "fixture-account", at)],
@@ -2424,16 +2424,16 @@ async fn capacity_duplicate_rescans_preserve_progress_cleanup_and_validation() {
             at,
         )
         .unwrap();
-    assert_eq!(alerts.store.snapshot().unwrap(), pending);
+    assert_eq!(alerts.store.shared_snapshot().unwrap(), pending);
 
     // A known log still advances the forward cursor after an earlier rescan.
     let ahead = synthetic_provider_row(30, 1, "fixture-account", at);
     alerts
         .collect(std::slice::from_ref(&ahead), false, at)
         .unwrap();
-    assert_eq!(alerts.store.snapshot().unwrap()["cursor"], 20);
+    assert_eq!(alerts.store.shared_snapshot().unwrap()["cursor"], 20);
     alerts.collect(&[ahead], true, at).unwrap();
-    assert_eq!(alerts.store.snapshot().unwrap()["cursor"], 30);
+    assert_eq!(alerts.store.shared_snapshot().unwrap()["cursor"], 30);
     // A lower id can arrive late, and old seen entries must still expire.
     alerts
         .collect(
@@ -2442,13 +2442,13 @@ async fn capacity_duplicate_rescans_preserve_progress_cleanup_and_validation() {
             at,
         )
         .unwrap();
-    assert!(alerts.store.snapshot().unwrap()["detection_events"]
+    assert!(alerts.store.shared_snapshot().unwrap()["detection_events"]
         .get("error:10")
         .is_some());
     alerts
         .collect(&[], false, at + Duration::minutes(11))
         .unwrap();
-    let cleaned = alerts.store.snapshot().unwrap();
+    let cleaned = alerts.store.shared_snapshot().unwrap();
     assert!(cleaned["seen"].as_object().unwrap().is_empty());
     assert_eq!(cleaned["cursor"], 30);
     assert_eq!(cleaned["detection_events"].as_object().unwrap().len(), 3);
@@ -2550,7 +2550,7 @@ async fn slow_poll_cache_ignores_non_openai_traffic_catches_out_of_order_commits
     .await;
 
     alerts.poll().await.unwrap();
-    let s1 = alerts.store.snapshot().unwrap();
+    let s1 = alerts.store.shared_snapshot().unwrap();
     assert_eq!(s1["slow_ttft"][openai_id.to_string()]["active"], false);
 
     // Additional Anthropic rows advance global_max_id without touching OpenAI accounts.
@@ -2566,7 +2566,7 @@ async fn slow_poll_cache_ignores_non_openai_traffic_catches_out_of_order_commits
     *now_cell.lock().unwrap() = t0 + Duration::seconds(2);
     alerts.poll().await.unwrap();
     assert_eq!(
-        alerts.store.snapshot().unwrap()["slow_ttft"][openai_id.to_string()]["active"],
+        alerts.store.shared_snapshot().unwrap()["slow_ttft"][openai_id.to_string()]["active"],
         false
     );
 
@@ -2581,7 +2581,7 @@ async fn slow_poll_cache_ignores_non_openai_traffic_catches_out_of_order_commits
     .await;
     *now_cell.lock().unwrap() = t0 + Duration::seconds(4);
     alerts.poll().await.unwrap();
-    let s2 = alerts.store.snapshot().unwrap();
+    let s2 = alerts.store.shared_snapshot().unwrap();
     assert_eq!(s2["slow_ttft"][openai_id.to_string()]["active"], true);
     assert!(
         s2["detection_events"]
@@ -2593,7 +2593,7 @@ async fn slow_poll_cache_ignores_non_openai_traffic_catches_out_of_order_commits
     // At t0 + 15s (< t0 + 4s + 30s TTL), the oldest sample (t0 - 24h + 10s) ages out of the 24h window.
     *now_cell.lock().unwrap() = t0 + Duration::seconds(15);
     alerts.poll().await.unwrap();
-    let s3 = alerts.store.snapshot().unwrap();
+    let s3 = alerts.store.shared_snapshot().unwrap();
     assert_eq!(
         s3["slow_ttft"][openai_id.to_string()]["active"],
         false,
@@ -2617,7 +2617,7 @@ async fn slow_poll_cache_ignores_non_openai_traffic_catches_out_of_order_commits
     .await;
     *now_cell.lock().unwrap() = t0 + Duration::seconds(18);
     alerts.poll().await.unwrap();
-    let s4 = alerts.store.snapshot().unwrap();
+    let s4 = alerts.store.shared_snapshot().unwrap();
     assert_eq!(s4["slow_ttft"][openai_id.to_string()]["active"], true);
 
     sqlx::query("DELETE FROM usage_logs WHERE id >= $1")

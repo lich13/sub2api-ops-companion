@@ -1,5 +1,5 @@
 import { useEffectEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   LoaderCircle,
@@ -24,7 +24,12 @@ import type {
   TemplateMetaEntry,
   TemplatesHeader,
 } from "./protocol";
-import { useDialogFocus } from "./dialogFocus";
+import { ConfirmDiscardDialog } from "./ConfirmDiscardDialog";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
 import { useBackAction } from "./mobile";
 import type { Account } from "./types";
 
@@ -60,10 +65,14 @@ const draftsOf = (value: Config): Record<string, Draft> =>
       },
     ]),
   );
-const profileOf = (value: Profile): Profile => ({
-  whitelist: value.whitelist,
-  mappings: value.mappings,
+export const normalizeProfile = (value: Profile): Profile => ({
+  whitelist: value.whitelist.map((m) => m.trim()),
+  mappings: value.mappings.map((r) => ({
+    source: r.source.trim(),
+    target: r.target.trim(),
+  })),
 });
+const profileOf = (value: Profile): Profile => normalizeProfile(value);
 const running = (batch: Batch | null) =>
   batch?.items.some((item) =>
     ["queued", "running", "checking"].includes(item.status),
@@ -79,7 +88,8 @@ const statusNames: Record<string, string> = {
   superseded: "已替代",
 };
 
-export function validate(profile: Profile) {
+export function validate(rawProfile: Profile) {
+  const profile = normalizeProfile(rawProfile);
   const seen = new Set<string>();
   for (const model of profile.whitelist) {
     if (!/^[A-Za-z0-9._:/-]{1,200}$/.test(model))
@@ -142,7 +152,11 @@ function ProfileEditor({
             aria-label={`${label}白名单 ${index + 1}`}
             value={model}
             disabled={disabled}
-            onChange={(e) => updateWhitelist(index, e.target.value.trim())}
+            onChange={(e) => updateWhitelist(index, e.target.value)}
+            onBlur={(e) => {
+              const trimmed = e.target.value.trim();
+              if (trimmed !== model) updateWhitelist(index, trimmed);
+            }}
           />
           <button
             className="icon-button"
@@ -186,10 +200,21 @@ function ProfileEditor({
               change({
                 ...value,
                 mappings: value.mappings.map((old, i) =>
-                  i === index ? { ...old, source: e.target.value.trim() } : old,
+                  i === index ? { ...old, source: e.target.value } : old,
                 ),
               })
             }
+            onBlur={(e) => {
+              const trimmed = e.target.value.trim();
+              if (trimmed !== rule.source) {
+                change({
+                  ...value,
+                  mappings: value.mappings.map((old, i) =>
+                    i === index ? { ...old, source: trimmed } : old,
+                  ),
+                });
+              }
+            }}
           />
           <ArrowRight size={14} />
           <input
@@ -201,10 +226,21 @@ function ProfileEditor({
               change({
                 ...value,
                 mappings: value.mappings.map((old, i) =>
-                  i === index ? { ...old, target: e.target.value.trim() } : old,
+                  i === index ? { ...old, target: e.target.value } : old,
                 ),
               })
             }
+            onBlur={(e) => {
+              const trimmed = e.target.value.trim();
+              if (trimmed !== rule.target) {
+                change({
+                  ...value,
+                  mappings: value.mappings.map((old, i) =>
+                    i === index ? { ...old, target: trimmed } : old,
+                  ),
+                });
+              }
+            }}
           />
           <button
             className="icon-button"
@@ -288,13 +324,22 @@ export default function AccountTemplates({
     } | null>(null),
     dialogRef = useRef<HTMLElement>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const discardDialog = useRef<HTMLElement>(null);
   useDialogFocus(dialogRef, !confirmDiscard);
-  useDialogFocus(discardDialog, confirmDiscard);
   const dismiss = () => {
     if (dirtyAny) setConfirmDiscard(true);
     else close();
   };
+  const backdrop = useBackdropDismiss(() => {
+    if (!dirtyAny) close();
+  });
+  const [pageVisible, setPageVisible] = useState(
+    () => typeof document === "undefined" || !document.hidden,
+  );
+  useEffect(() => {
+    const sync = () => setPageVisible(!document.hidden);
+    document.addEventListener("visibilitychange", sync);
+    return () => document.removeEventListener("visibilitychange", sync);
+  }, []);
   useBackAction(true, () => {
     if (confirmDiscard) setConfirmDiscard(false);
     else if (deleteId) setDeleteId(null);
@@ -398,7 +443,7 @@ export default function AccountTemplates({
   const dirtyAny = !!creating || Object.keys(drafts).some(dirty);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.isComposing || e.defaultPrevented) return;
+      if (!isCleanEscape(e)) return;
       e.preventDefault();
       e.stopPropagation();
       if (confirmDiscard) setConfirmDiscard(false);
@@ -498,11 +543,12 @@ export default function AccountTemplates({
     pollStep.current = 0;
   }, [batch?.batch_id]);
   useEffect(() => {
-    if (!online || !batch || !running(batch) || batchError) return;
+    if (!online || !pageVisible || !batch || !running(batch) || batchError)
+      return;
     const delay = nextAdaptiveDelay(pollStep.current++);
     const timer = setTimeout(() => void pollBatch(batch.batch_id), delay);
     return () => clearTimeout(timer);
-  }, [online, batch, batchError]);
+  }, [online, pageVisible, batch, batchError]);
   async function apply() {
     if (
       !saved ||
@@ -561,26 +607,26 @@ export default function AccountTemplates({
     setBatchError("");
     await Promise.allSettled([read(), readAccounts()]);
   }
+  const accountNameById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const a of initialAccounts ?? []) map.set(a.id, a.name);
+    for (const a of accounts) map.set(a.id, a.name);
+    return map;
+  }, [accounts, initialAccounts]);
+  const jobByAccount = useMemo(() => {
+    const map = new Map<number, Operation>();
+    for (const item of batch?.items ?? []) map.set(item.account_id, item);
+    return map;
+  }, [batch]);
   function targetName(id: number) {
-    return (
-      accounts.find((a) => a.id === id)?.name ??
-      initialAccounts?.find((a) => a.id === id)?.name ??
-      initialAccount?.name ??
-      "账号"
-    );
+    return accountNameById.get(id) ?? initialAccount?.name ?? "账号";
   }
   const disabled = busy || !online;
   const failure = error || Object.values(accountErrors)[0];
 
   return (
     <>
-      <div
-        className="modal-backdrop"
-        inert={confirmDiscard}
-        onMouseDown={(e) => {
-          if (e.target === e.currentTarget && !dirtyAny) close();
-        }}
-      >
+      <div className="modal-backdrop" inert={confirmDiscard} {...backdrop}>
         <section
           ref={dialogRef}
           className="account-templates-dialog"
@@ -815,7 +861,7 @@ export default function AccountTemplates({
                 <div className="account-template-previews">
                   {targetIds.map((id) => {
                     const value = accountConfigs[id],
-                      job = batch?.items.find((item) => item.account_id === id);
+                      job = jobByAccount.get(id);
                     return (
                       <article key={id} className="account-template-preview">
                         <header>
@@ -904,25 +950,11 @@ export default function AccountTemplates({
           )}
         </section>
       </div>
-      {confirmDiscard && (
-        <div className="modal-backdrop">
-          <section
-            ref={discardDialog}
-            className="discard-groups-dialog"
-            role="alertdialog"
-            aria-modal="true"
-            aria-label="放弃未保存的更改？"
-          >
-            <h2>放弃未保存的更改？</h2>
-            <div>
-              <button onClick={() => setConfirmDiscard(false)}>继续编辑</button>
-              <button className="primary" onClick={close}>
-                放弃修改
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
+      <ConfirmDiscardDialog
+        open={confirmDiscard}
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={close}
+      />
     </>
   );
 }

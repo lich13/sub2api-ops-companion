@@ -918,8 +918,6 @@ checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
  "hashbrown 0.17.1",
- "serde",
- "serde_core",
 ]
 
 [[package]]
@@ -1809,7 +1807,7 @@ dependencies = [
 
 [[package]]
 name = "sub2ops-server"
-version = "0.1.107"
+version = "0.1.108"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1820,7 +1818,6 @@ dependencies = [
  "fs2",
  "futures-util",
  "httpdate",
- "indexmap",
  "libc",
  "lmfpd",
  "regex",

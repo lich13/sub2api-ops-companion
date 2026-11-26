@@ -4,12 +4,7 @@ import Foundation
 public typealias ProxyManagedRow = ProxyRowReply
 public typealias ProxyManagedPage = ProxyPageReply
 public typealias ProxyCredentialsDTO = ProxyLogin
-public typealias ProxyAssociatedAccount = AccountIdentity
-public typealias ProxyConnectionResult = ProxyTestReply
-public typealias ProxyQualityTargetItem = ProxyQualityCheck
 public typealias ProxyQualityResult = ProxyQualityReply
-public typealias ProxyImportResultDTO = ProxyImportReply
-public typealias ProxyImportErrorItem = NamedMessage
 
 extension ProxyRowReply: Identifiable {
     public var protocolName: String { self.protocol }

@@ -75,7 +75,7 @@ extension ProxyManagementTabView {
                         return
                     }
                 } else {
-                    let c: ProxyConnectionResult = try await RustBridge.shared.api("POST", "/proxies/\(row.id)/test")
+                    let c: ProxyTestReply = try await RustBridge.shared.api("POST", "/proxies/\(row.id)/test")
                     out.append((row.name, c.success, c.success ? "连接成功\(c.latency_ms.map { " · \(Int($0.rounded())) ms" } ?? "")" : (c.message.isEmpty ? "连接失败" : c.message)))
                 }
             } catch {
@@ -133,7 +133,7 @@ extension ProxyManagementTabView {
 
     func showAccounts(_ row: ProxyManagedRow) async {
         do {
-            let list: [ProxyAssociatedAccount] = try await RustBridge.shared.api("GET", "/proxy-management/\(row.id)/accounts")
+            let list: [AccountIdentity] = try await RustBridge.shared.api("GET", "/proxy-management/\(row.id)/accounts")
             presentModal(.accounts(row, list))
         } catch {
             errorText = error.localizedDescription
@@ -148,7 +148,7 @@ extension ProxyManagementTabView {
         do {
             let text = try String(contentsOf: url, encoding: .utf8)
             let val = try ProxyDataParser.parseImport(text)
-            let r: ProxyImportResultDTO = try await RustBridge.shared.api(
+            let r: ProxyImportReply = try await RustBridge.shared.api(
                 "POST",
                 "/proxy-management/data",
                 body: .object(["data": val])

@@ -12,7 +12,7 @@
 
 ### 1. Multi-Sub2API Instance Management & Seamless Switching
 - **Multiple Instance Profiles**: Save and manage multiple Sub2API instances with custom aliases and base URLs (e.g., primary, standby, or regional clusters).
-- **OS-Level Credential Isolation**: Administrator API Keys are stored per normalized `base_url` in native system credential stores (**macOS Keychain** / **Android Keystore**) and are never written in plaintext to preference files.
+- **Protected Per-Instance Credentials**: Administrator API Keys are isolated per normalized `base_url`—written atomically with `0600` permissions to `~/Library/Application Support/com.lich13.sub2ops/credentials.json` on **macOS** (bypassing macOS Keychain to eliminate `CDHash` authorization prompts across ad-hoc signed upgrades) and encrypted via non-exportable **Android Keystore** keys on Android—never mixed into UI preferences or frontend storage.
 - **One-Click Passwordless Switching**: Switch instances effortlessly from the desktop sidebar, top bar, Settings page, or the **macOS menu bar quick panel**. Sub2Ops automatically retrieves the stored credential, verifies connectivity, and refreshes live snapshots—falling back to a prefilled connection modal if a key is missing or rotated.
 
 ### 2. Intelligent OAuth & API Key Quota Monitoring
@@ -114,5 +114,5 @@ docker compose up -d --build
 ## Security
 
 - **Minimal Exposure**: Sub2Ops holds administrative scheduling privileges and must never be exposed directly to the public internet. Bind only to loopback or internal container networks behind a TLS reverse proxy.
-- **Credential Protection**: Server state and config files (`USAGE_QUERY_STATE_PATH`, `BARK_CONFIG_PATH`) and their lockfiles are written atomically with `0600` permissions. Secrets are never logged or echoed. Client instance API Keys are stored per `base_url` in the OS Keychain / Keystore.
+- **Credential Protection**: Server state and config files (`USAGE_QUERY_STATE_PATH`, `BARK_CONFIG_PATH`) and their lockfiles are written atomically with `0600` permissions. Secrets are never logged or echoed. Client instance API Keys are stored per `base_url` in `0600`-protected `credentials.json` on macOS and in Android Keystore-backed private storage on Android.
 - **Bark SSRF Guards**: Bark HTTPS targets reject non-public literal IP addresses (including IPv4-mapped IPv6 and alternate numeric forms), supporting `api.day.app` and public self-hosted domains while preserving HTTP loopback for local testing.

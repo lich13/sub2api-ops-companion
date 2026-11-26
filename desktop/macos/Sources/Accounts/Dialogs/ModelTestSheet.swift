@@ -492,21 +492,17 @@ public struct ModelTestSheet: View {
                 policyVersion = cur.version
             }
             let trimmedTarget = degradedTarget.trimmingCharacters(in: .whitespacesAndNewlines)
-            let body = DetectionUpdateBody(
-                expected_version: policyVersion,
-                enabled: nil,
-                schedule_mode: nil,
-                interval_minutes: nil,
-                min_interval_minutes: nil,
-                model_id: nil,
-                model_override: nil,
-                verdict_mode: verdictMode,
-                degraded_model_id: verdictMode == "relaxed" ? trimmedTarget : nil
-            )
+            var body: [String: JSONValue] = [
+                "expected_version": .string(policyVersion),
+                "verdict_mode": .string(verdictMode),
+            ]
+            if verdictMode == "relaxed" {
+                body["degraded_model_id"] = .string(trimmedTarget)
+            }
             let updated: ModelDetectionReply = try await RustBridge.shared.api(
                 "PUT",
                 "/accounts/\(account.id)/model-detection",
-                encodable: body
+                body: .object(body)
             )
             policyVersion = updated.version
             savedVerdictMode = updated.verdict_mode ?? verdictMode

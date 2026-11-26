@@ -9,7 +9,7 @@ public struct MainShellView: View {
 
     private var detailAccount: Account? {
         guard let aid = store.detailError?.account_id else { return nil }
-        return store.accounts.first(where: { $0.id == aid })
+        return store.accountById[aid]
     }
 
     public var body: some View {
@@ -104,14 +104,11 @@ public struct MainShellView: View {
                         onClose: { store.closeDetail() }
                     )
                 }
-
+            }
+            .overlay(alignment: .bottom) {
                 if !store.toast.isEmpty {
-                    VStack {
-                        Spacer()
-                        toastBanner
-                            .padding(.bottom, 22)
-                    }
-                    .allowsHitTesting(true)
+                    toastBanner
+                        .padding(.bottom, 22)
                 }
             }
         }

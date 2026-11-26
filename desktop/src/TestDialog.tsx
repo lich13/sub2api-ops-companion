@@ -1,8 +1,19 @@
 import { useEffectEvent } from "react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { LoaderCircle, RefreshCw, Play, Square, X } from "lucide-react";
 import { api, command } from "./bridge";
 import { errorMessage } from "./bridgeError";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
 import {
   fullTime,
   type Account,
@@ -162,7 +173,12 @@ export default function TestDialog({
   const operationId = useRef<string | null>(null);
   const running = useRef(false),
     alive = useRef(true),
-    cancelled = useRef(false);
+    cancelled = useRef(false),
+    dialog = useRef<HTMLElement>(null);
+  useDialogFocus(dialog);
+  const backdrop = useBackdropDismiss(() => {
+    if (!busy) dismiss();
+  });
   const loadModels = useEffectEvent(readModels);
   useEffect(() => {
     alive.current = true;
@@ -215,7 +231,14 @@ export default function TestDialog({
             { id: "compact", label: "Compact" },
           ]
         : [{ id: "default", label: "普通" }];
-  const available = modelsForMode(models, account.platform, mode);
+  const available = useMemo(
+    () => modelsForMode(models, account.platform, mode),
+    [models, account.platform, mode],
+  );
+  const availableIds = useMemo(
+    () => new Set(available.map((item) => item.id)),
+    [available],
+  );
   const standalone = ["search", "tts", "stt", "realtime"].includes(mode);
   const imageModel =
     account.platform === "openai" &&
@@ -470,18 +493,21 @@ export default function TestDialog({
   return (
     <div
       className="modal-backdrop"
+      {...backdrop}
       onKeyDown={(e) => {
-        if (e.key === "Escape" && !e.nativeEvent.isComposing) {
+        if (isCleanEscape(e)) {
           e.stopPropagation();
           dismiss();
         }
       }}
     >
       <section
+        ref={dialog}
         className="test-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="测试连接"
+        onClick={(e) => e.stopPropagation()}
       >
         <header>
           <div>
@@ -582,7 +608,7 @@ export default function TestDialog({
                   }}
                 >
                   <option value="">默认模型</option>
-                  {model && !available.some((item) => item.id === model) && (
+                  {model && !availableIds.has(model) && (
                     <option value={model}>{model}（当前不可用）</option>
                   )}
                   {available.map((m) => (

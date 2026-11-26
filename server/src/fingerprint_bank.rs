@@ -11,7 +11,6 @@ use futures_util::future::BoxFuture;
 use serde_json::{json, Value};
 use sha1::{Digest, Sha1};
 use std::{
-    collections::BTreeSet,
     sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
@@ -72,94 +71,6 @@ fn hex(value: &Value, length: usize) -> bool {
         && string(value)
             .bytes()
             .all(|v| v.is_ascii_digit() || (b'a'..=b'f').contains(&v))
-}
-fn vector(value: &Value, n: usize, predicate: impl Fn(f64) -> bool) -> bool {
-    value.as_array().is_some_and(|v| {
-        v.len() == n
-            && v.iter()
-                .all(|v| v.as_f64().is_some_and(|v| v.is_finite() && predicate(v)))
-    })
-}
-fn matrix(value: &Value, n: usize, dim: usize) -> bool {
-    value
-        .as_array()
-        .is_some_and(|v| v.len() == n && v.iter().all(|row| vector(row, dim, |_| true)))
-}
-pub fn validate(value: &Value) -> Result<()> {
-    let invalid = || Error::new(503, "指纹库数据无效");
-    let models = value["models"].as_array().ok_or_else(invalid)?;
-    let robust = &value["robust"];
-    let method = &value["method"];
-    if value["schema"] != "robust-number-fingerprint-bank"
-        || chrono::DateTime::parse_from_rfc3339(string(&value["built_at"])).is_err()
-        || value["minimum_valid_numbers"] != 80
-        || value["recommended_queries"] != 3
-        || method["range"] != json!([1, 355])
-        || method["alpha"] != 0.5
-        || method["ordered_block_weight"] != 0.25
-        || models.is_empty()
-        || models.len() > 256
-        || robust["robust_ready"] != true
-    {
-        return Err(invalid());
-    }
-    let mut ids = BTreeSet::new();
-    for model in models {
-        for field in ["id", "display_name", "family", "family_name"] {
-            if model[field]
-                .as_str()
-                .is_none_or(|v| v.is_empty() || v.chars().count() > 256)
-            {
-                return Err(invalid());
-            }
-        }
-        if !ids.insert(string(&model["id"]))
-            || !vector(&model["counts"], 355, |v| {
-                (0.0..=9007199254740991.0).contains(&v) && v.trunc() == v
-            })
-        {
-            return Err(invalid());
-        }
-    }
-    if robust["model_order"] != json!(models.iter().map(|m| &m["id"]).collect::<Vec<_>>()) {
-        return Err(invalid());
-    }
-    for (key, dim) in [("hellinger", 355), ("ordered_blocks", 74)] {
-        let feature = &robust[key];
-        let basis = &feature["nuisance_basis"];
-        if !vector(&feature["feature_mean"], dim, |_| true)
-            || !vector(&feature["feature_scale"], dim, |v| v > 0.0)
-            || basis
-                .as_array()
-                .is_none_or(|v| v.len() > dim || !matrix(basis, v.len(), dim))
-            || !matrix(&feature["centroids"], models.len(), dim)
-        {
-            return Err(invalid());
-        }
-    }
-    let ordered = &robust["ordered_blocks"];
-    if ordered["weight"] != 0.25
-        || ordered["environment_centroids"]
-            .as_array()
-            .is_none_or(|env| {
-                env.is_empty()
-                    || env.len() > 256
-                    || !env.iter().all(|v| matrix(v, models.len(), 74))
-            })
-    {
-        return Err(invalid());
-    }
-    for count in ["1", "2", "3"] {
-        let c = &value["calibration"][count];
-        if !c["beta"].as_f64().is_some_and(|v| v.is_finite() && v > 0.0)
-            || !c["cv_accuracy"]
-                .as_f64()
-                .is_some_and(|v| v.is_finite() && (0.0..=1.0).contains(&v))
-        {
-            return Err(invalid());
-        }
-    }
-    Ok(())
 }
 pub fn git_blob_digest(raw: &[u8]) -> String {
     let mut hash = Sha1::new();
@@ -263,7 +174,6 @@ fn persist_bank_state(disk: &mut Value, next: Value) -> Result<()> {
 }
 struct Active {
     version: Value,
-    lazy_snapshot: Arc<std::sync::OnceLock<Arc<(Value, Value)>>>,
     compiled: Arc<modeltrace::CompiledBank>,
     state: Value,
     status: String,
@@ -397,7 +307,6 @@ impl FingerprintBank {
             store,
             active: Arc::new(RwLock::new(Active {
                 version,
-                lazy_snapshot: Arc::new(std::sync::OnceLock::new()),
                 compiled,
                 state,
                 status,
@@ -430,53 +339,14 @@ impl FingerprintBank {
         self.store.evict_cache();
         result
     }
-    pub fn snapshot(&self) -> Arc<(Value, Value)> {
-        let (lazy, version, source) = {
-            let active = self.active.read().unwrap_or_else(|e| e.into_inner());
-            (
-                active.lazy_snapshot.clone(),
-                active.version.clone(),
-                string(&active.state["source"]).to_owned(),
-            )
-        };
-        if let Some(cached) = lazy.get() {
-            return cached.clone();
-        }
-        if source != "bundled" {
-            let loaded = self
-                .store
-                .path()
-                .exists()
-                .then(|| self.store.read_shared().ok())
-                .flatten()
-                .and_then(|s| {
-                    s["active"]["raw_bank"]
-                        .as_str()
-                        .filter(|raw| sha256(raw) == version["sha256"])
-                        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
-                        .filter(|bank| validate(bank).is_ok())
-                });
-            self.store.evict_cache();
-            if let Some(bank) = loaded {
-                return lazy.get_or_init(|| Arc::new((bank, version))).clone();
-            }
-            let (bundled_bank, bundled_version) = modeltrace::bundled().expect("bundled bank");
-            return Arc::new((bundled_bank, bundled_version));
-        }
-        lazy.get_or_init(|| {
-            let (bundled_bank, _) = modeltrace::bundled().expect("bundled bank");
-            Arc::new((bundled_bank, version))
-        })
-        .clone()
-    }
-    pub(crate) fn compiled(&self) -> Arc<modeltrace::CompiledBank> {
+    pub fn compiled(&self) -> Arc<modeltrace::CompiledBank> {
         self.active
             .read()
             .unwrap_or_else(|e| e.into_inner())
             .compiled
             .clone()
     }
-    pub(crate) fn compiled_version(&self) -> (Value, Arc<modeltrace::CompiledBank>) {
+    pub fn compiled_version(&self) -> (Value, Arc<modeltrace::CompiledBank>) {
         let active = self.active.read().unwrap_or_else(|e| e.into_inner());
         (active.version.clone(), active.compiled.clone())
     }
@@ -841,7 +711,6 @@ impl FingerprintBank {
                 active.state = next;
                 if let Some((version, compiled)) = compiled_and_version {
                     active.version = version;
-                    active.lazy_snapshot = Arc::new(std::sync::OnceLock::new());
                     active.compiled = compiled;
                 }
                 active.status = "idle".into();

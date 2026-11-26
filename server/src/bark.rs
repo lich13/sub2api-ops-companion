@@ -256,13 +256,13 @@ pub fn oauth_message(event: &Value) -> (String, String) {
 }
 pub fn credit_message(event: &Value) -> (String, String) {
     let outcome = string(&event["outcome"]);
-    let label = result_label(outcome).unwrap_or("待确认");
+    let label = crate::credit::rules::label_opt(outcome).unwrap_or("待确认");
     let title = if outcome == "restored" {
         "✅ OAuth 用卡成功，已恢复调度".into()
     } else {
         format!(
             "⚠️ OAuth {}",
-            result_label(outcome).unwrap_or("用卡结果待确认")
+            crate::credit::rules::label_opt(outcome).unwrap_or("用卡结果待确认")
         )
     };
     let mut lines = vec![
@@ -320,16 +320,6 @@ pub fn credit_message(event: &Value) -> (String, String) {
     ));
     (title, lines.join("\n"))
 }
-fn result_label(outcome: &str) -> Option<&'static str> {
-    match outcome {
-        "restored" => Some("用卡成功，已恢复调度"),
-        "not_executed" => Some("未执行用卡"),
-        "consume_failed" => Some("用卡明确失败"),
-        "unrecovered" => Some("用卡成功，恢复未完成"),
-        "unknown" => Some("消费结果不确定，禁止重复用卡"),
-        _ => None,
-    }
-}
 #[derive(Clone)]
 pub struct Config {
     pub enabled: bool,
@@ -357,6 +347,7 @@ impl PushResult {
 #[derive(Clone)]
 pub struct Bark {
     pub config: Arc<RwLock<Config>>,
+    pub(crate) wake: Arc<tokio::sync::Notify>,
     client: reqwest::Client,
     settings: Arc<Settings>,
     supervisor: crate::supervision::Supervisor,
@@ -374,6 +365,7 @@ impl Bark {
         };
         Ok(Self {
             config: Arc::new(RwLock::new(config)),
+            wake: Arc::new(tokio::sync::Notify::new()),
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .build()?,
@@ -388,11 +380,14 @@ impl Bark {
             .clone()
     }
     pub fn configure(&self, value: &Value, valid: bool) {
-        let mut config = self.config.write().unwrap_or_else(|e| e.into_inner());
-        config.valid = valid;
-        config.enabled = value["enabled"] == true;
-        config.key = string(&value["device_key"]).into();
-        config.url = string(&value["server_url"]).into();
+        {
+            let mut config = self.config.write().unwrap_or_else(|e| e.into_inner());
+            config.valid = valid;
+            config.enabled = value["enabled"] == true;
+            config.key = string(&value["device_key"]).into();
+            config.url = string(&value["server_url"]).into();
+        }
+        self.wake.notify_waiters();
     }
     pub fn panel(&self) -> Result<Value> {
         let current = self.runtime();

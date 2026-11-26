@@ -13,10 +13,12 @@ use std::{
     sync::LazyLock,
 };
 
-pub static CATALOG: LazyLock<Value> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../resources/sub2api-config.json"))
-        .expect("reviewed configuration catalogue")
-});
+pub(crate) const CATALOG_JSON: &str =
+    include_str!(concat!(env!("OUT_DIR"), "/sub2api-config.compact.json"));
+include!(concat!(env!("OUT_DIR"), "/sub2api-config-paths.rs"));
+
+pub static CATALOG: LazyLock<Value> =
+    LazyLock::new(|| serde_json::from_str(CATALOG_JSON).expect("reviewed configuration catalogue"));
 static FIELDS_BY_PATH: LazyLock<HashMap<&'static str, &'static Value>> = LazyLock::new(|| {
     CATALOG["fields"]
         .as_array()
@@ -81,14 +83,14 @@ pub fn validate_request(payload: &Value) -> Result<()> {
     crate::validation::hex(&payload["runtime_revision"], 64)?;
     let changes = payload["changes"]
         .as_array()
-        .filter(|a| !a.is_empty() && a.len() <= CATALOG["fields"].as_array().unwrap().len())
+        .filter(|a| !a.is_empty() && a.len() <= CATALOG_FIELD_COUNT)
         .ok_or_else(Error::invalid)?;
     let mut paths = std::collections::BTreeSet::new();
     for change in changes {
         crate::validation::fields(change, &["path", "remove", "value"], &["path", "remove"])?;
         let path = string(&change["path"]);
         if !paths.insert(path)
-            || field(path).is_none_or(|f| f["editable"] != true)
+            || EDITABLE_CONFIG_PATHS.binary_search(&path).is_err()
             || !change["remove"].is_boolean()
             || (change["remove"] != true && change.get("value").is_none())
         {

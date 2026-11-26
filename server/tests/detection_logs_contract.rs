@@ -102,7 +102,7 @@ fn relaxed_summary_keeps_its_rule_and_verdict_after_compaction() {
         value["report"] =
             json!({"prediction":"gpt-5.6-luna","decision":"partial","used_outputs":1});
         value["groups"] = json!([{"index":1,"status":"completed","transport_complete":true,"report":value["report"]}]);
-        value["classification"] = sub2ops_server::verdict_policy::classify(&value);
+        value["classification"] = sub2ops_server::model_verdict::classify(&value);
         detection_logs::preserve_summary(&mut value);
         let saved = value["result_summary"].clone();
         assert_eq!(saved["outcome"], "normal");

@@ -122,8 +122,12 @@ extension GroupRecord: Identifiable {
     }
 }
 
-public func computeCurrentGroups(_ groups: [Group], accounts: [Account]) -> [Group] {
-    let members = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0) })
+public func computeCurrentGroups(
+    _ groups: [Group],
+    accounts: [Account],
+    accountById: [Int: Account]? = nil
+) -> [Group] {
+    let members = accountById ?? Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
     let mapped: [Group] = groups.map { group in
         let ordered = group.recent_accounts.filter { call in
             members[call.account_id]?.group_ids.contains(group.id) == true

@@ -5,9 +5,9 @@ use crate::{
     compat::{datetime, digest, integer, operation_versions, parse_datetime, pick, string, truthy},
     detection_quota,
     error::{Error, Result},
-    model_downgrade::{is_downgrade, valid_report},
     model_target,
     model_tests::{ModelTests, ACTIVE},
+    model_verdict::{is_downgrade, valid_report},
     oauth_monitor::Monitor,
     store::Store,
 };
@@ -15,7 +15,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-pub use crate::model_downgrade::LEGACY_TARGET as TARGET;
+pub use crate::model_verdict::LEGACY_TARGET as TARGET;
 pub fn defaults() -> Value {
     json!({
         "enabled":false, "interval_minutes":15, "model_id":crate::settings::DEFAULT_DETECTION_MODEL, "model_override":null,
@@ -48,8 +48,7 @@ fn validate(value: &Value) -> Result<()> {
         return Err(Error::new(503, "模型检测状态无效"));
     }
     for control in value["accounts"].as_object().unwrap().values() {
-        crate::verdict_policy::validate(control)
-            .map_err(|_| Error::new(503, "模型判定设置无效"))?;
+        crate::model_verdict::validate(control).map_err(|_| Error::new(503, "模型判定设置无效"))?;
         if control["enabled"].as_bool().is_none()
             || control["hold"].as_bool().is_none()
             || control["generation"].as_i64().is_none()
@@ -131,7 +130,7 @@ impl Detection {
     }
     fn effective_version(value: &Value, model: &str) -> String {
         let mut effective = value.clone();
-        crate::verdict_policy::copy(value, &mut effective);
+        crate::model_verdict::copy(value, &mut effective);
         effective["model_id"] = model.into();
         effective
             .as_object_mut()
@@ -247,7 +246,7 @@ impl Detection {
         value["model_override"] = value["model_override"].clone();
         value["global_model_id"] = global_model.into();
         let policy = value.clone();
-        crate::verdict_policy::copy(&policy, &mut value);
+        crate::model_verdict::copy(&policy, &mut value);
         value["account_id"] = id.into();
         let platform = &config["model_detection_platforms"][string(&row["platform"])];
         value["engine"] = platform["engine"].clone();
@@ -328,12 +327,11 @@ impl Detection {
                 {
                     return Err(Error::new(409, "检测设置已变化，请重新读取"));
                 }
-                if crate::verdict_policy::relaxed(value)
-                    != crate::verdict_policy::relaxed(&candidate)
-                    || crate::verdict_policy::target(value)
-                        != crate::verdict_policy::target(&candidate)
+                if crate::model_verdict::relaxed(value) != crate::model_verdict::relaxed(&candidate)
+                    || crate::model_verdict::target(value)
+                        != crate::model_verdict::target(&candidate)
                 {
-                    crate::verdict_policy::copy(&candidate, value);
+                    crate::model_verdict::copy(&candidate, value);
                     value["generation"] = json!(integer(&value["generation"]).unwrap_or(0) + 1);
                     value["pending_request_id"] = Value::Null;
                 }
@@ -398,7 +396,7 @@ impl Detection {
                 .as_object_mut()
                 .unwrap()
                 .extend(changes.as_object().unwrap().clone());
-            crate::verdict_policy::copy(&candidate, value);
+            crate::model_verdict::copy(&candidate, value);
             Ok(())
         })?;
         if crate::detection_schedule::smart(&candidate) && request["enabled"] == true {
@@ -493,6 +491,21 @@ impl Detection {
         if clues.is_empty() {
             return Ok(());
         }
+        if status == "ignored" {
+            let snap = self.capacity.store.shared_snapshot()?;
+            let now = self.now();
+            let all_recent = clues.iter().all(|key| {
+                let existing = &snap["detection_clues"][key.as_str()];
+                existing["status"] == "ignored"
+                    && existing["reason"] == reason
+                    && existing["job_id"].as_str() == job
+                    && parse_datetime(&existing["updated_at"])
+                        .is_some_and(|t| now - t < Duration::seconds(30))
+            });
+            if all_recent {
+                return Ok(());
+            }
+        }
         self.capacity.store.transaction(|data| {
             for field in ["detection_clues", "notifications"] {
                 if !data[field].is_object() {
@@ -506,7 +519,9 @@ impl Detection {
                     "job_id": job,
                     "updated_at": datetime(self.now()),
                 });
-                data["detection_clues"][key.as_str()] = record.clone();
+                let clues_map = data["detection_clues"].as_object_mut().unwrap();
+                clues_map.shift_remove(key.as_str());
+                clues_map.insert((*key).clone(), record.clone());
                 if let Some(key) = key.strip_prefix("error:") {
                     data["notifications"][key] = record;
                 }
@@ -635,12 +650,12 @@ impl Detection {
                 .load(self.tests.lm_bank.revision()?)
                 .await
                 .is_ok_and(|bank| {
-                    !crate::verdict_policy::relaxed(&value)
-                        || crate::verdict_policy::lm_contains(&bank, &value)
+                    !crate::model_verdict::relaxed(&value)
+                        || crate::model_verdict::lm_contains(&bank, &value)
                 })
         } else {
             let compiled = self.tests.bank.compiled();
-            if crate::verdict_policy::relaxed(&value) {
+            if crate::model_verdict::relaxed(&value) {
                 compiled.contains_policy(&value)
             } else {
                 compiled.contains_exact(TARGET)
@@ -702,8 +717,8 @@ impl Detection {
     }
     pub async fn verdict(&self, job: &Value, report: &Value) -> Result<Value> {
         // The runner supplies either the independent first group or the final aggregate.
-        let degraded = if crate::lm_verdict::is_lm(job) || crate::verdict_policy::relaxed(job) {
-            crate::verdict_policy::classify(job)["outcome"] == "degraded"
+        let degraded = if crate::model_verdict::is_lm(job) || crate::model_verdict::relaxed(job) {
+            crate::model_verdict::classify(job)["outcome"] == "degraded"
         } else {
             valid_report(report)
                 && is_downgrade(
@@ -861,9 +876,9 @@ pub fn detection_request(payload: &Value) -> Result<Value> {
     }
     let mut value = payload.clone();
     if let Some(model) = value.get_mut("degraded_model_id") {
-        *model = crate::lm_verdict::normalize(model.as_str().ok_or_else(Error::invalid)?).into();
+        *model = crate::model_verdict::normalize(model.as_str().ok_or_else(Error::invalid)?).into();
     }
-    crate::verdict_policy::validate(&value)?;
+    crate::model_verdict::validate(&value)?;
     if value.get("enabled").is_none() {
         if !["verdict_mode", "degraded_model_id"]
             .iter()

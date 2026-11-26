@@ -4,7 +4,7 @@ use sub2ops_server::store::{valid_object, Store};
 
 pub fn seed(root: &Path, checked_at: chrono::DateTime<chrono::Utc>) {
     let raw = include_str!("../../resources/modeltrace/unified_bank.json");
-    let (_, mut version) = sub2ops_server::modeltrace::bundled().unwrap();
+    let (_, mut version) = sub2ops_server::modeltrace::bundled_compiled().unwrap();
     let manifest = sub2ops_server::modeltrace::manifest();
     for key in ["core", "challenge"] {
         version[format!("{key}_blob")] = manifest["files"][key]["gitBlob"].clone();

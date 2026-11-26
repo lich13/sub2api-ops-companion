@@ -452,26 +452,19 @@ pub fn apply_native(row: &Value, usage: &mut Value, data: &Value, at: DateTime<U
 
 impl Runtime {
     pub(crate) async fn usage_row(&self, id: i64, include_account: bool) -> Result<Value> {
-        use crate::sql::USAGE_PARENT_JOIN as PARENT;
-        static ACCOUNT_SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-            crate::sql::USAGE_ACCOUNT_SQL.replace("{filter}", "AND a.id=$1")
-        });
-        static USAGE_SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-            format!(
-            "SELECT a.id,a.platform,a.type,a.extra,a.credentials,p.id AS effective_parent_id,p.credentials AS parent_credentials,
-             nullif(aj.jb->>'parent_account_id','')::bigint AS parent_account_id,
-             coalesce(nullif(a.credentials->>'plan_type',''),nullif(a.credentials->>'chatgpt_plan_type',''),a.extra->>'plan_type') AS quota_plan_type,
-             a.credentials->>'subscription_tier' AS quota_grok_tier,a.credentials->>'entitlement_status' AS quota_grok_entitlement,
-             a.credentials->>'account_mode' AS usage_account_mode,a.credentials->>'base_url' AS usage_base_url,
-             aj.jb->>'session_window_end' AS usage_session_window_end,aj.jb->>'session_window_status' AS usage_session_window_status
-             FROM accounts a CROSS JOIN LATERAL (SELECT to_jsonb(a) AS jb) aj{PARENT}WHERE a.id=$1 AND a.deleted_at IS NULL")
-        });
         self.db
-            .one(
-                if include_account {
-                    &ACCOUNT_SQL
-                } else {
-                    &USAGE_SQL
+            .one_with_columns(
+                |cols| {
+                    if include_account {
+                        crate::sql::build_account_sql(
+                            cols,
+                            "a.credentials, p.id AS effective_parent_id, p.credentials AS parent_credentials, ",
+                            true,
+                            "AND a.id=$1",
+                        )
+                    } else {
+                        crate::sql::build_usage_only_sql(cols)
+                    }
                 },
                 &[id.into()],
             )

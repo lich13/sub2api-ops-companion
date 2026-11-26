@@ -171,14 +171,16 @@ impl ProxyDiagnostics {
                 let weak = Arc::downgrade(&self.running);
                 let task_identity = identity.clone();
                 if let Err(error) = self.tasks.spawn(async move {
+                    let _cleanup = crate::supervision::on_drop(move || {
+                        if let Some(running) = weak.upgrade() {
+                            running
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .remove(&task_identity);
+                        }
+                    });
                     let result = future.await;
                     let _ = send.send(Some(result));
-                    if let Some(running) = weak.upgrade() {
-                        running
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .remove(&task_identity);
-                    }
                 }) {
                     running.remove(&identity);
                     return Err(error);

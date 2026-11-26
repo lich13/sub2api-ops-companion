@@ -5,7 +5,7 @@ use crate::{
     oauth_admission,
     oauth_monitor::Monitor,
     oauth_queries::{QueryOptions, Source},
-    quota, recovery_events, recovery_policy, recovery_rules,
+    quota, recovery_events, recovery_rules,
 };
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{json, Value};
@@ -425,7 +425,7 @@ impl Monitor {
             Err(error) => return Err(error),
         };
         let config = self.config.current()?;
-        let Some(method) = recovery_policy::intent_method(&config, id, &intent) else {
+        let Some(method) = recovery_rules::intent_method(&config, id, &intent) else {
             return Ok(json!({"skipped":true}));
         };
         if !eligible(&row, meta, self.now())
@@ -610,18 +610,18 @@ mod eligibility_tests {
         let config = json!({"oauth_early_reset_enabled":true,"oauth_recovery_monitor_enabled":false,"oauth_recovery_connection_account_ids":[],"oauth_recovery_model_account_ids":[1]});
         let intent = json!({"kind":"early_reset"});
         assert_eq!(
-            recovery_policy::intent_method(&config, 1, &intent),
+            recovery_rules::intent_method(&config, 1, &intent),
             Some("model")
         );
         assert_eq!(
-            recovery_policy::intent_method(&config, 2, &intent),
+            recovery_rules::intent_method(&config, 2, &intent),
             Some("connection")
         );
         let mut off = config;
         off["oauth_early_reset_enabled"] = false.into();
-        assert_eq!(recovery_policy::intent_method(&off, 1, &intent), None);
+        assert_eq!(recovery_rules::intent_method(&off, 1, &intent), None);
         assert_eq!(
-            recovery_policy::intent_method(
+            recovery_rules::intent_method(
                 &off,
                 1,
                 &json!({"kind":"early_reset","waiting_reason":"model_verification_pending"})

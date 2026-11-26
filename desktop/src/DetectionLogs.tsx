@@ -5,7 +5,11 @@ import { DefaultModelId } from "./protocol";
 import { engineName } from "./modelTestTypes";
 import { fullTime } from "./types";
 import { useBackAction } from "./mobile";
-import { useDialogFocus } from "./dialogFocus";
+import {
+  isCleanEscape,
+  useBackdropDismiss,
+  useDialogFocus,
+} from "./dialogFocus";
 import { useDetectionLogFeed, type DetectionLog } from "./useDetectionLogFeed";
 import "./detection-logs.css";
 
@@ -370,6 +374,7 @@ function Detail({
     generation.current = generation.current + 1;
     close();
   };
+  const backdrop = useBackdropDismiss(dismiss);
   useBackAction(true, dismiss);
   useEffect(() => {
     const epoch = ++generation.current;
@@ -397,7 +402,7 @@ function Detail({
     };
   }, [row.job_id, online]);
   return (
-    <div className="modal-backdrop" onClick={dismiss}>
+    <div className="modal-backdrop" {...backdrop}>
       <section
         ref={dialog}
         className="model-detection-dialog detection-log-detail"
@@ -406,7 +411,7 @@ function Detail({
         aria-label="自动检测日志详情"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
-          if (e.key === "Escape") {
+          if (isCleanEscape(e)) {
             e.stopPropagation();
             dismiss();
           }

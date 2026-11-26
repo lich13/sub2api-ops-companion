@@ -63,43 +63,6 @@ public struct ReauthorizeAccountSheet: View {
         return (codes[0], states.first?.isEmpty == false ? states.first : nil)
     }
 
-    public static func buildTokenIdentity(platform: String, token: [String: JSONValue], fallbackRefresh: String? = nil) -> [String: JSONValue] {
-        let credentialKeys = [
-            "access_token", "refresh_token", "id_token", "token_type", "expires_at", "scope",
-            "email", "email_address", "org_uuid", "account_uuid", "chatgpt_account_id", "chatgpt_user_id",
-            "organization_id", "plan_type", "subscription_expires_at", "client_id", "project_id",
-            "oauth_type", "tier_id", "sub", "team_id", "subscription_tier", "entitlement_status",
-        ]
-        var credentials: [String: JSONValue] = [:]
-        for k in credentialKeys {
-            if let v = token[k], v != .null, v.stringValue != "" {
-                credentials[k] = v
-            }
-        }
-        if let fallbackRefresh, !fallbackRefresh.isEmpty, credentials["refresh_token"] == nil {
-            credentials["refresh_token"] = .string(fallbackRefresh)
-        }
-        if ["gemini", "antigravity"].contains(platform), let exp = credentials["expires_at"] {
-            if let i = exp.intValue { credentials["expires_at"] = .string(String(i)) }
-            else if let d = exp.doubleValue { credentials["expires_at"] = .string(String(d)) }
-        }
-        var extra: [String: JSONValue] = [:]
-        if platform == "gemini", let nested = token["extra"]?.objectValue {
-            for k in ["drive_storage_limit", "drive_storage_usage", "drive_tier_updated_at"] {
-                if let v = nested[k] { extra[k] = v }
-            }
-        }
-        for k in ["email", "email_address", "org_uuid", "account_uuid", "subscription_tier", "entitlement_status", "name", "privacy_mode"] {
-            if let v = token[k], v != .null, v.stringValue != "" {
-                extra[k] = v
-            }
-        }
-        return [
-            "credentials": .object(credentials),
-            "extra": .object(extra),
-        ]
-    }
-
     public var body: some View {
         LinearModalCard(
             title: "重新授权",
@@ -238,18 +201,18 @@ public struct ReauthorizeAccountSheet: View {
         session = nil
         defer { busy = false }
         do {
-            let settings: [String: JSONValue] = try await RustBridge.shared.api("GET", "/accounts/\(account.id)/settings")
-            let pid = settings["proxy_id"]?.intValue.map(Int.init)
+            let settings: AccountSettingsReply = try await RustBridge.shared.api("GET", "/accounts/\(account.id)/settings")
+            let pid = settings.proxy_id
             var authBody: [String: JSONValue] = [:]
             if let pid, pid > 0 { authBody["proxy_id"] = .int(Int64(pid)) }
-            let raw: [String: JSONValue] = try await RustBridge.shared.api(
+            let raw: TokenAuthorization = try await RustBridge.shared.api(
                 "POST",
                 "/account-creation/auth/openai/authorize",
                 body: .object(authBody)
             )
-            let urlStr = raw["auth_url"]?.stringValue ?? ""
-            let sid = raw["session_id"]?.stringValue ?? ""
-            let st = raw["state"]?.stringValue ?? URLComponents(string: urlStr)?.queryItems?.first(where: { $0.name == "state" })?.value
+            let urlStr = raw.auth_url
+            let sid = raw.session_id
+            let st = raw.state ?? URLComponents(string: urlStr)?.queryItems?.first(where: { $0.name == "state" })?.value
             session = AuthSessionInfo(auth_url: urlStr, session_id: sid, state: st, proxy_id: pid)
         } catch {
             self.error = "无法生成授权链接，请重新尝试"
@@ -286,20 +249,23 @@ public struct ReauthorizeAccountSheet: View {
                 "/account-creation/auth/openai/exchange",
                 body: .object(exchangeBody)
             )
-            let identity = Self.buildTokenIdentity(platform: "openai", token: token)
-            guard identity["credentials"]?.objectValue?["access_token"]?.stringValue?.isEmpty == false else {
+            let identity = AccountCreationFormDraft.extractTokenIdentity(platform: "openai", token: token)
+            guard identity.credentials["access_token"]?.stringValue?.isEmpty == false else {
                 throw RustBridgeError("missing_token")
             }
             applying = true
-            let applied: [String: JSONValue] = try await RustBridge.shared.api(
+            let applied: VerifiedAccountReply = try await RustBridge.shared.api(
                 "POST",
                 "/accounts/\(account.id)/apply-oauth-credentials",
-                body: .object(identity)
+                body: .object([
+                    "credentials": .object(identity.credentials),
+                    "extra": .object(identity.extra),
+                ])
             )
-            guard applied["verified"]?.boolValue == true else {
+            guard applied.verified else {
                 throw RustBridgeError("授权保存结果未确认，请刷新账号核对；未重放请求")
             }
-            let status = applied["status"]?.stringValue ?? "active"
+            let status = applied.status.isEmpty ? "active" : applied.status
             store.refresh()
             store.showToast(status == "active" ? "\(account.name)：重新授权完成" : "\(account.name)：授权已保存，账号状态 \(status)")
             onClose()

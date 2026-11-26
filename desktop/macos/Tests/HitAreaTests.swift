@@ -168,5 +168,38 @@ struct HitAreaTests {
         let afterChildren = window.childWindows?.count ?? 0
         #expect(afterChildren > beforeChildren)
     }
+
+    @Test("Visible toast banner does not block clicks outside its own frame")
+    @MainActor
+    func toastOverlayDoesNotInterceptWindowClicks() {
+        let store = AppStore()
+        defer { store.stop() }
+        store.ready = true
+        store.page = .accounts
+        store.applyViewState(
+            ViewState(
+                connected: true,
+                online: false,
+                snapshot: Snapshot(
+                    observed_at: "2026-09-30T08:05:12Z",
+                    accounts: [Account(id: 7, name: "Codex-Prod-01")],
+                    groups: [Group(id: 1, name: "Codex 主力组")]
+                ),
+                preferences: Preferences(base_url: "https://prod.example.invalid/sub2ops")
+            )
+        )
+        store.showToast("已复制地址")
+        let window = SyntheticClick.host(MainShellView(store: store), size: CGSize(width: 1310, height: 860))
+        defer { SyntheticClick.teardown(window) }
+
+        let x = DS.sidebarCompactWidth - 22
+        var visited: Set<AppPage> = []
+        for y in stride(from: CGFloat(440), through: 152, by: -8) {
+            SyntheticClick.click(window, at: CGPoint(x: x, y: y))
+            visited.insert(store.page)
+            if visited.count == AppPage.allCases.count { break }
+        }
+        #expect(visited == Set(AppPage.allCases))
+    }
 }
 }

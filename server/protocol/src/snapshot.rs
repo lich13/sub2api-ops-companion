@@ -1,4 +1,4 @@
-use crate::dto::Integer;
+use crate::dto::{DetectionResult, Integer, ScheduleMode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use typeshare::typeshare;
@@ -86,13 +86,6 @@ pub enum RecoveryKindWire {
     QuotaRecovery,
     ResetCredit,
     ConnectionTest,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ScheduleModeWire {
-    Fixed,
-    Smart,
 }
 
 #[typeshare]
@@ -230,7 +223,7 @@ pub struct DegradationMarkRecord {
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ModelDetectionSummaryRecord {
-    pub schedule_mode: Option<ScheduleModeWire>,
+    pub schedule_mode: Option<ScheduleMode>,
     pub min_interval_minutes: Option<Integer>,
     pub effective_interval_minutes: Option<Integer>,
     pub recent_request_count: Option<Integer>,
@@ -242,7 +235,7 @@ pub struct ModelDetectionSummaryRecord {
     pub next_at: Option<String>,
     pub status: String,
     pub reason: Option<String>,
-    pub last_result: Option<ModelDetectionLastResultRecord>,
+    pub last_result: Option<DetectionResult>,
 }
 
 #[typeshare]
@@ -368,14 +361,6 @@ pub struct RecoveryResetCreditRecord {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ModelDetectionLastResultRecord {
-    pub status: Option<String>,
-    pub report: Option<ModelDetectionLastReportRecord>,
-    pub completed_at: Option<String>,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UsageStatsRecord {
     pub requests: Integer,
     pub tokens: Integer,
@@ -421,12 +406,6 @@ pub struct ResetCreditsInfoRecord {
     pub available: Option<Integer>,
     pub expires_at: Vec<String>,
     pub observed_at: Option<String>,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ModelDetectionLastReportRecord {
-    pub prediction_name: Option<String>,
 }
 
 #[typeshare]

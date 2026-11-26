@@ -7,6 +7,7 @@ import {
   X,
 } from "lucide-react";
 import { command } from "./bridge";
+import { errorMessage } from "./bridgeError";
 import { subscribeAppUpdate } from "./tauriEvents";
 import type { AppUpdateSnapshot } from "./types";
 import { version as appVersion } from "../package.json";
@@ -37,7 +38,22 @@ export default function ClientUpdateCard({
       const initial = await command("get_app_update_state");
       if (disposed) unlisten();
       else if (initial) setUpdate(initial);
-    })().catch(() => {});
+    })().catch((error) => {
+      if (disposed) return;
+      const message = errorMessage(error);
+      if (message === "请在 Sub2Ops 客户端中打开") return;
+      setUpdate(
+        (prev) =>
+          prev ?? {
+            phase: "error",
+            current_version: appVersion,
+            latest_version: null,
+            downloaded_bytes: 0,
+            total_bytes: null,
+            message,
+          },
+      );
+    });
     return () => {
       disposed = true;
       unlisten();

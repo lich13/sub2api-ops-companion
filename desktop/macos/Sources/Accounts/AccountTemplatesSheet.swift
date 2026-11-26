@@ -569,7 +569,7 @@ public struct AccountTemplatesSheet: View {
             }
 
             ForEach(targetIds, id: \.self) { id in
-                let accName = store.accounts.first(where: { $0.id == id })?.name ?? targetAccount?.name ?? "账号"
+                let accName = store.accountById[id]?.name ?? targetAccount?.name ?? "账号"
                 let entry = accountConfigs[id]
                 let job = batch?.items.first(where: { $0.account_id == id })
 

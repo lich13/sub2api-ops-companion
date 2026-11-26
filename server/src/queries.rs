@@ -6,7 +6,7 @@ use crate::{
     db::{Database, Param},
     error::{Error, Result},
     oauth_state::OAuthState,
-    security::{clean, safe_error, safe_error_body},
+    security::{clean, safe_error, safe_error_body_limited},
     sql,
 };
 use chrono::{DateTime, Utc};
@@ -299,12 +299,13 @@ pub fn error_dto(row: &Value, detail: bool) -> Value {
     )
     .into();
     if detail {
-        let content = safe_error_body(if truthy(&row["upstream_error_detail"]) {
-            &row["upstream_error_detail"]
-        } else {
-            &row["error_body"]
-        });
-        value["content_limited"] = content.contains("...").into();
+        let (content, limited) =
+            safe_error_body_limited(if truthy(&row["upstream_error_detail"]) {
+                &row["upstream_error_detail"]
+            } else {
+                &row["error_body"]
+            });
+        value["content_limited"] = limited.into();
         value["content"] = content.into();
     }
     value
@@ -332,24 +333,25 @@ pub struct Queries {
 }
 impl Queries {
     pub async fn accounts(&self) -> Result<Vec<Value>> {
-        static SQL: std::sync::LazyLock<String> =
-            std::sync::LazyLock::new(|| sql::DESKTOP_ACCOUNT_SQL.replace("{filter}", ""));
-        self.db.all(&SQL, &[]).await
+        self.db
+            .all_with_columns(sql::desktop_accounts_sql, &[])
+            .await
     }
     pub async fn account(&self, id: i64) -> Result<Value> {
-        static SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-            sql::DESKTOP_ACCOUNT_SQL.replace("{filter}", "AND a.id=$1")
-        });
         self.db
-            .one(&SQL, &[id.into()])
+            .one_with_columns(
+                |cols| sql::build_account_sql(cols, "", false, "AND a.id=$1"),
+                &[id.into()],
+            )
             .await?
             .ok_or_else(|| Error::new(404, "账号不存在"))
     }
     pub(crate) async fn private_account(&self, id: i64) -> Result<Value> {
-        static SQL: std::sync::LazyLock<String> =
-            std::sync::LazyLock::new(|| sql::MODEL_ACCOUNT_SQL.replace("{filter}", "AND a.id=$1"));
         self.db
-            .one(&SQL, &[id.into()])
+            .one_with_columns(
+                |cols| sql::build_account_sql(cols, "a.credentials, ", false, "AND a.id=$1"),
+                &[id.into()],
+            )
             .await?
             .ok_or_else(|| Error::new(404, "账号不存在"))
     }
@@ -378,11 +380,9 @@ impl Queries {
             accounts,
         ))
     }
-    fn error_filter(category: Option<&str>) -> Result<&'static str> {
+    fn validate_error_category(category: Option<&str>) -> Result<()> {
         match category {
-            None => Ok(sql::ERRORS_ERROR_WHERE),
-            Some("degradation") => Ok(sql::ERRORS_DEGRADATION_WHERE),
-            Some("other") => Ok(sql::ERRORS_OTHER_WHERE),
+            None | Some("degradation") | Some("other") => Ok(()),
             _ => Err(Error::new(422, "未知错误分类")),
         }
     }
@@ -393,17 +393,25 @@ impl Queries {
         limit: usize,
         category: Option<&str>,
     ) -> Result<Value> {
-        let filter = Self::error_filter(category)?;
-        let query = format!("SELECT {} FROM ops_error_logs e LEFT JOIN accounts a ON a.id=e.account_id LEFT JOIN groups g ON g.id=e.group_id WHERE {filter} AND ($1::bigint IS NULL OR e.account_id=$1) AND ($2::bigint IS NULL OR e.id<$2) ORDER BY e.id DESC LIMIT $3",sql::DESKTOP_ERROR_FIELDS);
+        Self::validate_error_category(category)?;
+        let mut params: Vec<Param> = Vec::with_capacity(3);
+        if let Some(aid) = account {
+            params.push(aid.into());
+        }
+        if let Some(cursor) = before {
+            params.push(cursor.into());
+        }
+        params.push(((limit + 1) as i64).into());
+        let has_account = account.is_some();
+        let has_before = before.is_some();
         let rows = self
             .db
-            .all(
-                &query,
-                &[
-                    Param::Int(account),
-                    Param::Int(before),
-                    ((limit + 1) as i64).into(),
-                ],
+            .all_with_columns(
+                |cols| {
+                    sql::errors_list_sql(cols, category, has_account, has_before)
+                        .expect("validated error category")
+                },
+                &params,
             )
             .await?;
         Ok(
@@ -411,11 +419,30 @@ impl Queries {
         )
     }
     pub async fn error_detail(&self, id: i64, category: Option<&str>) -> Result<Value> {
-        let filter = Self::error_filter(category)?;
-        let query = format!("SELECT {},e.error_body,e.upstream_error_detail FROM ops_error_logs e LEFT JOIN accounts a ON a.id=e.account_id LEFT JOIN groups g ON g.id=e.group_id WHERE {filter} AND e.id=$1",sql::DESKTOP_ERROR_FIELDS);
+        Self::validate_error_category(category)?;
         let row = self
             .db
-            .one(&query, &[id.into()])
+            .one_with_columns(
+                |cols| {
+                    let filter = sql::category_error_where(category, cols)
+                        .expect("validated error category");
+                    let body = if cols.error_body {
+                        "e.error_body"
+                    } else {
+                        "NULL::text AS error_body"
+                    };
+                    let detail = if cols.error_upstream_detail {
+                        "e.upstream_error_detail"
+                    } else {
+                        "NULL::text AS upstream_error_detail"
+                    };
+                    std::borrow::Cow::Owned(format!(
+                        "SELECT {},{body},{detail} FROM ops_error_logs e LEFT JOIN accounts a ON a.id=e.account_id LEFT JOIN groups g ON g.id=e.group_id WHERE {filter} AND e.id=$1",
+                        sql::desktop_error_fields(cols)
+                    ))
+                },
+                &[id.into()],
+            )
             .await?
             .ok_or_else(|| Error::new(404, "错误记录不存在或已过保留期"))?;
         Ok(error_dto(&row, true))
