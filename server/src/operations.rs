@@ -1720,7 +1720,15 @@ impl Operations {
                 .guard("operation", queue.run(&task_id))
                 .await;
             if let Some(Err(error)) = result {
-                let _ = queue.run_error(&task_id, error);
+                if let Err(write_error) = queue.run_error(&task_id, error) {
+                    tracing::warn!(
+                        category = "operations",
+                        job_id = %task_id,
+                        status = write_error.status.as_u16(),
+                        reason = %crate::security::safe_error(&write_error.detail, 200),
+                        "operation_error_persist_failed"
+                    );
+                }
             }
         });
         tasks.insert(jid, task);
@@ -1764,20 +1772,55 @@ impl Operations {
             let _permit = permit;
             let result = queue.actions.supervisor.guard("native_batch", queue.run_native(&task_id)).await;
             if let Some(Err(error)) = result {
-                if let Ok(data) = queue.store.read_shared() {
-                    for jid in data["batches"][&task_id]["job_ids"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                    {
-                        let status = string(&data["jobs"][string(jid)]["status"]);
-                        if matches!(status, "queued" | "running") {
-                            let _=queue.update(string(jid),json!({"status":if status=="running" {"checking"} else {"needs_confirmation"},"reason":crate::security::safe_error(&error.detail,600)}));
+                match queue.store.read_shared() {
+                    Ok(data) => {
+                        for jid in data["batches"][&task_id]["job_ids"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                        {
+                            let jid = string(jid);
+                            let status = string(&data["jobs"][jid]["status"]);
+                            if matches!(status, "queued" | "running") {
+                                if let Err(write_error) = queue.update(
+                                    jid,
+                                    json!({
+                                        "status": if status == "running" { "checking" } else { "needs_confirmation" },
+                                        "reason": crate::security::safe_error(&error.detail, 600),
+                                    }),
+                                ) {
+                                    tracing::warn!(
+                                        category = "operations",
+                                        batch_id = %task_id,
+                                        job_id = %jid,
+                                        status = write_error.status.as_u16(),
+                                        reason = %crate::security::safe_error(&write_error.detail, 200),
+                                        "native_batch_error_persist_failed"
+                                    );
+                                }
+                            }
                         }
+                    }
+                    Err(read_error) => {
+                        tracing::warn!(
+                            category = "operations",
+                            batch_id = %task_id,
+                            status = read_error.status.as_u16(),
+                            reason = %crate::security::safe_error(&read_error.detail, 200),
+                            "native_batch_error_read_failed"
+                        );
                     }
                 }
             }
-            let _ = queue.refresh_chunks(&task_id);
+            if let Err(refresh_error) = queue.refresh_chunks(&task_id) {
+                tracing::warn!(
+                    category = "operations",
+                    batch_id = %task_id,
+                    status = refresh_error.status.as_u16(),
+                    reason = %crate::security::safe_error(&refresh_error.detail, 200),
+                    "native_batch_chunk_refresh_failed"
+                );
+            }
             queue.backend.invalidate_snapshot();
         });
         tasks.insert(bid, task);
@@ -1887,12 +1930,45 @@ impl Operations {
             .scope(context, self.dispatch(&row, &job, &key))
             .await?;
         let uncertain = connection_test(&job) && truthy(&result["uncertain"]);
-        if scheduled && self.retry_scheduled(&job, &result)? {
+        if scheduled && self.retry_scheduled(&job, &result).await? {
             return Ok(());
         }
-        self.update(jid,json!({"status":if uncertain {"needs_confirmation"} else {"completed"},"reason":if uncertain {result.get("error").cloned().unwrap_or(json!(""))} else {json!("")},"result":result}))?;
+        self.persist_receipt(
+            jid,
+            json!({
+                "status": if uncertain { "needs_confirmation" } else { "completed" },
+                "reason": if uncertain {
+                    result.get("error").cloned().unwrap_or(json!(""))
+                } else {
+                    json!("")
+                },
+                "result": result,
+            }),
+        )
+        .await?;
         self.audit(&job, "completed");
         Ok(())
+    }
+    async fn persist_receipt(&self, jid: &str, changes: Value) -> Result<Value> {
+        let mut retries = 0usize;
+        loop {
+            match self.update(jid, changes.clone()) {
+                Ok(updated) => return Ok(updated),
+                Err(error) if retries < 3 && error.status.is_server_error() => {
+                    retries += 1;
+                    tracing::warn!(
+                        category = "operations",
+                        job_id = %jid,
+                        retry = retries,
+                        status = error.status.as_u16(),
+                        reason = %crate::security::safe_error(&error.detail, 200),
+                        "operation_receipt_persist_retry"
+                    );
+                    tokio::time::sleep(Duration::from_millis(50 * retries as u64)).await;
+                }
+                Err(error) => return Err(error),
+            }
+        }
     }
     pub fn key(&self, jid: &str) -> Result<String> {
         if let Some(key) = self.keys.lock().unwrap_or_else(|e| e.into_inner()).get(jid) {
@@ -2147,7 +2223,7 @@ impl Operations {
             || job["status"] == "completed" && job["repeat_state"] == "active"
     }
 
-    fn retry_scheduled(&self, job: &Value, result: &Value) -> Result<bool> {
+    async fn retry_scheduled(&self, job: &Value, result: &Value) -> Result<bool> {
         if !crate::recovery_rules::retryable(result) {
             return Ok(false);
         }
@@ -2156,11 +2232,12 @@ impl Operations {
         let Some(next) = policy.next(attempts, self.backend.now()) else {
             return Ok(false);
         };
-        self.update(
+        self.persist_receipt(
             string(&job["id"]),
             json!({"status":"queued","result":result,
             "next_retry_at":next,"reason":"等待连接测试重试"}),
-        )?;
+        )
+        .await?;
         Ok(true)
     }
 }

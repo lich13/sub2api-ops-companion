@@ -115,11 +115,7 @@ impl Monitor {
         credit::account(&self.actions.queries.db, id).await
     }
     pub fn lease(&self, row: &Value) -> Result<crate::account_locks::Lease> {
-        let parent = integer(&row["parent_account_id"])
-            .or_else(|| integer(&row["extra"]["parent_account_id"]));
-        self.actions
-            .locks
-            .try_ids([integer(&row["id"]).unwrap_or(0), parent.unwrap_or(0)])
+        self.actions.locks.try_account(row)
     }
     pub async fn inventory(&self, refresh: bool) -> Result<Arc<Vec<Value>>> {
         let mut cache = self.inventory.lock().await;

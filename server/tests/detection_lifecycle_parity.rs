@@ -7689,3 +7689,128 @@ async fn clue_batch_failure_keeps_completed_acknowledgements_and_unprocessed_eve
     assert_eq!(h.mock.count("POST", "/v1/responses"), 0);
     h.close().await;
 }
+
+#[tokio::test]
+async fn in_lock_guard_read_failure_after_business_conflict_preserves_active_job() {
+    let harness = Harness::new(sample_text("above_99", 0)).await;
+    let row = harness.seed_account("apikey", true, json!({})).await;
+    let id = integer(&row["id"]).unwrap();
+    harness.enable_detection(id, 1).await;
+    harness
+        .runtime()
+        .detection
+        .update(
+            id,
+            json!({"next_at":datetime(harness.now()-Duration::seconds(1))}),
+        )
+        .unwrap();
+    let model_gate = Gate::new();
+    harness.mock.set_model_gate(Some(model_gate.clone()));
+    harness.runtime().detection.tick().await.unwrap();
+    let job_id = harness.runtime().detection.control(id).unwrap()["job_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    tokio::time::timeout(StdDuration::from_secs(10), model_gate.entered.notified())
+        .await
+        .expect("running model request must reach the loopback endpoint");
+
+    harness
+        .runtime()
+        .detection
+        .capacity
+        .store
+        .transaction(|_| Ok(()))
+        .unwrap();
+    let account = harness.runtime().actions.account(id, None).await.unwrap();
+    harness
+        .runtime()
+        .set_schedulable(
+            id,
+            &json!({"schedulable":false,"expected_version":account_version(&account)}),
+            ADMIN_KEY,
+        )
+        .await
+        .unwrap();
+
+    let mut tx = harness.fixture_db.pool.begin().await.unwrap();
+    sqlx::query("LOCK TABLE accounts IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let held_control = harness.runtime().actions.locks.control(id).await;
+    let runtime = harness.runtime().clone();
+    let tick_task = tokio::spawn(async move { runtime.detection.tick().await });
+
+    tokio::time::timeout(StdDuration::from_secs(5), async {
+        loop {
+            let waiting: i64 = sqlx::query_scalar(
+                "SELECT count(*)::bigint FROM pg_locks WHERE relation = 'accounts'::regclass AND NOT granted",
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+            if waiting == 1 {
+                break;
+            }
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("first guard must block on accounts lock");
+
+    tx.rollback().await.unwrap();
+    tokio::time::timeout(StdDuration::from_secs(5), async {
+        loop {
+            let active: i64 = sqlx::query_scalar(
+                "SELECT count(*)::bigint FROM pg_stat_activity WHERE datname = current_database() AND state = 'active' AND pid <> pg_backend_pid()",
+            )
+            .fetch_one(&harness.fixture_db.pool)
+            .await
+            .unwrap();
+            if active == 0 {
+                break;
+            }
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("first guard query must finish before corrupting state");
+    tokio::task::yield_now().await;
+
+    let capacity_path = harness
+        .runtime()
+        .detection
+        .capacity
+        .store
+        .0
+        .path()
+        .to_path_buf();
+    let saved_capacity = fs::read(&capacity_path).unwrap();
+    fs::write(&capacity_path, b"{").unwrap();
+
+    drop(held_control);
+    let error = tick_task
+        .await
+        .unwrap()
+        .expect_err("5xx from in-lock guard must surface without cancelling active job");
+    assert!(error.status.is_server_error());
+    assert_eq!(
+        harness.runtime().tests.get(&job_id).unwrap()["status"],
+        "running"
+    );
+
+    fs::write(&capacity_path, saved_capacity).unwrap();
+    sqlx::query("UPDATE accounts SET schedulable=true WHERE id=$1")
+        .bind(id)
+        .execute(&harness.fixture_db.pool)
+        .await
+        .unwrap();
+    model_gate.release.notify_one();
+    harness.mock.set_model_gate(None);
+    let terminal = harness.wait_job_terminal(&job_id).await;
+    assert_eq!(terminal["status"], "completed");
+    assert_eq!(harness.mock.count("POST", "/v1/responses"), 1);
+    harness.close().await;
+}
+

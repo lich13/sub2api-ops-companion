@@ -28,6 +28,17 @@ impl Drop for Lease {
 pub fn busy() -> Error {
     Error::new(409, json!({"code":"account_busy","message":"等待账号空闲"}))
 }
+pub fn lock_ids(row: &Value) -> BTreeSet<i64> {
+    [
+        integer(&row["id"]).unwrap_or(0),
+        integer(&row["parent_account_id"])
+            .or_else(|| integer(&row["extra"]["parent_account_id"]))
+            .unwrap_or(0),
+    ]
+    .into_iter()
+    .filter(|id| *id > 0)
+    .collect()
+}
 impl AccountLocks {
     pub fn notified(&self) -> Notified<'_> {
         self.released.notified()
@@ -62,12 +73,7 @@ impl AccountLocks {
         })
     }
     pub fn try_account(&self, row: &Value) -> Result<Lease> {
-        self.try_ids([
-            integer(&row["id"]).unwrap_or(0),
-            integer(&row["parent_account_id"])
-                .or_else(|| integer(&row["extra"]["parent_account_id"]))
-                .unwrap_or(0),
-        ])
+        self.try_ids(lock_ids(row))
     }
     pub async fn account(&self, id: i64) -> Lease {
         Lease {

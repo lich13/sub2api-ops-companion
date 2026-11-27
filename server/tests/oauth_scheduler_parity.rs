@@ -5763,3 +5763,176 @@ async fn concurrency_tracks_external_replacement_and_keeps_invalid_bytes() {
     assert_eq!(config.concurrency().unwrap().usage, 2);
     harness.close().await;
 }
+
+#[tokio::test]
+async fn oauth_config_save_rejects_external_write_between_revision_read_and_commit() {
+    let harness = Harness::new().await;
+    let row = harness
+        .seed_account("plus", "fixture-config-race-account", json!({}))
+        .await;
+    let id = integer(&row["id"]).unwrap();
+    let initial = harness.runtime.config.snapshot(Some("oauth")).unwrap();
+    let stale_revision = initial["oauth"]["revision"].as_str().unwrap().to_owned();
+
+    let mut tx = harness.runtime.db.pool.begin().await.unwrap();
+    sqlx::query("LOCK TABLE accounts IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let config = harness.runtime.config.clone();
+    let save_task = tokio::spawn(async move {
+        config
+            .save(
+                "oauth",
+                &json!({"oauth_recovery_connection_account_ids": [id]}),
+                "fixture-user",
+                Some(&stale_revision),
+            )
+            .await
+    });
+
+    tokio::time::timeout(StdDuration::from_secs(5), async {
+        loop {
+            let waiting: i64 = sqlx::query_scalar(
+                "SELECT count(*)::bigint FROM pg_locks WHERE relation = 'accounts'::regclass AND NOT granted",
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+            if waiting == 1 {
+                break;
+            }
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("save must pause on eligibility read after checking revision");
+
+    std::fs::write(
+        harness.runtime.config.oauth.path(),
+        br#"{"oauth_recovery_test_model_id":"fixture-external-model"}"#,
+    )
+    .unwrap();
+    tx.rollback().await.unwrap();
+
+    let err = save_task.await.unwrap().unwrap_err();
+    assert_eq!(err.status.as_u16(), 409);
+    assert_eq!(
+        harness.runtime.config.current().unwrap()["oauth_recovery_test_model_id"],
+        "fixture-external-model"
+    );
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn quota_refresh_recomputes_parent_lock_when_parent_switches_from_a_to_busy_b() {
+    let harness = Harness::new().await;
+    let parent_a = harness
+        .seed_account("plus", "fixture-parent-a", json!({}))
+        .await;
+    let parent_b = harness
+        .seed_account("plus", "fixture-parent-b", json!({}))
+        .await;
+    let child = harness
+        .seed_account("plus", "fixture-child-c", json!({}))
+        .await;
+    let id_a = integer(&parent_a["id"]).unwrap();
+    let id_b = integer(&parent_b["id"]).unwrap();
+    let id_c = integer(&child["id"]).unwrap();
+    sqlx::query("UPDATE accounts SET parent_account_id=$1 WHERE id=$2")
+        .bind(id_a)
+        .bind(id_c)
+        .execute(&harness.runtime.db.pool)
+        .await
+        .unwrap();
+
+    let held_a = harness.runtime.monitor.lease(&parent_a).unwrap();
+    let held_b = harness.runtime.monitor.lease(&parent_b).unwrap();
+    harness
+        .runtime
+        .config
+        .save(
+            "oauth",
+            &json!({"oauth_usage_refresh_concurrency": 4}),
+            "fixture",
+            None,
+        )
+        .await
+        .unwrap();
+
+    let started = harness
+        .runtime
+        .0
+        .as_ref()
+        .unwrap()
+        .start_quota_refresh(ADMIN_KEY)
+        .await
+        .unwrap();
+    assert_eq!(started["total"], 3);
+
+    tokio::time::timeout(StdDuration::from_secs(5), async {
+        loop {
+            let progress = harness.runtime.quota_progress();
+            let all_queued = progress["items"].as_array().is_some_and(|items| {
+                items.len() == 3 && items.iter().all(|item| item["status"] == "queued")
+            });
+            if all_queued {
+                break;
+            }
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("all three items must queue behind held A and B locks");
+
+    sqlx::query("UPDATE accounts SET parent_account_id=$1 WHERE id=$2")
+        .bind(id_b)
+        .bind(id_c)
+        .execute(&harness.runtime.db.pool)
+        .await
+        .unwrap();
+
+    drop(held_a);
+    tokio::time::timeout(StdDuration::from_secs(5), async {
+        loop {
+            let progress = harness.runtime.quota_progress();
+            let items = progress["items"].as_array().unwrap();
+            let a_done = items
+                .iter()
+                .any(|item| item["account_id"] == id_a && item["status"] == "success");
+            if a_done {
+                break;
+            }
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("parent A should finish once its lock is released");
+
+    tokio::time::sleep(StdDuration::from_millis(150)).await;
+    let mid_progress = harness.runtime.quota_progress();
+    for item in mid_progress["items"].as_array().unwrap() {
+        if item["account_id"] == id_c || item["account_id"] == id_b {
+            assert_eq!(
+                item["status"], "queued",
+                "child C and parent B must remain queued while B is busy: {mid_progress}"
+            );
+        }
+    }
+    assert_eq!(
+        harness.mock.count("GET", "/usage"),
+        1,
+        "child C must not query upstream while new parent B is still locked"
+    );
+
+    drop(held_b);
+    let completed = wait_for_quota_batch_completion(&harness).await;
+    assert_eq!(completed["completed"], 3);
+    assert!(completed["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|item| item["status"] == "success"));
+    assert_eq!(harness.mock.count("GET", "/usage"), 3);
+    harness.close().await;
+}

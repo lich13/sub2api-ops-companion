@@ -215,6 +215,13 @@ impl Detection {
             Ok(due.is_none_or(|d| now >= d) || value["status"] != "waiting")
         }
     }
+    async fn guard_disqualified(&self, job: &Value) -> Result<bool> {
+        match self.guard(job).await {
+            Ok(_) => Ok(false),
+            Err(error) if error.status.is_server_error() => Err(error),
+            Err(_) => Ok(true),
+        }
+    }
     async fn tick_account(&self, id: i64) -> Result<Option<(Value, Value, bool)>> {
         let mut value = self.control(id)?;
         if value["disposition"]["status"] == "pending" {
@@ -236,14 +243,11 @@ impl Detection {
             if value["disposition"]["job_id"] == job["id"] {
                 return Ok(None);
             }
-            if let Err(error) = self.guard(&job).await {
-                if error.status.is_server_error() {
-                    return Err(error);
-                }
+            if self.guard_disqualified(&job).await? {
                 let cancel = {
                     let _control = self.actions.locks.control(id).await;
                     self.control(id)?["disposition"]["job_id"] != job["id"]
-                        && self.guard(&job).await.is_err()
+                        && self.guard_disqualified(&job).await?
                 };
                 if cancel {
                     self.tests.cancel(string(&job["id"])).await?;

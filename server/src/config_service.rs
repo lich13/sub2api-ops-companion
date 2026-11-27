@@ -201,22 +201,23 @@ impl ConfigService {
         if !matches!(section, "oauth" | "bark") {
             return Err(Error::new(422, "未知设置分区"));
         }
-        let current = self.snapshot(Some(section))?;
-        if expected.is_some_and(|v| v != string(&current[section]["revision"])) {
-            return Err(conflict());
-        }
-        let changes = changes.as_object().ok_or_else(Error::invalid)?;
-        let stamp = datetime((self.clock)());
         match section {
             "oauth" => {
+                let raw = self.oauth.read_shared()?;
+                let current_oauth = self.oauth_values(&raw)?;
+                let revision = config_revision(&json!([current_oauth, *raw]));
+                if expected.is_some_and(|v| v != revision) {
+                    return Err(conflict());
+                }
+                let changes = changes.as_object().ok_or_else(Error::invalid)?;
+                let stamp = datetime((self.clock)());
                 if changes
                     .keys()
                     .any(|key| !OAUTH_FIELDS.contains(&key.as_str()))
                 {
                     return Err(Error::new(422, "未知 OAuth 设置"));
                 }
-                let raw = self.oauth.read_shared()?;
-                let mut values = self.oauth_values(&raw)?;
+                let mut values = current_oauth.clone();
                 for (key, value) in changes {
                     if key == "model_detection_platforms" {
                         if !value.is_object() {
@@ -278,11 +279,11 @@ impl ConfigService {
                 let selected = connection.union(&models).copied().collect::<BTreeSet<_>>();
                 let selection_changed =
                     changes.contains_key(CONNECTION_IDS) || changes.contains_key(MODEL_IDS);
-                let previous = current[section][CONNECTION_IDS]
+                let previous = current_oauth[CONNECTION_IDS]
                     .as_array()
                     .into_iter()
                     .flatten()
-                    .chain(current[section][MODEL_IDS].as_array().into_iter().flatten())
+                    .chain(current_oauth[MODEL_IDS].as_array().into_iter().flatten())
                     .filter_map(integer)
                     .collect::<BTreeSet<_>>();
                 if selection_changed && !selected.is_empty() {
@@ -305,7 +306,7 @@ impl ConfigService {
                     if expected.is_none()
                         && [CONNECTION_IDS, MODEL_IDS].iter().any(|field| {
                             values[field]
-                                != current[section]
+                                != current_oauth
                                     .get(*field)
                                     .filter(|v| !v.is_null())
                                     .cloned()
@@ -332,7 +333,7 @@ impl ConfigService {
                     .union(&selected)
                     .copied()
                     .filter(|id| {
-                        recovery_rules::method(&current[section], *id)
+                        recovery_rules::method(&current_oauth, *id)
                             != recovery_rules::method(&values, *id)
                     })
                     .collect::<Vec<_>>();
@@ -361,8 +362,20 @@ impl ConfigService {
                     *on_disk = payload;
                     Ok(())
                 })?;
+                audit::write_at(
+                    &self.settings.audit_path,
+                    "oauth_config_update",
+                    json!({"user":user,"fields":changes.keys().collect::<BTreeSet<_>>()}),
+                    (self.clock)(),
+                );
             }
             "bark" => {
+                let current = self.snapshot(Some("bark"))?;
+                if expected.is_some_and(|v| v != string(&current["bark"]["revision"])) {
+                    return Err(conflict());
+                }
+                let changes = changes.as_object().ok_or_else(Error::invalid)?;
+                let stamp = datetime((self.clock)());
                 if changes
                     .keys()
                     .any(|key| !matches!(key.as_str(), "enabled" | "device_key" | "server_url"))
@@ -417,15 +430,15 @@ impl ConfigService {
                     Ok(raw.clone())
                 })?;
                 self.bark.configure(&payload, true);
+                audit::write_at(
+                    &self.settings.audit_path,
+                    "bark_config_update",
+                    json!({"user":user,"fields":changes.keys().collect::<BTreeSet<_>>()}),
+                    (self.clock)(),
+                );
             }
             _ => unreachable!("validated config section"),
         }
-        audit::write_at(
-            &self.settings.audit_path,
-            &format!("{section}_config_update"),
-            json!({"user":user,"fields":changes.keys().collect::<BTreeSet<_>>()}),
-            (self.clock)(),
-        );
         Ok(self.snapshot(Some(section))?[section].clone())
     }
 }

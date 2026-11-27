@@ -3567,3 +3567,115 @@ async fn batched_cycle_observations_match_live_reads_and_keep_per_account_failur
     runtime.close().await;
     h.finish().await;
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn terminal_receipt_retries_local_persist_failure_without_replaying_upstream() {
+    static GLOBAL_RETRY_SIGNAL: Mutex<Option<Arc<Notify>>> = Mutex::new(None);
+    struct GlobalRetrySubscriber;
+    impl tracing::Subscriber for GlobalRetrySubscriber {
+        fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+            true
+        }
+        fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+        fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+        fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+        fn event(&self, event: &tracing::Event<'_>) {
+            struct MessageVisitor(bool);
+            impl tracing::field::Visit for MessageVisitor {
+                fn record_debug(
+                    &mut self,
+                    field: &tracing::field::Field,
+                    value: &dyn std::fmt::Debug,
+                ) {
+                    if field.name() == "message"
+                        && format!("{value:?}").contains("operation_receipt_persist_retry")
+                    {
+                        self.0 = true;
+                    }
+                }
+                fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+                    if field.name() == "message" && value == "operation_receipt_persist_retry" {
+                        self.0 = true;
+                    }
+                }
+            }
+            let mut visitor = MessageVisitor(false);
+            event.record(&mut visitor);
+            if visitor.0 {
+                if let Some(signal) = GLOBAL_RETRY_SIGNAL.lock().unwrap().as_ref() {
+                    signal.notify_one();
+                }
+            }
+        }
+        fn enter(&self, _: &tracing::span::Id) {}
+        fn exit(&self, _: &tracing::span::Id) {}
+    }
+
+    static INIT_SUBSCRIBER: std::sync::Once = std::sync::Once::new();
+    INIT_SUBSCRIBER.call_once(|| {
+        tracing::dispatcher::set_global_default(tracing::Dispatch::new(GlobalRetrySubscriber))
+            .expect("install GlobalRetrySubscriber once");
+    });
+    let first_failed = Arc::new(Notify::new());
+    *GLOBAL_RETRY_SIGNAL.lock().unwrap() = Some(first_failed.clone());
+
+    let mut harness = Harness::new().await;
+    let id = harness.seed_accounts(1, json!({})).await[0];
+    let expected = harness.expected_versions(&[id], "test").await[&id].clone();
+    let request = json!({
+        "action": "test",
+        "request_id": "fixture-terminal-receipt-retry-0001",
+        "client_id": CLIENT_ID,
+        "expected_version": expected,
+        "payload": {"confirmed": true}
+    });
+    let accepted = harness
+        .operations
+        .submit_test(id, &request, ADMIN_KEY)
+        .await
+        .unwrap();
+    let job_id = accepted["id"].as_str().unwrap().to_owned();
+    let _gate = harness.mock.gate_test(id);
+
+    harness.operations.tick().await.unwrap();
+    harness.wait_test_calls(1).await;
+    assert_eq!(
+        harness.operations.get(&job_id, 0).unwrap()["status"],
+        "running"
+    );
+
+    let lock_path = harness.operations.store.0.path().with_extension("lock");
+    let backup_lock = harness
+        .operations
+        .store
+        .0
+        .path()
+        .with_extension("lock.saved");
+    fs::rename(&lock_path, &backup_lock).unwrap();
+    fs::create_dir(&lock_path).unwrap();
+
+    harness.mock.release_test(id);
+    tokio::time::timeout(Duration::from_secs(5), first_failed.notified())
+        .await
+        .expect("first terminal write must fail and schedule local retry");
+    assert_eq!(
+        harness.operations.get(&job_id, 0).unwrap()["status"],
+        "running"
+    );
+
+    fs::remove_dir(&lock_path).unwrap();
+    fs::rename(&backup_lock, &lock_path).unwrap();
+    let completed = harness.wait_status(&job_id, "completed").await;
+    *GLOBAL_RETRY_SIGNAL.lock().unwrap() = None;
+    assert_eq!(completed["status"], "completed");
+    assert_eq!(completed["result"]["success"], true);
+    assert_eq!(
+        completed["result"]["content"],
+        fixtures()["connection_test"]["content"]
+    );
+    assert_eq!(harness.mock.test_calls().len(), 1);
+    harness.finish().await;
+}

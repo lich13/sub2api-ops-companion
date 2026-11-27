@@ -50,12 +50,11 @@ impl Runtime {
         let handle = self.actions.supervisor.spawn("quota_refresh", async move {
             let openai = Arc::new(tokio::sync::Semaphore::new(limit));
             let grok = Arc::new(tokio::sync::Semaphore::new(limit));
-            stream::iter(rows.into_iter().map(|row| {
+            stream::iter(rows.into_iter().enumerate().map(|(index, row)| {
                 let runtime=runtime.clone();let key=key.clone();let capacity=if row["platform"]=="openai" {openai.clone()}else {grok.clone()};async move {
                     let _platform=capacity.acquire_owned().await;
-                    let id=integer(&row["id"]).unwrap_or(0);
-                    let result=runtime.refresh_quota_item(&row,&key,requested).await;
-                    runtime.quota_item(id,match result {
+                    let result=runtime.refresh_quota_item(index,&row,&key,requested).await;
+                    runtime.quota_item(index,match result {
                         Ok(result)=>result,
                         Err(error)=>json!({"status":"failed","error":crate::security::safe_error(&error.detail,200),"error_code":"quota_query_failed"}),
                     },true);
@@ -73,17 +72,10 @@ impl Runtime {
         *self.quota_task.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
         Ok(batch)
     }
-    fn quota_item(&self, id: i64, changes: Value, completed: bool) {
+    fn quota_item(&self, index: usize, changes: Value, completed: bool) {
         let mut batch = self.quota_batch.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(item) = batch["items"]
-            .as_array_mut()
-            .into_iter()
-            .flatten()
-            .find(|item| item["account_id"] == id)
-        {
-            item.as_object_mut()
-                .unwrap()
-                .extend(changes.as_object().unwrap().clone());
+        if let Some(item) = batch["items"].get_mut(index).and_then(Value::as_object_mut) {
+            item.extend(changes.as_object().unwrap().clone());
         }
         if completed {
             batch["completed"] = (integer(&batch["completed"]).unwrap_or(0) + 1).into();
@@ -91,6 +83,7 @@ impl Runtime {
     }
     async fn refresh_quota_item(
         &self,
+        index: usize,
         original: &Value,
         key: &str,
         requested: Instant,
@@ -102,7 +95,7 @@ impl Runtime {
             if live["platform"] != original["platform"] || live["type"] != original["type"] {
                 return Err(Error::new(409, "账号类型已变化"));
             }
-            self.quota_item(id, json!({"status":"running"}), false);
+            self.quota_item(index, json!({"status":"running"}), false);
             let (_, usage) = self.account_usage_from_row(live, key, true, false).await?;
             let partial = matches!(
                 string(&usage["status"]),
@@ -112,6 +105,7 @@ impl Runtime {
                 json!({"status":if partial {"partial"}else {"success"},"queried_at":datetime(self.monitor.now()),"error":usage["message"],"usage":usage}),
             );
         }
+        let mut lock_set = crate::account_locks::lock_ids(original);
         let (row, _lease, _budget) = loop {
             if self.closing.load(Ordering::Acquire) || self.actions.supervisor.is_stopping() {
                 return Err(Error::new(503, "服务正在停止"));
@@ -119,10 +113,10 @@ impl Runtime {
             let notified = self.actions.locks.notified();
             tokio::pin!(notified);
             notified.as_mut().enable();
-            let lease = match self.monitor.lease(original) {
+            let lease = match self.actions.locks.try_ids(lock_set.iter().copied()) {
                 Ok(lease) => lease,
                 Err(error) if error.status.as_u16() == 409 => {
-                    self.quota_item(id, json!({"status":"queued"}), false);
+                    self.quota_item(index, json!({"status":"queued"}), false);
                     let _ = tokio::time::timeout(Duration::from_millis(100), notified).await;
                     continue;
                 }
@@ -135,12 +129,19 @@ impl Runtime {
                 .await
                 .map_err(|_| Error::internal())?;
             let row = self.monitor.row(id).await?;
+            if row["platform"] != original["platform"] || row["type"] != "oauth" {
+                return Err(Error::new(409, "账号类型已变化"));
+            }
+            let latest_locks = crate::account_locks::lock_ids(&row);
+            if latest_locks != lock_set {
+                drop(budget);
+                drop(lease);
+                lock_set = latest_locks;
+                continue;
+            }
             break (row, lease, budget);
         };
-        if row["platform"] != original["platform"] || row["type"] != "oauth" {
-            return Err(Error::new(409, "账号类型已变化"));
-        }
-        self.quota_item(id, json!({"status":"running"}), false);
+        self.quota_item(index, json!({"status":"running"}), false);
         let at = self.monitor.now();
         let data = if row["platform"] == "openai" {
             let result = self
