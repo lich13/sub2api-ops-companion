@@ -213,10 +213,6 @@ extension RecordColumnId {
         return widths + CGFloat(columns.count) * columnSpacing + cellPadding * 2
     }
 
-    public static var defaultKeys: [String] {
-        Array(allCases.prefix(10)).map(\.rawValue)
-    }
-
     public static func normalize(_ columns: [String]?) -> [RecordColumnSpec] {
         guard let columns else {
             return Array(allCases.prefix(10))

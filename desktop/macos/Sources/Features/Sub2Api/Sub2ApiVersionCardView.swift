@@ -153,6 +153,11 @@ public struct Sub2ApiVersionCardView: View {
         .onChange(of: knownVersion) { _, next in
             if !next.isEmpty { version = next }
         }
+        .onDisappear {
+            generation &+= 1
+            waitingRestart = false
+            busy = false
+        }
         .task(id: "\(connectionKey):\(waitingRestart):\(active)") {
             guard waitingRestart, active else {
                 if !active { waitingRestart = false }
@@ -235,29 +240,87 @@ public struct Sub2ApiVersionCardView: View {
         }
     }
 
+    nonisolated public static func sanitizePollError(_ raw: String) -> String {
+        var text = raw
+            .replacingOccurrences(of: #"(?i)bearer\s+[A-Za-z0-9._\-+/=]+"#, with: "Bearer [REDACTED]", options: .regularExpression)
+            .replacingOccurrences(of: #"sk-[A-Za-z0-9_\-]{8,}"#, with: "sk-[REDACTED]", options: .regularExpression)
+            .replacingOccurrences(of: #"(https?://)[^/\s:@]+:[^/\s@]+@"#, with: "$1[REDACTED]@", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)([?&](?:token|key|secret|password|auth)=)[^&\s]+"#, with: "$1[REDACTED]", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.count > 160 {
+            text = String(text.prefix(160)) + "…"
+        }
+        return text
+    }
+
+    @MainActor
+    public static func pollUntilTargetVersion(
+        targetVersion: String,
+        initialDelayMs: Int = 1500,
+        retryDelayMs: Int = 3000,
+        attempts: Int = 20,
+        canContinue: @MainActor () -> Bool,
+        onObservedVersion: @MainActor (String) -> Void
+    ) async -> (confirmed: Bool, lastError: String) {
+        func normalize(_ v: String) -> String {
+            v.hasPrefix("v") ? String(v.dropFirst()) : v
+        }
+        if initialDelayMs > 0 {
+            try? await Task.sleep(for: .milliseconds(initialDelayMs))
+        }
+        var lastError = ""
+        for idx in 0..<max(1, attempts) {
+            guard !Task.isCancelled, canContinue() else { return (false, lastError) }
+            do {
+                let cur: SystemVersionReply = try await RustBridge.shared.api("GET", "/sub2api-system/version")
+                guard !Task.isCancelled, canContinue() else { return (false, lastError) }
+                lastError = ""
+                onObservedVersion(cur.version)
+                if !targetVersion.isEmpty && normalize(cur.version) == normalize(targetVersion) {
+                    return (true, "")
+                }
+            } catch is CancellationError {
+                return (false, lastError)
+            } catch {
+                lastError = sanitizePollError(error.localizedDescription)
+            }
+            if idx + 1 < attempts && retryDelayMs > 0 {
+                try? await Task.sleep(for: .milliseconds(retryDelayMs))
+            }
+        }
+        return (false, lastError)
+    }
+
     private func pollRestartVersion() async {
         let capturedGen = generation
-        try? await Task.sleep(for: .milliseconds(1500))
-        for _ in 0..<20 {
-            guard !Task.isCancelled, generation == capturedGen, waitingRestart, active else { return }
-            if let cur: SystemVersionReply = try? await RustBridge.shared.api("GET", "/sub2api-system/version") {
-                guard generation == capturedGen else { return }
-                version = cur.version
-                if !targetVersion.isEmpty && normalize(cur.version) == normalize(targetVersion) {
-                    waitingRestart = false
-                    needRestart = false
-                    errorText = ""
-                    messageText = "更新已生效"
-                    targetVersion = ""
-                    onRuntimeChanged?()
-                    return
+        let target = targetVersion
+        let outcome = await Self.pollUntilTargetVersion(
+            targetVersion: target,
+            canContinue: { generation == capturedGen && waitingRestart && active },
+            onObservedVersion: { cur in
+                if generation == capturedGen {
+                    version = cur
                 }
             }
-            try? await Task.sleep(for: .seconds(3))
-        }
-        if !Task.isCancelled, generation == capturedGen {
+        )
+        guard !Task.isCancelled, generation == capturedGen else { return }
+        if outcome.confirmed {
             waitingRestart = false
-            messageText = "尚未确认运行版本，请手动刷新"
+            needRestart = false
+            errorText = ""
+            messageText = "更新已生效"
+            targetVersion = ""
+            onRuntimeChanged?()
+        } else if waitingRestart && active {
+            waitingRestart = false
+            if outcome.lastError.isEmpty {
+                errorText = ""
+                messageText = "尚未确认运行版本，请手动刷新"
+            } else {
+                messageText = ""
+                errorText = "尚未确认运行版本：\(outcome.lastError)"
+            }
         }
     }
 }

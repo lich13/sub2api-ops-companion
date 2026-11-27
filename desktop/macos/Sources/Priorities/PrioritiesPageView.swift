@@ -55,6 +55,27 @@ public struct PrioritiesPageView: View {
         !submittingPlatform.isEmpty || (activeTask?.isPending == true)
     }
 
+    var isPollingVisible: Bool {
+        store.page == .priorities && store.state.foreground != false
+    }
+
+    func isEditingPlatform(_ group: PriorityPlatformGroup, draft: PriorityPlatformDraft?) -> Bool {
+        let conflict = draft != nil
+            && (draft!.version != group.version
+                || !PriorityDraftLogic.samePriorityAccounts(ids: draft!.ids, accounts: group.items))
+        return PriorityDraftLogic.canEditPlatform(
+            online: store.state.online,
+            hasView: view != nil,
+            loading: loading,
+            settingParallelism: settingParallelism,
+            query: query,
+            conflict: conflict,
+            submittingPlatform: submittingPlatform,
+            activeTask: activeTask,
+            platform: group.platform
+        )
+    }
+
     private var totalChangesCount: Int {
         drafts.values.reduce(0) { sum, draft in
             let prios = Dictionary(uniqueKeysWithValues: draft.accounts.map { ($0.id, $0.priority) })
@@ -187,8 +208,8 @@ public struct PrioritiesPageView: View {
                 await readPriorities()
             }
         }
-        .task(id: "\(store.connectionKey):\(activeTask?.id ?? ""):\(store.state.online)") {
-            guard let task = activeTask, task.isPending, store.state.online else { return }
+        .task(id: "\(store.connectionKey):\(activeTask?.id ?? ""):\(store.state.online):\(isPollingVisible)") {
+            guard let task = activeTask, task.isPending, store.state.online, isPollingVisible else { return }
             await pollActiveTask(id: task.id)
         }
     }
@@ -215,7 +236,7 @@ public struct PrioritiesPageView: View {
         let blocked = changes.filter { !$0.editable }
         let conflict = draft != nil && (draft!.version != group.version || !PriorityDraftLogic.samePriorityAccounts(ids: draft!.ids, accounts: group.items))
         let filtered = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let editing = store.state.online && view != nil && !loading && settingParallelism.isEmpty && !filtered && !conflict && submittingPlatform != platform && !(activeTask?.isPending == true && activeTask?.platform == platform)
+        let editing = isEditingPlatform(group, draft: draft)
         let lanes = groupLanes(slots: slots)
         let visibleLanes = lanes.filter { lane in
             !filtered || lane.slots.contains(where: { entry in

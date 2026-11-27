@@ -589,5 +589,62 @@ struct RecordsAndEventsTests {
         )
         scrollRecStore.page = .settings
     }
+
+    @Test("RecordFeedStore resets on connectionKey switch and ignores stale loadMore failures after head revision advances")
+    @MainActor
+    func recordFeedConnectionKeyIsolationAndStalePageErrorGuard() async throws {
+        let latePage = OSAllocatedUnfairLock<CheckedContinuation<Void, Never>?>(initialState: nil)
+        let holdRefresh = OSAllocatedUnfairLock<CheckedContinuation<Void, Never>?>(initialState: nil)
+        let pauseNextHead = OSAllocatedUnfairLock(initialState: false)
+        let instanceTag = OSAllocatedUnfairLock(initialState: "A")
+        RustBridge.shared.setMockHandler { _, payload in
+            if payload.contains("cursor=page2") {
+                await withCheckedContinuation { cont in
+                    latePage.withLock { $0 = cont }
+                }
+                throw RustBridgeError("旧分页超时")
+            }
+            if pauseNextHead.withLock({ let p = $0; $0 = false; return p }) {
+                await withCheckedContinuation { cont in
+                    holdRefresh.withLock { $0 = cont }
+                }
+            }
+            let tag = instanceTag.withLock { $0 }
+            let id = (tag == "A") ? 101 : 202
+            let nextCursor = (tag == "A") ? "\"page2\"" : "null"
+            return """
+            {"items":[{"id":\(id)}],"next_cursor":\(nextCursor),"latest_id":\(id),"observed_at":"2026-11-20T00:01:00Z","summary":{"actual_cost":"\(tag == "A" ? "1.00" : "2.00")"}}
+            """
+        }
+        let feed = RecordFeedStore()
+        defer {
+            feed.stop()
+            RustBridge.shared.setMockHandler(nil)
+        }
+
+        feed.bind(connectionKey: "https://a.example.invalid:true:1", query: "limit=50", active: true)
+        #expect(await waitFor { feed.items.map(\.id) == [101] && feed.cursor == "page2" && feed.latestId == 101 })
+
+        // Start loadMore on revision 1, then start refresh head; when loadMore finishes first,
+        // `loading` must remain true until refresh finishes, and stale loadMore failure is ignored.
+        let loadMoreTask = Task { await feed.loadMore() }
+        #expect(await waitFor { latePage.withLock { $0 != nil } })
+        pauseNextHead.withLock { $0 = true }
+        let refreshTask = Task { _ = await feed.refresh() }
+        #expect(await waitFor { holdRefresh.withLock { $0 != nil } })
+        latePage.withLock { let c = $0; $0 = nil; return c }?.resume()
+        await loadMoreTask.value
+        #expect(feed.loading)
+        holdRefresh.withLock { let c = $0; $0 = nil; return c }?.resume()
+        await refreshTask.value
+        #expect(!feed.loading)
+        #expect(feed.pageError.isEmpty)
+
+        // Switching connectionKey with the exact same query resets items, cursor, latestId, and reloads instance B
+        instanceTag.withLock { $0 = "B" }
+        feed.bind(connectionKey: "https://b.example.invalid:true:2", query: "limit=50", active: true)
+        #expect(feed.items.isEmpty && feed.cursor == nil && feed.latestId == nil)
+        #expect(await waitFor { feed.items.map(\.id) == [202] && feed.totalCost == "2.00" })
+    }
 }
 }

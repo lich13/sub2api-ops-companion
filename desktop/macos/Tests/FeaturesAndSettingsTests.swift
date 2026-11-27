@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import os
 import SwiftUI
 import Testing
 @testable import Sub2OpsMacOS
@@ -370,7 +371,7 @@ struct FeaturesAndSettingsTests {
                 return "{\"version\":{\"revision\":\"8f31c2a09b1e4d00\",\"sha256\":\"0123456789abcdef\",\"built_at\":\"2026-11-17T06:00:00Z\",\"analyzer_version\":\"0.2.0\"},\"source\":\"cache\",\"status\":\"idle\",\"result\":\"up-to-date\",\"checked_at\":\"2026-11-17T08:00:00Z\",\"synced_at\":\"2026-11-17T08:00:00Z\"}"
             }
             if payload.contains("/account-operations") {
-                return "{\"items\":[]}"
+                return "{\"pending\":0,\"items\":[]}"
             }
             if payload.contains("/accounts/101/models") {
                 return "{\"models\":[{\"id\":\"gpt-5.4\",\"display_name\":\"GPT-5.4\"}]}"
@@ -833,6 +834,387 @@ struct FeaturesAndSettingsTests {
             editable: false
         )
         #expect(Sub2ApiConfigTabView.effectiveFieldValue(field: portField, runtime: envOverridden, change: nil) == .int(9090))
+    }
+
+    @Test("Sub2ApiConfig masks sensitive fields in confirm summary while preserving reset-default, guards mutation generation, and reports sanitized version poll errors")
+    @MainActor
+    func sub2ApiSensitiveConfirmMaskGenerationAndVersionPollError() async throws {
+        let secretField = try JSONDecoder().decode(Sub2ApiConfigTabView.CatalogField.self, from: Data("""
+        {
+          "path": "jwt.secret",
+          "group": "security",
+          "type": "string",
+          "type_label": "字符串",
+          "description": "JWT 签名密钥",
+          "range": "",
+          "default_text": "",
+          "default_value": "",
+          "has_default": false,
+          "sensitive": true,
+          "internal": false,
+          "editable": true,
+          "status": "supported",
+          "source_url": "https://example.invalid",
+          "env": ["JWT_SECRET"]
+        }
+        """.utf8))
+        let plainField = try JSONDecoder().decode(Sub2ApiConfigTabView.CatalogField.self, from: Data("""
+        {
+          "path": "server.port",
+          "group": "server",
+          "type": "integer",
+          "type_label": "整数",
+          "description": "端口",
+          "range": "1-65535",
+          "default_text": "8080",
+          "default_value": 8080,
+          "has_default": true,
+          "sensitive": false,
+          "internal": false,
+          "editable": true,
+          "status": "supported",
+          "source_url": "https://example.invalid",
+          "env": ["SERVER_PORT"]
+        }
+        """.utf8))
+
+        let secretEdit = Sub2ApiConfigTabView.DraftChange(path: "jwt.secret", remove: false, value: .string("super-secret-value-123"))
+        let secretReset = Sub2ApiConfigTabView.DraftChange(path: "jwt.secret", remove: true, value: nil)
+        let plainEdit = Sub2ApiConfigTabView.DraftChange(path: "server.port", remove: false, value: .int(9090))
+
+        let maskedSummary = Sub2ApiConfigTabView.confirmSummaryValue(change: secretEdit, field: secretField)
+        #expect(maskedSummary == "替换为新值（已遮蔽）")
+        #expect(!maskedSummary.contains("super-secret-value-123"))
+        #expect(Sub2ApiConfigTabView.confirmSummaryValue(change: secretReset, field: secretField) == "<恢复默认>")
+        #expect(Sub2ApiConfigTabView.confirmSummaryValue(change: plainEdit, field: plainField) == "9090")
+
+        // Mutation generation advances across beginMutation() and resetForConnection(), invalidating stale replies
+        var session = Sub2ApiConfigSession()
+        let firstSeq = session.beginMutation()
+        #expect(session.isCurrentMutation(firstSeq))
+        session.resetForConnection()
+        #expect(!session.isCurrentMutation(firstSeq))
+        let secondSeq = session.beginMutation()
+        #expect(session.isCurrentMutation(secondSeq) && secondSeq != firstSeq)
+
+        // Version restart polling captures and sanitizes the error reason when all 20 polls fail
+        RustBridge.shared.setMockHandler { _, _ in
+            throw RustBridgeError("连接 https://admin:topsecret@host.example.invalid/sub2api-system/version?token=abc 失败 Bearer eyJhbGciOiJIUzI1NiJ9 sk-1234567890abcdef")
+        }
+        defer { RustBridge.shared.setMockHandler(nil) }
+        var observed: [String] = []
+        let outcome = await Sub2ApiVersionCardView.pollUntilTargetVersion(
+            targetVersion: "0.2.10",
+            initialDelayMs: 0,
+            retryDelayMs: 0,
+            attempts: 20,
+            canContinue: { true },
+            onObservedVersion: { observed.append($0) }
+        )
+        #expect(!outcome.confirmed)
+        #expect(observed.isEmpty)
+        #expect(!outcome.lastError.isEmpty)
+        #expect(!outcome.lastError.contains("topsecret"))
+        #expect(!outcome.lastError.contains("eyJhbGciOiJIUzI1NiJ9"))
+        #expect(!outcome.lastError.contains("sk-1234567890abcdef"))
+        #expect(!outcome.lastError.contains("token=abc"))
+        #expect(outcome.lastError.contains("[REDACTED]"))
+    }
+
+    @Test("Sub2ApiConfigController isolates mutatingBusy from loadConfig, prevents cross-instance or cross-tab modal clobbering, and drops stale status replies")
+    @MainActor
+    func sub2ApiControllerModalTokenIsolationAndBusySeparation() async throws {
+        let store = AppStore()
+        defer {
+            store.stop()
+            RustBridge.shared.setMockHandler(nil)
+        }
+        store.page = .features
+        store.applyViewState(
+            ViewState(
+                connection_revision: 1,
+                connected: true,
+                online: true,
+                preferences: Preferences(base_url: "https://a.example.invalid/sub2ops")
+            )
+        )
+        let keyA = store.connectionKey
+
+        let applyGate = OSAllocatedUnfairLock<CheckedContinuation<String, Never>?>(initialState: nil)
+        let validateGate = OSAllocatedUnfairLock<CheckedContinuation<String, Never>?>(initialState: nil)
+        let statusGate = OSAllocatedUnfairLock<CheckedContinuation<String, Never>?>(initialState: nil)
+        let configDocJSON = """
+        {
+          "available": true,
+          "editable": true,
+          "reason": "",
+          "revision": "rev-a",
+          "runtime_revision": "run-a",
+          "version": "0.2.1",
+          "commit": "abcdef12",
+          "healthy": true,
+          "values": {},
+          "catalog": {
+            "version": "1",
+            "revision": "cat-1",
+            "groups": [{"id": "server", "label": "服务"}],
+            "fields": [{
+              "path": "server.port",
+              "group": "server",
+              "type": "integer",
+              "type_label": "整数",
+              "description": "端口",
+              "range": "1-65535",
+              "default_text": "8080",
+              "default_value": 8080,
+              "has_default": true,
+              "sensitive": false,
+              "internal": false,
+              "editable": true,
+              "status": "supported",
+              "source_url": "https://example.invalid",
+              "env": []
+            }]
+          }
+        }
+        """
+
+        RustBridge.shared.setMockHandler { _, payload in
+            if payload.contains("/sub2api-config/apply") {
+                return await withCheckedContinuation { cont in
+                    applyGate.withLock { $0 = cont }
+                }
+            }
+            if payload.contains("/sub2api-config/validate") {
+                return await withCheckedContinuation { cont in
+                    validateGate.withLock { $0 = cont }
+                }
+            }
+            if payload.contains("/sub2api-config/operation") {
+                return await withCheckedContinuation { cont in
+                    statusGate.withLock { $0 = cont }
+                }
+            }
+            if payload.contains("/sub2api-config") {
+                return configDocJSON
+            }
+            return "{}"
+        }
+
+        let ctl = Sub2ApiConfigController()
+        ctl.didAppear(active: true)
+        ctl.bindConnection(keyA)
+        _ = await ctl.loadConfig(online: true, capturedKey: keyA, store: store, resetDraft: true)
+        ctl.session.draft["server.port"] = Sub2ApiConfigTabView.DraftChange(path: "server.port", remove: false, value: .int(9090))
+
+        // 1. Validate while user leaves the Sub2Api tab before response returns: must NOT present confirm modal
+        var presentedFromHiddenTab = false
+        let valTask = Task {
+            await ctl.validateChanges(
+                online: true,
+                capturedKey: keyA,
+                store: store,
+                openConfirm: true,
+                onPresentConfirm: { presentedFromHiddenTab = true }
+            )
+        }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while validateGate.withLock({ $0 == nil }) && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        ctl.setActive(false)
+        validateGate.withLock { $0 }?.resume(returning: #"{"valid":true,"errors":[]}"#)
+        await valTask.value
+        #expect(!presentedFromHiddenTab)
+        ctl.setActive(true)
+
+        // 2. Stale /sub2api-config/operation `idle` read started before applyChanges must be dropped
+        let statusTask = Task {
+            await ctl.refreshOperationStatus(capturedKey: keyA, store: store)
+        }
+        while statusGate.withLock({ $0 == nil }) && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+
+        // Present Instance A confirm modal and start applyChanges
+        let tokenA = store.presentWindowModal { Text("Confirm A") }
+        ctl.confirmModalToken = tokenA
+        let applyTask = Task {
+            await ctl.applyChanges(online: true, capturedKey: keyA, store: store)
+        }
+        while applyGate.withLock({ $0 == nil }) && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(ctl.mutatingBusy)
+
+        // Concurrent loadConfig finishing must NOT clear mutatingBusy while applyChanges is still in flight
+        _ = await ctl.loadConfig(online: true, capturedKey: keyA, store: store, resetDraft: false)
+        #expect(ctl.mutatingBusy)
+        #expect(!ctl.loadingBusy)
+
+        // Stale status `idle` resolves while applyChanges is in flight: must NOT write idle
+        statusGate.withLock { $0 }?.resume(returning: #"{"status":"idle","message":""}"#)
+        await statusTask.value
+        #expect(ctl.session.hostOp == nil)
+
+        // 3. Switch AppStore to Instance B (even BEFORE ctl.bindConnection runs, e.g. user left .features)
+        //    and present a modal on Instance B; Instance A's late applyChanges reply must NOT dismiss B's modal!
+        store.page = .accounts
+        store.applyViewState(
+            ViewState(
+                connection_revision: 2,
+                connected: true,
+                online: true,
+                preferences: Preferences(base_url: "https://b.example.invalid/sub2ops")
+            )
+        )
+        #expect(store.windowModalView == nil)
+        let tokenB = store.presentWindowModal { Text("Instance B Modal") }
+        #expect(store.windowModalView != nil)
+
+        applyGate.withLock { $0 }?.resume(returning: #"{"status":"restarting","message":"正在重启"}"#)
+        await applyTask.value
+        #expect(store.windowModalView != nil)
+        #expect(store.windowModalToken == tokenB)
+    }
+
+    @Test("Sub2ApiConfigController preserves local draft and marks conflict when external operation succeeds, and only clears draft on own apply")
+    @MainActor
+    func sub2ApiExternalSucceededKeepsDraftWhileOwnApplyResetsDraft() async throws {
+        let store = AppStore()
+        defer {
+            store.stop()
+            RustBridge.shared.setMockHandler(nil)
+        }
+        store.page = .features
+        store.applyViewState(
+            ViewState(
+                connection_revision: 1,
+                connected: true,
+                online: true,
+                preferences: Preferences(base_url: "https://a.example.invalid/sub2ops")
+            )
+        )
+        let keyA = store.connectionKey
+
+        let docState = OSAllocatedUnfairLock(initialState: ("rev-1", "run-1"))
+        let opState = OSAllocatedUnfairLock(initialState: #"{"status":"idle","message":""}"#)
+        RustBridge.shared.setMockHandler { _, payload in
+            if payload.contains("/sub2api-config/apply") {
+                return #"{"status":"restarting","message":"本窗口正在重启"}"#
+            }
+            if payload.contains("/sub2api-config/operation") {
+                return opState.withLock { $0 }
+            }
+            if payload.contains("/sub2api-config") {
+                let (rev, runRev) = docState.withLock { $0 }
+                return """
+                {
+                  "available": true,
+                  "editable": true,
+                  "reason": "",
+                  "revision": "\(rev)",
+                  "runtime_revision": "\(runRev)",
+                  "version": "0.2.1",
+                  "commit": "abcdef12",
+                  "healthy": true,
+                  "values": {},
+                  "catalog": {
+                    "version": "1",
+                    "revision": "cat-1",
+                    "groups": [{"id": "server", "label": "服务"}],
+                    "fields": [{
+                      "path": "server.port",
+                      "group": "server",
+                      "type": "integer",
+                      "type_label": "整数",
+                      "description": "端口",
+                      "range": "1-65535",
+                      "default_text": "8080",
+                      "default_value": 8080,
+                      "has_default": true,
+                      "sensitive": false,
+                      "internal": false,
+                      "editable": true,
+                      "status": "supported",
+                      "source_url": "https://example.invalid",
+                      "env": []
+                    }]
+                  }
+                }
+                """
+            }
+            return "{}"
+        }
+
+        let ctl = Sub2ApiConfigController()
+        ctl.didAppear(active: true)
+        ctl.bindConnection(keyA)
+        await ctl.refreshOperationStatus(capturedKey: keyA, store: store)
+        _ = await ctl.loadConfig(online: true, capturedKey: keyA, store: store, resetDraft: false)
+        ctl.session.draft["server.port"] = Sub2ApiConfigTabView.DraftChange(path: "server.port", remove: false, value: .int(9090))
+
+        // Re-enter tab and discover an external running operation started by another window.
+        ctl.setActive(false)
+        opState.withLock { $0 = #"{"status":"restarting","message":"另一窗口正在重启"}"# }
+        ctl.setActive(true)
+        await ctl.refreshOperationStatus(capturedKey: keyA, store: store)
+        #expect(ctl.isOperationRunning)
+        #expect(!ctl.session.ownOperation)
+
+        // External operation finishes with `succeeded` and changes revision: must keep draft & mark conflict!
+        docState.withLock { $0 = ("rev-2", "run-2") }
+        opState.withLock { $0 = #"{"status":"succeeded","message":"另一窗口已完成"}"# }
+        let extResolution = await ctl.pollOperationOnce(capturedKey: keyA, store: store)
+        #expect(extResolution == .reloadKeepingDraft)
+        _ = await ctl.loadConfig(online: true, capturedKey: keyA, store: store, resetDraft: false, protectDraft: true)
+        #expect(ctl.session.draft["server.port"]?.value == .int(9090))
+        #expect(ctl.session.conflicted)
+        #expect(ctl.session.document?.editable == false)
+
+        // Discard conflict, submit from THIS window, poll restarting -> failed after host rollback
+        // (runtime_revision changed): must keep local draft editable (`!conflicted`) instead of locking!
+        let needsDiscardReload = ctl.session.discardAll()
+        #expect(needsDiscardReload)
+        _ = await ctl.loadConfig(online: true, capturedKey: keyA, store: store, resetDraft: true, protectDraft: false)
+        ctl.session.draft["server.port"] = Sub2ApiConfigTabView.DraftChange(path: "server.port", remove: false, value: .int(9091))
+        await ctl.applyChanges(online: true, capturedKey: keyA, store: store)
+        #expect(ctl.isOperationRunning)
+        #expect(ctl.session.ownOperation)
+
+        docState.withLock { $0 = ("rev-2", "run-rollback-2") }
+        opState.withLock { $0 = #"{"status":"failed","message":"端口冲突已回滚"}"# }
+        let ownFailResolution = await ctl.pollOperationOnce(capturedKey: keyA, store: store)
+        #expect(ownFailResolution == .reloadAfterOwnFailure)
+        #expect(!ctl.session.ownOperation)
+        _ = await ctl.loadConfig(online: true, capturedKey: keyA, store: store, resetDraft: false, protectDraft: false)
+        #expect(ctl.session.draft["server.port"]?.value == .int(9091))
+        #expect(!ctl.session.conflicted)
+        #expect(ctl.session.document?.editable == true)
+
+        // Fix draft and submit again from THIS window, poll restarting -> succeeded: must reset draft!
+        ctl.session.draft["server.port"] = Sub2ApiConfigTabView.DraftChange(path: "server.port", remove: false, value: .int(9092))
+        await ctl.applyChanges(online: true, capturedKey: keyA, store: store)
+        #expect(ctl.isOperationRunning)
+        #expect(ctl.session.ownOperation)
+
+        opState.withLock { $0 = #"{"status":"restarting","message":"仍在重启"}"# }
+        #expect(await ctl.pollOperationOnce(capturedKey: keyA, store: store) == .keepPolling)
+        #expect(ctl.session.ownOperation)
+
+        docState.withLock { $0 = ("rev-3", "run-3") }
+        opState.withLock { $0 = #"{"status":"succeeded","message":"本窗口已完成"}"# }
+        let ownResolution = await ctl.pollOperationOnce(capturedKey: keyA, store: store)
+        #expect(ownResolution == .reloadResettingDraft)
+        #expect(!ctl.session.ownOperation)
+        _ = await ctl.loadConfig(online: true, capturedKey: keyA, store: store, resetDraft: true, protectDraft: false)
+        #expect(ctl.session.draft.isEmpty)
+        #expect(!ctl.session.conflicted)
+        #expect(ctl.session.document?.editable == true)
+
+        // Unmounted controller ignores pollOperationOnce
+        ctl.didDisappear()
+        #expect(await ctl.pollOperationOnce(capturedKey: keyA, store: store) == nil)
     }
 }
 }

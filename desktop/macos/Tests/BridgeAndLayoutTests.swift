@@ -356,5 +356,124 @@ struct BridgeAndLayoutTests {
         let cleared = try decoder.decode(ViewState.self, from: nullSnapJSON)
         #expect(cleared.snapshot == nil)
     }
+
+    @Test("OperationStore pollOnce tracks request sequence so target switches and publish writes reject stale in-flight replies")
+    @MainActor
+    func operationStorePollTargetIsolation() async throws {
+        let allGate = OSAllocatedUnfairLock<CheckedContinuation<String, Never>?>(initialState: nil)
+        let batchGate = OSAllocatedUnfairLock<CheckedContinuation<String, Never>?>(initialState: nil)
+        RustBridge.shared.setMockHandler { _, payload in
+            if payload.contains("batch_id=batch-1") {
+                return await withCheckedContinuation { cont in
+                    batchGate.withLock { $0 = cont }
+                }
+            }
+            if payload.contains("/account-operations") {
+                return await withCheckedContinuation { cont in
+                    allGate.withLock { $0 = cont }
+                }
+            }
+            return "{}"
+        }
+        let staleGlobalRunningJSON = String(
+            decoding: try JSONEncoder().encode(
+                OperationListReply(
+                    pending: 1,
+                    items: [Operation(id: "b-existing", account_id: 10, account_name: "BatchAcc", action: "test", status: "running")]
+                )
+            ),
+            as: UTF8.self
+        )
+        let batchCompletedJSON = String(
+            decoding: try JSONEncoder().encode(
+                OperationListReply(
+                    pending: 0,
+                    items: [Operation(id: "b-existing", account_id: 10, account_name: "BatchAcc", action: "test", status: "completed")]
+                )
+            ),
+            as: UTF8.self
+        )
+        let freshGlobalCancelledJSON = String(
+            decoding: try JSONEncoder().encode(
+                OperationListReply(
+                    pending: 0,
+                    items: [Operation(id: "b-existing", account_id: 10, account_name: "BatchAcc", action: "test", status: "cancelled")]
+                )
+            ),
+            as: UTF8.self
+        )
+        let ops = OperationStore()
+        defer {
+            ops.stop()
+            RustBridge.shared.setMockHandler(nil)
+        }
+        ops.bindConnection("https://a.example.invalid:true:1")
+        // Activate online state so setting isOpen / batchId triggers startPollingIfNeeded automatically
+        ops.startPollingIfNeeded(online: true, active: false)
+
+        // 1. Dispatch full-list GET, switch to batch view, let batch GET finish as `completed`,
+        //    then resolve stale full-list GET (`running`): stale reply must NOT regress shared `rows` or `batchItems`.
+        let allPoll = Task { await ops.pollOnce() }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while allGate.withLock({ $0 == nil }) && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let staleAllCont = allGate.withLock { let c = $0; $0 = nil; return c }
+        ops.batchId = "batch-1"
+        ops.batchItems = [Operation(id: "b-existing", account_id: 10, account_name: "BatchAcc", action: "test", status: "running")]
+        ops.isOpen = true
+        while batchGate.withLock({ $0 == nil }) && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        batchGate.withLock { let c = $0; $0 = nil; return c }?.resume(returning: batchCompletedJSON)
+        while ops.rows.first?.status != "completed" && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(ops.batchItems.map(\.status) == ["completed"])
+        #expect(ops.rows.map(\.status) == ["completed"])
+
+        staleAllCont?.resume(returning: staleGlobalRunningJSON)
+        await allPoll.value
+        #expect(ops.error.isEmpty)
+        #expect(ops.batchItems.map(\.status) == ["completed"])
+        #expect(ops.rows.map(\.status) == ["completed"])
+
+        // 2. Start another batch GET, switch back to full list so a newer full-list GET resolves as `cancelled`,
+        //    then resolve the cancelled in-flight batch GET (`running`): must NOT overwrite `rows` or `batchItems`.
+        let staleBatchPoll = Task { await ops.pollOnce() }
+        while batchGate.withLock({ $0 == nil }) && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let staleBatchCont = batchGate.withLock { let c = $0; $0 = nil; return c }
+        ops.batchId = nil
+        ops.batchItems = []
+        while allGate.withLock({ $0 == nil }) && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        allGate.withLock { let c = $0; $0 = nil; return c }?.resume(returning: freshGlobalCancelledJSON)
+        while ops.rows.first?.status != "cancelled" && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        staleBatchCont?.resume(returning: staleGlobalRunningJSON)
+        await staleBatchPoll.value
+        #expect(ops.error.isEmpty)
+        #expect(ops.batchItems.isEmpty)
+        #expect(ops.rows.map(\.status) == ["cancelled"])
+
+        // 3. `publish` while a full-list `pollOnce` is in flight must invalidate that pre-publish poll reply.
+        ops.stop()
+        ops.bindConnection("https://b.example.invalid:true:2")
+        let prePublishPoll = Task { await ops.pollOnce() }
+        while allGate.withLock({ $0 == nil }) && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let prePublishCont = allGate.withLock { let c = $0; $0 = nil; return c }
+        ops.publish(Operation(id: "b-existing", account_id: 10, account_name: "BatchAcc", action: "test", status: "completed"))
+        #expect(ops.rows.map(\.status) == ["completed"])
+
+        prePublishCont?.resume(returning: staleGlobalRunningJSON)
+        await prePublishPoll.value
+        #expect(ops.rows.map(\.status) == ["completed"])
+    }
 }
 }

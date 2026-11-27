@@ -170,6 +170,76 @@ public enum PriorityDraftLogic {
         }
     }
 
+    public static func canEditPlatform(
+        online: Bool,
+        hasView: Bool,
+        loading: Bool,
+        settingParallelism: String,
+        query: String,
+        conflict: Bool,
+        submittingPlatform: String,
+        activeTask: PriorityTask?,
+        platform: String
+    ) -> Bool {
+        online
+            && hasView
+            && !loading
+            && settingParallelism.isEmpty
+            && query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !conflict
+            && submittingPlatform != platform
+            && !(activeTask?.isPending == true && activeTask?.platform == platform)
+    }
+
+    public static func applyMove(
+        existing: PriorityPlatformDraft?,
+        group: PriorityPlatformGroup,
+        id: Int,
+        targetIndex: Int,
+        editing: Bool
+    ) -> PriorityPlatformDraft? {
+        guard editing else { return nil }
+        let accounts = existing?.accounts ?? group.items
+        let byId = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0) })
+        guard byId[id]?.editable == true else { return nil }
+        let width = max(1, min(8, existing?.parallelism ?? group.parallelism ?? 1))
+        let currentSlots = existing?.slots ?? (width == 1 && existing != nil
+            ? existing!.ids.enumerated().map { idx, item in PrioritySlot(priority: idx + 1, id: item) }
+            : prioritySlots(accounts: accounts, width: width))
+        let currentIds = currentSlots.compactMap(\.id)
+
+        if width > 1 {
+            let nextSlots = movePrioritySlot(slots: currentSlots, id: id, target: targetIndex, width: width)
+            guard nextSlots != currentSlots else { return nil }
+            let displacesLocked = nextSlots.contains { slot in
+                guard let sid = slot.id, let acc = byId[sid] else { return false }
+                return !acc.editable && acc.priority != slot.priority
+            }
+            guard !displacesLocked else { return nil }
+            return PriorityPlatformDraft(
+                ids: nextSlots.compactMap(\.id),
+                version: existing?.version ?? group.version,
+                accounts: accounts,
+                parallelism: width,
+                slots: nextSlots
+            )
+        } else {
+            let nextIds = movePriority(ids: currentIds, id: id, target: targetIndex)
+            guard nextIds != currentIds else { return nil }
+            let displacesLocked = nextIds.enumerated().contains { idx, sid in
+                guard let acc = byId[sid] else { return false }
+                return !acc.editable && acc.priority != idx + 1
+            }
+            guard !displacesLocked else { return nil }
+            return PriorityPlatformDraft(
+                ids: nextIds,
+                version: existing?.version ?? group.version,
+                accounts: accounts,
+                parallelism: 1
+            )
+        }
+    }
+
     public static func shouldUseMultiColumn(platforms: [PriorityPlatformGroup], availableWidth: CGFloat) -> Bool {
         guard platforms.count > 1 && platforms.count <= 3 else { return false }
         let minNeeded = platforms.reduce(CGFloat(0)) { sum, grp in

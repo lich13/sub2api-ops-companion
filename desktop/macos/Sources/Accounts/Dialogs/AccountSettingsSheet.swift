@@ -12,13 +12,6 @@ public enum AccountSettingsTab: String, CaseIterable, Sendable {
         case .proxy: return "选择代理"
         }
     }
-
-    public var heading: String {
-        switch self {
-        case .whitelist, .mapping: return "模型配置"
-        case .proxy: return "选择代理"
-        }
-    }
 }
 
 extension ModelProfileReply {

@@ -108,10 +108,10 @@ public struct RecordsPageView: View {
         }
         .task(id: "\(store.connectionKey):\(queryString):\(active)") {
             feed.holding = holding
-            feed.bind(query: queryString, active: active)
+            feed.bind(connectionKey: store.connectionKey, query: queryString, active: active)
         }
         .onChange(of: holding) { feed.holding = holding }
-        .onChange(of: queryString) {
+        .onChange(of: "\(store.connectionKey):\(queryString)") {
             scrolled = false
             scrollReset += 1
         }
@@ -361,11 +361,12 @@ public struct RecordsPageView: View {
             } else {
                 // Vertically scrollable table body keeping left User column sticky & right columns horizontally scrollable
                 GeometryReader { viewport in
+                    let lastRowId = feed.items.last?.id
                     ScrollView(.vertical) {
                         VStack(spacing: 0) {
                             HStack(alignment: .top, spacing: 0) {
                                 LazyVStack(spacing: 0) {
-                                    ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, item in
+                                    ForEach(feed.items) { item in
                                         let row = item.record
                                         let rh = item.height(model: hasModelCol, latency: hasLatencyCol)
                                         RecordUserRowCell(
@@ -378,7 +379,7 @@ public struct RecordsPageView: View {
                                             openDetail(id: row.id)
                                         }
 
-                                        if idx < feed.items.count - 1 {
+                                        if item.id != lastRowId {
                                             Rectangle().fill(DS.line).frame(height: 1)
                                         }
                                     }
@@ -398,7 +399,7 @@ public struct RecordsPageView: View {
                                         .frame(height: 0)
 
                                         LazyVStack(spacing: 0) {
-                                            ForEach(Array(feed.items.enumerated()), id: \.element.id) { idx, item in
+                                            ForEach(feed.items) { item in
                                                 let row = item.record
                                                 let rh = item.height(model: hasModelCol, latency: hasLatencyCol)
                                                 RecordDataRowCell(
@@ -426,7 +427,7 @@ public struct RecordsPageView: View {
                                                     }
                                                 }
 
-                                                if idx < feed.items.count - 1 {
+                                                if item.id != lastRowId {
                                                     Rectangle().fill(DS.line).frame(height: 1)
                                                 }
                                             }

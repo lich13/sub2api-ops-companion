@@ -182,6 +182,7 @@ public final class AppStore {
     public var selectedDetectionLog: DetectionLog?
     public var windowModalView: AnyView?
     public var windowModalOnBackdrop: (@MainActor () -> Void)?
+    public private(set) var windowModalToken: UInt64 = 0
 
     public var config: [String: JSONValue]?
     public let operations = OperationStore()
@@ -365,6 +366,7 @@ public final class AppStore {
         closeDetail()
         closeRecordDetail()
         selectedDetectionLog = nil
+        windowModalToken &+= 1
         windowModalView = nil
         windowModalOnBackdrop = nil
         accountModal = nil
@@ -387,7 +389,9 @@ public final class AppStore {
         let capturedEpoch = operations.epoch
         busyRecoverAccountIds.insert(acc.id)
         defer {
-            busyRecoverAccountIds.remove(acc.id)
+            if operations.epoch == capturedEpoch {
+                busyRecoverAccountIds.remove(acc.id)
+            }
         }
         do {
             let res = try await operations.accountOperation(account: acc, action: "recover", payload: [:])
@@ -437,12 +441,19 @@ public final class AppStore {
         recordDetailError = ""
     }
 
-    public func presentWindowModal<Content: View>(onBackdrop: (@MainActor () -> Void)? = nil, @ViewBuilder content: () -> Content) {
+    @discardableResult
+    public func presentWindowModal<Content: View>(onBackdrop: (@MainActor () -> Void)? = nil, @ViewBuilder content: () -> Content) -> UInt64 {
+        windowModalToken &+= 1
         windowModalOnBackdrop = onBackdrop
         windowModalView = AnyView(content())
+        return windowModalToken
     }
 
-    public func dismissWindowModal() {
+    public func dismissWindowModal(matching token: UInt64? = nil) {
+        if let token, windowModalToken != token {
+            return
+        }
+        windowModalToken &+= 1
         windowModalView = nil
         windowModalOnBackdrop = nil
     }

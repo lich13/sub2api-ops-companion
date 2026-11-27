@@ -208,7 +208,6 @@ public struct OperationPanelSheet: View {
                     Button("查看整批") {
                         ops.batchItems = []
                         ops.batchId = bId
-                        Task { await ops.pollOnce() }
                     }
                     .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
                 }

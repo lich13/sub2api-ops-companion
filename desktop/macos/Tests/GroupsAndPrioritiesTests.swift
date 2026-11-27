@@ -91,7 +91,7 @@ struct GroupsAndPrioritiesTests {
         """
         RustBridge.shared.setMockHandler { _, payload in
             if payload.contains("/account-operations") {
-                return "{\"items\":[]}"
+                return "{\"pending\":0,\"items\":[]}"
             }
             return priorityMockJSON
         }
@@ -153,6 +153,91 @@ struct GroupsAndPrioritiesTests {
                 outputURL: baseURL.appendingPathComponent("m3_priorities_\(suffix).png")
             )
         }
+    }
+
+    @Test("PriorityDraftLogic.applyMove rejects dragging editable A across locked B in single lane, allows empty tie slots when locked B stays put, and gates on editing")
+    @MainActor
+    func priorityMoveLockedDisplacementAndEditingGuards() {
+        let items = [
+            PriorityAccount(id: 1, name: "Editable-A", platform: "openai", priority: 1, editable: true),
+            PriorityAccount(id: 2, name: "Locked-B", platform: "openai", priority: 2, editable: false, reason: "由模板锁定"),
+            PriorityAccount(id: 3, name: "Editable-C", platform: "openai", priority: 3, editable: true),
+        ]
+        let singleLaneGroup = PriorityPlatformGroup(platform: "openai", items: items, version: "v1", parallelism: 1)
+
+        // 1. Single lane: dragging editable A (idx 0) across locked B (idx 1) to editable C (idx 2) shifts B to priority 1 -> rejected!
+        let rejectedAcrossLocked = PriorityDraftLogic.applyMove(
+            existing: nil,
+            group: singleLaneGroup,
+            id: 1,
+            targetIndex: 2,
+            editing: true
+        )
+        #expect(rejectedAcrossLocked == nil)
+
+        // 2. Editing gate: offline or active search filter disables move even when no locked account is displaced
+        let canEditWhileFiltered = PriorityDraftLogic.canEditPlatform(
+            online: true,
+            hasView: true,
+            loading: false,
+            settingParallelism: "",
+            query: "Editable",
+            conflict: false,
+            submittingPlatform: "",
+            activeTask: nil,
+            platform: "openai"
+        )
+        #expect(!canEditWhileFiltered)
+        let canEditWhileOffline = PriorityDraftLogic.canEditPlatform(
+            online: false,
+            hasView: true,
+            loading: false,
+            settingParallelism: "",
+            query: "",
+            conflict: false,
+            submittingPlatform: "",
+            activeTask: nil,
+            platform: "openai"
+        )
+        #expect(!canEditWhileOffline)
+
+        // 3. Multi-column (parallelism = 2): moving editable A into C's empty tie slot (priority 3, slot 5) or swapping A and C (slot 4)
+        //    leaves locked B at priority 2 -> allowed! Moving A onto locked B's occupied slot (slot 2) displaces B to priority 1 -> rejected!
+        let parallelGroup = PriorityPlatformGroup(platform: "openai", items: items, version: "v1", parallelism: 2)
+        // Slots: [0:(p1,id1), 1:(p1,nil), 2:(p2,id2), 3:(p2,nil), 4:(p3,id3), 5:(p3,nil), 6:(p4,nil), 7:(p4,nil)]
+        let intoEmptySlot = PriorityDraftLogic.applyMove(
+            existing: nil,
+            group: parallelGroup,
+            id: 1,
+            targetIndex: 5,
+            editing: true
+        )
+        #expect(intoEmptySlot != nil)
+        #expect(intoEmptySlot?.slots?.first(where: { $0.id == 2 })?.priority == 2)
+        #expect(intoEmptySlot?.slots?.first(where: { $0.id == 1 })?.priority == 3)
+
+        let swapOntoLocked = PriorityDraftLogic.applyMove(
+            existing: nil,
+            group: parallelGroup,
+            id: 1,
+            targetIndex: 2,
+            editing: true
+        )
+        #expect(swapOntoLocked == nil)
+
+        // 4. Visibility gate and shared adaptive poll table
+        #expect(OperationStore.adaptivePollDelaysMs == [35, 80, 180, 350, 500])
+        let store = AppStore()
+        defer { store.stop() }
+        store.page = .priorities
+        store.applyViewState(ViewState(foreground: true, connected: true, online: true))
+        let pageView = PrioritiesPageView(store: store)
+        #expect(pageView.isPollingVisible)
+        store.page = .accounts
+        #expect(!pageView.isPollingVisible)
+        store.page = .priorities
+        store.applyViewState(ViewState(foreground: false, connected: true, online: true))
+        #expect(!pageView.isPollingVisible)
     }
 }
 }

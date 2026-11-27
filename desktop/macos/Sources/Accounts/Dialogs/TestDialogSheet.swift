@@ -2,6 +2,131 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+@MainActor
+@Observable
+public final class TestDialogLifecycle {
+    public private(set) var isOpen: Bool = true
+    public private(set) var boundConnectionKey: String = ""
+    public private(set) var activeJobId: String? = nil
+    public private(set) var generation: UInt64 = 0
+    public private(set) var dialogSeq: UInt64 = 0
+    public private(set) var modelLoadSeq: UInt64 = 0
+    public var candidateModels: [ModelOption] = []
+    public private(set) var loadingModels: Bool = false
+    public var modelError: String = ""
+    @ObservationIgnored nonisolated(unsafe) private var runTask: Task<Void, Never>?
+
+    deinit {
+        runTask?.cancel()
+    }
+
+    public init() {}
+
+    public func open(connectionKey: String) {
+        isOpen = true
+        if boundConnectionKey != connectionKey {
+            boundConnectionKey = connectionKey
+            generation &+= 1
+            dialogSeq &+= 1
+            modelLoadSeq &+= 1
+            loadingModels = false
+            modelError = ""
+            candidateModels = []
+            activeJobId = nil
+            runTask?.cancel()
+            runTask = nil
+        }
+    }
+
+    public func close() {
+        isOpen = false
+        generation &+= 1
+        dialogSeq &+= 1
+        modelLoadSeq &+= 1
+        loadingModels = false
+        activeJobId = nil
+        runTask?.cancel()
+        runTask = nil
+    }
+
+    public func isDialogActive(dialogSeq capturedSeq: UInt64, connectionKey: String) -> Bool {
+        isOpen && dialogSeq == capturedSeq && boundConnectionKey == connectionKey
+    }
+
+    public func loadCandidateModels(
+        accountId: Int,
+        refresh: Bool,
+        online: Bool,
+        connectionKey: String
+    ) async {
+        guard online, isOpen, boundConnectionKey == connectionKey else { return }
+        let capturedDialogSeq = dialogSeq
+        modelLoadSeq &+= 1
+        let capturedModelSeq = modelLoadSeq
+        ModelDirectoryStore.shared.bindConnection(connectionKey)
+        loadingModels = true
+        modelError = ""
+        defer {
+            if isDialogActive(dialogSeq: capturedDialogSeq, connectionKey: connectionKey),
+               modelLoadSeq == capturedModelSeq
+            {
+                loadingModels = false
+            }
+        }
+        do {
+            let list = try await ModelDirectoryStore.shared.readModels(accountId: accountId, refresh: refresh)
+            guard !Task.isCancelled,
+                  isDialogActive(dialogSeq: capturedDialogSeq, connectionKey: connectionKey),
+                  modelLoadSeq == capturedModelSeq
+            else { return }
+            candidateModels = list
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled,
+                  isDialogActive(dialogSeq: capturedDialogSeq, connectionKey: connectionKey),
+                  modelLoadSeq == capturedModelSeq
+            else { return }
+            if ModelDirectoryStore.isRevoked(error) {
+                candidateModels = []
+            }
+            modelError = "模型列表读取失败：\(error.localizedDescription)"
+        }
+    }
+
+    public func beginRun(
+        connectionKey: String,
+        operation: @escaping @MainActor (UInt64) async -> Void
+    ) {
+        guard isOpen, boundConnectionKey == connectionKey else { return }
+        runTask?.cancel()
+        generation &+= 1
+        activeJobId = nil
+        let capturedGen = generation
+        runTask = Task { @MainActor [weak self] in
+            guard let self, self.canContinue(generation: capturedGen, connectionKey: connectionKey) else { return }
+            await operation(capturedGen)
+        }
+    }
+
+    public func bindJob(_ id: String?, generation capturedGen: UInt64) {
+        guard generation == capturedGen else { return }
+        activeJobId = id
+    }
+
+    public func canContinue(
+        generation capturedGen: UInt64,
+        connectionKey: String,
+        jobId: String? = nil
+    ) -> Bool {
+        guard isOpen, generation == capturedGen, boundConnectionKey == connectionKey else { return false }
+        if let jobId {
+            return activeJobId == jobId
+        }
+        return true
+    }
+}
+
 /// Matches `desktop/src/TestDialog.tsx` (`react_test_dialog_light.png`) in both visual layout and server JSON contract.
 public struct TestDialogSheet: View {
     public let account: Account
@@ -21,12 +146,10 @@ public struct TestDialogSheet: View {
         "tts": "Hello from Sub2API account connectivity test.",
     ]
 
+    @State var lifecycle = TestDialogLifecycle()
     @State var execution: ExecutionKind = .now
     @State var mode: String
     @State var model: String = ""
-    @State var candidateModels: [ModelOption] = []
-    @State var loadingModels: Bool = false
-    @State var modelError: String = ""
     @State var prompt: String = ""
     @State var scheduledText: String = ""
     @State var cycleBusy: Bool = false
@@ -80,6 +203,18 @@ public struct TestDialogSheet: View {
 
     private var hasMediaUpload: Bool {
         (account.platform == "grok" && ["image", "video", "stt"].contains(mode)) || isOpenAIImageModel
+    }
+
+    var candidateModels: [ModelOption] {
+        lifecycle.candidateModels
+    }
+
+    var loadingModels: Bool {
+        lifecycle.loadingModels
+    }
+
+    var modelError: String {
+        lifecycle.modelError
     }
 
     private var availableModels: [ModelOption] {
@@ -481,7 +616,10 @@ public struct TestDialogSheet: View {
                 }
             } else {
                 Button {
-                    Task { await startRun() }
+                    lifecycle.open(connectionKey: store.connectionKey)
+                    lifecycle.beginRun(connectionKey: store.connectionKey) { gen in
+                        await startRun(capturedGen: gen)
+                    }
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "play")
@@ -499,7 +637,19 @@ public struct TestDialogSheet: View {
             onBackdrop: { if !running && !cycleBusy { handleClose() } },
             onEscape: handleClose
         )
+        .onChange(of: store.connectionKey) { _, next in
+            if lifecycle.boundConnectionKey != next {
+                lifecycle.close()
+                running = false
+                cycleBusy = false
+                operationId = nil
+            }
+        }
+        .onDisappear {
+            lifecycle.close()
+        }
         .task {
+            lifecycle.open(connectionKey: store.connectionKey)
             if store.state.online {
                 await store.operations.pollOnce()
                 await loadCandidateModels(refresh: false)

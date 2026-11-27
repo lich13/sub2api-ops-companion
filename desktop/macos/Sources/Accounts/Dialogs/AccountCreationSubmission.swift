@@ -372,15 +372,15 @@ extension AccountCreationSheet {
                         if authMethod == "grok-sso" {
                             body["credentials"] = body.removeValue(forKey: "credential_extras") ?? .object([:])
                             body["sso_tokens"] = .array([.string(item)])
-                            let res: [String: JSONValue] = try await RustBridge.shared.api("POST", "/account-creation/import/grok-sso", body: .object(body))
-                            if !(res["failed"]?.arrayValue ?? []).isEmpty {
+                            let res: GrokImportReply = try await RustBridge.shared.api("POST", "/account-creation/import/grok-sso", body: .object(body))
+                            if !res.failed.isEmpty {
                                 sent = false
                                 throw RustBridgeError("SSO 导入失败，请检查凭据后重试")
                             }
-                            guard let first = res["created"]?.arrayValue?.first else {
+                            guard let first = res.created.first else {
                                 throw RustBridgeError("SSO 导入未返回创建结果")
                             }
-                            detail = "已创建 #\(first["account"]?["id"]?.intValue ?? 0)"
+                            detail = "已创建 #\(first.account.id)"
                         } else if authMethod == "codex-pat" {
                             body["access_token"] = .string(item)
                             let res: CreatedAccountReply = try await RustBridge.shared.api("POST", "/account-creation/import/codex-pat", body: .object(body))
@@ -388,15 +388,15 @@ extension AccountCreationSheet {
                         } else {
                             body["content"] = .string(item)
                             body["update_existing"] = .bool(true)
-                            let res: [String: JSONValue] = try await RustBridge.shared.api("POST", "/account-creation/import/codex-session", body: .object(body))
-                            let failed = res["failed"]?.intValue ?? 0
-                            detail = "创建 \(res["created"]?.intValue ?? 0)，更新 \(res["updated"]?.intValue ?? 0)，跳过 \(res["skipped"]?.intValue ?? 0)，失败 \(failed)"
-                            let failedIndexes = (res["errors"]?.arrayValue ?? []).compactMap { $0["index"]?.intValue }
+                            let res: SessionImportReply = try await RustBridge.shared.api("POST", "/account-creation/import/codex-session", body: .object(body))
+                            let failed = res.failed
+                            detail = "创建 \(res.created)，更新 \(res.updated)，跳过 \(res.skipped)，失败 \(failed)"
+                            let failedIndexes = res.errors.map(\.index)
                             if !failedIndexes.isEmpty {
                                 detail += "；失败项 \(failedIndexes.map { String($0) }.joined(separator: "、"))，请仅填入失败项重试"
                             }
-                            let warnings = (res["warnings"]?.arrayValue ?? []).map {
-                                "#\($0["index"]?.intValue ?? 0) \($0["message"]?.stringValue ?? "")"
+                            let warnings = res.warnings.map {
+                                "#\($0.index) \($0.message)"
                             }
                             if !warnings.isEmpty {
                                 detail += "；\(warnings.joined(separator: "；"))"

@@ -1,40 +1,24 @@
 import SwiftUI
 
 extension PrioritiesPageView {
-    func moveItem(platform: String, id: Int, targetIndex: Int) {
-        guard let grp = platforms.first(where: { $0.platform == platform }) else { return }
+    @discardableResult
+    func moveItem(platform: String, id: Int, targetIndex: Int) -> Bool {
+        guard let grp = platforms.first(where: { $0.platform == platform }) else { return false }
         let existing = drafts[platform]
-        let accounts = existing?.accounts ?? grp.items
-        guard accounts.first(where: { $0.id == id })?.editable == true else { return }
-        let width = max(1, min(8, existing?.parallelism ?? grp.parallelism ?? 1))
-        let currentSlots = existing?.slots ?? (width == 1 && existing != nil
-            ? existing!.ids.enumerated().map { idx, item in PrioritySlot(priority: idx + 1, id: item) }
-            : PriorityDraftLogic.prioritySlots(accounts: accounts, width: width))
-        let currentIds = currentSlots.compactMap(\.id)
-
-        if width > 1 {
-            let nextSlots = PriorityDraftLogic.movePrioritySlot(slots: currentSlots, id: id, target: targetIndex, width: width)
-            guard nextSlots != currentSlots else { return }
-            history[platform, default: []].append(existing)
-            drafts[platform] = PriorityPlatformDraft(
-                ids: nextSlots.compactMap(\.id),
-                version: existing?.version ?? grp.version,
-                accounts: accounts,
-                parallelism: width,
-                slots: nextSlots
-            )
-        } else {
-            let nextIds = PriorityDraftLogic.movePriority(ids: currentIds, id: id, target: targetIndex)
-            guard nextIds != currentIds else { return }
-            history[platform, default: []].append(existing)
-            drafts[platform] = PriorityPlatformDraft(
-                ids: nextIds,
-                version: existing?.version ?? grp.version,
-                accounts: accounts,
-                parallelism: 1
-            )
+        let editing = isEditingPlatform(grp, draft: existing)
+        guard let nextDraft = PriorityDraftLogic.applyMove(
+            existing: existing,
+            group: grp,
+            id: id,
+            targetIndex: targetIndex,
+            editing: editing
+        ) else {
+            return false
         }
+        history[platform, default: []].append(existing)
+        drafts[platform] = nextDraft
         notices[platform] = ""
+        return true
     }
 
     func undoDraft(platform: String) {
@@ -133,22 +117,29 @@ extension PrioritiesPageView {
         }
     }
 
-    private static let adaptivePollDelaysMs: [Int] = [35, 80, 180, 350, 500]
-
     func pollActiveTask(id: String) async {
         let capturedKey = store.connectionKey
         var failures = 0
         var step = 0
-        while !Task.isCancelled && store.state.online && store.connectionKey == capturedKey {
+        let delays = OperationStore.adaptivePollDelaysMs
+        while !Task.isCancelled
+            && store.state.online
+            && store.connectionKey == capturedKey
+            && isPollingVisible
+        {
             let delayMs: Int
             if failures > 0 {
                 delayMs = min(4, 1 << min(failures, 2)) * 1000
             } else {
-                delayMs = Self.adaptivePollDelaysMs[min(step, Self.adaptivePollDelaysMs.count - 1)]
+                delayMs = delays[min(step, delays.count - 1)]
                 step += 1
             }
             try? await Task.sleep(for: .milliseconds(delayMs))
-            guard !Task.isCancelled, store.state.online, store.connectionKey == capturedKey else { return }
+            guard !Task.isCancelled,
+                  store.state.online,
+                  store.connectionKey == capturedKey,
+                  isPollingVisible
+            else { return }
             do {
                 let next: PriorityTask = try await RustBridge.shared.api("GET", "/account-priority-orders/\(id)?schema=2&details=0")
                 guard !Task.isCancelled, store.connectionKey == capturedKey else { return }

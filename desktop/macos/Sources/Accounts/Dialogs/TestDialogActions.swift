@@ -23,26 +23,24 @@ extension TestDialogSheet {
     }
 
     func loadCandidateModels(refresh: Bool) async {
-        guard store.state.online else { return }
-        ModelDirectoryStore.shared.bindConnection(store.connectionKey)
-        loadingModels = true
-        modelError = ""
-        defer { loadingModels = false }
-        do {
-            candidateModels = try await ModelDirectoryStore.shared.readModels(accountId: account.id, refresh: refresh)
-        } catch {
-            if ModelDirectoryStore.isRevoked(error) {
-                candidateModels = []
-            }
-            modelError = "模型列表读取失败：\(error.localizedDescription)"
-        }
+        await lifecycle.loadCandidateModels(
+            accountId: account.id,
+            refresh: refresh,
+            online: store.state.online,
+            connectionKey: store.connectionKey
+        )
     }
 
     func fillCycleTime() async {
-        guard store.state.online, !cycleBusy, !running else { return }
+        guard store.state.online, !cycleBusy, !running, lifecycle.isOpen else { return }
+        let capturedDialogSeq = lifecycle.dialogSeq
         cycleBusy = true
         errorText = ""
-        defer { cycleBusy = false }
+        defer {
+            if lifecycle.isDialogActive(dialogSeq: capturedDialogSeq, connectionKey: store.connectionKey) {
+                cycleBusy = false
+            }
+        }
         do {
             let usage: UsageSummary?
             if account.usage?.native_read == true {
@@ -50,17 +48,23 @@ extension TestDialogSheet {
             } else {
                 usage = account.usage
             }
+            guard !Task.isCancelled,
+                  lifecycle.isDialogActive(dialogSeq: capturedDialogSeq, connectionKey: store.connectionKey)
+            else { return }
             guard let targetDate = Self.nextCycleAppointmentDate(usage: usage, windows: account.usage_windows) else {
                 errorText = "暂无可用的周期重置时间，请手动设置预约时间。"
                 return
             }
             scheduledText = Self.formatBeijingTimestamp(targetDate)
         } catch {
-            errorText = "周期时间读取失败：\(error.localizedDescription)"
+            if lifecycle.isDialogActive(dialogSeq: capturedDialogSeq, connectionKey: store.connectionKey) {
+                errorText = "周期时间读取失败：\(error.localizedDescription)"
+            }
         }
     }
 
     func handleClose() {
+        lifecycle.close()
         clearMedia()
         onClose()
     }
@@ -111,8 +115,10 @@ extension TestDialogSheet {
     }
 
     /// Implements exact `TestDialog.tsx` submission + Stage 0 cancel-before-job-id fix & stale operationId reset.
-    func startRun() async {
-        guard store.state.online, !running, !cycleBusy else { return }
+    func startRun(capturedGen: UInt64? = nil) async {
+        let capturedKey = store.connectionKey
+        let activeGen = capturedGen ?? lifecycle.generation
+        guard store.state.online, !running, !cycleBusy, lifecycle.isOpen else { return }
 
         if execution != .now {
             let continuous = (execution == .cycle)
@@ -138,7 +144,11 @@ extension TestDialogSheet {
 
             running = true
             errorText = ""
-            defer { running = false }
+            defer {
+                if lifecycle.canContinue(generation: activeGen, connectionKey: store.connectionKey) {
+                    running = false
+                }
+            }
             do {
                 let job = try await store.operations.submitOperation(
                     account: account,
@@ -152,6 +162,7 @@ extension TestDialogSheet {
                     scheduledAt: scheduledISO,
                     repeatMode: continuous ? "quota_cycle" : nil
                 )
+                guard lifecycle.canContinue(generation: activeGen, connectionKey: store.connectionKey) else { return }
                 if job.status == "needs_confirmation" || job.repeat_state == "needs_confirmation" || job.status == "failed" {
                     errorText = job.repeat_reason ?? job.reason ?? "预约需确认，请核对后重新提交。"
                 } else {
@@ -159,7 +170,9 @@ extension TestDialogSheet {
                     handleClose()
                 }
             } catch {
-                errorText = error.localizedDescription
+                if lifecycle.canContinue(generation: activeGen, connectionKey: store.connectionKey) {
+                    errorText = error.localizedDescription
+                }
             }
             return
         }
@@ -176,12 +189,17 @@ extension TestDialogSheet {
         var terminalReceived = false
 
         defer {
-            operationId = nil
-            running = false
-            if cancelled {
-                statusLine = "已取消，未重放请求"
+            if lifecycle.canContinue(generation: activeGen, connectionKey: store.connectionKey) {
+                lifecycle.bindJob(nil, generation: activeGen)
+                operationId = nil
+                running = false
+                if cancelled {
+                    statusLine = "已取消，未重放请求"
+                }
             }
-            store.refresh()
+            if store.connectionKey == capturedKey {
+                store.refresh()
+            }
         }
 
         let effectivePrompt: String
@@ -215,17 +233,27 @@ extension TestDialogSheet {
                     do {
                         _ = try await store.operations.cancelJobId(job.id)
                     } catch {
-                        store.report(error)
+                        if store.connectionKey == capturedKey {
+                            store.report(error)
+                        }
                     }
                 }
                 return
             }
 
+            // Do not start polling if the dialog was closed or connection switched while submitOperation was in flight.
+            guard !Task.isCancelled,
+                  lifecycle.canContinue(generation: activeGen, connectionKey: store.connectionKey)
+            else { return }
+
+            lifecycle.bindJob(job.id, generation: activeGen)
             operationId = job.id
             _ = try await store.operations.followOperation(
                 initial: job,
                 onEvent: { event in
-                    guard !cancelled else { return }
+                    guard !cancelled,
+                          lifecycle.canContinue(generation: activeGen, connectionKey: store.connectionKey, jobId: job.id)
+                    else { return }
                     switch event.type {
                     case "content":
                         if let chunk = event.text {
@@ -252,16 +280,23 @@ extension TestDialogSheet {
                     }
                 },
                 onUpdate: { updated in
+                    guard lifecycle.canContinue(generation: activeGen, connectionKey: store.connectionKey, jobId: job.id) else { return }
                     if let ms = updated.result?.duration_ms {
                         durationMs = Double(ms)
                     }
                 }
             )
-            if !terminalReceived && !cancelled && errorText.isEmpty {
+            if !terminalReceived && !cancelled && errorText.isEmpty
+                && lifecycle.canContinue(generation: activeGen, connectionKey: store.connectionKey, jobId: job.id)
+            {
                 statusLine = "测试通过"
             }
+        } catch is CancellationError {
+            return
         } catch {
-            if !cancelled {
+            if !cancelled
+                && lifecycle.canContinue(generation: activeGen, connectionKey: store.connectionKey)
+            {
                 errorText = error.localizedDescription
                 statusLine = "测试失败"
             }
@@ -269,13 +304,16 @@ extension TestDialogSheet {
     }
 
     func cancelRun() async {
+        let capturedKey = store.connectionKey
         cancelled = true
         if let id = operationId {
             operationId = nil
             do {
                 _ = try await store.operations.cancelJobId(id)
             } catch {
-                store.report(error)
+                if store.connectionKey == capturedKey {
+                    store.report(error)
+                }
             }
         }
     }

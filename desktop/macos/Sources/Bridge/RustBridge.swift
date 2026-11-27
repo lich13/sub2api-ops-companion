@@ -166,10 +166,6 @@ public final class RustBridge: Sendable {
         return decoder
     }
 
-    public func rawCommand(_ name: String, payloadJSON: String = "{}") async throws -> Data {
-        try await rawCommand(name, payloadData: Data(payloadJSON.utf8))
-    }
-
     public func rawCommand(_ name: String, payloadData: Data) async throws -> Data {
         let mock = state.withLock { $0.mockHandler }
         if let mock {

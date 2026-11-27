@@ -54,7 +54,18 @@ public final class AccountSortStore {
         }
     }
 
-    public func sort(_ accounts: [Account]) -> [Account] {
+    public static func effectiveUsagePeak(
+        for account: Account,
+        resolvedUsage: UsageSummary? = nil
+    ) -> Double {
+        let windows = (resolvedUsage ?? account.usage)?.windows ?? account.usage_windows
+        return windows.compactMap(\.used_percent).max() ?? -1
+    }
+
+    public func sort(
+        _ accounts: [Account],
+        effectiveUsage: ((Account) -> UsageSummary?)? = nil
+    ) -> [Account] {
         switch option.key {
         case .recent:
             return AccountFilterSort.sortRecentCall(accounts, ascending: option.ascending)
@@ -71,9 +82,11 @@ public final class AccountSortStore {
         case .usage:
             guard accounts.count > 1 else { return accounts }
             let keyed: [(account: Account, peak: Double)] = accounts.map { account in
-                let windows = account.usage?.windows ?? account.usage_windows
-                let percents = windows.compactMap(\.used_percent)
-                return (account, percents.max() ?? -1)
+                let peak = Self.effectiveUsagePeak(
+                    for: account,
+                    resolvedUsage: effectiveUsage?(account)
+                )
+                return (account, peak)
             }
             return keyed.sorted { lhs, rhs in
                 let pa = lhs.peak

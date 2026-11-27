@@ -61,6 +61,7 @@ public struct PageContentRouterView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         accountsHeading
                         AccountsPageView(store: store, viewportWidth: effectiveAccountsWidth)
+                            .id("accounts:\(store.connectionKey)")
                     }
                     .padding(.horizontal, hPad)
                     .padding(.vertical, 18)

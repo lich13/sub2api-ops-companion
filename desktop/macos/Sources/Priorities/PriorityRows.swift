@@ -1,5 +1,19 @@
 import SwiftUI
 
+private struct ConditionalPriorityDragModifier: ViewModifier {
+    let enabled: Bool
+    let payload: String
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            content.draggable(payload)
+        } else {
+            content
+        }
+    }
+}
+
 extension PrioritiesPageView {
     @ViewBuilder
     func singleLaneRow(
@@ -110,13 +124,13 @@ extension PrioritiesPageView {
             .padding(.vertical, 12)
             .frame(minHeight: 62)
             .contentShape(Rectangle())
-            .draggable("\(platform):\(acc.id)")
+            .modifier(ConditionalPriorityDragModifier(enabled: editing && acc.editable, payload: "\(platform):\(acc.id)"))
             .dropDestination(for: String.self) { items, _ in
-                guard let raw = items.first, raw.hasPrefix("\(platform):"),
+                guard editing,
+                      let raw = items.first, raw.hasPrefix("\(platform):"),
                       let draggedId = Int(raw.dropFirst(platform.count + 1))
                 else { return false }
-                moveItem(platform: platform, id: draggedId, targetIndex: slotIndex)
-                return true
+                return moveItem(platform: platform, id: draggedId, targetIndex: slotIndex)
             }
         }
     }
@@ -216,13 +230,13 @@ extension PrioritiesPageView {
                 .background(DS.surface)
                 .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(changed ? DS.accent : DS.line, lineWidth: 1))
                 .clipShape(RoundedRectangle(cornerRadius: 7))
-                .draggable("\(platform):\(acc.id)")
+                .modifier(ConditionalPriorityDragModifier(enabled: editing && acc.editable, payload: "\(platform):\(acc.id)"))
                 .dropDestination(for: String.self) { items, _ in
-                    guard let raw = items.first, raw.hasPrefix("\(platform):"),
+                    guard editing,
+                          let raw = items.first, raw.hasPrefix("\(platform):"),
                           let draggedId = Int(raw.dropFirst(platform.count + 1))
                     else { return false }
-                    moveItem(platform: platform, id: draggedId, targetIndex: slotIndex)
-                    return true
+                    return moveItem(platform: platform, id: draggedId, targetIndex: slotIndex)
                 }
             }
         } else {
@@ -238,11 +252,11 @@ extension PrioritiesPageView {
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(DS.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
             .clipShape(RoundedRectangle(cornerRadius: 7))
             .dropDestination(for: String.self) { items, _ in
-                guard let raw = items.first, raw.hasPrefix("\(platform):"),
+                guard editing,
+                      let raw = items.first, raw.hasPrefix("\(platform):"),
                       let draggedId = Int(raw.dropFirst(platform.count + 1))
                 else { return false }
-                moveItem(platform: platform, id: draggedId, targetIndex: slotIndex)
-                return true
+                return moveItem(platform: platform, id: draggedId, targetIndex: slotIndex)
             }
         }
     }

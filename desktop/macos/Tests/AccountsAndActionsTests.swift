@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import os
 import SwiftUI
 import Testing
 @testable import Sub2OpsMacOS
@@ -220,10 +221,9 @@ struct AccountsAndActionsTests {
         let regular = AccountsPageView.TableColumnMetrics(containerWidth: 1133, nameExpanded: false)
         #expect(regular.totalWidth == 1133)
         #expect(regular.nameW == narrow.nameW && regular.usageW == narrow.usageW && regular.actionsW > narrow.actionsW)
-        let sumRegular = regular.selectW + regular.nameW + regular.paramsW + regular.statusW
-            + regular.usageW + regular.errorW + regular.scheduleW + regular.actionsW
-            + (regular.gap * 7) + (regular.horizontalPad * 2)
-        #expect(abs(sumRegular - 1133) < 0.001)
+        #expect(abs((regular.actionsW - narrow.actionsW) - (regular.totalWidth - narrow.totalWidth)) < 0.001)
+        #expect(expandedNarrow.actionsW == narrow.actionsW)
+        #expect(abs((expandedNarrow.totalWidth - narrow.totalWidth) - (expandedNarrow.nameW - narrow.nameW)) < 0.001)
         let ultrawide = AccountsPageView.TableColumnMetrics(containerWidth: 2200, nameExpanded: false)
         #expect(ultrawide.totalWidth == 2200 && ultrawide.actionsW > 600)
 
@@ -633,7 +633,7 @@ struct AccountsAndActionsTests {
                 return "{\"seconds\":60,\"revision\":\"kq-v1\"}"
             }
             if payload.contains("/account-operations") {
-                return "{\"items\":[]}"
+                return "{\"pending\":0,\"items\":[]}"
             }
             return "{}"
         }
@@ -926,6 +926,338 @@ struct AccountsAndActionsTests {
                 outputURL: baseURL.appendingPathComponent("m2_error_drawer_\(suffix).png")
             )
         }
+    }
+
+    @Test("AccountsPageSession, AppStore.recoverAccount, dialog lifecycles, effective usage peak sort, and O(1) NativeUsageReader queue")
+    @MainActor
+    func connectionIsolationQuotaRefreshDialogLifecycleAndUsageSort() async throws {
+        // 1. AccountsPageSession resets selection, batch, and quota refresh on connection switch,
+        //    and separates local GET failure from server running status so the button never bricks.
+        let store = AppStore()
+        defer {
+            store.stop()
+            RustBridge.shared.setMockHandler(nil)
+        }
+        let accA = Account(id: 101, name: "InstanceA-Codex", version: "v1", operation_versions: ["recover": "v1", "test": "v1"])
+        let accB = Account(id: 101, name: "InstanceB-Codex", version: "v2", operation_versions: ["recover": "v2", "test": "v2"])
+        store.applyViewState(
+            ViewState(
+                connection_revision: 1,
+                connected: true,
+                online: true,
+                snapshot: Snapshot(observed_at: "2026-11-20T00:00:00Z", accounts: [accA]),
+                preferences: Preferences(base_url: "https://a.example.invalid/sub2ops")
+            )
+        )
+        let session = AccountsPageSession()
+        session.bindConnection(store.connectionKey, liveAccountIds: [101])
+        session.selectedIds = [101]
+        session.connectionBatch = OperationBatch(batch_id: "b-a", items: [], pending: 1)
+
+        // Initial GET /quota-refresh failure records quotaQueryError without disabling the button
+        let quotaMode = OSAllocatedUnfairLock(initialState: "fail-first")
+        let recoverGate = OSAllocatedUnfairLock<CheckedContinuation<String, Never>?>(initialState: nil)
+        RustBridge.shared.setMockHandler { _, payload in
+            if payload.contains("/quota-refresh") {
+                let mode = quotaMode.withLock { $0 }
+                if mode == "fail-first" {
+                    throw RustBridgeError("连接暂时中断")
+                }
+                if mode == "running-then-fail" {
+                    if payload.contains("\"method\":\"POST\"") {
+                        return #"{"id":"qr-1","status":"running","total":2,"completed":0,"started_at":"2026-11-20T00:00:00Z","completed_at":null,"items":[]}"#
+                    }
+                    throw RustBridgeError("轮询读取失败")
+                }
+                return #"{"id":"qr-2","status":"completed","total":2,"completed":2,"started_at":"2026-11-20T00:00:00Z","completed_at":"2026-11-20T00:00:05Z","items":[]}"#
+            }
+            if payload.contains("/accounts/101/operations") {
+                return await withCheckedContinuation { cont in
+                    recoverGate.withLock { $0 = cont }
+                }
+            }
+            if payload.contains("/account-operations") {
+                return #"{"pending":0,"items":[]}"#
+            }
+            return "{}"
+        }
+        await session.syncQuotaRefresh(online: true, connectionKey: store.connectionKey, store: store, retryDelayMs: 5)
+        #expect(!session.quotaQueryError.isEmpty)
+        #expect(!session.isQuotaRefreshDisabled(online: true))
+
+        // POST /quota-refresh -> running, followed by first GET failure: button becomes clickable again once local GET fails
+        quotaMode.withLock { $0 = "running-then-fail" }
+        await session.triggerQuotaRefresh(store: store, retryDelayMs: 5)
+        let deadline = ContinuousClock.now + .seconds(2)
+        while session.quotaQueryError.isEmpty && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(session.isServerQuotaJobActive)
+        #expect(!session.quotaQueryError.isEmpty)
+        #expect(!session.isQuotaRefreshDisabled(online: true))
+
+        // Retry POST /quota-refresh while quotaJob is still `running`: if POST fails, button must remain
+        // clickable (`quotaQueryError` non-empty) AND polling must resume so recovery completes!
+        quotaMode.withLock { $0 = "fail-first" }
+        await session.triggerQuotaRefresh(store: store, retryDelayMs: 5)
+        #expect(session.isServerQuotaJobActive)
+        #expect(!session.quotaQueryError.isEmpty)
+        #expect(!session.isQuotaRefreshDisabled(online: true))
+        quotaMode.withLock { $0 = "completed-after-retry" }
+        while session.isServerQuotaJobActive && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(session.quotaJob?.status == "completed")
+        #expect(session.quotaQueryError.isEmpty)
+
+        // Start recoverAccount on instance A, then switch to instance B and lock id=101 on B;
+        // A's late defer must NOT clear B's busyRecoverAccountIds!
+        let recoverA = Task { await store.recoverAccount(accA) }
+        while recoverGate.withLock({ $0 == nil }) && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        quotaMode.withLock { $0 = "completed-b" }
+        store.applyViewState(
+            ViewState(
+                connection_revision: 2,
+                connected: true,
+                online: true,
+                snapshot: Snapshot(observed_at: "2026-11-20T00:01:00Z", accounts: [accB]),
+                preferences: Preferences(base_url: "https://b.example.invalid/sub2ops")
+            )
+        )
+        session.bindConnection(store.connectionKey, liveAccountIds: [101])
+        #expect(session.selectedIds.isEmpty && session.connectionBatch == nil && session.quotaJob == nil)
+
+        store.busyRecoverAccountIds.insert(101)
+        recoverGate.withLock { $0 }?.resume(returning: #"{"id":"op-rec-a","account_id":101,"account_name":"InstanceA-Codex","action":"recover","status":"completed"}"#)
+        await recoverA.value
+        #expect(store.busyRecoverAccountIds.contains(101))
+        store.busyRecoverAccountIds.removeAll()
+
+        // Instance B re-queries /quota-refresh cleanly
+        await session.syncQuotaRefresh(online: true, connectionKey: store.connectionKey, store: store, retryDelayMs: 5)
+        #expect(session.quotaJob?.id == "qr-2" && session.quotaQueryError.isEmpty)
+
+        // 2. ModelTestLifecycle and TestDialogLifecycle block late replies after close from starting polling
+        let modelLifecycle = ModelTestLifecycle()
+        modelLifecycle.open(connectionKey: store.connectionKey)
+        let modelGen = modelLifecycle.generation
+        modelLifecycle.close()
+        #expect(!modelLifecycle.canAccept(connectionKey: store.connectionKey, capturedGeneration: modelGen))
+        var modelPolled = false
+        modelLifecycle.startPolling(jobId: "mt-late", connectionKey: store.connectionKey) { _ in
+            modelPolled = true
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(!modelPolled)
+
+        // stopPolling on a closed lifecycle must NOT reopen it, and stopPolling for an old jobId must NOT cancel a newer job
+        modelLifecycle.stopPolling(jobId: "mt-late", connectionKey: store.connectionKey)
+        #expect(!modelLifecycle.isOpen)
+        modelLifecycle.open(connectionKey: store.connectionKey)
+        modelLifecycle.startPolling(jobId: "mt-new", connectionKey: store.connectionKey) { _ in
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        let activeNewGen = modelLifecycle.generation
+        modelLifecycle.stopPolling(jobId: "mt-old", connectionKey: store.connectionKey)
+        #expect(modelLifecycle.isOpen && modelLifecycle.activeJobId == "mt-new")
+        #expect(modelLifecycle.canPoll(jobId: "mt-new", generation: activeNewGen, connectionKey: store.connectionKey))
+        modelLifecycle.stopPolling(jobId: "mt-new", connectionKey: store.connectionKey)
+        #expect(modelLifecycle.isOpen && modelLifecycle.activeJobId == nil)
+        modelLifecycle.close()
+
+        let testLifecycle = TestDialogLifecycle()
+        testLifecycle.open(connectionKey: store.connectionKey)
+        var testContinuedAfterClose = false
+        testLifecycle.beginRun(connectionKey: store.connectionKey) { gen in
+            try? await Task.sleep(for: .milliseconds(25))
+            if testLifecycle.canContinue(generation: gen, connectionKey: store.connectionKey) {
+                testContinuedAfterClose = true
+            }
+        }
+        testLifecycle.close()
+        try await Task.sleep(for: .milliseconds(40))
+        #expect(!testContinuedAfterClose)
+
+        // Starting a test (`beginRun`) while `loadCandidateModels` is in flight must NOT leave `loadingModels` stuck true
+        let modelsGate = OSAllocatedUnfairLock<CheckedContinuation<String, Never>?>(initialState: nil)
+        let initialQuotaGate = OSAllocatedUnfairLock<CheckedContinuation<String, Never>?>(initialState: nil)
+        RustBridge.shared.setMockHandler { _, payload in
+            if payload.contains("/accounts/101/models") {
+                return await withCheckedContinuation { cont in
+                    modelsGate.withLock { $0 = cont }
+                }
+            }
+            if payload.contains("/quota-refresh") {
+                if payload.contains("\"method\":\"POST\"") {
+                    return #"{"id":"qr-race","status":"running","total":3,"completed":1,"started_at":"2026-11-20T00:02:00Z","completed_at":null,"items":[]}"#
+                }
+                return await withCheckedContinuation { cont in
+                    initialQuotaGate.withLock { $0 = cont }
+                }
+            }
+            return "{}"
+        }
+        testLifecycle.open(connectionKey: store.connectionKey)
+        let modelLoadTask = Task {
+            await testLifecycle.loadCandidateModels(
+                accountId: 101,
+                refresh: true,
+                online: true,
+                connectionKey: store.connectionKey
+            )
+        }
+        while modelsGate.withLock({ $0 == nil }) && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(testLifecycle.loadingModels)
+
+        // User clicks Start Test before model list finishes -> increments `testLifecycle.generation`
+        var runFinished = false
+        testLifecycle.beginRun(connectionKey: store.connectionKey) { _ in
+            runFinished = true
+        }
+        while !runFinished && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        modelsGate.withLock { let c = $0; $0 = nil; return c }?.resume(
+            returning: #"[{"id":"gpt-6-luna","display_name":"GPT-6 Luna"}]"#
+        )
+        await modelLoadTask.value
+        #expect(!testLifecycle.loadingModels)
+        #expect(testLifecycle.candidateModels.map(\.id) == ["gpt-6-luna"])
+        testLifecycle.close()
+
+        // Starting/stopping polling on ModelTestLifecycle while `loadModels` is in flight must NOT strand `loadingModels`
+        modelLifecycle.open(connectionKey: store.connectionKey)
+        let mtModelLoadTask = Task {
+            await modelLifecycle.loadModels(
+                accountId: 101,
+                refresh: true,
+                online: true,
+                connectionKey: store.connectionKey
+            )
+        }
+        while modelsGate.withLock({ $0 == nil }) && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(modelLifecycle.loadingModels)
+        modelLifecycle.startPolling(jobId: "mt-live", connectionKey: store.connectionKey) { _ in }
+        modelLifecycle.stopPolling(jobId: "mt-live", connectionKey: store.connectionKey)
+        modelsGate.withLock { let c = $0; $0 = nil; return c }?.resume(
+            returning: #"[{"id":"gpt-6-sol","display_name":"GPT-6 Sol"}]"#
+        )
+        let loadedModels = await mtModelLoadTask.value
+        #expect(!modelLifecycle.loadingModels)
+        #expect(loadedModels?.map(\.id) == ["gpt-6-sol"])
+        modelLifecycle.close()
+
+        // Stale initial GET /quota-refresh (`idle`) arriving AFTER manual POST /quota-refresh (`running`)
+        // on the same connection epoch must NOT overwrite `quotaJob` or stop polling.
+        let raceSession = AccountsPageSession()
+        raceSession.bindConnection(store.connectionKey, liveAccountIds: [101])
+        let initialSyncTask = Task {
+            await raceSession.syncQuotaRefresh(
+                online: true,
+                connectionKey: store.connectionKey,
+                store: store,
+                retryDelayMs: 5
+            )
+        }
+        while initialQuotaGate.withLock({ $0 == nil }) && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let staleInitialCont = initialQuotaGate.withLock { let c = $0; $0 = nil; return c }
+        await raceSession.triggerQuotaRefresh(store: store, retryDelayMs: 5)
+        #expect(raceSession.quotaJob?.id == "qr-race" && raceSession.isServerQuotaJobActive)
+
+        // Resolve stale initial GET as `idle`: must be ignored, and active polling must proceed to next GET!
+        staleInitialCont?.resume(
+            returning: #"{"id":"","status":"idle","total":0,"completed":0,"started_at":null,"completed_at":null,"items":[]}"#
+        )
+        await initialSyncTask.value
+        #expect(raceSession.quotaJob?.id == "qr-race" && raceSession.isServerQuotaJobActive)
+
+        // Offline -> online blip while `quotaJob` is `running` must re-sync GET /quota-refresh on reconnect
+        // instead of leaving `quotaPollTask == nil` and permanently locking `isQuotaRefreshDisabled`.
+        await raceSession.syncQuotaRefresh(
+            online: false,
+            connectionKey: store.connectionKey,
+            store: store,
+            retryDelayMs: 5
+        )
+        if let abandonedPollCont = initialQuotaGate.withLock({ let c = $0; $0 = nil; return c }) {
+            abandonedPollCont.resume(
+                returning: #"{"id":"qr-race","status":"running","total":3,"completed":1,"started_at":"2026-11-20T00:02:00Z","completed_at":null,"items":[]}"#
+            )
+        }
+        let reconnectSyncTask = Task {
+            await raceSession.syncQuotaRefresh(
+                online: true,
+                connectionKey: store.connectionKey,
+                store: store,
+                retryDelayMs: 5
+            )
+        }
+        while initialQuotaGate.withLock({ $0 == nil }) && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        initialQuotaGate.withLock { let c = $0; $0 = nil; return c }?.resume(
+            returning: #"{"id":"qr-race","status":"completed","total":3,"completed":3,"started_at":"2026-11-20T00:02:00Z","completed_at":"2026-11-20T00:02:05Z","items":[]}"#
+        )
+        await reconnectSyncTask.value
+        #expect(raceSession.quotaJob?.status == "completed")
+        #expect(!raceSession.isQuotaRefreshDisabled(online: true))
+
+        // 3. AccountSortStore(.usage) uses merged NativeUsageReader peak instead of stale snapshot windows,
+        //    and NativeUsageReader deduplicates queued IDs & prioritizes single-account refresh
+        let requestedUsageIds = OSAllocatedUnfairLock<[Int]>(initialState: [])
+        RustBridge.shared.setMockHandler { _, payload in
+            if let range = payload.range(of: #"/accounts/(\d+)/usage"#, options: .regularExpression) {
+                let path = String(payload[range])
+                let id = Int(path.split(separator: "/")[1]) ?? 0
+                requestedUsageIds.withLock { $0.append(id) }
+                let pct = (id == 202) ? 92.0 : 15.0
+                return """
+                {"branch":"oauth","native_read":true,"actions":[],"windows":[{"key":"5h","label":"5h","used_percent":\(pct),"reset_at":null,"status":"known","source":"native"}]}
+                """
+            }
+            return "{}"
+        }
+        let reader = NativeUsageReader()
+        reader.bindConnection("https://b.example.invalid:true:2")
+        let snapHigh = Account(
+            id: 201,
+            name: "Snapshot-60",
+            usage: UsageSummary(
+                branch: "oauth",
+                windows: [UsageWindow(key: "5h", label: "5h", used_percent: 60, reset_at: nil)],
+                native_read: false
+            )
+        )
+        let nativeHigher = Account(
+            id: 202,
+            name: "Native-92",
+            operation_versions: ["usage": "u1"],
+            usage: UsageSummary(branch: "oauth", windows: [], native_read: true)
+        )
+        reader.enqueueIfNeeded(accounts: [nativeHigher], online: true)
+        reader.enqueueIfNeeded(accounts: [nativeHigher], online: true)
+        while reader.isLoading(accountId: 202) && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(requestedUsageIds.withLock { $0 } == [202])
+        #expect(reader.error(for: nativeHigher) == nil)
+
+        let sorter = AccountSortStore()
+        let savedSort = sorter.option
+        defer { sorter.option = savedSort }
+        sorter.option = AccountSortOption(key: .usage, ascending: false)
+        let sorted = sorter.sort([snapHigh, nativeHigher]) { acc in
+            reader.resolvedUsage(for: acc)
+        }
+        #expect(sorted.map(\.id) == [202, 201])
     }
 }
 }

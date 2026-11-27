@@ -468,11 +468,15 @@ public struct LinearSearchField: View {
             Image(systemName: "magnifyingglass")
                 .font(DS.iconFont(12, weight: .medium))
                 .foregroundStyle(DS.muted)
-            TextField(text: $text, prompt: Text(verbatim: prompt).foregroundStyle(DS.placeholder)) { EmptyView() }
+            TextField(text: $text, prompt: Text(verbatim: prompt).foregroundStyle(DS.placeholder)) {
+                Text(verbatim: prompt)
+            }
+                .labelsHidden()
                 .textFieldStyle(.plain)
                 .font(compactFont ? DS.fontCompact : DS.fontBody)
                 .foregroundStyle(DS.ink)
                 .focused($focused)
+                .accessibilityLabel(prompt)
                 .onSubmit { onSubmit?() }
             if !text.isEmpty {
                 Button {
@@ -482,12 +486,15 @@ public struct LinearSearchField: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(DS.iconFont(12))
                         .foregroundStyle(DS.muted)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.linearPlain)
                 .accessibilityLabel("清空搜索")
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.leading, 10)
+        .padding(.trailing, text.isEmpty ? 10 : 4)
         .frame(width: width)
         .frame(maxWidth: width == nil ? .infinity : nil)
         .frame(height: height)

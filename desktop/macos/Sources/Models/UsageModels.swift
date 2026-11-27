@@ -26,11 +26,70 @@ public final class NativeUsageReader {
     private var connectionKey: String = ""
     private var generation: UInt64 = 0
     private var activeSlots: Int = 0
-    private var queue: [(accountId: Int, identity: String)] = []
+    private var priorityQueue: [Int] = []
+    private var priorityHead: Int = 0
+    private var regularQueue: [Int] = []
+    private var regularHead: Int = 0
+    private var queuedIdentities: [Int: String] = [:]
     private let maxConcurrency = 4
     private static let failureCooldown: TimeInterval = 60
 
     public init() {}
+
+    private func resetQueue() {
+        priorityQueue.removeAll()
+        priorityHead = 0
+        regularQueue.removeAll()
+        regularHead = 0
+        queuedIdentities.removeAll()
+    }
+
+    private func enqueueRegular(accountId: Int, identity: String) {
+        if queuedIdentities[accountId] != nil {
+            queuedIdentities[accountId] = identity
+            return
+        }
+        queuedIdentities[accountId] = identity
+        regularQueue.append(accountId)
+    }
+
+    private func enqueuePriority(accountId: Int, identity: String) {
+        if queuedIdentities[accountId] != nil {
+            queuedIdentities[accountId] = identity
+            return
+        }
+        queuedIdentities[accountId] = identity
+        priorityQueue.append(accountId)
+    }
+
+    private func popNextQueued() -> (accountId: Int, identity: String)? {
+        while priorityHead < priorityQueue.count {
+            let id = priorityQueue[priorityHead]
+            priorityHead += 1
+            if priorityHead == priorityQueue.count {
+                priorityQueue.removeAll(keepingCapacity: true)
+                priorityHead = 0
+            }
+            if let identity = queuedIdentities.removeValue(forKey: id) {
+                return (id, identity)
+            }
+        }
+        while regularHead < regularQueue.count {
+            let id = regularQueue[regularHead]
+            regularHead += 1
+            if regularHead == regularQueue.count {
+                regularQueue.removeAll(keepingCapacity: true)
+                regularHead = 0
+            } else if regularHead >= 64 && regularHead * 2 >= regularQueue.count {
+                regularQueue.removeFirst(regularHead)
+                regularHead = 0
+            }
+            if let identity = queuedIdentities.removeValue(forKey: id) {
+                return (id, identity)
+            }
+        }
+        return nil
+    }
 
     public func slot(for accountId: Int) -> AccountUsageSlot {
         if let existing = slots[accountId] {
@@ -65,7 +124,7 @@ public final class NativeUsageReader {
             slot.cooldownIdentity = ""
             slot.cooldownUntil = nil
         }
-        queue.removeAll()
+        resetQueue()
         activeSlots = 0
     }
 
@@ -122,6 +181,7 @@ public final class NativeUsageReader {
             : accountById
         let liveIds = Set(accounts.map(\.id))
         slots = slots.filter { liveIds.contains($0.key) }
+        queuedIdentities = queuedIdentities.filter { liveIds.contains($0.key) }
         for account in accounts where account.usage?.native_read == true {
             let identity = usageIdentity(for: account, accountById: lookup)
             let s = slot(for: account.id)
@@ -136,11 +196,8 @@ public final class NativeUsageReader {
                 && account.usage?.key_quota == nil
                 && account.usage?.balances == nil
             let invalidatedOverride = !s.cachedIdentity.isEmpty && s.cachedIdentity != identity
-            if (needsInitialRead || invalidatedOverride)
-                && !s.isLoading
-                && !queue.contains(where: { $0.accountId == account.id })
-            {
-                queue.append((account.id, identity))
+            if (needsInitialRead || invalidatedOverride) && !s.isLoading {
+                enqueueRegular(accountId: account.id, identity: identity)
             }
         }
         pumpQueue()
@@ -154,8 +211,8 @@ public final class NativeUsageReader {
         s.errorIdentity = ""
         s.cooldownUntil = nil
         s.cooldownIdentity = ""
-        if !s.isLoading && !queue.contains(where: { $0.accountId == account.id }) {
-            queue.insert((account.id, identity), at: 0)
+        if !s.isLoading {
+            enqueuePriority(accountId: account.id, identity: identity)
         }
         pumpQueue()
     }
@@ -172,8 +229,8 @@ public final class NativeUsageReader {
             s.errorIdentity = ""
             s.cooldownUntil = nil
             s.cooldownIdentity = ""
-            if !s.isLoading && !queue.contains(where: { $0.accountId == account.id }) {
-                queue.append((account.id, identity))
+            if !s.isLoading {
+                enqueueRegular(accountId: account.id, identity: identity)
             }
         }
         pumpQueue()
@@ -182,8 +239,7 @@ public final class NativeUsageReader {
     private func pumpQueue() {
         let capturedGen = generation
         let capturedKey = connectionKey
-        while activeSlots < maxConcurrency, !queue.isEmpty {
-            let item = queue.removeFirst()
+        while activeSlots < maxConcurrency, let item = popNextQueued() {
             let accountId = item.accountId
             let identity = item.identity
             let s = slot(for: accountId)

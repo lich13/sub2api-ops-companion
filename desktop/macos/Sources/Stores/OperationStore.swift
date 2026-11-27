@@ -11,6 +11,7 @@ public final class OperationStore {
     public var isOpen: Bool = false {
         didSet {
             if oldValue != isOpen {
+                pollSeq &+= 1
                 startPollingIfNeeded(online: lastOnline, active: lastActive)
             }
         }
@@ -18,8 +19,11 @@ public final class OperationStore {
     public var error: String = ""
     public var batchId: String? {
         didSet {
-            if oldValue != batchId && isOpen {
-                startPollingIfNeeded(online: lastOnline, active: lastActive)
+            if oldValue != batchId {
+                pollSeq &+= 1
+                if isOpen {
+                    startPollingIfNeeded(online: lastOnline, active: lastActive)
+                }
             }
         }
     }
@@ -34,6 +38,7 @@ public final class OperationStore {
     }
 
     private var memoryClientId: String = ""
+    private var pollSeq: UInt64 = 0
     @ObservationIgnored nonisolated(unsafe) private var pollingTask: Task<Void, Never>?
     private var activePollingKey: PollingKey?
     private var lastOnline: Bool = false
@@ -47,7 +52,7 @@ public final class OperationStore {
         "completed", "failed", "cancelled", "superseded", "needs_confirmation",
     ]
     private static let clientKey = "sub2ops-operation-client"
-    private static let adaptivePollDelaysMs: [Int] = [35, 80, 180, 350, 500]
+    public static let adaptivePollDelaysMs: [Int] = [35, 80, 180, 350, 500]
 
     public init() {}
 
@@ -82,6 +87,7 @@ public final class OperationStore {
 
     public func stop() {
         epoch &+= 1
+        pollSeq &+= 1
         pollingTask?.cancel()
         pollingTask = nil
         activePollingKey = nil
@@ -96,6 +102,7 @@ public final class OperationStore {
         activePollingKey = nil
         connectionKey = key
         epoch &+= 1
+        pollSeq &+= 1
         rows = []
         pendingByAccount = [:]
         isOpen = false
@@ -105,6 +112,11 @@ public final class OperationStore {
     }
 
     public func setOperations(_ next: [Operation]) {
+        pollSeq &+= 1
+        applyOperations(next)
+    }
+
+    private func applyOperations(_ next: [Operation]) {
         guard rows != next else { return }
         rows = next
         var indexed: [Int: [Operation]] = [:]
@@ -158,26 +170,56 @@ public final class OperationStore {
         }
     }
 
-    private struct OperationListEnvelope: Decodable, Sendable {
-        let items: [Operation]
+    private enum PollTarget: Equatable {
+        case all
+        case batch(String)
+    }
+
+    private var currentPollTarget: PollTarget {
+        if isOpen, let batchId {
+            return .batch(batchId)
+        }
+        return .all
     }
 
     public func pollOnce(capturedEpoch: UInt64? = nil) async {
         let checkEpoch = capturedEpoch ?? epoch
-        let path = (isOpen && batchId != nil) ? "/account-operations?batch_id=\(batchId!)" : "/account-operations"
+        pollSeq &+= 1
+        let capturedPollSeq = pollSeq
+        let target = currentPollTarget
+        let path: String
+        switch target {
+        case .all:
+            path = "/account-operations"
+        case .batch(let bid):
+            path = "/account-operations?batch_id=\(bid)"
+        }
         do {
-            let envelope: OperationListEnvelope = try await RustBridge.shared.api("GET", path)
-            guard epoch == checkEpoch else { return }
-            if isOpen, batchId != nil {
-                batchItems = envelope.items
-                let ids = Set(envelope.items.map(\.id))
-                setOperations(envelope.items + rows.filter { !ids.contains($0.id) })
-            } else {
-                setOperations(envelope.items)
+            let reply: OperationListReply = try await RustBridge.shared.api("GET", path)
+            guard !Task.isCancelled,
+                  epoch == checkEpoch,
+                  pollSeq == capturedPollSeq,
+                  currentPollTarget == target
+            else { return }
+            switch target {
+            case .batch(let bid):
+                if isOpen && batchId == bid {
+                    batchItems = reply.items
+                }
+                let ids = Set(reply.items.map(\.id))
+                applyOperations(reply.items + rows.filter { !ids.contains($0.id) })
+            case .all:
+                applyOperations(reply.items)
             }
             error = ""
+        } catch is CancellationError {
+            return
         } catch {
-            guard epoch == checkEpoch else { return }
+            guard !Task.isCancelled,
+                  epoch == checkEpoch,
+                  pollSeq == capturedPollSeq,
+                  currentPollTarget == target
+            else { return }
             self.error = error.localizedDescription
         }
     }
@@ -231,6 +273,7 @@ public final class OperationStore {
         var after = 0
         var step = 0
         while true {
+            try Task.checkCancellation()
             guard epoch == currentEpoch else {
                 throw RustBridgeError.connectionChanged
             }
@@ -346,15 +389,14 @@ public final class OperationStore {
             guard epoch == currentEpoch else {
                 throw RustBridgeError.connectionChanged
             }
-            let envelope: OperationListEnvelope = try await RustBridge.shared.api(
+            let reply: OperationListReply = try await RustBridge.shared.api(
                 "GET",
                 "/account-operations?batch_id=\(current.batch_id)"
             )
             guard epoch == currentEpoch else {
                 throw RustBridgeError.connectionChanged
             }
-            let remaining = envelope.items.filter { !Self.isTerminal($0.status) }.count
-            current = OperationBatch(batch_id: current.batch_id, items: envelope.items, pending: remaining)
+            current = OperationBatch(batch_id: current.batch_id, items: reply.items, pending: reply.pending)
             let batchIds = Set(current.items.map(\.id))
             setOperations(current.items + rows.filter { !batchIds.contains($0.id) })
             onUpdate?(current)

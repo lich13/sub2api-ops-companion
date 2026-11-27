@@ -201,5 +201,138 @@ struct HitAreaTests {
         }
         #expect(visited == Set(AppPage.allCases))
     }
+
+    @Test("LinearSearchField placeholder/warn tokens meet 4.5:1 contrast, clear button has 24pt hit area, and TextField exposes accessibility label")
+    @MainActor
+    func searchFieldContrastClearHitAreaAndAccessibility() throws {
+        func relativeLuminance(_ nsColor: NSColor, appearanceName: NSAppearance.Name) -> Double {
+            let appearance = NSAppearance(named: appearanceName)!
+            var srgb: NSColor = .black
+            appearance.performAsCurrentDrawingAppearance {
+                srgb = nsColor.usingColorSpace(.sRGB) ?? nsColor
+            }
+            func channel(_ c: CGFloat) -> Double {
+                let v = Double(c)
+                return v <= 0.04045 ? (v / 12.92) : pow((v + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * channel(srgb.redComponent)
+                + 0.7152 * channel(srgb.greenComponent)
+                + 0.0722 * channel(srgb.blueComponent)
+        }
+        func contrast(_ fg: NSColor, _ bg: NSColor, _ appearance: NSAppearance.Name) -> Double {
+            let l1 = relativeLuminance(fg, appearanceName: appearance)
+            let l2 = relativeLuminance(bg, appearanceName: appearance)
+            return (max(l1, l2) + 0.05) / (min(l1, l2) + 0.05)
+        }
+
+        // Placeholder >= 4.5:1 on surface & surfaceSubtle in both Light and Dark
+        #expect(contrast(DS.nsPlaceholder, DS.nsSurface, .aqua) >= 4.5)
+        #expect(contrast(DS.nsPlaceholder, DS.nsSurfaceSubtle, .aqua) >= 4.5)
+        #expect(contrast(DS.nsPlaceholder, DS.nsSurface, .darkAqua) >= 4.5)
+        #expect(contrast(DS.nsPlaceholder, DS.nsSurfaceSubtle, .darkAqua) >= 4.5)
+        // Warn >= 4.5:1 on both surface and warnBg in Light and Dark
+        #expect(contrast(DS.nsWarn, DS.nsSurface, .aqua) >= 4.5)
+        #expect(contrast(DS.nsWarn, DS.nsWarnBg, .aqua) >= 4.5)
+        #expect(contrast(DS.nsWarn, DS.nsSurface, .darkAqua) >= 4.5)
+        #expect(contrast(DS.nsWarn, DS.nsWarnBg, .darkAqua) >= 4.5)
+
+        @MainActor
+        final class SearchState {
+            var text = "codex"
+            var submits = 0
+        }
+        struct HostedSearch: View {
+            @State var text = "codex"
+            let onChanged: (String) -> Void
+            let onSubmit: () -> Void
+            var body: some View {
+                VStack(spacing: 0) {
+                    LinearSearchField(
+                        text: $text,
+                        prompt: "搜索名称或账号 ID",
+                        height: 34,
+                        width: 240
+                    ) {
+                        onSubmit()
+                    }
+                    .onChange(of: text) { _, next in onChanged(next) }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        let state = SearchState()
+        let window = SyntheticClick.host(
+            HostedSearch(
+                onChanged: { state.text = $0 },
+                onSubmit: { state.submits += 1 }
+            ),
+            size: CGSize(width: 240, height: 60)
+        )
+        defer { SyntheticClick.teardown(window) }
+
+        func findTextField(in view: NSView) -> NSTextField? {
+            if let tf = view as? NSTextField, tf.isEditable { return tf }
+            for sub in view.subviews {
+                if let found = findTextField(in: sub) { return found }
+            }
+            return nil
+        }
+        let tf = window.contentView.flatMap(findTextField(in:))
+        #expect(tf != nil)
+        let placeholderText = tf?.placeholderAttributedString?.string ?? tf?.placeholderString
+        #expect(placeholderText == "搜索名称或账号 ID")
+
+        func collectAccessibilityStrings(_ node: Any, depth: Int = 0) -> Set<String> {
+            guard depth < 12 else { return [] }
+            var labels: Set<String> = []
+            if let proto = node as? any NSAccessibilityProtocol {
+                if let label = proto.accessibilityLabel(), !label.isEmpty {
+                    labels.insert(label)
+                }
+                if let title = proto.accessibilityTitle(), !title.isEmpty {
+                    labels.insert(title)
+                }
+                if let ph = proto.accessibilityPlaceholderValue(), !ph.isEmpty {
+                    labels.insert(ph)
+                }
+                for child in proto.accessibilityChildren() ?? [] {
+                    labels.formUnion(collectAccessibilityStrings(child, depth: depth + 1))
+                }
+            }
+            if let nsView = node as? NSView {
+                if let cell = (nsView as? NSControl)?.cell {
+                    labels.formUnion(collectAccessibilityStrings(cell, depth: depth + 1))
+                }
+                for sub in nsView.subviews {
+                    labels.formUnion(collectAccessibilityStrings(sub, depth: depth + 1))
+                }
+            }
+            return labels
+        }
+        let axStrings = collectAccessibilityStrings(window)
+        #expect(axStrings.contains("搜索名称或账号 ID"))
+
+        // Clear button occupies [212...236] x [5...29]; click at x=215, y=8 (well outside the centered 12pt glyph)
+        SyntheticClick.click(window, at: CGPoint(x: 215, y: 8))
+        #expect(state.text.isEmpty && state.submits == 1)
+
+        if let dirPath = ProcessInfo.processInfo.environment["SUB2OPS_SNAPSHOT_DIR"], !dirPath.isEmpty {
+            let baseURL = URL(fileURLWithPath: dirPath)
+            for dark in [false, true] {
+                let suffix = dark ? "dark" : "light"
+                try SnapshotRenderUtility.renderPNG(
+                    view: VStack(spacing: 10) {
+                        LinearSearchField(text: .constant(""), prompt: "搜索名称或账号 ID", height: 34, width: 280)
+                        LinearSearchField(text: .constant("Codex · 主力"), prompt: "搜索名称或账号 ID", height: 34, width: 280)
+                    }
+                    .padding(16)
+                    .background(DS.canvas),
+                    size: CGSize(width: 312, height: 110),
+                    dark: dark,
+                    outputURL: baseURL.appendingPathComponent("search_field_\(suffix).png")
+                )
+            }
+        }
+    }
 }
 }

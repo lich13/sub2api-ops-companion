@@ -1,9 +1,332 @@
 import SwiftUI
 
+@MainActor
+@Observable
+public final class AccountsPageSession {
+    public private(set) var connectionKey: String = ""
+    public private(set) var epoch: UInt64 = 0
+    public private(set) var quotaSeq: UInt64 = 0
+    public var selectedIds: Set<Int> = []
+    public var connectionBatch: OperationBatch? = nil
+    public var batchBusy: Bool = false
+    public private(set) var quotaJob: QuotaRefreshHeader? = nil
+    public private(set) var quotaStarting: Bool = false
+    public private(set) var quotaQueryError: String = ""
+
+    private var syncedQuotaOnlineKey: String? = nil
+    @ObservationIgnored nonisolated(unsafe) private var quotaPollTask: Task<Void, Never>?
+
+    deinit {
+        quotaPollTask?.cancel()
+    }
+
+    public init() {}
+
+    public var isServerQuotaJobActive: Bool {
+        guard let status = quotaJob?.status else { return false }
+        return status == "running" || status == "queued"
+    }
+
+    public func isQuotaRefreshDisabled(online: Bool) -> Bool {
+        !online || quotaStarting || (isServerQuotaJobActive && quotaQueryError.isEmpty)
+    }
+
+    public func bindConnection(_ key: String, liveAccountIds: Set<Int>? = nil) {
+        if connectionKey != key {
+            quotaPollTask?.cancel()
+            quotaPollTask = nil
+            connectionKey = key
+            epoch &+= 1
+            quotaSeq &+= 1
+            selectedIds.removeAll()
+            connectionBatch = nil
+            batchBusy = false
+            quotaJob = nil
+            quotaStarting = false
+            quotaQueryError = ""
+            syncedQuotaOnlineKey = nil
+        }
+        if let liveAccountIds {
+            selectedIds = selectedIds.intersection(liveAccountIds)
+        }
+    }
+
+    public func syncQuotaRefresh(
+        online: Bool,
+        connectionKey key: String,
+        store: AppStore,
+        retryDelayMs: Int = 800
+    ) async {
+        bindConnection(key, liveAccountIds: Set(store.accounts.map(\.id)))
+        guard online else {
+            quotaSeq &+= 1
+            quotaPollTask?.cancel()
+            quotaPollTask = nil
+            quotaStarting = false
+            syncedQuotaOnlineKey = nil
+            return
+        }
+        guard !quotaStarting, quotaPollTask == nil, syncedQuotaOnlineKey != key else { return }
+        quotaSeq &+= 1
+        let capturedEpoch = epoch
+        let capturedQuotaSeq = quotaSeq
+        let capturedKey = key
+        let wasActive = isServerQuotaJobActive
+        do {
+            let initial: QuotaRefreshHeader = try await RustBridge.shared.api("GET", "/quota-refresh")
+            guard !Task.isCancelled,
+                  epoch == capturedEpoch,
+                  quotaSeq == capturedQuotaSeq,
+                  connectionKey == capturedKey,
+                  store.connectionKey == capturedKey
+            else { return }
+            syncedQuotaOnlineKey = capturedKey
+            quotaQueryError = ""
+            quotaJob = initial
+            if initial.status == "running" || initial.status == "queued" {
+                startQuotaPolling(
+                    capturedEpoch: capturedEpoch,
+                    capturedQuotaSeq: capturedQuotaSeq,
+                    capturedKey: capturedKey,
+                    store: store,
+                    retryDelayMs: retryDelayMs
+                )
+            } else if wasActive {
+                store.refresh()
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled,
+                  epoch == capturedEpoch,
+                  quotaSeq == capturedQuotaSeq,
+                  connectionKey == capturedKey,
+                  store.connectionKey == capturedKey
+            else { return }
+            syncedQuotaOnlineKey = capturedKey
+            quotaQueryError = error.localizedDescription
+        }
+    }
+
+    public func triggerQuotaRefresh(
+        store: AppStore,
+        nativeUsage: NativeUsageReader? = nil,
+        retryDelayMs: Int = 800
+    ) async {
+        bindConnection(store.connectionKey, liveAccountIds: Set(store.accounts.map(\.id)))
+        guard store.state.online, !quotaStarting else { return }
+        quotaSeq &+= 1
+        let capturedEpoch = epoch
+        let capturedQuotaSeq = quotaSeq
+        let capturedKey = store.connectionKey
+        quotaPollTask?.cancel()
+        quotaPollTask = nil
+        quotaStarting = true
+        quotaQueryError = ""
+        nativeUsage?.refreshAll(accounts: store.accounts, accountById: store.accountById)
+        defer {
+            if epoch == capturedEpoch && quotaSeq == capturedQuotaSeq {
+                quotaStarting = false
+            }
+        }
+        do {
+            let started: QuotaRefreshHeader = try await RustBridge.shared.api("POST", "/quota-refresh", body: .object([:]))
+            guard epoch == capturedEpoch,
+                  quotaSeq == capturedQuotaSeq,
+                  connectionKey == capturedKey,
+                  store.connectionKey == capturedKey
+            else { return }
+            syncedQuotaOnlineKey = capturedKey
+            quotaQueryError = ""
+            quotaJob = started
+            if started.status == "running" || started.status == "queued" {
+                startQuotaPolling(
+                    capturedEpoch: capturedEpoch,
+                    capturedQuotaSeq: capturedQuotaSeq,
+                    capturedKey: capturedKey,
+                    store: store,
+                    retryDelayMs: retryDelayMs
+                )
+            } else {
+                store.refresh()
+            }
+        } catch {
+            guard epoch == capturedEpoch,
+                  quotaSeq == capturedQuotaSeq,
+                  connectionKey == capturedKey,
+                  store.connectionKey == capturedKey
+            else { return }
+            quotaQueryError = error.localizedDescription
+            if isServerQuotaJobActive && store.state.online {
+                startQuotaPolling(
+                    capturedEpoch: capturedEpoch,
+                    capturedQuotaSeq: capturedQuotaSeq,
+                    capturedKey: capturedKey,
+                    store: store,
+                    retryDelayMs: retryDelayMs,
+                    initialFailures: 1
+                )
+            }
+            store.report(error)
+        }
+    }
+
+    private func startQuotaPolling(
+        capturedEpoch: UInt64,
+        capturedQuotaSeq: UInt64,
+        capturedKey: String,
+        store: AppStore,
+        retryDelayMs: Int,
+        initialFailures: Int = 0
+    ) {
+        quotaPollTask?.cancel()
+        quotaPollTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if self.epoch == capturedEpoch && self.quotaSeq == capturedQuotaSeq {
+                    self.quotaPollTask = nil
+                    if !store.state.online && self.isServerQuotaJobActive {
+                        self.syncedQuotaOnlineKey = nil
+                    }
+                }
+            }
+            var failures = initialFailures
+            while !Task.isCancelled
+                && self.epoch == capturedEpoch
+                && self.quotaSeq == capturedQuotaSeq
+                && self.connectionKey == capturedKey
+                && store.connectionKey == capturedKey
+                && store.state.online
+                && self.isServerQuotaJobActive
+            {
+                let baseDelay = max(1, retryDelayMs)
+                let delay = failures == 0
+                    ? baseDelay
+                    : min(10_000, baseDelay * (1 << min(failures, 4)))
+                try? await Task.sleep(for: .milliseconds(delay))
+                guard !Task.isCancelled,
+                      self.epoch == capturedEpoch,
+                      self.quotaSeq == capturedQuotaSeq,
+                      self.connectionKey == capturedKey,
+                      store.connectionKey == capturedKey,
+                      store.state.online
+                else { return }
+                do {
+                    let polled: QuotaRefreshHeader = try await RustBridge.shared.api("GET", "/quota-refresh")
+                    guard !Task.isCancelled,
+                          self.epoch == capturedEpoch,
+                          self.quotaSeq == capturedQuotaSeq,
+                          self.connectionKey == capturedKey,
+                          store.connectionKey == capturedKey
+                    else { return }
+                    failures = 0
+                    self.quotaQueryError = ""
+                    self.quotaJob = polled
+                    if polled.status != "running" && polled.status != "queued" {
+                        store.refresh()
+                        return
+                    }
+                } catch is CancellationError {
+                    return
+                } catch {
+                    guard !Task.isCancelled,
+                          self.epoch == capturedEpoch,
+                          self.quotaSeq == capturedQuotaSeq,
+                          self.connectionKey == capturedKey,
+                          store.connectionKey == capturedKey
+                    else { return }
+                    let firstFailure = (failures == 0)
+                    failures += 1
+                    self.quotaQueryError = error.localizedDescription
+                    if firstFailure {
+                        store.report(error)
+                    }
+                }
+            }
+        }
+    }
+
+    public func startBatchConnectionTest(_ targets: [Account], store: AppStore) async {
+        bindConnection(store.connectionKey, liveAccountIds: Set(store.accounts.map(\.id)))
+        guard store.state.online, !targets.isEmpty, !batchBusy else { return }
+        let capturedEpoch = epoch
+        let capturedKey = store.connectionKey
+        batchBusy = true
+        defer {
+            if epoch == capturedEpoch && connectionKey == capturedKey {
+                batchBusy = false
+            }
+        }
+        let items: [[String: JSONValue]] = targets.map { acc in
+            [
+                "account_id": .int(Int64(acc.id)),
+                "expected_version": .string(acc.operation_versions["test"] ?? acc.version),
+            ]
+        }
+        do {
+            let initial = try await store.operations.submitBatch(
+                action: "test",
+                accounts: items,
+                requestId: UUID().uuidString.lowercased()
+            )
+            guard epoch == capturedEpoch, connectionKey == capturedKey, store.connectionKey == capturedKey else { return }
+            connectionBatch = initial
+            _ = try await store.operations.followBatch(initial: initial) { [weak self] updated in
+                guard let self,
+                      self.epoch == capturedEpoch,
+                      self.connectionKey == capturedKey,
+                      store.connectionKey == capturedKey
+                else { return }
+                self.connectionBatch = updated
+            }
+            guard epoch == capturedEpoch, connectionKey == capturedKey, store.connectionKey == capturedKey else { return }
+            store.refresh()
+        } catch {
+            guard epoch == capturedEpoch, connectionKey == capturedKey, store.connectionKey == capturedKey else { return }
+            store.report(error)
+        }
+    }
+
+    public func runBatchRecover(_ targets: [Account], store: AppStore) async {
+        bindConnection(store.connectionKey, liveAccountIds: Set(store.accounts.map(\.id)))
+        guard store.state.online, !targets.isEmpty, !batchBusy else { return }
+        let capturedEpoch = epoch
+        let capturedKey = store.connectionKey
+        batchBusy = true
+        defer {
+            if epoch == capturedEpoch && connectionKey == capturedKey {
+                batchBusy = false
+            }
+        }
+        let items: [[String: JSONValue]] = targets.map { acc in
+            [
+                "account_id": .int(Int64(acc.id)),
+                "expected_version": .string(acc.operation_versions["recover"] ?? acc.version),
+            ]
+        }
+        do {
+            let initial = try await store.operations.submitBatch(
+                action: "recover",
+                accounts: items,
+                requestId: UUID().uuidString.lowercased()
+            )
+            let final = try await store.operations.followBatch(initial: initial)
+            guard epoch == capturedEpoch, connectionKey == capturedKey, store.connectionKey == capturedKey else { return }
+            let ok = final.items.filter { $0.status == "completed" }.count
+            store.refresh()
+            store.showToast("已恢复 \(ok)/\(final.items.count) 个账号状态")
+        } catch {
+            guard epoch == capturedEpoch, connectionKey == capturedKey, store.connectionKey == capturedKey else { return }
+            store.report(error)
+        }
+    }
+}
+
 public struct AccountsPageView: View {
     @Bindable public var store: AppStore
     public var viewportWidth: CGFloat?
 
+    @State private var session = AccountsPageSession()
     @State private var sortStore = AccountSortStore()
     @State private var nativeUsage = NativeUsageReader()
     @State private var query: String = ""
@@ -11,11 +334,7 @@ public struct AccountsPageView: View {
     @State private var platformFilter: String = ""
     @State private var typeFilter: String = ""
     @State private var statusFilter: String = ""
-    @State private var selectedIds: Set<Int> = []
     @State private var nameExpanded: Bool = UserDefaults.standard.bool(forKey: "sub2ops-account-name-expanded")
-    @State private var quotaJob: QuotaRefreshHeader? = nil
-    @State private var connectionBatch: OperationBatch? = nil
-    @State private var batchBusy: Bool = false
     @State private var measuredWidth: CGFloat = 1085
     @State private var filterCache = AccountFilterCache()
 
@@ -31,12 +350,14 @@ public struct AccountsPageView: View {
     private var filteredSortedAccounts: [Account] {
         filterCache.resolve(
             accounts: store.accounts,
+            accountById: store.accountById,
             query: query,
             group: groupFilter,
             platform: platformFilter,
             status: statusFilter,
             type: typeFilter,
-            sortStore: sortStore
+            sortStore: sortStore,
+            nativeUsage: nativeUsage
         )
     }
 
@@ -49,7 +370,8 @@ public struct AccountsPageView: View {
     }
 
     private var selectedAccounts: [Account] {
-        filteredSortedAccounts.filter { selectedIds.contains($0.id) }
+        guard session.connectionKey == store.connectionKey else { return [] }
+        return filteredSortedAccounts.filter { session.selectedIds.contains($0.id) }
     }
 
     public var body: some View {
@@ -61,43 +383,50 @@ public struct AccountsPageView: View {
                 BatchToolbarView(
                     selectedAccounts: selectedAccounts,
                     online: store.state.online,
-                    busy: batchBusy,
-                    onBatchTest: { Task { await startBatchConnectionTest(selectedAccounts) } },
-                    onBatchRecover: { Task { await runBatchRecover(selectedAccounts.filter { $0.recoverable == true }) } },
+                    busy: session.batchBusy,
+                    onBatchTest: { Task { await session.startBatchConnectionTest(selectedAccounts, store: store) } },
+                    onBatchRecover: { Task { await session.runBatchRecover(selectedAccounts.filter { $0.recoverable == true }, store: store) } },
                     onBatchCredits: { store.accountModal = .batchCredits(selectedAccounts) },
                     onBatchProxy: { store.accountModal = .batchProxy(selectedAccounts) },
                     onBatchDelete: { store.accountModal = .deleteAccounts(selectedAccounts) },
-                    onClear: { selectedIds.removeAll() }
+                    onClear: { session.selectedIds.removeAll() }
                 )
             }
 
             ConnectionBatchBanner(
-                batch: connectionBatch,
+                batch: session.connectionKey == store.connectionKey ? session.connectionBatch : nil,
                 onOpenBatchDetails: { batchId in
+                    store.operations.batchItems = []
                     store.operations.batchId = batchId
                     store.operations.isOpen = true
-                    Task { await store.operations.pollOnce() }
                 },
-                onDismiss: { connectionBatch = nil }
+                onDismiss: { session.connectionBatch = nil }
             )
 
-            QuotaRefreshBarView(job: quotaJob)
+            QuotaRefreshBarView(job: session.connectionKey == store.connectionKey ? session.quotaJob : nil)
 
             accountsTable
         }
         .background(LinearWidthObserver { if viewportWidth == nil { measuredWidth = $0 } })
+        .onChange(of: store.connectionKey) { _, next in
+            session.bindConnection(next, liveAccountIds: Set(store.accounts.map(\.id)))
+        }
         .onChange(of: "\(query)|\(groupFilter)|\(platformFilter)|\(typeFilter)|\(statusFilter)") { _, _ in
-            selectedIds.removeAll()
+            session.selectedIds.removeAll()
         }
         .task(id: "\(store.connectionKey):\(store.state.snapshot_revision ?? 0):\(store.state.online)") {
+            session.bindConnection(store.connectionKey, liveAccountIds: Set(store.accounts.map(\.id)))
             nativeUsage.bindConnection(store.connectionKey)
             nativeUsage.enqueueIfNeeded(
                 accounts: store.accounts,
                 accountById: store.accountById,
                 online: store.state.online
             )
-            let liveIds = Set(store.accounts.map(\.id))
-            selectedIds = selectedIds.intersection(liveIds)
+            await session.syncQuotaRefresh(
+                online: store.state.online,
+                connectionKey: store.connectionKey,
+                store: store
+            )
         }
     }
 
@@ -130,7 +459,7 @@ public struct AccountsPageView: View {
             }
 
             Button {
-                Task { await triggerQuotaRefresh() }
+                Task { await session.triggerQuotaRefresh(store: store, nativeUsage: nativeUsage) }
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "arrow.clockwise")
@@ -139,7 +468,7 @@ public struct AccountsPageView: View {
                 }
             }
             .buttonStyle(LinearButtonStyle(variant: .secondary, compact: true))
-            .disabled(!store.state.online || quotaJob?.status == "running")
+            .disabled(session.isQuotaRefreshDisabled(online: store.state.online))
 
             Spacer(minLength: 12)
 
@@ -286,7 +615,8 @@ public struct AccountsPageView: View {
 
     private var accountsTable: some View {
         let rows = filteredSortedAccounts
-        let allSelected = !rows.isEmpty && rows.allSatisfy { selectedIds.contains($0.id) }
+        let isBound = session.connectionKey == store.connectionKey
+        let allSelected = isBound && !rows.isEmpty && rows.allSatisfy { session.selectedIds.contains($0.id) }
         let pendingByAccount = store.operations.pendingByAccount
         let metrics = TableColumnMetrics(containerWidth: max(320, availableWidth), nameExpanded: nameExpanded)
         let needsHorizontalScroll = metrics.totalWidth > availableWidth + 0.5
@@ -298,10 +628,11 @@ public struct AccountsPageView: View {
                     accessibilityTitle: "全选当前筛选结果",
                     disabled: rows.isEmpty
                 ) {
+                    session.bindConnection(store.connectionKey, liveAccountIds: Set(store.accounts.map(\.id)))
                     if allSelected {
-                        for r in rows { selectedIds.remove(r.id) }
+                        for r in rows { session.selectedIds.remove(r.id) }
                     } else {
-                        for r in rows { selectedIds.insert(r.id) }
+                        for r in rows { session.selectedIds.insert(r.id) }
                     }
                 }
                 .frame(width: metrics.selectW, alignment: .center)
@@ -386,17 +717,18 @@ public struct AccountsPageView: View {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { idx, account in
                         AccountTableRowView(
                             account: account,
-                            checked: selectedIds.contains(account.id),
+                            checked: isBound && session.selectedIds.contains(account.id),
                             pendingCount: pendingByAccount[account.id]?.count ?? 0,
                             nameExpanded: nameExpanded,
                             metrics: metrics,
                             store: store,
                             nativeUsage: nativeUsage
                         ) {
-                            if selectedIds.contains(account.id) {
-                                selectedIds.remove(account.id)
+                            session.bindConnection(store.connectionKey, liveAccountIds: Set(store.accounts.map(\.id)))
+                            if session.selectedIds.contains(account.id) {
+                                session.selectedIds.remove(account.id)
                             } else {
-                                selectedIds.insert(account.id)
+                                session.selectedIds.insert(account.id)
                             }
                         }
                         if idx < rows.count - 1 {
@@ -423,75 +755,6 @@ public struct AccountsPageView: View {
         .clipShape(RoundedRectangle(cornerRadius: DS.cardRadius))
         .shadow(color: DS.shadowColor, radius: 2, x: 0, y: 1)
     }
-
-    private func triggerQuotaRefresh() async {
-        guard store.state.online else { return }
-        nativeUsage.refreshAll(accounts: store.accounts, accountById: store.accountById)
-        do {
-            let started: QuotaRefreshHeader = try await RustBridge.shared.api("POST", "/quota-refresh", body: .object([:]))
-            quotaJob = started
-            while quotaJob?.status == "running" || quotaJob?.status == "queued" {
-                try? await Task.sleep(for: .milliseconds(800))
-                guard !Task.isCancelled, store.state.online else { return }
-                let polled: QuotaRefreshHeader = try await RustBridge.shared.api("GET", "/quota-refresh")
-                quotaJob = polled
-            }
-            store.refresh()
-        } catch {
-            store.report(error)
-        }
-    }
-
-    private func startBatchConnectionTest(_ targets: [Account]) async {
-        guard store.state.online, !targets.isEmpty, !batchBusy else { return }
-        batchBusy = true
-        defer { batchBusy = false }
-        let items: [[String: JSONValue]] = targets.map { acc in
-            [
-                "account_id": .int(Int64(acc.id)),
-                "expected_version": .string(acc.operation_versions["test"] ?? acc.version),
-            ]
-        }
-        do {
-            let initial = try await store.operations.submitBatch(
-                action: "test",
-                accounts: items,
-                requestId: UUID().uuidString.lowercased()
-            )
-            connectionBatch = initial
-            _ = try await store.operations.followBatch(initial: initial) { updated in
-                connectionBatch = updated
-            }
-            store.refresh()
-        } catch {
-            store.report(error)
-        }
-    }
-
-    private func runBatchRecover(_ targets: [Account]) async {
-        guard store.state.online, !targets.isEmpty, !batchBusy else { return }
-        batchBusy = true
-        defer { batchBusy = false }
-        let items: [[String: JSONValue]] = targets.map { acc in
-            [
-                "account_id": .int(Int64(acc.id)),
-                "expected_version": .string(acc.operation_versions["recover"] ?? acc.version),
-            ]
-        }
-        do {
-            let initial = try await store.operations.submitBatch(
-                action: "recover",
-                accounts: items,
-                requestId: UUID().uuidString.lowercased()
-            )
-            let final = try await store.operations.followBatch(initial: initial)
-            let ok = final.items.filter { $0.status == "completed" }.count
-            store.refresh()
-            store.showToast("已恢复 \(ok)/\(final.items.count) 个账号状态")
-        } catch {
-            store.report(error)
-        }
-    }
 }
 
 
@@ -504,25 +767,44 @@ private final class AccountFilterCache {
     private var lastStatus: String = ""
     private var lastType: String = ""
     private var lastSortOption: AccountSortOption?
+    private var lastUsagePeaks: [Int: Double] = [:]
     private var cachedResult: [Account] = []
 
     func resolve(
         accounts: [Account],
+        accountById: [Int: Account],
         query: String,
         group: String,
         platform: String,
         status: String,
         type: String,
-        sortStore: AccountSortStore
+        sortStore: AccountSortStore,
+        nativeUsage: NativeUsageReader
     ) -> [Account] {
         let opt = sortStore.option
+        var currentPeaks: [Int: Double] = [:]
+        var resolvedById: [Int: UsageSummary] = [:]
+        if opt.key == .usage {
+            currentPeaks.reserveCapacity(accounts.count)
+            for account in accounts {
+                let resolved = nativeUsage.resolvedUsage(for: account, accountById: accountById)
+                if let resolved {
+                    resolvedById[account.id] = resolved
+                }
+                currentPeaks[account.id] = AccountSortStore.effectiveUsagePeak(
+                    for: account,
+                    resolvedUsage: resolved
+                )
+            }
+        }
         if lastSortOption == opt,
            lastQuery == query,
            lastGroup == group,
            lastPlatform == platform,
            lastStatus == status,
            lastType == type,
-           lastAccounts == accounts
+           lastAccounts == accounts,
+           (opt.key != .usage || lastUsagePeaks == currentPeaks)
         {
             return cachedResult
         }
@@ -534,7 +816,9 @@ private final class AccountFilterCache {
             status: status,
             type: type
         )
-        let sorted = sortStore.sort(filtered)
+        let sorted = sortStore.sort(filtered) { account in
+            resolvedById[account.id]
+        }
         lastAccounts = accounts
         lastQuery = query
         lastGroup = group
@@ -542,6 +826,7 @@ private final class AccountFilterCache {
         lastStatus = status
         lastType = type
         lastSortOption = opt
+        lastUsagePeaks = currentPeaks
         cachedResult = sorted
         return sorted
     }
