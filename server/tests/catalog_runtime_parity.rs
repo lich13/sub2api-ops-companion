@@ -614,6 +614,25 @@ async fn snapshot_invalidation_never_waits_or_republishes_inflight_cache() {
     let harness = Harness::new().await;
     sqlx::query("INSERT INTO accounts (id,name,platform,type) VALUES (12,'fixture-before','fixture','apikey')")
         .execute(&harness.runtime.db.pool).await.unwrap();
+    let app_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let app_base = format!("http://{}", app_listener.local_addr().unwrap());
+    let app = sub2ops_server::api::router(harness.runtime.clone());
+    let app_server = tokio::spawn(async move {
+        axum::serve(app_listener, app).await.unwrap();
+    });
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    harness.runtime.authenticate(ADMIN, false).await.unwrap();
+    harness.mock.calls.lock().unwrap().clear();
+    let fetch_snapshot = |client: reqwest::Client, base: String| async move {
+        let res = client
+            .get(format!("{base}/api/desktop/v1/snapshot"))
+            .header("x-api-key", ADMIN)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status().as_u16(), 200);
+        res.json::<Value>().await.unwrap()
+    };
     let mut blocker = harness.runtime.db.pool.begin().await.unwrap();
     sqlx::query("LOCK TABLE accounts IN ACCESS EXCLUSIVE MODE")
         .execute(&mut *blocker)
@@ -623,13 +642,7 @@ async fn snapshot_invalidation_never_waits_or_republishes_inflight_cache() {
         .fetch_one(&mut *blocker)
         .await
         .unwrap();
-    let runtime = harness.runtime.clone();
-    let inflight = tokio::spawn(async move {
-        runtime
-            .snapshot_bytes()
-            .await
-            .map(|b| serde_json::from_slice::<Value>(&b).unwrap())
-    });
+    let inflight = tokio::spawn(fetch_snapshot(client.clone(), app_base.clone()));
     tokio::time::timeout(Duration::from_secs(3), async {
         loop {
             let waiting: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))")
@@ -647,7 +660,7 @@ async fn snapshot_invalidation_never_waits_or_republishes_inflight_cache() {
         .await
         .unwrap();
     blocker.commit().await.unwrap();
-    let first = inflight.await.unwrap().unwrap();
+    let first = inflight.await.unwrap();
     assert_eq!(first["accounts"][0]["name"], "fixture-inflight");
 
     // An invalidated in-flight result may satisfy its caller, but must not become
@@ -656,18 +669,19 @@ async fn snapshot_invalidation_never_waits_or_republishes_inflight_cache() {
         .execute(&harness.runtime.db.pool)
         .await
         .unwrap();
-    let second: Value =
-        serde_json::from_slice(&harness.runtime.snapshot_bytes().await.unwrap()).unwrap();
+    let second = fetch_snapshot(client.clone(), app_base.clone()).await;
     assert_eq!(second["accounts"][0]["name"], "fixture-after");
     sqlx::query("UPDATE accounts SET name='fixture-unobserved' WHERE id=12")
         .execute(&harness.runtime.db.pool)
         .await
         .unwrap();
     assert_eq!(
-        serde_json::from_slice::<Value>(&harness.runtime.snapshot_bytes().await.unwrap()).unwrap(),
+        fetch_snapshot(client, app_base).await,
         second,
         "the subsequent uncontended snapshot is cached normally"
     );
+    app_server.abort();
+    let _ = app_server.await;
     let projection_row = harness.runtime.actions.queries.account(12).await.unwrap();
     let mut account = harness
         .runtime
@@ -838,6 +852,14 @@ async fn single_account_usage_is_independent_of_groups_history_and_snapshot_lock
         .execute(&h.runtime.db.pool).await.unwrap();
     let expected = h.runtime.account_usage(12, ADMIN, false).await.unwrap();
     assert_eq!(expected["today"]["requests"], 1);
+    let app_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let app_base = format!("http://{}", app_listener.local_addr().unwrap());
+    let app = sub2ops_server::api::router(h.runtime.clone());
+    let app_server = tokio::spawn(async move {
+        axum::serve(app_listener, app).await.unwrap();
+    });
+    h.runtime.authenticate(ADMIN, false).await.unwrap();
+    h.mock.calls.lock().unwrap().clear();
     let mut blocker = h.runtime.db.pool.begin().await.unwrap();
     sqlx::query("LOCK TABLE groups, ops_error_logs IN ACCESS EXCLUSIVE MODE")
         .execute(&mut *blocker)
@@ -847,8 +869,18 @@ async fn single_account_usage_is_independent_of_groups_history_and_snapshot_lock
         .fetch_one(&mut *blocker)
         .await
         .unwrap();
-    let runtime = h.runtime.clone();
-    let snapshot = tokio::spawn(async move { runtime.snapshot_bytes().await });
+    let snapshot = tokio::spawn(async move {
+        let res = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap()
+            .get(format!("{app_base}/api/desktop/v1/snapshot"))
+            .header("x-api-key", ADMIN)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status().as_u16(), 200);
+    });
     tokio::time::timeout(std::time::Duration::from_secs(3), async {
         loop {
             let waiting: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))")
@@ -867,7 +899,9 @@ async fn single_account_usage_is_independent_of_groups_history_and_snapshot_lock
     assert_eq!(usage["today"], expected["today"]);
     assert!(!snapshot.is_finished());
     blocker.rollback().await.unwrap();
-    snapshot.await.unwrap().unwrap();
+    snapshot.await.unwrap();
+    app_server.abort();
+    let _ = app_server.await;
     assert!(h.mock.calls.lock().unwrap().is_empty());
     h.close().await;
 }

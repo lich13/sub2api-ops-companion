@@ -239,10 +239,6 @@ pub(crate) fn safe_error_body_limited(value: &Value) -> (String, bool) {
     (body, limited || outer_truncated)
 }
 
-pub fn safe_error_body(value: &Value) -> String {
-    safe_error_body_limited(value).0
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

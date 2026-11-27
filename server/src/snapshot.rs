@@ -303,12 +303,6 @@ impl Runtime {
     pub(crate) fn invalidate_snapshot(&self) {
         self.cache_epoch.fetch_add(1, Ordering::AcqRel);
     }
-    pub async fn snapshot_bytes(&self) -> Result<axum::body::Bytes> {
-        match self.snapshot_http(None, false).await? {
-            SnapshotReply::Full { body, .. } => Ok(body),
-            SnapshotReply::NotModified { .. } => Err(Error::internal()),
-        }
-    }
     pub(crate) async fn snapshot_http(
         &self,
         if_none_match: Option<&str>,
@@ -520,11 +514,12 @@ impl Runtime {
         }
 
         let marks = self.detection.capacity.store.shared_snapshot();
-        let detection = self
-            .detection
-            .store
-            .read_shared()
-            .and_then(|state| self.config.current_shared().map(|config| (state, config)));
+        let detection = self.detection.store.read_shared().and_then(|state| {
+            let sampled = self.detection.frequency_sampled_map(&state);
+            self.config
+                .current_shared()
+                .map(|config| (state, config, sampled))
+        });
         for account in &mut accounts {
             let id = integer(&account["id"]).unwrap();
             account["usage"]["stats_status"] = if stats_failed { "error" } else { "ok" }.into();
@@ -540,9 +535,9 @@ impl Runtime {
                     account["model_detection"] = detection
                         .as_ref()
                         .map_err(Clone::clone)
-                        .and_then(|(state, config)| {
+                        .and_then(|(state, config, sampled)| {
                             crate::model_detection::Detection::project_account(
-                                account, state, config,
+                                account, state, config, sampled,
                             )
                         })
                         .unwrap_or(json!({"status":"error","reason":"检测状态暂不可读取"}));
@@ -624,9 +619,10 @@ impl Runtime {
                         .store
                         .read_shared()
                         .and_then(|state| {
+                            let sampled = self.detection.frequency_sampled_map(&state);
                             self.config.current_shared().and_then(|config| {
                                 crate::model_detection::Detection::project_account(
-                                    row, &state, &config,
+                                    row, &state, &config, &sampled,
                                 )
                             })
                         })

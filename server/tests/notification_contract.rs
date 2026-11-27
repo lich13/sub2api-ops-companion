@@ -2627,3 +2627,101 @@ async fn slow_poll_cache_ignores_non_openai_traffic_catches_out_of_order_commits
         .unwrap();
     runtime.close().await;
 }
+
+#[tokio::test]
+async fn capacity_forward_cursor_pagination_and_slow_poll_failure_backoff() {
+    let _serial = DB_TEST_LOCK.lock().await;
+    let capture = CaptureServer::start(vec![]).await;
+    let dir = tempfile::tempdir().unwrap();
+    let t0 = Utc::now();
+    let now_cell = Arc::new(Mutex::new(t0));
+    let clock_cell = Arc::clone(&now_cell);
+    let cfg = settings(
+        dir.path(),
+        database_url(),
+        json!({"enabled":false,"device_key":"","server_url":""}),
+        true,
+        capture.url.clone(),
+    );
+    let runtime = Runtime::new_with_clock(cfg, Arc::new(move || *clock_cell.lock().unwrap()))
+        .await
+        .unwrap();
+    let alerts = &runtime.detection.capacity;
+    seed_capacity_baseline(alerts, t0 - Duration::hours(2));
+    alerts.poll().await.unwrap();
+
+    // Insert 250 non-matching error rows (> 1 page of 200) to exercise effective_cursor forward loop.
+    let base_err: i64 =
+        sqlx::query_scalar::<_, i64>("SELECT COALESCE(MAX(id), 0)::bigint FROM ops_error_logs")
+            .fetch_one(&runtime.db.pool)
+            .await
+            .unwrap()
+            + 1000;
+    for idx in 1..=250_i64 {
+        sqlx::query(
+            "INSERT INTO ops_error_logs (id,created_at,error_owner,error_message) VALUES ($1,$2,'platform','benign message')",
+        )
+        .bind(base_err + idx)
+        .bind(t0 + Duration::seconds(1))
+        .execute(&runtime.db.pool)
+        .await
+        .unwrap();
+    }
+    *now_cell.lock().unwrap() = t0 + Duration::seconds(2);
+    alerts.poll().await.unwrap();
+
+    // Force slow_ttft SQL failure and verify failure backoff prevents 2s audit spam.
+    let audit_slow_errors = || -> usize {
+        std::fs::read_to_string(&runtime.settings.audit_path)
+            .unwrap_or_default()
+            .lines()
+            .filter(|line| line.contains("capacity_alert_slow_ttft_query_error"))
+            .count()
+    };
+    sqlx::query("ALTER TABLE usage_logs RENAME TO usage_logs_slow_backoff_test")
+        .execute(&runtime.db.pool)
+        .await
+        .unwrap();
+
+    *now_cell.lock().unwrap() = t0 + Duration::seconds(4);
+    alerts.poll().await.unwrap();
+    assert_eq!(audit_slow_errors(), 1, "first failure records one audit");
+
+    // 2 seconds later (inside 4s backoff): poll() succeeds and skips poll_slow without new audit.
+    *now_cell.lock().unwrap() = t0 + Duration::seconds(6);
+    alerts.poll().await.unwrap();
+    assert_eq!(
+        audit_slow_errors(),
+        1,
+        "2s tick inside backoff window must not re-query or re-audit"
+    );
+
+    // At +4s (t0 + 8s), backoff expires and second failure widens backoff to 8s.
+    *now_cell.lock().unwrap() = t0 + Duration::seconds(8);
+    alerts.poll().await.unwrap();
+    assert_eq!(audit_slow_errors(), 2);
+
+    *now_cell.lock().unwrap() = t0 + Duration::seconds(14);
+    alerts.poll().await.unwrap();
+    assert_eq!(
+        audit_slow_errors(),
+        2,
+        "6s after second failure is still inside 8s backoff"
+    );
+
+    // Restore table and advance past 8s backoff: poll_slow recovers cleanly.
+    sqlx::query("ALTER TABLE usage_logs_slow_backoff_test RENAME TO usage_logs")
+        .execute(&runtime.db.pool)
+        .await
+        .unwrap();
+    *now_cell.lock().unwrap() = t0 + Duration::seconds(17);
+    alerts.poll().await.unwrap();
+    assert_eq!(audit_slow_errors(), 2);
+
+    sqlx::query("DELETE FROM ops_error_logs WHERE id > $1")
+        .bind(base_err)
+        .execute(&runtime.db.pool)
+        .await
+        .unwrap();
+    runtime.close().await;
+}

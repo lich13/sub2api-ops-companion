@@ -1342,25 +1342,24 @@ impl Operations {
         }
         self.get(jid, 0)
     }
-    pub(crate) fn has_pending_work(&self) -> bool {
+    pub(crate) fn idle_schedule_delay(
+        &self,
+        default_interval: Duration,
+        real_wall_clock: bool,
+    ) -> Option<Duration> {
         if !self
             .tasks
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .is_empty()
-            || !self
-                .events
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .is_empty()
         {
-            return true;
+            return Some(default_interval);
         }
         let Ok((ops_rev, data)) = self.store.read_shared_versioned() else {
-            return true;
+            return Some(default_interval);
         };
         let Ok(oauth_rev) = self.actions.queries.oauth.0.cache_revision() else {
-            return true;
+            return Some(default_interval);
         };
         if *self
             .scheduled_results_cache
@@ -1368,23 +1367,52 @@ impl Operations {
             .unwrap_or_else(|e| e.into_inner())
             != (ops_rev, oauth_rev)
         {
-            return true;
+            return Some(default_interval);
         }
         let cache = *self
             .active_scan_cache
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        if cache.0 == ops_rev {
-            return cache.1 || cache.2;
+        let has_active = if cache.0 == ops_rev {
+            cache.1 || cache.2
+        } else {
+            data["jobs"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .any(|(_, job)| {
+                    matches!(string(&job["status"]), "queued" | "checking")
+                        || job["repeat_state"] == "active"
+                })
+        };
+        if has_active {
+            return Some(default_interval);
         }
-        data["jobs"]
-            .as_object()
-            .into_iter()
-            .flatten()
-            .any(|(_, job)| {
-                matches!(string(&job["status"]), "queued" | "checking")
-                    || job["repeat_state"] == "active"
-            })
+        let earliest_expiry = {
+            let events = self.events.lock().unwrap_or_else(|e| e.into_inner());
+            if events.is_empty() {
+                return None;
+            }
+            let mut earliest: Option<chrono::DateTime<chrono::Utc>> = None;
+            for buf in events.values() {
+                let Some(done_at) = buf.terminal_at else {
+                    return Some(default_interval);
+                };
+                let expires_at = done_at + chrono::Duration::seconds(60);
+                earliest = Some(earliest.map_or(expires_at, |prev| prev.min(expires_at)));
+            }
+            earliest?
+        };
+        if !real_wall_clock {
+            return Some(Duration::from_secs(2));
+        }
+        let now = self.backend.now();
+        Some(
+            (earliest_expiry - now)
+                .to_std()
+                .unwrap_or(Duration::from_millis(50))
+                .clamp(Duration::from_millis(50), Duration::from_secs(60)),
+        )
     }
     pub async fn tick(self: &Arc<Self>) -> Result<()> {
         if self.closing.load(Ordering::Acquire) || self.actions.supervisor.is_stopping() {
@@ -2478,5 +2506,129 @@ mod tests {
             .is_err());
 
         store.recover_startup().unwrap();
+    }
+
+    #[tokio::test]
+    async fn terminal_event_buffer_sleeps_until_expiry_and_wakes_on_active_work() {
+        use chrono::TimeZone;
+
+        struct ClockBackend(Mutex<chrono::DateTime<chrono::Utc>>);
+        impl Backend for ClockBackend {
+            fn now(&self) -> chrono::DateTime<chrono::Utc> {
+                *self.0.lock().unwrap()
+            }
+            fn mark(&self, _id: i64) -> Result<Value> {
+                Ok(json!({"version": "0".repeat(64)}))
+            }
+            fn dispatch<'a>(
+                &'a self,
+                _row: &'a Value,
+                _job: &'a Value,
+                _key: &'a str,
+            ) -> BoxFuture<'a, Result<Value>> {
+                Box::pin(async { Ok(json!({})) })
+            }
+            fn model_get(&self, _id: &str) -> Result<Value> {
+                Err(Error::new(404, "absent"))
+            }
+            fn model_jobs(&self) -> Result<Vec<Value>> {
+                Ok(Vec::new())
+            }
+            fn model_cancel<'a>(&'a self, _id: &'a str) -> BoxFuture<'a, Result<Value>> {
+                Box::pin(async { Err(Error::new(404, "absent")) })
+            }
+            fn test_config(&self) -> Result<(String, usize)> {
+                Ok(("gpt-5.4".into(), 1))
+            }
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let t0 = chrono::Utc.with_ymd_and_hms(2026, 11, 26, 5, 0, 0).unwrap();
+        let settings = Arc::new(
+            crate::settings::Settings::from_env(&BTreeMap::from([
+                (
+                    "DATABASE_URL".into(),
+                    std::env::var("DATABASE_URL").unwrap(),
+                ),
+                (
+                    "USAGE_QUERY_STATE_PATH".into(),
+                    dir.path().join("oauth-state.json").to_string_lossy().into(),
+                ),
+            ]))
+            .unwrap(),
+        );
+        let db = crate::db::Database::open(&settings.database_url)
+            .await
+            .unwrap();
+        let oauth = crate::oauth_state::OAuthState::new(settings.usage_path.clone());
+        let queries = crate::queries::Queries {
+            db: db.clone(),
+            oauth,
+        };
+        let upstream =
+            crate::upstream::Upstream::with_clock(settings.clone(), Arc::new(move || t0)).unwrap();
+        let templates =
+            crate::account_templates::Templates::new(settings.data_dir().join("templates.json"));
+        let actions = Actions::new(
+            queries,
+            upstream,
+            crate::account_locks::AccountLocks::default(),
+            templates,
+            settings,
+        )
+        .unwrap();
+        let backend = Arc::new(ClockBackend(Mutex::new(t0)));
+        let ops = Operations::new(actions, backend.clone(), Arc::new(Semaphore::new(2))).unwrap();
+        ops.tick().await.unwrap();
+        assert_eq!(
+            ops.idle_schedule_delay(Duration::from_millis(250), true),
+            None
+        );
+
+        ops.events.lock().unwrap().insert(
+            "done-1".into(),
+            EventBuffer {
+                items: vec![],
+                terminal_at: Some(t0),
+                last_push_at: t0,
+            },
+        );
+        *backend.0.lock().unwrap() = t0 + chrono::Duration::seconds(15);
+        assert_eq!(
+            ops.idle_schedule_delay(Duration::from_millis(250), true),
+            Some(Duration::from_secs(45))
+        );
+
+        let jid = "11111111111111111111111111111111";
+        ops.store
+            .transaction(|data| {
+                data["jobs"][jid] = json!({
+                    "id": jid,
+                    "account_id": 1,
+                    "action": "schedulable",
+                    "status": "queued",
+                    "payload": {"schedulable": true},
+                });
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            ops.idle_schedule_delay(Duration::from_millis(250), true),
+            Some(Duration::from_millis(250))
+        );
+
+        ops.store
+            .transaction(|data| {
+                data["jobs"][jid]["status"] = "cancelled".into();
+                Ok(())
+            })
+            .unwrap();
+        *backend.0.lock().unwrap() = t0 + chrono::Duration::seconds(61);
+        ops.tick().await.unwrap();
+        assert_eq!(
+            ops.idle_schedule_delay(Duration::from_millis(250), true),
+            None
+        );
+        db.close().await;
     }
 }

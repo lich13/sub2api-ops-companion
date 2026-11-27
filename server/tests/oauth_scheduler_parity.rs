@@ -433,6 +433,10 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
         );
     }
 
+    if method == Method::GET && path == "/api/v1/admin/groups/all" {
+        return json_response(200, json!({"code":0,"data":[]}));
+    }
+
     state
         .unexpected
         .lock()
@@ -1736,7 +1740,22 @@ async fn deleted_account_cache_cleanup_preserves_inflight_queries_and_live_resul
     let persisted = harness.runtime.monitor.shared_state().unwrap()["oauth_results"].clone();
     assert!(persisted[id.to_string()].is_object());
     // A late completion may refill the cache; the next full inventory removes it.
-    harness.runtime.snapshot_bytes().await.unwrap();
+    let (app_url, app_task) = spawn_loopback(sub2ops_server::api::router(
+        harness.runtime.0.as_ref().unwrap().clone(),
+    ))
+    .await;
+    let snap_res = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .unwrap()
+        .get(format!("{app_url}/api/desktop/v1/snapshot"))
+        .header("x-api-key", ADMIN_KEY)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(snap_res.status().as_u16(), 200);
+    app_task.abort();
+    let _ = app_task.await;
     assert!(harness
         .runtime
         .monitor

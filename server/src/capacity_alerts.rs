@@ -239,6 +239,7 @@ fn prune_notifications(data: &mut Value) {
 }
 
 type SlowPollWatermark = ((i64, i64, i64), i64, i64);
+type SlowBackoff = std::sync::Mutex<(u32, Option<(DateTime<Utc>, DateTime<Utc>)>)>;
 
 #[derive(Clone)]
 struct SlowPollCache {
@@ -317,6 +318,7 @@ pub struct CapacityAlerts {
     last_seen_cleanup: std::sync::Arc<std::sync::Mutex<Option<DateTime<Utc>>>>,
     cursor_mem: std::sync::Arc<std::sync::Mutex<Option<CursorMemory>>>,
     slow_cache: std::sync::Arc<std::sync::Mutex<Option<SlowPollCache>>>,
+    slow_backoff: std::sync::Arc<SlowBackoff>,
 }
 impl CapacityAlerts {
     pub fn new(db: Database, settings: &crate::settings::Settings) -> Self {
@@ -332,6 +334,7 @@ impl CapacityAlerts {
             last_seen_cleanup: std::sync::Arc::new(std::sync::Mutex::new(None)),
             cursor_mem: std::sync::Arc::new(std::sync::Mutex::new(None)),
             slow_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            slow_backoff: std::sync::Arc::new(std::sync::Mutex::new((0, None))),
         }
     }
     fn audit(&self, event: &str, payload: Value) {
@@ -358,6 +361,12 @@ impl CapacityAlerts {
             }
             Ok(())
         })
+    }
+    fn effective_cursor(&self, at: DateTime<Utc>) -> Result<i64> {
+        let (rev, state) = self.store.shared_snapshot_versioned()?;
+        let disk_cursor = integer(&state["cursor"]).ok_or_else(Error::internal)?;
+        let mut guard = self.cursor_mem.lock().unwrap_or_else(|e| e.into_inner());
+        Ok(sync_cursor_memory(&mut guard, rev, &state, disk_cursor, at).cursor)
     }
     fn effective_cursor_and_seen(&self, at: DateTime<Utc>) -> Result<(i64, Vec<i64>)> {
         let (rev, state) = self.store.shared_snapshot_versioned()?;
@@ -484,7 +493,7 @@ impl CapacityAlerts {
             return Ok(());
         }
         for _ in 0..20 {
-            let (cursor, _) = self.effective_cursor_and_seen(at)?;
+            let cursor = self.effective_cursor(at)?;
             let rows = self
                 .db
                 .all_with_columns(sql::capacity_poll_sql, &[cursor.into()])
@@ -727,7 +736,28 @@ impl CapacityAlerts {
         let tail_count = integer(&row["tail_count"]).unwrap_or(0);
         Some((floor_id, (accounts_sig, tail_max_id, tail_count)))
     }
+    fn record_slow_failure(&self, at: DateTime<Utc>) {
+        let mut backoff = self.slow_backoff.lock().unwrap_or_else(|e| e.into_inner());
+        let failures = (backoff.0 + 1).min(5);
+        let delay = Duration::seconds((1_i64 << (failures + 1)).min(60));
+        *backoff = (failures, Some((at, at + delay)));
+        drop(backoff);
+        self.audit("slow_ttft_query_error", json!({"error":"DatabaseError"}));
+    }
+    fn clear_slow_backoff(&self) {
+        *self.slow_backoff.lock().unwrap_or_else(|e| e.into_inner()) = (0, None);
+    }
     async fn poll_slow(&self, at: DateTime<Utc>) -> Result<()> {
+        if let Some((failed_at, retry_at)) = self
+            .slow_backoff
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .1
+        {
+            if at >= failed_at && at < retry_at {
+                return Ok(());
+            }
+        }
         let (store_rev, previous) = self.store.shared_snapshot_versioned()?;
         let window_start = at - Duration::hours(24);
         let valid_cached = self
@@ -769,7 +799,7 @@ impl CapacityAlerts {
             {
                 Ok(Some(row)) => row,
                 _ => {
-                    self.audit("slow_ttft_query_error", json!({"error":"DatabaseError"}));
+                    self.record_slow_failure(at);
                     return Ok(());
                 }
             };
@@ -787,6 +817,7 @@ impl CapacityAlerts {
                     tail_count,
                 );
                 if current_wm == cached.watermark {
+                    self.clear_slow_backoff();
                     return Ok(());
                 }
                 let global_max_id = integer(&check["global_max_id"]).unwrap_or(0);
@@ -797,7 +828,7 @@ impl CapacityAlerts {
                     match self.slow_scan_watermark(at).await {
                         Some(v) => v,
                         None => {
-                            self.audit("slow_ttft_query_error", json!({"error":"DatabaseError"}));
+                            self.record_slow_failure(at);
                             return Ok(());
                         }
                     }
@@ -806,7 +837,7 @@ impl CapacityAlerts {
                 match self.slow_scan_watermark(at).await {
                     Some(v) => v,
                     None => {
-                        self.audit("slow_ttft_query_error", json!({"error":"DatabaseError"}));
+                        self.record_slow_failure(at);
                         return Ok(());
                     }
                 }
@@ -815,7 +846,7 @@ impl CapacityAlerts {
             match self.slow_scan_watermark(at).await {
                 Some(v) => v,
                 None => {
-                    self.audit("slow_ttft_query_error", json!({"error":"DatabaseError"}));
+                    self.record_slow_failure(at);
                     return Ok(());
                 }
             }
@@ -827,10 +858,11 @@ impl CapacityAlerts {
         {
             Ok(v) => v,
             Err(_) => {
-                self.audit("slow_ttft_query_error", json!({"error":"DatabaseError"}));
+                self.record_slow_failure(at);
                 return Ok(());
             }
         };
+        self.clear_slow_backoff();
         let mut grouped: BTreeMap<i64, Vec<Value>> = BTreeMap::new();
         let mut accounts = BTreeMap::new();
         let mut earliest_sample_at: Option<DateTime<Utc>> = None;

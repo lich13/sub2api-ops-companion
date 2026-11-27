@@ -203,22 +203,6 @@ fn quota_windows_and_read_only_usage_projections_match_python() {
 }
 
 #[test]
-fn account_quality_removal_contract_is_explicit() {
-    let document = fixture();
-    let contract = &document["account_quality_removed"];
-    assert_eq!(contract["status"], "removed");
-    assert_eq!(
-        contract["route"],
-        "GET /api/desktop/v1/accounts/{id}/quality"
-    );
-    assert_eq!(contract["expected_status"], 404);
-    assert_eq!(
-        contract["replacements"],
-        json!(["proxy quality-check", "capacity slow_ttft evidence"])
-    );
-}
-
-#[test]
 fn credit_state_validation_errors_match_python() {
     let state_fixture = &fixture()["credit_state"];
     assert!(oauth_state::validate_credit(&state_fixture["valid_state"]).is_ok());

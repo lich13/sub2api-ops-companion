@@ -6931,8 +6931,8 @@ async fn key_quota_http_auth_settings_and_parent_credential_isolation() {
     sqlx::query("UPDATE accounts SET credentials=jsonb_build_object('base_url',$1::text,'api_key','fixture-parent') WHERE id=$2").bind(&base).bind(parent).execute(&harness.runtime.db.pool).await.unwrap();
     // Both child and parent use the inherited source, but their independent
     // account access tokens and cache entries remain isolated.
-    let snapshot: Value =
-        serde_json::from_slice(&harness.runtime.snapshot_bytes().await.unwrap()).unwrap();
+    let (snapshot_status, snapshot, _) = harness.request(Method::GET, "snapshot", None).await;
+    assert_eq!(snapshot_status, 200);
     let child_dto = snapshot["accounts"]
         .as_array()
         .unwrap()

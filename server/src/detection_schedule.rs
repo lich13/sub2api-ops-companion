@@ -51,6 +51,28 @@ pub fn pause_reason(value: &Value) -> &'static str {
 }
 
 impl Detection {
+    pub(crate) fn frequency_sampled_map(&self, state: &Value) -> BTreeMap<i64, DateTime<Utc>> {
+        let mut guard = self
+            .frequency_samples
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        guard
+            .get_or_insert_with(|| {
+                state["accounts"]
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|(k, v)| {
+                        Some((
+                            k.parse::<i64>().ok()?,
+                            parse_datetime(&v["frequency_sampled_at"])?,
+                        ))
+                    })
+                    .collect()
+            })
+            .clone()
+    }
+
     pub(crate) async fn refresh_call_frequency(&self) -> Result<()> {
         let _guard = self.frequency_lock.lock().await;
         let state = self.store.read_shared()?;
@@ -61,9 +83,16 @@ impl Detection {
             .filter(|(_, value)| value["enabled"] == true && smart(value))
             .collect();
         let at = self.now();
+        let sampled = self.frequency_sampled_map(&state);
         if accounts.is_empty()
-            || accounts.iter().all(|(_, value)| {
-                parse_datetime(&value["frequency_sampled_at"])
+            || accounts.iter().all(|(key, value)| {
+                let mem_sample = key
+                    .parse::<i64>()
+                    .ok()
+                    .and_then(|id| sampled.get(&id).copied());
+                let disk_sample = parse_datetime(&value["frequency_sampled_at"]);
+                mem_sample
+                    .or(disk_sample)
                     .is_some_and(|sample| sample <= at && at - sample < Duration::minutes(1))
             })
         {
@@ -84,20 +113,48 @@ impl Detection {
                 .filter_map(|row| Some((integer(&row["account_id"])?, row["requests"].as_u64()?)))
                 .collect::<BTreeMap<_, _>>()
         });
-        self.store.transaction(|state| {
-            for id in &ids {
-                let value = &mut state["accounts"][id.to_string()];
-                if value["enabled"] == true && smart(value) {
-                    value["frequency_sampled_at"] = datetime(at).into();
-                    value["recent_request_count"] = counts
-                        .as_ref()
-                        .ok()
-                        .map(|counts| json!(counts.get(id).copied().unwrap_or(0)))
-                        .unwrap_or(Value::Null);
+        let next_count = |id: &i64| -> Value {
+            counts
+                .as_ref()
+                .ok()
+                .map(|counts| json!(counts.get(id).copied().unwrap_or(0)))
+                .unwrap_or(Value::Null)
+        };
+        let post_state = self.store.read_shared()?;
+        let should_persist = ids.iter().any(|id| {
+            let current = &post_state["accounts"][id.to_string()];
+            current["enabled"] == true
+                && smart(current)
+                && (current["recent_request_count"] != next_count(id)
+                    || parse_datetime(&current["frequency_sampled_at"])
+                        .is_some_and(|persisted| persisted > at))
+        });
+        if should_persist {
+            self.store.transaction(|state| {
+                for id in &ids {
+                    let value = &mut state["accounts"][id.to_string()];
+                    if value["enabled"] == true && smart(value) {
+                        value["frequency_sampled_at"] = datetime(at).into();
+                        value["recent_request_count"] = next_count(id);
+                    }
                 }
+                Ok(())
+            })?;
+        }
+        let latest = self.store.read_shared()?;
+        let mut guard = self
+            .frequency_samples
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let samples = guard.get_or_insert_with(BTreeMap::new);
+        samples.retain(|id, _| latest["accounts"].get(id.to_string()).is_some());
+        for id in &ids {
+            let current = &latest["accounts"][id.to_string()];
+            if current["enabled"] == true && smart(current) {
+                samples.insert(*id, at);
             }
-            Ok(())
-        })
+        }
+        Ok(())
     }
 
     pub(crate) fn smart_due(&self, id: i64, value: &Value) -> Result<Option<DateTime<Utc>>> {

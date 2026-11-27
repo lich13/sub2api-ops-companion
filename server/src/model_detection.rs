@@ -71,6 +71,7 @@ fn validate(value: &Value) -> Result<()> {
     Ok(())
 }
 type WaitingSweepCache = std::sync::Mutex<Option<((u64, u64, u64, u64), DateTime<Utc>)>>;
+type FrequencySamples = std::sync::Mutex<Option<std::collections::BTreeMap<i64, DateTime<Utc>>>>;
 
 #[derive(Clone)]
 pub struct Detection {
@@ -84,6 +85,7 @@ pub struct Detection {
     pub(crate) tick_lock: Arc<tokio::sync::Mutex<()>>,
     pub(crate) notice_lock: Arc<tokio::sync::Mutex<()>>,
     pub(crate) frequency_lock: Arc<tokio::sync::Mutex<()>>,
+    pub(crate) frequency_samples: Arc<FrequencySamples>,
     pub(crate) waiting_sweep_cache: Arc<WaitingSweepCache>,
 }
 impl Detection {
@@ -113,6 +115,7 @@ impl Detection {
             tick_lock: Arc::new(tokio::sync::Mutex::new(())),
             notice_lock: Arc::new(tokio::sync::Mutex::new(())),
             frequency_lock: Arc::new(tokio::sync::Mutex::new(())),
+            frequency_samples: Arc::new(std::sync::Mutex::new(None)),
             waiting_sweep_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
@@ -184,7 +187,7 @@ impl Detection {
         .into())
     }
     pub fn update(&self, id: i64, changes: Value) -> Result<Value> {
-        self.store.transaction(|data| {
+        let updated = self.store.transaction(|data| {
             let value = data["accounts"]
                 .as_object_mut()
                 .unwrap()
@@ -195,7 +198,22 @@ impl Detection {
                 .unwrap()
                 .extend(changes.as_object().cloned().ok_or_else(Error::invalid)?);
             Ok(value.clone())
-        })
+        })?;
+        if let Some(raw_sampled) = changes.get("frequency_sampled_at") {
+            if let Some(samples) = self
+                .frequency_samples
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_mut()
+            {
+                if let Some(ts) = parse_datetime(raw_sampled) {
+                    samples.insert(id, ts);
+                } else {
+                    samples.remove(&id);
+                }
+            }
+        }
+        Ok(updated)
     }
     pub fn audit(&self, event: &str, value: Value) {
         self.actions.audit(event, value);
@@ -207,14 +225,23 @@ impl Detection {
     fn view_account(&self, row: &Value) -> Result<Value> {
         let data = self.store.read_shared()?;
         let config = self.monitor.config.current()?;
-        Self::project_account(row, &data, &config)
+        let sampled = self.frequency_sampled_map(&data);
+        Self::project_account(row, &data, &config, &sampled)
     }
-    pub(crate) fn project_account(row: &Value, data: &Value, config: &Value) -> Result<Value> {
+    pub(crate) fn project_account(
+        row: &Value,
+        data: &Value,
+        config: &Value,
+        sampled: &std::collections::BTreeMap<i64, DateTime<Utc>>,
+    ) -> Result<Value> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         let mut value = data["accounts"]
             .get(id.to_string())
             .cloned()
             .unwrap_or_else(defaults);
+        if let Some(sampled_at) = sampled.get(&id) {
+            value["frequency_sampled_at"] = datetime(*sampled_at).into();
+        }
         value
             .as_object_mut()
             .unwrap()

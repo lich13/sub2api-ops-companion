@@ -380,8 +380,7 @@ impl Runtime {
         match kind {
             "operations" => self
                 .operations
-                .has_pending_work()
-                .then_some(default_interval),
+                .idle_schedule_delay(default_interval, self.real_wall_clock),
             "priority_orders" => self
                 .priorities
                 .has_pending_work()
@@ -529,9 +528,48 @@ impl Runtime {
         if !due {
             return;
         }
+        let mut candidate_ids = std::collections::BTreeSet::new();
+        if let Ok(snap) = self.keepalive.store.read_shared() {
+            candidate_ids.extend(
+                snap["accounts"]
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|(k, _)| k.parse::<i64>().ok()),
+            );
+        }
+        if let Ok(snap) = self.detection.store.read_shared() {
+            for field in ["accounts", "automatic_starts"] {
+                candidate_ids.extend(
+                    snap[field]
+                        .as_object()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|(k, _)| k.parse::<i64>().ok()),
+                );
+            }
+        }
+        if let Ok(snap) = self.detection.capacity.store.shared_snapshot() {
+            for field in ["marks", "slow_ttft"] {
+                candidate_ids.extend(
+                    snap[field]
+                        .as_object()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|(k, _)| k.parse::<i64>().ok()),
+                );
+            }
+        }
+        if candidate_ids.is_empty() {
+            return;
+        }
+        let candidates: Vec<i64> = candidate_ids.into_iter().collect();
         let Ok(rows) = self
             .db
-            .all("SELECT id FROM accounts WHERE deleted_at IS NOT NULL", &[])
+            .all(
+                "SELECT id FROM accounts WHERE id = ANY($1) AND deleted_at IS NOT NULL",
+                &[crate::db::Param::Ints(candidates)],
+            )
             .await
         else {
             return;
@@ -575,6 +613,15 @@ impl Runtime {
                     }
                     Ok(())
                 });
+                if let Some(samples) = self
+                    .detection
+                    .frequency_samples
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_mut()
+                {
+                    samples.retain(|id, _| !deleted.contains(&id.to_string()));
+                }
             }
         }
         if let Ok(snap) = self.detection.capacity.store.shared_snapshot() {
@@ -916,5 +963,95 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[tokio::test]
+    async fn reconcile_deleted_accounts_skips_empty_candidates_and_filters_by_candidate_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = crate::settings::Settings {
+            database_url: std::env::var("DATABASE_URL").unwrap(),
+            bind: "127.0.0.1:0".into(),
+            audit_path: dir.path().join("audit.jsonl"),
+            usage_path: dir.path().join("oauth-state.json"),
+            oauth_path: dir.path().join("oauth-config.json"),
+            bark_path: dir.path().join("bark-config.json"),
+            connection_path: dir.path().join("sub2api-config.json"),
+            keepalive_path: dir.path().join("keepalive-state.json"),
+            oauth: json!({
+                "oauth_auto_reset_credit_enabled": false,
+                "oauth_daily_test_enabled": false,
+                "oauth_daily_test_time": "23:59",
+                "oauth_recovery_connection_account_ids": [],
+                "oauth_recovery_model_account_ids": [],
+                "oauth_recovery_monitor_enabled": false,
+                "oauth_recovery_test_concurrency": 1,
+                "oauth_recovery_test_model_id": "gpt-5.4",
+                "oauth_usage_refresh_concurrency": 1,
+            }),
+            bark: json!({"enabled": false}),
+            bark_valid: true,
+            base_url: "http://127.0.0.1:9".into(),
+            verify_url: String::new(),
+        };
+        let runtime = super::Runtime::new(settings).await.unwrap();
+
+        // When local stores have no candidate accounts, reconcile must skip querying `accounts`
+        // (verified by holding ACCESS EXCLUSIVE lock on `accounts` and confirming instant return).
+        let mut blocker = runtime.db.pool.begin().await.unwrap();
+        sqlx::query("LOCK TABLE accounts IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *blocker)
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), runtime.reconcile_deleted_accounts())
+            .await
+            .expect("empty local candidate set must return without querying accounts");
+        blocker.rollback().await.unwrap();
+
+        sqlx::query("INSERT INTO accounts (id,name,platform,type,status,schedulable,deleted_at) VALUES (9101,'live','openai','apikey','active',true,NULL),(9102,'gone','openai','apikey','active',true,now())")
+            .execute(&runtime.db.pool)
+            .await
+            .unwrap();
+        for id in [9101_i64, 9102] {
+            let ver = crate::capacity_alerts::mark_view(id, &serde_json::Value::Null)["version"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            runtime
+                .detection
+                .capacity
+                .store
+                .set_mark(id, true, &ver, chrono::Utc::now(), None)
+                .unwrap();
+            runtime
+                .detection
+                .update(id, json!({"enabled": true, "status": "waiting"}))
+                .unwrap();
+        }
+        *runtime.detection.frequency_samples.lock().unwrap() =
+            Some(std::collections::BTreeMap::from([
+                (9101, chrono::Utc::now()),
+                (9102, chrono::Utc::now()),
+            ]));
+        *runtime.last_orphan_reconcile.lock().unwrap() = None;
+        runtime.reconcile_deleted_accounts().await;
+
+        let marks = runtime.detection.capacity.store.shared_snapshot().unwrap();
+        assert!(marks["marks"].get("9101").is_some());
+        assert!(marks["marks"].get("9102").is_none());
+        let samples = runtime
+            .detection
+            .frequency_samples
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap();
+        assert!(samples.contains_key(&9101));
+        assert!(!samples.contains_key(&9102));
+
+        sqlx::query("DELETE FROM accounts WHERE id IN (9101, 9102)")
+            .execute(&runtime.db.pool)
+            .await
+            .unwrap();
+        runtime.close().await;
     }
 }

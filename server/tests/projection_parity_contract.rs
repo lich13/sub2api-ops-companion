@@ -1124,14 +1124,26 @@ async fn desktop_runtime_snapshot_reuses_shared_stats_without_upstream_io() {
         }
     };
 
+    let (api_address, api_task) = start_projection_api(runtime.clone()).await;
+    runtime.authenticate("fixture-key", false).await.unwrap();
+    mock.calls
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clear();
+    let api_client = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .expect("build loopback-only API client");
+
     let verification = std::panic::AssertUnwindSafe(async {
-        let first: Value = serde_json::from_slice(
-            &runtime
-                .snapshot_bytes()
-                .await
-                .expect("read the first Runtime snapshot from PostgreSQL"),
-        )
-        .unwrap();
+        let first_res = api_client
+            .get(format!("http://{api_address}/api/desktop/v1/snapshot"))
+            .header("x-api-key", "fixture-key")
+            .send()
+            .await
+            .expect("read the first Runtime snapshot from PostgreSQL");
+        assert_eq!(first_res.status().as_u16(), 200);
+        let first: Value = first_res.json().await.unwrap();
         let wire = sub2ops_protocol::response::client_response("GET", "/snapshot", first.clone())
             .expect("both clients can decode a populated server snapshot");
         assert_eq!(
@@ -1187,11 +1199,14 @@ async fn desktop_runtime_snapshot_reuses_shared_stats_without_upstream_io() {
             .execute(&seed.pool)
             .await
             .expect("make a later stats SQL execution fail while leaving other reads available");
-        let second: Value =
-            serde_json::from_slice(&runtime.snapshot_bytes().await.expect(
-                "refresh the whole snapshot while the 15-second stats cache remains valid",
-            ))
-            .unwrap();
+        let second_res = api_client
+            .get(format!("http://{api_address}/api/desktop/v1/snapshot"))
+            .header("x-api-key", "fixture-key")
+            .send()
+            .await
+            .expect("refresh the whole snapshot while the 15-second stats cache remains valid");
+        assert_eq!(second_res.status().as_u16(), 200);
+        let second: Value = second_res.json().await.unwrap();
         let second_usage = second["accounts"]
             .as_array()
             .unwrap()
@@ -1236,6 +1251,8 @@ async fn desktop_runtime_snapshot_reuses_shared_stats_without_upstream_io() {
     .await;
 
     runtime.close().await;
+    api_task.abort();
+    let _ = api_task.await;
     upstream_task.abort();
     let _ = upstream_task.await;
     sqlx::query("DROP VIEW IF EXISTS usage_logs")

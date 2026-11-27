@@ -406,9 +406,9 @@ fn identity(row: &Value) -> String {
     stable["priority"] = 0.into();
     string(&version(&stable)).to_owned()
 }
-fn list_version(rows: &[Value], parallelism: u64) -> String {
+fn list_version<'a>(rows: impl IntoIterator<Item = &'a Value>, parallelism: u64) -> String {
     let entries = json!(rows
-        .iter()
+        .into_iter()
         .map(|row| json!([
             row["id"],
             version(row),
@@ -568,33 +568,46 @@ impl PriorityOrders {
     pub async fn view(&self) -> Result<Value> {
         let rows = self.rows(None).await?;
         let data = self.store.read_shared()?;
-        let items: Vec<_> = rows.iter().map(public_item).collect();
-        let mut groups: BTreeMap<&str, Vec<Value>> = BTreeMap::new();
-        for item in &items {
-            groups
-                .entry(string(&item["platform"]))
-                .or_default()
-                .push(item.clone());
+        let jobs = data["jobs"].as_object().ok_or_else(invalid_state)?;
+        let mut groups: BTreeMap<&str, (Vec<Value>, Vec<&Value>)> = BTreeMap::new();
+        for row in &rows {
+            let entry = groups.entry(string(&row["platform"])).or_default();
+            entry.0.push(public_item(row));
+            entry.1.push(row);
         }
         // Keep a deleted platform's last task reachable for reconciliation.
-        let jobs = data["jobs"].as_object().ok_or_else(invalid_state)?;
+        let mut latest_jobs: BTreeMap<&str, &Value> = BTreeMap::new();
         for job in jobs.values() {
-            groups.entry(string(&job["platform"])).or_default();
+            let platform = string(&job["platform"]);
+            groups.entry(platform).or_default();
+            let key = (string(&job["created_at"]), string(&job["id"]));
+            latest_jobs
+                .entry(platform)
+                .and_modify(|prev| {
+                    if key >= (string(&prev["created_at"]), string(&prev["id"])) {
+                        *prev = job;
+                    }
+                })
+                .or_insert(job);
         }
-        let mut raw: BTreeMap<&str, Vec<Value>> = BTreeMap::new();
-        for row in &rows {
-            raw.entry(string(&row["platform"]))
-                .or_default()
-                .push(row.clone());
-        }
-        let platforms: Vec<_> = groups.into_iter().map(|(platform, items)| {
-            let width = parallelism(&data, platform);
-            let last = jobs.values().filter(|job| job["platform"] == platform)
-                .max_by_key(|job| (string(&job["created_at"]), string(&job["id"])));
-            json!({"platform":platform,"items":items,"parallelism":width,"version":list_version(raw.get(platform).map(Vec::as_slice).unwrap_or_default(), width),"last_task":last.map(|job|public_job(job,false))})
-        }).collect();
-        Ok(json!({"platforms":platforms,
-            "active_task":active(&data).map(|id|public_job(&data["jobs"][id],false))}))
+        let platforms: Vec<_> = groups
+            .into_iter()
+            .map(|(platform, (items, raw_rows))| {
+                let width = parallelism(&data, platform);
+                let last = latest_jobs.get(platform).map(|job| public_job(job, false));
+                json!({
+                    "platform": platform,
+                    "items": items,
+                    "parallelism": width,
+                    "version": list_version(raw_rows.iter().copied(), width),
+                    "last_task": last,
+                })
+            })
+            .collect();
+        Ok(json!({
+            "platforms": platforms,
+            "active_task": active(&data).map(|id| public_job(&data["jobs"][id], false))
+        }))
     }
     pub fn get(&self, id: &str, details: bool) -> Result<Value> {
         let missing = || Error::new(404, "优先级排序任务不存在");
@@ -1018,5 +1031,178 @@ impl PriorityOrders {
             }
         });
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod view_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn view_selects_latest_task_per_platform_and_retains_deleted_platform_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = Arc::new(
+            crate::settings::Settings::from_env(&std::collections::BTreeMap::from([
+                (
+                    "DATABASE_URL".into(),
+                    std::env::var("DATABASE_URL").unwrap(),
+                ),
+                (
+                    "USAGE_QUERY_STATE_PATH".into(),
+                    dir.path().join("oauth-state.json").to_string_lossy().into(),
+                ),
+            ]))
+            .unwrap(),
+        );
+        let db = crate::db::Database::open(&settings.database_url)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO accounts (id,name,platform,type,priority,status,schedulable) VALUES (987101,'oa-1','view-openai','oauth',0,'active',true),(987102,'gr-1','view-grok','oauth',0,'active',true)")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        let oauth = crate::oauth_state::OAuthState::new(settings.usage_path.clone());
+        let queries = crate::queries::Queries {
+            db: db.clone(),
+            oauth,
+        };
+        let upstream = crate::upstream::Upstream::new(settings.clone()).unwrap();
+        let templates =
+            crate::account_templates::Templates::new(settings.data_dir().join("templates.json"));
+        let actions = Actions::new(
+            queries,
+            upstream,
+            crate::account_locks::AccountLocks::default(),
+            templates,
+            settings,
+        )
+        .unwrap();
+        struct NoopBackend;
+        impl crate::operations::Backend for NoopBackend {
+            fn mark(&self, _id: i64) -> Result<Value> {
+                Ok(json!({"version": "0".repeat(64)}))
+            }
+            fn dispatch<'a>(
+                &'a self,
+                _row: &'a Value,
+                _job: &'a Value,
+                _key: &'a str,
+            ) -> futures_util::future::BoxFuture<'a, Result<Value>> {
+                Box::pin(async { Ok(json!({})) })
+            }
+            fn model_get(&self, _id: &str) -> Result<Value> {
+                Err(Error::new(404, "absent"))
+            }
+            fn model_jobs(&self) -> Result<Vec<Value>> {
+                Ok(Vec::new())
+            }
+            fn model_cancel<'a>(
+                &'a self,
+                _id: &'a str,
+            ) -> futures_util::future::BoxFuture<'a, Result<Value>> {
+                Box::pin(async { Err(Error::new(404, "absent")) })
+            }
+            fn test_config(&self) -> Result<(String, usize)> {
+                Ok(("gpt-5.4".into(), 1))
+            }
+        }
+        let ops = Operations::new(
+            actions.clone(),
+            Arc::new(NoopBackend),
+            Arc::new(tokio::sync::Semaphore::new(1)),
+        )
+        .unwrap();
+        let orders = PriorityOrders::new(actions, ops);
+
+        let v0 = orders.view().await.unwrap();
+        let grok_ver = v0["platforms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["platform"] == "view-grok")
+            .unwrap()["version"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let grok_job = orders
+            .submit_validated(&json!({
+                "platform": "view-grok",
+                "ordered_account_ids": [987102],
+                "expected_version": grok_ver,
+                "request_id": "fixture-view-grok-req-0001",
+                "client_id": "fixture-view-client-0001",
+            }))
+            .await
+            .unwrap();
+        let retired_id = grok_job["id"].as_str().unwrap().to_owned();
+        orders.cancel(&retired_id).unwrap();
+        orders.run(&retired_id).await.unwrap();
+        sqlx::query("DELETE FROM accounts WHERE id=987102")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        let oa_ver1 = orders.view().await.unwrap()["platforms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["platform"] == "view-openai")
+            .unwrap()["version"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let oa_job1 = orders
+            .submit_validated(&json!({
+                "platform": "view-openai",
+                "ordered_account_ids": [987101],
+                "expected_version": oa_ver1,
+                "request_id": "fixture-view-openai-req-0001",
+                "client_id": "fixture-view-client-0001",
+            }))
+            .await
+            .unwrap();
+        let old_id = oa_job1["id"].as_str().unwrap().to_owned();
+        orders.cancel(&old_id).unwrap();
+        orders.run(&old_id).await.unwrap();
+        let oa_ver2 = orders.view().await.unwrap()["platforms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["platform"] == "view-openai")
+            .unwrap()["version"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let oa_job2 = orders
+            .submit_validated(&json!({
+                "platform": "view-openai",
+                "ordered_account_ids": [987101],
+                "expected_version": oa_ver2,
+                "request_id": "fixture-view-openai-req-0002",
+                "client_id": "fixture-view-client-0001",
+            }))
+            .await
+            .unwrap();
+        let new_id = oa_job2["id"].as_str().unwrap().to_owned();
+
+        let view = orders.view().await.unwrap();
+        let platforms = view["platforms"].as_array().unwrap();
+        let grok = platforms
+            .iter()
+            .find(|p| p["platform"] == "view-grok")
+            .unwrap();
+        assert_eq!(grok["items"], json!([]));
+        assert_eq!(grok["last_task"]["id"], retired_id);
+        let openai = platforms
+            .iter()
+            .find(|p| p["platform"] == "view-openai")
+            .unwrap();
+        assert_eq!(openai["items"].as_array().unwrap().len(), 1);
+        assert_eq!(openai["last_task"]["id"], new_id);
+        sqlx::query("DELETE FROM accounts WHERE id=987101")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        db.close().await;
     }
 }

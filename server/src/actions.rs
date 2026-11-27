@@ -984,27 +984,28 @@ impl Actions {
             return Ok(());
         }
         let mut pending = Vec::new();
+        let mut scanned = 0usize;
         let mut total = 0usize;
         let mut completed = false;
         loop {
             let chunk = tokio::select! {result=response.chunk()=>result.map_err(|e|if e.is_timeout() {Error::new(504,"测试超时")} else {Error::new(502,"测试连接中断")})?,_ = sender.closed()=>return Ok(())};
             if let Some(bytes) = chunk.as_ref() {
                 total = total.saturating_add(bytes.len());
+                if total > 134_217_728 {
+                    let mut event = json!({"type":"error","error":"测试输出超过大小限制"});
+                    if summary {
+                        event["uncertain"] = true.into();
+                    }
+                    let _ = sender.send(event).await;
+                    return Ok(());
+                }
                 pending.extend_from_slice(bytes);
             }
-            if total > 134_217_728 {
-                let mut event = json!({"type":"error","error":"测试输出超过大小限制"});
-                if summary {
-                    event["uncertain"] = true.into();
-                }
-                let _ = sender.send(event).await;
-                return Ok(());
-            }
             let mut offset = 0;
-            while let Some(end) = pending[offset..]
+            while let Some(end) = pending[scanned..]
                 .iter()
                 .position(|v| *v == b'\n')
-                .map(|v| v + offset)
+                .map(|v| v + scanned)
                 .or_else(|| {
                     if chunk.is_none() && offset < pending.len() {
                         Some(pending.len())
@@ -1015,6 +1016,7 @@ impl Actions {
             {
                 let line = String::from_utf8_lossy(&pending[offset..end]);
                 offset = (end + 1).min(pending.len());
+                scanned = offset;
                 let Some(raw) = line.strip_prefix("data:") else {
                     continue;
                 };
@@ -1089,7 +1091,11 @@ impl Actions {
                     return Ok(());
                 }
             }
-            pending.drain(..offset);
+            scanned = pending.len();
+            if offset > 0 {
+                pending.drain(..offset);
+                scanned -= offset;
+            }
             if chunk.is_none() {
                 break;
             }
@@ -1239,5 +1245,139 @@ mod matching_tests {
                 assert!(old.is_none());
             }
         }
+    }
+
+    #[tokio::test]
+    async fn sse_stream_preserves_scan_offset_across_chunks_and_checks_limit_before_append() {
+        use axum::{body::Body, routing::post, Router};
+        use std::convert::Infallible;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route(
+                "/api/v1/admin/accounts/1/test",
+                post(|| async {
+                    let chunks: Vec<std::result::Result<axum::body::Bytes, Infallible>> = vec![
+                        Ok(axum::body::Bytes::from_static(
+                            b"data: {\"type\":\"content\",\"text\":\"hel",
+                        )),
+                        Ok(axum::body::Bytes::from_static(b"lo ")),
+                        Ok(axum::body::Bytes::from_static(
+                            b"world\"}\ndata: {\"type\":\"test_complete\",\"success\":true",
+                        )),
+                        Ok(axum::body::Bytes::from_static(b"}")),
+                    ];
+                    axum::response::Response::builder()
+                        .status(200)
+                        .body(Body::from_stream(futures_util::stream::iter(chunks)))
+                        .unwrap()
+                }),
+            )
+            .route(
+                "/api/v1/admin/accounts/2/test",
+                post(|| async {
+                    let chunk = axum::body::Bytes::from(vec![b'a'; 34 * 1024 * 1024]);
+                    let chunks: Vec<std::result::Result<axum::body::Bytes, Infallible>> = vec![
+                        Ok(chunk.clone()),
+                        Ok(chunk.clone()),
+                        Ok(chunk.clone()),
+                        Ok(chunk),
+                    ];
+                    axum::response::Response::builder()
+                        .status(200)
+                        .body(Body::from_stream(futures_util::stream::iter(chunks)))
+                        .unwrap()
+                }),
+            );
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut settings =
+            crate::settings::Settings::from_env(&std::collections::BTreeMap::from([
+                (
+                    "DATABASE_URL".into(),
+                    std::env::var("DATABASE_URL").unwrap(),
+                ),
+                (
+                    "USAGE_QUERY_STATE_PATH".into(),
+                    dir.path().join("oauth-state.json").to_string_lossy().into(),
+                ),
+                ("SUB2API_BASE_URL".into(), format!("http://{addr}")),
+            ]))
+            .unwrap();
+        settings.connection_path = dir.path().join("sub2api-config.json");
+        std::fs::write(
+            &settings.connection_path,
+            serde_json::to_vec(&json!({"base_url": format!("http://{addr}")})).unwrap(),
+        )
+        .unwrap();
+        let settings = Arc::new(settings);
+        let db = crate::db::Database::open(&settings.database_url)
+            .await
+            .unwrap();
+        let oauth = crate::oauth_state::OAuthState::new(settings.usage_path.clone());
+        let queries = crate::queries::Queries {
+            db: db.clone(),
+            oauth,
+        };
+        let upstream = crate::upstream::Upstream::new(settings.clone()).unwrap();
+        let templates =
+            crate::account_templates::Templates::new(settings.data_dir().join("templates.json"));
+        let actions = Actions::new(
+            queries,
+            upstream,
+            crate::account_locks::AccountLocks::default(),
+            templates,
+            settings,
+        )
+        .unwrap();
+
+        let (tx, mut rx) = mpsc::channel(16);
+        actions
+            .consume_test(
+                1,
+                &json!({"mode":"default"}),
+                "fixture-key",
+                &tx,
+                false,
+                Instant::now(),
+            )
+            .await
+            .unwrap();
+        drop(tx);
+        let mut events = Vec::new();
+        while let Some(ev) = rx.recv().await {
+            events.push(ev);
+        }
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["type"], "content");
+        assert_eq!(events[0]["text"], "hello world");
+        assert_eq!(events[1]["type"], "test_complete");
+        assert_eq!(events[1]["success"], true);
+
+        let (tx2, mut rx2) = mpsc::channel(16);
+        actions
+            .consume_test(
+                2,
+                &json!({"mode":"default"}),
+                "fixture-key",
+                &tx2,
+                true,
+                Instant::now(),
+            )
+            .await
+            .unwrap();
+        drop(tx2);
+        let overflow = rx2.recv().await.unwrap();
+        assert_eq!(overflow["type"], "error");
+        assert_eq!(overflow["error"], "测试输出超过大小限制");
+        assert_eq!(overflow["uncertain"], true);
+
+        db.close().await;
+        server.abort();
+        let _ = server.await;
     }
 }

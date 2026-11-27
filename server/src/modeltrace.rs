@@ -21,20 +21,42 @@ pub fn manifest() -> Value {
     serde_json::from_str(include_str!("../resources/modeltrace/manifest.json"))
         .expect("bundled manifest")
 }
-pub fn bundled_compiled() -> Result<(CompiledBank, Value)> {
+#[derive(serde::Deserialize)]
+struct RawBankHeader {
+    schema: String,
+    built_at: String,
+}
+
+static BUNDLED_VERSION: LazyLock<Result<Value>> = LazyLock::new(|| {
     let manifest = manifest();
     let raw = include_str!("../resources/modeltrace/unified_bank.json");
     let digest = sha256(raw);
     if manifest["files"]["bank"]["sha256"] != digest {
         return Err(Error::new(503, "模型指纹库校验失败"));
     }
-    let compiled = CompiledBank::compile_str(raw)?;
-    let version = json!({
+    let header: RawBankHeader =
+        serde_json::from_str(raw).map_err(|_| Error::new(503, "指纹库数据无效"))?;
+    if header.schema != "robust-number-fingerprint-bank"
+        || chrono::DateTime::parse_from_rfc3339(&header.built_at).is_err()
+    {
+        return Err(Error::new(503, "指纹库数据无效"));
+    }
+    Ok(json!({
         "revision": manifest["revision"],
         "sha256": digest,
-        "built_at": compiled.built_at(),
+        "built_at": header.built_at,
         "analyzer_version": manifest.get("analyzerVersion").unwrap_or(&json!(1)),
-    });
+    }))
+});
+
+pub fn bundled_version() -> Result<Value> {
+    BUNDLED_VERSION.clone()
+}
+
+pub fn bundled_compiled() -> Result<(CompiledBank, Value)> {
+    let version = bundled_version()?;
+    let raw = include_str!("../resources/modeltrace/unified_bank.json");
+    let compiled = CompiledBank::compile_str(raw)?;
     Ok((compiled, version))
 }
 fn choose(n: usize) -> usize {
@@ -285,8 +307,14 @@ fn valid_mat(m: &[Vec<f64>], rows: usize, dim: usize) -> bool {
     m.len() == rows && m.iter().all(|r| valid_vec(r, dim, |_| true))
 }
 
+#[cfg(test)]
+pub(crate) static COMPILE_COUNT: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
 impl CompiledBank {
     pub fn compile_str(raw: &str) -> Result<Self> {
+        #[cfg(test)]
+        COMPILE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let invalid = || Error::new(503, "指纹库数据无效");
         let parsed: RawBank = serde_json::from_str(raw).map_err(|_| invalid())?;
         if parsed.schema != "robust-number-fingerprint-bank"

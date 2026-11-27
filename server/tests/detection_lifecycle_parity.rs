@@ -7814,3 +7814,199 @@ async fn in_lock_guard_read_failure_after_business_conflict_preserves_active_job
     harness.close().await;
 }
 
+#[tokio::test]
+async fn smart_frequency_gate_keeps_memory_samples_skips_unchanged_writes_and_survives_restart() {
+    let mut h = Harness::new(sample_text("above_99", 0)).await;
+    let id1 = integer(&h.seed_account("apikey", true, json!({})).await["id"]).unwrap();
+    let id2 = integer(&h.seed_account("apikey", true, json!({})).await["id"]).unwrap();
+
+    h.business_requests(id1, 3).await;
+    let t0 = h.now();
+    h.smart_detection(id1, 5).await;
+    let view1 = h.runtime().detection.view(id1).await.unwrap();
+    assert_eq!(view1["recent_request_count"], 3);
+    assert_eq!(parse_datetime(&view1["frequency_sampled_at"]), Some(t0));
+
+    // Enabling a second smart account within 1 minute still samples immediately.
+    h.advance(20);
+    h.business_requests(id2, 10).await;
+    let t_second = h.now();
+    h.smart_detection(id2, 5).await;
+    let view2 = h.runtime().detection.view(id2).await.unwrap();
+    assert_eq!(view2["recent_request_count"], 10);
+    assert_eq!(
+        parse_datetime(&view2["frequency_sampled_at"]),
+        Some(t_second)
+    );
+
+    // After restart, persisted sample timestamp prevents early re-query within 1 minute.
+    h.restart_runtime().await;
+    h.advance(20);
+    h.business_requests(id2, 30).await;
+    h.runtime().detection.tick().await.unwrap();
+    assert_eq!(
+        h.runtime().detection.view(id2).await.unwrap()["recent_request_count"],
+        10,
+        "persisted frequency_sampled_at must hold the 1-minute gate across restart"
+    );
+
+    // Past 1 minute from t_second, counts update; then steady counts skip disk writes while updating projected timestamp.
+    h.advance(45);
+    h.runtime().detection.tick().await.unwrap();
+    let after_window = h.now();
+    assert_eq!(
+        h.runtime().detection.view(id2).await.unwrap()["recent_request_count"],
+        30
+    );
+    assert_eq!(
+        parse_datetime(&h.runtime().detection.view(id2).await.unwrap()["frequency_sampled_at"]),
+        Some(after_window)
+    );
+
+    let mtime_before = fs::metadata(h.runtime().detection.store.path())
+        .unwrap()
+        .modified()
+        .unwrap();
+    tokio::time::sleep(StdDuration::from_millis(20)).await;
+    h.advance(65);
+    h.runtime().detection.tick().await.unwrap();
+    let steady_at = h.now();
+    assert_eq!(
+        fs::metadata(h.runtime().detection.store.path())
+            .unwrap()
+            .modified()
+            .unwrap(),
+        mtime_before,
+        "unchanged request counts must not rewrite model-detection-state.json"
+    );
+    assert_eq!(
+        parse_datetime(&h.runtime().detection.view(id2).await.unwrap()["frequency_sampled_at"]),
+        Some(steady_at),
+        "projected HTTP view must expose latest in-memory sample timestamp"
+    );
+
+    // System clock rollback when persisted frequency_sampled_at is ahead of `now` and request
+    // count is unchanged must heal the future disk timestamp once, project the rolled-back
+    // sample time, hold the 1-minute gate (including across restart), and resume skipping
+    // disk writes on subsequent steady ticks.
+    let pre_rollback_usage_at = h.now();
+    sqlx::query("DELETE FROM usage_logs WHERE account_id IN ($1, $2)")
+        .bind(id1)
+        .bind(id2)
+        .execute(&h.fixture_db.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO usage_logs (id,account_id,created_at) SELECT $1 * 1000 + n,$1,$2 FROM generate_series(1,12) n",
+    )
+    .bind(id2)
+    .bind(pre_rollback_usage_at)
+    .execute(&h.fixture_db.pool)
+    .await
+    .unwrap();
+    h.advance(500);
+    let future_persisted_at = h.now();
+    h.runtime().detection.tick().await.unwrap();
+    assert_eq!(
+        h.runtime().detection.view(id2).await.unwrap()["recent_request_count"],
+        12
+    );
+    assert_eq!(
+        parse_datetime(
+            &h.runtime().detection.store.read_shared().unwrap()["accounts"][id2.to_string()]
+                ["frequency_sampled_at"]
+        ),
+        Some(future_persisted_at)
+    );
+
+    h.advance(-300);
+    let rolled_back_at = h.now();
+    assert!(rolled_back_at < future_persisted_at && rolled_back_at > pre_rollback_usage_at);
+    h.runtime().detection.tick().await.unwrap();
+    assert_eq!(
+        parse_datetime(
+            &h.runtime().detection.store.read_shared().unwrap()["accounts"][id2.to_string()]
+                ["frequency_sampled_at"]
+        ),
+        Some(rolled_back_at),
+        "clock rollback must heal future persisted frequency_sampled_at on disk"
+    );
+    assert_eq!(
+        parse_datetime(&h.runtime().detection.view(id2).await.unwrap()["frequency_sampled_at"]),
+        Some(rolled_back_at),
+        "project_account must return rolled-back sample time rather than stale future disk timestamp"
+    );
+
+    // Within 1 minute of rolled_back_at (both in-memory and across cold restart from healed
+    // disk state, while still well before future_persisted_at), new usage_logs must NOT pierce
+    // the 1-minute gate.
+    h.advance(15);
+    h.business_requests(id2, 45).await;
+    h.runtime().detection.tick().await.unwrap();
+    let gated_view = h.runtime().detection.view(id2).await.unwrap();
+    assert_eq!(
+        gated_view["recent_request_count"], 12,
+        "1-minute gate must hold after clock rollback instead of re-querying DB every tick"
+    );
+    assert_eq!(
+        parse_datetime(&gated_view["frequency_sampled_at"]),
+        Some(rolled_back_at)
+    );
+    h.restart_runtime().await;
+    h.advance(10);
+    h.runtime().detection.tick().await.unwrap();
+    assert_eq!(
+        h.runtime().detection.view(id2).await.unwrap()["recent_request_count"],
+        12,
+        "healed disk timestamp must hold the 1-minute gate across cold restart after clock rollback"
+    );
+
+    // Past 1 minute from rolled_back_at (still before future_persisted_at), sampling resumes,
+    // and subsequent steady ticks skip disk writes again.
+    h.advance(40);
+    h.runtime().detection.tick().await.unwrap();
+    assert_eq!(
+        h.runtime().detection.view(id2).await.unwrap()["recent_request_count"],
+        45
+    );
+    let mtime_after_resume = fs::metadata(h.runtime().detection.store.path())
+        .unwrap()
+        .modified()
+        .unwrap();
+    tokio::time::sleep(StdDuration::from_millis(20)).await;
+    h.advance(65);
+    let steady_after_rollback = h.now();
+    assert!(steady_after_rollback < future_persisted_at);
+    h.runtime().detection.tick().await.unwrap();
+    assert_eq!(
+        fs::metadata(h.runtime().detection.store.path())
+            .unwrap()
+            .modified()
+            .unwrap(),
+        mtime_after_resume,
+        "once future disk timestamp is healed, unchanged counts skip disk writes again"
+    );
+    assert_eq!(
+        parse_datetime(&h.runtime().detection.view(id2).await.unwrap()["frequency_sampled_at"]),
+        Some(steady_after_rollback)
+    );
+
+    // Statistics query failure resets recent_request_count to null.
+    h.advance(65);
+    sqlx::query("ALTER TABLE usage_logs RENAME TO usage_logs_hidden_for_freq_test")
+        .execute(&h.fixture_db.pool)
+        .await
+        .unwrap();
+    let tick_res = h.runtime().detection.tick().await;
+    sqlx::query("ALTER TABLE usage_logs_hidden_for_freq_test RENAME TO usage_logs")
+        .execute(&h.fixture_db.pool)
+        .await
+        .unwrap();
+    tick_res.unwrap();
+    assert!(
+        h.runtime().detection.view(id2).await.unwrap()["recent_request_count"].is_null(),
+        "failed statistics query must report null recent_request_count"
+    );
+
+    h.close().await;
+}

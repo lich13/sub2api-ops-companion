@@ -322,6 +322,16 @@ mod response_tests {
                 assert_eq!(error.detail["code"], "invalid_request");
             }
         }
+        for invalid in [
+            br#"{"value": NaN}"#.as_slice(),
+            br#"{"value": Infinity}"#.as_slice(),
+        ] {
+            let error = json_payload(Body::from(invalid.to_vec()))
+                .await
+                .unwrap_err();
+            assert_eq!(error.status, StatusCode::UNPROCESSABLE_ENTITY);
+            assert_eq!(error.detail["code"], "invalid_request");
+        }
     }
 
     #[tokio::test]

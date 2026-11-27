@@ -41,7 +41,9 @@ fn execute(name: &str, args: &Value) -> Result<Value> {
                 .collect(),
         )),
         "error_dto" => queries::error_dto(&args["row"], args["detail"].as_bool().unwrap()),
-        "safe_error_body" => json!(sub2ops_server::security::safe_error_body(&args["value"])),
+        "safe_error_body" => {
+            queries::error_dto(&json!({"error_body": args["value"]}), true)["content"].clone()
+        }
         "error_evidence.match_message" => json!(error_evidence::match_message(&args["row"])),
         "error_evidence.is_local_throttle" => json!(error_evidence::local_throttle(&args["row"])),
         "parse_iso_datetime" => json!(compat::parse_datetime(&args["value"]).map(compat::datetime)),
@@ -166,12 +168,15 @@ fn assert_same(actual: &Value, expected: &Value, context: &str) {
     }
 }
 
-fn check(legacy_id: &str) {
-    let fixture: Value = serde_json::from_str(include_str!(
+static FIXTURE: std::sync::LazyLock<Value> = std::sync::LazyLock::new(|| {
+    serde_json::from_str(include_str!(
         "../../tests/contracts/rule-traces/fixtures.json"
     ))
-    .unwrap();
-    let cases = fixture["cases"]
+    .unwrap()
+});
+
+fn check(legacy_id: &str) {
+    let cases = FIXTURE["cases"]
         .as_array()
         .unwrap()
         .iter()
@@ -179,11 +184,6 @@ fn check(legacy_id: &str) {
         .collect::<Vec<_>>();
     assert!(!cases.is_empty(), "missing oracle vectors for {legacy_id}");
     for (index, case) in cases.iter().enumerate() {
-        if let Some(raw) = case["invalid_json_arguments"].as_str() {
-            assert!(serde_json::from_str::<Value>(raw).is_err());
-            assert!(case["error"] == "invalid_value" || case["expected"].is_null());
-            continue;
-        }
         let args = case["arguments"].clone();
         let actual = execute(case["function"].as_str().unwrap(), &args);
         if case["function"] == "project_state" && args["value"]["stage"] == "releasing" {

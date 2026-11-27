@@ -143,7 +143,7 @@ fn bundled_state_with_raw(manifest: &Value, version: &Value) -> Value {
 }
 fn lazy_bundled_state() -> Value {
     let manifest = modeltrace::manifest();
-    let (_, version) = modeltrace::bundled_compiled().expect("bundled modeltrace bank");
+    let version = modeltrace::bundled_version().expect("bundled modeltrace bank");
     bundled_state_with_raw(&manifest, &version)
 }
 fn strip_raw_bank(mut state: Value) -> Value {
@@ -221,7 +221,7 @@ impl FingerprintBank {
         if manifest["repository"] != "Hanmo123/ModelTrace" || manifest["branch"] != "hanmo" {
             return Err(Error::new(503, "指纹库来源无效"));
         }
-        let (bundled_compiled, bundled_version) = modeltrace::bundled_compiled()?;
+        let bundled_version = modeltrace::bundled_version()?;
         let store = Store::new_lazy(
             settings.data_dir().join("modeltrace-bank-state.json"),
             lazy_bundled_state,
@@ -229,6 +229,7 @@ impl FingerprintBank {
         );
         let cached = store.path().exists() || store.path().with_extension("lock").exists();
         let (compiled, version, state) = if !cached {
+            let (bundled_compiled, _) = modeltrace::bundled_compiled()?;
             let mut defaults = bundled_state_meta(&manifest, &bundled_version);
             let v = crate::compat::pick(
                 &defaults["active"]["version"],
@@ -279,8 +280,9 @@ impl FingerprintBank {
             // A cache older than the bundled bank is superseded by it. The file is replaced
             // by `adopt_bundled` once the service starts; validation alone writes nothing.
             let compiled = if parse_datetime(cached_compiled.built_at())
-                < parse_datetime(bundled_compiled.built_at())
+                < parse_datetime(&bundled_version["built_at"])
             {
+                let (bundled_compiled, _) = modeltrace::bundled_compiled()?;
                 state = bundled_state_meta(&manifest, &bundled_version);
                 Arc::new(bundled_compiled)
             } else {
@@ -328,7 +330,7 @@ impl FingerprintBank {
             return Ok(());
         }
         let manifest = modeltrace::manifest();
-        let (_, bundled_version) = modeltrace::bundled_compiled()?;
+        let bundled_version = modeltrace::bundled_version()?;
         let built = parse_datetime(&bundled_version["built_at"]);
         let result = self.store.transaction(|state| {
             if parse_datetime(&state["active"]["version"]["built_at"]) < built {
@@ -757,5 +759,79 @@ impl FingerprintBank {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod compile_budget_tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    struct NoopTransport;
+    impl Transport for NoopTransport {
+        fn get<'a>(
+            &'a self,
+            _url: reqwest::Url,
+            _accept: &'a str,
+        ) -> BoxFuture<'a, SyncResult<reqwest::Response>> {
+            Box::pin(async { Err(Failure::new("network")) })
+        }
+    }
+
+    #[test]
+    fn cached_bank_startup_and_adopt_skip_compiling_bundled_bank() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut settings = Settings::from_env(&std::collections::BTreeMap::from([
+            ("DATABASE_URL".into(), "postgres://127.0.0.1/unused".into()),
+            (
+                "USAGE_QUERY_STATE_PATH".into(),
+                dir.path().join("oauth-state.json").to_string_lossy().into(),
+            ),
+        ]))
+        .unwrap();
+        settings.audit_path = dir.path().join("audit.jsonl");
+        let settings = Arc::new(settings);
+
+        // Cold startup without cache compiles bundled bank exactly once.
+        let before_cold = modeltrace::COMPILE_COUNT.load(Ordering::Relaxed);
+        let cold = FingerprintBank::with_transport(
+            settings.clone(),
+            Arc::new(NoopTransport),
+            Arc::new(|| 1_700_000_000.0),
+        )
+        .unwrap();
+        assert_eq!(
+            modeltrace::COMPILE_COUNT.load(Ordering::Relaxed) - before_cold,
+            1
+        );
+        drop(cold);
+
+        // Seed up-to-date disk cache using lazy_bundled_state (which uses bundled_version only).
+        let before_lazy = modeltrace::COMPILE_COUNT.load(Ordering::Relaxed);
+        let seeded = lazy_bundled_state();
+        assert_eq!(
+            modeltrace::COMPILE_COUNT.load(Ordering::Relaxed) - before_lazy,
+            0
+        );
+        std::fs::write(
+            settings.data_dir().join("modeltrace-bank-state.json"),
+            serde_json::to_vec(&seeded).unwrap(),
+        )
+        .unwrap();
+
+        // Warm startup over up-to-date cache + adopt_bundled compiles only the cache (1 total, not 2).
+        let before_warm = modeltrace::COMPILE_COUNT.load(Ordering::Relaxed);
+        let warm = FingerprintBank::with_transport(
+            settings,
+            Arc::new(NoopTransport),
+            Arc::new(|| 1_700_000_000.0),
+        )
+        .unwrap();
+        warm.adopt_bundled().unwrap();
+        assert_eq!(
+            modeltrace::COMPILE_COUNT.load(Ordering::Relaxed) - before_warm,
+            1
+        );
+        assert_eq!(warm.public()["source"], "cache");
     }
 }
