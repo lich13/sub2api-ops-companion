@@ -426,7 +426,11 @@ it("keeps a failed application draft and displays the full failure", async () =>
   let applied = false;
   const failure = `恢复失败\n${"fixture failure details ".repeat(30)}`;
   vi.mocked(api).mockImplementation(async (...args) => {
-    if (args[1].endsWith("/apply")) applied = true;
+    if (args[1].endsWith("/apply")) {
+      applied = true;
+      fixture = { ...fixture, runtime_revision: "e".repeat(64) };
+      return { status: "restarting", message: "正在重启服务" } as never;
+    }
     if (args[1].endsWith("/operation"))
       return {
         status: applied ? "failed" : "idle",
@@ -441,6 +445,7 @@ it("keeps a failed application draft and displays the full failure", async () =>
   expect(container.textContent).toContain(failure);
   expect(input("server.host").value).toBe("127.0.0.1");
   expect(container.querySelectorAll(".config-field.changed")).toHaveLength(1);
+  expect(button("应用并重启").disabled).toBe(false);
 });
 
 it("keeps secret values hidden in the editor and confirmation until explicitly revealed", async () => {
@@ -732,6 +737,175 @@ it("deduplicates in-flight operation polling across visibilitychange events", as
       await vi.advanceTimersByTimeAsync(1500);
     });
     expect(operationCalls).toBe(3);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("re-queries operation status on re-entry and drops stale idle replies after apply", async () => {
+  const baseImpl = vi.mocked(api).getMockImplementation()!;
+  let opReads = 0;
+  let resolveStaleIdle:
+    ((op: { status: string; message: string }) => void) | null = null;
+  vi.mocked(api).mockImplementation((method, path, body) => {
+    if (path === "/sub2api-config/operation") {
+      opReads += 1;
+      if (opReads === 1) {
+        return Promise.resolve({ status: "idle", message: "" } as never);
+      }
+      if (opReads === 2) {
+        return new Promise((resolve) => {
+          resolveStaleIdle = resolve as never;
+        });
+      }
+      return Promise.resolve({
+        status: "restarting",
+        message: "正在重启服务",
+      } as never);
+    }
+    if (path === "/sub2api-config/apply") {
+      return Promise.resolve({
+        status: "restarting",
+        message: "正在重启服务",
+      } as never);
+    }
+    return baseImpl(method, path, body);
+  });
+
+  await act(async () => root.render(<Sub2ApiConfig active online />));
+  expect(opReads).toBe(1);
+
+  // Leave and re-enter: must re-query operation status (call #2, held in flight).
+  await act(async () => root.render(<Sub2ApiConfig active={false} online />));
+  await act(async () => root.render(<Sub2ApiConfig active online />));
+  expect(opReads).toBe(2);
+
+  // Submit an edit while call #2 (stale idle) is still in flight.
+  await fill(input("server.host"), "127.0.0.1");
+  await act(async () => button("应用并重启").click());
+  await act(async () => button("确认应用并重启").click());
+  expect(container.textContent).toContain("正在重启服务");
+
+  // Now the late `idle` reply from call #2 arrives: must NOT overwrite the active operation!
+  await act(async () => {
+    resolveStaleIdle?.({ status: "idle", message: "" });
+  });
+  expect(container.textContent).toContain("正在重启服务");
+});
+
+it("keeps active apply polling alive across online and active transitions during host restart", async () => {
+  vi.useFakeTimers();
+  const baseImpl = vi.mocked(api).getMockImplementation()!;
+  let opReads = 0;
+  let resolveInFlightPoll:
+    ((op: { status: string; message: string }) => void) | null = null;
+  vi.mocked(api).mockImplementation((method, path, body) => {
+    if (path === "/sub2api-config/operation") {
+      opReads += 1;
+      if (opReads === 1) {
+        return Promise.resolve({ status: "idle", message: "" } as never);
+      }
+      if (opReads === 2) {
+        return new Promise((resolve) => {
+          resolveInFlightPoll = resolve as never;
+        });
+      }
+      return Promise.resolve({
+        status: "succeeded",
+        message: "配置已应用并重启成功",
+      } as never);
+    }
+    if (path === "/sub2api-config/apply") {
+      return Promise.resolve({
+        status: "restarting",
+        message: "正在重启服务",
+      } as never);
+    }
+    return baseImpl(method, path, body);
+  });
+
+  try {
+    await act(async () => root.render(<Sub2ApiConfig active online />));
+    expect(opReads).toBe(1);
+
+    await fill(input("server.host"), "127.0.0.1");
+    await act(async () => button("应用并重启").click());
+    await act(async () => button("确认应用并重启").click());
+    expect(opReads).toBe(2);
+    expect(container.textContent).toContain("正在重启服务");
+
+    // Host restarts so online flips true -> false -> true and user toggles tab while poll #2 is in flight.
+    await act(async () => root.render(<Sub2ApiConfig active online={false} />));
+    await act(async () =>
+      root.render(<Sub2ApiConfig active={false} online={false} />),
+    );
+    await act(async () => root.render(<Sub2ApiConfig active online />));
+    expect(opReads).toBe(2);
+
+    // Resolve poll #2 as still restarting: must schedule the 1500ms follow-up poll rather than dying.
+    await act(async () => {
+      resolveInFlightPoll?.({ status: "restarting", message: "正在重启服务" });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    expect(opReads).toBe(3);
+    expect(container.textContent).toContain("配置已应用并重启成功");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("preserves local draft and locks on revision conflict when an external operation discovered on re-entry succeeds", async () => {
+  vi.useFakeTimers();
+  const baseImpl = vi.mocked(api).getMockImplementation()!;
+  let opReads = 0;
+  vi.mocked(api).mockImplementation((method, path, body) => {
+    if (path === "/sub2api-config/operation") {
+      opReads += 1;
+      if (opReads === 1) {
+        return Promise.resolve({ status: "idle", message: "" } as never);
+      }
+      if (opReads === 2 || opReads === 3) {
+        return Promise.resolve({
+          status: "restarting",
+          message: "另一窗口正在重启服务",
+        } as never);
+      }
+      fixture = {
+        ...fixture,
+        revision: "c".repeat(64),
+        runtime_revision: "d".repeat(64),
+      };
+      return Promise.resolve({
+        status: "succeeded",
+        message: "另一窗口配置已应用",
+      } as never);
+    }
+    return baseImpl(method, path, body);
+  });
+
+  try {
+    await act(async () => root.render(<Sub2ApiConfig active online />));
+    await fill(input("server.host"), "127.0.0.1");
+    expect(container.querySelectorAll(".config-field.changed")).toHaveLength(1);
+
+    // Leave and re-enter: discovers external operation in restarting state (calls #2 and #3).
+    await act(async () => root.render(<Sub2ApiConfig active={false} online />));
+    await act(async () => root.render(<Sub2ApiConfig active online />));
+    expect(opReads).toBe(3);
+    expect(container.textContent).toContain("另一窗口正在重启服务");
+
+    // External operation finishes with `succeeded` on next poll (#4): local draft must NOT be cleared,
+    // and revision change must mark conflict.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    expect(opReads).toBe(4);
+    expect(input("server.host").value).toBe("127.0.0.1");
+    expect(container.querySelectorAll(".config-field.changed")).toHaveLength(1);
+    expect(container.textContent).toContain("文件或运行进程已变更");
+    expect(button("应用并重启").disabled).toBe(true);
   } finally {
     vi.useRealTimers();
   }

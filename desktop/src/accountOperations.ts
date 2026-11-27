@@ -1,5 +1,6 @@
 import { BridgeError } from "./bridgeError";
 import { api, command } from "./bridge";
+import { nextAdaptiveDelay } from "./pollBackoff";
 import type {
   BatchHeader,
   OperationCurrentFields,
@@ -178,13 +179,10 @@ export async function submitAccountBatch(
     client_id: clientId(),
   });
   if (current !== epoch) throw BridgeError.changed();
-  setOperations([
-    ...batch.items,
-    ...rows.filter((r) => !batch.items.some((j) => j.id === r.id)),
-  ]);
+  const batchIds = new Set(batch.items.map((j) => j.id));
+  setOperations([...batch.items, ...rows.filter((r) => !batchIds.has(r.id))]);
   return batch;
 }
-const adaptivePollDelaysMs = [35, 80, 180, 350, 500];
 export async function followAccountBatch(
   initial: OperationBatch,
   update: (batch: OperationBatch) => void,
@@ -199,8 +197,7 @@ export async function followAccountBatch(
       void command("refresh");
       return;
     }
-    const delay =
-      adaptivePollDelaysMs[Math.min(step++, adaptivePollDelaysMs.length - 1)];
+    const delay = nextAdaptiveDelay(step++);
     await new Promise((resolve) => setTimeout(resolve, delay));
     if (!alive() || current !== epoch) return;
     const next = await api<OperationBatch>(
@@ -209,10 +206,8 @@ export async function followAccountBatch(
     );
     if (!alive() || current !== epoch) return;
     batch = next;
-    setOperations([
-      ...batch.items,
-      ...rows.filter((r) => !batch.items.some((j) => j.id === r.id)),
-    ]);
+    const nextIds = new Set(batch.items.map((j) => j.id));
+    setOperations([...batch.items, ...rows.filter((r) => !nextIds.has(r.id))]);
   }
 }
 export async function submitOperation(
@@ -294,8 +289,7 @@ export async function followOperation<T>(
             ? "核对结果"
             : "测试中",
     });
-    const delay =
-      adaptivePollDelaysMs[Math.min(step++, adaptivePollDelaysMs.length - 1)];
+    const delay = nextAdaptiveDelay(step++);
     await new Promise((resolve) => setTimeout(resolve, delay));
     if (current !== epoch) throw BridgeError.changed();
     const next = await api<Operation>(

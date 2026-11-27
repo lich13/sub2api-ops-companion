@@ -71,11 +71,10 @@ function remember(key: string, saved: Saved) {
   }
 }
 function publish(batch: OperationBatch) {
+  const ids = new Set(batch.items.map((item) => item.id));
   setOperations([
     ...batch.items,
-    ...getOperations().filter(
-      (row) => !batch.items.some((item) => row.id === item.id),
-    ),
+    ...getOperations().filter((row) => !ids.has(row.id)),
   ]);
 }
 

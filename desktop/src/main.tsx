@@ -95,16 +95,15 @@ type PreloadableComponent<P extends object> = React.FC<P> & {
   preload: () => Promise<unknown>;
 };
 
-function lazyWithPreload<P extends object>(
+export function lazyWithPreload<P extends object>(
   loader: () => Promise<{ default: React.FC<P> }>,
 ): PreloadableComponent<P> {
-  let Resolved: React.FC<P> | null = null;
   let pending: Promise<{ default: React.FC<P> }> | null = null;
   const load = () => {
     if (!pending) {
-      pending = loader().then((mod) => {
-        Resolved = mod.default;
-        return mod;
+      pending = loader().catch((err: unknown) => {
+        pending = null;
+        throw err;
       });
     }
     return pending;
@@ -112,9 +111,6 @@ function lazyWithPreload<P extends object>(
   const Lazy = React.lazy(load);
   const Component: PreloadableComponent<P> = Object.assign(
     function PreloadableLazy(props: P) {
-      if (Resolved) {
-        return <Resolved {...props} />;
-      }
       return (
         <Suspense fallback={null}>
           <Lazy {...props} />

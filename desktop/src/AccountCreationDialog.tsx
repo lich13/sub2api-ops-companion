@@ -188,9 +188,14 @@ export default function AccountCreationDialog({
       ),
     [accounts, draft.platform, draft.type],
   );
-  const visibleCandidates = candidates.filter((a) =>
-    `${a.name} ${a.id}`.toLowerCase().includes(query.trim().toLowerCase()),
-  );
+  const visibleCandidateIds = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return new Set(
+      candidates
+        .filter((a) => `${a.name} ${a.id}`.toLowerCase().includes(q))
+        .map((a) => a.id),
+    );
+  }, [candidates, query]);
   useEffect(() => {
     mounted.current = true;
     const requests = ledger.current;
@@ -893,7 +898,7 @@ export default function AccountCreationDialog({
                       {candidates
                         .filter(
                           (a) =>
-                            visibleCandidates.includes(a) ||
+                            visibleCandidateIds.has(a.id) ||
                             String(a.id) === source,
                         )
                         .map((a) => (

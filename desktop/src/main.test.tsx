@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, command, subscribe } from "./bridge";
 import type { OperationBatch } from "./accountOperations";
-import App from "./main";
+import App, { lazyWithPreload } from "./main";
 import type { Account, OpsError, ViewState } from "./types";
 
 vi.mock("./bridge", () => ({
@@ -1300,5 +1300,62 @@ describe("main account selection surface", () => {
 
     await act(async () => selectAll.click());
     expect(selectionBar()).toBeNull();
+  });
+
+  it("lazyWithPreload preserves component state across parent rerenders after module resolves", async () => {
+    const { useState } = await import("react");
+    function DraftSurface({ tick }: { tick: number }) {
+      const [draft, setDraft] = useState("");
+      return (
+        <div data-tick={tick}>
+          <input
+            aria-label="草稿输入"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+        </div>
+      );
+    }
+    let resolveModule!: (mod: { default: typeof DraftSurface }) => void;
+    const Wrapped = lazyWithPreload(
+      () =>
+        new Promise<{ default: typeof DraftSurface }>((resolve) => {
+          resolveModule = resolve;
+        }),
+    );
+
+    // Mount BEFORE module resolves (renders <Suspense><Lazy /></Suspense>)
+    await act(async () => {
+      root.render(<Wrapped tick={1} />);
+    });
+    expect(container.querySelector('input[aria-label="草稿输入"]')).toBeNull();
+
+    // Resolve lazy module and type user draft
+    await act(async () => {
+      resolveModule({ default: DraftSurface });
+    });
+    const draftInput = container.querySelector<HTMLInputElement>(
+      'input[aria-label="草稿输入"]',
+    )!;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      setter.call(draftInput, "important-unsaved-draft");
+      draftInput.dispatchEvent(new Event("input", { bubbles: true }));
+      draftInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(draftInput.value).toBe("important-unsaved-draft");
+
+    // Re-render from parent AFTER Resolved: must keep the same fiber without remounting or clearing draft!
+    await act(async () => {
+      root.render(<Wrapped tick={2} />);
+    });
+    const afterRerender = container.querySelector<HTMLInputElement>(
+      'input[aria-label="草稿输入"]',
+    )!;
+    expect(afterRerender).toBe(draftInput);
+    expect(afterRerender.value).toBe("important-unsaved-draft");
   });
 });

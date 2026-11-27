@@ -538,8 +538,10 @@ export default function Sub2ApiConfig({
     draftRef = useRef(draft),
     documentRef = useRef(document),
     conflicted = useRef(false),
-    statusLoaded = useRef(false),
+    statusSeq = useRef(0),
+    statusChecked = useRef(false),
     uncertain = useRef(false),
+    ownApply = useRef(false),
     applying = running(operation);
   draftRef.current = draft;
   documentRef.current = document;
@@ -599,19 +601,41 @@ export default function Sub2ApiConfig({
   useEffect(() => {
     if (active && online) refreshDocument();
   }, [active, online]);
-  useEffect(() => {
-    if (!active || statusLoaded.current) return;
-    statusLoaded.current = true;
+  const refreshStatus = useEffectEvent(() => {
+    if (applying) return;
+    statusChecked.current = true;
+    const seq = ++statusSeq.current;
     void api<Operation>("GET", "/sub2api-config/operation")
       .then((value) => {
-        if (alive.current) setOperation(value);
+        if (alive.current && seq === statusSeq.current) {
+          ownApply.current = false;
+          setOperation(value);
+        }
       })
       .catch((err: unknown) => {
-        if (alive.current && !ignoredFailure(err)) setError(errorText(err));
+        if (alive.current && seq === statusSeq.current && !ignoredFailure(err))
+          setError(errorText(err));
       });
-  }, [active]);
+  });
+  useEffect(() => {
+    statusChecked.current = false;
+    ownApply.current = false;
+    uncertain.current = false;
+    return () => {
+      statusSeq.current += 1;
+    };
+  }, [connectionKey]);
+  useEffect(() => {
+    if (!active) {
+      statusSeq.current += 1;
+      return;
+    }
+    if (!online && statusChecked.current) return;
+    refreshStatus();
+  }, [active, online, connectionKey]);
   useEffect(() => {
     if (!applying) return;
+    statusSeq.current += 1;
     let cancelled = false,
       inFlight = false,
       timer: ReturnType<typeof setTimeout> | undefined;
@@ -631,20 +655,24 @@ export default function Sub2ApiConfig({
         if (cancelled || !alive.current) return;
         if (!running(value) && uncertain.current) {
           shouldContinue = false;
+          ownApply.current = false;
           setOperation({
             status: "failed",
             message: `提交结果未确认；宿主机当前状态：${value.message || (value.status === "idle" ? "无操作记录" : value.status)}。草稿已保留。`,
           });
           uncertain.current = false;
-          await load();
+          await load(false, true);
           return;
         }
         setOperation(value);
         setError("");
         if (!running(value)) {
           shouldContinue = false;
-          if (value.status === "succeeded") await load(true);
-          else await load();
+          const submittedBySelf = ownApply.current;
+          ownApply.current = false;
+          if (submittedBySelf && value.status === "succeeded") await load(true);
+          else if (submittedBySelf) await load();
+          else await load(false, true);
           return;
         }
       } catch (e) {
@@ -677,7 +705,7 @@ export default function Sub2ApiConfig({
       clearScheduled();
       globalThis.document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [applying]);
+  }, [applying, connectionKey]);
   const fieldByPath = useMemo(
     () => new Map(document?.catalog.fields.map((f) => [f.path, f]) ?? []),
     [document],
@@ -814,9 +842,11 @@ export default function Sub2ApiConfig({
   }
   async function apply() {
     if (blocked) return;
+    statusSeq.current += 1;
     setBusy(true);
     setError("");
     uncertain.current = false;
+    ownApply.current = false;
     try {
       const result = await api<Operation>(
         "POST",
@@ -824,13 +854,21 @@ export default function Sub2ApiConfig({
         payload(),
       );
       if (alive.current) {
+        statusSeq.current += 1;
+        ownApply.current = running(result);
         setOperation(result);
         setConfirm(false);
         setMessage("");
+        if (!running(result)) {
+          if (result.status === "succeeded") await load(true);
+          else await load();
+        }
       }
     } catch (e) {
       if (alive.current) {
+        statusSeq.current += 1;
         uncertain.current = true;
+        ownApply.current = false;
         setConfirm(false);
         setError(errorText(e));
         setOperation({

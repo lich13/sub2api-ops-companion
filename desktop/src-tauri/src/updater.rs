@@ -55,12 +55,16 @@ pub(crate) struct AndroidReleaseCandidate {
     pub sums_url: Option<String>,
 }
 
+#[derive(Clone)]
 struct VerifiedApk {
     version: String,
     path: PathBuf,
     size: u64,
     sha256: String,
 }
+
+#[cfg(test)]
+type TestInstaller = Arc<dyn Fn(&Path) -> Result<String, String> + Send + Sync>;
 
 pub struct UpdaterState {
     client: reqwest::Client,
@@ -70,6 +74,8 @@ pub struct UpdaterState {
     verified: Mutex<Option<VerifiedApk>>,
     cancel_tx: watch::Sender<u64>,
     run_seq: AtomicU64,
+    #[cfg(test)]
+    test_installer: Option<TestInstaller>,
 }
 
 #[cfg(target_os = "android")]
@@ -522,11 +528,22 @@ impl UpdaterState {
             verified: Mutex::new(None),
             cancel_tx,
             run_seq: AtomicU64::new(0),
+            #[cfg(test)]
+            test_installer: None,
         }))
     }
 
     #[cfg(test)]
     fn new_for_test(cache_dir: PathBuf, current_version: &str) -> Arc<Self> {
+        Self::new_for_test_with_installer(cache_dir, current_version, None)
+    }
+
+    #[cfg(test)]
+    fn new_for_test_with_installer(
+        cache_dir: PathBuf,
+        current_version: &str,
+        test_installer: Option<TestInstaller>,
+    ) -> Arc<Self> {
         let (cancel_tx, _) = watch::channel(0u64);
         Arc::new(Self {
             client: build_update_client(true).unwrap(),
@@ -536,6 +553,7 @@ impl UpdaterState {
             verified: Mutex::new(None),
             cancel_tx,
             run_seq: AtomicU64::new(0),
+            test_installer,
         })
     }
 
@@ -569,7 +587,7 @@ impl UpdaterState {
 
     pub async fn cancel(&self, app: Option<&tauri::AppHandle>) -> AppUpdateSnapshot {
         let next_seq = self.run_seq.fetch_add(1, Ordering::SeqCst) + 1;
-        let _ = self.cancel_tx.send(next_seq);
+        let _ = self.cancel_tx.send_replace(next_seq);
         *self.verified.lock().await = None;
         clear_android_pending(app.cloned()).await;
         let updates_dir = self.cache_dir.join("updates");
@@ -595,6 +613,16 @@ impl UpdaterState {
     }
 
     pub async fn start(self: &Arc<Self>, app: tauri::AppHandle) -> AppUpdateSnapshot {
+        self.start_with_sources(Some(app), RELEASES_API.to_string(), RELEASES.to_string())
+            .await
+    }
+
+    async fn start_with_sources(
+        self: &Arc<Self>,
+        app: Option<tauri::AppHandle>,
+        releases_api: String,
+        download_prefix: String,
+    ) -> AppUpdateSnapshot {
         {
             let guard = self.snapshot.lock().await;
             if matches!(guard.phase, "checking" | "downloading" | "verifying") {
@@ -602,7 +630,7 @@ impl UpdaterState {
             }
         }
         let seq = self.run_seq.fetch_add(1, Ordering::SeqCst) + 1;
-        let _ = self.cancel_tx.send(seq);
+        let _ = self.cancel_tx.send_replace(seq);
         let checking = AppUpdateSnapshot {
             phase: "checking",
             current_version: self.current_version.clone(),
@@ -612,20 +640,20 @@ impl UpdaterState {
             message: "正在检查新版本…".into(),
         };
         let _ = self
-            .set_and_emit(Some(&app), Some(seq), checking.clone())
+            .set_and_emit(app.as_ref(), Some(seq), checking.clone())
             .await;
 
         let this = self.clone();
-        let handle = app.clone();
         tauri::async_runtime::spawn(async move {
-            this.run_workflow(handle, seq, RELEASES_API, RELEASES).await;
+            this.run_workflow(app, seq, &releases_api, &download_prefix)
+                .await;
         });
         checking
     }
 
     async fn run_workflow(
         self: &Arc<Self>,
-        app: tauri::AppHandle,
+        app: Option<tauri::AppHandle>,
         seq: u64,
         releases_api: &str,
         download_prefix: &str,
@@ -657,7 +685,7 @@ impl UpdaterState {
             res = fetch_fut => match res {
                 Ok(val) => val,
                 Err(msg) => {
-                    self.fail(Some(&app), seq, None, msg).await;
+                    self.fail(app.as_ref(), seq, None, msg).await;
                     return;
                 }
             }
@@ -678,11 +706,11 @@ impl UpdaterState {
                         total_bytes: None,
                         message: format!("当前版本 {} 已是最新", self.current_version),
                     };
-                    let _ = self.set_and_emit(Some(&app), Some(seq), up_to_date).await;
+                    let _ = self.set_and_emit(app.as_ref(), Some(seq), up_to_date).await;
                     return;
                 }
                 Err(err) => {
-                    self.fail(Some(&app), seq, None, err.to_string()).await;
+                    self.fail(app.as_ref(), seq, None, err.to_string()).await;
                     return;
                 }
             };
@@ -690,7 +718,7 @@ impl UpdaterState {
         let expected_sha256 = match resolve_candidate_sha256(&self.client, &candidate).await {
             Ok(hash) => hash,
             Err(err) => {
-                self.fail(Some(&app), seq, Some(candidate.version), err)
+                self.fail(app.as_ref(), seq, Some(candidate.version), err)
                     .await;
                 return;
             }
@@ -718,7 +746,7 @@ impl UpdaterState {
                 };
                 let _ = progress_state
                     .set_and_emit(
-                        Some(&progress_app),
+                        progress_app.as_ref(),
                         Some(seq),
                         AppUpdateSnapshot {
                             phase,
@@ -741,7 +769,7 @@ impl UpdaterState {
             cancel_rx,
             seq,
             move |phase, dl, tot| {
-                let _ = prog_tx.send(Some((phase, dl, tot)));
+                let _ = prog_tx.send_replace(Some((phase, dl, tot)));
             },
         )
         .await;
@@ -751,7 +779,7 @@ impl UpdaterState {
             Ok(path) => path,
             Err(DownloadError::Cancelled) => return,
             Err(DownloadError::Failed(err)) => {
-                self.fail(Some(&app), seq, Some(version), err).await;
+                self.fail(app.as_ref(), seq, Some(version), err).await;
                 return;
             }
         };
@@ -766,7 +794,7 @@ impl UpdaterState {
             sha256: expected_sha256,
         });
         let _ = self
-            .trigger_install(&app, Some(seq), &version, &apk_path, total)
+            .trigger_install(app.as_ref(), Some(seq), &version, &apk_path, total)
             .await;
     }
 
@@ -795,18 +823,36 @@ impl UpdaterState {
             *self.verified.lock().await = None;
             return Err("本地更新包已失效，请重新下载更新".into());
         }
-        self.trigger_install(app, None, &version, &path, size).await
+        self.trigger_install(Some(app), None, &version, &path, size)
+            .await
     }
 
     async fn trigger_install(
         &self,
-        app: &tauri::AppHandle,
+        app: Option<&tauri::AppHandle>,
         seq: Option<u64>,
         version: &str,
         apk_path: &Path,
         total_bytes: u64,
     ) -> Result<AppUpdateSnapshot, HttpFailure> {
-        match invoke_android_installer(app.clone(), apk_path.to_path_buf()).await {
+        #[cfg(test)]
+        let install_res = if let Some(installer) = &self.test_installer {
+            installer(apk_path)
+        } else {
+            match app {
+                Some(handle) => {
+                    invoke_android_installer(handle.clone(), apk_path.to_path_buf()).await
+                }
+                None => Err("仅 Android 客户端支持内置 APK 安装".into()),
+            }
+        };
+        #[cfg(not(test))]
+        let install_res = match app {
+            Some(handle) => invoke_android_installer(handle.clone(), apk_path.to_path_buf()).await,
+            None => Err("仅 Android 客户端支持内置 APK 安装".into()),
+        };
+
+        match install_res {
             Ok(status) if status == "permission_required" => {
                 let snap = AppUpdateSnapshot {
                     phase: "permission_required",
@@ -816,7 +862,7 @@ impl UpdaterState {
                     total_bytes: Some(total_bytes),
                     message: "请开启「允许安装未知应用」权限，返回后将自动继续安装".into(),
                 };
-                let _ = self.set_and_emit(Some(app), seq, snap.clone()).await;
+                let _ = self.set_and_emit(app, seq, snap.clone()).await;
                 Ok(snap)
             }
             Ok(_) => {
@@ -828,7 +874,7 @@ impl UpdaterState {
                     total_bytes: Some(total_bytes),
                     message: format!("已校验 v{version}，正在调起系统安装器…"),
                 };
-                let _ = self.set_and_emit(Some(app), seq, snap.clone()).await;
+                let _ = self.set_and_emit(app, seq, snap.clone()).await;
                 Ok(snap)
             }
             Err(err) => {
@@ -840,7 +886,7 @@ impl UpdaterState {
                     total_bytes: Some(total_bytes),
                     message: err.clone(),
                 };
-                let _ = self.set_and_emit(Some(app), seq, snap).await;
+                let _ = self.set_and_emit(app, seq, snap).await;
                 Err(err.into())
             }
         }
@@ -1271,5 +1317,105 @@ mod tests {
         assert_eq!(next.latest_version, None);
         assert!(state.verified.lock().await.is_none());
         assert!(!part_file.exists());
+    }
+
+    #[tokio::test]
+    async fn start_without_initial_receiver_downloads_verifies_sha256_and_invokes_installer() {
+        let payload = b"synthetic-signed-arm64-apk-payload-for-start-workflow";
+        let valid_hash = format!("{:x}", Sha256::digest(payload));
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let releases_json = serde_json::to_string(&serde_json::json!([
+            {
+                "tag_name": "desktop-v0.1.109",
+                "assets": [
+                    {
+                        "name": "Sub2Ops_0.1.109_arm64-v8a.apk",
+                        "size": payload.len(),
+                        "digest": format!("sha256:{valid_hash}"),
+                        "browser_download_url": format!("http://{addr}/releases/download/desktop-v0.1.109/Sub2Ops_0.1.109_arm64-v8a.apk")
+                    }
+                ]
+            }
+        ]))
+        .unwrap();
+
+        let server = std::thread::spawn(move || {
+            for _ in 0..2 {
+                let (mut sock, _) = listener.accept().unwrap();
+                let mut req_buf = [0u8; 2048];
+                let n = sock.read(&mut req_buf).unwrap_or(0);
+                let req_str = String::from_utf8_lossy(&req_buf[..n]);
+                if req_str.starts_with("GET /api/releases ") {
+                    write!(
+                        sock,
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        releases_json.len(),
+                        releases_json
+                    )
+                    .unwrap();
+                } else {
+                    write!(
+                        sock,
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/vnd.android.package-archive\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        payload.len()
+                    )
+                    .unwrap();
+                    sock.write_all(payload).unwrap();
+                }
+            }
+        });
+
+        let dir = tempfile::tempdir().unwrap();
+        let installed_paths: Arc<std::sync::Mutex<Vec<PathBuf>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
+        let installed_capture = installed_paths.clone();
+        let installer: TestInstaller = Arc::new(move |apk_path: &Path| {
+            installed_capture
+                .lock()
+                .unwrap()
+                .push(apk_path.to_path_buf());
+            Ok("installing".into())
+        });
+
+        let state = UpdaterState::new_for_test_with_installer(
+            dir.path().to_path_buf(),
+            "0.1.108",
+            Some(installer),
+        );
+        assert_eq!(state.cancel_tx.receiver_count(), 0);
+
+        let initial = state
+            .start_with_sources(
+                None,
+                format!("http://{addr}/api/releases"),
+                format!("http://{addr}/releases"),
+            )
+            .await;
+        assert_eq!(initial.phase, "checking");
+
+        let final_snap = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let snap = state.get_snapshot().await;
+                if matches!(snap.phase, "installing" | "error" | "idle") && snap.phase != "checking"
+                {
+                    return snap;
+                }
+                tokio::time::sleep(Duration::from_millis(15)).await;
+            }
+        })
+        .await
+        .expect("workflow started with zero watch receivers must finish download and install");
+
+        assert_eq!(final_snap.phase, "installing", "snapshot: {final_snap:?}");
+        assert_eq!(final_snap.latest_version.as_deref(), Some("0.1.109"));
+        assert_eq!(final_snap.downloaded_bytes, payload.len() as u64);
+
+        let calls = installed_paths.lock().unwrap().clone();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(std::fs::read(&calls[0]).unwrap(), payload);
+        let verified = state.verified.lock().await.clone().unwrap();
+        assert_eq!(verified.sha256, valid_hash);
+        let _ = server.join();
     }
 }
