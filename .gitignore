@@ -21,3 +21,6 @@ desktop/artifacts/
 desktop/macos/.build/
 desktop/macos/.swiftpm/
 server/target/
+ci-results/
+companion-artifact/
+artifacts/

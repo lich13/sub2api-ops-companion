@@ -1472,15 +1472,31 @@ async function proxyBatchChecks(h, fixture, { navigate = false } = {}) {
 }
 
 async function runScenario(scenario) {
-  const context = await browser.newContext({
-    viewport: scenario.viewport, colorScheme: scenario.theme,
-    hasTouch: true, isMobile: true,
-    reducedMotion: "reduce", serviceWorkers: "block", locale: "zh-CN",
-  });
   const blocked = [];
   const pageErrors = [];
+  let context;
   let h;
+  let scenarioFailed = false;
+  const recordFailure = async (error, fallbackPhase = "initialization") => {
+    scenarioFailed = true;
+    const evidence = error instanceof CheckFailure ? error.evidence
+      : h?.target ? await geometry(h.target).catch(() => ({})) : {};
+    const failure = {
+      result: "FAIL", scenario: scenario.name, viewport: scenario.viewport,
+      phase: h?.phase || fallbackPhase, kind: h?.kind || "browser",
+      reason: error instanceof CheckFailure ? error.message : error.name === "TimeoutError" ? "browser-action-timeout" : "browser-action-failed",
+      ...evidence, ...(error.keyboardActivation ? { keyboardActivation: error.keyboardActivation } : {}),
+      blocked, pageErrorCount: pageErrors.length,
+    };
+    failures.push(failure);
+    console.error(JSON.stringify(failure));
+  };
   try {
+    context = await browser.newContext({
+      viewport: scenario.viewport, colorScheme: scenario.theme,
+      hasTouch: true, isMobile: true,
+      reducedMotion: "reduce", serviceWorkers: "block", locale: "zh-CN",
+    });
     await context.route("**/*", (route) => {
       if (localUrl(route.request().url())) return route.continue();
       blocked.push({ type: route.request().resourceType() });
@@ -1550,44 +1566,52 @@ async function runScenario(scenario) {
     requireCondition(!serverExit && !serverError, "preview-exited-during-check", { processCode: serverExit?.code || serverError });
     console.log(JSON.stringify({ result: "PASS", scenario: scenario.name, checks: h.checks, fontSize: presentation.fontSize }));
   } catch (error) {
-    const evidence = error instanceof CheckFailure ? error.evidence
-      : h?.target ? await geometry(h.target).catch(() => ({})) : {};
-    const failure = {
-      result: "FAIL", scenario: scenario.name, viewport: scenario.viewport,
-      phase: h?.phase || "initialization", kind: h?.kind || "browser",
-      reason: error instanceof CheckFailure ? error.message : error.name === "TimeoutError" ? "browser-action-timeout" : "browser-action-failed",
-      ...evidence, ...(error.keyboardActivation ? { keyboardActivation: error.keyboardActivation } : {}),
-      blocked, pageErrorCount: pageErrors.length,
-    };
-    failures.push(failure);
-    console.error(JSON.stringify(failure));
+    await recordFailure(error);
   } finally {
-    await context.close();
+    if (context) {
+      try {
+        await context.close();
+      } catch (closeError) {
+        if (!scenarioFailed) await recordFailure(closeError, "cleanup");
+      }
+    }
   }
 }
 
 async function main() {
   const { chromium } = require("playwright");
   const selectedScenario = process.argv.find((arg) => arg.startsWith("--scenario="))?.slice("--scenario=".length);
-  await startServer();
-  browser = await chromium.launch({ headless: true, ...(process.argv.includes("--chrome") ? { channel: "chrome" } : {}) });
+  const rawConcurrency = Number(process.argv.find((arg) => arg.startsWith("--concurrency="))?.slice("--concurrency=".length) || 4);
+  const concurrency = Number.isFinite(rawConcurrency) && rawConcurrency >= 1 ? Math.floor(rawConcurrency) : 4;
   const viewports = [
     { width: 320, height: 640 }, { width: 360, height: 800 },
     { width: 393, height: 852 }, { width: 430, height: 932 },
     { width: 844, height: 390 },
   ];
-  let total = 0;
+  const scenarios = [];
   for (const viewport of viewports) {
     for (const theme of ["light", "dark"]) {
       for (const largeFont of [false, true]) {
         const name = `mobile-${viewport.width}x${viewport.height}-${theme}-font${largeFont ? "125" : "default"}`;
         if (selectedScenario && name !== selectedScenario) continue;
-        await runScenario({ name, viewport, theme, largeFont });
-        total++;
+        scenarios.push({ name, viewport, theme, largeFont });
       }
     }
   }
+  const total = scenarios.length;
   requireCondition(total > 0, "scenario-not-found");
+  await startServer();
+  browser = await chromium.launch({ headless: true, ...(process.argv.includes("--chrome") ? { channel: "chrome" } : {}) });
+  let nextIndex = 0;
+  const workerCount = Math.min(concurrency, total);
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < total) {
+        const scenario = scenarios[nextIndex++];
+        await runScenario(scenario);
+      }
+    }),
+  );
   console.log(JSON.stringify({ result: failures.length ? "FAIL" : "PASS", scenarios: total, passed: total - failures.length, failed: failures.length }));
   if (failures.length) process.exitCode = 1;
 }

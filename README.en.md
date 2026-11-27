@@ -26,7 +26,7 @@
 - **Scheduled & On-Demand Runs**: Configure global detection models and scheduled inspection runs with real-time in-memory progress streaming and automated scheduling actions on anomalies.
 
 ### 4. Batch Account Operations, `schema=2` Priority Orchestration & Host Config
-- **Streamlined Daily Ops & Priority Drag-and-Drop**: Live group activity feeds, multi-dimensional account filtering/sorting, platform-scoped priority drag-and-drop orchestration (`schema=2` reconciled writes), batch health tests, batch re-authorization, reusable account templates, and proxy health checks.
+- **Streamlined Daily Ops & Priority Drag-and-Drop**: Live group activity feeds, multi-dimensional account filtering/sorting, platform-scoped priority drag-and-drop orchestration (`schema=2` reconciled writes), batch health tests, reusable account templates, and proxy health checks.
 - **Protected Host `config.yaml` Delivery & Online Upgrades**: Inspect and update Sub2API host configurations with optimistic concurrency guards, check upstream releases, and trigger one-click online upgrades and service restarts.
 
 ### 5. Native Cross-Platform Clients & Bark Push Alerts
@@ -60,7 +60,7 @@ docker compose up -d --build
 ```
 
 - `.env.example` contains local development placeholders only. Replace the database URL, Sub2API endpoints, and Bark settings before deploying to production. Never commit `.env` or `data/` to public repositories or release artifacts.
-- Server source code resides in [`server/`](server/README.md). Production container images ship only the compiled Rust binary and license/resource files—no Python runtime is included.
+- Server source code resides in [`server/`](server/README.md). Production container images include the compiled Rust binary, CA certificates, `curl` (for health checks), and license files—no Python runtime is included.
 - Production deployments should load the corresponding commit's `Companion-linux-amd64` CI artifact image and set `OPS_IMAGE`, mounting only `/data`.
 
 ### Networking & Reverse Proxy

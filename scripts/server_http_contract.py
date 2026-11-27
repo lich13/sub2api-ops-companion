@@ -73,10 +73,6 @@ def require(value: bool, message: str) -> None:
         raise CheckFailure(message)
 
 
-def progress(message: str) -> None:
-    print(message, file=sys.stderr, flush=True)
-
-
 def free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
